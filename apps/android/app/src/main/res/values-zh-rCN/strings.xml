@@ -880,6 +880,14 @@
     <string name="on_device_agent_max_tool_calls_subtitle">执行达到 8、16 或 32 次后阻止重复或失控的自主调用</string>
     <string name="on_device_agent_model_max_actions">最大规划动作数</string>
     <string name="on_device_agent_model_max_actions_subtitle">每个模型计划最多包含 4、8 或 12 个经验证动作</string>
+    <string name="on_device_agent_max_loop_iterations">最大循环次数</string>
+    <string name="on_device_agent_max_loop_iterations_subtitle">限制每个任务的规划、执行、观察与重规划循环</string>
+    <string name="on_device_agent_max_phase_retries">最大阶段重试次数</string>
+    <string name="on_device_agent_max_phase_retries_subtitle">限制动作失败或验证失败后的重试次数</string>
+    <string name="on_device_agent_execution_time_budget">有效执行时间预算</string>
+    <string name="on_device_agent_execution_time_budget_subtitle">等待用户或远程资源的时间不计入此预算</string>
+    <string name="on_device_agent_execution_time_minutes">%1$d 分钟</string>
+    <string name="on_device_agent_execution_time_seconds">%1$d 秒</string>
     <string name="on_device_agent_section_capabilities">能力授权</string>
     <string name="on_device_agent_allow_screen_observation">屏幕理解</string>
     <string name="on_device_agent_allow_screen_observation_subtitle">允许智能体运行时采集结构化屏幕上下文</string>

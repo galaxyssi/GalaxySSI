@@ -13,7 +13,10 @@ data class AgentModelPlannerSettings(
     val multiAgentCoordination: Boolean = true,
     val shareAgentOutputsWithPlanner: Boolean = false,
     val maxAgentHops: Int = 4,
-    val maxToolCalls: Int = 16
+    val maxToolCalls: Int = 16,
+    val maxLoopIterations: Int = 8,
+    val maxPhaseRetries: Int = 2,
+    val maxExecutionSeconds: Int = 600
 )
 
 class AgentModelPlannerSettingsStore(context: Context) {
@@ -32,7 +35,13 @@ class AgentModelPlannerSettingsStore(context: Context) {
             multiAgentCoordination = json.optBoolean("multi_agent_coordination", true),
             shareAgentOutputsWithPlanner = json.optBoolean("share_agent_outputs_with_planner", false),
             maxAgentHops = json.optInt("max_agent_hops", DEFAULT_MAX_AGENT_HOPS).coerceIn(1, MAX_AGENT_HOPS),
-            maxToolCalls = json.optInt("max_tool_calls", DEFAULT_MAX_TOOL_CALLS).coerceIn(MIN_TOOL_CALLS, MAX_TOOL_CALLS)
+            maxToolCalls = json.optInt("max_tool_calls", DEFAULT_MAX_TOOL_CALLS).coerceIn(MIN_TOOL_CALLS, MAX_TOOL_CALLS),
+            maxLoopIterations = json.optInt("max_loop_iterations", DEFAULT_MAX_LOOP_ITERATIONS)
+                .coerceIn(MIN_LOOP_ITERATIONS, MAX_LOOP_ITERATIONS),
+            maxPhaseRetries = json.optInt("max_phase_retries", DEFAULT_MAX_PHASE_RETRIES)
+                .coerceIn(MIN_PHASE_RETRIES, MAX_PHASE_RETRIES),
+            maxExecutionSeconds = json.optInt("max_execution_seconds", DEFAULT_MAX_EXECUTION_SECONDS)
+                .coerceIn(MIN_EXECUTION_SECONDS, MAX_EXECUTION_SECONDS)
         )
     }
 
@@ -40,7 +49,7 @@ class AgentModelPlannerSettingsStore(context: Context) {
         preferences.writeString(
             KEY_SETTINGS,
             JSONObject()
-                .put("version", 4)
+                .put("version", 5)
                 .put("enabled", settings.enabled)
                 .put("share_screen_text", settings.shareScreenText)
                 .put("max_actions", settings.maxActions.coerceIn(1, MAX_ACTIONS))
@@ -51,6 +60,18 @@ class AgentModelPlannerSettingsStore(context: Context) {
                 .put("share_agent_outputs_with_planner", settings.shareAgentOutputsWithPlanner)
                 .put("max_agent_hops", settings.maxAgentHops.coerceIn(1, MAX_AGENT_HOPS))
                 .put("max_tool_calls", settings.maxToolCalls.coerceIn(MIN_TOOL_CALLS, MAX_TOOL_CALLS))
+                .put(
+                    "max_loop_iterations",
+                    settings.maxLoopIterations.coerceIn(MIN_LOOP_ITERATIONS, MAX_LOOP_ITERATIONS)
+                )
+                .put(
+                    "max_phase_retries",
+                    settings.maxPhaseRetries.coerceIn(MIN_PHASE_RETRIES, MAX_PHASE_RETRIES)
+                )
+                .put(
+                    "max_execution_seconds",
+                    settings.maxExecutionSeconds.coerceIn(MIN_EXECUTION_SECONDS, MAX_EXECUTION_SECONDS)
+                )
                 .toString()
         )
     }
@@ -69,5 +90,14 @@ class AgentModelPlannerSettingsStore(context: Context) {
         const val DEFAULT_MAX_TOOL_CALLS = 16
         const val MIN_TOOL_CALLS = 4
         const val MAX_TOOL_CALLS = 32
+        const val DEFAULT_MAX_LOOP_ITERATIONS = 8
+        const val MIN_LOOP_ITERATIONS = 1
+        const val MAX_LOOP_ITERATIONS = 24
+        const val DEFAULT_MAX_PHASE_RETRIES = 2
+        const val MIN_PHASE_RETRIES = 0
+        const val MAX_PHASE_RETRIES = 5
+        const val DEFAULT_MAX_EXECUTION_SECONDS = 600
+        const val MIN_EXECUTION_SECONDS = 60
+        const val MAX_EXECUTION_SECONDS = 3_600
     }
 }

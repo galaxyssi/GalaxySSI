@@ -1106,6 +1106,14 @@
     <string name="on_device_agent_max_tool_calls_subtitle">Stop repeated or runaway autonomous execution after 8, 16, or 32 calls</string>
     <string name="on_device_agent_model_max_actions">Maximum Planned Actions</string>
     <string name="on_device_agent_model_max_actions_subtitle">Limit each model-generated plan to 4, 8, or 12 validated actions</string>
+    <string name="on_device_agent_max_loop_iterations">Maximum Loop Iterations</string>
+    <string name="on_device_agent_max_loop_iterations_subtitle">Bound Plan, Act, Observe, and Replan cycles for every task</string>
+    <string name="on_device_agent_max_phase_retries">Maximum Phase Retries</string>
+    <string name="on_device_agent_max_phase_retries_subtitle">Limit retries after failed actions or verification</string>
+    <string name="on_device_agent_execution_time_budget">Active Execution Budget</string>
+    <string name="on_device_agent_execution_time_budget_subtitle">Waiting for a user or remote resource does not consume this budget</string>
+    <string name="on_device_agent_execution_time_minutes">%1$d min</string>
+    <string name="on_device_agent_execution_time_seconds">%1$d s</string>
     <string name="on_device_agent_section_capabilities">Capability Access</string>
     <string name="on_device_agent_visual_model">On-device Visual Model</string>
     <string name="on_device_agent_visual_model_subtitle">Fuse offline OCR geometry with the UI tree for grounded complex-page actions</string>

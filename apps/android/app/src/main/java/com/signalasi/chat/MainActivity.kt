@@ -1020,8 +1020,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 workspaceId = turnId,
                 lane = AgentTaskLane.READ_REASONING,
                 hook = AgentTaskResumeHook { context, _ ->
+                    bindAgentExecutionLoop(runtime, turnId, context)
                     context.progress("connector.response", "Connector response received")
-                    val state = try {
+                    var state = try {
                         runtime.acceptConnectorResponse(
                             sourceMessageId = response.sourceMessageId,
                             contactId = response.contactId,
@@ -1033,6 +1034,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         agentConnectorResponsesInFlight.remove(responseKey)
                         throw failure
                     }
+                    state = finalizeAgentExecutionLoop(runtime, turnId, state)
                     context.appendEvent(
                         kind = "agent.connector.response",
                         message = state.phase.name,
@@ -1042,7 +1044,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             .put("success", response.success)
                             .toString()
                     )
-                    persistAgentWorkspaceSnapshot(turnId, state)
+                    persistAgentWorkspaceSnapshot(turnId, state, runtime)
                     AgentConnectorResponseStore.remove(this@MainActivity, response)
                     activeAgentTasks.remove(response.sourceMessageId)
                     runOnUiThread {
@@ -1093,15 +1095,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         conversationId: String
     ) {
         thread(name = "signalasi-agent-response-${response.sourceMessageId}") {
-            val state = runtime.acceptConnectorResponse(
+            val turnId = agentRuntimeTurnIds[runtime].orEmpty().ifBlank { response.turnId }
+            bindAgentExecutionLoop(runtime, turnId)
+            var state = runtime.acceptConnectorResponse(
                 sourceMessageId = response.sourceMessageId,
                 contactId = response.contactId,
                 content = response.content,
                 success = response.success,
                 richOutputJson = response.richOutputJson
             ) ?: runtime.snapshot()
-            val turnId = agentRuntimeTurnIds[runtime].orEmpty().ifBlank { response.turnId }
-            if (turnId.isNotBlank()) persistAgentWorkspaceSnapshot(turnId, state)
+            if (turnId.isNotBlank()) {
+                state = finalizeAgentExecutionLoop(runtime, turnId, state)
+            }
+            if (turnId.isNotBlank()) persistAgentWorkspaceSnapshot(turnId, state, runtime)
             AgentConnectorResponseStore.remove(this, response)
             activeAgentTasks.remove(response.sourceMessageId)
             runOnUiThread {
@@ -1134,7 +1140,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             clearAgentTaskWatchdogTranscript(conversationId, turnId)
         }
         renderAgentState(state, conversationId, turnId)
-        if (turnId.isNotBlank()) recordAgentRunFromState(turnId, state)
         if (state.phase == AgentPhase.COMPLETED || state.phase == AgentPhase.FAILED ||
             state.phase == AgentPhase.CANCELLED
         ) {
@@ -2516,7 +2521,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val contactId = result?.metadata?.get("contact_id").orEmpty()
         val sourceMessageId = result?.metadata?.get("source_message_id")?.toLongOrNull() ?: 0L
         if (taskId.isBlank() || contactId.isBlank() || sourceMessageId <= 0L) {
-            renderAgentState(mobileNativeAgent.cancelCurrentTask())
+            agentRuntimeTurnIds[mobileNativeAgent]
+                ?.let { AgentTaskRuntime.supervisor(this).cancellationSource(it) }
+                ?.cancel("User cancelled the Agent task")
+            runAgentOperationAsync { mobileNativeAgent.cancelCurrentTask() }
             return
         }
         val sent = SignalASIMqttClient.publishAgentTaskCancel(
@@ -2592,10 +2600,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (agentOperationInFlight) return
         agentOperationInFlight = true
         thread(name = "signalasi-agent-operation") {
-            val outcome = runCatching(operation)
+            val runtime = mobileNativeAgent
+            val turnId = agentRuntimeTurnIds[runtime].orEmpty()
+            if (turnId.isNotBlank()) bindAgentExecutionLoop(runtime, turnId)
+            val outcome = runCatching {
+                var state = operation()
+                if (turnId.isNotBlank()) {
+                    state = finalizeAgentExecutionLoop(runtime, turnId, state)
+                    persistAgentWorkspaceSnapshot(turnId, state, runtime)
+                }
+                state
+            }
             runOnUiThread {
                 agentOperationInFlight = false
-                val state = outcome.getOrElse { mobileNativeAgent.snapshot() }
+                val state = outcome.getOrElse { runtime.snapshot() }
                 renderAgentState(state)
                 onComplete(state)
                 consumePendingAgentConnectorResponses()
@@ -2823,6 +2841,73 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
     }
 
+    private fun bindAgentExecutionLoop(
+        runtime: MobileNativeAgent,
+        turnId: String,
+        taskContext: AgentTaskContext? = null
+    ) {
+        val cleanTurnId = turnId.trim()
+        val supervisor = cleanTurnId.takeIf(String::isNotBlank)
+            ?.let { AgentTaskRuntime.supervisor(this) }
+        runtime.bindExecutionLoopEventSink(AgentExecutionLoopEventSink { event ->
+            if (cleanTurnId.isBlank()) return@AgentExecutionLoopEventSink
+            if (taskContext != null) {
+                taskContext.persistExecutionLoop(event)
+            } else {
+                if (event.phase != AgentExecutionLoopPhase.CANCELLED) {
+                    supervisor?.cancellationSource(cleanTurnId)?.throwIfCancellationRequested()
+                }
+                runCatching {
+                    supervisor?.persistExecutionLoop(cleanTurnId, event)
+                }.onFailure { error ->
+                    Log.w(
+                        "SignalASIAgentLoop",
+                        "loop_checkpoint_failed turn=${cleanTurnId.take(8)}",
+                        error
+                    )
+                }
+            }
+        })
+    }
+
+    private fun finalizeAgentExecutionLoop(
+        runtime: MobileNativeAgent,
+        turnId: String,
+        state: AgentUiState
+    ): AgentUiState {
+        if (runtime.executionLoopSnapshot()?.phase == AgentExecutionLoopPhase.COMPLETED) {
+            return state
+        }
+        if (state.phase != AgentPhase.COMPLETED) {
+            recordAgentRunFromState(turnId, state)
+            return state
+        }
+        val loopPhase = runtime.executionLoopSnapshot()?.phase
+        if (loopPhase !in setOf(
+                AgentExecutionLoopPhase.FINALIZE,
+                AgentExecutionLoopPhase.LEARN
+            ) &&
+            !runtime.beginExecutionFinalization()
+        ) {
+            return runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
+        }
+        if (runtime.executionLoopSnapshot()?.phase != AgentExecutionLoopPhase.LEARN &&
+            !runtime.beginExecutionLearning()
+        ) {
+            return runtime.snapshot().also { recordAgentRunFromState(turnId, it) }
+        }
+        return runCatching {
+            recordAgentRunFromState(turnId, state)
+            runtime.completeExecutionLoop()
+            runtime.snapshot()
+        }.getOrElse { failure ->
+            runtime.failExecutionLoop(
+                failure.message.orEmpty().ifBlank { "Task finalization failed" }
+            )
+            runtime.snapshot()
+        }
+    }
+
     private fun executeConcurrentAgentGoal(
         goal: String,
         conversationContext: AgentConversationContext,
@@ -2836,6 +2921,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             conversationId = conversationId,
             taskId = turnId,
             goal = goal,
+            parentRunId = agentRunIdsByTurn[turnId].orEmpty(),
             agentId = deterministicAction?.parameters?.get("connector_id").orEmpty()
                 .ifBlank { "signalasi-mobile" },
             deviceId = AppStore.profile(this).optString("device_id")
@@ -2858,6 +2944,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 sessionStore = SharedPreferencesAgentSessionStore(this@MainActivity, "task:$turnId"),
                 nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
             )
+            bindAgentExecutionLoop(runtime, turnId, this)
             provisionalAgentTasks.add(runtime)
             agentRuntimeConversationIds[runtime] = conversationId
             agentRuntimeTurnIds[runtime] = turnId
@@ -2874,9 +2961,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 state
             }
-            val state = outcome.getOrElse { runtime.snapshot() }
+            var state = outcome.getOrElse { runtime.snapshot() }
+            state = finalizeAgentExecutionLoop(runtime, turnId, state)
             progress("agent.${state.phase.name.lowercase(Locale.ROOT)}", state.phase.name)
-            persistAgentWorkspaceSnapshot(turnId, state)
+            persistAgentWorkspaceSnapshot(turnId, state, runtime)
             appendEvent(
                 kind = "agent.state",
                 message = state.phase.name,
@@ -2896,7 +2984,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     scheduleConnectorTimeouts(runtime, sourceId, conversationId, turnId)
                 }
                 renderAgentState(state, conversationId, turnId)
-                recordAgentRunFromState(turnId, state)
                 requestMissingAgentNativePermissions(state)
                 consumePendingAgentConnectorResponses()
                 outcome.exceptionOrNull()?.let { error ->
@@ -2952,7 +3039,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         handler.postDelayed({
             thread(name = "signalasi-connector-timeout-${stage.name.lowercase(Locale.US)}") {
                 val before = runtime.pendingConnectorMetadata(sourceMessageId)
-                val state = runtime.handleConnectorTimeout(sourceMessageId, stage) ?: return@thread
+                bindAgentExecutionLoop(runtime, turnId)
+                var state = runtime.handleConnectorTimeout(sourceMessageId, stage) ?: return@thread
+                state = finalizeAgentExecutionLoop(runtime, turnId, state)
+                persistAgentWorkspaceSnapshot(turnId, state, runtime)
                 val remoteTaskId = before["remote_task_id"].orEmpty()
                 val contactId = before["contact_id"].orEmpty()
                 finishStructuredAgentHandoff(
@@ -2986,7 +3076,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         scheduleConnectorTimeouts(runtime, replacementSourceId, conversationId, turnId)
                     }
                     renderAgentState(state, conversationId, turnId)
-                    recordAgentRunFromState(turnId, state)
                 }
             }
         }, delayMs)
@@ -3233,7 +3322,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )?.let(::observeCompletedAgentRun)
     }
 
-    private fun persistAgentWorkspaceSnapshot(turnId: String, state: AgentUiState) {
+    private fun persistAgentWorkspaceSnapshot(
+        turnId: String,
+        state: AgentUiState,
+        runtime: MobileNativeAgent = mobileNativeAgent
+    ) {
         runCatching {
             val actions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
                 .distinctBy(AgentAction::id)
@@ -3303,6 +3396,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .put("phase", state.phase.name)
                 .put("message", result?.message.orEmpty())
                 .put("metadata", JSONObject(result?.metadata.orEmpty()))
+                .put(
+                    "execution_loop",
+                    runtime.executionLoopSnapshot()
+                        ?.let(AgentExecutionLoopJsonCodec::encode)
+                        ?.let(::JSONObject)
+                )
                 .toString()
             val profile = AppStore.profile(this)
             val supervisor = AgentTaskRuntime.supervisor(this)
@@ -3339,6 +3438,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .put("permission_scope", pendingScope)
                     .put("agent_id", routeTarget)
                     .put("remote_run_id", result?.metadata?.get("remote_task_id").orEmpty())
+                    .put(
+                        "execution_loop",
+                        runtime.executionLoopSnapshot()
+                            ?.let(AgentExecutionLoopJsonCodec::encode)
+                            ?.let(::JSONObject)
+                    )
                     .toString()
             )
         }.onFailure { error ->
@@ -3348,8 +3453,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun recordAgentRunFromState(turnId: String, state: AgentUiState) {
         if (state.phase !in setOf(AgentPhase.COMPLETED, AgentPhase.FAILED, AgentPhase.CANCELLED, AgentPhase.BLOCKED)) return
-        val runId = agentRunIdsByTurn.remove(turnId) ?: return
-        val run = agentRunRecorder.run(runId) ?: return
+        val persistedRunId = runCatching {
+            EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
+        }.getOrDefault("")
+        val runId = agentRunIdsByTurn.remove(turnId).orEmpty().ifBlank { persistedRunId }
+        val run = agentRunRecorder.run(runId)
+            ?.takeIf { it.status == AgentRecordedRunStatus.RUNNING }
+            ?: return
         val result = state.lastActionResult
         val nativeActions = (state.plan?.actionHistory.orEmpty() + state.plan?.actions.orEmpty())
             .distinctBy { it.id }
@@ -5628,6 +5738,41 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "agent.planner.max_actions" -> {
                 val current = mobileNativeAgent.modelPlannerSettings().maxActions
                 mobileNativeAgent.updateModelPlannerMaxActions(if (current < 8) 8 else if (current < 12) 12 else 4)
+                showAgentPlannerSettingsPage()
+            }
+            "agent.planner.max_iterations" -> {
+                val current = mobileNativeAgent.modelPlannerSettings().maxLoopIterations
+                val next = when {
+                    current < 8 -> 8
+                    current < 16 -> 16
+                    current < 24 -> 24
+                    else -> 4
+                }
+                mobileNativeAgent.updateMaxLoopIterations(next)
+                showAgentPlannerSettingsPage()
+            }
+            "agent.planner.max_retries" -> {
+                val current = mobileNativeAgent.modelPlannerSettings().maxPhaseRetries
+                val next = when {
+                    current < 1 -> 1
+                    current < 2 -> 2
+                    current < 3 -> 3
+                    current < 5 -> 5
+                    else -> 0
+                }
+                mobileNativeAgent.updateMaxPhaseRetries(next)
+                showAgentPlannerSettingsPage()
+            }
+            "agent.planner.execution_time" -> {
+                val current = mobileNativeAgent.modelPlannerSettings().maxExecutionSeconds
+                val next = when {
+                    current < 300 -> 300
+                    current < 600 -> 600
+                    current < 1_200 -> 1_200
+                    current < 3_600 -> 3_600
+                    else -> 120
+                }
+                mobileNativeAgent.updateMaxExecutionSeconds(next)
                 showAgentPlannerSettingsPage()
             }
             "memory.manage" -> openExistingControlCenterPage { showAgentMemoryPage() }
@@ -8346,7 +8491,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         listOf(
                             ControlCenterRowSpec("agent.planner.max_actions", getString(R.string.on_device_agent_model_max_actions), getString(R.string.on_device_agent_model_max_actions_subtitle), R.drawable.ic_agent_history, settings.maxActions.toString(), ControlCenterTone.BLUE),
                             ControlCenterRowSpec("agent.planner.max_tools", getString(R.string.on_device_agent_max_tool_calls), getString(R.string.on_device_agent_max_tool_calls_subtitle), R.drawable.ic_agent_control, settings.maxToolCalls.toString(), ControlCenterTone.VIOLET),
-                            ControlCenterRowSpec("agent.planner.max_hops", getString(R.string.on_device_agent_max_agent_hops), getString(R.string.on_device_agent_max_agent_hops_subtitle), R.drawable.ic_protocol_link, settings.maxAgentHops.toString(), ControlCenterTone.AMBER)
+                            ControlCenterRowSpec("agent.planner.max_hops", getString(R.string.on_device_agent_max_agent_hops), getString(R.string.on_device_agent_max_agent_hops_subtitle), R.drawable.ic_protocol_link, settings.maxAgentHops.toString(), ControlCenterTone.AMBER),
+                            ControlCenterRowSpec("agent.planner.max_iterations", getString(R.string.on_device_agent_max_loop_iterations), getString(R.string.on_device_agent_max_loop_iterations_subtitle), R.drawable.ic_reset_data, settings.maxLoopIterations.toString(), ControlCenterTone.BLUE),
+                            ControlCenterRowSpec("agent.planner.max_retries", getString(R.string.on_device_agent_max_phase_retries), getString(R.string.on_device_agent_max_phase_retries_subtitle), R.drawable.ic_agent_history, settings.maxPhaseRetries.toString(), ControlCenterTone.AMBER),
+                            ControlCenterRowSpec(
+                                "agent.planner.execution_time",
+                                getString(R.string.on_device_agent_execution_time_budget),
+                                getString(R.string.on_device_agent_execution_time_budget_subtitle),
+                                R.drawable.ic_agent_control,
+                                if (settings.maxExecutionSeconds % 60 == 0) {
+                                    getString(
+                                        R.string.on_device_agent_execution_time_minutes,
+                                        settings.maxExecutionSeconds / 60
+                                    )
+                                } else {
+                                    getString(
+                                        R.string.on_device_agent_execution_time_seconds,
+                                        settings.maxExecutionSeconds
+                                    )
+                                },
+                                ControlCenterTone.VIOLET
+                            )
                         )
                     ),
                     ControlCenterSectionSpec(
@@ -10653,10 +10818,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentOutputList.removeAllViews()
         refreshAgentTranscriptWindow(entry.conversationId)
         thread(name = "signalasi-rich-decision") {
-            val state = if (approved) {
+            bindAgentExecutionLoop(runtime, entry.turnId)
+            if (!approved && entry.turnId.isNotBlank()) {
+                AgentTaskRuntime.supervisor(this).cancellationSource(entry.turnId)
+                    ?.cancel("User rejected the Agent action")
+            }
+            var state = if (approved) {
                 runtime.approveNextAction(highRiskConfirmed = true)
             } else {
                 runtime.cancelCurrentTask()
+            }
+            if (entry.turnId.isNotBlank()) {
+                state = finalizeAgentExecutionLoop(runtime, entry.turnId, state)
+                persistAgentWorkspaceSnapshot(entry.turnId, state, runtime)
             }
             runOnUiThread { renderAgentState(state, entry.conversationId, entry.turnId) }
         }
