@@ -50,6 +50,9 @@ const state = {
   attachments: [],
   renderingSignature: "",
   polling: false,
+  taskStream: null,
+  taskStreamConnected: false,
+  taskStreamReconnectTimer: 0,
   toastTimer: 0,
   speechRecognition: null,
   agentRefreshPromise: null
@@ -357,6 +360,69 @@ async function refreshTasks(force = false) {
   }
 }
 
+function mergeTaskUpdate(task) {
+  if (!task?.task_id) return;
+  const optimisticIndex = state.tasks.findIndex((item) =>
+    String(item.task_id || "").startsWith("pending-")
+    && item.conversation_id === task.conversation_id
+    && item.prompt === task.prompt);
+  if (optimisticIndex >= 0) state.tasks.splice(optimisticIndex, 1);
+
+  const index = state.tasks.findIndex((item) => item.task_id === task.task_id);
+  if (index >= 0) {
+    state.tasks[index] = { ...state.tasks[index], ...task };
+  } else {
+    state.tasks.push(task);
+  }
+  renderHistory();
+  if (task.conversation_id === state.currentConversationId) renderConversation();
+}
+
+function scheduleTaskStreamReconnect() {
+  window.clearTimeout(state.taskStreamReconnectTimer);
+  state.taskStreamReconnectTimer = window.setTimeout(connectTaskStream, 1500);
+}
+
+async function connectTaskStream() {
+  if (state.taskStream && [WebSocket.CONNECTING, WebSocket.OPEN].includes(state.taskStream.readyState)) return;
+  try {
+    const stream = await window.signalasi.desktopTaskStreamConfig();
+    const socket = new WebSocket(stream.url, stream.protocols);
+    state.taskStream = socket;
+    socket.addEventListener("open", () => {
+      if (state.taskStream !== socket) return;
+      state.taskStreamConnected = true;
+    });
+    socket.addEventListener("message", (event) => {
+      if (state.taskStream !== socket) return;
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (payload.type === "desktop_tasks_snapshot" && Array.isArray(payload.tasks)) {
+        state.tasks = payload.tasks;
+        renderHistory();
+        renderConversation();
+      } else if (payload.type === "desktop_task_update") {
+        mergeTaskUpdate(payload.task);
+      }
+    });
+    socket.addEventListener("close", () => {
+      if (state.taskStream !== socket) return;
+      state.taskStream = null;
+      state.taskStreamConnected = false;
+      scheduleTaskStreamReconnect();
+    });
+    socket.addEventListener("error", () => socket.close());
+  } catch {
+    state.taskStream = null;
+    state.taskStreamConnected = false;
+    scheduleTaskStreamReconnect();
+  }
+}
+
 function updateSendState() {
   const ready = Boolean(elements.prompt.value.trim() || state.attachments.length);
   elements.send.classList.toggle("ready", ready);
@@ -417,10 +483,9 @@ async function sendTask() {
       attachments
     });
     state.tasks = state.tasks.filter((item) => item.task_id !== optimistic.task_id);
-    state.tasks.push(task);
+    mergeTaskUpdate(task);
     updateSelectedAgent();
     state.renderingSignature = "";
-    renderHistory();
     renderConversation(true);
   } catch (error) {
     state.tasks = state.tasks.filter((item) => item.task_id !== optimistic.task_id);
@@ -1240,8 +1305,11 @@ async function init() {
   updateSendState();
   await refreshBackend();
   await Promise.all([refreshAgents(), refreshGateway(), refreshDesktopTools(), refreshCapabilities(), refreshTasks(true)]);
+  connectTaskStream();
   window.setInterval(updateElapsedLabels, 1000);
-  window.setInterval(() => refreshTasks(false), 1500);
+  window.setInterval(() => {
+    if (!state.taskStreamConnected) refreshTasks(false);
+  }, 10_000);
   window.setInterval(() => { refreshBackend(); refreshGateway(); }, 30_000);
   window.setInterval(() => {
     if (elements.drawer.classList.contains("open") && $("#computerPanel").classList.contains("active")) {

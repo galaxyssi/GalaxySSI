@@ -126,6 +126,50 @@ class AgentTaskStoreTests(unittest.TestCase):
             self.assertEqual(manager.list(), [])
             self.assertIsNone(manager.get("legacy-task"))
 
+    def test_task_subscribers_receive_live_updates_until_unsubscribed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")
+            snapshots: list[dict] = []
+            subscription_id = manager.subscribe(lambda snapshot: snapshots.append(dict(snapshot)))
+
+            task = manager.create_external(
+                agent_id="desktop",
+                contact_id="desktop",
+                source_message_id="desktop:stream-test",
+                prompt="Stream this task",
+                on_event=lambda _snapshot: None,
+                task_id="stream-test",
+                conversation_id="stream-conversation",
+            )
+            manager.update(task.task_id, "running", current_step="Executing")
+
+            self.assertEqual([item["status"] for item in snapshots], ["accepted", "running"])
+            self.assertEqual(snapshots[-1]["current_step"], "Executing")
+            self.assertTrue(manager.unsubscribe(subscription_id))
+            self.assertFalse(manager.unsubscribe(subscription_id))
+
+            manager.update(task.task_id, "completed", result="done")
+            self.assertEqual([item["status"] for item in snapshots], ["accepted", "running"])
+
+    def test_failing_task_subscriber_does_not_block_other_listeners(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")
+            snapshots: list[dict] = []
+            manager.subscribe(lambda _snapshot: (_ for _ in ()).throw(RuntimeError("listener failed")))
+            manager.subscribe(lambda snapshot: snapshots.append(dict(snapshot)))
+
+            manager.create_external(
+                agent_id="desktop",
+                contact_id="desktop",
+                source_message_id="desktop:stream-test",
+                prompt="Keep streaming",
+                on_event=lambda _snapshot: None,
+                task_id="stream-listener-test",
+            )
+
+            self.assertEqual(len(snapshots), 1)
+            self.assertEqual(snapshots[0]["task_id"], "stream-listener-test")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -122,6 +122,7 @@ class AgentTaskManager:
         self._recovered_task_ids: set[str] = set()
         self._external_task_ids: set[str] = set()
         self._external_heartbeat_stops: dict[str, threading.Event] = {}
+        self._listeners: dict[str, EventCallback] = {}
         self._heartbeat_interval_seconds = max(0.01, float(heartbeat_interval_seconds))
         self._task_timeout_seconds = max(
             0.01,
@@ -133,6 +134,18 @@ class AgentTaskManager:
         )
         self._store = AgentTaskStore(state_path or TASKS_DB_PATH)
         self._load()
+
+    def subscribe(self, listener: EventCallback) -> str:
+        if not callable(listener):
+            raise TypeError("Task listener must be callable")
+        subscription_id = str(uuid.uuid4())
+        with self._lock:
+            self._listeners[subscription_id] = listener
+        return subscription_id
+
+    def unsubscribe(self, subscription_id: str) -> bool:
+        with self._lock:
+            return self._listeners.pop(str(subscription_id or ""), None) is not None
 
     def create(
         self,
@@ -686,14 +699,17 @@ class AgentTaskManager:
     def _emit(self, task: AgentTask, on_event: EventCallback | None) -> None:
         self._emit_snapshot(task.public(), on_event)
 
-    @staticmethod
-    def _emit_snapshot(snapshot: dict, on_event: EventCallback | None) -> None:
-        if on_event is None:
-            return
-        try:
-            on_event(snapshot)
-        except Exception:
-            pass
+    def _emit_snapshot(self, snapshot: dict, on_event: EventCallback | None) -> None:
+        callbacks: list[EventCallback] = []
+        if on_event is not None:
+            callbacks.append(on_event)
+        with self._lock:
+            callbacks.extend(self._listeners.values())
+        for callback in callbacks:
+            try:
+                callback(snapshot)
+            except Exception:
+                pass
 
     @staticmethod
     def _terminate(process: subprocess.Popen) -> None:
