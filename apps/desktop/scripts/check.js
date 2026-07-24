@@ -276,6 +276,22 @@ if (!main.includes("function loadLocale") || !main.includes('ipcMain.handle("i18
   throw new Error("Desktop i18n must load locale JSON through preload IPC");
 }
 
+if (
+  !backendMain.includes('@app.websocket("/ws/desktop/tasks")')
+  || !backendTaskManager.includes("def subscribe(")
+  || !backendTaskManager.includes("def unsubscribe(")
+  || !main.includes('ipcMain.handle("desktop-tasks:stream-config"')
+  || !main.includes("SIGNALASI_DESKTOP_TASK_STREAM_TOKEN")
+  || !preload.includes("desktopTaskStreamConfig")
+  || !workspaceRenderer.includes("new WebSocket(stream.url, stream.protocols)")
+  || !html.includes("connect-src 'self' ws://127.0.0.1:8765")
+) {
+  throw new Error("Desktop task progress must use the loopback real-time event stream");
+}
+if (workspaceRenderer.includes("setInterval(() => refreshTasks(false), 1500)")) {
+  throw new Error("Desktop task progress must not use the legacy 1.5 second full-list polling loop");
+}
+
 for (const requiredLocaleKey of ["Language", "Desktop Connector", "{done}/{total} setup steps complete", "Detecting", "Super agent"]) {
   if (!localeZh[requiredLocaleKey]) {
     throw new Error(`Chinese desktop locale missing key: ${requiredLocaleKey}`);

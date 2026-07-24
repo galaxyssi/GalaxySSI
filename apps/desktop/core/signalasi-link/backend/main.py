@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import secrets
 import shutil
 import uuid
 from typing import Any
@@ -230,9 +231,42 @@ def api_pairing_status():
     from pairing_state import pairing_status
     return pairing_status()
 
+LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _is_loopback_host(host: str) -> bool:
+    return str(host or "").strip().lower() in LOOPBACK_HOSTS
+
+
+def _desktop_task_stream_token() -> str:
+    configured = str(os.environ.get("SIGNALASI_DESKTOP_TASK_STREAM_TOKEN") or "").strip()
+    if configured:
+        return configured
+    try:
+        from pairing_state import DATA_DIR
+
+        return (Path(DATA_DIR) / "desktop_task_stream_token").read_text(encoding="utf-8").strip()
+    except (FileNotFoundError, OSError):
+        return ""
+
+
+def _desktop_task_stream_authorized(ws: WebSocket) -> bool:
+    expected = _desktop_task_stream_token()
+    offered = [
+        value.strip()
+        for value in str(ws.headers.get("sec-websocket-protocol") or "").split(",")
+        if value.strip()
+    ]
+    return (
+        bool(expected)
+        and "signalasi-task-stream" in offered
+        and any(secrets.compare_digest(value, expected) for value in offered)
+    )
+
+
 def require_loopback(request: Request) -> None:
     host = str(request.client.host if request.client else "")
-    if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
+    if not _is_loopback_host(host):
         raise HTTPException(status_code=403, detail="Pairing payload is available only on the local Desktop")
 
 
@@ -1141,6 +1175,63 @@ def serve_static(filename: str):
     return FileResponse(str(frontend_path))
 
 # ── WebSocket ──
+
+@app.websocket("/ws/desktop/tasks")
+async def desktop_task_stream(ws: WebSocket):
+    host = str(ws.client.host if ws.client else "")
+    if not _is_loopback_host(host) or not _desktop_task_stream_authorized(ws):
+        await ws.close(code=1008)
+        return
+
+    await ws.accept(subprotocol="signalasi-task-stream")
+    loop = asyncio.get_running_loop()
+    updates: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
+
+    def enqueue(snapshot: dict) -> None:
+        if not str(snapshot.get("source_message_id") or "").startswith("desktop:"):
+            return
+        task = agent_task_manager.get(str(snapshot.get("task_id") or ""))
+        if task is None or not task.source_message_id.startswith("desktop:"):
+            return
+        payload = task.public(include_prompt=True)
+
+        def offer() -> None:
+            if updates.full():
+                try:
+                    updates.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+            updates.put_nowait(payload)
+
+        try:
+            loop.call_soon_threadsafe(offer)
+        except RuntimeError:
+            pass
+
+    subscription_id = agent_task_manager.subscribe(enqueue)
+    try:
+        tasks = [
+            item for item in agent_task_manager.list(limit=500, include_prompt=True)
+            if str(item.get("source_message_id") or "").startswith("desktop:")
+        ]
+        await ws.send_json({"type": "desktop_tasks_snapshot", "tasks": tasks})
+        while True:
+            try:
+                task = await asyncio.wait_for(updates.get(), timeout=20.0)
+            except asyncio.TimeoutError:
+                await ws.send_json({
+                    "type": "heartbeat",
+                    "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+                })
+                continue
+            await ws.send_json({"type": "desktop_task_update", "task": task})
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        log.info("Desktop task stream closed: %s", exc)
+    finally:
+        agent_task_manager.unsubscribe(subscription_id)
+
 
 @app.websocket("/ws/{contact_id}")
 async def websocket_endpoint(ws: WebSocket, contact_id: str):

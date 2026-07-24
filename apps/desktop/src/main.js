@@ -1,11 +1,13 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, shell } = require("electron");
 const { spawn, spawnSync, execFile } = require("node:child_process");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
 const BACKEND_PORT = 8765;
 const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
+const DESKTOP_TASK_STREAM_URL = `ws://127.0.0.1:${BACKEND_PORT}/ws/desktop/tasks`;
 const PAIRING_URL = `${BACKEND_ORIGIN}/signalasi/verify`;
 const APP_ROOT = path.resolve(__dirname, "..");
 const DEV_BACKEND_DIR = path.join(APP_ROOT, "core", "signalasi-link", "backend");
@@ -22,6 +24,7 @@ let mainWindow;
 let backendProcess;
 let backendRestartTimer;
 let appIsQuitting = false;
+let cachedDesktopTaskStreamToken = "";
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -309,6 +312,25 @@ async function backendStatus() {
   }
 }
 
+function desktopTaskStreamToken() {
+  if (cachedDesktopTaskStreamToken) return cachedDesktopTaskStreamToken;
+  const runtimeDir = path.join(app.getPath("userData"), "runtime");
+  const tokenPath = path.join(runtimeDir, "desktop_task_stream_token");
+  fs.mkdirSync(runtimeDir, { recursive: true });
+  try {
+    const existing = fs.readFileSync(tokenPath, "utf8").trim();
+    if (/^[A-Za-z0-9_-]{32,128}$/.test(existing)) {
+      cachedDesktopTaskStreamToken = existing;
+      return existing;
+    }
+  } catch {
+    // Create the token below.
+  }
+  cachedDesktopTaskStreamToken = crypto.randomBytes(32).toString("base64url");
+  fs.writeFileSync(tokenPath, cachedDesktopTaskStreamToken, { encoding: "utf8", mode: 0o600 });
+  return cachedDesktopTaskStreamToken;
+}
+
 function reclaimLegacyBackendPort() {
   if (process.platform !== "win32") return Promise.resolve({ reclaimed: false });
   const script = `
@@ -369,6 +391,7 @@ async function startBackend() {
       env: {
         ...process.env,
         SIGNALASI_DATA_DIR: signalasiDataDir,
+        SIGNALASI_DESKTOP_TASK_STREAM_TOKEN: desktopTaskStreamToken(),
         PYTHONUNBUFFERED: "1"
       },
       windowsHide: true,
@@ -839,6 +862,10 @@ ipcMain.handle("mobile:test-message", (_event, contactId, content) => sendMobile
 ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("desktop-tasks:list", (_event, limit) => listDesktopTasks(limit));
 ipcMain.handle("desktop-tasks:get", (_event, taskId) => getDesktopTask(taskId));
+ipcMain.handle("desktop-tasks:stream-config", () => ({
+  url: DESKTOP_TASK_STREAM_URL,
+  protocols: ["signalasi-task-stream", desktopTaskStreamToken()]
+}));
 ipcMain.handle("desktop-tasks:start", (_event, payload) => startDesktopTask(payload));
 ipcMain.handle("desktop-tasks:cancel", (_event, taskId) => cancelDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:retry", (_event, taskId) => retryDesktopTask(taskId));
