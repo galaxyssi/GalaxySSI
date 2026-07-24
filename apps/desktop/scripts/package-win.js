@@ -40,6 +40,7 @@ const backendFiles = [
   "conversation_context.py",
   "custom_agent_stdio.py",
   "desktop_agent_adapters.py",
+  "desktop_agent_loop.py",
   "desktop_control.py",
   "desktop_file_tools.py",
   "desktop_memory.py",
