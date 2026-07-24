@@ -15,6 +15,7 @@ const required = [
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
   "core/signalasi-link/backend/desktop_control.py",
+  "core/signalasi-link/backend/desktop_agent_loop.py",
   "core/signalasi-link/backend/desktop_super_agent.py",
   "core/signalasi-link/backend/desktop_memory.py",
   "core/signalasi-link/backend/desktop_mcp.py",
@@ -114,6 +115,7 @@ const backendAgentConfig = fs.readFileSync(path.join(backendDir, "agent_config.p
 const backendCustomAgent = fs.readFileSync(path.join(backendDir, "custom_agent_stdio.py"), "utf8");
 const backendDesktopFileTools = fs.readFileSync(path.join(backendDir, "desktop_file_tools.py"), "utf8");
 const backendDesktopControl = fs.readFileSync(path.join(backendDir, "desktop_control.py"), "utf8");
+const backendDesktopAgentLoop = fs.readFileSync(path.join(backendDir, "desktop_agent_loop.py"), "utf8");
 const backendDesktopNativeTools = fs.readFileSync(path.join(backendDir, "desktop_native_tools.py"), "utf8");
 const backendDesktopMemory = fs.readFileSync(path.join(backendDir, "desktop_memory.py"), "utf8");
 const backendDesktopMcp = fs.readFileSync(path.join(backendDir, "desktop_mcp.py"), "utf8");
@@ -325,13 +327,16 @@ for (const requiredBackendCode of [
 if (!packager.includes("\"api_response.py\"")) {
   throw new Error("Packaged Desktop backend must include api_response.py");
 }
-for (const requiredFile of ["link_protocol.py", "link_delivery.py", "task_workspace.py", "desktop_control.py", "desktop_file_tools.py", "desktop_memory.py", "desktop_mcp.py", "desktop_native_tools.py", "desktop_skills.py", "desktop_super_agent.py"]) {
+for (const requiredFile of ["link_protocol.py", "link_delivery.py", "task_workspace.py", "desktop_agent_loop.py", "desktop_control.py", "desktop_file_tools.py", "desktop_memory.py", "desktop_mcp.py", "desktop_native_tools.py", "desktop_skills.py", "desktop_super_agent.py"]) {
   if (!packager.includes(`"${requiredFile}"`)) {
     throw new Error(`Packaged Desktop backend must include ${requiredFile}`);
   }
 }
 
 for (const capabilityContract of [
+  [backendDesktopAgentLoop, "class AgentLoopPhase"],
+  [backendDesktopAgentLoop, "class AgentLoopBudget"],
+  [backendDesktopAgentLoop, "class AgentLoopObservation"],
   [backendDesktopControl, "class DesktopControlManager"],
   [backendDesktopMemory, "class DesktopMemoryStore"],
   [backendDesktopMcp, "class DesktopMcpRegistry"],
@@ -340,6 +345,12 @@ for (const capabilityContract of [
 ]) {
   if (!capabilityContract[0].includes(capabilityContract[1])) {
     throw new Error(`Desktop super-agent capability is incomplete: ${capabilityContract[1]}`);
+  }
+}
+
+for (const phase of ["PLAN", "ACT", "OBSERVE", "REPLAN", "VERIFY", "FINALIZE", "LEARN"]) {
+  if (!backendDesktopAgentLoop.includes(`${phase} =`)) {
+    throw new Error(`Desktop Agent loop phase is missing: ${phase}`);
   }
 }
 

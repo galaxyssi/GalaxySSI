@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from desktop_agent_loop import AgentLoopBudget
 from desktop_super_agent import DesktopSuperAgent
 
 
@@ -24,7 +25,12 @@ class FakeRegistry:
 
     def invoke(self, tool_id, arguments, context):
         self.calls.append((tool_id, arguments, context))
-        return self.results[tool_id]
+        result = self.results[tool_id]
+        if isinstance(result, list):
+            if not result:
+                raise AssertionError(f"No fake result remains for {tool_id}")
+            return result.pop(0)
+        return result
 
 
 class FakeMemory:
@@ -69,6 +75,17 @@ def succeeded(output: dict, message: str = "ok") -> dict:
         "message": message,
         "error": None,
         "verification": {"status": "passed"},
+        "receipt": {"duration_ms": 2},
+    }
+
+
+def failed(code: str, message: str, *, retryable: bool = False) -> dict:
+    return {
+        "status": "failed",
+        "output": {},
+        "message": "",
+        "error": {"code": code, "message": message, "retryable": retryable},
+        "verification": {},
         "receipt": {"duration_ms": 2},
     }
 
@@ -153,7 +170,10 @@ class DesktopSuperAgentTest(unittest.TestCase):
         self.assertEqual(outcome.reply, "Relay is on.")
         self.assertEqual(outcome.delegate_agent_id, "mcp:relay")
         self.assertEqual(deliveries, [])
-        self.assertTrue(any(event["kind"] == "mcp" for event in manager.events))
+        self.assertTrue(any(
+            event["kind"] == "agent_loop" and (event.get("metadata") or {}).get("phase") == "verify"
+            for event in manager.events
+        ))
 
     def test_reads_system_status_without_external_agent(self):
         manager = FakeTaskManager()
@@ -189,7 +209,12 @@ class DesktopSuperAgentTest(unittest.TestCase):
         self.assertIn("20.0 GB available", outcome.reply)
         self.assertEqual(deliveries, [])
         self.assertEqual(registry.calls[0][0], "signalasi.desktop.windows.system.status")
-        self.assertTrue(any(event["kind"] == "tool" for event in manager.events))
+        self.assertTrue(any(
+            event["kind"] == "agent_loop"
+            and (event.get("metadata") or {}).get("phase") == "verify"
+            and (event.get("metadata") or {}).get("verified") is True
+            for event in manager.events
+        ))
 
     def test_inspects_attachment_then_delegates_with_observation(self):
         manager = FakeTaskManager()
@@ -257,6 +282,161 @@ class DesktopSuperAgentTest(unittest.TestCase):
         )
 
         self.assertEqual(outcome.delegate_agent_id, "codex")
+
+    def test_transient_tool_failure_is_replanned_and_retried(self):
+        manager = FakeTaskManager()
+        registry = FakeRegistry({
+            "signalasi.desktop.windows.system.status": [
+                failed("desktop_tool_busy", "Desktop tool capacity is busy", retryable=True),
+                succeeded({
+                    "platform": "Windows",
+                    "release": "11",
+                    "architecture": "AMD64",
+                    "logical_cpu_count": 8,
+                    "memory_total_bytes": 16 * 1024 ** 3,
+                    "memory_available_bytes": 8 * 1024 ** 3,
+                }),
+            ],
+        })
+        coordinator = DesktopSuperAgent(
+            task_manager=manager,
+            diagnostics=lambda quick=True: {"agents": []},
+            deliver=lambda *args, **kwargs: self.fail("Verified direct tool should not delegate"),
+            registry=registry,
+            memory=FakeMemory(),
+            skills=FakeSkills(),
+            mcp=FakeMcp(),
+        )
+
+        outcome = coordinator.run(
+            task_id="task-retry",
+            conversation_id="conversation-retry",
+            prompt="Show computer status",
+            compiled_prompt="compiled",
+            attachments=[],
+        )
+
+        self.assertIn("8.0 GB available", outcome.reply)
+        self.assertEqual(len(registry.calls), 2)
+        self.assertTrue(any(
+            (event.get("metadata") or {}).get("phase") == "replan"
+            for event in manager.events
+        ))
+
+    def test_unverified_tool_result_is_never_reported_as_success(self):
+        manager = FakeTaskManager()
+        unverified = succeeded({"name": "Notepad", "launched": True})
+        unverified["verification"] = {"status": "failed", "message": "Launch was not observed"}
+        registry = FakeRegistry({
+            "signalasi.desktop.windows.app.launch": [dict(unverified), dict(unverified)],
+        })
+        coordinator = DesktopSuperAgent(
+            task_manager=manager,
+            diagnostics=lambda quick=True: {"agents": []},
+            deliver=lambda *args, **kwargs: self.fail("Direct action failure should not delegate"),
+            registry=registry,
+            memory=FakeMemory(),
+            skills=FakeSkills(),
+            mcp=FakeMcp(),
+        )
+
+        outcome = coordinator.run(
+            task_id="task-unverified",
+            conversation_id="conversation-unverified",
+            prompt="Open Notepad",
+            compiled_prompt="compiled",
+            attachments=[],
+        )
+
+        self.assertNotIn("Launched Notepad", outcome.reply)
+        self.assertIn("verification did not pass", outcome.reply)
+        self.assertEqual(len(registry.calls), 1)
+
+    def test_delegate_failure_is_isolated_and_next_agent_can_finish(self):
+        manager = FakeTaskManager()
+        deliveries: list[str] = []
+
+        def deliver(agent_id, _prompt, **_kwargs):
+            deliveries.append(agent_id)
+            if agent_id == "hermes":
+                raise TimeoutError("Hermes timed out")
+            return {"reply": "Verified research result."}
+
+        coordinator = DesktopSuperAgent(
+            task_manager=manager,
+            diagnostics=lambda quick=True: {
+                "agents": [
+                    {"id": "hermes", "status": "ready"},
+                    {"id": "codex", "status": "ready"},
+                ]
+            },
+            deliver=deliver,
+            registry=FakeRegistry({}),
+            memory=FakeMemory(),
+            skills=FakeSkills(),
+            mcp=FakeMcp(),
+        )
+
+        outcome = coordinator.run(
+            task_id="task-fallback",
+            conversation_id="conversation-fallback",
+            prompt="Research the latest release news",
+            compiled_prompt="compiled",
+            attachments=[],
+        )
+
+        self.assertEqual(deliveries, ["hermes", "codex"])
+        self.assertEqual(outcome.delegate_agent_id, "codex")
+        self.assertEqual(outcome.reply, "Verified research result.")
+        self.assertTrue(any(
+            (event.get("metadata") or {}).get("phase") == "replan"
+            and (event.get("metadata") or {}).get("failed_actor_id") == "hermes"
+            for event in manager.events
+        ))
+
+    def test_delegate_attempts_are_bounded_and_return_recovery_options(self):
+        manager = FakeTaskManager()
+        deliveries: list[str] = []
+
+        def deliver(agent_id, _prompt, **_kwargs):
+            deliveries.append(agent_id)
+            raise RuntimeError(f"{agent_id} unavailable")
+
+        coordinator = DesktopSuperAgent(
+            task_manager=manager,
+            diagnostics=lambda quick=True: {
+                "agents": [
+                    {"id": "codex", "status": "ready"},
+                    {"id": "hermes", "status": "ready"},
+                ]
+            },
+            deliver=deliver,
+            registry=FakeRegistry({}),
+            memory=FakeMemory(),
+            skills=FakeSkills(),
+            mcp=FakeMcp(),
+            loop_budget=AgentLoopBudget(max_iterations=4, max_delegate_attempts=1),
+        )
+
+        outcome = coordinator.run(
+            task_id="task-bounded",
+            conversation_id="conversation-bounded",
+            prompt="Answer this question",
+            compiled_prompt="compiled",
+            attachments=[],
+        )
+
+        self.assertEqual(deliveries, ["codex"])
+        self.assertIn("You can:", outcome.reply)
+        finalize_events = [
+            event for event in manager.events
+            if (event.get("metadata") or {}).get("phase") == "finalize"
+        ]
+        self.assertTrue(finalize_events)
+        self.assertFalse(any(
+            (event.get("metadata") or {}).get("phase") == "learn"
+            for event in manager.events
+        ))
 
 
 if __name__ == "__main__":
