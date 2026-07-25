@@ -82,6 +82,8 @@ public final class SignalSidecar {
         server.createContext("/encrypt", app::encrypt);
         server.createContext("/replace-peer", app::replacePeer);
         server.createContext("/remove-peer", app::removePeer);
+        server.createContext("/sign", app::sign);
+        server.createContext("/verify", app::verify);
         server.setExecutor(Executors.newCachedThreadPool());
         server.start();
         System.out.println("SignalASI Link sidecar listening on 127.0.0.1:" + PORT);
@@ -100,7 +102,8 @@ public final class SignalSidecar {
                 .put("apiVersion", 1)
                 .put("device", DEVICE_NAME)
                 .put("port", PORT)
-                .put("removePeer", true));
+                .put("removePeer", true)
+                .put("identitySigning", true));
     }
 
     private void bundle(HttpExchange exchange) throws IOException {
@@ -193,6 +196,39 @@ public final class SignalSidecar {
         }
     }
 
+    private void sign(HttpExchange exchange) throws IOException {
+        try {
+            JSONObject req = readJson(exchange);
+            byte[] payload = boundedPayload(req);
+            IdentityKeyPair identity = store.getIdentityKeyPair();
+            byte[] signature = identity.getPrivateKey().calculateSignature(payload);
+            writeJson(exchange, new JSONObject()
+                    .put("ok", true)
+                    .put("signerId", desktopIdentityId(identity))
+                    .put("signatureKeyId", sha256Hex(identity.getPublicKey().serialize()))
+                    .put("signature", b64e(signature)));
+        } catch (Exception exc) {
+            writeError(exchange, exc);
+        }
+    }
+
+    private void verify(HttpExchange exchange) throws IOException {
+        try {
+            JSONObject req = readJson(exchange);
+            byte[] payload = boundedPayload(req);
+            byte[] signature = b64d(req.getString("signature"));
+            IdentityKeyPair identity = store.getIdentityKeyPair();
+            boolean valid = identity.getPublicKey().getPublicKey().verifySignature(payload, signature);
+            writeJson(exchange, new JSONObject()
+                    .put("ok", true)
+                    .put("valid", valid)
+                    .put("signerId", desktopIdentityId(identity))
+                    .put("signatureKeyId", sha256Hex(identity.getPublicKey().serialize())));
+        } catch (Exception exc) {
+            writeError(exchange, exc);
+        }
+    }
+
     private JSONObject currentBundleJson() throws Exception {
         IdentityKeyPair identity = store.getIdentityKeyPair();
         PreKeyBundle bundle = new PreKeyBundle(
@@ -225,6 +261,18 @@ public final class SignalSidecar {
                 .put("kyberPreKeySignature", b64e(bundle.getKyberPreKeySignature()))
                 .put("identityKeySha256", sha256Hex(identity.getPublicKey().serialize()))
                 .put("identityFingerprint", identity.getPublicKey().getFingerprint());
+    }
+
+    private static byte[] boundedPayload(JSONObject req) {
+        byte[] payload = b64d(req.getString("payload"));
+        if (payload.length == 0 || payload.length > 1024 * 1024) {
+            throw new IllegalArgumentException("Signing payload must contain 1 to 1048576 bytes");
+        }
+        return payload;
+    }
+
+    private static String desktopIdentityId(IdentityKeyPair identity) throws Exception {
+        return "desktop_" + sha256Hex(identity.getPublicKey().serialize()).substring(0, 16);
     }
 
     private static SignalProtocolAddress address(JSONObject req) {

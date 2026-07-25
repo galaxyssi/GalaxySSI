@@ -1114,6 +1114,11 @@ object SignalASIMqttClient {
         } else {
             publishInboundReceipt(link, payload.optString("message_id"))
         }
+        AgentRemoteReputation.ingest(context, payload)?.let { result ->
+            if (!result.accepted) {
+                Log.w(TAG, "Rejected Agent execution receipt: ${result.reason}")
+            }
+        }
         if (payload.optString("type") == "capability_manifest") {
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }

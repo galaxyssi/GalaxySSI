@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import time
+import base64
 import urllib.error
 import urllib.request
 import socket
@@ -42,17 +43,17 @@ def start_signal_sidecar() -> None:
         SIDECAR_PORT = _available_local_port()
         SIDECAR_BASE = f"http://127.0.0.1:{SIDECAR_PORT}"
 
-    out = open(SIDECAR_DIR / "sidecar.out.log", "ab", buffering=0)
-    err = open(SIDECAR_DIR / "sidecar.err.log", "ab", buffering=0)
-    popen_kwargs = {
-        "cwd": str(SIDECAR_DIR),
-        "stdout": out,
-        "stderr": err,
-        "env": {**os.environ, "SIGNALASI_LINK_PORT": str(SIDECAR_PORT)},
-    }
-    if os.name == "nt":
-        popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    _process = subprocess.Popen([str(SIDECAR_SCRIPT)], **popen_kwargs)
+    with open(SIDECAR_DIR / "sidecar.out.log", "ab", buffering=0) as out, \
+            open(SIDECAR_DIR / "sidecar.err.log", "ab", buffering=0) as err:
+        popen_kwargs = {
+            "cwd": str(SIDECAR_DIR),
+            "stdout": out,
+            "stderr": err,
+            "env": {**os.environ, "SIGNALASI_LINK_PORT": str(SIDECAR_PORT)},
+        }
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        _process = subprocess.Popen([str(SIDECAR_SCRIPT)], **popen_kwargs)
     deadline = time.time() + 15
     while time.time() < deadline:
         if _is_healthy():
@@ -87,6 +88,33 @@ def stop_signal_sidecar() -> None:
 def get_signal_bundle() -> dict[str, Any]:
     start_signal_sidecar()
     return _request("GET", "/bundle")
+
+
+def sign_signal_identity(payload: bytes) -> dict[str, str]:
+    """Sign bounded application data without exporting the Signal identity key."""
+    if not payload or len(payload) > 1024 * 1024:
+        raise ValueError("Signing payload must contain 1 to 1048576 bytes")
+    start_signal_sidecar()
+    response = _request("POST", "/sign", {
+        "payload": base64.b64encode(payload).decode("ascii"),
+    })
+    return {
+        "signer_id": str(response["signerId"]),
+        "signature_key_id": str(response["signatureKeyId"]).lower(),
+        "signature": str(response["signature"]),
+    }
+
+
+def verify_signal_identity(payload: bytes, signature: str) -> bool:
+    """Verify data against this Desktop installation's public identity."""
+    if not payload or len(payload) > 1024 * 1024 or not signature:
+        return False
+    start_signal_sidecar()
+    response = _request("POST", "/verify", {
+        "payload": base64.b64encode(payload).decode("ascii"),
+        "signature": signature,
+    })
+    return bool(response.get("valid"))
 
 
 def desktop_name() -> str:
@@ -174,6 +202,7 @@ def _is_healthy() -> bool:
             and status.get("protocol") == "signalasi-link"
             and int(status.get("apiVersion") or 0) == 1
             and status.get("removePeer") is True
+            and status.get("identitySigning") is True
         )
     except Exception:
         return False

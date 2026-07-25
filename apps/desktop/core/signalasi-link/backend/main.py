@@ -117,6 +117,7 @@ def signalasi_pairing_qr() -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     file_server_process = None
+    reputation_subscription_id = ""
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
     instance_lock = BackendInstanceLock() if external_services_enabled else None
     if instance_lock is not None:
@@ -124,12 +125,35 @@ async def lifespan(app: FastAPI):
     init_db()
     if external_services_enabled:
         # Start the local Signal Protocol sidecar.
+        signal_sidecar_ready = False
         try:
             import signalasi_client
             signalasi_client.start_signal_sidecar()
+            signal_sidecar_ready = True
             log.info("Signal sidecar started (:%s)", signalasi_client.SIDECAR_PORT)
         except Exception as e:
             log.warning(f"Signal sidecar start failed: {e}")
+        if signal_sidecar_ready:
+            try:
+                from agent_reputation_ledger import agent_reputation_ledger
+
+                reputation_ledger = agent_reputation_ledger()
+
+                def record_reputation(snapshot: dict) -> None:
+                    if str(snapshot.get("status") or "") not in TERMINAL_STATES:
+                        return
+                    try:
+                        reputation_ledger.record_task(snapshot)
+                    except Exception as exc:
+                        log.warning(
+                            "Agent reputation receipt deferred task_id=%s: %s",
+                            snapshot.get("task_id"),
+                            exc,
+                        )
+
+                reputation_subscription_id = agent_task_manager.subscribe(record_reputation)
+            except Exception as exc:
+                log.warning("Agent reputation ledger unavailable: %s", exc)
         # Start the MQTT bridge in a background thread.
         try:
             from mqtt_bridge import start_background
@@ -155,6 +179,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if reputation_subscription_id:
+            agent_task_manager.unsubscribe(reputation_subscription_id)
         if external_services_enabled:
             try:
                 from mqtt_bridge import stop
@@ -225,6 +251,18 @@ def api_health():
 @app.get("/api/agents/execution-log")
 def api_agent_execution_log(limit: int = Query(50)):
     return recent_agent_execution_log(limit)
+
+
+@app.get("/api/agents/reputation")
+def api_agent_reputation(agent_id: str = Query("")):
+    from agent_reputation_ledger import agent_reputation_ledger
+
+    ledger = agent_reputation_ledger()
+    return {
+        "integrity": ledger.integrity(),
+        "agent": ledger.snapshot(agent_id) if agent_id else None,
+    }
+
 
 @app.get("/api/pairing/status")
 def api_pairing_status():

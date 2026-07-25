@@ -22,7 +22,7 @@ import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
 from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync
-from agent_task_manager import agent_task_manager
+from agent_task_manager import TERMINAL_STATES, agent_task_manager
 from codex_app_server import CodexAppServer, CodexConversationBusyError
 import phone_tool_broker as phone_tool
 from link_delivery import (
@@ -1754,6 +1754,35 @@ def _codex_terminal_result(content: str, status: str, result: object) -> str | N
     return result if isinstance(result, str) else None
 
 
+def _task_reputation_evidence(task: dict) -> tuple[dict, dict]:
+    task_id = str(task.get("task_id") or "")
+    if (
+        not task_id
+        or str(task.get("status") or "") not in TERMINAL_STATES
+        or not str(task.get("agent_id") or "").strip()
+        or not str(task.get("contact_id") or "").startswith("desktop_")
+        or int(task.get("completed_at") or 0) <= 0
+    ):
+        return {}, {}
+    try:
+        from agent_reputation_ledger import agent_reputation_ledger
+
+        ledger = agent_reputation_ledger()
+        receipt = ledger.receipt_for_task(task_id)
+        if receipt is None:
+            receipt = ledger.record_task(task)
+        if not receipt:
+            return {}, {}
+        snapshot = ledger.snapshot(
+            str(receipt.get("agent_id") or ""),
+            list(receipt.get("capabilities") or []),
+        )
+        return receipt, snapshot
+    except Exception as exc:
+        log.warning("Agent reputation evidence unavailable task_id=%s: %s", task_id, exc)
+        return {}, {}
+
+
 def _agent_task_payload(
     task: dict,
     trace: list[dict],
@@ -1766,7 +1795,7 @@ def _agent_task_payload(
     stage = f"agent_{status}"
     events = task.get("events") if isinstance(task.get("events"), list) else []
     progress_event = events[-1] if events and isinstance(events[-1], dict) else {}
-    return {
+    payload = {
         "type": "agent_task_event",
         "task_id": task.get("task_id", ""),
         "task_status": status,
@@ -1800,6 +1829,11 @@ def _agent_task_payload(
         "delivery_trace": _delivery_trace({"delivery_trace": trace}, _trace_event(stage, task.get("agent_id", ""))),
         "latency": _trace_metrics(trace),
     }
+    receipt, snapshot = _task_reputation_evidence(task)
+    if receipt:
+        payload["execution_receipt"] = receipt
+        payload["reputation_snapshot"] = snapshot
+    return payload
 
 
 def _task_event_order(task: dict) -> tuple[int, int]:
@@ -2218,6 +2252,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         }
         if rich_output:
             reply_payload["rich_output"] = rich_output
+        receipt, reputation_snapshot = _task_reputation_evidence(task)
+        if receipt:
+            reply_payload["execution_receipt"] = receipt
+            reply_payload["reputation_snapshot"] = reputation_snapshot
         if requires_exact_content_transport(raw_result):
             reply_payload["exact_content_encoding"] = "base64-utf8"
             reply_payload["exact_content_b64"] = base64.b64encode(raw_result.encode("utf-8")).decode("ascii")
@@ -3171,12 +3209,21 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
     dname = desktop_name()
     fingerprint = get_signal_bundle().get("identityKeySha256", "")
     up_topic = _client_topics(client_route_id).up if client_route_id else ""
+    try:
+        from agent_reputation_ledger import agent_reputation_ledger
+
+        reputation_ledger = agent_reputation_ledger()
+    except Exception as exc:
+        log.warning("Agent reputation ledger unavailable for connector status: %s", exc)
+        reputation_ledger = None
     for agent in diagnostics.get("agents", []):
         agent_id = agent.get("mobile_contact_id") or agent.get("id")
         if agent_id in MOBILE_HIDDEN_AGENT_IDS or agent.get("kind") in MOBILE_HIDDEN_AGENT_IDS:
             continue
-        agents.append({
-            "id": f"{did}:{agent_id}",
+        full_agent_id = f"{did}:{agent_id}"
+        capabilities = (agent.get("adapter") or {}).get("capabilities") or []
+        entry = {
+            "id": full_agent_id,
             "agent_id": agent_id,
             "name": agent.get("name") or agent.get("id"),
             "display_name": f"{agent.get('name') or agent.get('id')} · {dname}",
@@ -3191,11 +3238,17 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
             "setup": agent.get("setup") or "",
             "kind": agent.get("kind") or "",
             "adapter": agent.get("adapter") or {},
-            "capabilities": (agent.get("adapter") or {}).get("capabilities") or [],
+            "capabilities": capabilities,
             "protocols": (agent.get("adapter") or {}).get("protocols") or [],
             "mqtt_topic": up_topic,
             "updated_at": int(time.time() * 1000),
-        })
+        }
+        if reputation_ledger is not None:
+            entry["reputation"] = reputation_ledger.snapshot(
+                full_agent_id,
+                capabilities,
+            )
+        agents.append(entry)
     return agents
 
 
@@ -3251,6 +3304,8 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "desktop_control_input_v1",
             "mqtt_fragmentation_v1",
             "mqtt_fragment_integrity_sha256",
+            "signed_agent_execution_receipts_v1",
+            "agent_reputation_snapshots_v1",
         ],
         "limits": {
             "max_parallel_tasks": int(os.environ.get("SIGNALASI_MAX_PARALLEL_TASKS", "4")),
