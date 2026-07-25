@@ -696,6 +696,9 @@ object AppStore {
         contact.put("setup_status", agent.optString("status", "needs_setup"))
         contact.put("setup_detail", agent.optString("detail"))
         contact.put("setup_next_step", agent.optString("setup"))
+        agent.optJSONObject("reputation")?.let { reputation ->
+            contact.put("agent_reputation", JSONObject(reputation.toString()))
+        }
         val rawUpdatedAt = agent.optLong("updated_at", now)
         val updatedAtMillis = if (rawUpdatedAt in 1L..9_999_999_999L) {
             rawUpdatedAt * 1_000L

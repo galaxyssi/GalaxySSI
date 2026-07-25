@@ -20,6 +20,7 @@ const required = [
   "core/signalasi-link/backend/desktop_memory.py",
   "core/signalasi-link/backend/desktop_mcp.py",
   "core/signalasi-link/backend/desktop_skills.py",
+  "core/signalasi-link/backend/agent_reputation_ledger.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
   "scripts/smoke.js",
@@ -109,6 +110,7 @@ const backendPairing = fs.readFileSync(path.join(backendDir, "pairing_state.py")
 const backendLinkProtocol = fs.readFileSync(path.join(backendDir, "link_protocol.py"), "utf8");
 const backendLinkDelivery = fs.readFileSync(path.join(backendDir, "link_delivery.py"), "utf8");
 const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_client.py"), "utf8");
+const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_reputation_ledger.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
 const backendTaskManager = fs.readFileSync(path.join(backendDir, "agent_task_manager.py"), "utf8");
 const backendAgentConfig = fs.readFileSync(path.join(backendDir, "agent_config.py"), "utf8");
@@ -258,6 +260,16 @@ if (!backendSignalClient.includes("signalasi-link-sidecar") || !main.includes("s
 
 if (!sidecarMainSource.includes("package com.signalasi.link;") || !sidecarBuildGradle.includes("com.signalasi.link.SignalSidecar") || !sidecarSettingsGradle.includes('rootProject.name = "signalasi-link-sidecar"')) {
   throw new Error("Signal sidecar source and Gradle metadata must use SignalASI Link naming");
+}
+if (
+  !sidecarMainSource.includes('server.createContext("/sign"')
+  || !sidecarMainSource.includes('server.createContext("/verify"')
+  || !sidecarMainSource.includes(".calculateSignature(")
+  || !backendSignalClient.includes("def sign_signal_identity(")
+  || !backendAgentReputation.includes("class AgentReputationLedger")
+  || !packager.includes('"agent_reputation_ledger.py"')
+) {
+  throw new Error("Desktop package must include signed Agent reputation receipts");
 }
 
 if (fs.existsSync(path.join(sidecarSourceDir, "com", "hermes", "signal"))) {

@@ -52,7 +52,8 @@ data class AgentSignedExecutionReceipt(
     val signatureKeyId: String,
     val signature: String
 ) {
-    fun canonicalPayload(): ByteArray = canonicalJson().toString().toByteArray(Charsets.UTF_8)
+    fun canonicalPayload(): ByteArray =
+        agentReputationCanonicalJson(canonicalJson()).toByteArray(Charsets.UTF_8)
 
     internal fun canonicalJson(): JSONObject = JSONObject()
         .put("version", CURRENT_VERSION)
@@ -94,7 +95,8 @@ data class AgentSignedReputationAttestation(
     val signatureKeyId: String,
     val signature: String
 ) {
-    fun canonicalPayload(): ByteArray = canonicalJson().toString().toByteArray(Charsets.UTF_8)
+    fun canonicalPayload(): ByteArray =
+        agentReputationCanonicalJson(canonicalJson()).toByteArray(Charsets.UTF_8)
 
     internal fun canonicalJson(): JSONObject = JSONObject()
         .put("version", CURRENT_VERSION)
@@ -113,6 +115,35 @@ data class AgentSignedReputationAttestation(
     companion object {
         const val CURRENT_VERSION = 1
     }
+}
+
+internal object AgentReputationWireCodec {
+    fun decodeReceipt(json: JSONObject): AgentSignedExecutionReceipt? = runCatching {
+        AgentSignedExecutionReceipt(
+            receiptId = json.getString("receipt_id"),
+            runId = json.getString("run_id"),
+            taskIdHash = json.getString("task_id_hash"),
+            agentId = json.getString("agent_id"),
+            installationId = json.getString("installation_id"),
+            executorFailureDomain = json.optString("executor_failure_domain"),
+            capabilities = json.optJSONArray("capabilities").strings()
+                .mapNotNullTo(linkedSetOf()) { name ->
+                    runCatching { AgentCapability.valueOf(name) }.getOrNull()
+                },
+            outcome = AgentReputationOutcome.valueOf(json.getString("outcome")),
+            provenance = AgentReputationReceiptProvenance.valueOf(json.getString("provenance")),
+            startedAtMillis = json.getLong("started_at_millis"),
+            completedAtMillis = json.getLong("completed_at_millis"),
+            deadlineAtMillis = json.optLong("deadline_at_millis"),
+            estimatedCostUnits = json.optInt("estimated_cost_units"),
+            actualCostUnits = json.optInt("actual_cost_units"),
+            outputHash = json.optString("output_hash"),
+            evidenceHash = json.optString("evidence_hash"),
+            signerId = json.getString("signer_id"),
+            signatureKeyId = json.getString("signature_key_id"),
+            signature = json.getString("signature")
+        )
+    }.getOrNull()
 }
 
 data class AgentReputationSnapshot(
@@ -782,37 +813,11 @@ private object AgentReputationCodec {
     fun decode(raw: String): AgentReputationDocument = runCatching {
         val root = JSONObject(raw)
         AgentReputationDocument(
-            receipts = root.optJSONArray("receipts").objects().mapNotNull(::decodeReceipt),
+            receipts = root.optJSONArray("receipts").objects()
+                .mapNotNull(AgentReputationWireCodec::decodeReceipt),
             attestations = root.optJSONArray("attestations").objects().mapNotNull(::decodeAttestation)
         )
     }.getOrDefault(AgentReputationDocument(emptyList(), emptyList()))
-
-    private fun decodeReceipt(json: JSONObject): AgentSignedExecutionReceipt? = runCatching {
-        AgentSignedExecutionReceipt(
-            receiptId = json.getString("receipt_id"),
-            runId = json.getString("run_id"),
-            taskIdHash = json.getString("task_id_hash"),
-            agentId = json.getString("agent_id"),
-            installationId = json.getString("installation_id"),
-            executorFailureDomain = json.optString("executor_failure_domain"),
-            capabilities = json.optJSONArray("capabilities").strings()
-                .mapNotNullTo(linkedSetOf()) { name ->
-                    runCatching { AgentCapability.valueOf(name) }.getOrNull()
-                },
-            outcome = AgentReputationOutcome.valueOf(json.getString("outcome")),
-            provenance = AgentReputationReceiptProvenance.valueOf(json.getString("provenance")),
-            startedAtMillis = json.getLong("started_at_millis"),
-            completedAtMillis = json.getLong("completed_at_millis"),
-            deadlineAtMillis = json.optLong("deadline_at_millis"),
-            estimatedCostUnits = json.optInt("estimated_cost_units"),
-            actualCostUnits = json.optInt("actual_cost_units"),
-            outputHash = json.optString("output_hash"),
-            evidenceHash = json.optString("evidence_hash"),
-            signerId = json.getString("signer_id"),
-            signatureKeyId = json.getString("signature_key_id"),
-            signature = json.getString("signature")
-        )
-    }.getOrNull()
 
     private fun decodeAttestation(json: JSONObject): AgentSignedReputationAttestation? = runCatching {
         AgentSignedReputationAttestation(
@@ -840,6 +845,24 @@ private fun JSONArray?.objects(): List<JSONObject> = buildList {
 private fun JSONArray?.strings(): Set<String> = buildSet {
     val array = this@strings ?: return@buildSet
     for (index in 0 until array.length()) array.optString(index).takeIf(String::isNotBlank)?.let(::add)
+}
+
+internal fun agentReputationCanonicalJson(value: Any?): String = when (value) {
+    null, JSONObject.NULL -> "null"
+    is JSONObject -> value.keys().asSequence().toList().sorted()
+        .joinToString(prefix = "{", postfix = "}", separator = ",") { key ->
+            "${JSONObject.quote(key)}:${agentReputationCanonicalJson(value.opt(key))}"
+        }
+    is JSONArray -> (0 until value.length())
+        .joinToString(prefix = "[", postfix = "]", separator = ",") { index ->
+            agentReputationCanonicalJson(value.opt(index))
+        }
+    is String -> JSONObject.quote(value)
+    is Boolean, is Byte, is Short, is Int, is Long -> value.toString()
+    is Float -> require(value.isFinite()) { "Non-finite reputation value" }.let { value.toString() }
+    is Double -> require(value.isFinite()) { "Non-finite reputation value" }.let { value.toString() }
+    is Number -> value.toString()
+    else -> JSONObject.quote(value.toString())
 }
 
 private fun AgentReputationOutcome.reliabilityValue(): Double = when (this) {

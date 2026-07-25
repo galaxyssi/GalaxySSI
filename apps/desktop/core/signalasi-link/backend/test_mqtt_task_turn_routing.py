@@ -81,6 +81,46 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
         self.assertEqual("", payload["turn_id"])
         self.assertEqual("codex-turn-1", payload["agent_turn_id"])
 
+    def test_terminal_task_event_carries_signed_reputation_evidence(self):
+        receipt = {
+            "receipt_id": "receipt-1",
+            "agent_id": "desktop_test:codex",
+            "capabilities": ["CODE"],
+            "signature": "signed",
+        }
+        snapshot = {
+            "agent_id": "desktop_test:codex",
+            "score": 74,
+            "confidence": 18,
+        }
+        ledger = SimpleNamespace(
+            receipt_for_task=lambda _task_id: None,
+            record_task=lambda _task: receipt,
+            snapshot=lambda _agent_id, _capabilities: snapshot,
+        )
+        task = {
+            "task_id": "task-1",
+            "status": "completed",
+            "agent_id": "codex",
+            "contact_id": "desktop_test:codex",
+            "completed_at": 2_000,
+        }
+
+        with patch(
+            "agent_reputation_ledger.agent_reputation_ledger",
+            return_value=ledger,
+        ):
+            payload = mqtt_bridge._agent_task_payload(
+                task,
+                [],
+                resolved_desktop_id="desktop_test",
+                resolved_desktop_name="Test Desktop",
+                resolved_connector_agents=[],
+            )
+
+        self.assertEqual(receipt, payload["execution_receipt"])
+        self.assertEqual(snapshot, payload["reputation_snapshot"])
+
     def test_offline_task_event_queues_without_starting_signal_sidecar(self):
         task = {
             "task_id": "task-offline",
