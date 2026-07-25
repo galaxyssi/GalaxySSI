@@ -79,6 +79,30 @@ const cases = [
     timeoutMs: 210_000,
     validate: text => /CODEX_OK/i.test(text),
   },
+  {
+    id: "codex_returned_image",
+    prompt: "\u8bf7\u5728\u8fd9\u5f20\u56fe\u7247\u56db\u5468\u6dfb\u52a0\u660e\u663e\u7684\u7ea2\u8272\u8fb9\u6846\uff0c\u5e76\u628a\u4fee\u6539\u540e\u7684\u56fe\u7247\u53d1\u56de\u6765\u3002",
+    maxMs: 180_000,
+    timeoutMs: 240_000,
+    attachment: {
+      name: "signalasi-live-image.png",
+      path: path.join(
+        root,
+        "..",
+        "android",
+        "app",
+        "src",
+        "main",
+        "res",
+        "drawable",
+        "signalasi_mark.png",
+      ),
+    },
+    validate: text => (
+      /\u56fe\u7247|\u8fb9\u6846|image|border/i.test(text)
+      && !/\u672a\u6536\u5230|\u6ca1\u6709\u56fe\u7247|missing image|upload again/i.test(text)
+    ),
+  },
 ];
 
 function sleep(ms) {
@@ -157,10 +181,13 @@ async function runCase(testCase, timeoutMs) {
     "--ez", "signalasi_debug_agent_new_conversation", "true",
   ];
   if (testCase.attachment) {
+    const attachmentBytes = testCase.attachment.path
+      ? fs.readFileSync(testCase.attachment.path)
+      : Buffer.from(testCase.attachment.content, "utf8");
     args.push(
       "--es", "signalasi_debug_agent_attachment_name", testCase.attachment.name,
       "--es", "signalasi_debug_agent_attachment_b64",
-      Buffer.from(testCase.attachment.content, "utf8").toString("base64"),
+      attachmentBytes.toString("base64"),
     );
   }
   adb(args);

@@ -131,6 +131,25 @@ class AgentTaskStoreTests(unittest.TestCase):
             restored.update(task.task_id, "running", current_step="Continuing")
             self.assertEqual({}, restored.get(task.task_id).pending_approval)
 
+    def test_external_task_persists_received_attachment_names(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            manager = AgentTaskManager(state_path=path)
+
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex-contact",
+                source_message_id="phone-message",
+                prompt="Annotate the image",
+                on_event=lambda _snapshot: None,
+                task_id="image-task",
+                attachments=["homework.png"],
+            )
+
+            restored = AgentTaskManager(state_path=path).get(task.task_id)
+            self.assertEqual(["homework.png"], restored.attachments)
+            self.assertEqual(["homework.png"], restored.public()["attachments"])
+
     def test_deleting_one_conversation_does_not_remove_other_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"
