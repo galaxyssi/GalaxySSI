@@ -1295,7 +1295,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val stored = agentTranscriptStore.upsert(
             role = AgentTranscriptRole.ASSISTANT,
             text = response.content,
-            dedupeKey = "connector-response:$taskId",
+            dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                turnId = turnId,
+                sourceMessageId = response.sourceMessageId,
+                taskId = taskId
+            ),
             conversationId = conversationId,
             turnId = turnId,
             taskId = taskId,
@@ -1446,12 +1450,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 val directResponseTurnId = responseTurnId.ifBlank {
                     latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
                 }
-                agentTranscriptStore.append(
+                agentTranscriptStore.upsert(
                     AgentTranscriptRole.ASSISTANT,
                     msg.content,
+                    dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                        turnId = directResponseTurnId,
+                        sourceMessageId = sourceMessageId,
+                        taskId = responseTaskId
+                    ),
                     conversationId = resolvedResponseConversationId,
                     turnId = directResponseTurnId,
-                    taskId = envelope?.optString("task_id").orEmpty(),
+                    taskId = responseTaskId,
                     richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
                 )
                 if (resolvedResponseConversationId == agentTranscriptStore.activeConversation().id) {
@@ -10308,6 +10317,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun syncAgentTranscript(state: AgentUiState, conversationId: String, turnId: String) {
+        val transcriptTurnId = AgentFinalResponseIdentity.resolveTurnId(
+            explicitTurnId = turnId,
+            taskId = state.sessionId,
+            turnIdForTask = agentTranscriptStore::turnIdForTask
+        )
         state.plan?.selectedAgentOrModel?.takeIf { it.isNotBlank() }?.let {
             agentTranscriptStore.setSelectedModelOrAgent(conversationId, agentTraceTargetLabel(it))
         }
@@ -10322,7 +10336,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 dedupeKey = "audit:${entry.timestampMillis}:${entry.event.name}:${entry.detail.hashCode()}",
                 timestampMillis = entry.timestampMillis,
                 conversationId = conversationId,
-                turnId = turnId,
+                turnId = transcriptTurnId,
                 taskId = state.sessionId
             )
         }
@@ -10357,7 +10371,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     description,
                     dedupeKey = "approval:$planId:${pending.id}",
                     conversationId = conversationId,
-                    turnId = turnId,
+                    turnId = transcriptTurnId,
                     taskId = state.sessionId,
                     richOutputJson = richOutput
                 )
@@ -10371,7 +10385,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     processDescription,
                     dedupeKey = "pending:$planId:${pending.id}:${description.hashCode()}",
                     conversationId = conversationId,
-                    turnId = turnId,
+                    turnId = transcriptTurnId,
                     taskId = state.sessionId
                 )
             }
@@ -10381,7 +10395,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             connectorMetadata["awaiting_response"] == "true" &&
             connectorMetadata["source_message_id"].orEmpty().isNotBlank()
         val remoteTaskCreated = connectorMetadata["remote_task_id"].orEmpty().isNotBlank()
-        if (connectorPublished && !remoteTaskCreated && turnId.isNotBlank()) {
+        if (connectorPublished && !remoteTaskCreated && transcriptTurnId.isNotBlank()) {
             val target = connectorMetadata["target"].orEmpty()
                 .ifBlank { state.plan?.route?.targetTitle.orEmpty() }
                 .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() }
@@ -10389,9 +10403,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             agentTranscriptStore.upsert(
                 AgentTranscriptRole.PROCESS,
                 "$target · ${getString(R.string.agent_task_status_starting)}",
-                dedupeKey = "connector-turn:$turnId",
+                dedupeKey = "connector-turn:$transcriptTurnId",
                 conversationId = conversationId,
-                turnId = turnId,
+                turnId = transcriptTurnId,
                 taskId = state.sessionId
             )
         }
@@ -10403,14 +10417,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             state.phase == AgentPhase.FAILED ||
             state.phase == AgentPhase.CANCELLED ||
             state.phase == AgentPhase.BLOCKED
-        if (result.isNotBlank() && (settledConnectorResult || terminal) && !isTransientAgentResult(result)) {
+        if (result.isNotBlank() && transcriptTurnId.isNotBlank() &&
+            (settledConnectorResult || terminal) && !isTransientAgentResult(result)
+        ) {
             val actionId = state.lastActionResult?.actionId.orEmpty()
-            agentTranscriptStore.append(
+            agentTranscriptStore.upsert(
                 AgentTranscriptRole.ASSISTANT,
                 result,
-                dedupeKey = "result:$planId:$actionId:${result.hashCode()}",
+                dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                    turnId = transcriptTurnId,
+                    sourceMessageId = connectorMetadata["source_message_id"]?.toLongOrNull() ?: 0L,
+                    taskId = connectorMetadata["remote_task_id"].orEmpty()
+                        .ifBlank { state.sessionId }
+                ),
                 conversationId = conversationId,
-                turnId = turnId,
+                turnId = transcriptTurnId,
                 taskId = state.sessionId,
                 richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
                     state.lastActionResult?.metadata?.get("rich_output").orEmpty()
@@ -10729,14 +10750,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .sortedBy(AgentTranscriptEntry::timestampMillis)
             .distinctBy { it.text.trim() }
             .takeLast(MAX_VISIBLE_AGENT_PROCESS_STEPS)
+        val processSegments = AgentTranscriptPresentationPolicy.processSegments(
+            processEntries.ifEmpty { listOf(entry) }
+        )
+        val hasProcessDetails = processSegments.isNotEmpty()
         val startedAt = processEntries.firstOrNull()?.timestampMillis ?: entry.timestampMillis
         val completedAt = agentProcessCompletionTimestamp(entry, turnEntries)
         val completed = completedAt != null
-        val expanded = AgentTranscriptPresentationPolicy.processExpanded(
-            completed = completed,
-            manuallyExpanded = groupKey in expandedAgentProcessGroups,
-            manuallyCollapsedWhileActive = groupKey in collapsedActiveAgentProcessGroups
-        )
+        val expanded = hasProcessDetails &&
+            AgentTranscriptPresentationPolicy.processExpanded(
+                completed = completed,
+                manuallyExpanded = groupKey in expandedAgentProcessGroups,
+                manuallyCollapsedWhileActive = groupKey in collapsedActiveAgentProcessGroups
+            )
         val timelineActions = if (completed) {
             emptyList()
         } else {
@@ -10798,16 +10824,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         }
                     })
                 })
-                addView(ImageView(this@MainActivity).apply {
-                    setImageResource(R.drawable.ic_chevron_down)
-                    imageTintList = android.content.res.ColorStateList.valueOf(
-                        getColorCompat(R.color.text_secondary)
-                    )
-                    rotation = if (expanded) 180f else 0f
-                    contentDescription = getString(R.string.agent_trace_processed_details)
-                }, LinearLayout.LayoutParams(dp(17), dp(17)).apply {
-                    marginStart = dp(4)
-                })
+                if (hasProcessDetails) {
+                    addView(ImageView(this@MainActivity).apply {
+                        setImageResource(R.drawable.ic_chevron_down)
+                        imageTintList = android.content.res.ColorStateList.valueOf(
+                            getColorCompat(R.color.text_secondary)
+                        )
+                        rotation = if (expanded) 180f else 0f
+                        contentDescription = getString(R.string.agent_trace_processed_details)
+                    }, LinearLayout.LayoutParams(dp(17), dp(17)).apply {
+                        marginStart = dp(4)
+                    })
+                }
                 if (timelineActions.isNotEmpty()) {
                     addView(
                         View(this@MainActivity),
@@ -10828,34 +10856,36 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         marginStart = dp(8)
                     })
                 }
-                setOnClickListener {
-                    if (completed) {
-                        if (expanded) expandedAgentProcessGroups.remove(groupKey)
-                        else expandedAgentProcessGroups.add(groupKey)
-                    } else {
-                        if (expanded) collapsedActiveAgentProcessGroups.add(groupKey)
-                        else collapsedActiveAgentProcessGroups.remove(groupKey)
+                if (hasProcessDetails) {
+                    setOnClickListener {
+                        if (completed) {
+                            if (expanded) expandedAgentProcessGroups.remove(groupKey)
+                            else expandedAgentProcessGroups.add(groupKey)
+                        } else {
+                            if (expanded) collapsedActiveAgentProcessGroups.add(groupKey)
+                            else collapsedActiveAgentProcessGroups.remove(groupKey)
+                        }
+                        clearAgentTranscriptRows()
+                        refreshAgentTranscriptWindow(entry.conversationId)
                     }
-                    clearAgentTranscriptRows()
-                    refreshAgentTranscriptWindow(entry.conversationId)
+                } else {
+                    isClickable = false
+                    isFocusable = false
                 }
             })
             if (expanded) {
-                AgentTranscriptPresentationPolicy.processSegments(processEntries)
-                    .forEachIndexed { index, segment ->
-                        when (segment.kind) {
-                            AgentTranscriptPresentationPolicy.ProcessContentKind.NARRATION ->
-                                segment.entries.forEach { narration ->
-                                    addView(agentProcessNarrationRow(narration))
-                                }
-                            AgentTranscriptPresentationPolicy.ProcessContentKind.TOOL_ACTIVITY -> {
-                                val segmentKey = "$groupKey:tools:$index:${segment.entries.firstOrNull()?.id.orEmpty()}"
-                                addView(agentToolSegmentRow(segmentKey, segment.entries))
+                processSegments.forEachIndexed { index, segment ->
+                    when (segment.kind) {
+                        AgentTranscriptPresentationPolicy.ProcessContentKind.NARRATION ->
+                            segment.entries.forEach { narration ->
+                                addView(agentProcessNarrationRow(narration))
                             }
+                        AgentTranscriptPresentationPolicy.ProcessContentKind.TOOL_ACTIVITY -> {
+                            val segmentKey =
+                                "$groupKey:tools:$index:${segment.entries.firstOrNull()?.id.orEmpty()}"
+                            addView(agentToolSegmentRow(segmentKey, segment.entries))
                         }
                     }
-                if (processEntries.isEmpty()) {
-                    addView(agentProcessStepRow(entry))
                 }
             }
             addView(View(this@MainActivity).apply {

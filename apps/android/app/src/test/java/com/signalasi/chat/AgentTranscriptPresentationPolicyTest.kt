@@ -211,6 +211,60 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
+    fun hidesGenericExecutionLoopScaffoldingAndConnectorHeartbeat() {
+        val entries = listOf(
+            entry("Planning", AgentTranscriptRole.PROCESS, "conversation", "turn", 1L,
+                "agent-loop:turn:PLAN:1"),
+            entry("Checking the result", AgentTranscriptRole.PROCESS, "conversation", "turn", 2L,
+                "agent-loop:turn:OBSERVE:2"),
+            entry("Waiting for a resource", AgentTranscriptRole.PROCESS, "conversation", "turn", 3L,
+                "agent-loop:turn:WAITING_RESPONSE:3"),
+            entry("Working", AgentTranscriptRole.PROCESS, "conversation", "turn", 4L,
+                "connector-event:task:TOOL_EVENT:codex:heartbeat:1"),
+            entry("No progress reported", AgentTranscriptRole.PROCESS, "conversation", "turn", 5L,
+                "task-watchdog:turn"),
+            entry("Finalizing", AgentTranscriptRole.PROCESS, "conversation", "turn", 6L,
+                "agent-loop:turn:FINALIZE:4")
+        )
+
+        assertTrue(AgentTranscriptPresentationPolicy.processSegments(entries).isEmpty())
+    }
+
+    @Test
+    fun keepsModelNarrationAndConcreteToolsWhileHidingLoopScaffolding() {
+        val entries = listOf(
+            entry("Planning", AgentTranscriptRole.PROCESS, "conversation", "turn", 1L,
+                "agent-loop:turn:PLAN:1"),
+            entry("I will inspect the workbook before changing it.", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 2L,
+                "connector-event:task:REASONING_SUMMARY:codex:commentary:1"),
+            entry("Ran python validate_workbook.py", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 3L,
+                "connector-event:task:TOOL_EVENT:codex:command:1"),
+            entry("Verifying", AgentTranscriptRole.PROCESS, "conversation", "turn", 4L,
+                "agent-loop:turn:VERIFY:2")
+        )
+
+        val segments = AgentTranscriptPresentationPolicy.processSegments(entries)
+
+        assertEquals(
+            listOf(
+                "I will inspect the workbook before changing it.",
+                "Ran python validate_workbook.py"
+            ),
+            segments.flatMap(AgentTranscriptPresentationPolicy.ProcessSegment::entries)
+                .map(AgentTranscriptEntry::text)
+        )
+        assertEquals(
+            listOf(
+                AgentTranscriptPresentationPolicy.ProcessContentKind.NARRATION,
+                AgentTranscriptPresentationPolicy.ProcessContentKind.TOOL_ACTIVITY
+            ),
+            segments.map(AgentTranscriptPresentationPolicy.ProcessSegment::kind)
+        )
+    }
+
+    @Test
     fun removesRedundantConnectorCompletionFromTheRenderedTurn() {
         val entries = listOf(
             entry("user", AgentTranscriptRole.USER, "conversation", "turn", 1L),

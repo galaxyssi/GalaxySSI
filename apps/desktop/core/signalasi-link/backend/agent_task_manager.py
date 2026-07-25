@@ -196,6 +196,7 @@ class AgentTaskManager:
         on_event: EventCallback, task_id: str = "", conversation_id: str = "",
         client_conversation_id: str = "",
         client_route_id: str = "", client_turn_id: str = "",
+        attachments: list[str] | None = None,
     ) -> AgentTask:
         task = AgentTask(
             task_id=task_id.strip() or str(uuid.uuid4()), agent_id=agent_id,
@@ -204,6 +205,7 @@ class AgentTaskManager:
             client_conversation_id=client_conversation_id,
             client_route_id=client_route_id,
             client_turn_id=client_turn_id,
+            attachments=[str(value) for value in (attachments or [])[:12]],
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:

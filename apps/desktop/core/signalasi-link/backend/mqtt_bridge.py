@@ -2054,15 +2054,55 @@ def _resume_recovered_remote_task(mqttc, task: dict) -> None:
     _start_remote_agent_task(mqttc, wire_payload, payload, trace, prompt, "text")
 
 
-def _returned_image_artifact_contract(output_directory: Path) -> str:
+def _returned_image_artifact_contract(
+    output_directory: Path,
+    input_paths: list[Path] | tuple[Path, ...] = (),
+) -> str:
     destination = str(output_directory.resolve())
+    sources = [
+        str(Path(path).resolve())
+        for path in input_paths
+        if Path(path).is_file()
+    ]
+    source_lines = "".join(f"\n  - {path}" for path in sources)
     return (
         "\n\nRequired returned-image artifact contract:\n"
+        f"- The input image has already been received and is readable at:{source_lines or ' the attachment paths above'}\n"
+        "- Never claim that the input image is missing and never ask the user to upload it again.\n"
         f"- Save at least one finished annotated image inside: {destination}\n"
         "- Use the supplied local image as the source and perform the requested review before annotating it.\n"
-        "- Use a local image tool or a short script; preserve readable resolution and orientation.\n"
-        "- Verify the output file exists and is non-empty before writing the final response.\n"
+        "- Use ASCII-only helper-script and output filenames (for example scripts/annotate_image.py and outputs/annotated-result.jpg).\n"
+        "- Put executable statements on their own lines; do not append code after comments or rely on shell quoting for non-ASCII text.\n"
+        "- If a command fails, inspect the error and repair the script or command before finishing.\n"
+        "- Preserve readable resolution and orientation. Do not copy the original unchanged as a successful result.\n"
+        "- Reopen or decode the finished output, and verify it exists, is non-empty, and is a valid image before writing the final response.\n"
         "- Do not say that an image is being created or will be returned. Finish the file first, then report its filename."
+    )
+
+
+def _returned_image_repair_prompt(
+    output_directory: Path,
+    input_paths: list[Path] | tuple[Path, ...],
+) -> str:
+    return (
+        "The requested returned image was not created in the previous turn. "
+        "Continue the same task now and repair the failed image-generation step. "
+        "Do not repeat the review, ask for the image again, or only describe what should be done."
+        + _returned_image_artifact_contract(output_directory, input_paths)
+    )
+
+
+def _missing_returned_image_message(content: str) -> str:
+    if any("\u4e00" <= character <= "\u9fff" for character in str(content or "")):
+        return (
+            "\u539f\u56fe\u5df2\u6536\u5230\u5e76\u5b8c\u6210\u68c0\u67e5\uff0c"
+            "\u4f46\u6279\u6ce8\u56fe\u7247\u751f\u6210\u5931\u8d25\u3002"
+            "\u8bf7\u56de\u590d\u201c\u91cd\u8bd5\u751f\u6210\u201d\uff0c"
+            "\u6211\u4f1a\u6cbf\u7528\u5f53\u524d\u56fe\u7247\u7ee7\u7eed\u5904\u7406\u3002"
+        )
+    return (
+        "The original image was received and reviewed, but the annotated image could not be generated. "
+        'Reply "retry generation" and I will continue with the current image.'
     )
 
 
@@ -2096,6 +2136,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     image_artifact_required = has_image_attachment and _requests_returned_image(content)
     has_attachments = bool(attachments) if isinstance(attachments, list) else False
+    image_artifact_repair_attempts = 0
+    image_artifact_repair_lock = threading.Lock()
+    codex_runtime: dict[str, object] = {
+        "server": None,
+        "workspace": None,
+        "image_paths": [],
+    }
 
     def add_task_trace(stage: str, detail: object = "") -> None:
         with task_trace_lock:
@@ -2313,6 +2360,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 client_conversation_id=client_conversation_id,
                 client_route_id=client_route_id,
                 client_turn_id=str(payload.get("turn_id") or ""),
+                attachments=[
+                    str(item.get("name") or "")
+                    for item in attachments
+                    if isinstance(item, dict) and str(item.get("name") or "").strip()
+                ],
             )
             active_conversation_task = agent_task_manager.active_for_conversation(
                 codex_conversation_id,
@@ -2320,6 +2372,62 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 exclude_task_id=task.task_id,
             )
         add_task_trace("desktop_task_created", task.task_id)
+
+        def schedule_image_artifact_repair() -> bool:
+            nonlocal image_artifact_repair_attempts
+            with image_artifact_repair_lock:
+                server = codex_runtime.get("server")
+                workspace = codex_runtime.get("workspace")
+                image_paths = [
+                    Path(str(value))
+                    for value in codex_runtime.get("image_paths", [])
+                    if Path(str(value)).is_file()
+                ]
+                if (
+                    image_artifact_repair_attempts >= 1
+                    or not isinstance(server, CodexAppServer)
+                    or not isinstance(workspace, Path)
+                    or not image_paths
+                ):
+                    return False
+                image_artifact_repair_attempts += 1
+
+            repair_prompt = _returned_image_repair_prompt(
+                workspace / "outputs",
+                image_paths,
+            )
+
+            def repair() -> None:
+                time.sleep(0.05)
+                try:
+                    add_task_trace("returned_image_repair_started", "attempt=1")
+                    server.start_task(
+                        task.task_id,
+                        repair_prompt,
+                        str(workspace),
+                        conversation_id=codex_conversation_id,
+                        image_paths=[str(path.resolve()) for path in image_paths],
+                        approval_policy=codex_approval_policy,
+                        sandbox=codex_sandbox,
+                    )
+                except Exception as exc:
+                    add_task_trace("returned_image_repair_failed", str(exc)[:240])
+                    app_event(task.task_id, {
+                        "status": "failed",
+                        "current_step": "",
+                        "result": _missing_returned_image_message(content),
+                        "error": f"Returned image repair failed: {exc}",
+                    })
+                    with codex_task_callbacks_lock:
+                        codex_task_callbacks.pop(task.task_id, None)
+
+            threading.Thread(
+                target=repair,
+                daemon=True,
+                name=f"codex-image-repair-{task.task_id[:8]}",
+            ).start()
+            return True
+
         def app_event(task_id: str, event: dict) -> None:
             nonlocal result_published
             event_status = str(event.get("status") or "running")
@@ -2352,8 +2460,6 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 thread_id = str(event.get("thread_id") or "")
                 if thread_id:
                     sessions.put("codex", codex_conversation_id, thread_id)
-                completed_task = agent_task_manager.get(task_id)
-                mark_conversation_synced("codex", completed_task)
             if event_status == "completed" and str(event_result or "").strip():
                 from task_workspace import import_referenced_task_artifacts
 
@@ -2378,13 +2484,21 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     if Path(str(item.get("name") or "")).suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
                 ]
                 if not generated_images:
-                    event_status = "failed"
-                    event_result = (
-                        "\u672a\u751f\u6210\u53ef\u56de\u4f20\u7684\u6279\u6ce8\u56fe\u7247\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\uff0c\u6211\u4f1a\u5728\u56fe\u7247\u6587\u4ef6\u771f\u6b63\u751f\u6210\u540e\u518d\u56de\u590d\u3002"
-                        if any("\u4e00" <= character <= "\u9fff" for character in content) else
-                        "No annotated image was generated. Send it again and I will reply only after the image file exists."
-                    )
-                    event["error"] = "Requested image artifact was not generated"
+                    if schedule_image_artifact_repair():
+                        event_status = "running"
+                        event_result = ""
+                        event["status"] = "running"
+                        event["result"] = ""
+                        event["current_step"] = "Repairing returned image"
+                        event.pop("error", None)
+                        add_task_trace("returned_image_repair_queued", "attempt=1")
+                    else:
+                        event_status = "failed"
+                        event_result = _missing_returned_image_message(content)
+                        event["error"] = "Requested image artifact was not generated"
+            if event_status == "completed":
+                completed_task = agent_task_manager.get(task_id)
+                mark_conversation_synced("codex", completed_task)
             progress = event.get("progress_event")
             if event_status == "running" and isinstance(progress, dict):
                 updated = agent_task_manager.add_event(
@@ -2555,14 +2669,20 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     str(path.resolve()) for path in input_paths
                     if path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
                 ]
+                codex_runtime["workspace"] = workspace
+                codex_runtime["image_paths"] = list(image_paths)
                 fresh_thread_image_paths = [
                     str(path.resolve())
                     for path in restored_context_paths
                     if path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
                 ]
                 if image_artifact_required:
-                    task_prompt += _returned_image_artifact_contract(workspace / "outputs")
-                    fresh_task_prompt += _returned_image_artifact_contract(workspace / "outputs")
+                    artifact_contract = _returned_image_artifact_contract(
+                        workspace / "outputs",
+                        [Path(path) for path in image_paths],
+                    )
+                    task_prompt += artifact_contract
+                    fresh_task_prompt += artifact_contract
                 agent_task_manager.update(
                     task.task_id,
                     "running",
@@ -2612,6 +2732,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     server = _codex_server(executable, _agent_env(BASE_AGENTS["codex"]))
                     server.warm()
                     add_task_trace("codex_server_ready", f"pid={server.process.pid if server.process else 0}")
+                codex_runtime["server"] = server
                 add_task_trace("codex_turn_submit_started", executable)
                 try:
                     started_run = server.start_task(

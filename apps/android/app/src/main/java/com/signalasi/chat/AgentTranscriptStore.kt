@@ -89,7 +89,7 @@ object AgentTranscriptPresentationPolicy {
     }
 
     fun collapseProcessGroups(entries: List<AgentTranscriptEntry>): List<AgentTranscriptEntry> {
-        val retainedEntries = entries.filterNot { entry ->
+        val retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filterNot { entry ->
             isRedundantConnectorCompletion(entry) || isInternalRuntimeHandoff(entry)
         }
         val localUserTurnIds = retainedEntries.asSequence()
@@ -203,10 +203,9 @@ object AgentTranscriptPresentationPolicy {
 
     fun processSegments(entries: List<AgentTranscriptEntry>): List<ProcessSegment> = buildList {
         val hasConnectorDetail = entries.any { it.dedupeKey.startsWith("connector-event:") }
-        val visibleEntries = if (hasConnectorDetail) {
-            entries.filterNot(::isGenericConnectorFallback)
-        } else {
-            entries
+        val visibleEntries = entries.filter { entry ->
+            isUserRelevantProcessEntry(entry) &&
+                (!hasConnectorDetail || !isGenericConnectorFallback(entry))
         }
         visibleEntries.forEach { entry ->
             val kind = processContentKind(entry)
@@ -217,6 +216,34 @@ object AgentTranscriptPresentationPolicy {
                 add(ProcessSegment(kind, listOf(entry)))
             }
         }
+    }
+
+    fun isUserRelevantProcessEntry(entry: AgentTranscriptEntry): Boolean {
+        if (entry.role != AgentTranscriptRole.PROCESS) return false
+        if (entry.dedupeKey.startsWith("task-watchdog:")) return false
+        val loopPhase = AgentExecutionLoopTimelinePolicy.phaseFromTranscriptDedupeKey(entry.dedupeKey)
+        if (loopPhase in setOf(
+                AgentExecutionLoopPhase.PLAN,
+                AgentExecutionLoopPhase.ACT,
+                AgentExecutionLoopPhase.OBSERVE,
+                AgentExecutionLoopPhase.REPLAN,
+                AgentExecutionLoopPhase.VERIFY,
+                AgentExecutionLoopPhase.FINALIZE,
+                AgentExecutionLoopPhase.LEARN,
+                AgentExecutionLoopPhase.WAITING_RESPONSE
+            )
+        ) {
+            return false
+        }
+        if (!entry.dedupeKey.startsWith("connector-event:")) return true
+        return entry.text.trim().lowercase() !in setOf(
+            "accepted",
+            "queued",
+            "started",
+            "working",
+            "working complete",
+            "completed"
+        )
     }
 
     private fun isGenericConnectorFallback(entry: AgentTranscriptEntry): Boolean {
@@ -869,7 +896,7 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     fun metrics(conversationId: String): AgentConversationMetrics {
-        val messages = list(conversationId)
+        val messages = AgentFinalResponseIdentity.coalesce(list(conversationId))
         val dialogue = messages.filter { it.role != AgentTranscriptRole.PROCESS }
         val latestTurn = dialogue.map { it.turnId }.lastOrNull { it.isNotBlank() }.orEmpty()
         val latestMessages = dialogue.filter { it.turnId == latestTurn }
@@ -1173,8 +1200,9 @@ class AgentTranscriptStore(context: Context) {
         if (conversation.contextCompactedThroughMillis <= 0L) {
             return AgentContextWindow(
                 conversation = conversation,
-                dialogue = entryDatabase.listConversation(conversation.id)
-                    .filter { it.role != AgentTranscriptRole.PROCESS }
+                dialogue = AgentFinalResponseIdentity.coalesce(
+                    entryDatabase.listConversation(conversation.id)
+                ).filter { it.role != AgentTranscriptRole.PROCESS }
             )
         }
         val recent = entryDatabase.listConversationAfterEntry(
@@ -1184,7 +1212,8 @@ class AgentTranscriptStore(context: Context) {
         if (recent != null) {
             return AgentContextWindow(
                 conversation = conversation,
-                dialogue = recent.filter { it.role != AgentTranscriptRole.PROCESS }
+                dialogue = AgentFinalResponseIdentity.coalesce(recent)
+                    .filter { it.role != AgentTranscriptRole.PROCESS }
             )
         }
         val reset = conversation.copy(
@@ -1201,8 +1230,9 @@ class AgentTranscriptStore(context: Context) {
         }
         return AgentContextWindow(
             conversation = reset,
-            dialogue = entryDatabase.listConversation(conversation.id)
-                .filter { it.role != AgentTranscriptRole.PROCESS }
+            dialogue = AgentFinalResponseIdentity.coalesce(
+                entryDatabase.listConversation(conversation.id)
+            ).filter { it.role != AgentTranscriptRole.PROCESS }
         )
     }
 

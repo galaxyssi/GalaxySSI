@@ -71,15 +71,58 @@ class AgentTranscriptRenderPolicyTest {
         assertEquals(listOf(0), diff.replacementIndices)
     }
 
+    @Test
+    fun appendedAssistantRefreshesItsProcessHeader() {
+        val user = entry(
+            id = "user-1",
+            text = "Run this",
+            role = AgentTranscriptRole.USER,
+            conversationId = "conversation",
+            turnId = "turn"
+        )
+        val process = entry(
+            id = "process-1",
+            text = "Processing",
+            role = AgentTranscriptRole.PROCESS,
+            conversationId = "conversation",
+            turnId = "turn"
+        )
+        val assistant = entry(
+            id = "assistant-1",
+            text = "Done",
+            role = AgentTranscriptRole.ASSISTANT,
+            conversationId = "conversation",
+            turnId = "turn"
+        )
+
+        val diff = AgentTranscriptRenderPolicy.diff(
+            renderedIds = listOf(user.id, process.id),
+            renderedSignatures = mapOf(
+                user.id to AgentTranscriptRenderPolicy.signature(user),
+                process.id to AgentTranscriptRenderPolicy.signature(process)
+            ),
+            incoming = listOf(user, process, assistant)
+        )
+
+        assertFalse(diff.reset)
+        assertEquals(listOf(1), diff.replacementIndices)
+        assertEquals(2, diff.appendFromIndex)
+    }
+
     private fun entry(
         id: String,
         text: String,
-        richOutputJson: String = ""
+        richOutputJson: String = "",
+        role: AgentTranscriptRole = AgentTranscriptRole.PROCESS,
+        conversationId: String = "",
+        turnId: String = ""
     ) = AgentTranscriptEntry(
         id = id,
-        role = AgentTranscriptRole.PROCESS,
+        role = role,
         text = text,
         timestampMillis = 1L,
-        richOutputJson = richOutputJson
+        richOutputJson = richOutputJson,
+        conversationId = conversationId,
+        turnId = turnId
     )
 }

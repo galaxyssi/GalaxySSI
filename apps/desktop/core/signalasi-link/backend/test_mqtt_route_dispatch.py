@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import threading
 import time
 import unittest
@@ -193,9 +194,30 @@ class MqttRouteDispatchTests(unittest.TestCase):
         self.assertFalse(mqtt_bridge._requests_returned_image("\u6279\u6539\u4f5c\u4e1a"))
 
     def test_returned_image_contract_targets_output_directory(self) -> None:
-        contract = mqtt_bridge._returned_image_artifact_contract(mqtt_bridge.Path("outputs"))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = mqtt_bridge.Path(temporary)
+            source = root / "input.jpg"
+            source.write_bytes(b"image")
+            contract = mqtt_bridge._returned_image_artifact_contract(
+                root / "outputs",
+                [source],
+            )
+
         self.assertIn("finished annotated image", contract)
-        self.assertIn("outputs", contract)
+        self.assertIn(str(source.resolve()), contract)
+        self.assertIn("Never claim that the input image is missing", contract)
+        self.assertIn("ASCII-only", contract)
+        self.assertIn("annotated-result.jpg", contract)
+
+    def test_missing_returned_image_message_keeps_current_input(self) -> None:
+        chinese = mqtt_bridge._missing_returned_image_message("\u6279\u6539\u56fe\u7247")
+        english = mqtt_bridge._missing_returned_image_message("Annotate this image")
+
+        self.assertIn("\u539f\u56fe\u5df2\u6536\u5230", chinese)
+        self.assertIn("\u6cbf\u7528\u5f53\u524d\u56fe\u7247", chinese)
+        self.assertNotIn("\u91cd\u65b0\u53d1\u9001", chinese)
+        self.assertIn("original image was received", english)
+        self.assertIn("current image", english)
 
 
 if __name__ == "__main__":
