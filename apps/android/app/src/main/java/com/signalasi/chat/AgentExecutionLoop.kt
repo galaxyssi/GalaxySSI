@@ -83,7 +83,9 @@ data class AgentExecutionLoopEvent(
     val previousPhase: AgentExecutionLoopPhase?,
     val phase: AgentExecutionLoopPhase,
     val reason: String,
-    val snapshot: AgentExecutionLoopSnapshot
+    val snapshot: AgentExecutionLoopSnapshot,
+    val toolCall: Boolean = false,
+    val retry: Boolean = false
 )
 
 fun interface AgentExecutionLoopEventSink {
@@ -181,7 +183,14 @@ class AgentExecutionLoop private constructor(
             revision = current.revision + 1L
         )
         snapshot = next
-        return AgentExecutionLoopEvent(current.phase, next.phase, resolvedReason, next)
+        return AgentExecutionLoopEvent(
+            previousPhase = current.phase,
+            phase = next.phase,
+            reason = resolvedReason,
+            snapshot = next,
+            toolCall = toolCall,
+            retry = retry
+        )
     }
 
     fun pause(reason: String = "Task paused"): AgentExecutionLoopEvent {
@@ -407,6 +416,8 @@ object AgentExecutionLoopJsonCodec {
         .put("previous_phase", event.previousPhase?.name.orEmpty().lowercase(Locale.ROOT))
         .put("phase", event.phase.name.lowercase(Locale.ROOT))
         .put("reason", event.reason)
+        .put("tool_call", event.toolCall)
+        .put("retry", event.retry)
         .put("snapshot", JSONObject(encode(event.snapshot)))
         .toString()
 

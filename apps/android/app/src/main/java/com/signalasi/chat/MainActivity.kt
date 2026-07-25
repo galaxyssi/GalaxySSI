@@ -236,6 +236,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentRuntimeConversationIds = ConcurrentHashMap<MobileNativeAgent, String>()
     private val agentRuntimeTurnIds = ConcurrentHashMap<MobileNativeAgent, String>()
     private val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val agentTimelineOperationsInFlight = ConcurrentHashMap.newKeySet<String>()
     private var pendingDirectSystemAction: PendingDirectSystemAction? = null
     private lateinit var agentScreenSearchInput: EditText
     private lateinit var agentScreenDetailList: LinearLayout
@@ -952,6 +953,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun consumeAgentConnectorResponse(response: AgentConnectorResponse) {
+        if (response.sourceMessageId in supersededConnectorSourceIds) {
+            AgentConnectorResponseStore.remove(this, response)
+            Log.i(
+                "SignalASIAgent",
+                "Discarded response for superseded source=${response.sourceMessageId}"
+            )
+            return
+        }
         if (::globalSuperAgentRuntime.isInitialized &&
             globalSuperAgentRuntime.consumeResearchResponse(response)
         ) {
@@ -2515,17 +2524,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         renderAgentTranscript(agentTranscriptWindow.entries)
     }
 
-    private fun cancelRemoteAgentTask(state: AgentUiState) {
+    private fun publishRemoteAgentTaskCancellation(state: AgentUiState): Boolean? {
         val result = state.lastActionResult
         val taskId = result?.metadata?.get("remote_task_id").orEmpty()
         val contactId = result?.metadata?.get("contact_id").orEmpty()
         val sourceMessageId = result?.metadata?.get("source_message_id")?.toLongOrNull() ?: 0L
         if (taskId.isBlank() || contactId.isBlank() || sourceMessageId <= 0L) {
-            agentRuntimeTurnIds[mobileNativeAgent]
-                ?.let { AgentTaskRuntime.supervisor(this).cancellationSource(it) }
-                ?.cancel("User cancelled the Agent task")
-            runAgentOperationAsync { mobileNativeAgent.cancelCurrentTask() }
-            return
+            return null
         }
         val sent = SignalASIMqttClient.publishAgentTaskCancel(
             taskId = taskId,
@@ -2534,15 +2539,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             topicOverride = AppStore.outgoingTopicForContact(this, contactId)
         )
         if (sent) {
-            agentTranscriptStore.upsert(
-                AgentTranscriptRole.PROCESS,
-                "${contactById(contactId).name} · ${getString(R.string.agent_task_status_cancelling)}",
-                dedupeKey = "remote-task:$taskId"
-            )
-            refreshAgentTranscriptWindow()
-        } else {
-            Toast.makeText(this, getString(R.string.delivery_status_send_failed), Toast.LENGTH_SHORT).show()
+            completedConnectorTaskIds.add(taskId)
+            supersededConnectorSourceIds.add(sourceMessageId)
+            activeAgentTasks.remove(sourceMessageId)
         }
+        return sent
     }
 
     private fun startAgentScreenUnderstanding() {
@@ -2619,6 +2620,148 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 consumePendingAgentConnectorResponses()
                 outcome.exceptionOrNull()?.let { error ->
                     Toast.makeText(this@MainActivity, error.message ?: "Agent operation failed", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun agentTimelineRuntime(entry: AgentTranscriptEntry): MobileNativeAgent? {
+        val candidates = buildList {
+            addAll(activeAgentTasks.values)
+            addAll(provisionalAgentTasks)
+            add(mobileNativeAgent)
+        }.distinct()
+        return candidates.firstOrNull { runtime ->
+            val turnMatches = entry.turnId.isNotBlank() &&
+                agentRuntimeTurnIds[runtime] == entry.turnId
+            val taskMatches = entry.taskId.isNotBlank() &&
+                runtime.snapshot().sessionId == entry.taskId
+            turnMatches || taskMatches
+        }
+    }
+
+    private fun showAgentTimelineMenu(entry: AgentTranscriptEntry, anchor: View) {
+        val runtime = agentTimelineRuntime(entry)
+        if (runtime == null) {
+            Toast.makeText(
+                this,
+                getString(R.string.agent_loop_timeline_action_unavailable),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val actions = AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)
+        if (actions.isEmpty()) {
+            Toast.makeText(
+                this,
+                getString(R.string.agent_loop_timeline_action_unavailable),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        PopupMenu(this, anchor).apply {
+            actions.forEachIndexed { order, action ->
+                menu.add(0, action.ordinal, order, agentTimelineActionLabel(action))
+            }
+            setOnMenuItemClickListener { item ->
+                actions.firstOrNull { it.ordinal == item.itemId }?.let { action ->
+                    runAgentTimelineAction(entry, runtime, action)
+                    true
+                } ?: false
+            }
+            show()
+        }
+    }
+
+    private fun agentTimelineActionLabel(action: AgentExecutionLoopTimelineAction): String =
+        getString(when (action) {
+            AgentExecutionLoopTimelineAction.PAUSE -> R.string.agent_pause_button
+            AgentExecutionLoopTimelineAction.RESUME -> R.string.agent_resume_button
+            AgentExecutionLoopTimelineAction.RETRY -> R.string.common_retry
+            AgentExecutionLoopTimelineAction.REPLAN -> R.string.agent_loop_timeline_replan_action
+            AgentExecutionLoopTimelineAction.CANCEL -> R.string.common_cancel
+        })
+
+    private fun runAgentTimelineAction(
+        entry: AgentTranscriptEntry,
+        runtime: MobileNativeAgent,
+        action: AgentExecutionLoopTimelineAction
+    ) {
+        if (action !in AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)) {
+            Toast.makeText(
+                this,
+                getString(R.string.agent_loop_timeline_action_unavailable),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        var remoteCancellationFailed = false
+        runAgentTimelineOperation(
+            entry = entry,
+            runtime = runtime,
+            onComplete = {
+                if (remoteCancellationFailed) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.agent_loop_timeline_remote_cancel_failed),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        ) {
+            when (action) {
+                AgentExecutionLoopTimelineAction.PAUSE -> runtime.pauseCurrentTask()
+                AgentExecutionLoopTimelineAction.RESUME -> runtime.resumeCurrentTask()
+                AgentExecutionLoopTimelineAction.RETRY -> runtime.retryFailedAction()
+                AgentExecutionLoopTimelineAction.REPLAN -> runtime.replanCurrentTask()
+                AgentExecutionLoopTimelineAction.CANCEL -> {
+                    remoteCancellationFailed =
+                        publishRemoteAgentTaskCancellation(runtime.snapshot()) == false
+                    val turnId = entry.turnId.ifBlank {
+                        agentRuntimeTurnIds[runtime].orEmpty()
+                    }
+                    turnId.takeIf(String::isNotBlank)
+                        ?.let { AgentTaskRuntime.supervisor(this).cancellationSource(it) }
+                        ?.cancel("User cancelled the Agent task")
+                    runtime.cancelCurrentTask()
+                }
+            }
+        }
+    }
+
+    private fun runAgentTimelineOperation(
+        entry: AgentTranscriptEntry,
+        runtime: MobileNativeAgent,
+        onComplete: (AgentUiState) -> Unit = {},
+        operation: () -> AgentUiState
+    ) {
+        val turnId = entry.turnId.ifBlank { agentRuntimeTurnIds[runtime].orEmpty() }
+        val operationKey = turnId.ifBlank { runtime.snapshot().sessionId }
+        if (!agentTimelineOperationsInFlight.add(operationKey)) return
+        val conversationId = entry.conversationId.ifBlank {
+            agentRuntimeConversationIds[runtime].orEmpty()
+        }
+        thread(name = "signalasi-agent-timeline-operation") {
+            if (turnId.isNotBlank()) bindAgentExecutionLoop(runtime, turnId)
+            val outcome = runCatching {
+                var state = operation()
+                if (turnId.isNotBlank()) {
+                    state = finalizeAgentExecutionLoop(runtime, turnId, state)
+                    persistAgentWorkspaceSnapshot(turnId, state, runtime)
+                }
+                state
+            }
+            runOnUiThread {
+                agentTimelineOperationsInFlight.remove(operationKey)
+                val state = outcome.getOrElse { runtime.snapshot() }
+                renderAgentState(state, conversationId, turnId)
+                onComplete(state)
+                outcome.exceptionOrNull()?.let { error ->
+                    Toast.makeText(
+                        this@MainActivity,
+                        error.message ?: getString(R.string.agent_loop_timeline_action_unavailable),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -2867,7 +3010,56 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     )
                 }
             }
+            recordAgentExecutionLoopEvent(runtime, cleanTurnId, event)
         })
+    }
+
+    private fun recordAgentExecutionLoopEvent(
+        runtime: MobileNativeAgent,
+        turnId: String,
+        event: AgentExecutionLoopEvent
+    ) {
+        val persistedRunId = runCatching {
+            EncryptedAgentWorkspaceStore(this).find(turnId)?.parentRunId.orEmpty()
+        }.getOrDefault("")
+        val runId = agentRunIdsByTurn[turnId].orEmpty().ifBlank { persistedRunId }
+        val run = agentRunRecorder.run(runId) ?: return
+        val projection = AgentExecutionLoopTimelinePolicy.project(event)
+        val revisionRecorded = agentRunEventStore.events(run.runId).any { recorded ->
+            AgentExecutionLoopTimelinePolicy.isSameRevision(
+                recorded,
+                event.snapshot.revision
+            )
+        }
+        if (!revisionRecorded) {
+            appendRunControlEvent(
+                run = run,
+                messageId = turnId,
+                taskId = turnId,
+                agentId = "signalasi-mobile",
+                type = projection.controlEventType,
+                payload = projection.payload,
+                stepId = projection.stepId,
+                toolCallId = projection.toolCallId,
+                timestampMillis = event.snapshot.updatedAtMillis
+            )
+        }
+        val label = projection.label ?: return
+        val state = runtime.snapshot()
+        agentTranscriptStore.append(
+            AgentTranscriptRole.PROCESS,
+            agentExecutionLoopTimelineText(label),
+            dedupeKey = AgentExecutionLoopTimelinePolicy.transcriptDedupeKey(turnId, event),
+            timestampMillis = event.snapshot.updatedAtMillis,
+            conversationId = run.conversationId,
+            turnId = turnId,
+            taskId = state.sessionId
+        )
+        runOnUiThread {
+            if (run.conversationId == agentTranscriptStore.activeConversation().id) {
+                refreshAgentTranscriptWindow(run.conversationId)
+            }
+        }
     }
 
     private fun finalizeAgentExecutionLoop(
@@ -3620,7 +3812,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         type: AgentRunControlEventType,
         payload: AgentNativeJsonObject = emptyMap(),
         stepId: String = "",
-        toolCallId: String = ""
+        toolCallId: String = "",
+        timestampMillis: Long = System.currentTimeMillis()
     ) {
         val profile = AppStore.profile(this)
         agentRunEventStore.appendNext(
@@ -3635,6 +3828,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 deviceId = profile.optString("device_id").ifBlank { profile.optString("signalasi_id") },
                 type = type,
                 sequence = 0L,
+                timestampMillis = timestampMillis,
                 payload = payload
             )
         )
@@ -10155,7 +10349,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             entry.taskId.isNotBlank() -> agentTranscriptStore.entriesForTask(entry.taskId)
             else -> listOf(entry)
         }
-        val processEntries = turnEntries
+        val processEntries = AgentExecutionLoopTimelinePolicy.suppressSupersededPlaceholders(turnEntries)
             .filter { candidate ->
                 candidate.role == AgentTranscriptRole.PROCESS &&
                     !AgentTranscriptPresentationPolicy.isRedundantConnectorCompletion(candidate) &&
@@ -10179,6 +10373,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             manuallyExpanded = groupKey in expandedAgentProcessGroups,
             manuallyCollapsedWhileActive = groupKey in collapsedActiveAgentProcessGroups
         )
+        val timelineActions = if (completed) {
+            emptyList()
+        } else {
+            agentTimelineRuntime(entry)
+                ?.snapshot()
+                ?.phase
+                ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
+                .orEmpty()
+        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -10242,6 +10445,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }, LinearLayout.LayoutParams(dp(17), dp(17)).apply {
                     marginStart = dp(4)
                 })
+                if (timelineActions.isNotEmpty()) {
+                    addView(
+                        View(this@MainActivity),
+                        LinearLayout.LayoutParams(0, 1, 1f)
+                    )
+                    addView(ImageView(this@MainActivity).apply {
+                        setImageResource(R.drawable.ic_more_horizontal)
+                        imageTintList = android.content.res.ColorStateList.valueOf(
+                            getColorCompat(R.color.text_secondary)
+                        )
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        setPadding(dp(6), dp(6), dp(6), dp(6))
+                        contentDescription = getString(R.string.agent_more_actions)
+                        isClickable = true
+                        isFocusable = true
+                        setOnClickListener { anchor -> showAgentTimelineMenu(entry, anchor) }
+                    }, LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+                        marginStart = dp(8)
+                    })
+                }
                 setOnClickListener {
                     if (completed) {
                         if (expanded) expandedAgentProcessGroups.remove(groupKey)
@@ -10917,6 +11140,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             else -> null
         }
     }
+
+    private fun agentExecutionLoopTimelineText(label: AgentExecutionLoopTimelineLabel): String =
+        getString(when (label) {
+            AgentExecutionLoopTimelineLabel.PLAN -> R.string.agent_loop_timeline_plan
+            AgentExecutionLoopTimelineLabel.ACT -> R.string.agent_loop_timeline_act
+            AgentExecutionLoopTimelineLabel.OBSERVE -> R.string.agent_loop_timeline_observe
+            AgentExecutionLoopTimelineLabel.REPLAN -> R.string.agent_loop_timeline_replan
+            AgentExecutionLoopTimelineLabel.VERIFY -> R.string.agent_loop_timeline_verify
+            AgentExecutionLoopTimelineLabel.FINALIZE -> R.string.agent_loop_timeline_finalize
+            AgentExecutionLoopTimelineLabel.LEARN -> R.string.agent_loop_timeline_learn
+            AgentExecutionLoopTimelineLabel.WAITING_CONFIRMATION ->
+                R.string.agent_loop_timeline_waiting_confirmation
+            AgentExecutionLoopTimelineLabel.WAITING_RESPONSE ->
+                R.string.agent_loop_timeline_waiting_response
+            AgentExecutionLoopTimelineLabel.PAUSED -> R.string.agent_loop_timeline_paused
+            AgentExecutionLoopTimelineLabel.BLOCKED -> R.string.agent_loop_timeline_blocked
+            AgentExecutionLoopTimelineLabel.FAILED -> R.string.agent_loop_timeline_failed
+            AgentExecutionLoopTimelineLabel.CANCELLED -> R.string.agent_loop_timeline_cancelled
+        })
 
     private fun auditDetailValue(detail: String, key: String): String = detail
         .split(';')
