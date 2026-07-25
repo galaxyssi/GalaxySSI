@@ -269,7 +269,6 @@ if (
   || !sidecarMainSource.includes(".calculateSignature(")
   || !backendSignalClient.includes("def sign_signal_identity(")
   || !backendAgentReputation.includes("class AgentReputationLedger")
-  || !packager.includes('"agent_reputation_ledger.py"')
 ) {
   throw new Error("Desktop package must include signed Agent reputation receipts");
 }
@@ -354,12 +353,13 @@ for (const requiredBackendCode of [
   }
 }
 
-if (!packager.includes("\"api_response.py\"")) {
-  throw new Error("Packaged Desktop backend must include api_response.py");
-}
-for (const requiredFile of ["link_protocol.py", "link_delivery.py", "task_workspace.py", "desktop_agent_loop.py", "desktop_control.py", "desktop_file_tools.py", "desktop_memory.py", "desktop_mcp.py", "desktop_native_tools.py", "desktop_runtime.py", "desktop_skills.py", "desktop_super_agent.py"]) {
-  if (!packager.includes(`"${requiredFile}"`)) {
-    throw new Error(`Packaged Desktop backend must include ${requiredFile}`);
+for (const packageDiscoveryContract of [
+  "fs.readdirSync(backendSrc, { withFileTypes: true })",
+  'entry.name.endsWith(".py")',
+  '!entry.name.startsWith("test_")'
+]) {
+  if (!packager.includes(packageDiscoveryContract)) {
+    throw new Error(`Packaged Desktop backend auto-discovery is incomplete: ${packageDiscoveryContract}`);
   }
 }
 
@@ -399,7 +399,7 @@ for (const runtimeIntegration of [
   [preload, "getRuntimeDiagnostics: (refresh = false)"],
   [html, 'id="runtimeManagerList"'],
   [workspaceRenderer, "refreshRuntimeManager"],
-  [packager, '"desktop_runtime.py"']
+  [packager, "fs.readdirSync(backendSrc, { withFileTypes: true })"]
 ]) {
   if (!runtimeIntegration[0].includes(runtimeIntegration[1])) {
     throw new Error(`Desktop runtime manager integration missing: ${runtimeIntegration[1]}`);

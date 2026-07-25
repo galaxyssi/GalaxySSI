@@ -30,43 +30,11 @@ const sidecarRuntimeDir = path.join(sidecarDir, "build", "install", sidecarRunti
 process.on("exit", releaseLock);
 
 const backendFiles = [
-  "api_response.py",
-  "agent_config.py",
-  "agent_gateway.py",
-  "agent_reputation_ledger.py",
-  "agent_task_manager.py",
-  "agent_task_store.py",
-  "backend_instance_lock.py",
-  "codex_app_server.py",
-  "conversation_context.py",
-  "custom_agent_stdio.py",
-  "desktop_agent_adapters.py",
-  "desktop_agent_loop.py",
-  "desktop_control.py",
-  "desktop_file_tools.py",
-  "desktop_memory.py",
-  "desktop_mcp.py",
-  "desktop_native_tools.py",
-  "desktop_runtime.py",
-  "desktop_skills.py",
-  "desktop_super_agent.py",
-  "file_server.py",
-  "link_delivery.py",
-  "link_protocol.py",
-  "main.py",
-  "mcp_agent_wrapper.py",
-  "models.py",
-  "mqtt_bridge.py",
-  "pairing_state.py",
-  "phone_tool_broker.py",
-  "push_auth.py",
-  "requirements.txt",
-  "response_policy.py",
-  "rich_output.py",
-  "signalasi_client.py",
-  "signalasi_notify.py",
-  "stt_bridge.py",
-  "task_workspace.py"
+  ...fs.readdirSync(backendSrc, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".py") && !entry.name.startsWith("test_"))
+    .map((entry) => entry.name)
+    .sort(),
+  "requirements.txt"
 ];
 
 function copyRecursive(src, dest, options = {}) {
