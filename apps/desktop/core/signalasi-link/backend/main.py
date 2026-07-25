@@ -485,6 +485,14 @@ def api_desktop_native_tools(request: Request):
     return desktop_native_tool_registry().manifest()
 
 
+@app.get("/api/desktop-runtime")
+def api_desktop_runtime(request: Request, refresh: bool = Query(False)):
+    require_loopback(request)
+    from desktop_runtime import desktop_runtime_manager
+
+    return desktop_runtime_manager().snapshot(refresh=refresh)
+
+
 @app.post("/api/desktop-tools/invoke")
 def api_invoke_desktop_native_tool(req: DesktopNativeToolInvokeReq, request: Request):
     require_loopback(request)

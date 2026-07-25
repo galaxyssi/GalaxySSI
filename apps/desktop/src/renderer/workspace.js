@@ -43,6 +43,7 @@ const state = {
   memory: { memories: [], stats: {} },
   skills: [],
   mcp: [],
+  runtime: { summary: {}, runtimes: [], error: "" },
   tasks: [],
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
@@ -1048,6 +1049,55 @@ async function runDiagnostics() {
   }
 }
 
+function runtimeStatusLabel(status) {
+  if (status === "ready") return "Ready";
+  if (status === "partial") return "Partial";
+  return "Missing";
+}
+
+function renderRuntimeManager() {
+  const summary = state.runtime?.summary || {};
+  const rows = Array.isArray(state.runtime?.runtimes) ? state.runtime.runtimes : [];
+  const summaryNode = $("#runtimeManagerSummary");
+  if (state.runtime?.error) {
+    summaryNode.textContent = state.runtime.error;
+  } else if (rows.length) {
+    summaryNode.textContent = t("{ready} ready · {partial} partial · {missing} missing", {
+      ready: Number(summary.ready || 0),
+      partial: Number(summary.partial || 0),
+      missing: Number(summary.missing || 0)
+    });
+  } else {
+    summaryNode.textContent = t("Runtime inventory has not been checked.");
+  }
+  $("#runtimeManagerList").innerHTML = rows.length ? rows.map((runtime) => {
+    const status = String(runtime.status || "missing");
+    const detail = runtime.version
+      || (runtime.missing_components || []).map((item) => t("Missing {component}", { component: item })).join(", ")
+      || runtime.source
+      || "";
+    return `<article class="runtime-row">
+      <div><strong>${escapeHtml(runtime.title || runtime.id)}</strong><small title="${escapeHtml(detail)}">${escapeHtml(detail)}</small></div>
+      <span class="state-badge ${status === "ready" ? "ok" : status === "missing" ? "bad" : ""}">${escapeHtml(t(runtimeStatusLabel(status)))}</span>
+    </article>`;
+  }).join("") : "";
+}
+
+async function refreshRuntimeManager(refresh = false) {
+  const button = $("#refreshRuntimeButton");
+  button.disabled = true;
+  try {
+    const diagnostics = await window.signalasi.getRuntimeDiagnostics(refresh);
+    state.runtime = diagnostics.managedRuntime || { summary: {}, runtimes: [], error: "" };
+    renderRuntimeManager();
+  } catch (error) {
+    state.runtime = { summary: {}, runtimes: [], error: error.message || String(error) };
+    renderRuntimeManager();
+  } finally {
+    button.disabled = false;
+  }
+}
+
 const PANEL_META = {
   agents: ["Agents", "Private agents and local execution engines"],
   capabilities: ["Capabilities", "Long-term memory, Skills, and MCP"],
@@ -1069,7 +1119,9 @@ async function openPanel(name) {
   if (name === "gateway") { await refreshGateway(); await loadPairingFrame(); }
   if (name === "computer") await refreshDesktopTools();
   if (name === "capabilities") await refreshCapabilities();
-  if (name === "settings") { await refreshBackend(); await refreshAgents(); }
+  if (name === "settings") {
+    await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false)]);
+  }
 }
 
 function closePanel() {
@@ -1286,6 +1338,7 @@ function bindEvents() {
     }
   });
   $("#runDiagnosticsButton").addEventListener("click", runDiagnostics);
+  $("#refreshRuntimeButton").addEventListener("click", () => refreshRuntimeManager(true));
   $("#languageSelect").addEventListener("change", (event) => setLanguage(event.target.value));
   $("#workspaceMenuButton").addEventListener("click", () => { $("#workspaceMenu").hidden = !$("#workspaceMenu").hidden; });
   $("#cancelRunningTask").addEventListener("click", cancelRunningTask);

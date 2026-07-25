@@ -24,6 +24,7 @@ from desktop_native_tools import (
     HOST_FILE_SEARCH,
     OFFICE_INSPECT,
     PROCESS_LIST,
+    RUNTIME_STATUS,
     SYSTEM_STATUS,
     WEB_FETCH,
     DesktopNativeToolRegistry,
@@ -706,6 +707,16 @@ class DesktopSuperAgent:
         if any(term in normalized for term in system_terms):
             calls.append((SYSTEM_STATUS, {}, "Reading computer status"))
             return calls, "system"
+        runtime_terms = (
+            "runtime status", "installed runtimes", "available runtimes", "toolchain status",
+            "which languages can run", "python installed", "node installed", "ffmpeg installed",
+            "\u8fd0\u884c\u65f6\u72b6\u6001", "\u8fd0\u884c\u73af\u5883", "\u53ef\u7528\u8fd0\u884c\u65f6",
+            "\u5de5\u5177\u94fe", "\u80fd\u8dd1\u54ea\u4e9b\u8bed\u8a00", "\u662f\u5426\u5b89\u88c5python",
+            "\u662f\u5426\u5b89\u88c5node", "\u662f\u5426\u5b89\u88c5ffmpeg",
+        )
+        if any(term in normalized for term in runtime_terms):
+            calls.append((RUNTIME_STATUS, {"refresh": True}, "Checking Desktop runtimes"))
+            return calls, "runtime"
 
         url_match = re.search(r"https?://[^\s<>\]\[\"']+", str(prompt or ""), re.IGNORECASE)
         if url_match:
@@ -927,6 +938,26 @@ class DesktopSuperAgent:
             heading = f"\u5f53\u524d\u8bfb\u53d6\u5230 {int(output.get('count') or len(rows))} \u4e2a\u8fdb\u7a0b:" if chinese else f"Found {int(output.get('count') or len(rows))} processes:"
             body = "\n".join(f"- {item.get('name')} (PID {item.get('pid')})" for item in rows)
             return f"{heading}\n\n{body}"
+        if kind == "runtime":
+            rows = list(output.get("runtimes") or [])
+            ready = [item for item in rows if item.get("status") == "ready"]
+            partial = [item for item in rows if item.get("status") == "partial"]
+            missing = [item for item in rows if item.get("status") == "missing"]
+            heading = (
+                f"\u8fd9\u53f0\u7535\u8111\u6709 {len(ready)} \u4e2a\u8fd0\u884c\u65f6\u5df2\u5c31\u7eea\u3002"
+                if chinese else
+                f"{len(ready)} Desktop runtimes are ready."
+            )
+            available = "\n".join(
+                f"- {item.get('title')}: {item.get('version') or item.get('source') or 'ready'}"
+                for item in ready + partial
+            )
+            unavailable = ", ".join(str(item.get("title") or item.get("id")) for item in missing)
+            missing_text = (
+                f"\n\n\u5c1a\u672a\u5c31\u7eea\uff1a{unavailable}" if chinese and unavailable else
+                f"\n\nNot ready: {unavailable}" if unavailable else ""
+            )
+            return f"{heading}\n\n{available}{missing_text}".strip()
         if kind == "files":
             rows = list(output.get("entries") or [])
             heading = "\u5f53\u524d\u4efb\u52a1\u6587\u4ef6:" if chinese else "Current task files:"

@@ -47,6 +47,7 @@ const backendFiles = [
   "desktop_memory.py",
   "desktop_mcp.py",
   "desktop_native_tools.py",
+  "desktop_runtime.py",
   "desktop_skills.py",
   "desktop_super_agent.py",
   "file_server.py",

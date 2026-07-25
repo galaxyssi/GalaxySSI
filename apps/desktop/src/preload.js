@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("signalasi", {
   startBackend: () => ipcRenderer.invoke("backend:start"),
   backendStatus: () => ipcRenderer.invoke("backend:status"),
-  getRuntimeDiagnostics: () => ipcRenderer.invoke("runtime:diagnostics"),
+  getRuntimeDiagnostics: (refresh = false) => ipcRenderer.invoke("runtime:diagnostics", refresh),
   getPairingStatus: () => ipcRenderer.invoke("pairing:status"),
   getPairingQr: () => ipcRenderer.invoke("pairing:qr"),
   clearPairing: (clientRouteId = "") => ipcRenderer.invoke("pairing:clear", clientRouteId),
