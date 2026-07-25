@@ -24,10 +24,25 @@ object AgentTranscriptRenderPolicy {
                 appendFromIndex = 0
             )
         }
-        val replacements = renderedIds.indices.filter { index ->
+        val signatureReplacements = renderedIds.indices.filter { index ->
             val entry = incoming[index]
             renderedSignatures[entry.id] != signature(entry)
         }
+        val changedAssistantGroups = incoming.withIndex()
+            .filter { (index, entry) ->
+                entry.role == AgentTranscriptRole.ASSISTANT &&
+                    (index >= renderedIds.size || index in signatureReplacements)
+            }
+            .map { (_, entry) -> AgentTranscriptPresentationPolicy.processGroupKey(entry) }
+            .toSet()
+        val processCompletionReplacements = renderedIds.indices.filter { index ->
+            val entry = incoming[index]
+            entry.role == AgentTranscriptRole.PROCESS &&
+                AgentTranscriptPresentationPolicy.processGroupKey(entry) in changedAssistantGroups
+        }
+        val replacements = (signatureReplacements + processCompletionReplacements)
+            .distinct()
+            .sorted()
         return AgentTranscriptRenderDiff(
             reset = false,
             replacementIndices = replacements,

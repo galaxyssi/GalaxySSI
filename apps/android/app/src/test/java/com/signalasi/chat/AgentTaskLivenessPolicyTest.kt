@@ -93,11 +93,18 @@ class AgentTaskLivenessPolicyTest {
         val entries = listOf(
             transcript(AgentTranscriptRole.USER, "", "turn"),
             transcript(AgentTranscriptRole.PROCESS, "task-watchdog:turn", "turn"),
-            transcript(AgentTranscriptRole.ASSISTANT, "result:plan:action:hash", "turn")
+            transcript(AgentTranscriptRole.ASSISTANT, "result:plan:action:hash", "turn"),
+            transcript(
+                role = AgentTranscriptRole.ASSISTANT,
+                dedupeKey = "assistant-final:turn:other-turn",
+                turnId = "other-turn",
+                taskId = "turn"
+            )
         )
 
         assertTrue(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries, "turn"))
-        assertFalse(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries, "other-turn"))
+        assertTrue(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries, "other-turn"))
+        assertFalse(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries, "unrelated-turn"))
     }
 
     @Test
@@ -131,7 +138,12 @@ class AgentTaskLivenessPolicyTest {
         timestampMillis = timestamp
     )
 
-    private fun transcript(role: AgentTranscriptRole, dedupeKey: String, turnId: String) =
+    private fun transcript(
+        role: AgentTranscriptRole,
+        dedupeKey: String,
+        turnId: String,
+        taskId: String = turnId
+    ) =
         AgentTranscriptEntry(
             id = "$role-$dedupeKey",
             role = role,
@@ -140,6 +152,6 @@ class AgentTaskLivenessPolicyTest {
             dedupeKey = dedupeKey,
             conversationId = "conversation",
             turnId = turnId,
-            taskId = turnId
+            taskId = taskId
         )
 }

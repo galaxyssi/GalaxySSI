@@ -44,4 +44,54 @@ class AgentFinalResponseIdentityTest {
             AgentFinalResponseIdentity.dedupeKey("", taskId = " task-1 ")
         )
     }
+
+    @Test
+    fun `missing explicit turn resolves from the persisted task`() {
+        assertEquals(
+            "turn-1",
+            AgentFinalResponseIdentity.resolveTurnId("", "task-1") { taskId ->
+                "turn-1".takeIf { taskId == "task-1" }
+            }
+        )
+    }
+
+    @Test
+    fun `duplicate final responses retain the canonical turn entry`() {
+        val canonical = finalEntry(
+            id = "canonical",
+            turnId = "turn-1",
+            taskId = "task-1",
+            dedupeKey = "assistant-final:turn:turn-1",
+            timestampMillis = 1L
+        )
+        val lateDuplicate = finalEntry(
+            id = "late",
+            turnId = "",
+            taskId = "task-1",
+            dedupeKey = "assistant-final:task:task-1",
+            timestampMillis = 2L
+        )
+
+        assertEquals(
+            listOf(canonical),
+            AgentFinalResponseIdentity.coalesce(listOf(canonical, lateDuplicate))
+        )
+    }
+
+    private fun finalEntry(
+        id: String,
+        turnId: String,
+        taskId: String,
+        dedupeKey: String,
+        timestampMillis: Long
+    ) = AgentTranscriptEntry(
+        id = id,
+        role = AgentTranscriptRole.ASSISTANT,
+        text = "CODEX_OK",
+        timestampMillis = timestampMillis,
+        dedupeKey = dedupeKey,
+        conversationId = "conversation",
+        turnId = turnId,
+        taskId = taskId
+    )
 }

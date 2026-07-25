@@ -32,6 +32,7 @@ fun interface AgentTaskLivenessListener {
 
 internal object AgentTaskTerminalReplyPolicy {
     private val terminalDedupePrefixes = listOf(
+        "assistant-final:",
         "result:",
         "direct-system:",
         "fast-local:",
@@ -43,7 +44,7 @@ internal object AgentTaskTerminalReplyPolicy {
         val cleanTurnId = turnId.trim()
         if (cleanTurnId.isBlank()) return false
         return entries.any { entry ->
-            entry.turnId == cleanTurnId &&
+            (entry.turnId == cleanTurnId || entry.taskId == cleanTurnId) &&
                 entry.role == AgentTranscriptRole.ASSISTANT &&
                 terminalDedupePrefixes.any(entry.dedupeKey::startsWith)
         }
