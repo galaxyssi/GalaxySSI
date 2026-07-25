@@ -32,6 +32,8 @@ from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from desktop_runtime import DesktopRuntimeManager, desktop_runtime_manager
+
 
 CONTRACT_VERSION = "signalasi.desktop-native-tools/1.0"
 TOOL_VERSION = "1.0.0"
@@ -47,6 +49,7 @@ MAX_RECEIPTS = 2_048
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
 
 SYSTEM_STATUS = "signalasi.desktop.windows.system.status"
+RUNTIME_STATUS = "signalasi.desktop.runtime.status"
 PROCESS_LIST = "signalasi.desktop.windows.process.list"
 APP_LIST = "signalasi.desktop.windows.app.list"
 APP_LAUNCH = "signalasi.desktop.windows.app.launch"
@@ -254,6 +257,13 @@ def _specs() -> tuple[DesktopToolSpec, ...]:
             _object_schema(),
             capabilities=("windows.status.read",),
             availability=_windows_availability,
+        ),
+        DesktopToolSpec(
+            RUNTIME_STATUS,
+            "Read Desktop runtime status",
+            "Reads the verified language, media, automation, archive, and voice runtimes available to this Desktop.",
+            _object_schema({"refresh": {"type": "boolean"}}),
+            capabilities=("desktop.runtime.read",),
         ),
         DesktopToolSpec(
             PROCESS_LIST,
@@ -558,6 +568,7 @@ class DesktopNativeToolRegistry:
         app_catalog: Callable[[], list[dict[str, str]]] | None = None,
         app_launcher: Callable[[dict[str, str]], None] | None = None,
         browser_opener: Callable[[str], bool] | None = None,
+        runtime_manager: DesktopRuntimeManager | None = None,
     ) -> None:
         root = Path(state_root) if state_root else Path(
             os.environ.get("SIGNALASI_STATE_DIR") or Path(os.environ.get("APPDATA") or Path.home()) / "SignalASI"
@@ -575,9 +586,11 @@ class DesktopNativeToolRegistry:
         self.app_catalog = app_catalog or self._windows_app_catalog
         self.app_launcher = app_launcher or self._launch_catalog_entry
         self.browser_opener = browser_opener or webbrowser.open
+        self.runtime_manager = runtime_manager or desktop_runtime_manager()
         self.specs = {spec.tool_id: spec for spec in _specs()}
         self.handlers: dict[str, Callable[[dict[str, Any], dict[str, Any]], DesktopToolExecution]] = {
             SYSTEM_STATUS: self._system_status,
+            RUNTIME_STATUS: self._runtime_status,
             PROCESS_LIST: self._process_list,
             APP_LIST: self._app_list,
             APP_LAUNCH: self._app_launch,
@@ -1250,6 +1263,19 @@ class DesktopNativeToolRegistry:
             verification_evidence={"exit_code": completed.returncode},
         )
 
+    def _runtime_status(self, arguments: dict[str, Any], _context: dict[str, Any]) -> DesktopToolExecution:
+        snapshot = self.runtime_manager.snapshot(refresh=bool(arguments.get("refresh", False)))
+        summary = dict(snapshot.get("summary") or {})
+        return DesktopToolExecution(
+            snapshot,
+            f"Found {summary.get('ready', 0)} ready Desktop runtimes",
+            verification_evidence={
+                "contract_version": snapshot.get("contract_version"),
+                "checked_at_epoch_ms": snapshot.get("checked_at_epoch_ms"),
+                "summary": summary,
+            },
+        )
+
     def _office_inspect(self, arguments: dict[str, Any], _context: dict[str, Any]) -> DesktopToolExecution:
         root, source = self._workspace_path(arguments["workspace_id"], arguments["path"])
         maximum = int(arguments.get("max_items") or 100)
@@ -1507,7 +1533,7 @@ try {
         }
         if token.casefold() not in allowlist | configured:
             raise DesktopNativeToolError("executable_not_allowlisted", f"Desktop executable is not allowlisted: {token}")
-        resolved = shutil.which(token)
+        resolved = self.runtime_manager.resolve_executable(token) or shutil.which(token)
         if not resolved:
             raise DesktopNativeToolError("executable_not_found", f"Desktop executable is not installed: {token}", retryable=True)
         return resolved

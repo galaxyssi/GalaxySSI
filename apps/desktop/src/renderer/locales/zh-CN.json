@@ -405,4 +405,10 @@
 , "Connected": "已连接"
 , "Cloud API is ready.": "云端 API 已可用。"
 , "Language, cloud API, commands, and diagnostics": "语言、云端 API、Agent 命令和诊断"
+, "Desktop runtimes": "桌面运行环境"
+, "Runtime inventory has not been checked.": "尚未检查运行环境"
+, "{ready} ready · {partial} partial · {missing} missing": "{ready} 项就绪 · {partial} 项不完整 · {missing} 项缺失"
+, "Partial": "部分可用"
+, "Missing": "缺失"
+, "Missing {component}": "缺少 {component}"
 }

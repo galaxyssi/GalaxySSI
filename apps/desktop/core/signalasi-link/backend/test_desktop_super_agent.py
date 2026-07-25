@@ -216,6 +216,41 @@ class DesktopSuperAgentTest(unittest.TestCase):
             for event in manager.events
         ))
 
+    def test_reads_runtime_inventory_without_external_agent(self):
+        registry = FakeRegistry({
+            "signalasi.desktop.runtime.status": succeeded({
+                "summary": {"ready": 2, "partial": 0, "missing": 1, "total": 3},
+                "runtimes": [
+                    {"id": "python", "title": "Python", "status": "ready", "version": "Python 3.12"},
+                    {"id": "ffmpeg", "title": "FFmpeg", "status": "ready", "version": "FFmpeg 7"},
+                    {"id": "rust", "title": "Rust", "status": "missing", "version": ""},
+                ],
+            }),
+        })
+        coordinator = DesktopSuperAgent(
+            task_manager=FakeTaskManager(),
+            diagnostics=lambda quick=True: {"agents": []},
+            deliver=lambda *args, **kwargs: self.fail("Runtime status should not call an external Agent"),
+            registry=registry,
+            memory=FakeMemory(),
+            skills=FakeSkills(),
+            mcp=FakeMcp(),
+        )
+
+        outcome = coordinator.run(
+            task_id="task-runtime",
+            conversation_id="conversation-runtime",
+            prompt="Show available runtimes and toolchain status",
+            compiled_prompt="compiled",
+            attachments=[],
+        )
+
+        self.assertIn("2 Desktop runtimes are ready", outcome.reply)
+        self.assertIn("Python 3.12", outcome.reply)
+        self.assertIn("Not ready: Rust", outcome.reply)
+        self.assertEqual("signalasi.desktop.runtime.status", registry.calls[0][0])
+        self.assertEqual({"refresh": True}, registry.calls[0][1])
+
     def test_inspects_attachment_then_delegates_with_observation(self):
         manager = FakeTaskManager()
         registry = FakeRegistry({

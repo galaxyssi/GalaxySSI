@@ -19,6 +19,7 @@ const required = [
   "core/signalasi-link/backend/desktop_super_agent.py",
   "core/signalasi-link/backend/desktop_memory.py",
   "core/signalasi-link/backend/desktop_mcp.py",
+  "core/signalasi-link/backend/desktop_runtime.py",
   "core/signalasi-link/backend/desktop_skills.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "scripts/package-win.js",
@@ -121,6 +122,7 @@ const backendDesktopAgentLoop = fs.readFileSync(path.join(backendDir, "desktop_a
 const backendDesktopNativeTools = fs.readFileSync(path.join(backendDir, "desktop_native_tools.py"), "utf8");
 const backendDesktopMemory = fs.readFileSync(path.join(backendDir, "desktop_memory.py"), "utf8");
 const backendDesktopMcp = fs.readFileSync(path.join(backendDir, "desktop_mcp.py"), "utf8");
+const backendDesktopRuntime = fs.readFileSync(path.join(backendDir, "desktop_runtime.py"), "utf8");
 const backendDesktopSkills = fs.readFileSync(path.join(backendDir, "desktop_skills.py"), "utf8");
 const backendDesktopSuperAgent = fs.readFileSync(path.join(backendDir, "desktop_super_agent.py"), "utf8");
 const backendMcpWrapper = fs.readFileSync(path.join(backendDir, "mcp_agent_wrapper.py"), "utf8");
@@ -355,7 +357,7 @@ for (const requiredBackendCode of [
 if (!packager.includes("\"api_response.py\"")) {
   throw new Error("Packaged Desktop backend must include api_response.py");
 }
-for (const requiredFile of ["link_protocol.py", "link_delivery.py", "task_workspace.py", "desktop_agent_loop.py", "desktop_control.py", "desktop_file_tools.py", "desktop_memory.py", "desktop_mcp.py", "desktop_native_tools.py", "desktop_skills.py", "desktop_super_agent.py"]) {
+for (const requiredFile of ["link_protocol.py", "link_delivery.py", "task_workspace.py", "desktop_agent_loop.py", "desktop_control.py", "desktop_file_tools.py", "desktop_memory.py", "desktop_mcp.py", "desktop_native_tools.py", "desktop_runtime.py", "desktop_skills.py", "desktop_super_agent.py"]) {
   if (!packager.includes(`"${requiredFile}"`)) {
     throw new Error(`Packaged Desktop backend must include ${requiredFile}`);
   }
@@ -368,11 +370,39 @@ for (const capabilityContract of [
   [backendDesktopControl, "class DesktopControlManager"],
   [backendDesktopMemory, "class DesktopMemoryStore"],
   [backendDesktopMcp, "class DesktopMcpRegistry"],
+  [backendDesktopRuntime, "class DesktopRuntimeManager"],
   [backendDesktopSkills, "class DesktopSkillRegistry"],
   [backendDesktopSuperAgent, "Using relevant long-term memory"]
 ]) {
   if (!capabilityContract[0].includes(capabilityContract[1])) {
     throw new Error(`Desktop super-agent capability is incomplete: ${capabilityContract[1]}`);
+  }
+}
+
+for (const runtimeContract of [
+  "signalasi.desktop-runtime/1.0",
+  "code.python.run",
+  "media.video.process",
+  "browser.automate",
+  "speech.transcribe",
+  "speech.synthesize",
+  "def resolve_executable("
+]) {
+  if (!backendDesktopRuntime.includes(runtimeContract)) {
+    throw new Error(`Desktop runtime manager contract missing: ${runtimeContract}`);
+  }
+}
+for (const runtimeIntegration of [
+  [backendMain, '@app.get("/api/desktop-runtime")'],
+  [backendDesktopNativeTools, "signalasi.desktop.runtime.status"],
+  [main, "/api/desktop-runtime?refresh="],
+  [preload, "getRuntimeDiagnostics: (refresh = false)"],
+  [html, 'id="runtimeManagerList"'],
+  [workspaceRenderer, "refreshRuntimeManager"],
+  [packager, '"desktop_runtime.py"']
+]) {
+  if (!runtimeIntegration[0].includes(runtimeIntegration[1])) {
+    throw new Error(`Desktop runtime manager integration missing: ${runtimeIntegration[1]}`);
   }
 }
 

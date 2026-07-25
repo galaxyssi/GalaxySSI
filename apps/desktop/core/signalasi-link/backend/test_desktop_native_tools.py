@@ -19,6 +19,7 @@ from desktop_native_tools import (
     OFFICE_CONVERT,
     OFFICE_INSPECT,
     PROCESS_LIST,
+    RUNTIME_STATUS,
     SYSTEM_STATUS,
     TERMINAL_RUN,
     WEB_FETCH,
@@ -73,7 +74,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
 
         self.assertEqual("signalasi.desktop-native-tools/1.0", manifest["contract_version"])
         for tool_id in (
-            SYSTEM_STATUS, PROCESS_LIST, FILE_LIST, FILE_READ_TEXT, FILE_WRITE_TEXT,
+            SYSTEM_STATUS, RUNTIME_STATUS, PROCESS_LIST, FILE_LIST, FILE_READ_TEXT, FILE_WRITE_TEXT,
             FILE_SHA256, ARCHIVE_CREATE, TERMINAL_RUN, OFFICE_INSPECT, OFFICE_CONVERT,
             APP_LIST, APP_LAUNCH, HOST_FILE_SEARCH, BROWSER_OPEN, WEB_FETCH,
         ):

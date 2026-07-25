@@ -541,6 +541,44 @@ button:disabled { cursor: default; opacity: 0.48; }
 .state-badge { margin-left: auto; padding: 4px 7px; border-radius: 5px; background: #eef1f3; color: #68717a; font-size: 8px; }
 .state-badge.ok { background: var(--green-soft); color: var(--green-ink); }
 .state-badge.bad { background: var(--red-soft); color: var(--red); }
+.compact-button { min-height: 25px; padding: 0 8px; font-size: 8px; }
+.runtime-manager-summary {
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 8px;
+}
+.runtime-manager-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.runtime-row {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.runtime-row:last-child { border-bottom: 0; }
+.runtime-row strong,
+.runtime-row small { display: block; }
+.runtime-row strong { color: #30373d; font-size: 9px; }
+.runtime-row small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.runtime-row .state-badge { margin-left: 0; }
 
 .toast { position: fixed; z-index: 60; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(520px, 80vw); padding: 9px 12px; border-radius: 6px; background: #24292e; color: #fff; box-shadow: var(--shadow); font-size: 9px; }
 

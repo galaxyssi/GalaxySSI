@@ -66,6 +66,7 @@ async function runUiSmoke() {
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
+  const runtimePath = path.join(outDir, "desktop-runtimes.png");
   try {
     fs.mkdirSync(outDir, { recursive: true });
     let state;
@@ -224,6 +225,30 @@ async function runUiSmoke() {
       throw new Error(`Settings drawer did not expose cloud API configuration: ${JSON.stringify(settingsState)}`);
     }
     await captureSmokeScreenshot(settingsPath);
+    const runtimeState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          if (document.querySelectorAll("#runtimeManagerList .runtime-row").length >= 10) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        const target = document.querySelector("#runtimeManagerList");
+        const panel = document.querySelector("#settingsPanel");
+        if (target && panel) {
+          panel.scrollTop = Math.max(0, target.offsetTop - panel.clientHeight / 3);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        return {
+          rows: document.querySelectorAll("#runtimeManagerList .runtime-row").length,
+          summary: document.querySelector("#runtimeManagerSummary")?.textContent || "",
+          statuses: Array.from(document.querySelectorAll("#runtimeManagerList .state-badge")).map((node) => node.textContent || ""),
+          scrollTop: panel?.scrollTop || 0
+        };
+      })()
+    `);
+    if (runtimeState.rows < 10 || !runtimeState.summary.trim() || runtimeState.statuses.length !== runtimeState.rows || runtimeState.scrollTop < 1) {
+      throw new Error(`Desktop runtime manager did not render verified inventory: ${JSON.stringify(runtimeState)}`);
+    }
+    await captureSmokeScreenshot(runtimePath);
     const gatewayState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         document.querySelector('[data-open-panel="gateway"]')?.click();
@@ -253,6 +278,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
+    console.log(`[ui-smoke] screenshot: ${runtimePath}`);
     app.exit(0);
   } catch (error) {
     console.error(`[ui-smoke] failed: ${error.stack || error.message || error}`);
@@ -462,7 +488,7 @@ function loadLocale(language) {
   }
 }
 
-async function runtimeDiagnostics() {
+async function runtimeDiagnostics(refresh = false) {
   const python = findPython();
   const pythonVersion = await runCommand(python, ["--version"], 5000);
   const pythonDeps = pythonVersion.ok
@@ -470,6 +496,25 @@ async function runtimeDiagnostics() {
     : { ok: false, code: 1, output: "Python not found" };
   const sidecarRuntime = path.join(BACKEND_DIR, "signal_sidecar", "build", "install", "signalasi-link-sidecar", "bin", "signalasi-link-sidecar.bat");
   const packaged = Boolean(app.isPackaged);
+  let managedRuntime = {
+    contract_version: "signalasi.desktop-runtime/1.0",
+    summary: { ready: 0, partial: 0, missing: 0, total: 0 },
+    capabilities: [],
+    runtimes: [],
+    error: ""
+  };
+  try {
+    const status = await startBackend();
+    if (!status.running) {
+      managedRuntime.error = status.error || "Desktop backend is unavailable";
+    } else {
+      const response = await fetch(`${BACKEND_ORIGIN}/api/desktop-runtime?refresh=${refresh ? "true" : "false"}`);
+      if (!response.ok) throw new Error(`Runtime inventory returned HTTP ${response.status}`);
+      managedRuntime = await response.json();
+    }
+  } catch (error) {
+    managedRuntime.error = error.message || String(error);
+  }
   return {
     app: {
       packaged,
@@ -490,6 +535,7 @@ async function runtimeDiagnostics() {
       depsOk: pythonDeps.ok,
       depsOutput: pythonDeps.output
     },
+    managedRuntime,
     installHint: "If Python deps are missing, run install-backend-deps.bat from the portable package or pip install -r backend/requirements.txt."
   };
 }
@@ -846,7 +892,7 @@ async function revealTaskWorkspace(taskId) {
 
 ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
-ipcMain.handle("runtime:diagnostics", runtimeDiagnostics);
+ipcMain.handle("runtime:diagnostics", (_event, refresh = false) => runtimeDiagnostics(Boolean(refresh)));
 ipcMain.handle("pairing:status", getPairingStatus);
 ipcMain.handle("pairing:qr", getPairingQr);
 ipcMain.handle("pairing:clear", (_event, clientRouteId = "") => clearPairing(clientRouteId));
