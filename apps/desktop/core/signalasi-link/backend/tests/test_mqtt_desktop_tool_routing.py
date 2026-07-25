@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import desktop_native_tools
 import mqtt_bridge
+from pairing_access import grant_for_executor
 
 
 class FakeRegistry:
@@ -168,6 +169,28 @@ class MqttDesktopToolRoutingTests(unittest.TestCase):
             )
 
         self.assertEqual([], self.registry.calls)
+
+    def test_restricted_pairing_cannot_invoke_desktop_native_tools(self) -> None:
+        paired = {
+            "signal_name": "signalasi:phone-a",
+            "client_route_id": "route-a",
+            "access": grant_for_executor(False),
+        }
+
+        handled = mqtt_bridge._route_desktop_tool_payload(
+            object(),
+            paired,
+            self.envelope(),
+            self.request(),
+            "control",
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual([], self.registry.calls)
+        self.assertEqual(
+            "desktop_executor_scope_required",
+            self.published[0]["result"]["error"]["code"],
+        )
 
 
 if __name__ == "__main__":

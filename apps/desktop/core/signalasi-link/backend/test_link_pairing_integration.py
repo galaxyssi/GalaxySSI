@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import link_protocol
 import mqtt_bridge
+import pairing_access
 import pairing_state
 
 
@@ -105,6 +106,65 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         pairing_state.revoke_client(first_route)
         self.assertIsNone(pairing_state.get_client(first_route))
         self.assertIsNotNone(pairing_state.get_client(second_route))
+
+    def test_pairing_token_is_the_authority_for_restricted_or_executor_access(self):
+        server = pairing_state.server_route_id()
+        restricted_route = link_protocol.new_route_id()
+        restricted = pairing_state.new_pairing_session(
+            pairing_access.grant_for_executor(False)
+        )
+        restricted_claim = client_claim(
+            restricted["token"],
+            server,
+            restricted_route,
+            b"restricted identity",
+            "Restricted phone",
+        )
+        restricted_claim["pairing_access"] = pairing_access.grant_for_executor(True)
+        mqtt_bridge.on_message(
+            self.mqtt,
+            None,
+            FakeMessage(
+                link_protocol.LinkTopics(server).pairing,
+                link_protocol.encrypt_pairing_claim(
+                    restricted_claim,
+                    restricted["token"],
+                    restricted["secret"],
+                    server,
+                ),
+            ),
+        )
+        stored_restricted = pairing_state.get_client(restricted_route)
+        self.assertEqual(pairing_access.RESTRICTED, stored_restricted["access_profile"])
+        self.assertFalse(pairing_access.has_full_executor(stored_restricted))
+
+        executor_route = link_protocol.new_route_id()
+        executor = pairing_state.new_pairing_session(
+            pairing_access.grant_for_executor(True)
+        )
+        executor_claim = client_claim(
+            executor["token"],
+            server,
+            executor_route,
+            b"executor identity",
+            "Executor phone",
+        )
+        mqtt_bridge.on_message(
+            self.mqtt,
+            None,
+            FakeMessage(
+                link_protocol.LinkTopics(server).pairing,
+                link_protocol.encrypt_pairing_claim(
+                    executor_claim,
+                    executor["token"],
+                    executor["secret"],
+                    server,
+                ),
+            ),
+        )
+        stored_executor = pairing_state.get_client(executor_route)
+        self.assertEqual(pairing_access.DESKTOP_EXECUTOR, stored_executor["access_profile"])
+        self.assertTrue(pairing_access.has_full_executor(stored_executor))
 
     def test_mqtt_reconnect_publishes_one_recovery_presence(self):
         with (

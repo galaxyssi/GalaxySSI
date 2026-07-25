@@ -582,6 +582,8 @@ object AppStore {
                     .put("desktop_id", desktopId)
                     .put("desktop_name", desktopName)
                     .put("desktop_fingerprint", fingerprint)
+                    .put("desktop_access_profile", link.accessProfile)
+                    .put("desktop_access_scopes", JSONArray(link.accessScopes.sorted()))
                     .put("status", "unknown")
                     .put("detail", "Waiting for SignalASI Desktop status")
                     .put("setup", "")
@@ -680,6 +682,18 @@ object AppStore {
         })
         contact.put("identity_fingerprint", fingerprint)
         contact.put("desktop_fingerprint", fingerprint)
+        val link = SignalASILinkProtocol.serverLink(context, desktopId)
+        contact.put(
+            "desktop_access_profile",
+            agent.optString("desktop_access_profile").ifBlank {
+                link?.accessProfile ?: SignalASILinkProtocol.ACCESS_RESTRICTED
+            }
+        )
+        contact.put(
+            "desktop_access_scopes",
+            agent.optJSONArray("desktop_access_scopes")
+                ?: JSONArray(link?.accessScopes?.sorted().orEmpty())
+        )
         contact.put("agent_kind", agent.optString("kind", contact.optString("agent_kind", "custom-cli")))
         val adapter = agent.optJSONObject("adapter") ?: JSONObject()
         val capabilities = agent.optJSONArray("capabilities") ?: adapter.optJSONArray("capabilities") ?: JSONArray()

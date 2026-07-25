@@ -67,9 +67,13 @@ manager = ConnectionManager()
 # ── App ──
 from pathlib import Path
 
-def signalasi_pairing_payload(include_agents: bool = False) -> dict:
+def signalasi_pairing_payload(
+    include_agents: bool = False,
+    grant_desktop_executor: bool = False,
+) -> dict:
     from pairing_state import new_pairing_session, server_route_id
     from link_protocol import LinkTopics, PROTOCOL_NAME, PROTOCOL_VERSION
+    from pairing_access import grant_for_executor
     from signalasi_client import get_signal_verification_payload
 
     payload = get_signal_verification_payload()
@@ -79,12 +83,20 @@ def signalasi_pairing_payload(include_agents: bool = False) -> dict:
     payload["role"] = "server"
     payload["server_route_id"] = route_id
     payload["pairing_topic"] = LinkTopics(route_id).pairing
-    pairing = new_pairing_session()
+    access_grant = grant_for_executor(grant_desktop_executor)
+    pairing = new_pairing_session(access_grant)
     payload["pairing_token"] = pairing["token"]
     payload["pairing_secret"] = pairing["secret"]
+    payload["pairing_access"] = pairing["access"]
     from desktop_control import desktop_control_manager
 
-    control_offer = desktop_control_manager().create_offer(pairing["token"])
+    control_manager = desktop_control_manager()
+    if grant_desktop_executor and not control_manager.settings().get("enabled"):
+        control_manager.update_settings(enabled=True)
+    control_offer = (
+        control_manager.create_offer(pairing["token"])
+        if grant_desktop_executor else None
+    )
     if control_offer is not None:
         payload["desktop_control_authorization"] = control_offer
     if include_agents:
@@ -93,13 +105,15 @@ def signalasi_pairing_payload(include_agents: bool = False) -> dict:
     return payload
 
 
-def signalasi_pairing_qr() -> dict:
+def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
     import base64
     import io
     import qrcode
     from mqtt_bridge import mobile_connector_agents
 
-    payload = signalasi_pairing_payload()
+    payload = signalasi_pairing_payload(
+        grant_desktop_executor=grant_desktop_executor,
+    )
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_L, border=2, box_size=10)
     qr.add_data(json.dumps(payload, ensure_ascii=False, separators=(",", ":")))
     qr.make(fit=True)
@@ -112,6 +126,7 @@ def signalasi_pairing_qr() -> dict:
         "fingerprint": payload["identity_key_sha256"][:16],
         "pairing_type": payload["type"],
         "agent_count": len(mobile_connector_agents()),
+        "pairing_access": payload["pairing_access"],
     }
 
 @asynccontextmanager
@@ -309,15 +324,25 @@ def require_loopback(request: Request) -> None:
 
 
 @app.get("/api/pairing/payload")
-def api_pairing_payload(request: Request):
+def api_pairing_payload(
+    request: Request,
+    desktop_executor: bool = Query(False),
+):
     require_loopback(request)
-    return signalasi_pairing_payload()
+    return signalasi_pairing_payload(
+        grant_desktop_executor=desktop_executor,
+    )
 
 
 @app.get("/api/pairing/qr")
-def api_pairing_qr(request: Request):
+def api_pairing_qr(
+    request: Request,
+    desktop_executor: bool = Query(False),
+):
     require_loopback(request)
-    return signalasi_pairing_qr()
+    return signalasi_pairing_qr(
+        grant_desktop_executor=desktop_executor,
+    )
 
 @app.post("/api/pairing/clear")
 def api_pairing_clear(client_route_id: str = Query("")):

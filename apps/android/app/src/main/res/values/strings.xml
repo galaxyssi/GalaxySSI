@@ -236,6 +236,7 @@
     <string name="desktop_control_screen_content_description">Encrypted desktop screenshot</string>
     <string name="desktop_control_tap_refresh">Refresh the screen to begin</string>
     <string name="desktop_control_authorization_required">Approve this phone on the computer first</string>
+    <string name="desktop_control_repair_executor_required">Re-pair this phone with Start Desktop Executor enabled</string>
     <string name="desktop_control_refresh_screen">Refresh screen</string>
     <string name="desktop_control_refresh_screen_subtitle">Capture a compressed desktop snapshot</string>
     <string name="desktop_control_screen_metadata">%1$dx%2$d · %3$s</string>
@@ -646,6 +647,10 @@
     <string name="pairing_section_after_confirm">After Confirmation</string>
     <string name="pairing_save_trust">Save Trust</string>
     <string name="pairing_save_trust_subtitle">Hermes, Codex, Claude, local models, and custom Agents will appear as contacts</string>
+    <string name="pairing_access_full">Desktop Executor</string>
+    <string name="pairing_access_full_subtitle">Full Desktop tools, control, and external file access without per-action approval</string>
+    <string name="pairing_access_restricted">Restricted Desktop Access</string>
+    <string name="pairing_access_restricted_subtitle">Agent chat and files explicitly attached to the current task only</string>
     <string name="pairing_invalid_identity_qr">Invalid SignalASI identity QR code</string>
     <string name="pairing_contact_request_received">Contact request received: %1$s</string>
     <string name="pairing_invalid_qr">Invalid QR code</string>

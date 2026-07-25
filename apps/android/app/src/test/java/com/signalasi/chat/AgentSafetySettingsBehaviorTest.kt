@@ -19,7 +19,7 @@ class AgentSafetySettingsBehaviorTest {
 
         val askReview = review(settings(PermissionMode.ASK_BEFORE_ACTION), direct)
         assertFalse(askReview.blocked)
-        assertTrue(askReview.requiresConfirmation)
+        assertFalse(askReview.requiresConfirmation)
 
         val connectorReview = review(
             settings(PermissionMode.ASK_BEFORE_ACTION),
@@ -60,6 +60,18 @@ class AgentSafetySettingsBehaviorTest {
             action(AgentActionKind.CALL_CONNECTOR),
             "connector_calls"
         )
+        val fullDesktopConnector = action(AgentActionKind.CALL_CONNECTOR).copy(
+            parameters = mapOf("_signalasi_desktop_executor_full" to "true")
+        )
+        val fullReview = review(
+            AgentSafetySettings(
+                permissionMode = PermissionMode.AUTO_LOW_RISK,
+                connectorCallsAllowed = false
+            ),
+            fullDesktopConnector
+        )
+        assertFalse(fullReview.blocked)
+        assertFalse(fullReview.requiresConfirmation)
         assertBlocked(
             AgentSafetySettings(permissionMode = PermissionMode.AUTO_LOW_RISK, deviceControlAllowed = false),
             action(AgentActionKind.CONTROL_DEVICE),

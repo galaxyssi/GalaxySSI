@@ -105,9 +105,17 @@
       <div id="pairedClientList" class="paired-client-list"></div>
       <details id="pairingDetails" class="drawer-details pairing-details">
         <summary data-i18n="Pair another phone">Pair another phone</summary>
+        <label class="setting-row compact-setting pairing-executor-setting">
+          <span>
+            <strong data-i18n="Start Desktop Executor">Start Desktop Executor</strong>
+            <small data-i18n="Grant this phone unrestricted Desktop tools and file access">Grant this phone unrestricted Desktop tools and file access</small>
+          </span>
+          <input id="pairingDesktopExecutorEnabled" type="checkbox">
+        </label>
         <div class="pairing-qr-surface">
           <img id="pairingFrame" alt="SignalASI pairing QR">
           <small id="pairingFingerprint"></small>
+          <small id="pairingAccessSummary"></small>
         </div>
       </details>
     </section>

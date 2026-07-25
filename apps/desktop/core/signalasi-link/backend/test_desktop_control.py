@@ -121,6 +121,20 @@ class DesktopControlTests(unittest.TestCase):
             )
         self.assertEqual("authorization_offer_invalid", raised.exception.code)
 
+    def test_pairing_qr_can_approve_executor_access_in_the_same_consent_step(self):
+        self.manager.update_settings(enabled=True)
+        offer = self.manager.create_offer("pair-token")
+
+        authorization = self.manager.accept_pairing_offer(
+            offer["token"],
+            "pair-token",
+            self.client,
+            auto_approve=True,
+        )
+
+        self.assertEqual("active", authorization["status"])
+        self.assertGreater(authorization["granted_at"], 0)
+
     def test_offer_is_rejected_if_executor_is_disabled_before_pairing_completes(self):
         self.manager.update_settings(enabled=True)
         offer = self.manager.create_offer("pair-token")

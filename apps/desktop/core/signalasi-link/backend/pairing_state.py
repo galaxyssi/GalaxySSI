@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from link_protocol import LinkTopics, new_route_id, valid_route_id
+from pairing_access import grant_for_executor, normalize_grant
 
 TTL_SECONDS = 10 * 60
 DEFAULT_DATA_DIR = (
@@ -59,7 +60,7 @@ def server_route_id() -> str:
     return str(_read_state()["server_route_id"])
 
 
-def new_pairing_session() -> dict:
+def new_pairing_session(access_grant: dict | None = None) -> dict:
     with _registry_lock:
         now = time.time()
         for token, entry in list(_tokens.items()):
@@ -67,8 +68,15 @@ def new_pairing_session() -> dict:
                 _tokens.pop(token, None)
         token = secrets.token_urlsafe(24)
         secret = secrets.token_urlsafe(32)
-        _tokens[token] = {"created_at": now, "secret": secret}
-        return {"token": token, "secret": secret, "created_at": now, "expires_at": now + TTL_SECONDS}
+        grant = normalize_grant(access_grant or grant_for_executor(False))
+        _tokens[token] = {"created_at": now, "secret": secret, "access": grant}
+        return {
+            "token": token,
+            "secret": secret,
+            "created_at": now,
+            "expires_at": now + TTL_SECONDS,
+            "access": grant,
+        }
 
 
 def new_pairing_token() -> str:
@@ -84,15 +92,29 @@ def pairing_secret(token: str) -> str:
 
 
 def validate_pairing_token(token: str, consume: bool = False) -> bool:
+    return consume_pairing_session(token) is not None if consume else pairing_session(token) is not None
+
+
+def pairing_session(token: str) -> dict | None:
     with _registry_lock:
         entry = _tokens.get(str(token or ""))
         created_at = float((entry or {}).get("created_at") or 0)
         if not entry or time.time() - created_at > TTL_SECONDS:
             _tokens.pop(str(token or ""), None)
-            return False
-        if consume:
-            _tokens.pop(str(token), None)
-        return True
+            return None
+        return {
+            **entry,
+            "access": normalize_grant(entry.get("access")),
+        }
+
+
+def consume_pairing_session(token: str) -> dict | None:
+    with _registry_lock:
+        entry = pairing_session(token)
+        if entry is None:
+            return None
+        _tokens.pop(str(token), None)
+        return entry
 
 
 def token_status() -> dict:
@@ -121,6 +143,7 @@ def record_pairing_success(
     client_route_id: str = "",
     display_name: str = "SignalASI Client",
     platform: str = "unknown",
+    access_grant: dict | None = None,
 ) -> dict:
     if not fingerprint:
         raise ValueError("identity fingerprint required")
@@ -131,17 +154,21 @@ def record_pairing_success(
         state = _read_state()
         previous = state["clients"].get(route_id, {})
         now = time.time()
+        access = normalize_grant(access_grant or grant_for_executor(False))
         client = {
-        "client_route_id": route_id,
-        "signal_name": remote_name or previous.get("signal_name") or f"client_{route_id}",
-        "signal_device_id": int(remote_device_id or 1),
-        "identity_fingerprint": fingerprint,
-        "display_name": display_name or previous.get("display_name") or "SignalASI Client",
-        "platform": platform or previous.get("platform") or "unknown",
-        "paired_at": float(previous.get("paired_at") or now),
-        "updated_at": now,
-        "last_seen_at": now,
-        "revoked": False,
+            "client_route_id": route_id,
+            "signal_name": remote_name or previous.get("signal_name") or f"client_{route_id}",
+            "signal_device_id": int(remote_device_id or 1),
+            "identity_fingerprint": fingerprint,
+            "display_name": display_name or previous.get("display_name") or "SignalASI Client",
+            "platform": platform or previous.get("platform") or "unknown",
+            "access_profile": access["profile"],
+            "access_scopes": list(access["scopes"]),
+            "access_granted_at": int(access["issued_at"]),
+            "paired_at": float(previous.get("paired_at") or now),
+            "updated_at": now,
+            "last_seen_at": now,
+            "revoked": False,
         }
         state["clients"][route_id] = client
         state["updated_at"] = now
@@ -155,6 +182,12 @@ def client_status(client: dict, server_id: str | None = None) -> dict:
     topics = LinkTopics(sid, route_id)
     return {
         **client,
+        "access": normalize_grant({
+            "profile": client.get("access_profile"),
+            "scopes": client.get("access_scopes"),
+            "desktop_executor": client.get("access_profile") == "desktop_executor",
+            "issued_at": client.get("access_granted_at"),
+        }),
         "paired": not bool(client.get("revoked")),
         "identity_fingerprint_short": str(client.get("identity_fingerprint") or "")[:16],
         "topics": {"up": topics.up, "down": topics.down, "control": topics.control},

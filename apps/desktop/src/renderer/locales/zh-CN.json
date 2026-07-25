@@ -411,4 +411,10 @@
 , "Partial": "部分可用"
 , "Missing": "缺失"
 , "Missing {component}": "缺少 {component}"
+, "Start Desktop Executor": "启动桌面执行器"
+, "Grant this phone unrestricted Desktop tools and file access": "允许这台手机不受限地使用电脑工具和文件"
+, "Full Desktop Executor access will be granted to this phone.": "扫描后将授予这台手机完整的桌面执行器权限。"
+, "Restricted pairing: Agent chat and explicit task attachments only.": "受限配对：仅允许 Agent 对话和当前任务明确添加的附件。"
+, "Full access": "完整权限"
+, "Restricted": "受限"
 }

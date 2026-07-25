@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import desktop_control
 import mqtt_bridge
+from pairing_access import grant_for_executor
 
 
 class ImmediateThread:
@@ -71,6 +72,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             "signal_name": "signalasi:phone-a",
             "display_name": "Phone A",
             "platform": "android",
+            "access": grant_for_executor(True),
         }
         self.published: list[dict] = []
         self.patches = [
@@ -151,6 +153,24 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
         self.assertEqual([], self.input.calls)
         self.assertEqual(1, len(self.published))
         self.assertEqual("authorization_not_found", self.published[0]["error"]["code"])
+
+    def test_restricted_pairing_is_rejected_before_authorization_lookup(self) -> None:
+        authorization = self.authorize()
+        restricted_client = {
+            **self.client,
+            "access": grant_for_executor(False),
+        }
+
+        mqtt_bridge._route_desktop_control_payload(
+            object(),
+            restricted_client,
+            self.envelope(),
+            self.request(authorization["authorization_id"]),
+            "control",
+        )
+
+        self.assertEqual([], self.input.calls)
+        self.assertEqual("desktop_executor_scope_required", self.published[0]["error"]["code"])
 
     def test_non_control_channel_and_wrong_target_are_not_executed(self) -> None:
         authorization = self.authorize()

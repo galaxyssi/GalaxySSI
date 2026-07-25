@@ -15,6 +15,7 @@ const required = [
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
   "core/signalasi-link/backend/desktop_control.py",
+  "core/signalasi-link/backend/pairing_access.py",
   "core/signalasi-link/backend/desktop_agent_loop.py",
   "core/signalasi-link/backend/desktop_super_agent.py",
   "core/signalasi-link/backend/desktop_memory.py",
@@ -108,6 +109,7 @@ const backendMain = fs.readFileSync(path.join(backendDir, "main.py"), "utf8");
 const backendModels = fs.readFileSync(path.join(backendDir, "models.py"), "utf8");
 const backendMqtt = fs.readFileSync(path.join(backendDir, "mqtt_bridge.py"), "utf8");
 const backendPairing = fs.readFileSync(path.join(backendDir, "pairing_state.py"), "utf8");
+const backendPairingAccess = fs.readFileSync(path.join(backendDir, "pairing_access.py"), "utf8");
 const backendLinkProtocol = fs.readFileSync(path.join(backendDir, "link_protocol.py"), "utf8");
 const backendLinkDelivery = fs.readFileSync(path.join(backendDir, "link_delivery.py"), "utf8");
 const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_client.py"), "utf8");
@@ -230,6 +232,27 @@ if (!backendSignalClient.includes('"type": "signalasi_verify"')) {
 
 if (!backendMqtt.includes("decrypt_pairing_claim") || !backendLinkProtocol.includes('"signalasi_pairing_ciphertext"')) {
   throw new Error("MQTT pairing must use the encrypted Link v1 bootstrap");
+}
+
+for (const required of [
+  "desktop.executor.full",
+  "desktop.control",
+  "desktop.native_tools",
+  "desktop.files.external",
+  "apply_restricted_agent_boundary"
+]) {
+  if (!backendPairingAccess.includes(required)) {
+    throw new Error(`Pairing access profiles missing: ${required}`);
+  }
+}
+if (
+  !html.includes('id="pairingDesktopExecutorEnabled"')
+  || !preload.includes('ipcRenderer.invoke("pairing:qr", Boolean(grantDesktopExecutor))')
+  || !main.includes("desktop_executor=${grantDesktopExecutor")
+  || !backendMain.includes("grant_desktop_executor")
+  || !backendMqtt.includes("desktop_executor_scope_required")
+) {
+  throw new Error("Desktop pairing UI and backend must enforce the two access profiles");
 }
 
 for (const source of [backendMqtt, backendPairing, androidMqtt, androidAppStore]) {
