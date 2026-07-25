@@ -1295,7 +1295,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val stored = agentTranscriptStore.upsert(
             role = AgentTranscriptRole.ASSISTANT,
             text = response.content,
-            dedupeKey = "connector-response:$taskId",
+            dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                turnId = turnId,
+                sourceMessageId = response.sourceMessageId,
+                taskId = taskId
+            ),
             conversationId = conversationId,
             turnId = turnId,
             taskId = taskId,
@@ -1446,12 +1450,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 val directResponseTurnId = responseTurnId.ifBlank {
                     latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
                 }
-                agentTranscriptStore.append(
+                agentTranscriptStore.upsert(
                     AgentTranscriptRole.ASSISTANT,
                     msg.content,
+                    dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                        turnId = directResponseTurnId,
+                        sourceMessageId = sourceMessageId,
+                        taskId = responseTaskId
+                    ),
                     conversationId = resolvedResponseConversationId,
                     turnId = directResponseTurnId,
-                    taskId = envelope?.optString("task_id").orEmpty(),
+                    taskId = responseTaskId,
                     richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
                 )
                 if (resolvedResponseConversationId == agentTranscriptStore.activeConversation().id) {
@@ -10405,10 +10414,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             state.phase == AgentPhase.BLOCKED
         if (result.isNotBlank() && (settledConnectorResult || terminal) && !isTransientAgentResult(result)) {
             val actionId = state.lastActionResult?.actionId.orEmpty()
-            agentTranscriptStore.append(
+            agentTranscriptStore.upsert(
                 AgentTranscriptRole.ASSISTANT,
                 result,
-                dedupeKey = "result:$planId:$actionId:${result.hashCode()}",
+                dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                    turnId = turnId,
+                    sourceMessageId = connectorMetadata["source_message_id"]?.toLongOrNull() ?: 0L,
+                    taskId = connectorMetadata["remote_task_id"].orEmpty()
+                        .ifBlank { state.sessionId }
+                ),
                 conversationId = conversationId,
                 turnId = turnId,
                 taskId = state.sessionId,
