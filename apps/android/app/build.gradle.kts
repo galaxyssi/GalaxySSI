@@ -7,7 +7,7 @@ val runtimeJniRoot = rootProject.file("../../build/runtime/android-jni-libs")
 val runtimeAssetRoot = rootProject.file("../../build/runtime/android-assets")
 val requireEmbeddedRuntime = providers.gradleProperty("signalasi.requireEmbeddedRuntime")
     .map(String::toBoolean)
-    .orElse(false)
+    .orElse(true)
 
 android {
     namespace = "com.signalasi.chat"
@@ -17,8 +17,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 207
-        versionName = "0.2.11"
+        versionCode = 208
+        versionName = "0.2.12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
@@ -92,7 +92,7 @@ val verifyEmbeddedRuntimeBundle = tasks.register<Exec>("verifyEmbeddedRuntimeBun
 }
 
 tasks.matching { task ->
-    task.name == "preReleaseBuild" || (requireEmbeddedRuntime.get() && task.name == "preDebugBuild")
+    task.name == "preReleaseBuild" || (requireEmbeddedRuntime.get() && task.name == "packageDebug")
 }.configureEach {
     dependsOn(verifyEmbeddedRuntimeBundle)
 }
