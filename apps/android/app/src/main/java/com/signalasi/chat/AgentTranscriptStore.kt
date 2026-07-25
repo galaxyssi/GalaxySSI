@@ -45,7 +45,8 @@ object AgentTranscriptLifecyclePolicy {
                 val hasAssistant = entries.any {
                     it.role == AgentTranscriptRole.ASSISTANT &&
                         it.turnId == turnId &&
-                        !it.dedupeKey.startsWith("approval:")
+                        !it.dedupeKey.startsWith("approval:") &&
+                        !it.dedupeKey.startsWith("remote-approval:")
                 }
                 if (!hasUser || hasAssistant) return@mapNotNull null
                 val task = tasksById[taskEntry.taskId] ?: return@mapNotNull null
@@ -620,6 +621,13 @@ class AgentTranscriptStore(context: Context) {
     @Synchronized
     fun list(conversationId: String = activeConversation().id): List<AgentTranscriptEntry> =
         entryDatabase.listConversation(conversationId)
+
+    @Synchronized
+    fun taskEntries(taskId: String): List<AgentTranscriptEntry> {
+        val cleanTaskId = taskId.trim()
+        if (cleanTaskId.isBlank()) return emptyList()
+        return allEntries().filter { entry -> entry.taskId == cleanTaskId }
+    }
 
     @Synchronized
     internal fun page(

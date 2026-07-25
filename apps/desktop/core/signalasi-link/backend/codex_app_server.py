@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import os
 import queue
 import subprocess
@@ -35,14 +37,57 @@ CODEX_MAX_TASK_SECONDS = max(
     CODEX_STALL_TIMEOUT_SECONDS,
     int(os.environ.get("SIGNALASI_CODEX_MAX_TASK_SECONDS", "900")),
 )
+CODEX_APPROVAL_TTL_SECONDS = max(
+    60,
+    int(os.environ.get("SIGNALASI_CODEX_APPROVAL_TTL_SECONDS", "300")),
+)
 MAX_VISIBLE_PROGRESS_TEXT = 2_000
 MAX_VISIBLE_TOOL_DETAIL = 500
+CODEX_APPROVAL_METHODS = {
+    "item/commandExecution/requestApproval": "command",
+    "item/fileChange/requestApproval": "file_change",
+    "item/permissions/requestApproval": "permissions",
+    "execCommandApproval": "command",
+    "applyPatchApproval": "file_change",
+}
 
 
 class CodexConversationBusyError(RuntimeError):
     def __init__(self, active_task_id: str) -> None:
         super().__init__(f"Codex conversation already has an active task: {active_task_id}")
         self.active_task_id = active_task_id
+
+
+@dataclass(frozen=True)
+class CodexPendingApproval:
+    request_id: object
+    approval_id: str
+    action_hash: str
+    method: str
+    kind: str
+    title: str
+    detail: str
+    target: str
+    reason: str
+    parameters: dict[str, object]
+    requested_at_ms: int
+    expires_at_ms: int
+    raw_params: dict[str, object] = field(repr=False, compare=False)
+
+    def public(self) -> dict[str, object]:
+        return {
+            "approval_id": self.approval_id,
+            "action_hash": self.action_hash,
+            "method": self.method,
+            "kind": self.kind,
+            "title": self.title,
+            "detail": self.detail,
+            "target": self.target,
+            "reason": self.reason,
+            "parameters": self.parameters,
+            "requested_at_ms": self.requested_at_ms,
+            "expires_at_ms": self.expires_at_ms,
+        }
 
 
 @dataclass
@@ -55,7 +100,7 @@ class CodexRun:
     last_agent_text: str = ""
     agent_message_deltas: dict[str, str] = field(default_factory=dict)
     reasoning_summary_deltas: dict[str, dict[int, str]] = field(default_factory=dict)
-    pending_requests: dict[int, dict] = field(default_factory=dict)
+    pending_requests: dict[str, CodexPendingApproval] = field(default_factory=dict)
     started_monotonic: float = field(default_factory=time.monotonic)
     last_event_monotonic: float = field(default_factory=time.monotonic)
     finished: bool = False
@@ -209,7 +254,7 @@ class CodexAppServer:
         try:
             response = self._request("thread/resume", {
                 "threadId": clean_thread_id,
-                "approvalPolicy": "never",
+                "approvalPolicy": "on-request",
                 "sandbox": "workspace-write",
             }, timeout=30)
             if run.finished:
@@ -310,9 +355,27 @@ class CodexAppServer:
             run = self._runs.get(task_id)
             if run is None or run.finished:
                 return
+            now_ms = int(time.time() * 1000)
+            expired_approvals = [
+                pending
+                for pending in list(run.pending_requests.values())
+                if pending.expires_at_ms < now_ms
+            ]
+            for pending in expired_approvals:
+                try:
+                    self.resolve_approval(
+                        task_id,
+                        pending.approval_id,
+                        pending.action_hash,
+                        approved=False,
+                    )
+                except RuntimeError:
+                    pass
             now = time.monotonic()
             stalled = now - run.last_event_monotonic >= CODEX_STALL_TIMEOUT_SECONDS
             exceeded = now - run.started_monotonic >= CODEX_MAX_TASK_SECONDS
+            if run.pending_requests and not exceeded:
+                continue
             if not stalled and not exceeded:
                 continue
             run.finished = True
@@ -338,7 +401,7 @@ class CodexAppServer:
     def _start_thread(self, cwd: str, model: str, conversation_id: str) -> str:
         response = self._request("thread/start", {
             "cwd": os.path.abspath(cwd), "model": model, "ephemeral": False,
-            "approvalPolicy": "never", "sandbox": "workspace-write",
+            "approvalPolicy": "on-request", "sandbox": "workspace-write",
         }, timeout=30)
         thread_id = str((response.get("thread") or {}).get("id") or "")
         if conversation_id and thread_id:
@@ -529,6 +592,60 @@ class CodexAppServer:
         self._request("turn/interrupt", {"threadId": run.thread_id, "turnId": run.turn_id}, timeout=10)
         return True
 
+    def resolve_approval(
+        self,
+        task_id: str,
+        approval_id: str,
+        action_hash: str,
+        approved: bool,
+    ) -> dict[str, object]:
+        clean_task_id = str(task_id or "").strip()
+        clean_approval_id = str(approval_id or "").strip()
+        clean_hash = str(action_hash or "").strip().lower()
+        expired = False
+        with self._lock:
+            run = self._runs.get(clean_task_id)
+            if run is None or run.finished:
+                raise RuntimeError("Codex task is no longer active")
+            pending = run.pending_requests.get(clean_approval_id)
+            if pending is None:
+                raise RuntimeError("Codex approval is no longer pending")
+            if not hmac.compare_digest(pending.action_hash, clean_hash):
+                raise RuntimeError("Codex approval parameters changed")
+            if pending.expires_at_ms < int(time.time() * 1000):
+                expired = True
+                run.pending_requests.pop(clean_approval_id, None)
+                self._write_server_response(
+                    pending.request_id,
+                    self._approval_result(pending, approved=False),
+                )
+            else:
+                run.pending_requests.pop(clean_approval_id, None)
+                self._write_server_response(
+                    pending.request_id,
+                    self._approval_result(pending, approved=approved),
+                )
+            run.last_event_monotonic = time.monotonic()
+        self.on_event(clean_task_id, {
+            "thread_id": run.thread_id,
+            "turn_id": run.turn_id,
+            "status": "running",
+            "current_step": (
+                "Approval expired"
+                if expired else
+                ("Approval accepted" if approved else "Approval declined")
+            ),
+            "approval_request": {},
+        })
+        if expired:
+            raise RuntimeError("Codex approval expired")
+        return {
+            "task_id": clean_task_id,
+            "approval_id": clean_approval_id,
+            "action_hash": clean_hash,
+            "approved": bool(approved),
+        }
+
     def close(self) -> None:
         with self._lock:
             process = self.process
@@ -592,6 +709,9 @@ class CodexAppServer:
     def _notify(self, method: str, params: dict) -> None:
         self._write({"jsonrpc": "2.0", "method": method, "params": params})
 
+    def _write_server_response(self, request_id: object, result: dict[str, object]) -> None:
+        self._write({"jsonrpc": "2.0", "id": request_id, "result": result})
+
     def _write(self, payload: dict) -> None:
         process = self.process
         if process is None or process.stdin is None or process.poll() is not None:
@@ -633,8 +753,21 @@ class CodexAppServer:
         run.last_event_monotonic = time.monotonic()
         common = {"thread_id": run.thread_id, "turn_id": turn_id or run.turn_id}
         if "id" in message:
-            run.pending_requests[int(message["id"])] = message
-            self.on_event(task_id, {**common, "status": "waiting_approval", "current_step": self._request_label(method)})
+            approval = self._pending_approval(task_id, message)
+            if approval is not None:
+                run.pending_requests[approval.approval_id] = approval
+                self.on_event(task_id, {
+                    **common,
+                    "status": "waiting_approval",
+                    "current_step": approval.title,
+                    "approval_request": approval.public(),
+                })
+            else:
+                self.on_event(task_id, {
+                    **common,
+                    "status": "waiting_input",
+                    "current_step": self._request_label(method),
+                })
         elif method == "turn/started":
             if turn_id:
                 run.turn_id = turn_id
@@ -948,6 +1081,116 @@ class CodexAppServer:
     @staticmethod
     def _request_label(method: str) -> str:
         return "Waiting for approval" if "approval" in method.lower() else "Waiting for user input"
+
+    @classmethod
+    def _pending_approval(
+        cls,
+        task_id: str,
+        message: dict,
+    ) -> CodexPendingApproval | None:
+        method = str(message.get("method") or "")
+        kind = CODEX_APPROVAL_METHODS.get(method)
+        if kind is None:
+            return None
+        params = message.get("params") if isinstance(message.get("params"), dict) else {}
+        request_id = message.get("id")
+        requested_at_ms = int(params.get("startedAtMs") or time.time() * 1000)
+        expires_at_ms = requested_at_ms + CODEX_APPROVAL_TTL_SECONDS * 1000
+        command = params.get("command")
+        if isinstance(command, list):
+            command = " ".join(str(value) for value in command)
+        command = str(command or "").strip()
+        cwd = str(params.get("cwd") or "").strip()
+        reason = str(params.get("reason") or "").strip()
+        grant_root = str(params.get("grantRoot") or "").strip()
+        file_changes = params.get("fileChanges") if isinstance(params.get("fileChanges"), dict) else {}
+        changed_files = sorted(str(path) for path in file_changes)[:20]
+        permissions = params.get("permissions")
+        if not isinstance(permissions, dict):
+            permissions = params.get("additionalPermissions")
+        if not isinstance(permissions, dict):
+            permissions = {}
+        target = command or grant_root or cwd
+        if not target and changed_files:
+            target = changed_files[0]
+        if kind == "command":
+            title = "Run a command"
+            detail = command or reason or "Codex requested command execution"
+        elif kind == "file_change":
+            title = "Modify files"
+            detail = (
+                ", ".join(changed_files)
+                or grant_root
+                or reason
+                or "Codex requested file changes"
+            )
+        else:
+            title = "Grant additional permissions"
+            detail = reason or cwd or "Codex requested additional permissions"
+        display_parameters = {
+            "command": command[:2_000],
+            "cwd": cwd[:1_000],
+            "reason": reason[:1_000],
+            "grant_root": grant_root[:1_000],
+            "files": changed_files,
+            "permissions": permissions,
+        }
+        canonical = {
+            "task_id": str(task_id or ""),
+            "request_id": request_id,
+            "method": method,
+            "params": params,
+        }
+        action_hash = hashlib.sha256(
+            json.dumps(
+                canonical,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
+        approval_id = hashlib.sha256(
+            f"{task_id}:{request_id}:{method}:{action_hash}".encode("utf-8")
+        ).hexdigest()[:32]
+        return CodexPendingApproval(
+            request_id=request_id,
+            approval_id=approval_id,
+            action_hash=action_hash,
+            method=method,
+            kind=kind,
+            title=title,
+            detail=detail[:2_000],
+            target=target[:2_000],
+            reason=reason[:1_000],
+            parameters=display_parameters,
+            requested_at_ms=requested_at_ms,
+            expires_at_ms=expires_at_ms,
+            raw_params=dict(params),
+        )
+
+    @staticmethod
+    def _approval_result(
+        pending: CodexPendingApproval,
+        *,
+        approved: bool,
+    ) -> dict[str, object]:
+        if pending.method == "item/commandExecution/requestApproval":
+            return {"decision": "accept" if approved else "decline"}
+        if pending.method == "item/fileChange/requestApproval":
+            return {"decision": "accept" if approved else "decline"}
+        if pending.method == "execCommandApproval":
+            return {"decision": "approved" if approved else "denied"}
+        if pending.method == "applyPatchApproval":
+            return {"decision": "approved" if approved else "denied"}
+        if pending.method == "item/permissions/requestApproval":
+            requested = pending.raw_params.get("permissions")
+            return {
+                "permissions": requested if approved and isinstance(requested, dict) else {},
+                "scope": "turn",
+                "strictAutoReview": True,
+            }
+        raise RuntimeError(f"Unsupported Codex approval method: {pending.method}")
 
     @staticmethod
     def _contains_chinese(value: str) -> bool:

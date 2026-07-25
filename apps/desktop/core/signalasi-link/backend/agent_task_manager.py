@@ -61,6 +61,7 @@ class AgentTask:
     client_turn_id: str = ""
     delegate_agent_id: str = ""
     current_step: str = ""
+    pending_approval: dict = field(default_factory=dict)
     events: list[dict] = field(default_factory=list)
     output_files: list[dict] = field(default_factory=list)
     attachments: list[str] = field(default_factory=list)
@@ -98,6 +99,7 @@ class AgentTask:
             "client_turn_id": self.client_turn_id,
             "delegate_agent_id": self.delegate_agent_id,
             "current_step": self.current_step,
+            "pending_approval": self.pending_approval,
             "events": self.events[-100:],
             "output_files": self.output_files,
             "attachments": self.attachments,
@@ -241,6 +243,7 @@ class AgentTaskManager:
         delegate_agent_id: str | None = None,
         current_step: str | None = None, result: str | None = None,
         error: str | None = None,
+        approval_request: dict | None = None,
     ) -> AgentTask | None:
         with self._lock:
             task = self._tasks.get(task_id)
@@ -260,6 +263,10 @@ class AgentTaskManager:
                 task.delegate_agent_id = delegate_agent_id
             if current_step is not None:
                 task.current_step = current_step
+            if approval_request is not None:
+                task.pending_approval = dict(approval_request)
+            elif status != "waiting_approval":
+                task.pending_approval = {}
             if result is not None:
                 task.result = result
             if error is not None:
@@ -269,6 +276,7 @@ class AgentTaskManager:
                 task.output_files = self._task_artifacts(task.task_id)
             if status in TERMINAL_STATES:
                 task.current_step = ""
+                task.pending_approval = {}
             if task.task_id in self._external_task_ids and status == "running":
                 self._ensure_external_heartbeat_locked(task, on_event)
             elif status in TERMINAL_STATES or status == "interrupted":
@@ -646,6 +654,7 @@ class AgentTaskManager:
             task.error = ""
             task.exit_code = None
             task.current_step = ""
+            task.pending_approval = {}
             task.process = None
             task.cancel_requested = False
             task.status_seq += 1
@@ -690,6 +699,7 @@ class AgentTaskManager:
             task.result = result
             task.error = error
             task.current_step = ""
+            task.pending_approval = {}
             task.output_files = self._task_artifacts(task.task_id)
             self._stop_external_heartbeat_locked(task.task_id, forget_task=True)
             self._save_locked(task)
@@ -790,6 +800,11 @@ class AgentTaskManager:
             client_turn_id=str(row.get("client_turn_id") or ""),
             delegate_agent_id=str(row.get("delegate_agent_id") or ""),
             current_step="" if status in TERMINAL_STATES else str(row.get("current_step") or ""),
+            pending_approval=(
+                {}
+                if status in TERMINAL_STATES else
+                dict(row.get("pending_approval") or {})
+            ),
             events=list(row.get("events") or []),
             output_files=list(row.get("output_files") or [])[:100],
             attachments=[str(value) for value in list(row.get("attachments") or [])[:12]],

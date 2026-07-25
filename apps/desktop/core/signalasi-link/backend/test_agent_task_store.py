@@ -99,6 +99,38 @@ class AgentTaskStoreTests(unittest.TestCase):
             self.assertEqual(len(restored.public()["events"]), 100)
             self.assertEqual(restored.events[0]["event_id"], "event-0")
 
+    def test_pending_approval_is_persisted_and_cleared_on_resume(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            manager = AgentTaskManager(state_path=path)
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex-contact",
+                source_message_id="phone-message",
+                prompt="Run a protected command",
+                on_event=lambda _snapshot: None,
+                task_id="approval-task",
+            )
+            manager.update(
+                task.task_id,
+                "waiting_approval",
+                approval_request={
+                    "approval_id": "approval-1",
+                    "action_hash": "a" * 64,
+                },
+            )
+
+            restored = AgentTaskManager(state_path=path)
+            waiting = restored.get(task.task_id)
+            self.assertEqual("approval-1", waiting.pending_approval["approval_id"])
+            self.assertEqual(
+                "approval-1",
+                waiting.public()["pending_approval"]["approval_id"],
+            )
+
+            restored.update(task.task_id, "running", current_step="Continuing")
+            self.assertEqual({}, restored.get(task.task_id).pending_approval)
+
     def test_deleting_one_conversation_does_not_remove_other_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"

@@ -1,6 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SignalASI</string>
+    <string name="agent_remote_approval_title">Approve remote action</string>
+    <string name="agent_remote_approval_command">Run command</string>
+    <string name="agent_remote_approval_files">Modify files</string>
+    <string name="agent_remote_approval_permissions">Grant permissions</string>
+    <string name="agent_remote_approval_requested_by">Requested by %1$s</string>
+    <string name="agent_remote_approval_working_directory">Working directory: %1$s</string>
+    <string name="agent_remote_approval_scope">Scope: %1$s</string>
+    <string name="agent_remote_approval_files_list">Files: %1$s</string>
+    <string name="agent_remote_approval_permissions_list">Permissions: %1$s</string>
+    <string name="agent_remote_approval_reason">Reason: %1$s</string>
+    <string name="agent_remote_approval_fingerprint">Action fingerprint: %1$s</string>
+    <string name="agent_remote_approval_waiting">Review the exact action before allowing it.</string>
+    <string name="agent_remote_approval_deny">Deny</string>
+    <string name="agent_remote_approval_allow">Allow</string>
+    <string name="agent_remote_approval_invalid">This approval request is invalid or has changed.</string>
+    <string name="agent_remote_approval_pending">The decision is being sent.</string>
+    <string name="agent_remote_approval_send_failed">Could not send the decision. Check the connection and try again.</string>
+    <string name="agent_remote_approval_sent">Decision sent</string>
+    <string name="agent_remote_approval_allowed">Action allowed</string>
+    <string name="agent_remote_approval_denied">Action denied</string>
+    <string name="agent_remote_approval_expired">This approval request has expired.</string>
+    <string name="agent_remote_approval_failed">The action could not be approved. Review the request and try again.</string>
     <string name="device_admin_description">Allows explicitly confirmed device-policy actions such as locking a managed device.</string>
     <string name="agent_native_permissions_result">Granted %1$d of %2$d requested Android permissions. Run the task again to use them.</string>
     <string name="agent_native_confirmation_title">Confirm phone action</string>
