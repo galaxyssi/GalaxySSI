@@ -148,7 +148,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val AGENT_TRANSCRIPT_PAGE_ITEMS = 24
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
-        private const val AGENT_PROCESS_TIMER_TICK_MS = 250L
+        private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
         private const val UNROUTABLE_CONNECTOR_GRACE_MILLIS = 5L * 60L * 1_000L
         private const val GLOBAL_AGENT_FOREGROUND_RETRY_MILLIS = 5_000L
         private const val AGENT_BRAND_LOGO_BASE_DP = 39
@@ -216,8 +216,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentPage: LinearLayout
     private lateinit var agentSessionTitle: TextView
     private lateinit var agentSubtitleText: TextView
-    private lateinit var agentOutputScroll: ScrollView
-    private lateinit var agentOutputList: LinearLayout
+    private lateinit var agentOutputList: RecyclerView
+    private lateinit var agentOutputLayout: LinearLayoutManager
+    private lateinit var agentTranscriptAdapter: AgentTranscriptRecyclerAdapter
     private lateinit var agentSettingsButton: ImageButton
     private lateinit var agentPermissionModeButton: TextView
     private lateinit var agentHighRiskGuardButton: TextView
@@ -413,6 +414,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentTranscriptWindow = AgentTranscriptWindow()
     private val renderedAgentTranscriptIds = linkedSetOf<String>()
     private val renderedAgentTranscriptSignatures = mutableMapOf<String, Int>()
+    private var renderedAgentTranscriptSourceEntries: List<AgentTranscriptEntry> = emptyList()
     private val expandedAgentProcessGroups = linkedSetOf<String>()
     private val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
     private val expandedAgentToolSegments = linkedSetOf<String>()
@@ -580,7 +582,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentPage = findViewById(R.id.agentPage)
         agentSessionTitle = findViewById(R.id.agentSessionTitle)
         agentSubtitleText = findViewById(R.id.agentSubtitleText)
-        agentOutputScroll = findViewById(R.id.agentOutputScroll)
         agentOutputList = findViewById(R.id.agentOutputList)
         agentSettingsButton = findViewById(R.id.agentSettingsButton)
         agentPermissionModeButton = findViewById(R.id.agentPermissionModeButton)
@@ -2543,13 +2544,67 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun configureAgentPage() {
-        agentOutputScroll.setOnScrollChangeListener { view, _, scrollY, _, _ ->
-            val child = (view as ScrollView).getChildAt(0)
-            val remaining = child?.height?.minus(scrollY + view.height) ?: 0
-            agentTranscriptAutoFollow = remaining <= dp(56)
-            if (!initialAgentHydrationPending && !agentTranscriptAutoFollow && scrollY <= dp(12)) {
-                loadOlderAgentTranscriptEntries()
-            }
+        agentOutputLayout = LinearLayoutManager(this)
+        agentTranscriptAdapter = AgentTranscriptRecyclerAdapter()
+        agentOutputList.apply {
+            layoutManager = agentOutputLayout
+            adapter = agentTranscriptAdapter
+            itemAnimator = null
+            setItemViewCacheSize(4)
+            recycledViewPool.setMaxRecycledViews(0, 8)
+            addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+                private var downY = 0f
+                private var requestedForGesture = false
+
+                override fun onInterceptTouchEvent(
+                    recyclerView: RecyclerView,
+                    event: MotionEvent
+                ): Boolean {
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downY = event.y
+                            requestedForGesture = false
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            if (
+                                !requestedForGesture &&
+                                AgentTranscriptScrollPolicy.shouldLoadOlderFromPull(
+                                    downY = downY,
+                                    currentY = event.y,
+                                    canScrollUp = recyclerView.canScrollVertically(-1),
+                                    hydrationPending = initialAgentHydrationPending,
+                                    thresholdPx = dp(12)
+                                )
+                            ) {
+                                requestedForGesture = true
+                                loadOlderAgentTranscriptEntries()
+                            }
+                        }
+                    }
+                    return false
+                }
+            })
+            addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    val itemCount = agentTranscriptAdapter.itemCount
+                    val lastPosition = agentOutputLayout.findLastVisibleItemPosition()
+                    val lastView = agentOutputLayout.findViewByPosition(lastPosition)
+                    val remaining = if (lastPosition == itemCount - 1 && lastView != null) {
+                        lastView.bottom - (recyclerView.height - recyclerView.paddingBottom)
+                    } else {
+                        Int.MAX_VALUE
+                    }
+                    agentTranscriptAutoFollow = itemCount == 0 || remaining <= dp(56)
+                    if (AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(
+                            dy = dy,
+                            firstVisiblePosition = agentOutputLayout.findFirstVisibleItemPosition(),
+                            hydrationPending = initialAgentHydrationPending
+                        )
+                    ) {
+                        loadOlderAgentTranscriptEntries()
+                    }
+                }
+            })
         }
         findViewById<View>(R.id.agentSessionSummary).setOnClickListener { showAgentSessionsPage() }
         agentSettingsButton.setOnClickListener { showMainTab(PAGE_SETTINGS) }
@@ -2640,27 +2695,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     agentTranscriptPageLoading = false
                     return@runOnUiThread
                 }
-                val previousHeight = agentOutputList.height
-                val previousScrollY = agentOutputScroll.scrollY
                 val added = agentTranscriptWindow.prependOlder(conversationId, page)
                 agentTranscriptAllLoaded = !page.hasMore
                 if (added > 0) {
-                    agentOutputList.removeAllViews()
-                    renderedAgentTranscriptIds.clear()
                     renderAgentTranscript(agentTranscriptWindow.entries)
-                    agentOutputScroll.post {
-                        val insertedHeight = (agentOutputList.height - previousHeight).coerceAtLeast(0)
-                        agentOutputScroll.scrollTo(0, previousScrollY + insertedHeight)
-                    }
                 }
                 agentTranscriptPageLoading = false
             }
         }
     }
 
-    private fun resetAgentTranscriptRendering(conversationId: String = "") {
-        agentOutputList.removeAllViews()
+    private fun clearAgentTranscriptRows() {
+        if (::agentTranscriptAdapter.isInitialized) agentTranscriptAdapter.clear()
         renderedAgentTranscriptIds.clear()
+        renderedAgentTranscriptSignatures.clear()
+        renderedAgentTranscriptSourceEntries = emptyList()
+    }
+
+    private fun resetAgentTranscriptRendering(conversationId: String = "") {
+        clearAgentTranscriptRows()
         agentTranscriptPageLoading = false
         agentTranscriptAllLoaded = false
         agentRenderedConversationId = conversationId
@@ -4475,8 +4528,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             chosen.forEach(::deleteAgentConversationData)
                             selectionDialog.dismiss()
                             refreshAgentConversationHeader()
-                            renderedAgentTranscriptIds.clear()
-                            agentOutputList.removeAllViews()
+                            clearAgentTranscriptRows()
                             refreshAgentTranscriptWindow()
                             showAgentSessionsPage(showArchived)
                         }
@@ -10397,6 +10449,109 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             normalized.startsWith("\u5df2\u6536\u5230")
     }
 
+    private data class AgentTranscriptScrollAnchor(
+        val entryId: String,
+        val topOffset: Int
+    )
+
+    private class AgentTranscriptViewHolder(
+        val container: FrameLayout
+    ) : RecyclerView.ViewHolder(container)
+
+    private inner class AgentTranscriptRecyclerAdapter :
+        RecyclerView.Adapter<AgentTranscriptViewHolder>() {
+        private val entries = mutableListOf<AgentTranscriptEntry>()
+
+        override fun onCreateViewHolder(
+            parent: ViewGroup,
+            viewType: Int
+        ): AgentTranscriptViewHolder = AgentTranscriptViewHolder(
+            FrameLayout(parent.context).apply {
+                layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                isSaveEnabled = false
+            }
+        )
+
+        override fun onBindViewHolder(holder: AgentTranscriptViewHolder, position: Int) {
+            holder.container.removeAllViews()
+            holder.container.addView(
+                agentTranscriptRow(entries[position]),
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+        }
+
+        override fun onViewRecycled(holder: AgentTranscriptViewHolder) {
+            holder.container.removeAllViews()
+            super.onViewRecycled(holder)
+        }
+
+        override fun getItemCount(): Int = entries.size
+
+        fun replaceAll(replacement: List<AgentTranscriptEntry>) {
+            entries.clear()
+            entries.addAll(replacement)
+            notifyDataSetChanged()
+        }
+
+        fun replaceAt(index: Int, entry: AgentTranscriptEntry) {
+            entries[index] = entry
+            notifyItemChanged(index)
+        }
+
+        fun append(appended: List<AgentTranscriptEntry>) {
+            if (appended.isEmpty()) return
+            val start = entries.size
+            entries.addAll(appended)
+            notifyItemRangeInserted(start, appended.size)
+        }
+
+        fun clear() {
+            if (entries.isEmpty()) return
+            val count = entries.size
+            entries.clear()
+            notifyItemRangeRemoved(0, count)
+        }
+
+        fun entryIdAt(position: Int): String? =
+            entries.getOrNull(position)?.id
+
+        fun indexOfEntry(entryId: String): Int =
+            entries.indexOfFirst { it.id == entryId }
+    }
+
+    private fun captureAgentTranscriptScrollAnchor(): AgentTranscriptScrollAnchor? {
+        if (!::agentOutputLayout.isInitialized || !::agentTranscriptAdapter.isInitialized) return null
+        val position = agentOutputLayout.findFirstVisibleItemPosition()
+        if (position == RecyclerView.NO_POSITION) return null
+        val entryId = agentTranscriptAdapter.entryIdAt(position) ?: return null
+        val topOffset = agentOutputLayout.findViewByPosition(position)?.top
+            ?: agentOutputList.paddingTop
+        return AgentTranscriptScrollAnchor(entryId, topOffset)
+    }
+
+    private fun restoreAgentTranscriptScrollAnchor(anchor: AgentTranscriptScrollAnchor?) {
+        if (anchor == null) return
+        val position = agentTranscriptAdapter.indexOfEntry(anchor.entryId)
+        if (position >= 0) {
+            agentOutputLayout.scrollToPositionWithOffset(position, anchor.topOffset)
+        }
+    }
+
+    private fun scrollAgentTranscriptToBottom() {
+        val lastPosition = agentTranscriptAdapter.itemCount - 1
+        if (lastPosition < 0) return
+        agentOutputList.scrollToPosition(lastPosition)
+        agentOutputList.post {
+            agentOutputList.scrollBy(0, agentOutputList.computeVerticalScrollRange())
+        }
+    }
+
     private fun renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
         val filteredEntries = entries.filterNot { entry ->
             val staleApproval = isLocalAgentApprovalEntry(entry) &&
@@ -10406,6 +10561,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             staleApproval
         }
+        renderedAgentTranscriptSourceEntries = filteredEntries
         val visibleEntries = AgentTranscriptPresentationPolicy.collapseProcessGroups(filteredEntries)
         val incomingIds = visibleEntries.map(AgentTranscriptEntry::id)
         val renderedIds = renderedAgentTranscriptIds.toList()
@@ -10414,16 +10570,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             renderedAgentTranscriptSignatures,
             visibleEntries
         )
-        val reset = diff.reset || agentOutputList.childCount != renderedIds.size
+        val reset = diff.reset || agentTranscriptAdapter.itemCount != renderedIds.size
         val shouldFollow = agentTranscriptAutoFollow
-        val preservedScrollY = agentOutputScroll.scrollY
+        val scrollAnchor = captureAgentTranscriptScrollAnchor()
         var changed = false
         if (reset) {
-            agentOutputList.removeAllViews()
+            agentTranscriptAdapter.replaceAll(visibleEntries)
             renderedAgentTranscriptIds.clear()
             renderedAgentTranscriptSignatures.clear()
             visibleEntries.forEach { entry ->
-                agentOutputList.addView(agentTranscriptRow(entry))
                 renderedAgentTranscriptIds += entry.id
                 renderedAgentTranscriptSignatures[entry.id] =
                     AgentTranscriptRenderPolicy.signature(entry)
@@ -10432,14 +10587,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         } else {
             diff.replacementIndices.forEach { index ->
                 val entry = visibleEntries[index]
-                agentOutputList.removeViewAt(index)
-                agentOutputList.addView(agentTranscriptRow(entry), index)
+                agentTranscriptAdapter.replaceAt(index, entry)
                 renderedAgentTranscriptSignatures[entry.id] =
                     AgentTranscriptRenderPolicy.signature(entry)
                 changed = true
             }
-            visibleEntries.drop(diff.appendFromIndex).forEach { entry ->
-                agentOutputList.addView(agentTranscriptRow(entry))
+            val appended = visibleEntries.drop(diff.appendFromIndex)
+            agentTranscriptAdapter.append(appended)
+            appended.forEach { entry ->
                 renderedAgentTranscriptIds += entry.id
                 renderedAgentTranscriptSignatures[entry.id] =
                     AgentTranscriptRenderPolicy.signature(entry)
@@ -10448,11 +10603,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         renderedAgentTranscriptSignatures.keys.retainAll(incomingIds.toSet())
         if (!changed) return
-        agentOutputScroll.post {
+        agentOutputList.post {
             if (shouldFollow) {
-                agentOutputScroll.fullScroll(View.FOCUS_DOWN)
-            } else if (reset || diff.replacementIndices.isNotEmpty()) {
-                agentOutputScroll.scrollTo(0, preservedScrollY)
+                scrollAgentTranscriptToBottom()
+            } else {
+                restoreAgentTranscriptScrollAnchor(scrollAnchor)
             }
         }
     }
@@ -10549,10 +10704,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun agentProcessTranscriptRow(entry: AgentTranscriptEntry): View {
         val groupKey = AgentTranscriptPresentationPolicy.processGroupKey(entry)
         val turnEntries = when {
-            entry.turnId.isNotBlank() -> agentTranscriptStore.entriesForTurn(entry.turnId)
-            entry.taskId.isNotBlank() -> agentTranscriptStore.entriesForTask(entry.taskId)
+            entry.turnId.isNotBlank() -> renderedAgentTranscriptSourceEntries.filter { candidate ->
+                candidate.turnId == entry.turnId ||
+                    (candidate.turnId.isBlank() && candidate.taskId == entry.taskId)
+            }
+            entry.taskId.isNotBlank() -> renderedAgentTranscriptSourceEntries.filter { candidate ->
+                candidate.taskId == entry.taskId
+            }
             else -> listOf(entry)
-        }
+        }.ifEmpty { listOf(entry) }
         val processEntries = AgentExecutionLoopTimelinePolicy.suppressSupersededPlaceholders(turnEntries)
             .filter { candidate ->
                 candidate.role == AgentTranscriptRole.PROCESS &&
@@ -10610,12 +10770,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     val statusView = this
                     val ticker = object : Runnable {
                         override fun run() {
-                            val completionTimestamp = agentProcessCompletionTimestamp(entry)
                             val elapsedMillis = (
-                                (completionTimestamp ?: System.currentTimeMillis()) - startedAt
+                                (completedAt ?: System.currentTimeMillis()) - startedAt
                             ).coerceAtLeast(0L)
                             statusView.text = getString(
-                                if (completionTimestamp != null) {
+                                if (completedAt != null) {
                                     R.string.agent_trace_processed
                                 } else {
                                     R.string.agent_trace_processing
@@ -10623,7 +10782,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 agentTraceDuration(elapsedMillis),
                                 ""
                             ).trimEnd()
-                            if (completionTimestamp == null && statusView.isAttachedToWindow) {
+                            if (completedAt == null && statusView.isAttachedToWindow) {
                                 statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
                             }
                         }
@@ -10677,8 +10836,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         if (expanded) collapsedActiveAgentProcessGroups.add(groupKey)
                         else collapsedActiveAgentProcessGroups.remove(groupKey)
                     }
-                    renderedAgentTranscriptIds.clear()
-                    agentOutputList.removeAllViews()
+                    clearAgentTranscriptRows()
                     refreshAgentTranscriptWindow(entry.conversationId)
                 }
             })
@@ -10762,8 +10920,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setOnClickListener {
                 if (detailsExpanded) expandedAgentToolSegments.remove(segmentKey)
                 else expandedAgentToolSegments.add(segmentKey)
-                renderedAgentTranscriptIds.clear()
-                agentOutputList.removeAllViews()
+                clearAgentTranscriptRows()
                 refreshAgentTranscriptWindow()
             }
         })
@@ -11040,8 +11197,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         deleteLabel -> {
                             if (agentTranscriptStore.deleteEntry(entry.id)) {
                                 agentTranscriptWindow.remove(entry.id)
-                                renderedAgentTranscriptIds.clear()
-                                agentOutputList.removeAllViews()
+                                clearAgentTranscriptRows()
                                 refreshAgentTranscriptWindow()
                             }
                         }
@@ -11246,8 +11402,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (agentTranscriptStore.deleteEntry(entry.id)) {
             agentTranscriptWindow.remove(entry.id)
         }
-        renderedAgentTranscriptIds.clear()
-        agentOutputList.removeAllViews()
+        clearAgentTranscriptRows()
         refreshAgentTranscriptWindow(entry.conversationId)
         thread(name = "signalasi-rich-decision") {
             bindAgentExecutionLoop(runtime, entry.turnId)
