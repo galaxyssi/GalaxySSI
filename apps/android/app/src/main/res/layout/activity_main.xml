@@ -199,21 +199,32 @@
                         android:tint="@color/text_primary" />
                 </LinearLayout>
 
-                <ScrollView
-                    android:id="@+id/agentOutputScroll"
+                <FrameLayout
+                    android:id="@+id/agentOutputViewport"
                     android:layout_width="match_parent"
                     android:layout_height="0dp"
-                    android:layout_weight="1"
-                    android:fillViewport="false"
-                    android:overScrollMode="never"
-                    android:scrollbars="none">
+                    android:layout_weight="1">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/agentOutputList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:clipToPadding="false"
+                        android:overScrollMode="never"
+                        android:paddingStart="2dp"
+                        android:paddingTop="8dp"
+                        android:paddingEnd="2dp"
+                        android:paddingBottom="16dp"
+                        android:scrollbars="none" />
 
                     <LinearLayout
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
+                        android:id="@+id/agentLegacyControls"
+                        android:layout_width="0dp"
+                        android:layout_height="0dp"
                         android:orientation="vertical"
                         android:paddingTop="0dp"
-                        android:paddingBottom="16dp">
+                        android:paddingBottom="16dp"
+                        android:visibility="gone">
 
                         <LinearLayout
                             android:layout_width="match_parent"
@@ -280,7 +291,7 @@
                             android:paddingEnd="2dp">
 
                             <LinearLayout
-                                android:id="@+id/agentOutputList"
+                                android:id="@+id/agentLegacyOutputList"
                                 android:layout_width="match_parent"
                                 android:layout_height="wrap_content"
                                 android:minHeight="180dp"
@@ -723,7 +734,7 @@
                             android:orientation="vertical"
                             android:visibility="gone" />
                     </LinearLayout>
-                </ScrollView>
+                </FrameLayout>
 
                 <LinearLayout
                     android:id="@+id/agentInputShell"
