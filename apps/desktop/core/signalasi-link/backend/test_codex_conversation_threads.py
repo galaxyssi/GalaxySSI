@@ -177,6 +177,97 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("Checking the visible worksheet fields.", progress[0]["detail"])
         self.assertNotIn("hidden chain", progress[0]["detail"])
 
+    def test_command_approval_is_bound_to_exact_parameters_and_resumed(self):
+        server, run, events = self._event_server()
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append(
+            (request_id, result)
+        )
+
+        server._handle_event({
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "itemId": "command-approval",
+                "startedAtMs": int(time.time() * 1000),
+                "command": "python verify.py",
+                "cwd": "C:/workspace",
+                "reason": "Run the generated verification",
+            },
+        })
+
+        approval_event = events[-1][1]
+        approval = approval_event["approval_request"]
+        self.assertEqual("waiting_approval", approval_event["status"])
+        self.assertEqual("command", approval["kind"])
+        self.assertEqual("python verify.py", approval["parameters"]["command"])
+        self.assertEqual(64, len(approval["action_hash"]))
+        self.assertNotIn("request_id", approval)
+
+        result = server.resolve_approval(
+            run.task_id,
+            approval["approval_id"],
+            approval["action_hash"],
+            approved=True,
+        )
+
+        self.assertTrue(result["approved"])
+        self.assertEqual([(41, {"decision": "accept"})], responses)
+        self.assertEqual("running", events[-1][1]["status"])
+        self.assertEqual({}, events[-1][1]["approval_request"])
+        self.assertEqual({}, run.pending_requests)
+
+    def test_approval_rejects_changed_hash_and_duplicate_decisions(self):
+        server, run, events = self._event_server()
+        responses = []
+        server._write_server_response = lambda request_id, result: responses.append(
+            (request_id, result)
+        )
+        server._handle_event({
+            "jsonrpc": "2.0",
+            "id": "approval-request",
+            "method": "item/fileChange/requestApproval",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "itemId": "file-change",
+                "startedAtMs": int(time.time() * 1000),
+                "reason": "Write outside the task workspace",
+                "grantRoot": "C:/shared-output",
+            },
+        })
+        approval = events[-1][1]["approval_request"]
+
+        with self.assertRaisesRegex(RuntimeError, "parameters changed"):
+            server.resolve_approval(
+                run.task_id,
+                approval["approval_id"],
+                "0" * 64,
+                approved=True,
+            )
+        self.assertEqual([], responses)
+
+        server.resolve_approval(
+            run.task_id,
+            approval["approval_id"],
+            approval["action_hash"],
+            approved=False,
+        )
+        self.assertEqual(
+            [("approval-request", {"decision": "decline"})],
+            responses,
+        )
+        with self.assertRaisesRegex(RuntimeError, "no longer pending"):
+            server.resolve_approval(
+                run.task_id,
+                approval["approval_id"],
+                approval["action_hash"],
+                approved=False,
+            )
+
     def test_same_conversation_reuses_thread(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,
@@ -202,6 +293,8 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual(second.thread_id, "thread-1")
             self.assertEqual([method for method, _, _ in calls].count("thread/start"), 1)
             self.assertEqual([method for method, _, _ in calls].count("turn/start"), 2)
+            thread_start = next(params for method, params, _ in calls if method == "thread/start")
+            self.assertEqual("on-request", thread_start["approvalPolicy"])
             turn_inputs = [params["input"][0]["text"] for method, params, _ in calls if method == "turn/start"]
             self.assertIn("first", turn_inputs[0])
             self.assertIn("Do not synthesize replacement media or data.", turn_inputs[0])

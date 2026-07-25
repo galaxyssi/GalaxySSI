@@ -1630,6 +1630,7 @@ def _publish_phone_payload(mqttc, wire_payload: dict, reply_payload: dict) -> bo
         return False
     channel = "control" if reply_payload.get("type") in {
         "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
+        "agent_task_approval_result",
         DESKTOP_TOOL_CALL_RESULT_TYPE, DESKTOP_TOOL_CANCEL_ACK_TYPE,
         DESKTOP_EXECUTOR_EVENT_TYPE, DESKTOP_ACTION_RECEIPT_TYPE,
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
@@ -1689,6 +1690,58 @@ def _task_control_matches(
     )
 
 
+def _resolve_agent_task_approval(
+    payload: dict,
+    *,
+    client_route_id: str,
+    contact_id: str,
+) -> dict:
+    task_id = str(payload.get("task_id") or "").strip()
+    approval_id = str(payload.get("approval_id") or "").strip()
+    action_hash = str(payload.get("action_hash") or "").strip().lower()
+    source_message_id = str(payload.get("source_message_id") or "")
+    existing_task = agent_task_manager.get(task_id)
+    task_matches = _task_control_matches(
+        existing_task,
+        client_route_id=client_route_id,
+        contact_id=contact_id,
+        source_message_id=source_message_id,
+    )
+    approved = payload.get("approved") is True
+    error = ""
+    resolved = False
+    if not task_matches:
+        error = "Task approval does not match the paired task"
+    elif existing_task is None or existing_task.agent_id != "codex":
+        error = "This Agent does not support remote approval"
+    elif codex_app_server is None:
+        error = "Codex App Server is not running"
+    else:
+        try:
+            codex_app_server.resolve_approval(
+                task_id=task_id,
+                approval_id=approval_id,
+                action_hash=action_hash,
+                approved=approved,
+            )
+            resolved = True
+        except Exception as exc:
+            error = str(exc)[:500]
+    return {
+        "type": "agent_task_approval_result",
+        "task_id": task_id,
+        "approval_id": approval_id,
+        "action_hash": action_hash,
+        "approved": approved,
+        "resolved": resolved,
+        "error": error,
+        "contact_id": contact_id,
+        "source_message_id": source_message_id,
+        "sender": "system",
+        "time": time.time(),
+    }
+
+
 def _codex_terminal_result(content: str, status: str, result: object) -> str | None:
     if status == "cancelled":
         return ""
@@ -1733,6 +1786,7 @@ def _agent_task_payload(
         "turn_id": _client_task_turn_id(task),
         "agent_turn_id": task.get("turn_id", ""),
         "current_step": task.get("current_step", ""),
+        "approval_request": task.get("pending_approval", {}),
         "task_disposition": task.get("task_disposition", ""),
         "merged_into_task_id": task.get("merged_into_task_id", ""),
         "progress_event": progress_event,
@@ -2295,6 +2349,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     thread_id=event.get("thread_id"), turn_id=event.get("turn_id"),
                     current_step=event.get("current_step"), result=event_result,
                     error=event.get("error"),
+                    approval_request=(
+                        event.get("approval_request")
+                        if isinstance(event.get("approval_request"), dict) else None
+                    ),
                 )
             if (
                 updated and not result_published and event_status in {"completed", "failed", "timed_out"}
@@ -2816,6 +2874,26 @@ def _process_message(mqttc, userdata, msg):
                     "time": time.time(),
                     "delivery_trace": _delivery_trace({"delivery_trace": trace}, _trace_event("agent_not_found", task_id)),
                 })
+            return
+
+        if msg_type == "agent_task_approval":
+            result = _resolve_agent_task_approval(
+                payload,
+                client_route_id=client_route_id,
+                contact_id=str(contact_id),
+            )
+            result["delivery_trace"] = _delivery_trace(
+                {"delivery_trace": trace},
+                _trace_event(
+                    (
+                        "agent_approval_resolved"
+                        if result["resolved"]
+                        else "agent_approval_rejected"
+                    ),
+                    result["approval_id"],
+                ),
+            )
+            _publish_phone_payload(mqttc, wire_payload, result)
             return
 
         if msg_type == "agent_conversation_delete":

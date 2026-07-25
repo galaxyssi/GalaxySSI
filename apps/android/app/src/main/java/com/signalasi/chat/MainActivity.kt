@@ -237,6 +237,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentRuntimeTurnIds = ConcurrentHashMap<MobileNativeAgent, String>()
     private val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val agentTimelineOperationsInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val remoteAgentApprovalsInFlight = ConcurrentHashMap.newKeySet<String>()
     private var pendingDirectSystemAction: PendingDirectSystemAction? = null
     private lateinit var agentScreenSearchInput: EditText
     private lateinit var agentScreenDetailList: LinearLayout
@@ -1402,6 +1403,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         ?.recordConnectorTransportAccepted(acknowledgedId)
                 }
             }
+            if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
             if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
             if (handleAgentTaskEvent(envelope)) return@runOnUiThread
             val msg = parseIncomingMessage(payload)
@@ -1583,6 +1585,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             taskRuntime,
             turnId
         ) ?: return true
+        syncRemoteAgentApproval(
+            envelope = envelope,
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = taskId,
+            targetName = targetName
+        )
         envelope.optJSONObject("progress_event")?.let { progress ->
             val eventId = progress.optString("event_id").trim()
             val progressText = connectorProgressText(progress)
@@ -1699,6 +1708,182 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
         return true
+    }
+
+    private fun syncRemoteAgentApproval(
+        envelope: JSONObject,
+        conversationId: String,
+        turnId: String,
+        taskId: String,
+        targetName: String
+    ) {
+        val request = AgentRemoteApprovalRequest.fromTaskEvent(envelope)
+        if (request == null) {
+            if (taskId.isNotBlank() && envelope.optString("task_status") != "waiting_approval") {
+                removeRemoteAgentApprovals(taskId)
+            }
+            return
+        }
+        val richOutput = AgentRichContentCodec.encode(
+            listOf(
+                AgentRichBlock(
+                    id = request.dedupeKey,
+                    type = AgentRichBlockType.APPROVAL,
+                    title = remoteAgentApprovalTitle(request),
+                    text = remoteAgentApprovalDetail(request, targetName),
+                    fallbackText = getString(R.string.agent_remote_approval_waiting),
+                    actions = listOf(
+                        AgentRichAction(
+                            id = "deny:${request.approvalId}",
+                            label = getString(R.string.agent_remote_approval_deny),
+                            verb = "reject_remote_task",
+                            value = request.decision(false).encode()
+                        ),
+                        AgentRichAction(
+                            id = "allow:${request.approvalId}",
+                            label = getString(R.string.agent_remote_approval_allow),
+                            verb = "approve_remote_task",
+                            value = request.decision(true).encode()
+                        )
+                    ),
+                    metadata = mapOf(
+                        "approval_id" to request.approvalId,
+                        "action_hash" to request.actionHash,
+                        "expires_at_ms" to request.expiresAtMillis.toString()
+                    )
+                )
+            )
+        )
+        agentTranscriptStore.upsert(
+            role = AgentTranscriptRole.ASSISTANT,
+            text = remoteAgentApprovalTitle(request),
+            dedupeKey = request.dedupeKey,
+            timestampMillis = request.requestedAtMillis,
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = taskId,
+            richOutputJson = richOutput
+        )
+    }
+
+    private fun remoteAgentApprovalTitle(request: AgentRemoteApprovalRequest): String =
+        getString(
+            when (request.kind.lowercase(Locale.ROOT)) {
+                "command" -> R.string.agent_remote_approval_command
+                "file_change" -> R.string.agent_remote_approval_files
+                "permissions" -> R.string.agent_remote_approval_permissions
+                else -> R.string.agent_remote_approval_title
+            }
+        )
+
+    private fun remoteAgentApprovalDetail(
+        request: AgentRemoteApprovalRequest,
+        targetName: String
+    ): String = buildList {
+        add(getString(R.string.agent_remote_approval_requested_by, targetName))
+        request.detail.takeIf(String::isNotBlank)?.let(::add)
+        val parameters = runCatching { JSONObject(request.parametersJson) }.getOrNull()
+        parameters?.optString("cwd")?.takeIf(String::isNotBlank)?.let {
+            add(getString(R.string.agent_remote_approval_working_directory, it))
+        }
+        parameters?.optString("grant_root")?.takeIf(String::isNotBlank)?.let {
+            add(getString(R.string.agent_remote_approval_scope, it))
+        }
+        parameters?.optJSONArray("files")?.let { files ->
+            val names = (0 until files.length())
+                .mapNotNull { index -> files.optString(index).takeIf(String::isNotBlank) }
+            if (names.isNotEmpty()) {
+                add(getString(R.string.agent_remote_approval_files_list, names.joinToString(", ")))
+            }
+        }
+        parameters?.optJSONObject("permissions")
+            ?.takeIf { it.length() > 0 }
+            ?.let {
+                add(
+                    getString(
+                        R.string.agent_remote_approval_permissions_list,
+                        it.toString().take(2_000)
+                    )
+                )
+            }
+        request.reason
+            .takeIf { it.isNotBlank() && !request.detail.contains(it, ignoreCase = true) }
+            ?.let { add(getString(R.string.agent_remote_approval_reason, it)) }
+        add(getString(R.string.agent_remote_approval_fingerprint, request.compactActionHash))
+    }.joinToString("\n")
+
+    private fun handleAgentTaskApprovalResult(envelope: JSONObject?): Boolean {
+        if (envelope?.optString("type") != "agent_task_approval_result") return false
+        val taskId = envelope.optString("task_id").trim()
+        val approvalId = envelope.optString("approval_id").trim()
+        val actionHash = envelope.optString("action_hash").trim().lowercase(Locale.ROOT)
+        val matchingEntries = remoteAgentApprovalEntries(taskId, approvalId, actionHash)
+        remoteAgentApprovalsInFlight.remove("$taskId:$approvalId:$actionHash")
+        if (matchingEntries.isEmpty()) return true
+        if (envelope.optBoolean("resolved", false)) {
+            matchingEntries.forEach { entry ->
+                agentTranscriptStore.deleteEntry(entry.id)
+                if (agentTranscriptWindow.conversationId == entry.conversationId) {
+                    agentTranscriptWindow.remove(entry.id)
+                }
+            }
+            matchingEntries.map(AgentTranscriptEntry::conversationId).distinct().forEach { conversationId ->
+                if (conversationId == agentTranscriptStore.activeConversation().id) {
+                    refreshAgentTranscriptWindow(conversationId)
+                }
+            }
+            Toast.makeText(
+                this,
+                if (envelope.optBoolean("approved", false)) {
+                    R.string.agent_remote_approval_allowed
+                } else {
+                    R.string.agent_remote_approval_denied
+                },
+                Toast.LENGTH_SHORT
+            ).show()
+        } else {
+            Toast.makeText(
+                this,
+                if (envelope.optString("error").contains("expired", ignoreCase = true)) {
+                    R.string.agent_remote_approval_expired
+                } else {
+                    R.string.agent_remote_approval_failed
+                },
+                Toast.LENGTH_LONG
+            ).show()
+        }
+        return true
+    }
+
+    private fun remoteAgentApprovalEntries(
+        taskId: String,
+        approvalId: String,
+        actionHash: String
+    ): List<AgentTranscriptEntry> = agentTranscriptStore.taskEntries(taskId).filter { entry ->
+        AgentRichContentCodec.decode(entry.richOutputJson)
+            .flatMap(AgentRichBlock::actions)
+            .mapNotNull { action -> AgentRemoteApprovalDecision.decode(action.value) }
+            .any { decision ->
+                decision.taskId == taskId &&
+                    decision.approvalId == approvalId &&
+                    decision.actionHash == actionHash
+            }
+    }
+
+    private fun removeRemoteAgentApprovals(taskId: String) {
+        val entries = agentTranscriptStore.taskEntries(taskId).filter { entry ->
+            isRemoteAgentApprovalEntry(entry)
+        }
+        remoteAgentApprovalsInFlight
+            .filter { key -> key.startsWith("$taskId:") }
+            .forEach(remoteAgentApprovalsInFlight::remove)
+        if (entries.isEmpty()) return
+        entries.forEach { entry ->
+            agentTranscriptStore.deleteEntry(entry.id)
+            if (agentTranscriptWindow.conversationId == entry.conversationId) {
+                agentTranscriptWindow.remove(entry.id)
+            }
+        }
     }
 
     private fun syncRemoteTaskEvents(
@@ -10214,7 +10399,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
         val filteredEntries = entries.filterNot { entry ->
-            val staleApproval = isAgentApprovalEntry(entry) &&
+            val staleApproval = isLocalAgentApprovalEntry(entry) &&
                 (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
             if (staleApproval && agentTranscriptStore.deleteEntry(entry.id)) {
                 agentTranscriptWindow.remove(entry.id)
@@ -10275,7 +10460,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun isAgentApprovalEntry(entry: AgentTranscriptEntry): Boolean =
         entry.taskId.isNotBlank() && AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
             block.type == AgentRichBlockType.APPROVAL && block.actions.any { action ->
+                action.verb in setOf(
+                    "approve_task",
+                    "reject_task",
+                    "approve_remote_task",
+                    "reject_remote_task"
+                )
+            }
+        }
+
+    private fun isLocalAgentApprovalEntry(entry: AgentTranscriptEntry): Boolean =
+        entry.taskId.isNotBlank() && AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
+            block.type == AgentRichBlockType.APPROVAL && block.actions.any { action ->
                 action.verb == "approve_task" || action.verb == "reject_task"
+            }
+        }
+
+    private fun isRemoteAgentApprovalEntry(entry: AgentTranscriptEntry): Boolean =
+        entry.taskId.isNotBlank() && AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
+            block.type == AgentRichBlockType.APPROVAL && block.actions.any { action ->
+                action.verb == "approve_remote_task" || action.verb == "reject_remote_task"
             }
         }
 
@@ -10890,6 +11094,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 entry,
                 approved = action.verb == "approve_task"
             )
+            "approve_remote_task", "reject_remote_task" -> runRemoteAgentTaskDecision(
+                entry,
+                action,
+                approved = action.verb == "approve_remote_task"
+            )
             "preview_runtime_artifact" -> previewRuntimeArtifact(action.value)
             "save_runtime_artifact" -> saveRuntimeArtifact(action.value)
             else -> Toast.makeText(this, action.label, Toast.LENGTH_SHORT).show()
@@ -11057,6 +11266,38 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             runOnUiThread { renderAgentState(state, entry.conversationId, entry.turnId) }
         }
+    }
+
+    private fun runRemoteAgentTaskDecision(
+        entry: AgentTranscriptEntry,
+        action: AgentRichAction,
+        approved: Boolean
+    ) {
+        val encodedDecision = AgentRemoteApprovalDecision.decode(action.value)
+        val decision = encodedDecision?.takeIf {
+            it.taskId == entry.taskId &&
+                entry.dedupeKey == "remote-approval:${it.taskId}:${it.approvalId}" &&
+                it.approved == approved
+        }
+        if (decision == null) {
+            Toast.makeText(this, R.string.agent_remote_approval_invalid, Toast.LENGTH_LONG).show()
+            return
+        }
+        val operationKey = "${decision.taskId}:${decision.approvalId}:${decision.actionHash}"
+        if (!remoteAgentApprovalsInFlight.add(operationKey)) {
+            Toast.makeText(this, R.string.agent_remote_approval_pending, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val published = SignalASIMqttClient.publishAgentTaskApproval(
+            decision = decision,
+            topicOverride = AppStore.outgoingTopicForContact(this, decision.contactId)
+        )
+        if (!published) {
+            remoteAgentApprovalsInFlight.remove(operationKey)
+            Toast.makeText(this, R.string.agent_remote_approval_send_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        Toast.makeText(this, R.string.agent_remote_approval_sent, Toast.LENGTH_SHORT).show()
     }
 
     private fun agentExecutionLine(state: AgentUiState, entry: AgentAuditEntry): String? {

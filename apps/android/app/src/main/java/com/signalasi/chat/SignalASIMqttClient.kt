@@ -544,6 +544,38 @@ object SignalASIMqttClient {
         return publishJson(payload, topicOverride ?: outgoingTopic(contactId), contactId)
     }
 
+    fun publishAgentTaskApproval(
+        decision: AgentRemoteApprovalDecision,
+        topicOverride: String? = null
+    ): Boolean {
+        val payload = JSONObject()
+            .put("type", "agent_task_approval")
+            .put("task_id", decision.taskId)
+            .put("contact_id", decision.contactId)
+            .put("source_message_id", decision.sourceMessageId)
+            .put("approval_id", decision.approvalId)
+            .put("action_hash", decision.actionHash)
+            .put("approved", decision.approved)
+            .put("time", System.currentTimeMillis())
+        appContext?.let { context ->
+            AppStore.contactById(context, decision.contactId)?.let { contact ->
+                payload
+                    .put(
+                        "agent_id",
+                        contact.optString("agent_id").ifBlank {
+                            AppStore.agentIdForContact(context, decision.contactId)
+                        }
+                    )
+                    .put("desktop_id", contact.optString("desktop_id"))
+            }
+        }
+        return publishJson(
+            payload,
+            topicOverride ?: outgoingTopic(decision.contactId),
+            decision.contactId
+        )
+    }
+
     fun publishAgentConversationDelete(conversationId: String, taskIds: Set<String>): Boolean {
         if (conversationId.isBlank()) return false
         val payload = JSONObject()
