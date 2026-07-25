@@ -21,6 +21,17 @@ object SignalASILinkProtocol {
     private const val MAX_CLOCK_SKEW_MS = 5 * 60 * 1000L
     private const val DEFAULT_MESSAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000L
     const val MAX_ENVELOPE_BYTES = 512 * 1024
+    const val ACCESS_CONTRACT = "signalasi.pairing-access/1.0"
+    const val ACCESS_RESTRICTED = "restricted"
+    const val ACCESS_DESKTOP_EXECUTOR = "desktop_executor"
+    const val SCOPE_AGENT_CHAT = "agent.chat"
+    const val SCOPE_EXPLICIT_ATTACHMENTS = "agent.attachments.explicit"
+    const val SCOPE_TASK_WORKSPACE = "desktop.task_workspace"
+    const val SCOPE_DESKTOP_EXECUTOR = "desktop.executor.full"
+    const val SCOPE_DESKTOP_CONTROL = "desktop.control"
+    const val SCOPE_DESKTOP_NATIVE_TOOLS = "desktop.native_tools"
+    const val SCOPE_DESKTOP_EXTERNAL_FILES = "desktop.files.external"
+    const val SCOPE_DESKTOP_APPROVAL_BYPASS = "desktop.approval.bypass"
     private const val MAX_TEXT_BYTES = 128 * 1024
     private val routePattern = Regex("^[A-Za-z0-9_-]{22}$")
     private val random = SecureRandom()
@@ -43,8 +54,14 @@ object SignalASILinkProtocol {
         val desktopFingerprint: String,
         val signalName: String,
         val routes: Routes,
-        val paired: Boolean
+        val paired: Boolean,
+        val accessProfile: String = ACCESS_RESTRICTED,
+        val accessScopes: Set<String> = emptySet()
     ) {
+        val fullDesktopExecutor: Boolean
+            get() = accessProfile == ACCESS_DESKTOP_EXECUTOR &&
+                SCOPE_DESKTOP_EXECUTOR in accessScopes
+
         fun toJson(): JSONObject = JSONObject()
             .put("desktop_id", desktopId)
             .put("desktop_name", desktopName)
@@ -53,7 +70,18 @@ object SignalASILinkProtocol {
             .put("server_route_id", routes.serverRouteId)
             .put("client_route_id", routes.clientRouteId)
             .put("paired", paired)
+            .put("access_profile", accessProfile)
+            .put("access_scopes", JSONArray(accessScopes.sorted()))
             .put("updated_at", System.currentTimeMillis())
+    }
+
+    data class PairingAccess(
+        val profile: String,
+        val scopes: Set<String>
+    ) {
+        val fullDesktopExecutor: Boolean
+            get() = profile == ACCESS_DESKTOP_EXECUTOR &&
+                SCOPE_DESKTOP_EXECUTOR in scopes
     }
 
     fun newRouteId(): String {
@@ -74,6 +102,7 @@ object SignalASILinkProtocol {
         if (qr.optString("pairing_token").length < 32) return false
         if (runCatching { Base64.getUrlDecoder().decode(qr.optString("pairing_secret")) }.getOrNull()?.size != 32) return false
         if (qr.optString("desktop_id").isBlank() || qr.optString("identity_key_sha256").length != 64) return false
+        if (pairingAccess(qr.optJSONObject("pairing_access")) == null) return false
         val createdAt = qr.optLong("created_at")
         val createdAtMs = if (createdAt < 10_000_000_000L) TimeUnit.SECONDS.toMillis(createdAt) else createdAt
         return createdAtMs > 0 && kotlin.math.abs(nowMs - createdAtMs) <= MAX_QR_AGE_MS
@@ -92,13 +121,18 @@ object SignalASILinkProtocol {
             existing != null &&
             existing.routes.serverRouteId == qr.getString("server_route_id")
         ) return existing
+        val access = requireNotNull(pairingAccess(qr.optJSONObject("pairing_access"))) {
+            "Invalid SignalASI pairing access grant"
+        }
         val link = ServerLink(
             desktopId = desktopId,
             desktopName = qr.optString("desktop_name", "SignalASI Desktop"),
             desktopFingerprint = qr.getString("identity_key_sha256"),
             signalName = desktopId,
             routes = Routes(qr.getString("server_route_id"), newRouteId()),
-            paired = false
+            paired = false,
+            accessProfile = access.profile,
+            accessScopes = access.scopes
         )
         existing?.let { SignalASILinkDeliveryStore.discardRoutes(context, it.routes) }
         save(context, link)
@@ -106,9 +140,34 @@ object SignalASILinkProtocol {
     }
 
     @Synchronized
-    fun markPaired(context: Context, desktopId: String): ServerLink? {
+    fun markPaired(
+        context: Context,
+        desktopId: String,
+        access: JSONObject? = null
+    ): ServerLink? {
         val current = serverLink(context, desktopId) ?: return null
-        val updated = current.copy(paired = true)
+        val parsedAccess = pairingAccess(access)
+        val updated = current.copy(
+            paired = true,
+            accessProfile = parsedAccess?.profile ?: current.accessProfile,
+            accessScopes = parsedAccess?.scopes ?: current.accessScopes
+        )
+        save(context, updated)
+        return updated
+    }
+
+    @Synchronized
+    fun updatePairingAccess(
+        context: Context,
+        desktopId: String,
+        access: JSONObject?
+    ): ServerLink? {
+        val current = serverLink(context, desktopId) ?: return null
+        val parsed = pairingAccess(access) ?: return current
+        val updated = current.copy(
+            accessProfile = parsed.profile,
+            accessScopes = parsed.scopes
+        )
         save(context, updated)
         return updated
     }
@@ -130,7 +189,9 @@ object SignalASILinkProtocol {
                             desktopFingerprint = item.getString("desktop_fingerprint"),
                             signalName = item.optString("signal_name", item.getString("desktop_id")),
                             routes = Routes(item.getString("server_route_id"), item.getString("client_route_id")),
-                            paired = item.optBoolean("paired", false)
+                            paired = item.optBoolean("paired", false),
+                            accessProfile = item.optString("access_profile", ACCESS_RESTRICTED),
+                            accessScopes = item.optJSONArray("access_scopes").toStringSet()
                         )
                     )
                 }
@@ -169,6 +230,32 @@ object SignalASILinkProtocol {
             .put("payload", payload)
         require(envelope.toString().toByteArray(Charsets.UTF_8).size <= MAX_ENVELOPE_BYTES) { "Envelope exceeds Link limit" }
         return envelope
+    }
+
+    fun pairingAccess(source: JSONObject?): PairingAccess? {
+        val value = source ?: return null
+        if (value.optString("contract_version") != ACCESS_CONTRACT ||
+            value.optInt("version") != 1
+        ) return null
+        val profile = value.optString("profile")
+        if (profile !in setOf(ACCESS_RESTRICTED, ACCESS_DESKTOP_EXECUTOR)) return null
+        val scopes = value.optJSONArray("scopes").toStringSet()
+        val restrictedScopes = setOf(
+            SCOPE_AGENT_CHAT,
+            SCOPE_EXPLICIT_ATTACHMENTS,
+            SCOPE_TASK_WORKSPACE
+        )
+        val executorScopes = restrictedScopes + setOf(
+            SCOPE_DESKTOP_EXECUTOR,
+            SCOPE_DESKTOP_CONTROL,
+            SCOPE_DESKTOP_NATIVE_TOOLS,
+            SCOPE_DESKTOP_EXTERNAL_FILES,
+            SCOPE_DESKTOP_APPROVAL_BYPASS
+        )
+        if (!scopes.containsAll(restrictedScopes)) return null
+        if (profile == ACCESS_DESKTOP_EXECUTOR && !scopes.containsAll(executorScopes)) return null
+        if (profile == ACCESS_RESTRICTED && scopes.any { it in executorScopes - restrictedScopes }) return null
+        return PairingAccess(profile, scopes)
     }
 
     fun encryptPairingClaim(claim: JSONObject, qr: JSONObject): JSONObject {
@@ -217,5 +304,12 @@ object SignalASILinkProtocol {
         val array = JSONArray()
         links.forEach { array.put(it.toJson()) }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_SERVERS, array.toString()).commit()
+    }
+
+    private fun JSONArray?.toStringSet(): Set<String> = buildSet {
+        val source = this@toStringSet ?: return@buildSet
+        for (index in 0 until source.length()) {
+            source.optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+        }
     }
 }

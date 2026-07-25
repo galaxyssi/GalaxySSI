@@ -83,6 +83,18 @@ class AgentCliExecutionTest(unittest.TestCase):
 
         self.assertEqual("QUOTED_OK:quoted prompt", reply)
 
+    def test_restricted_pairing_disables_hermes_yolo_and_marks_workspace_only(self):
+        full = agent_gateway._agent_env(agent_gateway.BASE_AGENTS["hermes"])
+        restricted = agent_gateway._agent_env(
+            agent_gateway.BASE_AGENTS["hermes"],
+            restricted_workspace=True,
+        )
+
+        self.assertEqual("1", full["HERMES_YOLO_MODE"])
+        self.assertNotIn("HERMES_YOLO_MODE", restricted)
+        self.assertEqual("restricted", restricted["SIGNALASI_DESKTOP_ACCESS_PROFILE"])
+        self.assertEqual("workspace_only", restricted["SIGNALASI_AGENT_TOOL_MODE"])
+
 
 if __name__ == "__main__":
     unittest.main()

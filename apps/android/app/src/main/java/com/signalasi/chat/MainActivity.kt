@@ -16154,6 +16154,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val desktopFingerprint = pairingQr.optString("identity_key_sha256")
             .ifBlank { pairingQr.optString("identity_fingerprint") }
+        val pairingAccess = SignalASILinkProtocol.pairingAccess(
+            pairingQr.optJSONObject("pairing_access")
+        ) ?: return
         showFeaturePage(getString(R.string.pairing_confirm_title))
         featureContent.addView(featureHeroCard(desktopName, getString(R.string.pairing_confirm_subtitle), R.drawable.ic_security_shield, "#14C66A", getString(R.string.pairing_pending_confirm)))
         addSectionTitle(getString(R.string.pairing_section_device))
@@ -16169,6 +16172,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
         addSectionTitle(getString(R.string.pairing_section_after_confirm))
         featureContent.addView(featureRow(getString(R.string.pairing_save_trust), getString(R.string.pairing_save_trust_subtitle), R.drawable.ic_protocol_link, getString(R.string.status_enabled)))
+        featureContent.addView(
+            featureRow(
+                getString(
+                    if (pairingAccess.fullDesktopExecutor) {
+                        R.string.pairing_access_full
+                    } else {
+                        R.string.pairing_access_restricted
+                    }
+                ),
+                getString(
+                    if (pairingAccess.fullDesktopExecutor) {
+                        R.string.pairing_access_full_subtitle
+                    } else {
+                        R.string.pairing_access_restricted_subtitle
+                    }
+                ),
+                R.drawable.ic_security_shield,
+                getString(R.string.status_enabled)
+            )
+        )
         featureContent.addView(TextView(this).apply {
             text = getString(R.string.pairing_confirm_title)
             gravity = Gravity.CENTER
@@ -16829,6 +16852,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 when {
                     snapshot.authorized -> R.string.desktop_control_authorized
                     snapshot.pending -> R.string.desktop_control_pending
+                    !snapshot.fullDesktopExecutor -> R.string.desktop_control_repair_executor_required
                     !snapshot.enabled -> R.string.desktop_control_executor_off
                     else -> R.string.desktop_control_not_authorized
                 }
@@ -16852,8 +16876,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ))
         val placeholder = TextView(this).apply {
             text = getString(
-                if (snapshot.authorized) R.string.desktop_control_tap_refresh
-                else R.string.desktop_control_authorization_required
+                when {
+                    snapshot.authorized -> R.string.desktop_control_tap_refresh
+                    !snapshot.fullDesktopExecutor -> R.string.desktop_control_repair_executor_required
+                    else -> R.string.desktop_control_authorization_required
+                }
             )
             gravity = Gravity.CENTER
             setTextColor(Color.parseColor("#AAB3BD"))

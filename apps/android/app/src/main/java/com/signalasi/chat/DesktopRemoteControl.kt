@@ -39,6 +39,7 @@ data class DesktopRemoteControlSnapshot(
     val desktopName: String,
     val desktopFingerprint: String,
     val serverRouteId: String,
+    val fullDesktopExecutor: Boolean,
     val enabled: Boolean,
     val requireUnlocked: Boolean,
     val currentAuthorization: DesktopControlAuthorization?,
@@ -49,8 +50,10 @@ data class DesktopRemoteControlSnapshot(
     val lastActionAt: Long,
     val screenshot: DesktopControlScreenshot?
 ) {
-    val authorized: Boolean get() = enabled && currentAuthorization?.status == "active"
-    val pending: Boolean get() = currentAuthorization?.status == "pending"
+    val authorized: Boolean
+        get() = fullDesktopExecutor && enabled && currentAuthorization?.status == "active"
+    val pending: Boolean
+        get() = fullDesktopExecutor && currentAuthorization?.status == "pending"
 }
 
 object DesktopRemoteControl {
@@ -79,6 +82,11 @@ object DesktopRemoteControl {
         if (type == "capability_manifest") {
             val desktopId = payload.optJSONObject("server")?.optString("id").orEmpty()
                 .ifBlank { payload.optString("desktop_id") }
+            SignalASILinkProtocol.updatePairingAccess(
+                context,
+                desktopId,
+                payload.optJSONObject("pairing_access")
+            )
             val control = payload.optJSONObject("desktop_control") ?: return false
             updateDesktopState(
                 context,
@@ -100,6 +108,11 @@ object DesktopRemoteControl {
 
         val desktopId = payload.optString("desktop_id")
         if (desktopId.isBlank()) return true
+        SignalASILinkProtocol.updatePairingAccess(
+            context,
+            desktopId,
+            payload.optJSONObject("pairing_access")
+        )
         when (type) {
             "desktop_control_authorizations" -> updateDesktopState(
                 context,
@@ -174,6 +187,7 @@ object DesktopRemoteControl {
             serverRouteId = item.optString("server_route_id").ifBlank {
                 link?.routes?.serverRouteId.orEmpty()
             },
+            fullDesktopExecutor = link?.fullDesktopExecutor == true,
             enabled = item.optBoolean("enabled", false),
             requireUnlocked = item.optBoolean("require_unlocked", false),
             currentAuthorization = current,

@@ -5703,6 +5703,8 @@ class MobileNativeAgent(
             },
             parameters = mapOf(
                 "connector_id" to target.id,
+                "_signalasi_desktop_executor_full" to
+                    (target.desktopAccessProfile == SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString(),
                 "knowledge_query" to query,
                 "knowledge_item_ids" to rag.citations.joinToString(",") { it.itemId },
                 "knowledge_source_count" to rag.sourceCount.toString(),
@@ -6382,7 +6384,9 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             parameters = mapOf(
                 "connector_id" to plannerTarget.id,
                 "prompt" to authoringPrompt,
-                "connector_task_mode" to PHONE_DEVELOPMENT_CONNECTOR_MODE
+                "connector_task_mode" to PHONE_DEVELOPMENT_CONNECTOR_MODE,
+                "_signalasi_desktop_executor_full" to
+                    (plannerTarget.desktopAccessProfile == SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString()
             )
         )
         val runtimeInput = JSONObject()
@@ -7116,6 +7120,10 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             parameters = buildMap {
                 put("connector_id", connectorId)
                 put("prompt", request.goal)
+                put(
+                    "_signalasi_desktop_executor_full",
+                    (target?.desktopAccessProfile == SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString()
+                )
                 routing?.let { decision ->
                     put("routing_mode", decision.requirements.mode.name)
                     put("routing_requires_live_data", decision.requirements.liveDataRequired.toString())
@@ -7434,7 +7442,9 @@ object AgentPlanFactory {
                 parameters = mapOf(
                     "connector_id" to target.id,
                     "prompt" to request.goal,
-                    "planner_fallback" to "empty_action_plan"
+                    "planner_fallback" to "empty_action_plan",
+                    "_signalasi_desktop_executor_full" to
+                        (target.desktopAccessProfile == SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR).toString()
                 ),
                 requiresConfirmation = false
             )
@@ -7899,7 +7909,10 @@ class DefaultAgentSafetyPolicy(
                 add("memory_capture")
             }
             if (!settings.connectorCallsAllowed && plan.actions.any { it.kind == AgentActionKind.CALL_CONNECTOR }) {
-                add("connector_calls")
+                val hasUnrestrictedDesktopGrant = plan.actions
+                    .filter { it.kind == AgentActionKind.CALL_CONNECTOR }
+                    .all { it.parameters["_signalasi_desktop_executor_full"] == "true" }
+                if (!hasUnrestrictedDesktopGrant) add("connector_calls")
             }
             if (!settings.deviceControlAllowed && plan.actions.any { it.kind == AgentActionKind.CONTROL_DEVICE }) {
                 add("device_control")
@@ -7940,7 +7953,8 @@ class DefaultAgentSafetyPolicy(
             PermissionMode.OBSERVE_ONLY,
             PermissionMode.SUGGEST_ONLY -> false
             PermissionMode.ASK_BEFORE_ACTION -> pendingActions.any {
-                it.kind != AgentActionKind.READ_SCREEN &&
+                AgentConfirmationPolicy.tier(it) != AgentConfirmationTier.DIRECT &&
+                    it.kind != AgentActionKind.READ_SCREEN &&
                     it.kind != AgentActionKind.DRAFT_PLAN &&
                     it.kind != AgentActionKind.CALL_CONNECTOR &&
                     !it.isPhoneDevelopmentRuntimeHandoff()
@@ -10068,14 +10082,16 @@ class AppStoreAgentConnectorRegistry(
 
     override fun availableTargets(): List<AgentCallableTarget> {
         val builtIn = fallback.availableTargets().map { target ->
-            val desktopDomain = matchingContactIds(target.id)
+            val contact = matchingContactIds(target.id)
                 .asSequence()
-                .map { AppStore.desktopIdForContact(appContext, it) }
-                .firstOrNull(String::isNotBlank)
-                .orEmpty()
+                .mapNotNull { AppStore.contactById(appContext, it) }
+                .firstOrNull()
+            val desktopDomain = contact?.optString("desktop_id").orEmpty()
             target.copy(
                 status = statusFor(target),
-                failureDomain = target.failureDomain.ifBlank { desktopDomain }
+                failureDomain = target.failureDomain.ifBlank { desktopDomain },
+                desktopAccessProfile = contact?.optString("desktop_access_profile")
+                    .orEmpty().ifBlank { target.desktopAccessProfile }
             )
         }
         val cloudProviders = cloudProviderTargets()
@@ -10218,7 +10234,11 @@ class AppStoreAgentConnectorRegistry(
                             defaultDesktopAdapterType(contact, id)
                         },
                         independentlyUpgradeable = adapterDescriptor.optBoolean("independently_upgradeable", true),
-                        capabilities = capabilities
+                        capabilities = capabilities,
+                        desktopAccessProfile = contact.optString(
+                            "desktop_access_profile",
+                            SignalASILinkProtocol.ACCESS_RESTRICTED
+                        )
                     )
                 )
             }
@@ -11176,7 +11196,8 @@ data class AgentCallableTarget(
     val failureDomain: String = "",
     val runtimeFailureDomain: String = "",
     val adapterType: String = "",
-    val independentlyUpgradeable: Boolean = true
+    val independentlyUpgradeable: Boolean = true,
+    val desktopAccessProfile: String = ""
 )
 
 data class ScreenContext(

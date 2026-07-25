@@ -38,6 +38,7 @@ const state = {
   agents: DEFAULT_AGENT_CONTACTS,
   agentConfig: null,
   pairing: null,
+  pairingGrantDesktopExecutor: false,
   tools: [],
   desktopControl: null,
   memory: { memories: [], stats: {} },
@@ -751,7 +752,9 @@ function renderGateway() {
   $("#gatewaySummary p").textContent = count ? t("{count} verified phone(s) connected", { count }) : t("No phone paired");
   $("#pairedClientList").innerHTML = clients.length ? clients.map((client) => {
     const id = client.client_route_id || "";
-    return `<article class="paired-client"><span class="phone-outline"></span><div><strong>${escapeHtml(client.remote_name || client.device_name || t("SignalASI phone"))}</strong><small>${escapeHtml(client.identity_fingerprint_short || id.slice(0, 12) || t("Verified"))}</small></div><button data-revoke-client="${escapeHtml(id)}">${escapeHtml(t("Revoke"))}</button></article>`;
+    const access = client.access?.profile === "desktop_executor" ? t("Full access") : t("Restricted");
+    const fingerprint = client.identity_fingerprint_short || id.slice(0, 12) || t("Verified");
+    return `<article class="paired-client"><span class="phone-outline"></span><div><strong>${escapeHtml(client.remote_name || client.device_name || t("SignalASI phone"))}</strong><small>${escapeHtml(`${fingerprint} · ${access}`)}</small></div><button data-revoke-client="${escapeHtml(id)}">${escapeHtml(t("Revoke"))}</button></article>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("Scan the QR code below to pair a phone."))}</div>`;
 }
 
@@ -770,13 +773,18 @@ async function loadPairingFrame() {
   const image = $("#pairingFrame");
   if (image.getAttribute("src")) return;
   const fingerprint = $("#pairingFingerprint");
+  const accessSummary = $("#pairingAccessSummary");
   fingerprint.textContent = t("Preparing secure pairing QR...");
+  accessSummary.textContent = "";
   try {
-    const pairing = await window.signalasi.getPairingQr();
+    const pairing = await window.signalasi.getPairingQr(state.pairingGrantDesktopExecutor);
     image.src = pairing.imageDataUrl;
     fingerprint.textContent = pairing.fingerprint
       ? t("Computer fingerprint: {fingerprint}", { fingerprint: pairing.fingerprint })
       : "";
+    accessSummary.textContent = state.pairingGrantDesktopExecutor
+      ? t("Full Desktop Executor access will be granted to this phone.")
+      : t("Restricted pairing: Agent chat and explicit task attachments only.");
   } catch (error) {
     image.removeAttribute("src");
     fingerprint.textContent = t("Unable to load the pairing QR. Restart the Desktop backend and try again.");
@@ -869,6 +877,8 @@ async function showDesktopControlPairingQr() {
     state.desktopControl = await window.signalasi.updateDesktopControl({ enabled: true });
     renderDesktopControl();
   }
+  state.pairingGrantDesktopExecutor = true;
+  $("#pairingDesktopExecutorEnabled").checked = true;
   $("#pairingDetails").open = true;
   $("#pairingFrame").removeAttribute("src");
   await openPanel("gateway");
@@ -1274,6 +1284,15 @@ function bindEvents() {
   $("#saveCloudModelButton").addEventListener("click", () => saveCloudModelSettings(false));
   $("#testCloudModelButton").addEventListener("click", () => saveCloudModelSettings(true));
   $("#refreshGatewayButton").addEventListener("click", async () => { $("#pairingFrame").removeAttribute("src"); await refreshGateway(); await loadPairingFrame(); });
+  $("#pairingDesktopExecutorEnabled").addEventListener("change", async (event) => {
+    state.pairingGrantDesktopExecutor = Boolean(event.target.checked);
+    $("#pairingFrame").removeAttribute("src");
+    try {
+      await loadPairingFrame();
+    } catch (error) {
+      showToast(error.message || String(error));
+    }
+  });
   $("#pairedClientList").addEventListener("click", async (event) => {
     const button = event.target.closest("[data-revoke-client]");
     if (!button || !window.confirm(t("Revoke this phone? It must scan the QR code again."))) return;

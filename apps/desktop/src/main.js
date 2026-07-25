@@ -663,14 +663,17 @@ async function getPairingStatus() {
   return fetchJson("/api/pairing/status");
 }
 
-async function getPairingQr() {
+async function getPairingQr(grantDesktopExecutor = false) {
   await startBackend();
-  const pairing = await fetchJson("/api/pairing/qr");
+  const pairing = await fetchJson(
+    `/api/pairing/qr?desktop_executor=${grantDesktopExecutor ? "true" : "false"}`
+  );
   const imageDataUrl = pairing.image_data_url || "";
   if (!imageDataUrl) throw new Error("Pairing QR image was missing from the Desktop response");
   return {
     imageDataUrl,
-    fingerprint: pairing.fingerprint || ""
+    fingerprint: pairing.fingerprint || "",
+    pairingAccess: pairing.pairing_access || {}
   };
 }
 
@@ -894,7 +897,8 @@ ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
 ipcMain.handle("runtime:diagnostics", (_event, refresh = false) => runtimeDiagnostics(Boolean(refresh)));
 ipcMain.handle("pairing:status", getPairingStatus);
-ipcMain.handle("pairing:qr", getPairingQr);
+ipcMain.handle("pairing:qr", (_event, grantDesktopExecutor = false) =>
+  getPairingQr(Boolean(grantDesktopExecutor)));
 ipcMain.handle("pairing:clear", (_event, clientRouteId = "") => clearPairing(clientRouteId));
 ipcMain.handle("agents:detect", detectAgents);
 ipcMain.handle("agents:diagnostics", getAgentDiagnostics);

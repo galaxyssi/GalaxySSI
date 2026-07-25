@@ -112,6 +112,9 @@ object AgentConfirmationPolicy {
         if (nativeToolId in CONFIRM_ONCE_NATIVE_TOOL_IDS) {
             return AgentConfirmationTier.CONFIRM_ONCE
         }
+        if (nativeToolId in AgentDesktopRemoteNativeTools.toolIds) {
+            return AgentConfirmationTier.DIRECT
+        }
         if (nativeToolId == AgentWebMediaNativeTools.WEB_SEARCH) {
             return AgentConfirmationTier.DIRECT
         }

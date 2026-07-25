@@ -414,6 +414,9 @@ class DesktopAgentStateStore:
                 "delivery_mode": request.delivery_mode.value,
                 "conversation_id": request.conversation_id,
                 "source_message_id": request.source_message_id,
+                "desktop_access_profile": str(
+                    request.checkpoint.get("desktop_access_profile") or ""
+                ),
             },
             ensure_ascii=False,
             sort_keys=True,

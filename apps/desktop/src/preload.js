@@ -5,7 +5,8 @@ contextBridge.exposeInMainWorld("signalasi", {
   backendStatus: () => ipcRenderer.invoke("backend:status"),
   getRuntimeDiagnostics: (refresh = false) => ipcRenderer.invoke("runtime:diagnostics", refresh),
   getPairingStatus: () => ipcRenderer.invoke("pairing:status"),
-  getPairingQr: () => ipcRenderer.invoke("pairing:qr"),
+  getPairingQr: (grantDesktopExecutor = false) =>
+    ipcRenderer.invoke("pairing:qr", Boolean(grantDesktopExecutor)),
   clearPairing: (clientRouteId = "") => ipcRenderer.invoke("pairing:clear", clientRouteId),
   detectAgents: () => ipcRenderer.invoke("agents:detect"),
   getAgentDiagnostics: () => ipcRenderer.invoke("agents:diagnostics"),

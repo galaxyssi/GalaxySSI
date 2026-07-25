@@ -483,6 +483,9 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             spec,
             task_id=request.run_id,
             conversation_id=request.conversation_id,
+            restricted_workspace=(
+                str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
+            ),
         )
     reply = sanitize_assistant_response(
         raw_reply
@@ -1090,6 +1093,7 @@ def deliver_agent_sync(
     return_path: str = "",
     protocol: str = "1.0",
     required_features: tuple[str, ...] = (),
+    desktop_access_profile: str = "desktop_executor",
 ) -> dict:
     spec = all_agent_specs().get(contact_id)
     if spec is None:
@@ -1111,6 +1115,7 @@ def deliver_agent_sync(
                 conversation_id=conversation_id,
                 source_message_id=source_message_id,
                 return_path=return_path,
+                checkpoint={"desktop_access_profile": str(desktop_access_profile or "restricted")},
             )
         )
         if mode == AgentDeliveryMode.RESPOND:
@@ -1158,6 +1163,7 @@ def _ask_agent_sync_inner(
     spec: AgentSpec | None,
     task_id: str = "",
     conversation_id: str = "",
+    restricted_workspace: bool = False,
 ) -> str:
     if spec is None:
         return f"[SignalASI] \u672a\u77e5 Agent: {contact_id}"
@@ -1165,7 +1171,13 @@ def _ask_agent_sync_inner(
         return ask_local_model(text, timeout=spec.timeout)
     if spec.id == "cloud-model":
         return ask_cloud_model(text, timeout=spec.timeout)
-    return ask_cli_agent(spec, text, task_id=task_id, conversation_id=conversation_id)
+    return ask_cli_agent(
+        spec,
+        text,
+        task_id=task_id,
+        conversation_id=conversation_id,
+        restricted_workspace=restricted_workspace,
+    )
 
 
 def _agent_permission(spec: AgentSpec | None) -> str:
@@ -1235,6 +1247,7 @@ def ask_cli_agent(
     text: str,
     task_id: str = "",
     conversation_id: str = "",
+    restricted_workspace: bool = False,
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -1249,6 +1262,7 @@ def ask_cli_agent(
             text,
             task_id=task_id,
             conversation_id=conversation_id,
+            restricted_workspace=restricted_workspace,
         )
 
 
@@ -1259,6 +1273,7 @@ def _ask_cli_agent_locked(
     *,
     task_id: str,
     conversation_id: str,
+    restricted_workspace: bool = False,
     retried_stale_session: bool = False,
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
@@ -1300,6 +1315,7 @@ def _ask_cli_agent_locked(
         original_text=text,
         task_id=task_id,
         conversation_id=conversation_id,
+        restricted_workspace=restricted_workspace,
         retried_stale_session=retried_stale_session,
     )
 
@@ -1312,6 +1328,7 @@ def _run_cli_agent_process(
     original_text: str,
     task_id: str,
     conversation_id: str,
+    restricted_workspace: bool,
     retried_stale_session: bool,
 ) -> str:
     process: subprocess.Popen | None = None
@@ -1320,7 +1337,7 @@ def _run_cli_agent_process(
 
         args, stdin_text = _apply_prompt(command, text)
         working_directory = task_workspace(task_id, spec.id)
-        agent_env = _agent_env(spec)
+        agent_env = _agent_env(spec, restricted_workspace=restricted_workspace)
         agent_env.update(
             {
                 "SIGNALASI_TASK_ID": task_id or working_directory.name,
@@ -1365,6 +1382,7 @@ def _run_cli_agent_process(
                     original_text,
                     task_id=task_id,
                     conversation_id=conversation_id,
+                    restricted_workspace=restricted_workspace,
                     retried_stale_session=True,
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
@@ -1646,9 +1664,15 @@ def _mark_native_session_synced(
     )
 
 
-def _agent_env(spec: AgentSpec) -> dict:
+def _agent_env(spec: AgentSpec, *, restricted_workspace: bool = False) -> dict:
     env = {**os.environ, "SIGNALASI_AGENT_MODE": "1"}
-    if spec.id == "hermes":
+    env["SIGNALASI_DESKTOP_ACCESS_PROFILE"] = (
+        "restricted" if restricted_workspace else "desktop_executor"
+    )
+    if restricted_workspace:
+        env["SIGNALASI_AGENT_TOOL_MODE"] = "workspace_only"
+        env.pop("HERMES_YOLO_MODE", None)
+    elif spec.id == "hermes":
         env["HERMES_YOLO_MODE"] = "1"
     if spec.id == "codex":
         proxy = os.environ.get("SIGNALASI_CODEX_PROXY", "").strip()

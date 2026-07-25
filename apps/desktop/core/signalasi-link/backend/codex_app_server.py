@@ -146,6 +146,8 @@ class CodexAppServer:
         conversation_id: str = "",
         image_paths: list[str] | None = None,
         fresh_thread_prompt: str = "",
+        approval_policy: str = "on-request",
+        sandbox: str = "workspace-write",
     ) -> CodexRun:
         self._ensure_started()
         local_images = [
@@ -170,7 +172,13 @@ class CodexAppServer:
                 run.thread_id = self._conversation_threads.get(conversation_key, "") if conversation_key else ""
                 reused_thread = bool(run.thread_id)
                 if not run.thread_id:
-                    run.thread_id = self._start_thread(cwd, model, clean_conversation_id)
+                    run.thread_id = self._start_thread(
+                        cwd,
+                        model,
+                        clean_conversation_id,
+                        approval_policy=approval_policy,
+                        sandbox=sandbox,
+                    )
         except Exception:
             self._discard_run(run)
             raise
@@ -188,7 +196,13 @@ class CodexAppServer:
                 if clean_conversation_id:
                     self._conversation_threads.pop(conversation_key, None)
                     self._save_conversation_threads()
-                run.thread_id = self._start_thread(cwd, model, clean_conversation_id)
+                run.thread_id = self._start_thread(
+                    cwd,
+                    model,
+                    clean_conversation_id,
+                    approval_policy=approval_policy,
+                    sandbox=sandbox,
+                )
                 self.on_event(task_id, {
                     "status": "starting", "thread_id": run.thread_id,
                     "current_step": "Starting a fresh Codex thread",
@@ -221,6 +235,8 @@ class CodexAppServer:
         original_prompt: str,
         conversation_id: str = "",
         elapsed_seconds: float = 0,
+        approval_policy: str = "on-request",
+        sandbox: str = "workspace-write",
     ) -> CodexRun:
         """Reconnect to an existing Codex turn without replaying the prompt."""
         clean_thread_id = str(thread_id or "").strip()
@@ -254,8 +270,8 @@ class CodexAppServer:
         try:
             response = self._request("thread/resume", {
                 "threadId": clean_thread_id,
-                "approvalPolicy": "on-request",
-                "sandbox": "workspace-write",
+                "approvalPolicy": approval_policy,
+                "sandbox": sandbox,
             }, timeout=30)
             if run.finished:
                 return run
@@ -398,10 +414,18 @@ class CodexAppServer:
                 pass
             return
 
-    def _start_thread(self, cwd: str, model: str, conversation_id: str) -> str:
+    def _start_thread(
+        self,
+        cwd: str,
+        model: str,
+        conversation_id: str,
+        *,
+        approval_policy: str = "on-request",
+        sandbox: str = "workspace-write",
+    ) -> str:
         response = self._request("thread/start", {
             "cwd": os.path.abspath(cwd), "model": model, "ephemeral": False,
-            "approvalPolicy": "on-request", "sandbox": "workspace-write",
+            "approvalPolicy": approval_policy, "sandbox": sandbox,
         }, timeout=30)
         thread_id = str((response.get("thread") or {}).get("id") or "")
         if conversation_id and thread_id:

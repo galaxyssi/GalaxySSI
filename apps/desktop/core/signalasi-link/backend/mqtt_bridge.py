@@ -48,6 +48,7 @@ from mqtt_wire_chunking import (
 )
 from pairing_state import (
     clients_for_identity,
+    consume_pairing_session,
     get_client,
     is_paired,
     list_clients,
@@ -57,7 +58,16 @@ from pairing_state import (
     revoke_client,
     server_route_id,
     touch_client,
-    validate_pairing_token,
+)
+from pairing_access import (
+    DESKTOP_EXECUTOR,
+    DESKTOP_CONTROL,
+    DESKTOP_NATIVE_TOOLS,
+    RESTRICTED,
+    apply_restricted_agent_boundary,
+    client_grant,
+    has_full_executor,
+    has_scope,
 )
 from signalasi_client import (
     decrypt_signal_envelope,
@@ -611,6 +621,31 @@ def _route_desktop_tool_payload(
     if channel != "control":
         log.warning("Desktop tool request rejected on non-control channel=%s", channel)
         return True
+    if not has_scope(paired_client, DESKTOP_NATIVE_TOOLS):
+        result = _desktop_tool_failure(
+            str(payload.get("call_id") or "")[:160],
+            str(payload.get("invocation_id") or payload.get("call_id") or "")[:160],
+            "desktop_executor_scope_required",
+            "This phone was paired without Desktop Executor access. Re-pair and enable Desktop Executor.",
+        )
+        _publish_phone_payload(
+            mqttc,
+            {"_client_route_id": paired_client["client_route_id"], "scheme": "signal"},
+            {
+                "type": DESKTOP_TOOL_CALL_RESULT_TYPE,
+                "call_id": str(payload.get("call_id") or "")[:160],
+                "invocation_id": str(payload.get("invocation_id") or payload.get("call_id") or "")[:160],
+                "task_id": str(payload.get("task_id") or ""),
+                "conversation_id": str(application_envelope.get("conversation_id") or ""),
+                "source_message_id": str(payload.get("message_id") or application_envelope.get("message_id") or ""),
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+                "result": result,
+                "sender": "system",
+                "time": time.time(),
+            },
+        )
+        return True
     call_id = str(payload.get("call_id") or "")[:160]
     invocation_id = str(payload.get("invocation_id") or call_id)[:160]
     if message_type == DESKTOP_TOOL_CALL_CANCEL_TYPE:
@@ -701,6 +736,7 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
         "server_route_id": server_route_id(),
         "contract_version": visible.get("contract_version"),
+        "pairing_access": client_grant(paired_client),
         "enabled": bool(visible.get("enabled")),
         "require_unlocked": bool(visible.get("require_unlocked")),
         "allowed_tools": list(visible.get("allowed_tools") or []),
@@ -856,6 +892,20 @@ def _route_desktop_control_payload(
         return True
 
     wire_payload = {"_client_route_id": paired_client["client_route_id"], "scheme": "signal"}
+    if not has_scope(paired_client, DESKTOP_CONTROL):
+        receipt = _desktop_control_failure_receipt(
+            payload,
+            "desktop_executor_scope_required",
+            "This phone was paired without Desktop Executor access. Re-pair and enable Desktop Executor.",
+        )
+        receipt.update({
+            "desktop_id": desktop_id(),
+            "desktop_name": desktop_name(),
+            "sender": "system",
+            "time": time.time(),
+        })
+        _publish_phone_payload(mqttc, wire_payload, receipt)
+        return True
     if not DESKTOP_CONTROL_REQUEST_SLOTS.acquire(blocking=False):
         receipt = _desktop_control_failure_receipt(
             payload,
@@ -2047,6 +2097,10 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
     source_message_id = str(payload.get("client_message_id") or payload.get("message_id") or "")
     client_route_id = str(wire_payload.get("_client_route_id") or "")
+    paired_client = get_client(client_route_id)
+    full_desktop_executor = has_full_executor(paired_client)
+    codex_approval_policy = "never"
+    codex_sandbox = "danger-full-access" if full_desktop_executor else "workspace-write"
     client_conversation_id = str(payload.get("conversation_id") or "")
     backend_conversation_id = str(payload.get("_backend_conversation_id") or "").strip() or (
         _scoped_agent_conversation_id(client_route_id, client_conversation_id)
@@ -2137,13 +2191,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             materialized.append(str(target))
         materialized = list(dict.fromkeys(materialized))
         metadata_only = list(dict.fromkeys(metadata_only))
-        if not materialized and not metadata_only:
-            return task_content
-        details = ["\n\nInput attachments available for this task:"]
-        details.extend(f"- {path}" for path in materialized)
-        details.extend(f"- {name} (content indexed on the phone; binary was not transferred)" for name in metadata_only)
-        details.append("Inspect the available files when they are relevant to the user's request.")
-        return task_content + "\n".join(details)
+        combined = task_content
+        if materialized or metadata_only:
+            details = ["\n\nInput attachments available for this task:"]
+            details.extend(f"- {path}" for path in materialized)
+            details.extend(f"- {name} (content indexed on the phone; binary was not transferred)" for name in metadata_only)
+            details.append("Inspect the available files when they are relevant to the user's request.")
+            combined += "\n".join(details)
+        if full_desktop_executor:
+            return combined
+        return apply_restricted_agent_boundary(combined, task_workspace(task_id, agent_id))
 
     progress_event_gate = _TaskProgressEventGate()
 
@@ -2179,6 +2236,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 conversation_id=backend_conversation_id,
                 source_message_id=source_message_id,
                 return_path=_wire_down_topic(wire_payload),
+                desktop_access_profile=(
+                    DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
+                ),
             )
         except Exception:
             agent_task_manager.add_event(
@@ -2462,6 +2522,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         original_prompt=content,
                         conversation_id=codex_conversation_id,
                         elapsed_seconds=elapsed_seconds,
+                        approval_policy=codex_approval_policy,
+                        sandbox=codex_sandbox,
                     )
                     add_task_trace("codex_turn_reconnected", task.turn_id)
                     return
@@ -2561,6 +2623,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         conversation_id=codex_conversation_id,
                         image_paths=image_paths,
                         fresh_thread_prompt=fresh_task_prompt,
+                        approval_policy=codex_approval_policy,
+                        sandbox=codex_sandbox,
                     )
                     sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
@@ -2583,6 +2647,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             conversation_id=codex_conversation_id,
                             image_paths=image_paths,
                             fresh_thread_prompt=fresh_task_prompt,
+                            approval_policy=codex_approval_policy,
+                            sandbox=codex_sandbox,
                         )
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                     else:
@@ -3107,9 +3173,11 @@ def handle_pairing_claim(mqttc, payload: dict):
     if get_client(client_route_id, include_revoked=True) is not None:
         log.warning("MQTT pairing claim rejected: client route was already used")
         return
-    if not validate_pairing_token(token, consume=True):
+    pairing_session = consume_pairing_session(token)
+    if pairing_session is None:
         log.warning("MQTT pairing claim rejected: invalid token")
         return
+    access_grant = client_grant({"access": pairing_session.get("access")})
     replaced_clients = clients_for_identity(
         fingerprint,
         signal_name,
@@ -3144,6 +3212,7 @@ def handle_pairing_claim(mqttc, payload: dict):
         client_route_id=client_route_id,
         display_name=str(payload.get("client_name") or "SignalASI Client")[:120],
         platform=str(payload.get("platform") or "unknown")[:32],
+        access_grant=access_grant,
     )
     control_authorization = None
     try:
@@ -3155,6 +3224,7 @@ def handle_pairing_claim(mqttc, payload: dict):
                 control_token,
                 token,
                 paired_client,
+                auto_approve=has_full_executor(paired_client),
             )
     except DesktopControlError as exc:
         log.warning("Desktop control authorization offer rejected: %s", exc)
@@ -3181,6 +3251,7 @@ def handle_pairing_claim(mqttc, payload: dict):
         "signal_bundle": get_signal_bundle(),
         "sender": "system",
         "connector_agents": mobile_connector_agents(client_route_id),
+        "pairing_access": client_grant(paired_client),
         "desktop_control": {
             "enabled": bool(desktop_control_manager().settings().get("enabled")),
             "authorization_status": str((control_authorization or {}).get("status") or "not_requested"),
@@ -3209,6 +3280,8 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
     dname = desktop_name()
     fingerprint = get_signal_bundle().get("identityKeySha256", "")
     up_topic = _client_topics(client_route_id).up if client_route_id else ""
+    paired_client = get_client(client_route_id) if client_route_id else None
+    access = client_grant(paired_client)
     try:
         from agent_reputation_ledger import agent_reputation_ledger
 
@@ -3242,6 +3315,8 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
             "protocols": (agent.get("adapter") or {}).get("protocols") or [],
             "mqtt_topic": up_topic,
             "updated_at": int(time.time() * 1000),
+            "desktop_access_profile": access["profile"],
+            "desktop_access_scopes": list(access["scopes"]),
         }
         if reputation_ledger is not None:
             entry["reputation"] = reputation_ledger.snapshot(
@@ -3257,7 +3332,28 @@ def capability_manifest(client_route_id: str = "") -> dict:
     from desktop_control import desktop_control_manager
 
     diagnostics = connector_diagnostics()
+    paired_client = get_client(client_route_id) if client_route_id else None
+    access = client_grant(paired_client)
+    full_executor = has_full_executor(paired_client)
     control_status = desktop_control_manager().status(client_route_id)
+    native_manifest = desktop_native_tool_registry().manifest()
+    if not full_executor:
+        native_manifest = {
+            **native_manifest,
+            "tools": [],
+            "access_restriction": {
+                "code": "desktop_executor_scope_required",
+                "message": "Re-pair this phone with Desktop Executor enabled to use Desktop native tools.",
+            },
+        }
+    advertised_tools = [
+        "agent_tasks",
+        "agent_adapters",
+        "voice_stt",
+        "file_transfer",
+    ]
+    if full_executor:
+        advertised_tools.extend(["desktop_native_tools", "desktop_control"])
     return {
         "type": "capability_manifest",
         "manifest_version": 1,
@@ -3269,8 +3365,9 @@ def capability_manifest(client_route_id: str = "") -> dict:
         },
         "agents": mobile_connector_agents(client_route_id),
         "models": [],
-        "tools": ["agent_tasks", "agent_adapters", "voice_stt", "file_transfer", "desktop_native_tools", "desktop_control"],
-        "desktop_native_tools": desktop_native_tool_registry().manifest(),
+        "tools": advertised_tools,
+        "pairing_access": access,
+        "desktop_native_tools": native_manifest,
         "desktop_control": {
             "contract_version": control_status.get("contract_version"),
             "enabled": bool(control_status.get("enabled")),
@@ -3302,6 +3399,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "desktop_control_authorization_v1",
             "desktop_control_screenshot_v1",
             "desktop_control_input_v1",
+            "pairing_access_profiles_v1",
             "mqtt_fragmentation_v1",
             "mqtt_fragment_integrity_sha256",
             "signed_agent_execution_receipts_v1",

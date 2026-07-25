@@ -632,6 +632,10 @@ object SignalASIMqttClient {
             .put("identity_public_key", SignalASICrypto.localIdentityPublicKey())
             .put("signal_bundle", SignalASICrypto.localSignalBundleJson())
             .put("desktop_control_authorization_token", controlAuthorizationToken)
+            .put(
+                "requested_access_profile",
+                pairingQr.optJSONObject("pairing_access")?.optString("profile").orEmpty()
+            )
             .put("time", System.currentTimeMillis())
         val encryptedClaim = runCatching { SignalASILinkProtocol.encryptPairingClaim(payload, pairingQr) }
             .getOrElse {
@@ -1120,6 +1124,11 @@ object SignalASIMqttClient {
             }
         }
         if (payload.optString("type") == "capability_manifest") {
+            SignalASILinkProtocol.updatePairingAccess(
+                context,
+                link.desktopId,
+                payload.optJSONObject("pairing_access")
+            )
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }
         DesktopRemoteControl.handleInbound(context, payload)
@@ -1172,7 +1181,11 @@ object SignalASIMqttClient {
                 synchronized(pairingClaimLock) {
                     if (pendingPairingClaim?.desktopId == desktopId) pendingPairingClaim = null
                 }
-                SignalASILinkProtocol.markPaired(context, desktopId)
+                SignalASILinkProtocol.markPaired(
+                    context,
+                    desktopId,
+                    json.optJSONObject("pairing_access")
+                )
                 setSecureReady(true)
             }
         }

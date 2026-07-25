@@ -161,6 +161,8 @@ class DesktopControlManager:
         control_token: str,
         pairing_token: str,
         paired_client: Mapping[str, Any],
+        *,
+        auto_approve: bool = False,
     ) -> dict[str, Any] | None:
         token = str(control_token or "")
         if not token:
@@ -224,6 +226,8 @@ class DesktopControlManager:
                 return self._public_authorization(existing)
 
             authorization_id = str(uuid.uuid4())
+            status = "active" if auto_approve else "pending"
+            granted_at = int(now * 1_000) if auto_approve else 0
             row = {
                 "authorization_id": authorization_id,
                 "grant_type": "desktop_control",
@@ -233,20 +237,24 @@ class DesktopControlManager:
                 "client_route_id": route_id,
                 "platform": str(paired_client.get("platform") or "unknown")[:32],
                 "requested_at": int(now * 1_000),
-                "granted_at": 0,
+                "granted_at": granted_at,
                 "last_used_at": 0,
                 "updated_at": int(now * 1_000),
                 "allowed_tools": list(DEFAULT_ALLOWED_TOOLS),
-                "status": "pending",
+                "status": status,
             }
             self._state["authorizations"][authorization_id] = row
             self._append_audit_locked(
-                "authorization_requested",
+                "authorization_approved_at_pairing" if auto_approve else "authorization_requested",
                 authorization_id=authorization_id,
                 client_route_id=route_id,
                 phone_fingerprint=fingerprint,
-                status="pending",
-                summary="Phone requested Desktop control authorization",
+                status="succeeded" if auto_approve else "pending",
+                summary=(
+                    "Desktop Executor access was approved by the pairing QR"
+                    if auto_approve else
+                    "Phone requested Desktop control authorization"
+                ),
             )
             self._save_locked()
             return self._public_authorization(row)

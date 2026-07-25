@@ -2,6 +2,7 @@ package com.signalasi.chat
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.json.JSONArray
 import org.json.JSONObject
@@ -79,8 +80,49 @@ class SignalASILinkProtocolTest {
         assertEquals("many-attempts", pending.single().messageId)
     }
 
+    @Test
+    fun pairingAccessProfilesFailClosedWhenExecutorScopesAreIncomplete() {
+        val restricted = pairingAccess(
+            SignalASILinkProtocol.ACCESS_RESTRICTED,
+            SignalASILinkProtocol.SCOPE_AGENT_CHAT,
+            SignalASILinkProtocol.SCOPE_EXPLICIT_ATTACHMENTS,
+            SignalASILinkProtocol.SCOPE_TASK_WORKSPACE
+        )
+        val executor = pairingAccess(
+            SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR,
+            SignalASILinkProtocol.SCOPE_AGENT_CHAT,
+            SignalASILinkProtocol.SCOPE_EXPLICIT_ATTACHMENTS,
+            SignalASILinkProtocol.SCOPE_TASK_WORKSPACE,
+            SignalASILinkProtocol.SCOPE_DESKTOP_EXECUTOR,
+            SignalASILinkProtocol.SCOPE_DESKTOP_CONTROL,
+            SignalASILinkProtocol.SCOPE_DESKTOP_NATIVE_TOOLS,
+            SignalASILinkProtocol.SCOPE_DESKTOP_EXTERNAL_FILES,
+            SignalASILinkProtocol.SCOPE_DESKTOP_APPROVAL_BYPASS
+        )
+        val forgedRestricted = pairingAccess(
+            SignalASILinkProtocol.ACCESS_RESTRICTED,
+            SignalASILinkProtocol.SCOPE_AGENT_CHAT,
+            SignalASILinkProtocol.SCOPE_EXPLICIT_ATTACHMENTS,
+            SignalASILinkProtocol.SCOPE_TASK_WORKSPACE,
+            SignalASILinkProtocol.SCOPE_DESKTOP_EXECUTOR
+        )
+
+        assertEquals(
+            SignalASILinkProtocol.ACCESS_RESTRICTED,
+            SignalASILinkProtocol.pairingAccess(restricted)?.profile
+        )
+        assertTrue(SignalASILinkProtocol.pairingAccess(executor)?.fullDesktopExecutor == true)
+        assertNull(SignalASILinkProtocol.pairingAccess(forgedRestricted))
+    }
+
     private fun outboxMessage(id: String, topic: String): JSONObject = JSONObject()
         .put("message_id", id)
         .put("topic", topic)
         .put("wire_payload", "{}")
+
+    private fun pairingAccess(profile: String, vararg scopes: String): JSONObject = JSONObject()
+        .put("contract_version", SignalASILinkProtocol.ACCESS_CONTRACT)
+        .put("version", 1)
+        .put("profile", profile)
+        .put("scopes", JSONArray(scopes.toList()))
 }
