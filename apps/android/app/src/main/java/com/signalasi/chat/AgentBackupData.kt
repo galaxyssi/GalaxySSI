@@ -65,6 +65,9 @@ object AgentBackupData {
                     .put("share_agent_outputs_with_planner", modelPlanner.shareAgentOutputsWithPlanner)
                     .put("max_agent_hops", modelPlanner.maxAgentHops)
                     .put("max_tool_calls", modelPlanner.maxToolCalls)
+                    .put("max_loop_iterations", modelPlanner.maxLoopIterations)
+                    .put("max_phase_retries", modelPlanner.maxPhaseRetries)
+                    .put("max_execution_seconds", modelPlanner.maxExecutionSeconds)
             )
             .put(
                 "voice_assistant",
@@ -182,7 +185,10 @@ object AgentBackupData {
                     multiAgentCoordination = json.optBoolean("multi_agent_coordination", true),
                     shareAgentOutputsWithPlanner = json.optBoolean("share_agent_outputs_with_planner", false),
                     maxAgentHops = json.optInt("max_agent_hops", 4).coerceIn(1, 8),
-                    maxToolCalls = json.optInt("max_tool_calls", 16).coerceIn(4, 32)
+                    maxToolCalls = json.optInt("max_tool_calls", 16).coerceIn(4, 32),
+                    maxLoopIterations = json.optInt("max_loop_iterations", 8).coerceIn(1, 24),
+                    maxPhaseRetries = json.optInt("max_phase_retries", 2).coerceIn(0, 5),
+                    maxExecutionSeconds = json.optInt("max_execution_seconds", 600).coerceIn(60, 3_600)
                 )
             )
         }

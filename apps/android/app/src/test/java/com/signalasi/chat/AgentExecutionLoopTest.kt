@@ -1,0 +1,201 @@
+package com.signalasi.chat
+
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentExecutionLoopTest {
+    @Test
+    fun happyPathPersistsTheCanonicalExecutionSequence() {
+        var now = 1_000L
+        val loop = AgentExecutionLoop.create { now }
+
+        loop.start("task-1", AgentExecutionLoopBudget())
+        now += 20
+        loop.transition(AgentExecutionLoopPhase.ACT, "Run tool", "action-1", toolCall = true)
+        now += 30
+        loop.transition(AgentExecutionLoopPhase.OBSERVE, "Read result", "action-1")
+        loop.transition(AgentExecutionLoopPhase.VERIFY, "Verify goal")
+        loop.transition(AgentExecutionLoopPhase.FINALIZE, "Prepare result")
+        loop.transition(AgentExecutionLoopPhase.LEARN, "Record evidence")
+        val completed = loop.transition(AgentExecutionLoopPhase.COMPLETED, "Done")
+
+        assertEquals(AgentExecutionLoopPhase.COMPLETED, completed.phase)
+        assertEquals(1, completed.snapshot.usage.iterations)
+        assertEquals(1, completed.snapshot.usage.actions)
+        assertEquals(1, completed.snapshot.usage.toolCalls)
+        assertEquals(50L, completed.snapshot.usage.activeDurationMillis)
+        assertTrue(completed.snapshot.phase.isTerminal)
+    }
+
+    @Test
+    fun replanConsumesAnIterationAndReturnsToAction() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-2", AgentExecutionLoopBudget(maxIterations = 3, maxReplans = 2))
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "first")
+        loop.transition(AgentExecutionLoopPhase.OBSERVE, actionId = "first")
+        loop.transition(AgentExecutionLoopPhase.REPLAN, "First approach failed")
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "second")
+
+        val snapshot = requireNotNull(loop.snapshot)
+        assertEquals(AgentExecutionLoopPhase.ACT, snapshot.phase)
+        assertEquals(2, snapshot.usage.iterations)
+        assertEquals(1, snapshot.usage.replans)
+        assertEquals(2, snapshot.usage.actions)
+    }
+
+    @Test
+    fun iterationBudgetFailsInsteadOfStartingAnUnboundedReplan() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-3", AgentExecutionLoopBudget(maxIterations = 1, maxReplans = 3))
+        loop.transition(AgentExecutionLoopPhase.ACT)
+        loop.transition(AgentExecutionLoopPhase.OBSERVE)
+        val failed = loop.transition(AgentExecutionLoopPhase.REPLAN)
+
+        assertEquals(AgentExecutionLoopPhase.FAILED, failed.phase)
+        assertTrue(failed.snapshot.budgetFailure.contains("iteration", ignoreCase = true))
+    }
+
+    @Test
+    fun toolAndActionBudgetsAreEnforcedBeforeAnotherSideEffect() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start(
+            "task-4",
+            AgentExecutionLoopBudget(maxActions = 1, maxToolCalls = 1)
+        )
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "one", toolCall = true)
+        loop.transition(AgentExecutionLoopPhase.OBSERVE, actionId = "one")
+        val failed = loop.transition(AgentExecutionLoopPhase.ACT, actionId = "two", toolCall = true)
+
+        assertEquals(AgentExecutionLoopPhase.FAILED, failed.phase)
+        assertTrue(failed.snapshot.budgetFailure.contains("Action budget"))
+    }
+
+    @Test
+    fun waitingForADeviceDoesNotConsumeActiveExecutionTime() {
+        var now = 1_000L
+        val loop = AgentExecutionLoop.create { now }
+        loop.start(
+            "task-5",
+            AgentExecutionLoopBudget(maxActiveDurationMillis = 2_000L)
+        )
+        now = 1_500L
+        loop.transition(AgentExecutionLoopPhase.WAITING_RESPONSE)
+        now = 91_500L
+        loop.transition(AgentExecutionLoopPhase.OBSERVE)
+        now = 92_000L
+        val verified = loop.transition(AgentExecutionLoopPhase.VERIFY)
+
+        assertEquals(AgentExecutionLoopPhase.VERIFY, verified.phase)
+        assertEquals(1_000L, verified.snapshot.usage.activeDurationMillis)
+        assertTrue(verified.snapshot.budgetFailure.isBlank())
+    }
+
+    @Test
+    fun pauseAndResumeReturnToTheExactDurablePhase() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-6", AgentExecutionLoopBudget())
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "action")
+        val paused = loop.pause()
+        val resumed = loop.resume()
+
+        assertEquals(AgentExecutionLoopPhase.PAUSED, paused.phase)
+        assertEquals(AgentExecutionLoopPhase.ACT, paused.snapshot.resumePhase)
+        assertEquals(AgentExecutionLoopPhase.ACT, resumed.phase)
+    }
+
+    @Test
+    fun retryBudgetAppliesToFailedActions() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-7", AgentExecutionLoopBudget(maxRetries = 1))
+        loop.transition(AgentExecutionLoopPhase.FAILED, "First failure")
+        loop.transition(AgentExecutionLoopPhase.ACT, retry = true)
+        loop.transition(AgentExecutionLoopPhase.FAILED, "Second failure")
+        val exhausted = loop.transition(AgentExecutionLoopPhase.ACT, retry = true)
+
+        assertEquals(AgentExecutionLoopPhase.FAILED, exhausted.phase)
+        assertTrue(exhausted.snapshot.budgetFailure.contains("Retry budget"))
+    }
+
+    @Test
+    fun invalidTransitionsAreRejected() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-8", AgentExecutionLoopBudget())
+
+        assertThrows(IllegalArgumentException::class.java) {
+            loop.transition(AgentExecutionLoopPhase.LEARN)
+        }
+    }
+
+    @Test
+    fun snapshotRoundTripPreservesRecoveryAndBudgetState() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-9", AgentExecutionLoopBudget(maxIterations = 5, maxRetries = 4))
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "action-9", toolCall = true)
+        val original = requireNotNull(loop.snapshot)
+
+        val restored = AgentExecutionLoopJsonCodec.decode(
+            AgentExecutionLoopJsonCodec.encode(original)
+        )
+
+        assertNotNull(restored)
+        assertEquals(original, restored)
+    }
+
+    @Test
+    fun interruptedActivePhaseRecoversToSafePause() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start("task-10", AgentExecutionLoopBudget())
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "action-10")
+        val recovered = loop.recoverInterrupted()
+
+        assertNotNull(recovered)
+        assertEquals(AgentExecutionLoopPhase.PAUSED, recovered?.phase)
+        assertEquals(AgentExecutionLoopPhase.ACT, recovered?.snapshot?.resumePhase)
+        assertFalse(recovered?.snapshot?.phase?.isActive ?: true)
+    }
+
+    @Test
+    fun everyPhaseIsJournaledAndCheckpointedInTheDurableWorkspace() = runBlocking {
+        val store = InMemoryAgentWorkspaceStore(clock = { 2_000L })
+        val supervisor = AgentTaskSupervisor(store, clock = { 2_000L })
+        val workspace = AgentWorkspace(
+            workspaceId = "workspace-loop",
+            sessionId = "session-loop",
+            conversationId = "conversation-loop",
+            taskId = "task-loop",
+            goal = "Run a bounded task"
+        )
+        val handle = supervisor.submit(workspace) {
+            val loop = AgentExecutionLoop.create { 2_000L }
+            persistExecutionLoop(loop.start("task-loop", AgentExecutionLoopBudget()))
+            persistExecutionLoop(loop.transition(AgentExecutionLoopPhase.ACT, actionId = "action"))
+            persistExecutionLoop(loop.transition(AgentExecutionLoopPhase.OBSERVE, actionId = "action"))
+            persistExecutionLoop(loop.transition(AgentExecutionLoopPhase.VERIFY))
+            persistExecutionLoop(loop.transition(AgentExecutionLoopPhase.FINALIZE))
+            persistExecutionLoop(loop.transition(AgentExecutionLoopPhase.LEARN))
+            persistExecutionLoop(loop.transition(AgentExecutionLoopPhase.COMPLETED))
+        }
+
+        handle.join()
+
+        val persisted = requireNotNull(store.find("workspace-loop"))
+        assertEquals(AgentWorkspaceStatus.COMPLETED, persisted.status)
+        assertEquals(
+            listOf("plan", "act", "observe", "verify", "finalize", "learn", "completed"),
+            persisted.eventJournal
+                .filter { it.kind.startsWith("agent.loop.") }
+                .map { it.kind.substringAfterLast('.') }
+        )
+        val restored = AgentExecutionLoopJsonCodec.decode(
+            persisted.checkpoints.last().stateJson
+        )
+        assertEquals(AgentExecutionLoopPhase.COMPLETED, restored?.phase)
+        assertEquals(7L, restored?.revision)
+        supervisor.shutdown()
+    }
+}

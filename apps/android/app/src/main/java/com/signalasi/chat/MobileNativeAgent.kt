@@ -23,6 +23,7 @@ import android.provider.AlarmClock
 import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.security.MessageDigest
@@ -158,7 +159,8 @@ class MobileNativeAgent(
     private val connectorRegistry: AgentConnectorRegistry = AppStoreAgentConnectorRegistry(context),
     private val reputationLedger: AgentReputationLedger = AgentReputationLedger.encrypted(context),
     private val sessionStore: AgentSessionStore = SharedPreferencesAgentSessionStore(context),
-    private val nativeToolEventSink: AgentNativeToolEventSink = AgentNativeToolEventSink.NONE
+    private val nativeToolEventSink: AgentNativeToolEventSink = AgentNativeToolEventSink.NONE,
+    executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE
 ) {
     private val appContext = context.applicationContext
     private var sessionId: String = UUID.randomUUID().toString()
@@ -170,6 +172,8 @@ class MobileNativeAgent(
     private var currentPlan: AgentPlan? = null
     private var lastActionResult: AgentActionResult? = null
     private var activeWorkflowExecutionId: String? = null
+    private var executionLoop = AgentExecutionLoop.create()
+    private var executionLoopEventSink: AgentExecutionLoopEventSink = executionLoopEventSink
     private val auditTrail = mutableListOf<AgentAuditEntry>()
     private val nativeToolRegistry: AgentNativeToolRegistry by lazy {
         AgentPhoneNativeToolCatalog.defaultRegistry(
@@ -181,6 +185,136 @@ class MobileNativeAgent(
 
     init {
         restoreSession(sessionStore.load())
+    }
+
+    fun bindExecutionLoopEventSink(sink: AgentExecutionLoopEventSink) {
+        executionLoopEventSink = sink
+    }
+
+    fun executionLoopSnapshot(): AgentExecutionLoopSnapshot? = executionLoop.snapshot
+
+    fun beginExecutionFinalization(): Boolean =
+        advanceExecutionLoop(
+            AgentExecutionLoopPhase.FINALIZE,
+            "Final result prepared"
+        )
+
+    fun beginExecutionLearning(): Boolean =
+        advanceExecutionLoop(
+            AgentExecutionLoopPhase.LEARN,
+            "Verified execution evidence queued for learning"
+        )
+
+    fun completeExecutionLoop(): Boolean =
+        advanceExecutionLoop(
+            AgentExecutionLoopPhase.COMPLETED,
+            "Task completed"
+        )
+
+    fun failExecutionLoop(reason: String): Boolean =
+        advanceExecutionLoop(
+            AgentExecutionLoopPhase.FAILED,
+            reason.trim().ifBlank { "Task failed" }
+        )
+
+    private fun startExecutionLoop(turnId: String) {
+        val taskId = turnId.trim().ifBlank { sessionId }
+        val event = executionLoop.start(taskId, modelPlannerSettings().executionLoopBudget())
+        persistExecutionLoopEvent(event)
+    }
+
+    private fun advanceExecutionLoop(
+        nextPhase: AgentExecutionLoopPhase,
+        reason: String,
+        actionId: String = "",
+        toolCall: Boolean = false,
+        retry: Boolean = false
+    ): Boolean {
+        val current = executionLoop.snapshot ?: return true
+        if (current.phase == nextPhase && !retry) return current.budgetFailure.isBlank()
+        val event = executionLoop.transition(
+            phase = nextPhase,
+            reason = reason,
+            actionId = actionId,
+            toolCall = toolCall,
+            retry = retry
+        )
+        persistExecutionLoopEvent(event)
+        if (event.snapshot.budgetFailure.isNotBlank()) {
+            phase = AgentPhase.FAILED
+            lastActionResult = AgentActionResult(
+                actionId = actionId.ifBlank { "agent-loop-budget" },
+                success = false,
+                message = event.snapshot.budgetFailure
+            )
+            saveTaskRecord(result = event.snapshot.budgetFailure)
+            return false
+        }
+        return true
+    }
+
+    private fun persistExecutionLoopEvent(event: AgentExecutionLoopEvent) {
+        persistSession()
+        executionLoopEventSink.onEvent(event)
+    }
+
+    private fun reconcileExecutionLoop(state: AgentUiState): AgentUiState {
+        val loop = executionLoop.snapshot ?: return state
+        if (loop.phase.isTerminal) return state
+        when (state.phase) {
+            AgentPhase.WAITING_CONFIRMATION -> advanceExecutionLoop(
+                AgentExecutionLoopPhase.WAITING_CONFIRMATION,
+                state.pendingAction?.description.orEmpty().ifBlank { "Waiting for confirmation" },
+                state.pendingAction?.id.orEmpty()
+            )
+            AgentPhase.WAITING_RESPONSE -> advanceExecutionLoop(
+                AgentExecutionLoopPhase.WAITING_RESPONSE,
+                state.lastActionResult?.message.orEmpty().ifBlank { "Waiting for a resource response" },
+                state.lastActionResult?.actionId.orEmpty()
+            )
+            AgentPhase.PAUSED -> {
+                if (loop.phase != AgentExecutionLoopPhase.PAUSED) {
+                    val event = executionLoop.pause(
+                        state.lastActionResult?.message.orEmpty().ifBlank { "Task paused" }
+                    )
+                    persistExecutionLoopEvent(event)
+                }
+            }
+            AgentPhase.BLOCKED -> advanceExecutionLoop(
+                AgentExecutionLoopPhase.BLOCKED,
+                state.plan?.safetyReview?.reason.orEmpty().ifBlank { "Task blocked" },
+                state.pendingAction?.id.orEmpty()
+            )
+            AgentPhase.FAILED -> advanceExecutionLoop(
+                AgentExecutionLoopPhase.FAILED,
+                state.lastActionResult?.message.orEmpty().ifBlank { "Task failed" },
+                state.lastActionResult?.actionId.orEmpty()
+            )
+            AgentPhase.CANCELLED -> advanceExecutionLoop(
+                AgentExecutionLoopPhase.CANCELLED,
+                state.lastActionResult?.message.orEmpty().ifBlank { "Task cancelled" }
+            )
+            AgentPhase.COMPLETED -> {
+                if (loop.phase !in setOf(
+                        AgentExecutionLoopPhase.VERIFY,
+                        AgentExecutionLoopPhase.FINALIZE,
+                        AgentExecutionLoopPhase.LEARN,
+                        AgentExecutionLoopPhase.COMPLETED
+                    )
+                ) {
+                    advanceExecutionLoop(
+                        AgentExecutionLoopPhase.VERIFY,
+                        "Goal outcome ready for verification",
+                        state.lastActionResult?.actionId.orEmpty()
+                    )
+                }
+            }
+            AgentPhase.OBSERVING,
+            AgentPhase.PLANNING,
+            AgentPhase.EXECUTING,
+            AgentPhase.VERIFYING -> Unit
+        }
+        return snapshot()
     }
 
     private fun captureScreen(foregroundApp: String? = null, pageTitle: String? = null): ScreenContext {
@@ -235,7 +369,8 @@ class MobileNativeAgent(
             },
             auditTrail = auditTrail.toList(),
             lastActionResult = lastActionResult,
-            recentTasks = taskStore.recent(limit = 3)
+            recentTasks = taskStore.recent(limit = 3),
+            executionLoop = executionLoop.snapshot
         )
     }
 
@@ -271,6 +406,7 @@ class MobileNativeAgent(
         currentPlan = null
         lastActionResult = null
         activeWorkflowExecutionId = null
+        executionLoop = AgentExecutionLoop.create()
         auditTrail.clear()
         persistSession()
         return snapshot()
@@ -1285,6 +1421,27 @@ class MobileNativeAgent(
             return observeCurrentScreen()
         }
 
+        return try {
+            startExecutionLoop(turnId)
+            reconcileExecutionLoop(executeSubmittedGoal())
+        } catch (failure: CancellationException) {
+            runCatching {
+                advanceExecutionLoop(
+                    AgentExecutionLoopPhase.CANCELLED,
+                    "Task cancellation requested"
+                )
+            }
+            throw failure
+        } catch (failure: Throwable) {
+            advanceExecutionLoop(
+                AgentExecutionLoopPhase.FAILED,
+                failure.message.orEmpty().ifBlank { "Agent execution failed" }
+            )
+            throw failure
+        }
+    }
+
+    private fun executeSubmittedGoal(): AgentUiState {
         currentScreen = captureScreen()
         callableInventoryCommand(currentGoal)?.let { filter ->
             return showCallableInventoryCommand(filter)
@@ -1569,7 +1726,10 @@ class MobileNativeAgent(
         return snapshot()
     }
 
-    fun approveNextAction(highRiskConfirmed: Boolean = false): AgentUiState {
+    fun approveNextAction(highRiskConfirmed: Boolean = false): AgentUiState =
+        reconcileExecutionLoop(approveNextActionInternal(highRiskConfirmed))
+
+    private fun approveNextActionInternal(highRiskConfirmed: Boolean): AgentUiState {
         val plan = currentPlan ?: return snapshot()
         if (phase == AgentPhase.PAUSED) return snapshot()
         val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
@@ -1661,7 +1821,8 @@ class MobileNativeAgent(
     private fun executePlannedAction(
         plan: AgentPlan,
         nextAction: AgentAction,
-        userConfirmed: Boolean
+        userConfirmed: Boolean,
+        retrying: Boolean = false
     ): AgentUiState {
         val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
         val hardenedAction = hardenedPlan.actions.firstOrNull { it.id == nextAction.id } ?: nextAction
@@ -1686,6 +1847,20 @@ class MobileNativeAgent(
                 "action=${hardenedAction.id}; calls=${autonomyDecision.completedToolCalls}; repeated=${autonomyDecision.repeatedCalls}"
             )
             saveTaskRecord()
+            return snapshot()
+        }
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.ACT,
+                reason = hardenedAction.description.ifBlank { hardenedAction.kind.name },
+                actionId = hardenedAction.id,
+                toolCall = hardenedAction.kind in setOf(
+                    AgentActionKind.CALL_NATIVE_TOOL,
+                    AgentActionKind.CALL_CONNECTOR,
+                    AgentActionKind.CONTROL_DEVICE
+                ),
+                retry = retrying
+            )
+        ) {
             return snapshot()
         }
         phase = AgentPhase.EXECUTING
@@ -1733,6 +1908,14 @@ class MobileNativeAgent(
                 "awaiting_response=$dispatchAwaitingResponse; success=${lastActionResult?.success == true}; " +
                 "duration_ms=${System.currentTimeMillis() - toolStartedAt}; target=${hardenedAction.target.take(160)}"
         )
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.OBSERVE,
+                reason = "Observing action outcome",
+                actionId = hardenedAction.id
+            )
+        ) {
+            return snapshot()
+        }
         phase = AgentPhase.VERIFYING
         val observation = captureVerificationScreen(
             action = hardenedAction,
@@ -1770,6 +1953,14 @@ class MobileNativeAgent(
             else -> ""
         }
         val continuedPlan = if (updatedPlan != null && replanReason.isNotBlank()) {
+            if (!advanceExecutionLoop(
+                    nextPhase = AgentExecutionLoopPhase.REPLAN,
+                    reason = replanReason,
+                    actionId = hardenedAction.id
+                )
+            ) {
+                return snapshot()
+            }
             replanFromCurrentState(updatedPlan, replanReason) ?: updatedPlan
         } else {
             updatedPlan
@@ -1805,6 +1996,20 @@ class MobileNativeAgent(
         content: String,
         success: Boolean = true,
         richOutputJson: String = ""
+    ): AgentUiState? = acceptConnectorResponseInternal(
+        sourceMessageId,
+        contactId,
+        content,
+        success,
+        richOutputJson
+    )?.let(::reconcileExecutionLoop)
+
+    private fun acceptConnectorResponseInternal(
+        sourceMessageId: Long,
+        contactId: String,
+        content: String,
+        success: Boolean,
+        richOutputJson: String
     ): AgentUiState? {
         if (sourceMessageId <= 0L || (success && content.isBlank())) return null
         val pendingResult = lastActionResult ?: return null
@@ -1815,6 +2020,14 @@ class MobileNativeAgent(
         if (expectedContactId.isNotBlank() && contactId.isNotBlank() && expectedContactId != contactId) return null
         val plan = currentPlan ?: return null
         val actionId = pendingResult.actionId
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.OBSERVE,
+                reason = "Remote response received",
+                actionId = actionId
+            )
+        ) {
+            return snapshot()
+        }
         val response = content.trim().ifBlank { "The selected resource did not return a usable response." }
             .take(MAX_CONNECTOR_RESPONSE_CHARACTERS)
         val resourceId = pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }
@@ -1880,7 +2093,20 @@ class MobileNativeAgent(
             it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
         }
         val preservesToolGraph = success && responsePlan.hasOutputHandoffFrom(actionId)
-        val continuedPlan = if ((hasPendingActions && !preservesToolGraph) || !success) {
+        val shouldReplan = (hasPendingActions && !preservesToolGraph) || !success
+        val continuedPlan = if (shouldReplan) {
+            if (!advanceExecutionLoop(
+                    nextPhase = AgentExecutionLoopPhase.REPLAN,
+                    reason = if (success) {
+                        "Planning the next step after the connector response"
+                    } else {
+                        "Planning recovery after the connector response failed"
+                    },
+                    actionId = actionId
+                )
+            ) {
+                return snapshot()
+            }
             currentScreen = captureScreen()
             replanFromCurrentState(
                 responsePlan,
@@ -1935,6 +2161,14 @@ class MobileNativeAgent(
         if (expectedContactId.isNotBlank() && contactId.isNotBlank() && expectedContactId != contactId) return null
         val plan = currentPlan ?: return null
         val actionId = pendingResult.actionId
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.OBSERVE,
+                reason = "Remote task update merged into the active turn",
+                actionId = actionId
+            )
+        ) {
+            return snapshot()
+        }
         val completedResult = AgentActionResult(
             actionId = actionId,
             success = true,
@@ -1995,16 +2229,42 @@ class MobileNativeAgent(
                 "routing_fallback_ids" to fallbackIds.drop(1).joinToString(",")
             )
         )
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.REPLAN,
+                reason = "Connector fallback selected",
+                actionId = action.id
+            )
+        ) {
+            return snapshot()
+        }
         recordAudit(
             AgentAuditEvent.INVOCATION_AUDIT,
             "fallback_after_failure:${failedResult.metadata["resource_id"].orEmpty()}:${fallbackIds.first()}"
         )
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.ACT,
+                reason = "Dispatching connector fallback",
+                actionId = retryAction.id,
+                toolCall = true,
+                retry = true
+            )
+        ) {
+            return snapshot()
+        }
         val fallbackResult = actionExecutor.execute(retryAction, currentScreen)
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.OBSERVE,
+                reason = "Observing connector fallback dispatch",
+                actionId = retryAction.id
+            )
+        ) {
+            return snapshot()
+        }
         if (!fallbackResult.success || fallbackResult.metadata["awaiting_response"] != "true") return null
         lastActionResult = fallbackResult
         phase = AgentPhase.WAITING_RESPONSE
         saveTaskRecord()
-        return snapshot()
+        return reconcileExecutionLoop(snapshot())
     }
 
     private fun connectorFailureDomain(connectorId: String): String {
@@ -2149,7 +2409,7 @@ class MobileNativeAgent(
         currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
         phase = AgentPhase.FAILED
         saveTaskRecord(result = failed.message)
-        return snapshot()
+        return reconcileExecutionLoop(snapshot())
     }
 
     fun pendingConnectorMetadata(sourceMessageId: Long): Map<String, String> =
@@ -2203,9 +2463,31 @@ class MobileNativeAgent(
     ): AgentRecoveryOutcome {
         val recovery = recoveryController.recover(action, result, observation) {
             recordAudit(AgentAuditEvent.ACTION_RECOVERY_STARTED, "action:${action.kind}:${action.id}")
+            if (!advanceExecutionLoop(
+                    nextPhase = AgentExecutionLoopPhase.ACT,
+                    reason = "Retrying action after observation",
+                    actionId = action.id,
+                    toolCall = action.kind in setOf(
+                        AgentActionKind.CALL_NATIVE_TOOL,
+                        AgentActionKind.CALL_CONNECTOR,
+                        AgentActionKind.CONTROL_DEVICE
+                    ),
+                    retry = true
+                )
+            ) {
+                return@recover AgentRecoveryAttempt(
+                    result = lastActionResult,
+                    observation = observation
+                )
+            }
             val retryScreen = observation.screen
             val retryResult = executeAction(action, retryScreen, userConfirmed = true)
             val retryObservation = captureVerificationScreen(action, retryScreen, retryResult)
+            advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.OBSERVE,
+                reason = "Observing retry outcome",
+                actionId = action.id
+            )
             AgentRecoveryAttempt(
                 result = applyObservationResult(action, retryResult, retryObservation),
                 observation = retryObservation
@@ -2249,7 +2531,7 @@ class MobileNativeAgent(
         currentPlan = null
         recordAudit(AgentAuditEvent.TASK_CANCELLED, "cancelled")
         persistSession()
-        return snapshot()
+        return reconcileExecutionLoop(snapshot())
     }
 
     fun pauseCurrentTask(): AgentUiState {
@@ -2270,7 +2552,7 @@ class MobileNativeAgent(
         )
         recordAudit(AgentAuditEvent.TASK_PAUSED, "paused")
         persistSession()
-        return snapshot()
+        return reconcileExecutionLoop(snapshot())
     }
 
     fun resumeCurrentTask(): AgentUiState {
@@ -2285,7 +2567,15 @@ class MobileNativeAgent(
             return snapshot()
         }
         val plan = currentPlan ?: return observeCurrentScreen()
+        val loopResumePhase = executionLoop.snapshot
+            ?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }
+            ?.resumePhase
         phase = when {
+            loopResumePhase in setOf(
+                AgentExecutionLoopPhase.VERIFY,
+                AgentExecutionLoopPhase.FINALIZE,
+                AgentExecutionLoopPhase.LEARN
+            ) -> AgentPhase.COMPLETED
             plan.actions.any { it.status == AgentActionStatus.WAITING_RESPONSE } -> AgentPhase.WAITING_RESPONSE
             plan.actions.any { it.status == AgentActionStatus.PENDING_CONFIRMATION } -> AgentPhase.WAITING_CONFIRMATION
             else -> AgentPhase.PLANNING
@@ -2297,7 +2587,10 @@ class MobileNativeAgent(
         )
         recordAudit(AgentAuditEvent.TASK_RESUMED, "resumed")
         persistSession()
-        return snapshot()
+        executionLoop.snapshot?.takeIf { it.phase == AgentExecutionLoopPhase.PAUSED }?.let {
+            persistExecutionLoopEvent(executionLoop.resume("Task resumed"))
+        }
+        return reconcileExecutionLoop(snapshot())
     }
 
     fun retryFailedAction(): AgentUiState {
@@ -2316,17 +2609,32 @@ class MobileNativeAgent(
             )
             recordAudit(AgentAuditEvent.ACTION_BLOCKED, "retry:${failedAction.id}:$reason")
             saveTaskRecord()
-            return snapshot()
+            return reconcileExecutionLoop(snapshot())
         }
         val retryAction = reviewedPlan.actions.first { it.id == failedAction.id }
         lastActionResult = null
         recordAudit(AgentAuditEvent.TASK_RESUMED, "retry:${retryAction.id}")
-        return executePlannedAction(reviewedPlan, retryAction, userConfirmed = true)
+        return reconcileExecutionLoop(
+            executePlannedAction(
+                reviewedPlan,
+                retryAction,
+                userConfirmed = true,
+                retrying = true
+            )
+        )
     }
 
     fun replanCurrentTask(): AgentUiState {
         val plan = currentPlan ?: return snapshot()
         currentScreen = captureScreen()
+        if (!advanceExecutionLoop(
+                nextPhase = AgentExecutionLoopPhase.REPLAN,
+                reason = "User requested a new plan",
+                retry = executionLoop.snapshot?.phase?.isTerminal == true
+            )
+        ) {
+            return snapshot()
+        }
         val replanned = replanFromCurrentState(plan, "user_requested_replan", force = true)
         if (replanned == null) {
             lastActionResult = AgentActionResult(
@@ -2335,7 +2643,7 @@ class MobileNativeAgent(
                 message = "A validated model replan is not available"
             )
             persistSession()
-            return snapshot()
+            return reconcileExecutionLoop(snapshot())
         }
         currentPlan = replanned
         phase = when {
@@ -2351,9 +2659,9 @@ class MobileNativeAgent(
         saveTaskRecord()
         persistSession()
         return if (!replanned.safetyReview.blocked && !replanned.safetyReview.requiresConfirmation) {
-            executeFirstPendingAction()
+            reconcileExecutionLoop(executeFirstPendingAction())
         } else {
-            snapshot()
+            reconcileExecutionLoop(snapshot())
         }
     }
 
@@ -2702,6 +3010,30 @@ class MobileNativeAgent(
         val normalized = maxToolCalls.coerceIn(4, 32)
         store.save(store.load().copy(maxToolCalls = normalized))
         recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_tool_calls:$normalized")
+        return snapshot()
+    }
+
+    fun updateMaxLoopIterations(maxIterations: Int): AgentUiState {
+        val store = AgentModelPlannerSettingsStore(appContext)
+        val normalized = maxIterations.coerceIn(1, 24)
+        store.save(store.load().copy(maxLoopIterations = normalized))
+        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_loop_iterations:$normalized")
+        return snapshot()
+    }
+
+    fun updateMaxPhaseRetries(maxRetries: Int): AgentUiState {
+        val store = AgentModelPlannerSettingsStore(appContext)
+        val normalized = maxRetries.coerceIn(0, 5)
+        store.save(store.load().copy(maxPhaseRetries = normalized))
+        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_phase_retries:$normalized")
+        return snapshot()
+    }
+
+    fun updateMaxExecutionSeconds(maxSeconds: Int): AgentUiState {
+        val store = AgentModelPlannerSettingsStore(appContext)
+        val normalized = maxSeconds.coerceIn(60, 3_600)
+        store.save(store.load().copy(maxExecutionSeconds = normalized))
+        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_execution_seconds:$normalized")
         return snapshot()
     }
 
@@ -5743,6 +6075,8 @@ class MobileNativeAgent(
 
     private fun restoreSession(session: AgentSessionSnapshot?) {
         if (session == null) return
+        executionLoop = session.executionLoopSnapshot?.let(AgentExecutionLoop::restore)
+            ?: AgentExecutionLoop.create()
         val persistedTask = session.currentPlan?.planId?.let(taskStore::find)
         val lifecycleNormalization = AgentPlanLifecyclePolicy.normalize(session)
         val restoredSession = AgentPlanLifecyclePolicy.recoverCompletedConnector(
@@ -5752,7 +6086,8 @@ class MobileNativeAgent(
         )
         logRestoredLifecycle(session, restoredSession, persistedTask)
         val executionWasInterrupted = restoredSession.phase == AgentPhase.EXECUTING ||
-            restoredSession.phase == AgentPhase.VERIFYING
+            restoredSession.phase == AgentPhase.VERIFYING ||
+            executionLoop.snapshot?.phase?.isActive == true
         sessionId = restoredSession.sessionId.ifBlank { UUID.randomUUID().toString() }
         phase = if (executionWasInterrupted) AgentPhase.PAUSED else restoredSession.phase
         currentGoal = restoredSession.currentGoal
@@ -5784,6 +6119,7 @@ class MobileNativeAgent(
             )
         }
         if (executionWasInterrupted) {
+            executionLoop.recoverInterrupted()
             recordAudit(AgentAuditEvent.TASK_INTERRUPTED, "restored_to_safe_pause")
         }
     }
@@ -5818,6 +6154,7 @@ class MobileNativeAgent(
                 auditTrail = auditTrail.toList(),
                 lastActionResult = lastActionResult,
                 activeWorkflowExecutionId = activeWorkflowExecutionId.orEmpty(),
+                executionLoopSnapshot = executionLoop.snapshot,
                 updatedAtMillis = System.currentTimeMillis()
             )
         )
@@ -10064,7 +10401,7 @@ class SharedPreferencesAgentSessionStore(
     }
 
     private fun encodeSession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
-        .put("version", 3)
+        .put("version", 4)
         .put("session_id", snapshot.sessionId)
         .put("phase", snapshot.phase.name)
         .put("current_goal", snapshot.currentGoal)
@@ -10075,6 +10412,12 @@ class SharedPreferencesAgentSessionStore(
         })
         .put("last_action_result", snapshot.lastActionResult?.let { encodeActionResult(it) })
         .put("active_workflow_execution_id", snapshot.activeWorkflowExecutionId)
+        .put(
+            "execution_loop",
+            snapshot.executionLoopSnapshot
+                ?.let(AgentExecutionLoopJsonCodec::encode)
+                ?.let(::JSONObject)
+        )
         .put("updated_at", snapshot.updatedAtMillis)
 
     private fun decodeSession(json: JSONObject): AgentSessionSnapshot = AgentSessionSnapshot(
@@ -10086,6 +10429,9 @@ class SharedPreferencesAgentSessionStore(
         auditTrail = decodeAuditTrail(json.optJSONArray("audit_trail")),
         lastActionResult = json.optJSONObject("last_action_result")?.let { decodeActionResult(it) },
         activeWorkflowExecutionId = json.optString("active_workflow_execution_id"),
+        executionLoopSnapshot = json.optJSONObject("execution_loop")
+            ?.toString()
+            ?.let(AgentExecutionLoopJsonCodec::decode),
         updatedAtMillis = json.optLong("updated_at", 0L)
     )
 
@@ -10793,7 +11139,8 @@ data class AgentUiState(
     val pendingAction: AgentAction? = null,
     val auditTrail: List<AgentAuditEntry> = emptyList(),
     val lastActionResult: AgentActionResult? = null,
-    val recentTasks: List<AgentTaskRecord> = emptyList()
+    val recentTasks: List<AgentTaskRecord> = emptyList(),
+    val executionLoop: AgentExecutionLoopSnapshot? = null
 )
 
 data class AgentSessionSnapshot(
@@ -10805,6 +11152,7 @@ data class AgentSessionSnapshot(
     val auditTrail: List<AgentAuditEntry>,
     val lastActionResult: AgentActionResult?,
     val activeWorkflowExecutionId: String = "",
+    val executionLoopSnapshot: AgentExecutionLoopSnapshot? = null,
     val updatedAtMillis: Long
 )
 
