@@ -2063,35 +2063,6 @@ def _returned_image_artifact_contract(output_directory: Path) -> str:
     )
 
 
-def _initial_codex_narration(
-    content: str,
-    *,
-    has_attachments: bool,
-    has_image_attachment: bool,
-    image_artifact_required: bool,
-) -> str:
-    prefers_chinese = any("\u4e00" <= character <= "\u9fff" for character in str(content or ""))
-    if image_artifact_required:
-        return (
-            "\u6536\u5230\uff0c\u6211\u5148\u68c0\u67e5\u56fe\u7247\u5185\u5bb9\uff0c\u518d\u6309\u4f60\u7684\u8981\u6c42\u4fee\u6539\u5e76\u8fd4\u56de\u53ef\u67e5\u770b\u7684\u7ed3\u679c\u3002"
-            if prefers_chinese else
-            "Got it. I will inspect the image, make the requested changes, and return a viewable result."
-        )
-    if has_image_attachment:
-        return (
-            "\u6536\u5230\uff0c\u6211\u5148\u68c0\u67e5\u56fe\u7247\u5185\u5bb9\uff0c\u518d\u6838\u5bf9\u7ec6\u8282\u5e76\u7ed9\u51fa\u7ed3\u679c\u3002"
-            if prefers_chinese else
-            "Got it. I will inspect the image, verify the details, and report the result."
-        )
-    if has_attachments:
-        return (
-            "\u6536\u5230\uff0c\u6211\u5148\u68c0\u67e5\u6587\u4ef6\u5185\u5bb9\uff0c\u518d\u6267\u884c\u5e76\u9a8c\u8bc1\u7ed3\u679c\u3002"
-            if prefers_chinese else
-            "Got it. I will inspect the files, execute the task, and verify the result."
-        )
-    return "\u6536\u5230\uff0c\u6211\u9a6c\u4e0a\u5904\u7406\u3002" if prefers_chinese else "Got it. I will handle this now."
-
-
 def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: list[dict], content: str, msg_type: str) -> None:
     contact_id = str(payload.get("contact_id") or "hermes")
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
@@ -2346,24 +2317,6 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 exclude_task_id=task.task_id,
             )
         add_task_trace("desktop_task_created", task.task_id)
-        if payload.get("_recovered_task") is not True:
-            acknowledgement = _initial_codex_narration(
-                content,
-                has_attachments=has_attachments,
-                has_image_attachment=has_image_attachment,
-                image_artifact_required=image_artifact_required,
-            )
-            agent_task_manager.add_event(
-                task.task_id,
-                "narration",
-                acknowledgement,
-                event_id=f"signalasi:ack:{task.task_id}",
-                status="completed",
-                detail=acknowledgement,
-                metadata={"source": "signalasi_host", "code": "acknowledgement"},
-                on_event=publish_event,
-            )
-
         def app_event(task_id: str, event: dict) -> None:
             nonlocal result_published
             event_status = str(event.get("status") or "running")
