@@ -111,11 +111,23 @@ def retry_context_windows(
 
 
 @dataclass(frozen=True)
+class ContextAttachment:
+    artifact_id: str = ""
+    kind: str = "file"
+    name: str = ""
+    mime_type: str = ""
+    size_bytes: int = 0
+    message_id: str = ""
+    group_id: str = ""
+
+
+@dataclass(frozen=True)
 class ContextMessage:
     role: str
     content: str
     message_id: str = ""
     group_id: str = ""
+    attachments: tuple[ContextAttachment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -124,6 +136,7 @@ class MobileConversationContext:
     summary: str = ""
     global_context: str = ""
     messages: tuple[ContextMessage, ...] = ()
+    attachment_index: tuple[ContextAttachment, ...] = ()
     turn_ids: frozenset[str] = frozenset()
     entry_ids: frozenset[str] = frozenset()
     summary_digest: str = ""
@@ -137,12 +150,38 @@ class MobileConversationContext:
         )
 
     @property
+    def attachments(self) -> tuple[ContextAttachment, ...]:
+        values = list(self.attachment_index)
+        values.extend(
+            attachment
+            for message in self.messages
+            for attachment in message.attachments
+        )
+        result: list[ContextAttachment] = []
+        seen: set[str] = set()
+        for attachment in values:
+            key = attachment.artifact_id or "\u001f".join(
+                (
+                    attachment.group_id,
+                    attachment.kind,
+                    attachment.name.casefold(),
+                    attachment.mime_type.casefold(),
+                )
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(attachment)
+        return tuple(result)
+
+    @property
     def present(self) -> bool:
         return bool(
             self.conversation_id
             or self.summary
             or self.global_context
             or self.messages
+            or self.attachment_index
         )
 
     def delta(
@@ -159,6 +198,36 @@ class MobileConversationContext:
             if item.message_id not in known_entries
             and item.group_id not in known_turns
         )
+
+
+def _context_attachment(
+    value: object,
+    *,
+    message_id: str = "",
+    group_id: str = "",
+) -> ContextAttachment | None:
+    if not isinstance(value, dict):
+        return None
+    name = str(value.get("name") or "").replace("\\", "/").split("/")[-1]
+    name = _sanitize(name, 240)
+    if not name:
+        return None
+    kind = str(value.get("kind") or "file").strip().lower()
+    if kind not in {"image", "file", "video", "audio"}:
+        kind = "file"
+    try:
+        size_bytes = max(0, int(value.get("size_bytes") or 0))
+    except (TypeError, ValueError):
+        size_bytes = 0
+    return ContextAttachment(
+        artifact_id=str(value.get("artifact_id") or "").strip()[:120],
+        kind=kind,
+        name=name,
+        mime_type=str(value.get("mime_type") or "").strip()[:160],
+        size_bytes=size_bytes,
+        message_id=str(value.get("entry_id") or message_id).strip()[:240],
+        group_id=str(value.get("turn_id") or group_id).strip()[:240],
+    )
 
 
 def embedded_mobile_context(prompt: str) -> MobileConversationContext:
@@ -200,6 +269,17 @@ def embedded_mobile_context(prompt: str) -> MobileConversationContext:
                 continue
             entry_id = str(item.get("entry_id") or "").strip()[:240]
             turn_id = str(item.get("turn_id") or "").strip()[:240]
+            attachments: list[ContextAttachment] = []
+            raw_attachments = item.get("attachments")
+            if isinstance(raw_attachments, list):
+                for attachment in raw_attachments[:10]:
+                    parsed_attachment = _context_attachment(
+                        attachment,
+                        message_id=entry_id,
+                        group_id=turn_id,
+                    )
+                    if parsed_attachment is not None:
+                        attachments.append(parsed_attachment)
             if entry_id:
                 entry_ids.add(entry_id)
             if turn_id:
@@ -210,8 +290,17 @@ def embedded_mobile_context(prompt: str) -> MobileConversationContext:
                     content=content,
                     message_id=entry_id or f"mobile:{index}",
                     group_id=turn_id or entry_id or f"mobile:{index}",
+                    attachments=tuple(attachments),
                 )
             )
+
+    attachment_index: list[ContextAttachment] = []
+    raw_attachment_index = payload.get("attachment_index")
+    if isinstance(raw_attachment_index, list):
+        for attachment in raw_attachment_index[:10]:
+            parsed_attachment = _context_attachment(attachment)
+            if parsed_attachment is not None:
+                attachment_index.append(parsed_attachment)
 
     summary = _sanitize(str(payload.get("summary") or ""), 32_000)
     global_context = _sanitize(str(payload.get("global_context") or ""), 32_000)
@@ -223,6 +312,7 @@ def embedded_mobile_context(prompt: str) -> MobileConversationContext:
         summary=summary,
         global_context=global_context,
         messages=tuple(messages),
+        attachment_index=tuple(attachment_index),
         turn_ids=frozenset(turn_ids),
         entry_ids=frozenset(entry_ids),
         summary_digest=summary_digest,
@@ -286,6 +376,7 @@ def compile_context(
             content=clean,
             message_id=item.message_id,
             group_id=item.group_id,
+            attachments=item.attachments,
         )
         for item in messages
         if (clean := _sanitize(item.content, policy.maximum_message_characters))

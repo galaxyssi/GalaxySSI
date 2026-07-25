@@ -5,6 +5,7 @@ from pathlib import Path
 
 from conversation_context import (
     ContextBudget,
+    ContextAttachment,
     ContextMessage,
     ConversationSummaryStore,
     compacted_history_cursor,
@@ -62,6 +63,35 @@ class ConversationContextTest(unittest.TestCase):
                     "task_id": "task-2",
                     "role": "user",
                     "content": "Compare it with the second result",
+                    "attachments": [
+                        {
+                            "artifact_id": "image-1",
+                            "kind": "image",
+                            "name": "homework.jpg",
+                            "mime_type": "image/jpeg",
+                            "size_bytes": 245760,
+                        }
+                    ],
+                },
+            ],
+            "attachment_index": [
+                {
+                    "artifact_id": "image-older",
+                    "kind": "image",
+                    "name": "earlier.png",
+                    "mime_type": "image/png",
+                    "size_bytes": 1024,
+                    "entry_id": "entry-older",
+                    "turn_id": "turn-older",
+                },
+                {
+                    "artifact_id": "image-1",
+                    "kind": "image",
+                    "name": "homework.jpg",
+                    "mime_type": "image/jpeg",
+                    "size_bytes": 245760,
+                    "entry_id": "entry-u2",
+                    "turn_id": "turn-2",
                 },
             ],
         }
@@ -83,6 +113,20 @@ class ConversationContextTest(unittest.TestCase):
         self.assertNotIn("Use the first result", [item.content for item in entry_delta])
         self.assertTrue(context.summary_digest)
         self.assertIn("Earlier decisions", context.reference_summary)
+        self.assertEqual(["earlier.png", "homework.jpg"], [item.name for item in context.attachments])
+        self.assertEqual("turn-older", context.attachments[0].group_id)
+        self.assertEqual(
+            ContextAttachment(
+                artifact_id="image-1",
+                kind="image",
+                name="homework.jpg",
+                mime_type="image/jpeg",
+                size_bytes=245760,
+                message_id="entry-u2",
+                group_id="turn-2",
+            ),
+            context.attachments[1],
+        )
 
     def test_invalid_mobile_context_is_ignored(self):
         prompt = (

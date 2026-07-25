@@ -21,7 +21,11 @@ data class AgentInputAttachment(
         uri = uri.toString(),
         mimeType = mimeType,
         text = if (isImage) "" else humanSize(sizeBytes),
-        fallbackText = displayName
+        fallbackText = displayName,
+        metadata = mapOf(
+            "size_bytes" to sizeBytes.coerceAtLeast(0L).toString(),
+            "source" to "user_attachment"
+        )
     )
 
     fun descriptor(): JSONObject = JSONObject()

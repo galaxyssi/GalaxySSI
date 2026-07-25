@@ -145,16 +145,16 @@ class CodexAppServer:
         model: str = "gpt-5.6-sol",
         conversation_id: str = "",
         image_paths: list[str] | None = None,
+        fresh_thread_image_paths: list[str] | None = None,
         fresh_thread_prompt: str = "",
         approval_policy: str = "on-request",
         sandbox: str = "workspace-write",
     ) -> CodexRun:
         self._ensure_started()
-        local_images = [
-            os.path.abspath(path)
-            for path in (image_paths or [])
-            if str(path or "").strip() and os.path.isfile(path)
-        ][:10]
+        local_images = self._existing_image_paths(image_paths)
+        restored_images = self._existing_image_paths(
+            [*local_images, *(fresh_thread_image_paths or [])]
+        )
         clean_conversation_id = str(conversation_id or "").strip()
         run = CodexRun(
             task_id=task_id,
@@ -187,9 +187,10 @@ class CodexAppServer:
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
         turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
+        turn_images = local_images if reused_thread else restored_images
         try:
             try:
-                response = self._start_turn(run.thread_id, turn_prompt, model, local_images)
+                response = self._start_turn(run.thread_id, turn_prompt, model, turn_images)
             except RuntimeError as exc:
                 if not run.thread_id or "thread not found" not in str(exc).lower():
                     raise
@@ -211,7 +212,7 @@ class CodexAppServer:
                     run.thread_id,
                     fresh_thread_prompt or prompt,
                     model,
-                    local_images,
+                    restored_images,
                 )
         except Exception:
             self._discard_run(run)
@@ -226,6 +227,21 @@ class CodexAppServer:
             name=f"codex-watch-{task_id[:8]}",
         ).start()
         return run
+
+    @staticmethod
+    def _existing_image_paths(paths: list[str] | None) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in paths or []:
+            path = os.path.abspath(str(value or "").strip())
+            key = os.path.normcase(path)
+            if not value or not os.path.isfile(path) or key in seen:
+                continue
+            seen.add(key)
+            result.append(path)
+            if len(result) >= 10:
+                break
+        return result
 
     def recover_task(
         self,
