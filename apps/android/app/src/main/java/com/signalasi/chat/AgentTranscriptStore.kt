@@ -283,6 +283,66 @@ data class AgentConversation(
     val contextCompactedThroughEntryId: String = ""
 )
 
+private data class AgentContextArtifact(
+    val id: String,
+    val kind: String,
+    val name: String,
+    val mimeType: String,
+    val sizeBytes: Long
+) {
+    fun toJson(entryId: String = "", turnId: String = ""): JSONObject =
+        JSONObject()
+            .put("artifact_id", id)
+            .put("kind", kind)
+            .put("name", name)
+            .put("mime_type", mimeType)
+            .put("size_bytes", sizeBytes.coerceAtLeast(0L))
+            .apply {
+                if (entryId.isNotBlank()) put("entry_id", entryId)
+                if (turnId.isNotBlank()) put("turn_id", turnId)
+            }
+}
+
+private fun AgentTranscriptEntry.contextArtifacts(): List<AgentContextArtifact> =
+    AgentRichContentCodec.decode(richOutputJson).mapNotNull { block ->
+        if (block.type !in CONTEXT_ARTIFACT_TYPES) return@mapNotNull null
+        val name = block.title.ifBlank {
+            block.fallbackText.ifBlank {
+                block.uri.substringBefore('?').substringAfterLast('/').ifBlank { "attachment" }
+            }
+        }.take(240)
+        AgentContextArtifact(
+            id = block.id.take(120),
+            kind = block.type.name.lowercase(),
+            name = name,
+            mimeType = block.mimeType.take(160),
+            sizeBytes = block.metadata["size_bytes"]?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+        )
+    }.distinctBy { artifact ->
+        listOf(artifact.kind, artifact.name, artifact.mimeType).joinToString("\u001f").lowercase()
+    }.take(MAX_CONTEXT_ARTIFACTS_PER_ENTRY)
+
+private fun AgentTranscriptEntry.contextText(): String {
+    val artifacts = contextArtifacts()
+    if (artifacts.isEmpty()) return text
+    val names = artifacts.joinToString(", ") { artifact ->
+        buildString {
+            append(artifact.name)
+            if (artifact.mimeType.isNotBlank()) append(" (").append(artifact.mimeType).append(')')
+        }
+    }
+    return "$text\nAttachments: $names"
+}
+
+private val CONTEXT_ARTIFACT_TYPES = setOf(
+    AgentRichBlockType.IMAGE,
+    AgentRichBlockType.FILE,
+    AgentRichBlockType.VIDEO,
+    AgentRichBlockType.AUDIO
+)
+private const val MAX_CONTEXT_ARTIFACTS_PER_ENTRY = 10
+private const val MAX_CONTEXT_ARTIFACTS = 10
+
 data class AgentConversationContext(
     val conversationId: String,
     val summary: String,
@@ -291,6 +351,22 @@ data class AgentConversationContext(
     val globalContext: String = "",
     val trackingPaused: Boolean = false
 ) {
+    private fun attachmentIndex(): List<Pair<AgentTranscriptEntry, AgentContextArtifact>> {
+        val seen = mutableSetOf<String>()
+        return turns.asReversed()
+            .flatMap { entry -> entry.contextArtifacts().asReversed().map { entry to it } }
+            .filter { (entry, artifact) ->
+                val key = artifact.id.ifBlank {
+                    listOf(entry.turnId, artifact.kind, artifact.name, artifact.mimeType)
+                        .joinToString("\u001f")
+                        .lowercase()
+                }
+                seen.add(key)
+            }
+            .take(MAX_CONTEXT_ARTIFACTS)
+            .asReversed()
+    }
+
     val allowsGlobalContext: Boolean
         get() = !privateMode && !trackingPaused
 
@@ -301,7 +377,7 @@ data class AgentConversationContext(
         }
         turns.forEach { entry ->
             val label = if (entry.role == AgentTranscriptRole.USER) "User" else "Assistant"
-            append(label).append(": ").append(entry.text).append("\n")
+            append(label).append(": ").append(entry.contextText()).append("\n")
         }
         if (allowsGlobalContext && globalContext.isNotBlank()) append(globalContext).append("\n")
     }.trim()
@@ -316,7 +392,7 @@ data class AgentConversationContext(
                 } else {
                     ConversationContextRole.ASSISTANT
                 },
-                content = entry.text,
+                content = entry.contextText(),
                 groupId = entry.turnId.ifBlank { "entry:${entry.id}" }
             )
         }
@@ -362,7 +438,7 @@ data class AgentConversationContext(
                         ConversationContextRole.ASSISTANT
                     },
                     content = ConversationContextCompactor.fitTextToTokenBudget(
-                        entry.text,
+                        entry.contextText(),
                         maximumTokens = (safeMaximum / 2).coerceAtLeast(768)
                     ),
                     groupId = entry.turnId.ifBlank { "entry:${entry.id}" }
@@ -394,7 +470,17 @@ data class AgentConversationContext(
                                 if (entry.role == AgentTranscriptRole.USER) "user" else "assistant"
                             )
                             .put("content", item.content)
+                            .put("attachments", JSONArray().apply {
+                                entry.contextArtifacts().forEach { artifact ->
+                                    put(artifact.toJson())
+                                }
+                            })
                     )
+                }
+            })
+            .put("attachment_index", JSONArray().apply {
+                attachmentIndex().forEach { (entry, artifact) ->
+                    put(artifact.toJson(entry.id, entry.turnId))
                 }
             })
         if (allowsGlobalContext && globalContext.isNotBlank()) {

@@ -392,6 +392,46 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertEqual(str(image.resolve()), turn["input"][1]["path"])
             self.assertEqual("original", turn["input"][1]["detail"])
 
+    def test_prior_image_is_only_rebound_when_starting_a_fresh_thread(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            prior_image = Path(temporary) / "prior-homework.jpg"
+            prior_image.write_bytes(b"image")
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-context"}}
+                return {"turn": {"id": f"turn-{len(calls)}"}}
+
+            server._request = request
+            first = server.start_task(
+                "task-first",
+                "grade the prior image",
+                temporary,
+                conversation_id="conversation-first",
+                fresh_thread_image_paths=[str(prior_image)],
+            )
+            first.finished = True
+            second = server.start_task(
+                "task-second",
+                "continue",
+                temporary,
+                conversation_id="conversation-first",
+                fresh_thread_image_paths=[str(prior_image)],
+            )
+
+            turns = [params for method, params, _ in calls if method == "turn/start"]
+            self.assertEqual(["text", "localImage"], [item["type"] for item in turns[0]["input"]])
+            self.assertEqual(["text"], [item["type"] for item in turns[1]["input"]])
+            self.assertEqual(first.thread_id, second.thread_id)
+
     def test_recover_completed_turn_without_starting_a_duplicate_turn(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,

@@ -66,6 +66,23 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
         self.assertEqual("client:phone-b:conversation-1", phone_b)
         self.assertNotEqual(phone_a, phone_b)
 
+    def test_repaired_route_reuses_conversation_for_same_signal_identity(self):
+        fingerprint = "a" * 64
+
+        with patch.object(
+            mqtt_bridge,
+            "get_client",
+            side_effect=lambda route, include_revoked=False: {
+                "client_route_id": route,
+                "identity_fingerprint": fingerprint,
+            },
+        ):
+            before = mqtt_bridge._scoped_agent_conversation_id("old-route", "conversation-1")
+            after = mqtt_bridge._scoped_agent_conversation_id("new-route", "conversation-1")
+
+        self.assertEqual(before, after)
+        self.assertEqual(f"client:identity:{fingerprint}:conversation-1", before)
+
     def test_task_without_client_turn_id_does_not_expose_internal_agent_turn(self):
         task = {"task_id": "task-1", "status": "completed", "turn_id": "codex-turn-1"}
 
