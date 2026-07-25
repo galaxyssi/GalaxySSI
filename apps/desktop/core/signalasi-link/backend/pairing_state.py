@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import secrets
+import tempfile
 import threading
 import time
+from copy import deepcopy
 from pathlib import Path
 
 from link_protocol import LinkTopics, new_route_id, valid_route_id
@@ -22,6 +25,13 @@ STATE_PATH = DATA_DIR / "signalasi_link_registry.json"
 
 _tokens: dict[str, dict] = {}
 _registry_lock = threading.RLock()
+_last_good_state: dict | None = None
+_last_good_path = ""
+logger = logging.getLogger(__name__)
+
+
+class PairingRegistryError(RuntimeError):
+    """Raised when an existing pairing registry cannot be recovered safely."""
 
 
 def _empty_state() -> dict:
@@ -33,27 +43,116 @@ def _empty_state() -> dict:
     }
 
 
-def _read_state() -> dict:
-    try:
-        data = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            raise ValueError("invalid registry")
-    except Exception:
-        data = _empty_state()
-        _write_state(data)
+def _backup_path() -> Path:
+    return STATE_PATH.with_name(f"{STATE_PATH.name}.bak")
+
+
+def _state_path_key() -> str:
+    return str(STATE_PATH.resolve())
+
+
+def _validated_state(data: object) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("registry root must be an object")
     if not valid_route_id(data.get("server_route_id")):
-        data["server_route_id"] = new_route_id()
-        _write_state(data)
+        raise ValueError("registry has an invalid server route")
     if not isinstance(data.get("clients"), dict):
-        data["clients"] = {}
-    return data
+        raise ValueError("registry clients must be an object")
+    clean = deepcopy(data)
+    clean.setdefault("schema", 2)
+    clean.setdefault("updated_at", time.time())
+    return clean
+
+
+def _load_state(path: Path) -> dict:
+    return _validated_state(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _remember_state(data: dict) -> dict:
+    global _last_good_path, _last_good_state
+    clean = _validated_state(data)
+    _last_good_path = _state_path_key()
+    _last_good_state = deepcopy(clean)
+    return clean
+
+
+def _cached_state() -> dict | None:
+    if _last_good_path != _state_path_key() or _last_good_state is None:
+        return None
+    return deepcopy(_last_good_state)
+
+
+def _atomic_write(path: Path, payload: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        text=True,
+    )
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def _write_state(data: dict) -> None:
-    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp = STATE_PATH.with_suffix(".tmp")
-    temp.write_text(f"{json.dumps(data, ensure_ascii=False, indent=2)}\n", encoding="utf-8")
-    temp.replace(STATE_PATH)
+    with _registry_lock:
+        clean = _validated_state(data)
+        payload = f"{json.dumps(clean, ensure_ascii=False, indent=2)}\n"
+        # Write the recovery copy first. A crash between the two replacements
+        # still leaves at least one complete registry with the newest state.
+        _atomic_write(_backup_path(), payload)
+        _atomic_write(STATE_PATH, payload)
+        _remember_state(clean)
+
+
+def _restore_state(reason: Exception | None = None) -> dict | None:
+    try:
+        recovered = _load_state(_backup_path())
+        source = "backup"
+    except Exception:
+        recovered = _cached_state()
+        source = "memory"
+    if recovered is None:
+        return None
+    _write_state(recovered)
+    logger.warning(
+        "Recovered SignalASI Link pairing registry from %s after primary read failure: %s",
+        source,
+        reason or "registry missing",
+    )
+    return recovered
+
+
+def _read_state() -> dict:
+    with _registry_lock:
+        if not STATE_PATH.exists():
+            recovered = _restore_state()
+            if recovered is not None:
+                return recovered
+            data = _empty_state()
+            _write_state(data)
+            return deepcopy(data)
+
+        try:
+            return _remember_state(_load_state(STATE_PATH))
+        except Exception as error:
+            recovered = _restore_state(error)
+            if recovered is not None:
+                return recovered
+            logger.error(
+                "SignalASI Link pairing registry is unreadable and no recovery copy is available: %s",
+                error,
+            )
+            raise PairingRegistryError(
+                "Pairing registry is unreadable; refusing to replace the existing identity"
+            ) from error
 
 
 def server_route_id() -> str:
