@@ -22,7 +22,7 @@
         <button class="sidebar-action sidebar-settings-row" data-open-panel="settings">
           <span class="line-icon settings-icon"></span>
           <b data-i18n="Settings">Settings</b>
-          <span id="desktopVersion" class="sidebar-version">v0.2.19</span>
+          <span id="desktopVersion" class="sidebar-version">v0.2.20</span>
         </button>
       </div>
     </aside>
@@ -34,10 +34,10 @@
           <p><span id="taskStateText" data-i18n="Ready">Ready</span><span class="header-separator">·</span><span id="routeText" data-i18n="Automatic routing">Automatic routing</span></p>
         </div>
         <div class="workspace-status">
-          <button class="compact-status active" data-open-panel="computer" title="Computer control"><span class="computer-symbol"></span><b data-i18n="Computer">Computer</b></button>
-          <button class="compact-status" data-open-panel="agents" title="Agents"><span class="agent-symbol"></span><b data-i18n="Agents">Agents</b><em id="agentCount">0</em></button>
-          <button class="compact-status" data-open-panel="capabilities" title="Capabilities"><span class="capability-symbol"></span><b data-i18n="Capabilities">Capabilities</b><em id="capabilityCount">0</em></button>
-          <button class="compact-status" data-open-panel="gateway" title="Mobile Gateway"><span class="gateway-symbol"></span><b data-i18n="Mobile Gateway">Mobile Gateway</b><em id="gatewayCount">Offline</em></button>
+          <button class="compact-status active" data-open-panel="computer" title="Computer control"><span><svg class="lucide lucide-monitor" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><line x1="8" x2="16" y1="21" y2="21"></line><line x1="12" x2="12" y1="17" y2="21"></line></svg></span><b data-i18n="Computer">Computer</b></button>
+          <button class="compact-status" data-open-panel="agents" title="Agents"><span><svg class="lucide lucide-bot" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg></span><b data-i18n="Agents">Agents</b><em id="agentCount">0</em></button>
+          <button class="compact-status" data-open-panel="capabilities" title="Capabilities"><span><svg class="lucide lucide-sparkles" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg></span><b data-i18n="Capabilities">Capabilities</b><em id="capabilityCount">0</em></button>
+          <button class="compact-status" data-open-panel="gateway" title="Mobile Gateway"><span><svg class="lucide lucide-smartphone" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg></span><b data-i18n="Mobile Gateway">Mobile Gateway</b><em id="gatewayCount">Offline</em></button>
           <button id="workspaceMenuButton" class="icon-button more-button" title="More" aria-label="More"></button>
         </div>
         <div id="workspaceMenu" class="workspace-menu" hidden>

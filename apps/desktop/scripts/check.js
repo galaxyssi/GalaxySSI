@@ -385,6 +385,21 @@ if (
   throw new Error("Desktop workspace menu must use a centered three-dot control");
 }
 
+for (const iconClass of ["lucide-monitor", "lucide-bot", "lucide-sparkles", "lucide-smartphone"]) {
+  if (!html.includes(`class="lucide ${iconClass}"`)) {
+    throw new Error(`Desktop precision header icon missing: ${iconClass}`);
+  }
+}
+if (
+  !/\.compact-status svg\s*\{[^}]*stroke-width:\s*1\.65;/s.test(styles)
+  || styles.includes(".computer-symbol::before")
+  || styles.includes(".agent-symbol::before")
+  || styles.includes(".capability-symbol::before")
+  || styles.includes(".gateway-symbol::before")
+) {
+  throw new Error("Desktop header controls must use the selected precision line icon set");
+}
+
 if (
   !/\.sidebar-brand-copy\s*\{[^}]*width:\s*64px;[^}]*text-align:\s*center;/s.test(styles)
   || !/\.sidebar-brand strong,\s*\.sidebar-brand span\s*\{[^}]*width:\s*100%;[^}]*text-align:\s*center;/s.test(styles)
