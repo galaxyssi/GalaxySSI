@@ -18,7 +18,8 @@ const ignoredDirs = new Set([
   "ui-smoke",
   "__pycache__",
   "venv",
-  ".venv"
+  ".venv",
+  "artifacts"
 ]);
 
 const ignoredExtensions = new Set([
@@ -60,6 +61,7 @@ function walk(dir, findings) {
       if (!ignoredDirs.has(entry.name)) walk(full, findings);
       continue;
     }
+    if (entry.isSymbolicLink()) continue;
     if (ignoredExtensions.has(path.extname(entry.name).toLowerCase())) continue;
     if (isAllowedChineseFile(full)) continue;
     const text = fs.readFileSync(full, "utf8");

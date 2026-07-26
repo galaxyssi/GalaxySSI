@@ -839,19 +839,28 @@ class EncryptedAgentRegistry(context: Context) {
         timestampMillis: Long = System.currentTimeMillis()
     ): AgentRegistration? {
         val existing = index.get(agentId) ?: return null
+        val normalizedActiveRuns = activeRuns.coerceAtLeast(0)
+        val normalizedCapabilitiesHash = capabilitiesHash.ifBlank { existing.capabilitiesHash }
+        val stateChanged = existing.status != status ||
+            existing.activeRuns != normalizedActiveRuns ||
+            existing.capabilitiesHash != normalizedCapabilitiesHash
+        val heartbeatDue = timestampMillis - existing.lastHeartbeatMillis >= HEARTBEAT_PERSIST_INTERVAL_MILLIS
+        if (!stateChanged && !heartbeatDue) return existing
         val updated = existing.copy(
             status = status,
-            activeRuns = activeRuns.coerceAtLeast(0),
-            capabilitiesHash = capabilitiesHash.ifBlank { existing.capabilitiesHash },
+            activeRuns = normalizedActiveRuns,
+            capabilitiesHash = normalizedCapabilitiesHash,
             lastHeartbeatMillis = timestampMillis,
             updatedAtMillis = timestampMillis
         )
         database.writeString(agentNetworkStorageKey(agentId), updated.toJson().toString())
         index.upsert(updated)
-        GlobalConversationEventBus.publishCapabilityEvents(
-            appContext,
-            GlobalCapabilityObservationExtractor.agentMutations(listOf(existing), listOf(updated), timestampMillis)
-        )
+        if (stateChanged) {
+            GlobalConversationEventBus.publishCapabilityEvents(
+                appContext,
+                GlobalCapabilityObservationExtractor.agentMutations(listOf(existing), listOf(updated), timestampMillis)
+            )
+        }
         return updated
     }
 
@@ -907,6 +916,7 @@ class EncryptedAgentRegistry(context: Context) {
         private const val DATABASE = "signalasi_agent_registry_v2"
         private const val LEGACY_DATABASE = "signalasi_agent_registry_v1.db"
         private const val AGENT_KEY_PREFIX = "agent:"
+        private const val HEARTBEAT_PERSIST_INTERVAL_MILLIS = 30_000L
         private val ROUTABLE_STATES = setOf(
             AgentEndpointStatus.ONLINE,
             AgentEndpointStatus.IDLE,
@@ -918,43 +928,66 @@ class EncryptedAgentRegistry(context: Context) {
 class AgentRunEventStore(context: Context) : AgentRunControlStore {
     private val database = AgentEncryptedDatabase(context.applicationContext, DATABASE)
 
-    @Synchronized
-    fun append(event: AgentRunControlEvent): Boolean {
+    fun append(event: AgentRunControlEvent): Boolean = synchronized(STORE_LOCK) {
+        appendLocked(event)
+    }
+
+    private fun appendLocked(event: AgentRunControlEvent): Boolean {
         require(event.runId.isNotBlank() && event.taskId.isNotBlank()) { "Run and task ids must not be blank" }
-        val events = events(event.runId).toMutableList()
+        val events = eventsLocked(event.runId).toMutableList()
         if (events.any { it.eventId == event.eventId }) return false
-        val lastSequence = events.maxOfOrNull { it.sequence } ?: 0L
+        val lastSequence = events.lastOrNull()?.sequence ?: 0L
         require(event.sequence > lastSequence) { "Run event sequence must increase" }
         events += event
+        val retainedEvents = events.takeLast(MAX_EVENTS_PER_RUN)
         database.writeString(runKey(event.runId), JSONArray().apply {
-            events.takeLast(MAX_EVENTS_PER_RUN).forEach { put(it.toJson()) }
+            retainedEvents.forEach { put(it.toJson()) }
         }.toString())
-        val runs = runIds().filterNot { it == event.runId } + event.runId
+        EVENTS_CACHE[event.runId] = retainedEvents
+        val runs = runIdsLocked().filterNot { it == event.runId } + event.runId
         val retained = runs.takeLast(MAX_RUNS)
-        (runs - retained.toSet()).forEach { staleRunId -> database.remove(runKey(staleRunId)) }
+        val staleRunIds = runs - retained.toSet()
+        staleRunIds.forEach { staleRunId ->
+            database.remove(runKey(staleRunId))
+            EVENTS_CACHE.remove(staleRunId)
+        }
         database.writeString(KEY_RUN_IDS, JSONArray(retained).toString())
+        RUN_IDS_CACHE = retained
+        val state = retainedEvents.fold(AgentRunControlState.CREATED) { current, item ->
+            reduce(current, item.type)
+        }
+        updateRecoverableRunIdsLocked(
+            runId = event.runId,
+            recoverable = state !in TERMINAL_STATES,
+            removedRunIds = staleRunIds.toSet()
+        )
         return true
     }
 
-    @Synchronized
-    override fun appendNext(event: AgentRunControlEvent): AgentRunControlEvent? {
-        val currentEvents = events(event.runId)
+    override fun appendNext(event: AgentRunControlEvent): AgentRunControlEvent? = synchronized(STORE_LOCK) {
+        val currentEvents = eventsLocked(event.runId)
         val currentState = currentEvents.fold(AgentRunControlState.CREATED) { state, item ->
             reduce(state, item.type)
         }
         if (currentState in TERMINAL_STATES && event.type != AgentRunControlEventType.RUN_RECOVERED) return null
         val sequenced = event.copy(sequence = (currentEvents.lastOrNull()?.sequence ?: 0L) + 1L)
-        return sequenced.takeIf(::append)
+        return sequenced.takeIf(::appendLocked)
     }
 
-    @Synchronized
-    fun events(runId: String): List<AgentRunControlEvent> = decodeEvents(
-        database.readString(runKey(runId), "[]")
-    ).sortedBy { it.sequence }
+    fun events(runId: String): List<AgentRunControlEvent> = synchronized(STORE_LOCK) {
+        eventsLocked(runId).toList()
+    }
 
-    @Synchronized
-    fun snapshot(runId: String): AgentRunControlSnapshot? {
-        val events = events(runId)
+    fun latestEvent(runId: String): AgentRunControlEvent? = synchronized(STORE_LOCK) {
+        eventsLocked(runId).lastOrNull()
+    }
+
+    fun snapshot(runId: String): AgentRunControlSnapshot? = synchronized(STORE_LOCK) {
+        snapshotLocked(runId)
+    }
+
+    private fun snapshotLocked(runId: String): AgentRunControlSnapshot? {
+        val events = eventsLocked(runId)
         val last = events.lastOrNull() ?: return null
         return AgentRunControlSnapshot(
             runId = runId,
@@ -967,18 +1000,66 @@ class AgentRunEventStore(context: Context) : AgentRunControlStore {
         )
     }
 
-    @Synchronized
-    override fun recoverableRuns(): List<AgentRunControlSnapshot> = runIds().mapNotNull(::snapshot).filter {
-        it.state !in setOf(AgentRunControlState.COMPLETED, AgentRunControlState.FAILED, AgentRunControlState.CANCELLED)
+    override fun recoverableRuns(): List<AgentRunControlSnapshot> = synchronized(STORE_LOCK) {
+        recoverableRunIdsLocked().mapNotNull(::snapshotLocked).filter {
+            it.state !in setOf(AgentRunControlState.COMPLETED, AgentRunControlState.FAILED, AgentRunControlState.CANCELLED)
+        }
     }
 
-    @Synchronized
-    fun clear() = database.clear()
+    fun clear() = synchronized(STORE_LOCK) {
+        database.clear()
+        EVENTS_CACHE.clear()
+        RUN_IDS_CACHE = emptyList()
+        RECOVERABLE_RUN_IDS_CACHE = emptyList()
+    }
 
-    private fun runIds(): List<String> {
+    private fun eventsLocked(runId: String): List<AgentRunControlEvent> =
+        EVENTS_CACHE[runId] ?: decodeEvents(
+            database.readString(runKey(runId), "[]")
+        ).sortedBy { it.sequence }.also { EVENTS_CACHE[runId] = it }
+
+    private fun runIdsLocked(): List<String> {
+        RUN_IDS_CACHE?.let { return it }
         val array = runCatching { JSONArray(database.readString(KEY_RUN_IDS, "[]")) }.getOrDefault(JSONArray())
         return buildList {
             for (index in 0 until array.length()) array.optString(index).takeIf(String::isNotBlank)?.let(::add)
+        }.also { RUN_IDS_CACHE = it }
+    }
+
+    private fun recoverableRunIdsLocked(): List<String> {
+        RECOVERABLE_RUN_IDS_CACHE?.let { return it }
+        if (!database.contains(KEY_RECOVERABLE_RUN_IDS)) {
+            database.writeString(KEY_RECOVERABLE_RUN_IDS, "[]")
+            RECOVERABLE_RUN_IDS_CACHE = emptyList()
+            return emptyList()
+        }
+        return decodeRunIds(database.readString(KEY_RECOVERABLE_RUN_IDS, "[]"))
+            .also { RECOVERABLE_RUN_IDS_CACHE = it }
+    }
+
+    private fun updateRecoverableRunIdsLocked(
+        runId: String,
+        recoverable: Boolean,
+        removedRunIds: Set<String>
+    ) {
+        val current = recoverableRunIdsLocked()
+            .filterNot { it == runId || it in removedRunIds }
+            .toMutableList()
+        if (recoverable) current += runId
+        val retained = current.takeLast(MAX_RECOVERABLE_RUNS)
+        database.writeString(
+            KEY_RECOVERABLE_RUN_IDS,
+            JSONArray(retained).toString()
+        )
+        RECOVERABLE_RUN_IDS_CACHE = retained
+    }
+
+    private fun decodeRunIds(raw: String): List<String> {
+        val array = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        return buildList {
+            for (index in 0 until array.length()) {
+                array.optString(index).takeIf(String::isNotBlank)?.let(::add)
+            }
         }
     }
 
@@ -994,8 +1075,14 @@ class AgentRunEventStore(context: Context) : AgentRunControlStore {
     companion object {
         private const val DATABASE = "signalasi_run_control_v1"
         private const val KEY_RUN_IDS = "run_ids"
+        private const val KEY_RECOVERABLE_RUN_IDS = "recoverable_run_ids"
         private const val MAX_RUNS = 500
+        private const val MAX_RECOVERABLE_RUNS = 64
         private const val MAX_EVENTS_PER_RUN = 2_000
+        private val STORE_LOCK = Any()
+        private val EVENTS_CACHE = linkedMapOf<String, List<AgentRunControlEvent>>()
+        private var RUN_IDS_CACHE: List<String>? = null
+        private var RECOVERABLE_RUN_IDS_CACHE: List<String>? = null
         private val TERMINAL_STATES = setOf(
             AgentRunControlState.COMPLETED,
             AgentRunControlState.FAILED,

@@ -1320,8 +1320,6 @@
     <string name="agent_loop_timeline_replan_action">Replan</string>
     <string name="agent_loop_timeline_action_unavailable">This task is no longer available</string>
     <string name="agent_loop_timeline_remote_cancel_failed">The task was stopped on this phone, but the remote cancellation could not be delivered</string>
-    <string name="agent_trace_tool_group_count">Ran %1$d tool steps</string>
-    <string name="agent_trace_tool_group_details">Show tool details</string>
     <string name="agent_trace_connector_progress_running">Running: %1$s%2$s</string>
     <string name="agent_trace_connector_progress_completed">Completed: %1$s%2$s</string>
     <string name="agent_trace_connector_progress_failed">Failed: %1$s%2$s</string>

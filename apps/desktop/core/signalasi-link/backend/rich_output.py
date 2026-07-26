@@ -20,6 +20,7 @@ MAX_ROWS = 500
 MAX_COLUMNS = 24
 MAX_INLINE_ARTIFACT_BYTES = 300_000
 MAX_INLINE_ARTIFACT_B64 = ((MAX_INLINE_ARTIFACT_BYTES + 2) // 3) * 4
+MAX_TOTAL_INLINE_ARTIFACT_B64 = MAX_INLINE_ARTIFACT_B64
 ALLOWED_TYPES = {
     "text", "heading", "quote", "list", "divider", "code", "json", "key_value",
     "table", "image", "gallery", "video", "audio",
@@ -28,6 +29,10 @@ ALLOWED_TYPES = {
     "webpage", "unknown",
 }
 RICH_FENCE = re.compile(r"```signalasi-rich\s*(.*?)```", re.IGNORECASE | re.DOTALL)
+SANDBOX_ARTIFACT_LINK = re.compile(
+    r"!?\[[^\]]*]\(\s*<?(?:sandbox:)?/?(?:outputs|downloads|screenshots)/[^)\r\n>]+>?\s*\)",
+    re.IGNORECASE,
+)
 ARTIFACT_TYPES = {"image", "gallery", "video", "audio", "file"}
 ARTIFACT_CATEGORIES = {"outputs", "downloads", "screenshots"}
 IMAGE_MIME_TYPES = {
@@ -55,7 +60,7 @@ def build_rich_output(content: str, output_files: list[dict] | None = None, task
         if isinstance(candidate, list):
             blocks.extend(_normalize_block(item) for item in candidate if isinstance(item, dict))
 
-    clean_content = RICH_FENCE.sub("", source).strip()
+    clean_content = _clean_visible_content(RICH_FENCE.sub("", source))
     blocks = [
         hydrated
         for item in blocks
@@ -69,7 +74,14 @@ def build_rich_output(content: str, output_files: list[dict] | None = None, task
         for item in (output_files or [])
         if isinstance(item, dict) and not is_input_artifact(item)
     )
+    if clean_content and not _contains_equivalent_text(blocks, clean_content):
+        blocks.insert(0, {
+            "id": f"text-{hashlib.sha256(clean_content.encode('utf-8')).hexdigest()[:24]}",
+            "type": "text",
+            "text": clean_content[:MAX_TEXT],
+        })
     blocks = _dedupe_blocks(item for item in blocks if item)[:MAX_BLOCKS]
+    blocks = _limit_inline_artifact_payload(blocks)
 
     if not blocks:
         if had_explicit_document:
@@ -86,6 +98,24 @@ def build_rich_output(content: str, output_files: list[dict] | None = None, task
     if not clean_content:
         clean_content = _fallback_text(blocks)
     return clean_content[:MAX_TEXT], {"version": 1, "blocks": blocks}
+
+
+def _clean_visible_content(content: str) -> str:
+    text = SANDBOX_ARTIFACT_LINK.sub("", str(content or ""))
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _contains_equivalent_text(blocks: list[dict], content: str) -> bool:
+    normalized = re.sub(r"\s+", " ", content).strip().casefold()
+    if not normalized:
+        return True
+    return any(
+        str(block.get("type") or "").lower() in {"text", "heading", "notice"} and
+        re.sub(r"\s+", " ", str(block.get("text") or block.get("title") or "")).strip().casefold() == normalized
+        for block in blocks
+    )
 
 
 def _load_json(raw: str) -> Any:
@@ -267,6 +297,26 @@ def _dedupe_blocks(blocks) -> list[dict]:
     return result
 
 
+def _limit_inline_artifact_payload(blocks: list[dict]) -> list[dict]:
+    remaining = MAX_TOTAL_INLINE_ARTIFACT_B64
+    bounded: list[dict] = []
+    for raw in blocks:
+        block = dict(raw)
+        encoded = str(block.get("data_b64") or "").strip()
+        if encoded and len(encoded) > remaining:
+            block.pop("data_b64", None)
+            metadata = dict(block.get("metadata") or {})
+            metadata.pop("transport", None)
+            if metadata:
+                block["metadata"] = metadata
+            else:
+                block.pop("metadata", None)
+        elif encoded:
+            remaining -= len(encoded)
+        bounded.append(block)
+    return bounded
+
+
 def _block_identity(block: dict) -> str:
     title = str(block.get("title") or "").strip().casefold()
     fallback = str(block.get("fallback_text") or "").replace("\\", "/").strip().casefold()
@@ -309,7 +359,7 @@ def _safe_relative_artifact_path(value: str) -> str:
     category = candidate.parts[0].lower()
     if category not in ARTIFACT_CATEGORIES:
         return ""
-    if category == "downloads" and candidate.parts[1].lower() == "input":
+    if category == "downloads" and candidate.parts[1].lower() in {"input", "context"}:
         return ""
     return candidate.as_posix()
 

@@ -101,7 +101,7 @@ def task_artifacts(task_id: str, limit: int = 50) -> list[dict]:
             if not file_path.is_file() or file_path.is_symlink():
                 continue
             relative = file_path.relative_to(directory).as_posix()
-            if relative.lower().startswith("downloads/input/"):
+            if relative.lower().startswith(("downloads/input/", "downloads/context/")):
                 continue
             artifacts.append({
                 "name": file_path.name,
@@ -139,7 +139,11 @@ def referenced_task_artifact_paths(content: str, limit: int = 20) -> list[Path]:
         category = relative.parts[1].lower()
         if category not in {"outputs", "downloads", "screenshots"}:
             continue
-        if category == "downloads" and len(relative.parts) > 2 and relative.parts[2].lower() == "input":
+        if (
+            category == "downloads"
+            and len(relative.parts) > 2
+            and relative.parts[2].lower() in {"input", "context"}
+        ):
             continue
         if not source.is_file() or source.is_symlink() or source.stat().st_size > MAX_IMPORTED_ARTIFACT_BYTES:
             continue
@@ -165,7 +169,7 @@ def referenced_relative_artifact_paths(content: str, limit: int = 20) -> list[Pu
         category = candidate.parts[0].lower()
         if category not in {"outputs", "downloads", "screenshots"}:
             continue
-        if category == "downloads" and candidate.parts[1].lower() == "input":
+        if category == "downloads" and candidate.parts[1].lower() in {"input", "context"}:
             continue
         key = candidate.as_posix().casefold()
         if key in seen:
@@ -194,6 +198,13 @@ def import_referenced_task_artifacts(
     tasks_root = (workspace_root() / "tasks").resolve()
     safe_sources = list(dict.fromkeys(_safe_component(value) for value in source_task_ids))
     for relative in referenced_relative_artifact_paths(content, limit=limit):
+        current_source = (current_root / Path(*relative.parts)).resolve()
+        if (
+            _is_within(current_source, current_root)
+            and current_source.is_file()
+            and not current_source.is_symlink()
+        ):
+            continue
         for safe_source_id in safe_sources:
             if not safe_source_id or safe_source_id == current_root.name:
                 continue

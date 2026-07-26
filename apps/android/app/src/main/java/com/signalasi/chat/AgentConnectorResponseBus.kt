@@ -38,7 +38,7 @@ object AgentConnectorResponseBus {
 
     fun publish(context: Context, response: AgentConnectorResponse): Boolean {
         if (response.sourceMessageId <= 0L) return false
-        val richOutput = AgentRichContentCodec.normalize(response.richOutputJson)
+        val richOutput = AgentRichContentMaterializer.materialize(context, response.richOutputJson)
         val normalized = response.copy(
             content = response.content.ifBlank { AgentRichContentCodec.fallbackText(richOutput) },
             richOutputJson = richOutput

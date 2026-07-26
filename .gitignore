@@ -58,6 +58,9 @@ SignalASIWorkspace/
 tasks/
 task-workspaces/
 
+# Local test evidence
+/artifacts/
+
 # SignalASI sidecar local build cache
 apps/desktop/core/signalasi-link/backend/build/
 apps/desktop/core/signalasi-link/backend/signal_sidecar/.gradle/

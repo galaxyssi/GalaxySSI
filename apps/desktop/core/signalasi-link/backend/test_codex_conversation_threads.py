@@ -301,6 +301,49 @@ class CodexConversationThreadTests(unittest.TestCase):
             self.assertTrue(server.delete_conversation("conversation-1"))
             self.assertNotIn(server._conversation_key("conversation-1"), server._conversation_threads)
 
+    def test_reused_thread_moves_workspace_to_each_turn(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            first_workspace = Path(temporary) / "task-1"
+            second_workspace = Path(temporary) / "task-2"
+            first_workspace.mkdir()
+            second_workspace.mkdir()
+            server = codex_app_server.CodexAppServer(
+                "codex",
+                {},
+                lambda _task, _event: None,
+            )
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-1"}}
+                return {"turn": {"id": f"turn-{len(calls)}"}}
+
+            server._request = request
+            first = server.start_task(
+                "task-1",
+                "first",
+                str(first_workspace),
+                conversation_id="conversation-1",
+            )
+            first.finished = True
+            server.start_task(
+                "task-2",
+                "continue",
+                str(second_workspace),
+                conversation_id="conversation-1",
+            )
+
+            turns = [params for method, params, _ in calls if method == "turn/start"]
+            self.assertEqual(str(first_workspace.resolve()), turns[0]["cwd"])
+            self.assertEqual(str(second_workspace.resolve()), turns[1]["cwd"])
+
     def test_overlapping_tasks_are_steered_without_creating_a_branch(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,

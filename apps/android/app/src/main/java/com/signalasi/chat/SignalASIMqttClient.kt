@@ -3,6 +3,7 @@ package com.signalasi.chat
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import org.eclipse.paho.client.mqttv3.IMqttActionListener
@@ -20,6 +21,7 @@ import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 internal object MqttPublishGuard {
@@ -112,8 +114,8 @@ object SignalASIMqttClient {
     private const val PAIRING_CLAIM_MAX_AGE_MILLIS = 9 * 60_000L
     private const val SUBSCRIPTION_RETRY_DELAY_MILLIS = 3_000L
     private const val MQTT_MAX_INFLIGHT = 64
-    private const val MAX_FRAGMENT_INFLIGHT = 16
-    private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 4
+    private const val MAX_FRAGMENT_INFLIGHT = 48
+    private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 24
 
     private data class PendingPairingClaim(
         val desktopId: String,
@@ -128,6 +130,7 @@ object SignalASIMqttClient {
         val topic: String,
         val packets: List<String>,
         val purpose: String,
+        val queuedAtElapsedMillis: Long = SystemClock.elapsedRealtime(),
         var nextPacketIndex: Int = 0,
         var outstanding: Int = 0,
         var failed: Boolean = false
@@ -136,6 +139,10 @@ object SignalASIMqttClient {
     private val connecting = AtomicBoolean(false)
     private val connectionRetryScheduled = AtomicBoolean(false)
     private val initialOutboxRecoveryPrepared = AtomicBoolean(false)
+    private val inboundReplayScheduled = AtomicBoolean(false)
+    private val inboundReplayExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "signalasi-inbound-replay").apply { isDaemon = true }
+    }
     private val retryHandler = Handler(Looper.getMainLooper())
     private val connectionRetryPolicy = MqttConnectionRetryPolicy()
     private val subscriptionRecoveryState = MqttSubscriptionRecoveryState()
@@ -184,6 +191,7 @@ object SignalASIMqttClient {
         listeners.add(listener)
         listener.onConnectionChanged(connected)
         listener.onSecureChannelChanged(secureReady)
+        schedulePendingIncomingReplay()
     }
 
     fun removeListener(listener: Listener) {
@@ -195,6 +203,14 @@ object SignalASIMqttClient {
     fun isSecureReady(): Boolean = secureReady
 
     internal fun applicationContext(): Context? = appContext
+
+    fun completeIncomingDelivery(context: Context, payload: String) {
+        val messageId = runCatching { JSONObject(payload).optString("message_id") }
+            .getOrDefault("")
+        if (messageId.isNotBlank()) {
+            SignalASILinkDeliveryStore.completeIncoming(context.applicationContext, messageId)
+        }
+    }
 
     fun forgetSecureChannel() {
         val context = appContext
@@ -309,6 +325,7 @@ object SignalASIMqttClient {
     fun connect(context: Context) {
         appContext = context.applicationContext
         SignalASICrypto.initialize(context.applicationContext)
+        schedulePendingIncomingReplay()
         val current = client
         if (current?.isConnected == true) {
             onTransportConnected(context.applicationContext)
@@ -983,7 +1000,8 @@ object SignalASIMqttClient {
                     Log.i(
                         TAG,
                         "MQTT fragmented transfer broker-acked chunks=${transfer.packets.size} " +
-                            "purpose=${transfer.purpose}"
+                            "purpose=${transfer.purpose} " +
+                            "elapsed_ms=${SystemClock.elapsedRealtime() - transfer.queuedAtElapsedMillis}"
                     )
                 }
             }
@@ -1105,19 +1123,47 @@ object SignalASIMqttClient {
         }
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
         val incomingMessageId = payload.optString("message_id")
-        if (!SignalASILinkDeliveryStore.claimIncoming(context, incomingMessageId)) {
-            if (payload.optString("type") != "delivery_ack") {
-                publishInboundReceipt(link, incomingMessageId)
-            }
-            Log.i(TAG, "Ignored duplicate inbound message $incomingMessageId")
-            return
-        }
         if (payload.optString("type") == "delivery_ack") {
+            if (!SignalASILinkDeliveryStore.claimIncoming(context, incomingMessageId)) {
+                Log.i(TAG, "Ignored duplicate inbound receipt $incomingMessageId")
+                return
+            }
             val acknowledgedId = payload.optString("source_message_id").ifBlank { payload.optString("reply_to") }
             SignalASILinkDeliveryStore.acknowledge(context, acknowledgedId)
-        } else {
-            publishInboundReceipt(link, payload.optString("message_id"))
+            dispatchIncomingPayload(context, payload, link.desktopId)
+            return
         }
+        when (
+            SignalASILinkDeliveryStore.stageIncoming(
+                context,
+                incomingMessageId,
+                payload.toString()
+            )
+        ) {
+            SignalASILinkDeliveryStore.IncomingStageResult.INVALID -> return
+            SignalASILinkDeliveryStore.IncomingStageResult.COMPLETED -> {
+                publishInboundReceipt(link, incomingMessageId)
+                Log.i(TAG, "Ignored completed duplicate inbound message $incomingMessageId")
+                return
+            }
+            SignalASILinkDeliveryStore.IncomingStageResult.PENDING -> {
+                publishInboundReceipt(link, incomingMessageId)
+                schedulePendingIncomingReplay()
+                Log.i(TAG, "Replaying pending inbound message $incomingMessageId")
+                return
+            }
+            SignalASILinkDeliveryStore.IncomingStageResult.STAGED -> {
+                publishInboundReceipt(link, incomingMessageId)
+            }
+        }
+        dispatchIncomingPayload(context, payload, link.desktopId)
+    }
+
+    private fun dispatchIncomingPayload(
+        context: Context,
+        payload: JSONObject,
+        sourceDesktopId: String = payload.optString("desktop_id")
+    ) {
         AgentRemoteReputation.ingest(context, payload)?.let { result ->
             if (!result.accepted) {
                 Log.w(TAG, "Rejected Agent execution receipt: ${result.reason}")
@@ -1126,19 +1172,55 @@ object SignalASIMqttClient {
         if (payload.optString("type") == "capability_manifest") {
             SignalASILinkProtocol.updatePairingAccess(
                 context,
-                link.desktopId,
+                sourceDesktopId,
                 payload.optJSONObject("pairing_access")
             )
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }
         DesktopRemoteControl.handleInbound(context, payload)
-        if (AgentDesktopRemoteNativeTools.handleInbound(payload)) return
+        if (AgentDesktopRemoteNativeTools.handleInbound(payload)) {
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
         if (handleSecureControlMessage(payload)) {
-            listeners.forEach { it.onMessage(payload.toString()) }
+            notifyMessageListeners(payload)
             return
         }
         payload.optJSONArray("connector_agents")?.let { AppStore.updateConnectorAgentStatuses(context, it) }
-        listeners.forEach { it.onMessage(payload.toString()) }
+        notifyMessageListeners(payload)
+    }
+
+    private fun notifyMessageListeners(payload: JSONObject) {
+        val encoded = payload.toString()
+        listeners.forEach { listener ->
+            runCatching { listener.onMessage(encoded) }
+                .onFailure { Log.e(TAG, "Inbound listener failed", it) }
+        }
+    }
+
+    private fun schedulePendingIncomingReplay() {
+        val context = appContext ?: return
+        if (listeners.isEmpty() || !inboundReplayScheduled.compareAndSet(false, true)) return
+        inboundReplayExecutor.execute {
+            try {
+                val pending = SignalASILinkDeliveryStore.pendingIncoming(context)
+                if (pending.isNotEmpty()) {
+                    Log.i(TAG, "Replaying durable inbound messages count=${pending.size}")
+                }
+                pending.forEach { incoming ->
+                    if (listeners.isEmpty()) return@forEach
+                    val payload = runCatching { JSONObject(incoming.payload) }
+                        .onFailure {
+                            Log.w(TAG, "Discarding invalid durable inbound message ${incoming.messageId}", it)
+                            SignalASILinkDeliveryStore.completeIncoming(context, incoming.messageId)
+                        }
+                        .getOrNull() ?: return@forEach
+                    dispatchIncomingPayload(context, payload)
+                }
+            } finally {
+                inboundReplayScheduled.set(false)
+            }
+        }
     }
 
     private fun publishInboundReceipt(link: SignalASILinkProtocol.ServerLink, receivedMessageId: String) {

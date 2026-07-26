@@ -7,6 +7,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.Executors
 
 data class GlobalAgentProcessingBatch(
     val processedEventCount: Int,
@@ -3048,16 +3049,70 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
 }
 
 object GlobalConversationEventBus {
+    fun publishTranscriptEntryAsync(
+        context: Context,
+        conversation: AgentConversation,
+        entry: AgentTranscriptEntry,
+        updated: Boolean = false,
+        supersededEntryId: String = ""
+    ) {
+        EVENT_PUBLISH_EXECUTOR.execute {
+            publishTranscriptEntry(context, conversation, entry, updated, supersededEntryId)
+        }
+    }
+
+    fun publishRecordedRunStartedAsync(
+        context: Context,
+        run: AgentRecordedRun,
+        conversationTitle: String = ""
+    ) {
+        EVENT_PUBLISH_EXECUTOR.execute {
+            publishRecordedRunStarted(context, run, conversationTitle)
+        }
+    }
+
+    fun publishRecordedRunCompletedAsync(
+        context: Context,
+        run: AgentRecordedRun,
+        conversationTitle: String = ""
+    ) {
+        EVENT_PUBLISH_EXECUTOR.execute {
+            publishRecordedRunCompleted(context, run, conversationTitle)
+        }
+    }
+
+    fun publishRecordedRunFeedbackAsync(
+        context: Context,
+        run: AgentRecordedRun,
+        feedback: String,
+        conversationTitle: String = ""
+    ) {
+        EVENT_PUBLISH_EXECUTOR.execute {
+            publishRecordedRunFeedback(context, run, feedback, conversationTitle)
+        }
+    }
+
     fun publishCapabilityEvents(
         context: Context,
         events: List<GlobalConversationEvent>
     ): Boolean {
         if (events.isEmpty()) return false
+        val appContext = context.applicationContext
+        val eventSnapshot = events.toList()
+        EVENT_PUBLISH_EXECUTOR.execute {
+            publishCapabilityEventsNow(appContext, eventSnapshot)
+        }
+        return true
+    }
+
+    private fun publishCapabilityEventsNow(
+        context: Context,
+        events: List<GlobalConversationEvent>
+    ) {
         val repository = GlobalAgentRepository(context)
-        if (!repository.settings().enabled) return false
+        if (!repository.settings().enabled) return
         val accepted = repository.enqueueAll(events) > 0
         if (accepted) requestProcessing(context)
-        return accepted
     }
 
     fun publishChatMessage(
@@ -3071,8 +3126,6 @@ object GlobalConversationEventBus {
         metadata: Map<String, String> = emptyMap()
     ): Boolean {
         if (contactId.isBlank() || content.isBlank() || actor == GlobalConversationActor.SYSTEM) return false
-        val repository = GlobalAgentRepository(context)
-        if (!repository.settings().enabled) return false
         val conversationId = "contact:${contactId.take(160)}"
         val event = GlobalConversationEvent(
             id = "chat:$contactId:$messageId",
@@ -3087,9 +3140,13 @@ object GlobalConversationEventBus {
             topicHints = setOf(contactName.ifBlank { contactId }.take(160)),
             metadata = metadata + mapOf("contact_id" to contactId, "origin" to "contact_chat")
         )
-        val enqueued = repository.enqueue(event)
-        if (enqueued) requestProcessing(context)
-        return enqueued
+        val appContext = context.applicationContext
+        EVENT_PUBLISH_EXECUTOR.execute {
+            val repository = GlobalAgentRepository(appContext)
+            if (!repository.settings().enabled) return@execute
+            if (repository.enqueue(event)) requestProcessing(appContext)
+        }
+        return true
     }
 
     fun publishTaskStatus(
@@ -3315,8 +3372,6 @@ object GlobalConversationEventBus {
 
     fun publishConversationCreated(context: Context, conversation: AgentConversation): Boolean {
         if (conversation.privateMode || conversation.trackingPaused) return false
-        val repository = GlobalAgentRepository(context)
-        if (!repository.settings().enabled) return false
         val privateMode = conversation.privateMode
         val event = GlobalConversationEvent(
             id = "conversation-created:${conversation.id}",
@@ -3335,9 +3390,8 @@ object GlobalConversationEventBus {
             sensitivity = conversationSensitivity(conversation),
             metadata = conversationMetadata(conversation) + mapOf("origin" to "conversation_lifecycle")
         )
-        val enqueued = repository.enqueue(event)
-        if (enqueued) requestProcessing(context)
-        return enqueued
+        enqueueEventAsync(context, event)
+        return true
     }
 
     fun publishConversationUpdated(
@@ -3347,8 +3401,6 @@ object GlobalConversationEventBus {
     ): Boolean {
         val changes = conversationChanges(previous, current)
         if (changes.isEmpty()) return false
-        val repository = GlobalAgentRepository(context)
-        if (!repository.settings().enabled) return false
         val privateMode = current.privateMode
         val fingerprint = GlobalAgentText.stableKey(
             current.id,
@@ -3387,9 +3439,17 @@ object GlobalConversationEventBus {
                 "changed_fields" to changes.sorted().joinToString(",")
             )
         )
-        val enqueued = repository.enqueue(event)
-        if (enqueued) requestProcessing(context)
-        return enqueued
+        enqueueEventAsync(context, event)
+        return true
+    }
+
+    private fun enqueueEventAsync(context: Context, event: GlobalConversationEvent) {
+        val appContext = context.applicationContext
+        EVENT_PUBLISH_EXECUTOR.execute {
+            val repository = GlobalAgentRepository(appContext)
+            if (!repository.settings().enabled) return@execute
+            if (repository.enqueue(event)) requestProcessing(appContext)
+        }
     }
 
     fun publishRecordedRunStarted(
@@ -3543,4 +3603,7 @@ object GlobalConversationEventBus {
     }
 
     private const val PROCESSING_START_RETRY_MILLIS = 60_000L
+    private val EVENT_PUBLISH_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "signalasi-global-event-publisher").apply { isDaemon = true }
+    }
 }

@@ -79,18 +79,18 @@ class TaskWorkspaceTests(unittest.TestCase):
             root = Path(temporary) / "SignalASIWorkspace"
             with patch.dict(os.environ, {"SIGNALASI_WORKSPACE_ROOT": str(root)}):
                 source_task = task_workspace.task_workspace("source-turn", "codex")
-                source = source_task / "outputs" / "作业批改_全对.jpg"
+                source = source_task / "outputs" / "\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg"
                 source.write_bytes(b"annotated-image")
                 response = """```signalasi-rich
-{"blocks":[{"type":"file","name":"作业批改_全对.jpg","uri":"outputs/作业批改_全对.jpg"}]}
+{"blocks":[{"type":"file","name":"\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg","uri":"outputs/\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg"}]}
 ```"""
                 artifacts = task_workspace.import_referenced_task_artifacts(
                     "current-turn",
                     response,
                     source_task_ids=["source-turn"],
                 )
-            self.assertEqual(["outputs/作业批改_全对.jpg"], [item["relative_path"] for item in artifacts])
-            copied = root / "tasks" / "current-turn" / "outputs" / "作业批改_全对.jpg"
+            self.assertEqual(["outputs/\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg"], [item["relative_path"] for item in artifacts])
+            copied = root / "tasks" / "current-turn" / "outputs" / "\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg"
             self.assertEqual(b"annotated-image", copied.read_bytes())
 
     def test_rejects_relative_artifact_traversal(self):
@@ -105,6 +105,26 @@ class TaskWorkspaceTests(unittest.TestCase):
                     source_task_ids=["source-turn"],
                 )
             self.assertEqual([], artifacts)
+
+    def test_current_relative_artifact_wins_over_prior_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "SignalASIWorkspace"
+            with patch.dict(os.environ, {"SIGNALASI_WORKSPACE_ROOT": str(root)}):
+                prior_root = task_workspace.task_workspace("prior-task", "codex")
+                prior = prior_root / "outputs" / "project.zip"
+                prior.write_bytes(b"prior")
+                current_root = task_workspace.task_workspace("current-task", "codex")
+                current = current_root / "outputs" / "project.zip"
+                current.write_bytes(b"updated")
+                artifacts = task_workspace.import_referenced_task_artifacts(
+                    "current-task",
+                    "[Download](sandbox:/outputs/project.zip)",
+                    source_task_ids=["prior-task"],
+                )
+
+            self.assertEqual(["project.zip"], [item["name"] for item in artifacts])
+            self.assertEqual(b"updated", current.read_bytes())
+            self.assertFalse((current_root / "outputs" / "project-2.zip").exists())
 
 
 if __name__ == "__main__":

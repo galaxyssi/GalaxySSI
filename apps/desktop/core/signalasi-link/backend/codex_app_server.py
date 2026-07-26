@@ -190,7 +190,13 @@ class CodexAppServer:
         turn_images = local_images if reused_thread else restored_images
         try:
             try:
-                response = self._start_turn(run.thread_id, turn_prompt, model, turn_images)
+                response = self._start_turn(
+                    run.thread_id,
+                    turn_prompt,
+                    model,
+                    turn_images,
+                    cwd=cwd,
+                )
             except RuntimeError as exc:
                 if not run.thread_id or "thread not found" not in str(exc).lower():
                     raise
@@ -213,6 +219,7 @@ class CodexAppServer:
                     fresh_thread_prompt or prompt,
                     model,
                     restored_images,
+                    cwd=cwd,
                 )
         except Exception:
             self._discard_run(run)
@@ -539,11 +546,21 @@ class CodexAppServer:
         run.last_event_monotonic = time.monotonic()
         return run
 
-    def _start_turn(self, thread_id: str, prompt: str, model: str, image_paths: list[str] | None = None) -> dict:
+    def _start_turn(
+        self,
+        thread_id: str,
+        prompt: str,
+        model: str,
+        image_paths: list[str] | None = None,
+        *,
+        cwd: str,
+    ) -> dict:
         return self._request("turn/start", {
             "threadId": thread_id,
             "input": self._user_input(prompt, image_paths, include_task_policy=True),
-            "model": model, "effort": "low",
+            "model": model,
+            "effort": "low",
+            "cwd": os.path.abspath(cwd),
         }, timeout=30)
 
     @staticmethod

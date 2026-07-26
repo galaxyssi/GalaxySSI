@@ -262,6 +262,31 @@ class AgentTaskSupervisorTest {
         supervisor.shutdown()
     }
 
+    @Test
+    fun authenticatedLateConnectorResponseReopensOnlyItsFailedHandoff() {
+        val store = InMemoryAgentWorkspaceStore()
+        store.upsert(
+            workspace("late", status = AgentWorkspaceStatus.FAILED).copy(
+                handoffIds = listOf("codex:731"),
+                errorMessage = "Codex timed out"
+            )
+        )
+        val supervisor = AgentTaskSupervisor(store)
+
+        assertEquals(
+            null,
+            supervisor.reconcileLateConnectorResponse("workspace-late", 999L)
+        )
+        val recovered = requireNotNull(
+            supervisor.reconcileLateConnectorResponse("workspace-late", 731L)
+        )
+
+        assertEquals(AgentWorkspaceStatus.WAITING_RESPONSE, recovered.status)
+        assertEquals("", recovered.errorMessage)
+        assertEquals(AgentTaskEventKinds.LATE_RESPONSE, recovered.eventJournal.last().kind)
+        supervisor.close()
+    }
+
     private suspend fun awaitCondition(condition: () -> Boolean) {
         withTimeout(TEST_TIMEOUT_MILLIS) {
             while (!condition()) delay(10L)

@@ -6,6 +6,36 @@ import org.junit.Test
 
 class AgentRichContentTest {
     @Test
+    fun conversationContextDetectsPriorRichAttachments() {
+        val context = AgentConversationContext(
+            conversationId = "conversation",
+            summary = "",
+            turns = listOf(
+                AgentTranscriptEntry(
+                    id = "entry",
+                    role = AgentTranscriptRole.ASSISTANT,
+                    text = "Result",
+                    timestampMillis = 1L,
+                    richOutputJson = AgentRichContentCodec.encode(
+                        listOf(
+                            AgentRichBlock(
+                                id = "image",
+                                type = AgentRichBlockType.IMAGE,
+                                title = "result.png",
+                                uri = "file:///data/user/0/com.signalasi.chat/files/result.png",
+                                mimeType = "image/png"
+                            )
+                        )
+                    )
+                )
+            ),
+            privateMode = false
+        )
+
+        assertTrue(context.hasAttachments)
+    }
+
+    @Test
     fun parsesCodeAndMarkdownTableFallback() {
         val blocks = AgentRichContentCodec.fromText(
             """

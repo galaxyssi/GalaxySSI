@@ -29,6 +29,15 @@ def _connect() -> sqlite3.Connection:
         )"""
     )
     db.execute(
+        """CREATE TABLE IF NOT EXISTS inbound_ciphertexts (
+            client_route_id TEXT NOT NULL,
+            ciphertext_digest TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            received_at REAL NOT NULL,
+            PRIMARY KEY (client_route_id, ciphertext_digest)
+        )"""
+    )
+    db.execute(
         """CREATE TABLE IF NOT EXISTS outbound_messages (
             client_route_id TEXT NOT NULL,
             message_id TEXT NOT NULL,
@@ -98,6 +107,44 @@ def claim_message(client_route_id: str, message_id: str) -> bool:
             return cursor.rowcount == 1
         finally:
             db.close()
+
+
+def bind_ciphertext(client_route_id: str, ciphertext_digest: str, message_id: str) -> None:
+    """Persist the logical message behind a Signal ciphertext for pre-decrypt replay checks."""
+    with _lock:
+        db = _connect()
+        try:
+            db.execute(
+                """INSERT OR IGNORE INTO inbound_ciphertexts
+                   (client_route_id,ciphertext_digest,message_id,received_at)
+                   VALUES(?,?,?,?)""",
+                (client_route_id, ciphertext_digest, message_id, time.time()),
+            )
+            row = db.execute(
+                """SELECT message_id FROM inbound_ciphertexts
+                   WHERE client_route_id=? AND ciphertext_digest=?""",
+                (client_route_id, ciphertext_digest),
+            ).fetchone()
+            if row is None or str(row[0]) != message_id:
+                raise ValueError("Signal ciphertext digest is already bound to another message")
+            db.commit()
+        finally:
+            db.close()
+
+
+def message_for_ciphertext(client_route_id: str, ciphertext_digest: str) -> str | None:
+    """Return a previously decrypted message ID without advancing the Signal ratchet."""
+    with _lock:
+        db = _connect()
+        try:
+            row = db.execute(
+                """SELECT message_id FROM inbound_ciphertexts
+                   WHERE client_route_id=? AND ciphertext_digest=?""",
+                (client_route_id, ciphertext_digest),
+            ).fetchone()
+        finally:
+            db.close()
+    return str(row[0]) if row else None
 
 
 def complete_message(client_route_id: str, message_id: str, status: str, acknowledgement: dict | None = None) -> None:

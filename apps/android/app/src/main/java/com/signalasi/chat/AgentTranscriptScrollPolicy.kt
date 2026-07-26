@@ -1,6 +1,19 @@
 package com.signalasi.chat
 
 internal object AgentTranscriptScrollPolicy {
+    fun nextAutoFollow(
+        current: Boolean,
+        userScrollActive: Boolean,
+        itemCount: Int,
+        lastVisiblePosition: Int,
+        remainingPx: Int,
+        thresholdPx: Int
+    ): Boolean {
+        if (!userScrollActive) return current
+        return itemCount == 0 ||
+            (lastVisiblePosition == itemCount - 1 && remainingPx <= thresholdPx)
+    }
+
     fun shouldLoadOlderFromScroll(
         dy: Int,
         firstVisiblePosition: Int,

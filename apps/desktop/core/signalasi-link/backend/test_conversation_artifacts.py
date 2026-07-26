@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from conversation_artifacts import (
     conversation_input_artifact_paths,
+    conversation_output_artifact_paths,
+    stage_conversation_artifacts,
     stage_conversation_input_artifacts,
 )
 from conversation_context import ContextAttachment, ContextMessage, MobileConversationContext
@@ -153,6 +155,102 @@ class ConversationArtifactTests(unittest.TestCase):
             )
 
             self.assertEqual([first.resolve(), second.resolve()], resolved)
+
+    def test_latest_output_is_restored_for_same_project_follow_up(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            source_root = task_workspace.task_workspace("prior-task", "codex")
+            first = source_root / "outputs" / "SnakeGame-source.zip"
+            latest = source_root / "outputs" / "SnakeGame-source-2.zip"
+            first.write_bytes(b"first")
+            latest.write_bytes(b"latest")
+            os.utime(first, (1_700_000_000, 1_700_000_000))
+            os.utime(latest, (1_700_000_010, 1_700_000_010))
+            history = [{
+                "task_id": "prior-task",
+                "status": "completed",
+                "completed_at": 2,
+                "output_files": [
+                    {"relative_path": "outputs/SnakeGame-source.zip"},
+                    {"relative_path": "outputs/SnakeGame-source-2.zip"},
+                ],
+            }]
+
+            resolved = conversation_output_artifact_paths(
+                (
+                    "[SIGNALASI_CONVERSATION_CONTEXT_V1]\n"
+                    "Earlier cards: SnakeGame-source.zip and SnakeGame-source-2.zip\n"
+                    "[/SIGNALASI_CONVERSATION_CONTEXT_V1]\n"
+                    "\nCurrent user request:\n"
+                    "Fix the startup UX, keep the same project, and return one updated source ZIP."
+                ),
+                history,
+            )
+            staged = stage_conversation_artifacts("current-task", resolved)
+
+            self.assertEqual([latest.resolve()], resolved)
+            self.assertEqual(["SnakeGame-source-2.zip"], [path.name for path in staged])
+            self.assertEqual(b"latest", staged[0].read_bytes())
+
+    def test_explicit_output_name_wins_over_newer_artifact(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            source_root = task_workspace.task_workspace("prior-task", "codex")
+            requested = source_root / "outputs" / "report.csv"
+            newer = source_root / "outputs" / "chart.png"
+            requested.write_bytes(b"report")
+            newer.write_bytes(b"chart")
+            os.utime(requested, ns=(1, 1))
+            os.utime(newer, ns=(2, 2))
+
+            resolved = conversation_output_artifact_paths(
+                "Update report.csv and return it.",
+                [{"task_id": "prior-task", "status": "completed"}],
+            )
+
+            self.assertEqual([requested.resolve()], resolved)
+
+    def test_unrelated_turn_does_not_restore_prior_output(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            source_root = task_workspace.task_workspace("prior-task", "codex")
+            output = source_root / "outputs" / "private.zip"
+            output.write_bytes(b"private")
+
+            resolved = conversation_output_artifact_paths(
+                "What is the weather today?",
+                [{"task_id": "prior-task", "status": "completed"}],
+            )
+
+            self.assertEqual([], resolved)
+
+    def test_failed_task_and_external_artifact_are_not_restored(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            source_root = task_workspace.task_workspace("failed-task", "codex")
+            output = source_root / "outputs" / "failed.zip"
+            output.write_bytes(b"failed")
+            external = Path(temporary).parent / "external-output.zip"
+            external.write_bytes(b"external")
+            try:
+                resolved = conversation_output_artifact_paths(
+                    "Continue with the same project.",
+                    [{"task_id": "failed-task", "status": "failed"}],
+                )
+                staged = stage_conversation_artifacts("current-task", [external])
+
+                self.assertEqual([], resolved)
+                self.assertEqual([], staged)
+            finally:
+                external.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
