@@ -125,6 +125,25 @@ class RichOutputTests(unittest.TestCase):
             )
         self.assertEqual("2.0 KB", document["blocks"][1]["metadata"]["size"])
 
+    def test_phone_handoff_uses_apk_mime_without_inline_payload(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
+        ):
+            output = Path(temporary) / "tasks" / "apk-output" / "outputs" / "SnakeGame.apk"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"apk")
+            _, document = build_rich_output(
+                "Built the app.",
+                [{"name": output.name, "relative_path": "outputs/SnakeGame.apk", "size": 3}],
+                "apk-output",
+                inline_artifacts=False,
+            )
+
+        block = document["blocks"][1]
+        self.assertEqual("application/vnd.android.package-archive", block["mime_type"])
+        self.assertEqual("encrypted-fragmented", block["metadata"]["transport"])
+        self.assertNotIn("data_b64", block)
+
     def test_small_image_artifact_is_embedded_for_encrypted_phone_delivery(self):
         png = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="

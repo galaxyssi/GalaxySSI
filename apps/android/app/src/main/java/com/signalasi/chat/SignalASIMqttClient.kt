@@ -286,6 +286,21 @@ object SignalASIMqttClient {
             .put("time", System.currentTimeMillis())
     )
 
+    private fun publishArtifactReceipt(
+        desktopId: String,
+        result: AgentDesktopArtifactIngestResult
+    ): Boolean = publishDesktopControlPayload(
+        desktopId,
+        JSONObject()
+            .put("type", "artifact_receipt")
+            .put("artifact_id", result.artifactId)
+            .put("artifact_uri", result.artifactUri)
+            .put("task_id", result.taskId)
+            .put("sha256", result.sha256)
+            .put("status", "stored")
+            .put("time", System.currentTimeMillis())
+    )
+
     private fun publishDesktopControlPayload(desktopId: String, payload: JSONObject): Boolean {
         val context = appContext ?: return false
         val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
@@ -1182,6 +1197,23 @@ object SignalASIMqttClient {
                 payload.optJSONObject("pairing_access")
             )
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
+        }
+        if (payload.optString("type") == "artifact_chunk") {
+            val result = runCatching { AgentDesktopArtifactStore.ingest(context, payload) }
+                .onFailure { Log.w(TAG, "Rejected Desktop artifact chunk", it) }
+                .getOrNull()
+            if (result?.completed == true) {
+                publishArtifactReceipt(sourceDesktopId, result)
+                notifyMessageListeners(
+                    JSONObject()
+                        .put("type", "artifact_available")
+                        .put("artifact_id", result.artifactId)
+                        .put("artifact_uri", result.artifactUri)
+                        .put("task_id", result.taskId)
+                )
+            }
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
         }
         DesktopRemoteControl.handleInbound(context, payload)
         if (AgentDesktopRemoteNativeTools.handleInbound(payload)) {

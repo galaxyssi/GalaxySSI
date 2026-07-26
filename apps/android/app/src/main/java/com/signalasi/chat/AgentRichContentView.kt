@@ -19,6 +19,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Build
 import android.os.Looper
+import android.provider.Settings
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.InputType
@@ -48,6 +49,7 @@ import android.widget.MediaController
 import android.widget.ProgressBar
 import android.widget.SeekBar
 import android.widget.Spinner
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.widget.VideoView
@@ -102,7 +104,9 @@ class AgentRichContentView(
         }
     }
 
-    private fun blockView(block: AgentRichBlock): View = when (block.type) {
+    private fun blockView(source: AgentRichBlock): View {
+        val block = AgentDesktopArtifactStore.resolveBlock(activity, source)
+        return when (block.type) {
         AgentRichBlockType.TEXT -> selectableText(block.text, 16f)
         AgentRichBlockType.HEADING -> selectableText(
             block.text.ifBlank { block.title },
@@ -142,6 +146,7 @@ class AgentRichContentView(
         AgentRichBlockType.APPROVAL -> actionBlock(block, approval = true)
         AgentRichBlockType.FORM -> formBlock(block)
         AgentRichBlockType.UNKNOWN -> artifactBlock(block)
+        }
     }
 
     private fun blockSpacing(block: AgentRichBlock): Int = when (block.type) {
@@ -348,12 +353,35 @@ class AgentRichContentView(
 
     private fun imageBlock(block: AgentRichBlock): View {
         if (block.dataB64.isBlank() && !isPreviewableUri(block.uri)) return artifactBlock(block)
+        val desktopArtifact = block.metadata["transport"] == "encrypted-fragmented" ||
+            block.metadata["artifact_source_uri"].orEmpty().isNotBlank()
+        val savedToDownloads = block.metadata["saved_to_downloads"].toBoolean()
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-        block.title.takeIf(String::isNotBlank)?.let { addView(selectableText(it, 15f).apply {
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, 0, 0, dp(7))
-        }) }
+            if (block.title.isNotBlank() || desktopArtifact) {
+                addView(LinearLayout(activity).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    addView(selectableText(block.title, 15f).apply {
+                        setTypeface(typeface, Typeface.BOLD)
+                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                    if (desktopArtifact) addView(ImageButton(activity).apply {
+                        setImageResource(
+                            if (savedToDownloads) R.drawable.ic_rich_saved else R.drawable.ic_rich_download
+                        )
+                        contentDescription = activity.getString(
+                            if (savedToDownloads) R.string.rich_output_saved else R.string.rich_output_download
+                        )
+                        background = ColorDrawable(Color.TRANSPARENT)
+                        setPadding(dp(8), dp(8), dp(8), dp(8))
+                        isEnabled = !savedToDownloads
+                        setOnClickListener { saveDesktopArtifact(block, this) }
+                    }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                }, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(5) })
+            }
         val image = ImageView(activity).apply {
             adjustViewBounds = true
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -361,7 +389,7 @@ class AgentRichContentView(
             background = roundedBackground("#F6F8FA", 7f, "#E1E6EA")
             setPadding(dp(1), dp(1), dp(1), dp(1))
             minimumHeight = dp(120)
-            maxHeight = dp(420)
+            maxHeight = dp(240)
             setOnClickListener { showImageFullscreen(block) }
         }
         val loading = ProgressBar(activity).apply {
@@ -801,14 +829,17 @@ class AgentRichContentView(
         val previewAction = block.actions.firstOrNull { it.verb == "preview_runtime_artifact" }
         val saveAction = block.actions.firstOrNull { it.verb == "save_runtime_artifact" }
         val canOpen = previewAction == null && saveAction == null && isOpenableUri(block.uri)
+        val desktopArtifact = block.metadata["transport"] == "encrypted-fragmented" ||
+            block.metadata["artifact_source_uri"].orEmpty().isNotBlank()
+        val savedToDownloads = block.metadata["saved_to_downloads"].toBoolean()
         val detailParts = buildList {
             val customDetail = block.metadata["detail"].orEmpty()
             if (customDetail.isNotBlank()) add(customDetail) else {
                 add(formatLabel(descriptor))
                 block.metadata["size"]?.takeIf(String::isNotBlank)?.let(::add)
             }
-            block.mimeType.takeIf(String::isNotBlank)?.let(::add)
             if (descriptor.family == AgentRichFormatFamily.UNKNOWN) {
+                block.mimeType.takeIf(String::isNotBlank)?.let(::add)
                 add(activity.getString(R.string.rich_output_unknown_file))
             }
         }.distinct()
@@ -818,13 +849,10 @@ class AgentRichContentView(
             minimumHeight = dp(58)
             setPadding(dp(10), dp(8), dp(7), dp(8))
             background = roundedBackground("#F7F7F8", 8f, "#EAEBED")
-            addView(TextView(activity).apply {
-                val badge = formatBadge(descriptor)
-                text = badge
-                textSize = if (badge.length > 3) 9f else 12f
-                gravity = Gravity.CENTER
-                setTextColor(Color.WHITE)
-                setTypeface(typeface, Typeface.BOLD)
+            addView(ImageView(activity).apply {
+                setImageResource(R.drawable.ic_rich_file)
+                scaleType = ImageView.ScaleType.CENTER
+                setPadding(dp(9), dp(9), dp(9), dp(9))
                 background = roundedBackground(formatColor(descriptor.family), 6f, formatColor(descriptor.family))
                 contentDescription = formatLabel(descriptor)
             }, LinearLayout.LayoutParams(dp(40), dp(40)))
@@ -850,10 +878,21 @@ class AgentRichContentView(
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 marginStart = dp(9)
             })
-            if (canOpen) addView(iconButton(
+            if (canOpen && !desktopArtifact) addView(iconButton(
                 R.drawable.ic_rich_open,
                 activity.getString(R.string.rich_output_open)
             ) { openUri(block.uri, block.mimeType) }, LinearLayout.LayoutParams(dp(40), dp(40)))
+            if (desktopArtifact) addView(ImageButton(activity).apply {
+                setImageResource(if (savedToDownloads) R.drawable.ic_rich_saved else R.drawable.ic_rich_download)
+                contentDescription = activity.getString(
+                    if (savedToDownloads) R.string.rich_output_saved else R.string.rich_output_download
+                )
+                background = ColorDrawable(Color.TRANSPARENT)
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                isEnabled = canOpen && !savedToDownloads
+                alpha = if (isEnabled || savedToDownloads) 1f else 0.35f
+                setOnClickListener { saveDesktopArtifact(block, this) }
+            }, LinearLayout.LayoutParams(dp(40), dp(40)))
             saveAction?.let { action ->
                 addView(Button(activity).apply {
                     text = action.label
@@ -877,7 +916,10 @@ class AgentRichContentView(
                     contentDescription = primaryAction.label
                     setOnClickListener { onAction(primaryAction) }
                 }
-                canOpen -> setOnClickListener { openUri(block.uri, block.mimeType) }
+                canOpen -> setOnClickListener {
+                    if (desktopArtifact) openDesktopArtifact(block, descriptor)
+                    else openUri(block.uri, block.mimeType)
+                }
             }
         }
     }
@@ -1273,6 +1315,7 @@ class AgentRichContentView(
         AgentRichFormatFamily.AUDIO -> "AUD"
         AgentRichFormatFamily.WEB -> "WEB"
         AgentRichFormatFamily.ARCHIVE -> "ZIP"
+        AgentRichFormatFamily.APPLICATION -> "APP"
         AgentRichFormatFamily.CODE -> "</>"
         AgentRichFormatFamily.STRUCTURED_DATA -> "{}"
         else -> descriptor.extension.removePrefix(".").uppercase(Locale.ROOT).take(4).ifBlank { "FILE" }
@@ -1284,6 +1327,7 @@ class AgentRichContentView(
         AgentRichFormatFamily.AUDIO -> "#3578E5"
         AgentRichFormatFamily.DOCUMENT -> "#C04F52"
         AgentRichFormatFamily.ARCHIVE -> "#B87916"
+        AgentRichFormatFamily.APPLICATION -> "#168B72"
         AgentRichFormatFamily.CODE, AgentRichFormatFamily.STRUCTURED_DATA -> "#33404D"
         AgentRichFormatFamily.WEB -> "#087F69"
         else -> "#66717D"
@@ -1299,6 +1343,7 @@ class AgentRichContentView(
         AgentRichFormatFamily.AUDIO -> R.string.rich_output_type_audio
         AgentRichFormatFamily.DOCUMENT -> R.string.rich_output_type_document
         AgentRichFormatFamily.ARCHIVE -> R.string.rich_output_type_archive
+        AgentRichFormatFamily.APPLICATION -> R.string.rich_output_type_application
         AgentRichFormatFamily.WEB -> R.string.rich_output_type_web
         AgentRichFormatFamily.INTERACTIVE -> R.string.rich_output_type_interactive
         AgentRichFormatFamily.UNKNOWN -> R.string.rich_output_type_file
@@ -1451,6 +1496,165 @@ class AgentRichContentView(
         }
     }
 
+    private fun saveDesktopArtifact(block: AgentRichBlock, button: ImageButton) {
+        if (!button.isEnabled) return
+        button.isEnabled = false
+        button.alpha = 0.35f
+        ARTIFACT_EXECUTOR.execute {
+            val result = AgentDesktopArtifactStore.saveToDownloads(activity, block)
+            Handler(Looper.getMainLooper()).post {
+                if (activity.isDestroyed) return@post
+                result.onSuccess { path ->
+                    button.setImageResource(R.drawable.ic_rich_saved)
+                    button.contentDescription = activity.getString(R.string.rich_output_saved)
+                    button.alpha = 1f
+                    Toast.makeText(
+                        activity,
+                        activity.getString(R.string.rich_output_downloaded, path),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }.onFailure {
+                    button.isEnabled = true
+                    button.alpha = 1f
+                    Toast.makeText(activity, R.string.rich_output_download_failed, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun openDesktopArtifact(
+        block: AgentRichBlock,
+        descriptor: AgentRichFormatDescriptor
+    ) {
+        val mimeType = block.mimeType.substringBefore(';').lowercase(Locale.ROOT)
+        if (mimeType == "application/vnd.android.package-archive") {
+            if (
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                !activity.packageManager.canRequestPackageInstalls()
+            ) {
+                runCatching {
+                    activity.startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                            Uri.parse("package:${activity.packageName}")
+                        )
+                    )
+                }
+                Toast.makeText(activity, R.string.rich_output_install_permission, Toast.LENGTH_LONG).show()
+                return
+            }
+            openUri(block.uri, block.mimeType)
+            return
+        }
+        val source = AgentDesktopArtifactStore.localFile(activity, block)
+        if (source == null) {
+            openUri(block.uri, block.mimeType)
+            return
+        }
+        when {
+            descriptor.family in setOf(
+                AgentRichFormatFamily.TEXT,
+                AgentRichFormatFamily.CODE,
+                AgentRichFormatFamily.STRUCTURED_DATA
+            ) || mimeType.startsWith("text/") -> showTextArtifactPreview(block, source)
+            descriptor.family == AgentRichFormatFamily.ARCHIVE &&
+                source.extension.equals("zip", true) -> showArchivePreview(block, source)
+            else -> openUri(block.uri, block.mimeType)
+        }
+    }
+
+    private fun showTextArtifactPreview(block: AgentRichBlock, source: java.io.File) {
+        ARTIFACT_EXECUTOR.execute {
+            val result = AgentDesktopArtifactActions.readTextPreview(source)
+            Handler(Looper.getMainLooper()).post {
+                if (activity.isDestroyed) return@post
+                result.onSuccess { content ->
+                    val preview = TextView(activity).apply {
+                        text = content
+                        textSize = 14f
+                        typeface = Typeface.MONOSPACE
+                        setTextColor(Color.parseColor("#14202B"))
+                        setTextIsSelectable(true)
+                        setPadding(dp(16), dp(12), dp(16), dp(20))
+                    }
+                    android.app.AlertDialog.Builder(activity)
+                        .setTitle(displayFileName(block))
+                        .setView(ScrollView(activity).apply { addView(preview) })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setNeutralButton(R.string.rich_output_compress) { _, _ ->
+                            compressDesktopArtifact(source)
+                        }
+                        .show()
+                }.onFailure {
+                    openUri(block.uri, block.mimeType)
+                }
+            }
+        }
+    }
+
+    private fun showArchivePreview(block: AgentRichBlock, source: java.io.File) {
+        ARTIFACT_EXECUTOR.execute {
+            val result = AgentDesktopArtifactActions.archivePreview(source)
+            Handler(Looper.getMainLooper()).post {
+                if (activity.isDestroyed) return@post
+                result.onSuccess { entries ->
+                    val preview = TextView(activity).apply {
+                        text = entries.joinToString("\n")
+                        textSize = 14f
+                        typeface = Typeface.MONOSPACE
+                        setTextColor(Color.parseColor("#14202B"))
+                        setTextIsSelectable(true)
+                        setPadding(dp(16), dp(12), dp(16), dp(20))
+                    }
+                    android.app.AlertDialog.Builder(activity)
+                        .setTitle(displayFileName(block))
+                        .setView(ScrollView(activity).apply { addView(preview) })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .setPositiveButton(R.string.rich_output_extract) { _, _ ->
+                            extractDesktopArchive(source)
+                        }
+                        .show()
+                }.onFailure {
+                    openUri(block.uri, block.mimeType)
+                }
+            }
+        }
+    }
+
+    private fun extractDesktopArchive(source: java.io.File) {
+        ARTIFACT_EXECUTOR.execute {
+            val result = AgentDesktopArtifactActions.extractZipToDownloads(activity, source)
+            Handler(Looper.getMainLooper()).post {
+                if (activity.isDestroyed) return@post
+                Toast.makeText(
+                    activity,
+                    result.fold(
+                        onSuccess = { activity.getString(R.string.rich_output_extracted, it) },
+                        onFailure = { activity.getString(R.string.rich_output_extract_failed) }
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun compressDesktopArtifact(source: java.io.File) {
+        ARTIFACT_EXECUTOR.execute {
+            val result = AgentDesktopArtifactActions.compressToDownloads(activity, source)
+            Handler(Looper.getMainLooper()).post {
+                if (activity.isDestroyed) return@post
+                Toast.makeText(
+                    activity,
+                    result.fold(
+                        onSuccess = { activity.getString(R.string.rich_output_compressed, it) },
+                        onFailure = { activity.getString(R.string.rich_output_compress_failed) }
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
     private fun isPreviewableUri(value: String): Boolean =
         Uri.parse(value).scheme?.lowercase() in setOf("https", "content", "file", "android.resource")
 
@@ -1493,6 +1697,9 @@ class AgentRichContentView(
             .build()
         private val IMAGE_EXECUTOR = Executors.newFixedThreadPool(3) { runnable ->
             Thread(runnable, "signalasi-rich-image").apply { isDaemon = true }
+        }
+        private val ARTIFACT_EXECUTOR = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "signalasi-artifact-save").apply { isDaemon = true }
         }
     }
 }

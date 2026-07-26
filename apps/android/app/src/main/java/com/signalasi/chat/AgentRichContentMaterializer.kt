@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import android.content.Context
+import android.net.Uri
 import android.util.Base64
 import androidx.core.content.FileProvider
 import java.io.File
@@ -22,11 +23,16 @@ object AgentRichContentMaterializer {
         val normalized = AgentRichContentCodec.normalize(raw)
         if (normalized.isBlank()) return ""
         val blocks = AgentRichContentCodec.decode(normalized)
-        if (blocks.none { it.dataB64.isNotBlank() }) return normalized
+        if (blocks.none {
+                it.dataB64.isNotBlank() ||
+                    Uri.parse(it.uri).scheme == "signalasi-artifact"
+            }
+        ) return normalized
 
         val directory = File(context.applicationContext.filesDir, DIRECTORY_NAME)
         val materialized = blocks.map { block ->
-            materializeBlock(context.applicationContext, directory, block) ?: block
+            val resolved = AgentDesktopArtifactStore.resolveBlock(context.applicationContext, block)
+            materializeBlock(context.applicationContext, directory, resolved) ?: resolved
         }
         return AgentRichContentCodec.encode(materialized)
     }

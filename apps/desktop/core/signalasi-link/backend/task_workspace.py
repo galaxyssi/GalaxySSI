@@ -17,6 +17,12 @@ BACKEND_DIR = Path(__file__).resolve().parent
 DEFAULT_WORKSPACE_ROOT = Path.home() / "SignalASIWorkspace"
 TASK_SUBDIRECTORIES = ("outputs", "scripts", "downloads", "screenshots", "logs", "temp")
 MAX_IMPORTED_ARTIFACT_BYTES = 64 * 1024 * 1024
+INTERNAL_ARTIFACT_SUFFIXES = (
+    ".idsig",
+    ".sig",
+    ".sha256",
+    ".sha512",
+)
 MARKDOWN_TARGET = re.compile(r"!?\[[^\]]*\]\(\s*<?([^>\r\n)]+)>?\s*\)")
 WINDOWS_ARTIFACT_PATH = re.compile(
     r"/?[A-Za-z]:[\\/][^\r\n<>\"|?*]+?\.[A-Za-z0-9]{1,12}(?=$|[\s>)\],;\uFF0C\u3002])",
@@ -84,6 +90,43 @@ def cleanup_task_temporary_files(task_ids: list[str] | set[str]) -> list[str]:
     return cleaned
 
 
+def cleanup_task_workspace(task_id: str) -> bool:
+    """Remove one SignalASI-owned task workspace after phone handoff."""
+    safe_id = _safe_component(task_id)
+    if not safe_id:
+        return False
+    tasks_root = (workspace_root() / "tasks").resolve()
+    directory = (tasks_root / safe_id).resolve()
+    if not _is_within(directory, tasks_root) or not directory.exists():
+        return False
+    shutil.rmtree(directory, ignore_errors=True)
+    return not directory.exists()
+
+
+def task_artifact_path(task_id: str, relative_path: str) -> Path | None:
+    safe_id = _safe_component(task_id)
+    if not safe_id:
+        return None
+    candidate = PurePosixPath(str(relative_path or "").replace("\\", "/").strip("/"))
+    if (
+        len(candidate.parts) < 2
+        or candidate.parts[0].lower() not in {"outputs", "downloads", "screenshots"}
+        or any(part in {"", ".", ".."} for part in candidate.parts)
+    ):
+        return None
+    tasks_root = (workspace_root() / "tasks").resolve()
+    directory = (tasks_root / safe_id).resolve()
+    source = (directory / Path(*candidate.parts)).resolve()
+    if (
+        not _is_within(directory, tasks_root)
+        or not _is_within(source, directory)
+        or not source.is_file()
+        or source.is_symlink()
+    ):
+        return None
+    return source
+
+
 def task_artifacts(task_id: str, limit: int = 50) -> list[dict]:
     safe_id = _safe_component(task_id)
     if not safe_id:
@@ -103,6 +146,8 @@ def task_artifacts(task_id: str, limit: int = 50) -> list[dict]:
             relative = file_path.relative_to(directory).as_posix()
             if relative.lower().startswith(("downloads/input/", "downloads/context/")):
                 continue
+            if not _is_user_visible_artifact(file_path):
+                continue
             artifacts.append({
                 "name": file_path.name,
                 "relative_path": relative,
@@ -112,6 +157,13 @@ def task_artifacts(task_id: str, limit: int = 50) -> list[dict]:
             if len(artifacts) >= max(1, min(limit, 100)):
                 return artifacts
     return artifacts
+
+
+def _is_user_visible_artifact(file_path: Path) -> bool:
+    name = file_path.name.lower()
+    if name.startswith(".") or name.endswith(INTERNAL_ARTIFACT_SUFFIXES):
+        return False
+    return not any(part.lower() == "__pycache__" for part in file_path.parts)
 
 
 def referenced_task_artifact_paths(content: str, limit: int = 20) -> list[Path]:

@@ -14,6 +14,7 @@ class AgentRichFormatRegistryTest {
             Triple("", "file:///tmp/voice.opus", AgentRichFormatFamily.AUDIO),
             Triple("", "file:///tmp/report.xlsx", AgentRichFormatFamily.DOCUMENT),
             Triple("", "file:///tmp/source.zip", AgentRichFormatFamily.ARCHIVE),
+            Triple("application/vnd.android.package-archive", "content://files/app.apk", AgentRichFormatFamily.APPLICATION),
             Triple("application/json", "content://files/result", AgentRichFormatFamily.STRUCTURED_DATA),
             Triple("text/plain", "content://files/readme", AgentRichFormatFamily.CODE)
         )

@@ -1461,6 +1461,17 @@
     <string name="rich_output_copy">复制</string>
     <string name="rich_output_copied">已复制</string>
     <string name="rich_output_open">打开</string>
+    <string name="rich_output_download">保存到下载目录</string>
+    <string name="rich_output_downloaded">已保存到 %1$s</string>
+    <string name="rich_output_download_failed">文件保存失败</string>
+    <string name="rich_output_saved">已保存</string>
+    <string name="rich_output_extract">解压</string>
+    <string name="rich_output_extracted">已解压到 %1$s</string>
+    <string name="rich_output_extract_failed">压缩包解压失败</string>
+    <string name="rich_output_compress">压缩</string>
+    <string name="rich_output_compressed">ZIP 已保存到 %1$s</string>
+    <string name="rich_output_compress_failed">ZIP 创建失败</string>
+    <string name="rich_output_install_permission">请允许 SignalASI 安装应用，然后再次点击 APK。</string>
     <string name="rich_output_show_more">展开</string>
     <string name="rich_output_show_less">收起</string>
     <string name="rich_output_more_rows">还有 %1$d 行</string>
@@ -1483,6 +1494,7 @@
     <string name="rich_output_type_audio">音频</string>
     <string name="rich_output_type_document">文档</string>
     <string name="rich_output_type_archive">压缩包</string>
+    <string name="rich_output_type_application">应用</string>
     <string name="rich_output_type_web">网页</string>
     <string name="rich_output_type_interactive">交互内容</string>
     <string name="rich_output_type_file">文件</string>
