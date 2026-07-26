@@ -10,7 +10,6 @@ from __future__ import annotations
 import base64
 import ctypes
 import hashlib
-import io
 import json
 import os
 import secrets
@@ -20,6 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_state import DATA_DIR
 
 
@@ -28,7 +28,7 @@ AUTHORIZATION_VERSION = 1
 OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
 MAX_CLOCK_SKEW_MILLIS = 30_000
-MAX_SCREENSHOT_BYTES = 300 * 1024
+MAX_SCREENSHOT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
 MAX_AUDIT_EVENTS = 1_000
 MAX_RECENT_ACTIONS = 256
 
@@ -906,7 +906,7 @@ def capture_desktop_screenshot() -> dict[str, Any]:
     if os.name != "nt":
         raise DesktopControlError("screen_capture_failed", "Desktop screen capture requires Windows")
     try:
-        from PIL import Image, ImageGrab
+        from PIL import ImageGrab
     except ImportError as exc:
         raise DesktopControlError("screen_capture_failed", "Pillow screen capture support is unavailable") from exc
     try:
@@ -914,29 +914,20 @@ def capture_desktop_screenshot() -> dict[str, Any]:
     except Exception as exc:
         raise DesktopControlError("screen_capture_failed", str(exc) or "Windows screen capture failed") from exc
     original_width, original_height = source.size
-    attempts = ((0.5, 60), (0.5, 45), (0.35, 45), (0.35, 35), (0.25, 32), (0.2, 28))
-    encoded = b""
-    width = height = 0
-    resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-    for scale, quality in attempts:
-        width = max(1, int(original_width * scale))
-        height = max(1, int(original_height * scale))
-        image = source.resize((width, height), resampling) if (width, height) != source.size else source
-        stream = io.BytesIO()
-        image.save(stream, format="JPEG", quality=quality, optimize=True, progressive=True)
-        encoded = stream.getvalue()
-        if len(encoded) <= MAX_SCREENSHOT_BYTES:
-            break
-    if not encoded or len(encoded) > MAX_SCREENSHOT_BYTES:
+    try:
+        transport = compress_pil_image(source, MAX_SCREENSHOT_BYTES)
+    finally:
+        source.close()
+    if transport is None:
         raise DesktopControlError("screenshot_too_large", "Desktop screenshot could not fit the encrypted transport limit")
     return {
-        "image_mime": "image/jpeg",
-        "image_base64": base64.b64encode(encoded).decode("ascii"),
-        "width": width,
-        "height": height,
+        "image_mime": transport.mime_type,
+        "image_base64": base64.b64encode(transport.data).decode("ascii"),
+        "width": transport.width,
+        "height": transport.height,
         "original_width": original_width,
         "original_height": original_height,
-        "bytes": len(encoded),
+        "bytes": len(transport.data),
         "captured_at": int(time.time() * 1_000),
     }
 

@@ -22,11 +22,11 @@ class AgentImagePipelineTest {
     }
 
     @Test
-    fun losslessImagesKeepOriginalNameAndTargetIsThreeHundredKilobytes() {
+    fun losslessImagesKeepOriginalNameAndTargetIsOneHundredKilobytes() {
         val encoded = AgentTransportImage(byteArrayOf(1), "image/png", lossless = true)
 
         assertEquals("diagram.png", encoded.transportName("diagram.png"))
-        assertEquals(300 * 1024, AgentImagePipeline.TARGET_TRANSPORT_BYTES)
+        assertEquals(100_000, AgentImagePipeline.TARGET_TRANSPORT_BYTES)
         assertTrue(encoded.lossless)
         assertFalse(encoded.bytes.isEmpty())
     }
