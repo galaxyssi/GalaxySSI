@@ -88,6 +88,85 @@ internal fun renderPhoneWebSearchResult(output: AgentNativeJsonObject, zh: Boole
     return heading + "\n" + lines.joinToString("\n")
 }
 
+internal fun renderPhoneWebIntelligenceResult(
+    toolId: String,
+    output: AgentNativeJsonObject,
+    zh: Boolean
+): String {
+    if (toolId in setOf(
+            AgentWebIntelligenceNativeTools.SEARCH,
+            AgentWebIntelligenceNativeTools.FIND_SIMILAR
+        )
+    ) {
+        return renderPhoneWebSearchResult(output, zh)
+    }
+    val documents = (output["documents"] as? Iterable<*>)
+        ?.mapNotNull { it as? Map<*, *> }
+        .orEmpty()
+    val resultLinks = (output["results"] as? Iterable<*>)
+        ?.mapNotNull { it as? Map<*, *> }
+        .orEmpty()
+    val links = (documents + resultLinks).mapNotNull { item ->
+        val title = item["title"]?.toString()?.trim().orEmpty()
+        val url = item["url"]?.toString()?.trim().orEmpty()
+        if (title.isBlank() || !url.startsWith("https://", true)) null else title to url
+    }.distinctBy { it.second }.take(8)
+    return when (toolId) {
+        AgentWebIntelligenceNativeTools.RESEARCH,
+        AgentWebIntelligenceNativeTools.AGENT -> {
+            if (links.isEmpty()) {
+                if (zh) "\u6ca1\u6709\u6536\u96c6\u5230\u53ef\u9a8c\u8bc1\u7684\u516c\u5f00\u6765\u6e90\u3002"
+                else "No verifiable public sources were collected."
+            } else {
+                val heading = if (zh) {
+                    "\u5df2\u6536\u96c6 ${links.size} \u4e2a\u53ef\u5f15\u7528\u6765\u6e90\uff1a"
+                } else {
+                    "Collected ${links.size} citable sources:"
+                }
+                heading + "\n" + links.joinToString("\n") { (title, url) ->
+                    "- [${title.replace("[", "\\[").replace("]", "\\]").take(240)}](${url.replace(")", "%29")})"
+                }
+            }
+        }
+        AgentWebIntelligenceNativeTools.FETCH,
+        AgentWebIntelligenceNativeTools.EXTRACT,
+        AgentWebIntelligenceNativeTools.CRAWL -> {
+            val first = documents.firstOrNull()
+            val content = first?.get("content")?.toString()?.trim().orEmpty().take(3_000)
+            val heading = if (zh) {
+                "\u5df2\u8bfb\u53d6 ${documents.size} \u4e2a\u7f51\u9875\u3002"
+            } else {
+                "Read ${documents.size} web page${if (documents.size == 1) "" else "s"}."
+            }
+            listOf(heading, content).filter(String::isNotBlank).joinToString("\n\n")
+        }
+        AgentWebIntelligenceNativeTools.DIFF -> {
+            val delta = output["diff"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+            val changed = delta["changed"] as? Boolean ?: false
+            val summary = delta["summary"]?.toString()?.trim().orEmpty()
+            if (zh) {
+                if (changed) "\u9875\u9762\u5df2\u53d8\u66f4\u3002" + summary.takeIf(String::isNotBlank)?.let { "\n\n$it" }.orEmpty()
+                else "\u9875\u9762\u5185\u5bb9\u6ca1\u6709\u53d8\u5316\u3002"
+            } else {
+                if (changed) "The page changed." + summary.takeIf(String::isNotBlank)?.let { "\n\n$it" }.orEmpty()
+                else "The page has not changed."
+            }
+        }
+        AgentWebIntelligenceNativeTools.WATCH -> {
+            val action = (output["metadata"] as? Map<*, *>)?.get("action")?.toString().orEmpty()
+            if (zh) "\u7f51\u9875\u76d1\u63a7\u64cd\u4f5c\u5df2\u5b8c\u6210\uff1a$action"
+            else "Web watch operation completed: $action"
+        }
+        AgentWebIntelligenceNativeTools.CACHE -> {
+            val cache = output["cache"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+            val count = cache["entry_count"]?.toString().orEmpty().ifBlank { "0" }
+            if (zh) "\u672c\u673a\u52a0\u5bc6\u7f13\u5b58\u4e2d\u6709 $count \u4e2a\u7f51\u9875\u3002"
+            else "The encrypted local cache contains $count web pages."
+        }
+        else -> if (zh) "\u7f51\u7edc\u60c5\u62a5\u4efb\u52a1\u5df2\u5b8c\u6210\u3002" else "Web intelligence task completed."
+    }
+}
+
 internal fun renderPackageUnavailable(packageName: String, zh: Boolean): String {
     val displayName = packageName.ifBlank { if (zh) "\u8be5\u5e94\u7528" else "that app" }
     return if (zh) {
@@ -674,6 +753,9 @@ class MobileNativeAgent(
     ): String {
         if (output.isEmpty()) return renderNativeToolFailure(message, zh)
         if (toolId == AgentWebMediaNativeTools.WEB_SEARCH) return renderPhoneWebSearchResult(output, zh)
+        if (toolId in AgentWebIntelligenceNativeTools.toolIds) {
+            return renderPhoneWebIntelligenceResult(toolId, output, zh)
+        }
         if (toolId == AgentOnDeviceRuntimeTools.STATUS) return renderRuntimeStatus(output, zh)
         if (toolId == AgentOnDeviceRuntimeTools.LIST_PACKS) return renderRuntimePackList(output, zh)
         if (toolId == AgentOnDeviceRuntimeTools.EXECUTE) return renderRuntimeExecution(output, message, zh)
@@ -6532,11 +6614,12 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
         }
         val search = nativeToolAction(
             request,
-            AgentWebMediaNativeTools.WEB_SEARCH,
+            AgentWebIntelligenceNativeTools.RESEARCH,
             JSONObject()
                 .put("query", request.goal.replace("%27", "'", ignoreCase = true).trim())
-                .put("max_results", 6)
-                .put("timeout_ms", 10_000)
+                .put("evidence_limit", 8)
+                .put("engine_fanout", 18)
+                .put("timeout_ms", 30_000)
         ) ?: return null
         val synthesisId = "research-synthesis-${request.goal.hashCode().toUInt()}"
         return listOf(
@@ -6552,7 +6635,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     },
                     "depends_on" to search.id,
                     "use_outputs_from" to search.id,
-                    "research_mode" to "generic_phone_web_v1"
+                    "research_mode" to "signalasi_native_web_intelligence_v1"
                 )
             )
         )
@@ -6754,10 +6837,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             lower.hasAny("network status", "phone network", "active network", "\u624b\u673a\u7f51\u7edc\u72b6\u6001", "\u5f53\u524d\u7f51\u7edc", "\u7f51\u7edc\u8fde\u63a5\u72b6\u6001") ->
                 AgentHardwareNativeTools.NETWORK_STATUS to JSONObject()
             phoneWebSearchQuery != null ->
-                AgentWebMediaNativeTools.WEB_SEARCH to JSONObject()
+                AgentWebIntelligenceNativeTools.SEARCH to JSONObject()
                     .put("query", phoneWebSearchQuery)
-                    .put("max_results", 6)
-                    .put("timeout_ms", 10_000)
+                    .put("limit", 8)
+                    .put("engine_fanout", 18)
+                    .put("timeout_ms", 15_000)
             lower.hasAny("current location", "phone location", "where am i", "\u5f53\u524d\u4f4d\u7f6e", "\u624b\u673a\u4f4d\u7f6e", "\u6211\u5728\u54ea\u91cc", "\u83b7\u53d6\u4f4d\u7f6e") ->
                 AgentHardwareNativeTools.LOCATION_FOREGROUND_READ to JSONObject().put("timeout_ms", 10_000)
             lower.hasAny("list sensors", "device sensors", "sensor list", "\u5217\u51fa\u4f20\u611f\u5668", "\u624b\u673a\u4f20\u611f\u5668", "\u4f20\u611f\u5668\u5217\u8868") ->

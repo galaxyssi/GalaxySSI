@@ -115,7 +115,10 @@ object AgentConfirmationPolicy {
         if (nativeToolId in AgentDesktopRemoteNativeTools.toolIds) {
             return AgentConfirmationTier.DIRECT
         }
-        if (nativeToolId == AgentWebMediaNativeTools.WEB_SEARCH) {
+        if (
+            nativeToolId == AgentWebMediaNativeTools.WEB_SEARCH ||
+            nativeToolId in AgentWebIntelligenceNativeTools.toolIds
+        ) {
             return AgentConfirmationTier.DIRECT
         }
         if (action.kind in ALWAYS_CONFIRM_KINDS || ALWAYS_CONFIRM_TERMS.any(value::contains)) {
@@ -206,6 +209,7 @@ object AgentConfirmationPolicy {
         AgentHardwareNativeTools.FLASHLIGHT_SET,
         AgentVisibleCaptureNativeTools.CAMERA_CAPTURE,
         AgentWebMediaNativeTools.WEB_SEARCH,
+        *AgentWebIntelligenceNativeTools.toolIds.toTypedArray(),
         AgentWebMediaNativeTools.MEDIA_FFMPEG_TRANSCODE,
         AgentOnDeviceRuntimeTools.EXECUTE,
         AgentHardwareNativeTools.BLUETOOTH_PAIRING_HANDOFF,

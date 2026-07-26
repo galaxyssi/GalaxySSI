@@ -1,0 +1,471 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signalasi.org/protocol/web-intelligence-v1.schema.json",
+  "title": "SignalASI Web Intelligence v1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "operation",
+    "request_id",
+    "status",
+    "started_at_millis",
+    "completed_at_millis",
+    "receipts"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "signalasi.web-intelligence.v1"
+    },
+    "operation": {
+      "enum": [
+        "search",
+        "fetch",
+        "crawl",
+        "extract",
+        "cache",
+        "find_similar",
+        "research",
+        "agent",
+        "diff",
+        "watch"
+      ]
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "partial",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "query": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "url": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "results": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/result"
+      }
+    },
+    "documents": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/document"
+      }
+    },
+    "brief": {
+      "type": "string",
+      "maxLength": 524288
+    },
+    "citations": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/citation"
+      }
+    },
+    "receipts": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/receipt"
+      }
+    },
+    "cache": {
+      "$ref": "#/$defs/cache"
+    },
+    "diff": {
+      "$ref": "#/$defs/diff"
+    },
+    "watch": {
+      "$ref": "#/$defs/watch"
+    },
+    "started_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "completed_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "score": {
+      "type": "object",
+      "required": [
+        "final",
+        "reciprocal_rank",
+        "lexical",
+        "consensus",
+        "authority",
+        "freshness",
+        "local_model"
+      ],
+      "properties": {
+        "final": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "reciprocal_rank": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "lexical": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "consensus": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "authority": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "freshness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "local_model": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "citation_id",
+        "title",
+        "url",
+        "excerpt",
+        "engines",
+        "rank",
+        "score"
+      ],
+      "properties": {
+        "citation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{16,64}$"
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "excerpt": {
+          "type": "string",
+          "maxLength": 16384
+        },
+        "published_at": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "vertical": {
+          "enum": [
+            "general",
+            "news",
+            "code",
+            "docs",
+            "academic",
+            "community",
+            "knowledge",
+            "image",
+            "video",
+            "local"
+          ]
+        },
+        "engines": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "score": {
+          "$ref": "#/$defs/score"
+        },
+        "source_span": {
+          "type": "object",
+          "required": [
+            "start",
+            "end",
+            "sha256"
+          ],
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "document": {
+      "type": "object",
+      "required": [
+        "citation_id",
+        "url",
+        "title",
+        "content",
+        "content_sha256",
+        "retrieved_at_millis",
+        "fetch_tier"
+      ],
+      "properties": {
+        "citation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{16,64}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 2097152
+        },
+        "content_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "content_type": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "retrieved_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fetch_tier": {
+          "enum": [
+            "cache",
+            "http",
+            "browser",
+            "local"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "citation": {
+      "type": "object",
+      "required": [
+        "citation_id",
+        "url",
+        "title"
+      ],
+      "properties": {
+        "citation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{16,64}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "quoted_text": {
+          "type": "string",
+          "maxLength": 16384
+        }
+      },
+      "additionalProperties": false
+    },
+    "receipt": {
+      "type": "object",
+      "required": [
+        "source_id",
+        "status",
+        "duration_millis",
+        "result_count"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "empty",
+            "timeout",
+            "blocked",
+            "unavailable",
+            "failed",
+            "cancelled"
+          ]
+        },
+        "duration_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "result_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error_code": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "error_message": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "cache": {
+      "type": "object",
+      "properties": {
+        "hit": {
+          "type": "boolean"
+        },
+        "entry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "diff": {
+      "type": "object",
+      "required": [
+        "changed",
+        "previous_sha256",
+        "current_sha256",
+        "summary"
+      ],
+      "properties": {
+        "changed": {
+          "type": "boolean"
+        },
+        "previous_sha256": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "current_sha256": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 32768
+        }
+      },
+      "additionalProperties": false
+    },
+    "watch": {
+      "type": "object",
+      "required": [
+        "watch_id",
+        "url",
+        "interval_minutes",
+        "enabled"
+      ],
+      "properties": {
+        "watch_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "interval_minutes": {
+          "type": "integer",
+          "minimum": 15,
+          "maximum": 10080
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "last_checked_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "last_changed_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

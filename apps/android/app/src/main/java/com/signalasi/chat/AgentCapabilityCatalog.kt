@@ -929,7 +929,12 @@ object AgentDefaultCapabilityCatalog {
                 id = "signalasi.catalog.deep-research",
                 title = "Deep Research",
                 summary = "Search, compare sources, and produce a cited brief",
-                tools = listOf(AgentWebMediaNativeTools.WEB_SEARCH, AgentWebMediaNativeTools.WEB_OPEN)
+                tools = listOf(
+                    AgentWebIntelligenceNativeTools.SEARCH,
+                    AgentWebIntelligenceNativeTools.FETCH,
+                    AgentWebIntelligenceNativeTools.RESEARCH,
+                    AgentWebIntelligenceNativeTools.DIFF
+                )
             ),
             skill(
                 id = "signalasi.catalog.device-health",

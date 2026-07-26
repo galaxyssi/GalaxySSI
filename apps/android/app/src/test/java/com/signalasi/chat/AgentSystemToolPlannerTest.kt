@@ -308,7 +308,11 @@ class AgentSystemToolPlannerTest {
     @Test
     fun runsGenericWebToolsAtTheReasoningExecutionSite() {
         val screen = ScreenContext(foregroundApp = "com.signalasi.chat", pageTitle = "SignalASI")
-        val webTool = nativeDescriptor(AgentWebMediaNativeTools.WEB_SEARCH, "Search the public web", AgentNativeToolRisk.LOW)
+        val webTool = nativeDescriptor(
+            AgentWebIntelligenceNativeTools.RESEARCH,
+            "Build a cited research evidence pack",
+            AgentNativeToolRisk.LOW
+        )
         val codex = AgentCallableTarget(
             id = "codex",
             title = "Codex",
@@ -329,6 +333,7 @@ class AgentSystemToolPlannerTest {
         val toolLessModel = cloud.copy(id = "local-llm", title = "Local LLM", capabilities = listOf(AgentCapability.CHAT))
         val fallbackPlan = RuleBasedAgentPlanner().plan(request("Latest technology news today", screen, listOf(webTool), listOf(toolLessModel)))
         assertEquals(listOf(AgentActionKind.CALL_NATIVE_TOOL, AgentActionKind.CALL_CONNECTOR), fallbackPlan.actions.map { it.kind })
+        assertEquals(AgentWebIntelligenceNativeTools.RESEARCH, fallbackPlan.actions.first().parameters["tool_id"])
         assertEquals(fallbackPlan.actions.first().id, fallbackPlan.actions.last().parameters["depends_on"])
         assertEquals(fallbackPlan.actions.first().id, fallbackPlan.actions.last().parameters["use_outputs_from"])
     }

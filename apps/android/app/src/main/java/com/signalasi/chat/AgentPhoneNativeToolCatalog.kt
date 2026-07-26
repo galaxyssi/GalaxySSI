@@ -101,6 +101,7 @@ object AgentPhoneNativeToolCatalog {
         linkedSetOf<String>().apply {
             addAll(toolIds)
             addAll(AgentWebMediaNativeTools.toolIds)
+            addAll(AgentWebIntelligenceNativeTools.toolIds)
             addAll(AgentHardwareNativeTools.toolIds)
             addAll(AgentVisibleCaptureNativeTools.toolIds)
             addAll(AgentNotificationNativeTools.toolIds)
@@ -118,6 +119,10 @@ object AgentPhoneNativeToolCatalog {
         actionExecutor: AgentActionExecutor = AndroidAgentActionExecutor(context),
         clock: AgentNativeClock = AgentNativeClock.SYSTEM
     ): AgentNativeToolRegistry {
+        val webMediaServices = AgentWebMediaNativeTools.androidServices(
+            context.applicationContext,
+            clock = clock
+        )
         val registry = createRegistry(
             workspaceFileTools = AgentWorkspaceFileTools(
                 context.filesDir.toPath().resolve("agent-native-workspaces")
@@ -129,8 +134,11 @@ object AgentPhoneNativeToolCatalog {
             replayStore = EncryptedAgentNativeToolReplayStore(context)
         )
         return registry.registerAll(
-            AgentWebMediaNativeTools.definitions(
-                AgentWebMediaNativeTools.androidServices(context.applicationContext, clock = clock)
+            AgentWebMediaNativeTools.definitions(webMediaServices)
+        ).registerAll(
+            AgentWebIntelligenceNativeTools.androidDefinitions(
+                context.applicationContext,
+                webMediaServices.web
             )
         ).registerAll(
             AgentHardwareNativeTools.definitions(
