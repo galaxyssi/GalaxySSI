@@ -367,15 +367,15 @@ if (
   || html.includes('class="sidebar-action" data-open-panel="agents"')
   || html.includes('class="sidebar-action" data-open-panel="capabilities"')
   || html.includes('class="sidebar-action" data-open-panel="gateway"')
+  || computerNavIndex !== -1
   || !(
-    computerNavIndex >= 0
-    && computerNavIndex < agentNavIndex
+    agentNavIndex >= 0
     && agentNavIndex < capabilityNavIndex
     && capabilityNavIndex < gatewayNavIndex
     && gatewayNavIndex < menuNavIndex
   )
 ) {
-  throw new Error("Desktop Agent, capability, and gateway navigation must follow Computer in the workspace header");
+  throw new Error("Desktop header must expose Agent, capability, and Mobile Gateway navigation without a duplicate Computer entry");
 }
 
 if (
@@ -385,19 +385,44 @@ if (
   throw new Error("Desktop workspace menu must use a centered three-dot control");
 }
 
-for (const iconClass of ["lucide-monitor", "lucide-bot", "lucide-sparkles", "lucide-smartphone"]) {
+for (const iconClass of ["lucide-bot", "lucide-sparkles", "lucide-smartphone"]) {
   if (!html.includes(`class="lucide ${iconClass}"`)) {
     throw new Error(`Desktop precision header icon missing: ${iconClass}`);
   }
 }
 if (
   !/\.compact-status svg\s*\{[^}]*stroke-width:\s*1\.65;/s.test(styles)
+  || html.includes('class="lucide lucide-monitor"')
   || styles.includes(".computer-symbol::before")
   || styles.includes(".agent-symbol::before")
   || styles.includes(".capability-symbol::before")
   || styles.includes(".gateway-symbol::before")
 ) {
   throw new Error("Desktop header controls must use the selected precision line icon set");
+}
+
+if (
+  html.includes('id="computerPanel"')
+  || html.includes('id="desktopToolList"')
+  || html.includes('id="desktopExecutorEnabled"')
+  || html.includes('id="desktopControlRequireUnlocked"')
+  || html.includes('id="desktopControlPendingList"')
+  || html.includes('id="desktopControlAuthorizedList"')
+  || !html.includes('id="pairingDesktopExecutorEnabled"')
+  || !html.includes('class="drawer-details gateway-access-history"')
+  || !html.includes('id="desktopControlAuditList"')
+  || workspaceRenderer.includes("getDesktopTools")
+  || workspaceRenderer.includes("invokeDesktopTool")
+  || preload.includes("desktop-tools:list")
+  || preload.includes("desktop-tools:invoke")
+  || preload.includes("desktop-control:update")
+  || preload.includes("desktop-control:authorization")
+  || main.includes('ipcMain.handle("desktop-tools:list"')
+  || main.includes('ipcMain.handle("desktop-tools:invoke"')
+  || main.includes('ipcMain.handle("desktop-control:update"')
+  || main.includes('ipcMain.handle("desktop-control:authorization"')
+) {
+  throw new Error("Mobile Gateway must own pairing and recent access history without duplicate Computer controls or renderer-only tool IPC");
 }
 
 if (
@@ -641,7 +666,8 @@ for (const requiredText of [
   "SIGNALASI_ALLOW_UNPAIRED_MQTT",
   "Phone is not paired",
   "agentContactList",
-  "desktopToolList",
+  "desktopControlAuditList",
+  "Recent access history",
   "agent-execution.jsonl",
   "/api/agents/execution-log",
   "prompt_sha256",

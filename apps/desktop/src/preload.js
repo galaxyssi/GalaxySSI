@@ -26,12 +26,7 @@ contextBridge.exposeInMainWorld("signalasi", {
   cancelDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:cancel", taskId),
   retryDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:retry", taskId),
   deleteDesktopConversation: (conversationId) => ipcRenderer.invoke("desktop-conversations:delete", conversationId),
-  getDesktopTools: () => ipcRenderer.invoke("desktop-tools:list"),
-  invokeDesktopTool: (payload) => ipcRenderer.invoke("desktop-tools:invoke", payload),
   getDesktopControl: () => ipcRenderer.invoke("desktop-control:get"),
-  updateDesktopControl: (settings) => ipcRenderer.invoke("desktop-control:update", settings),
-  desktopControlAuthorizationAction: (authorizationId, action) =>
-    ipcRenderer.invoke("desktop-control:authorization", authorizationId, action),
   getDesktopMemory: (query, limit) => ipcRenderer.invoke("desktop-memory:list", query, limit),
   rememberDesktopMemory: (payload) => ipcRenderer.invoke("desktop-memory:remember", payload),
   forgetDesktopMemory: (memoryId) => ipcRenderer.invoke("desktop-memory:forget", memoryId),

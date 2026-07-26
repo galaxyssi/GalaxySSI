@@ -175,17 +175,33 @@ async function runUiSmoke() {
       throw new Error(`Capabilities drawer did not expose memory, Skills, and MCP: ${JSON.stringify(capabilitiesState)}`);
     }
     await captureSmokeScreenshot(capabilitiesPath);
-    const computerState = await mainWindow.webContents.executeJavaScript(`
+    const gatewayControlState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
-        document.querySelector('[data-open-panel="computer"]')?.click();
-        for (let attempt = 0; attempt < 60; attempt += 1) {
-          if (document.querySelectorAll("#desktopToolList .desktop-tool").length > 0) break;
-          await new Promise((resolve) => setTimeout(resolve, 500));
+        document.querySelector('[data-open-panel="gateway"]')?.click();
+        for (let attempt = 0; attempt < 30; attempt += 1) {
+          if (document.querySelector("#desktopControlAuditList")?.children.length > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        return { tools: document.querySelectorAll("#desktopToolList .desktop-tool").length };
+        const history = document.querySelector(".gateway-access-history");
+        if (history) history.open = true;
+        return {
+          active: document.querySelector("#gatewayPanel")?.classList.contains("active") || false,
+          accessHistory: document.querySelector("#desktopControlAuditList")?.children.length || 0,
+          pairingExecutor: Boolean(document.querySelector("#pairingDesktopExecutorEnabled")),
+          computerPanel: Boolean(document.querySelector("#computerPanel")),
+          desktopToolList: Boolean(document.querySelector("#desktopToolList"))
+        };
       })()
     `);
-    if (computerState.tools < 5) throw new Error(`Computer drawer did not render native tools: ${JSON.stringify(computerState)}`);
+    if (
+      !gatewayControlState.active
+      || gatewayControlState.accessHistory < 1
+      || !gatewayControlState.pairingExecutor
+      || gatewayControlState.computerPanel
+      || gatewayControlState.desktopToolList
+    ) {
+      throw new Error(`Mobile Gateway did not consolidate Desktop control access: ${JSON.stringify(gatewayControlState)}`);
+    }
     await captureSmokeScreenshot(setupPath);
     const settingsState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
@@ -774,40 +790,9 @@ async function deleteDesktopConversation(conversationId) {
   return fetchJson(`/api/desktop/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
 }
 
-async function getDesktopTools() {
-  await startBackend();
-  return fetchJson("/api/desktop-tools");
-}
-
-async function invokeDesktopTool(payload = {}) {
-  await startBackend();
-  return fetchJson("/api/desktop-tools/invoke", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  });
-}
-
 async function getDesktopControl() {
   await startBackend();
   return fetchJson("/api/desktop-control");
-}
-
-async function updateDesktopControl(settings = {}) {
-  await startBackend();
-  return fetchJson("/api/desktop-control/settings", {
-    method: "POST",
-    body: JSON.stringify(settings)
-  });
-}
-
-async function desktopControlAuthorizationAction(authorizationId, action) {
-  await startBackend();
-  const allowed = new Set(["approve", "reject", "revoke"]);
-  if (!allowed.has(action)) throw new Error("Unsupported Desktop control authorization action");
-  return fetchJson(
-    `/api/desktop-control/authorizations/${encodeURIComponent(authorizationId)}/${action}`,
-    { method: "POST" }
-  );
 }
 
 async function getDesktopMemory(query = "", limit = 100) {
@@ -934,12 +919,7 @@ ipcMain.handle("desktop-tasks:start", (_event, payload) => startDesktopTask(payl
 ipcMain.handle("desktop-tasks:cancel", (_event, taskId) => cancelDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:retry", (_event, taskId) => retryDesktopTask(taskId));
 ipcMain.handle("desktop-conversations:delete", (_event, conversationId) => deleteDesktopConversation(conversationId));
-ipcMain.handle("desktop-tools:list", getDesktopTools);
-ipcMain.handle("desktop-tools:invoke", (_event, payload) => invokeDesktopTool(payload));
 ipcMain.handle("desktop-control:get", getDesktopControl);
-ipcMain.handle("desktop-control:update", (_event, settings) => updateDesktopControl(settings));
-ipcMain.handle("desktop-control:authorization", (_event, authorizationId, action) =>
-  desktopControlAuthorizationAction(authorizationId, action));
 ipcMain.handle("desktop-memory:list", (_event, query, limit) => getDesktopMemory(query, limit));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));
