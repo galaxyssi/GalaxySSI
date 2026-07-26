@@ -15,6 +15,12 @@ SignalASI response policy:
 - Do not claim completion without a result. Keep the final answer focused on the result and the next useful step.
 """
 
+    fun prompt(context: Context): String {
+        val languageTag = LanguagePolicySettings.resolvedResponseLanguage(context)
+        val languageName = LanguagePolicySettings.modelLanguageName(languageTag)
+        return "$PROMPT\n- Preferred response language: $languageName ($languageTag). Respond in it unless the user explicitly requests another language."
+    }
+
     fun attachmentClarification(context: Context, attachments: List<AgentInputAttachment>): String {
         val names = attachments.map { it.displayName }.distinct().take(10)
         val target = if (names.size == 1) {

@@ -12,6 +12,7 @@ from response_policy import (
     is_input_artifact,
     remove_unfulfilled_artifact_claims,
     response_language,
+    response_language_tag,
     sanitize_assistant_response,
 )
 
@@ -121,33 +122,42 @@ class ResponsePolicyTest(unittest.TestCase):
             "Current user request:\nRead report.xlsx"
         )
         self.assertEqual(
-            "SignalASI turn policy: Turn language: English. Respond in English unless the user explicitly requests another language.\n\n"
+            "SignalASI turn policy: Turn language: English (en-US). Respond in English unless the user explicitly requests another language.\n\n"
             "Read report.xlsx",
-            compact_codex_turn_prompt(prompt),
+            compact_codex_turn_prompt(prompt, "en-US"),
         )
 
-    def test_language_uses_current_request_instead_of_history(self):
+    def test_configured_language_is_not_inferred_from_conversation_history(self):
         prompt = (
             "Conversation context:\nUser: \u8bf7\u7528\u4e2d\u6587\u56de\u590d\nAssistant: \u597d\n\n"
             "Current user request:\nPlease help me with this"
         )
-        self.assertEqual("English", response_language(prompt))
-        self.assertIn("Turn language: English", apply_response_policy(prompt))
+        self.assertEqual("English", response_language(prompt, "en-US"))
+        self.assertIn("Turn language: English (en-US)", apply_response_policy(prompt, "en-US"))
+        self.assertEqual("Simplified Chinese", response_language(prompt, "zh-CN"))
 
-    def test_language_ignores_attachment_metadata(self):
+    def test_language_preference_ignores_attachment_metadata(self):
         prompt = (
             "Current user request:\n\u8bf7\u603b\u7ed3\u8fd9\u4efd\u6587\u4ef6\n\n"
             "Attached input:\n- report.xlsx (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)"
         )
-        self.assertEqual("Simplified Chinese", response_language(prompt))
+        self.assertEqual("Simplified Chinese", response_language(prompt, "zh-CN"))
 
     def test_explicit_language_override_wins(self):
-        self.assertEqual("Simplified Chinese", response_language("Please reply in Simplified Chinese."))
-        self.assertEqual("English", response_language("\u8bf7\u7528\u82f1\u6587\u56de\u590d\u8fd9\u4e2a\u95ee\u9898"))
+        self.assertEqual("Simplified Chinese", response_language("Please reply in Simplified Chinese.", "en-US"))
+        self.assertEqual("English", response_language("\u8bf7\u7528\u82f1\u6587\u56de\u590d\u8fd9\u4e2a\u95ee\u9898", "zh-CN"))
+        self.assertEqual("zh-TW", response_language_tag("Please reply in Traditional Chinese.", "en-US"))
+
+    def test_auto_language_follows_the_desktop_system_language(self):
+        with patch.dict("os.environ", {"SIGNALASI_SYSTEM_LANGUAGE": "zh-HK"}, clear=False):
+            self.assertEqual("Traditional Chinese", response_language("hello", "auto"))
+            self.assertEqual("zh-HK", response_language_tag("hello", "auto"))
+        with patch.dict("os.environ", {"SIGNALASI_SYSTEM_LANGUAGE": "en-US"}, clear=False):
+            self.assertEqual("English", response_language("hello", "auto"))
 
     def test_policy_is_idempotent_and_complete(self):
-        prompt = apply_response_policy("hello")
-        self.assertEqual(prompt, apply_response_policy(prompt))
+        prompt = apply_response_policy("hello", "en-US")
+        self.assertEqual(prompt, apply_response_policy(prompt, "en-US"))
         for phrase in ("Simplified Chinese", "execute it", "most important question", "stack trace"):
             self.assertIn(phrase, CODEX_STYLE_RESPONSE_POLICY)
 

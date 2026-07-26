@@ -15,12 +15,17 @@ import kotlinx.coroutines.withContext
 
 object CloudModelClient {
     private const val TAG = "CloudModelClient"
-    private const val SYSTEM_PROMPT =
-        CodexStyleResponsePolicy.PROMPT + "\n" +
+    private const val RICH_OUTPUT_PROMPT =
             "When an answer benefits from tables, media, an animation, or an inline public web page, you may append a signalasi-rich fenced JSON document. " +
             "Use list, key_value, table, chart, timeline, notice, code, diff, json, image, gallery, video, audio, file, link, citation, html, or webpage blocks as appropriate. " +
             "Use an html block with self-contained HTML/CSS/JavaScript fragments for animations; never use external URLs, network requests, forms, or device APIs in HTML. " +
             "Use a webpage block with an HTTPS uri when the actual public page should appear inline. Always include fallback_text."
+
+    private fun defaultSystemPrompt(context: Context): String =
+        CodexStyleResponsePolicy.prompt(context) + "\n" + RICH_OUTPUT_PROMPT
+
+    private fun isDefaultSystemPrompt(systemPrompt: String): Boolean =
+        systemPrompt.contains(RICH_OUTPUT_PROMPT)
 
     fun send(context: Context, contact: JSONObject, prompt: String): String {
         return send(context, contact, listOf(ChatMessage(0L, prompt, true, Contact("me", context.getString(R.string.chat_me), ""))))
@@ -30,10 +35,11 @@ object CloudModelClient {
         validateContact(context, contact)
         val turn = ChatMessage(0L, prompt, true, Contact("me", context.getString(R.string.chat_me), ""))
         val style = contact.optString("cloud_api_style", "openai")
+        val systemPrompt = defaultSystemPrompt(context)
         return when (style) {
-            "anthropic" -> sendAnthropicWithUsage(context, contact, CloudWebGrounding.enrich(listOf(turn)), SYSTEM_PROMPT)
-            "gemini" -> sendGeminiWithUsage(context, contact, CloudWebGrounding.enrich(listOf(turn)), SYSTEM_PROMPT)
-            else -> sendOpenAiCompatibleWithUsage(context, contact, listOf(turn), SYSTEM_PROMPT, null)
+            "anthropic" -> sendAnthropicWithUsage(context, contact, CloudWebGrounding.enrich(listOf(turn)), systemPrompt)
+            "gemini" -> sendGeminiWithUsage(context, contact, CloudWebGrounding.enrich(listOf(turn)), systemPrompt)
+            else -> sendOpenAiCompatibleWithUsage(context, contact, listOf(turn), systemPrompt, null)
         }
     }
 
@@ -43,7 +49,7 @@ object CloudModelClient {
         turns: List<ChatMessage>,
         onToolEvent: ((CloudToolEvent) -> Unit)? = null
     ): String {
-        return send(context, contact, turns, SYSTEM_PROMPT, onToolEvent)
+        return send(context, contact, turns, defaultSystemPrompt(context), onToolEvent)
     }
 
     fun sendStructured(context: Context, contact: JSONObject, systemPrompt: String, prompt: String): String {
@@ -244,7 +250,7 @@ object CloudModelClient {
                     put("tool_choice", "auto")
                 }
             }
-            .apply { if (systemPrompt != SYSTEM_PROMPT) put("temperature", 0.1) }
+            .apply { if (!isDefaultSystemPrompt(systemPrompt)) put("temperature", 0.1) }
         var text = ""
         var json = JSONObject()
         var usage = CloudModelUsage()
@@ -317,7 +323,7 @@ object CloudModelClient {
         val body = JSONObject()
             .put("model", contact.getString("cloud_model"))
             .put("system", systemPromptWithContext(systemPrompt, compiled.summary))
-            .put("max_tokens", if (systemPrompt == SYSTEM_PROMPT) 1200 else 3000)
+            .put("max_tokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
             .put("messages", anthropicMessages(compiled.messages))
         val text = postJson(
             contact.getString("cloud_endpoint"),
@@ -364,8 +370,8 @@ object CloudModelClient {
             ))
             .put("contents", geminiContents(compiled.messages))
             .put("generationConfig", JSONObject()
-                .put("temperature", if (systemPrompt == SYSTEM_PROMPT) 0.7 else 0.1)
-                .put("maxOutputTokens", if (systemPrompt == SYSTEM_PROMPT) 1200 else 3000)
+                .put("temperature", if (isDefaultSystemPrompt(systemPrompt)) 0.7 else 0.1)
+                .put("maxOutputTokens", if (isDefaultSystemPrompt(systemPrompt)) 1200 else 3000)
             )
         val text = postJson(url, emptyMap(), body)
         val json = JSONObject(text)

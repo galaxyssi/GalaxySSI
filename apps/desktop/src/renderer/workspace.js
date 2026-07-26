@@ -31,8 +31,30 @@ const CLOUD_PROVIDER_PRESETS = Object.freeze({
     endpoint: ""
   }
 });
+const LANGUAGE_POLICY_CHOICES = new Set(["auto", "zh-CN", "en-US", "zh-HK", "zh-TW"]);
+
+function normalizeLanguagePolicy(value) {
+  const candidate = String(value || "").trim();
+  return LANGUAGE_POLICY_CHOICES.has(candidate) ? candidate : "auto";
+}
+
+function systemLanguageTag() {
+  const language = String(navigator.language || "en-US").replace("_", "-").toLowerCase();
+  if (language.startsWith("zh-hk") || language.startsWith("zh-mo")) return "zh-HK";
+  if (language.startsWith("zh-tw") || language.startsWith("zh-hant")) return "zh-TW";
+  if (language.startsWith("zh")) return "zh-CN";
+  return "en-US";
+}
+
+function resolveLanguagePolicy(value) {
+  const normalized = normalizeLanguagePolicy(value);
+  return normalized === "auto" ? systemLanguageTag() : normalized;
+}
+
+const savedInterfaceLanguage = localStorage.getItem("signalasi-desktop-language") || "auto";
 const state = {
-  language: localStorage.getItem("signalasi-desktop-language") || "en",
+  languagePreference: ["auto", "en", "zh-CN"].includes(savedInterfaceLanguage) ? savedInterfaceLanguage : "auto",
+  language: savedInterfaceLanguage === "zh-CN" || (savedInterfaceLanguage === "auto" && systemLanguageTag().startsWith("zh")) ? "zh-CN" : "en",
   locale: {},
   backend: null,
   agents: DEFAULT_AGENT_CONTACTS,
@@ -219,13 +241,17 @@ function showToast(message) {
 }
 
 async function setLanguage(language, persist = true) {
-  state.language = language === "zh-CN" ? "zh-CN" : "en";
+  state.languagePreference = ["auto", "en", "zh-CN"].includes(language) ? language : "auto";
+  state.language = state.languagePreference === "zh-CN"
+    || (state.languagePreference === "auto" && systemLanguageTag().startsWith("zh"))
+    ? "zh-CN"
+    : "en";
   state.locale = await window.signalasi.loadLocale(state.language);
   document.documentElement.lang = state.language === "zh-CN" ? "zh-Hans" : "en";
-  if (persist) localStorage.setItem("signalasi-desktop-language", state.language);
+  if (persist) localStorage.setItem("signalasi-desktop-language", state.languagePreference);
   $$('[data-i18n]').forEach((node) => { node.textContent = t(node.dataset.i18n); });
   $$('[data-i18n-placeholder]').forEach((node) => { node.placeholder = t(node.dataset.i18nPlaceholder); });
-  $("#languageSelect").value = state.language;
+  $("#languageSelect").value = state.languagePreference;
   renderHistory();
   renderConversation(true);
   updateHeaderStatus();
@@ -291,7 +317,7 @@ function renderArtifacts(task) {
 function renderTurn(task) {
   const statusClass = task.status === "completed" ? "completed" : (TERMINAL_STATES.has(task.status) ? "failed" : "");
   const answer = task.status === "completed"
-    ? `<article class="assistant-answer">${renderMarkdown(task.result || t("Task completed."))}</article>${renderArtifacts(task)}`
+    ? `<article class="assistant-answer">${renderMarkdown(task.result || t("Task completed."))}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
     : (TERMINAL_STATES.has(task.status)
       ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}<button class="retry-task" data-retry-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Retry"))}</button></article>`
       : "");
@@ -482,7 +508,10 @@ async function sendTask() {
       prompt,
       agentId: state.selectedAgentId,
       conversationId: state.currentConversationId,
-      attachments
+      attachments,
+      responseLanguage: resolveLanguagePolicy(
+        state.agentConfig?.language_policy?.response_language || "auto"
+      )
     });
     state.tasks = state.tasks.filter((item) => item.task_id !== optimistic.task_id);
     mergeTaskUpdate(task);
@@ -580,7 +609,28 @@ function fillAgentSettings() {
   $("#cmdCodex").value = commands.codex || "";
   $("#cmdClaude").value = commands.claude || "";
   $("#cmdOpenClaw").value = commands.openclaw || "";
+  fillLanguagePolicySettings(config);
   fillCloudModelSettings(config.cloud_model || {});
+}
+
+function fillLanguagePolicySettings(config = state.agentConfig || {}) {
+  const languagePolicy = config.language_policy || {};
+  $("#responseLanguageSelect").value = normalizeLanguagePolicy(languagePolicy.response_language);
+  $("#asrLanguageSelect").value = normalizeLanguagePolicy(languagePolicy.asr_language);
+  $("#ttsLanguageSelect").value = normalizeLanguagePolicy(languagePolicy.tts_language);
+}
+
+async function saveLanguagePolicySettings() {
+  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  config.language_policy = {
+    ...(config.language_policy || {}),
+    response_language: normalizeLanguagePolicy($("#responseLanguageSelect").value),
+    asr_language: normalizeLanguagePolicy($("#asrLanguageSelect").value),
+    tts_language: normalizeLanguagePolicy($("#ttsLanguageSelect").value)
+  };
+  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  fillLanguagePolicySettings(state.agentConfig);
+  showToast(t("Voice and language settings saved."));
 }
 
 function cloudProviderFor(config) {
@@ -1196,7 +1246,9 @@ function startVoiceInput() {
   }
   const recognition = new Recognition();
   state.speechRecognition = recognition;
-  recognition.lang = state.language === "zh-CN" ? "zh-CN" : "en-US";
+  recognition.lang = resolveLanguagePolicy(
+    state.agentConfig?.language_policy?.asr_language || "auto"
+  );
   recognition.interimResults = true;
   $("#voiceButton").classList.add("active");
   recognition.onresult = (event) => {
@@ -1209,6 +1261,27 @@ function startVoiceInput() {
     $("#voiceButton").classList.remove("active");
   };
   recognition.start();
+}
+
+function speakTaskResult(taskId) {
+  const task = state.tasks.find((item) => item.task_id === taskId);
+  const text = String(task?.result || "").trim();
+  if (!text || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+    showToast(t("Text-to-speech is not available on this desktop."));
+    return;
+  }
+  const container = document.createElement("div");
+  container.innerHTML = renderMarkdown(text);
+  const utterance = new SpeechSynthesisUtterance(container.textContent || text);
+  utterance.lang = resolveLanguagePolicy(
+    state.agentConfig?.language_policy?.tts_language || "auto"
+  );
+  const matchingVoice = window.speechSynthesis.getVoices().find((voice) =>
+    String(voice.lang || "").toLowerCase().startsWith(utterance.lang.toLowerCase())
+  );
+  if (matchingVoice) utterance.voice = matchingVoice;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
 }
 
 function bindEvents() {
@@ -1235,6 +1308,11 @@ function bindEvents() {
     renderConversation(true);
   });
   elements.messages.addEventListener("click", async (event) => {
+    const speak = event.target.closest("[data-speak-task]");
+    if (speak) {
+      speakTaskResult(speak.dataset.speakTask);
+      return;
+    }
     const retry = event.target.closest("[data-retry-task]");
     if (retry) {
       await retryTask(retry.dataset.retryTask);
@@ -1359,6 +1437,9 @@ function bindEvents() {
   $("#runDiagnosticsButton").addEventListener("click", runDiagnostics);
   $("#refreshRuntimeButton").addEventListener("click", () => refreshRuntimeManager(true));
   $("#languageSelect").addEventListener("change", (event) => setLanguage(event.target.value));
+  $("#responseLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
+  $("#asrLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
+  $("#ttsLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
   $("#workspaceMenuButton").addEventListener("click", () => { $("#workspaceMenu").hidden = !$("#workspaceMenu").hidden; });
   $("#cancelRunningTask").addEventListener("click", cancelRunningTask);
   $("#revealWorkspaceButton").addEventListener("click", revealWorkspace);
@@ -1370,7 +1451,7 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
-  await setLanguage(state.language, false);
+  await setLanguage(state.languagePreference, false);
   renderAgentContacts();
   updateAgentCounters();
   updateSelectedAgent();

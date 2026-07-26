@@ -64,6 +64,37 @@ class AgentConfigStorageTest(unittest.TestCase):
             self.assertEqual("8192", persisted["max_output_tokens"])
             self.assertEqual("true", persisted["context_model_summary"])
 
+    def test_language_policy_defaults_and_round_trip_are_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory) / "state"
+            with patch.dict(
+                os.environ,
+                {"SIGNALASI_STATE_DIR": str(state_dir), "SIGNALASI_CONFIG_PATH": ""},
+                clear=False,
+            ):
+                self.assertEqual(
+                    {
+                        "response_language": "auto",
+                        "asr_language": "auto",
+                        "tts_language": "auto",
+                    },
+                    agent_config.language_policy_config(),
+                )
+                agent_config.save_config({
+                    "language_policy": {
+                        "response_language": "zh-hk",
+                        "asr_language": "unsupported",
+                        "tts_language": "EN-us",
+                    }
+                })
+                persisted = agent_config.load_config()["language_policy"]
+                effective = agent_config.language_policy_config()
+
+            self.assertEqual("zh-HK", persisted["response_language"])
+            self.assertEqual("auto", persisted["asr_language"])
+            self.assertEqual("en-US", persisted["tts_language"])
+            self.assertEqual(persisted, effective)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agent_config import cloud_model_config, command_for, custom_agent_config, custom_agent_configs, local_model_config
+from agent_config import cloud_model_config, command_for, custom_agent_config, custom_agent_configs, language_policy_config, local_model_config
 from desktop_agent_adapters import (
     AgentAdapterDescriptor,
     AgentAdapterExecutionError,
@@ -464,6 +464,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     from response_policy import apply_response_policy, sanitize_assistant_response
 
     spec = all_agent_specs().get(agent_id)
+    preferred_language = request.response_language or language_policy_config()["response_language"]
     if spec is not None and spec.id == "local-llm":
         with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
             messages = _stateless_model_messages(request, spec.id)
@@ -475,7 +476,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         prompt = (
             request.prompt
             if request.conversation_id
-            else apply_response_policy(request.prompt)
+            else apply_response_policy(request.prompt, preferred_language)
         )
         raw_reply = _ask_agent_sync_inner(
             agent_id,
@@ -483,6 +484,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             spec,
             task_id=request.run_id,
             conversation_id=request.conversation_id,
+            response_language=preferred_language,
             restricted_workspace=(
                 str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
             ),
@@ -510,9 +512,13 @@ def _stateless_model_messages(
         merge_context_messages,
         task_history_messages,
     )
-    from response_policy import CODEX_STYLE_RESPONSE_POLICY
+    from response_policy import response_policy_prompt
 
     config = local_model_config() if agent_id == "local-llm" else cloud_model_config()
+    fixed_prompt = response_policy_prompt(
+        request.prompt,
+        request.response_language or language_policy_config()["response_language"],
+    )
     context_window = max(
         4_096,
         int(context_window_override or config.get("context_window_tokens") or 64_000),
@@ -544,7 +550,7 @@ def _stateless_model_messages(
             )
             if value
         ),
-        fixed_prompt=CODEX_STYLE_RESPONSE_POLICY,
+        fixed_prompt=fixed_prompt,
         budget=ContextBudget(
             context_window_tokens=context_window,
             reserved_output_tokens=output_reserve,
@@ -575,7 +581,7 @@ def _stateless_model_messages(
             through_created_at=cursor[0],
             through_task_id=cursor[1],
         )
-    return compiled.wire_messages(CODEX_STYLE_RESPONSE_POLICY)
+    return compiled.wire_messages(fixed_prompt)
 
 
 def _ask_cloud_model_for_request(request: AgentAdapterRequest, spec: AgentSpec) -> str:
@@ -1094,6 +1100,7 @@ def deliver_agent_sync(
     protocol: str = "1.0",
     required_features: tuple[str, ...] = (),
     desktop_access_profile: str = "desktop_executor",
+    response_language: str = "",
 ) -> dict:
     spec = all_agent_specs().get(contact_id)
     if spec is None:
@@ -1115,6 +1122,7 @@ def deliver_agent_sync(
                 conversation_id=conversation_id,
                 source_message_id=source_message_id,
                 return_path=return_path,
+                response_language=response_language,
                 checkpoint={"desktop_access_profile": str(desktop_access_profile or "restricted")},
             )
         )
@@ -1163,6 +1171,7 @@ def _ask_agent_sync_inner(
     spec: AgentSpec | None,
     task_id: str = "",
     conversation_id: str = "",
+    response_language: str = "",
     restricted_workspace: bool = False,
 ) -> str:
     if spec is None:
@@ -1176,6 +1185,7 @@ def _ask_agent_sync_inner(
         text,
         task_id=task_id,
         conversation_id=conversation_id,
+        response_language=response_language,
         restricted_workspace=restricted_workspace,
     )
 
@@ -1247,6 +1257,7 @@ def ask_cli_agent(
     text: str,
     task_id: str = "",
     conversation_id: str = "",
+    response_language: str = "",
     restricted_workspace: bool = False,
 ) -> str:
     command = _command_for(spec)
@@ -1262,6 +1273,7 @@ def ask_cli_agent(
             text,
             task_id=task_id,
             conversation_id=conversation_id,
+            response_language=response_language,
             restricted_workspace=restricted_workspace,
         )
 
@@ -1273,6 +1285,7 @@ def _ask_cli_agent_locked(
     *,
     task_id: str,
     conversation_id: str,
+    response_language: str = "",
     restricted_workspace: bool = False,
     retried_stale_session: bool = False,
 ) -> str:
@@ -1287,7 +1300,13 @@ def _ask_cli_agent_locked(
     if not conversation_id:
         invocation_text = text
     elif not has_native_session or not existing_native_session:
-        invocation_text = _compiled_cli_prompt(spec, text, task_id, conversation_id)
+        invocation_text = _compiled_cli_prompt(
+            spec,
+            text,
+            task_id,
+            conversation_id,
+            response_language=response_language,
+        )
     else:
         invocation_text = (
             _native_incremental_cli_prompt(
@@ -1299,8 +1318,9 @@ def _ask_cli_agent_locked(
                 synced_turn_ids=binding.synced_turn_ids,
                 synced_entry_ids=binding.synced_entry_ids,
                 summary_digest=binding.summary_digest,
+                response_language=response_language,
             )
-            or _styled_turn_prompt(text)
+            or _styled_turn_prompt(text, response_language)
         )
     session_command = _native_session_command(
         spec,
@@ -1315,6 +1335,7 @@ def _ask_cli_agent_locked(
         original_text=text,
         task_id=task_id,
         conversation_id=conversation_id,
+        response_language=response_language,
         restricted_workspace=restricted_workspace,
         retried_stale_session=retried_stale_session,
     )
@@ -1328,6 +1349,7 @@ def _run_cli_agent_process(
     original_text: str,
     task_id: str,
     conversation_id: str,
+    response_language: str,
     restricted_workspace: bool,
     retried_stale_session: bool,
 ) -> str:
@@ -1382,6 +1404,7 @@ def _run_cli_agent_process(
                     original_text,
                     task_id=task_id,
                     conversation_id=conversation_id,
+                    response_language=response_language,
                     restricted_workspace=restricted_workspace,
                     retried_stale_session=True,
                 )
@@ -1470,11 +1493,11 @@ def _is_stale_native_session_error(spec: AgentSpec, value: str) -> bool:
     return any(marker in normalized for marker in stale_markers)
 
 
-def _styled_turn_prompt(text: str) -> str:
+def _styled_turn_prompt(text: str, preferred_language: str = "") -> str:
     from conversation_context import current_request
     from response_policy import apply_response_policy
 
-    return apply_response_policy(current_request(text))
+    return apply_response_policy(current_request(text), preferred_language)
 
 
 def _compiled_cli_prompt(
@@ -1482,6 +1505,7 @@ def _compiled_cli_prompt(
     text: str,
     task_id: str,
     conversation_id: str,
+    response_language: str = "",
 ) -> str:
     from agent_task_manager import agent_task_manager
     from conversation_context import (
@@ -1494,7 +1518,9 @@ def _compiled_cli_prompt(
         render_prompt,
         task_history_messages,
     )
-    from response_policy import CODEX_STYLE_RESPONSE_POLICY, response_language
+    from response_policy import response_policy_prompt
+
+    fixed_prompt = response_policy_prompt(text, response_language)
 
     context_window = _cli_context_window(spec)
     summary_key = f"cli:{spec.id}:{conversation_id}"
@@ -1522,7 +1548,7 @@ def _compiled_cli_prompt(
             )
             if value
         ),
-        fixed_prompt=CODEX_STYLE_RESPONSE_POLICY,
+        fixed_prompt=fixed_prompt,
         budget=ContextBudget(
             context_window_tokens=context_window,
             reserved_output_tokens=min(8_192, max(1_024, context_window // 8)),
@@ -1540,11 +1566,7 @@ def _compiled_cli_prompt(
             through_created_at=cursor[0],
             through_task_id=cursor[1],
         )
-    language = response_language(text)
-    preamble = (
-        f"{CODEX_STYLE_RESPONSE_POLICY}\n"
-        f"- Turn language: {language}. Respond in {language} unless the user explicitly requests another language."
-    )
+    preamble = fixed_prompt
     return render_prompt(compiled, text, preamble=preamble)
 
 
@@ -1558,6 +1580,7 @@ def _native_incremental_cli_prompt(
     synced_turn_ids: tuple[str, ...] = (),
     synced_entry_ids: tuple[str, ...] = (),
     summary_digest: str = "",
+    response_language: str = "",
 ) -> str:
     from agent_task_manager import agent_task_manager
     from conversation_context import (
@@ -1568,7 +1591,7 @@ def _native_incremental_cli_prompt(
         render_prompt,
         task_history_messages,
     )
-    from response_policy import CODEX_STYLE_RESPONSE_POLICY, response_language
+    from response_policy import response_policy_prompt
 
     history = agent_task_manager.conversation_messages(
         conversation_id,
@@ -1593,6 +1616,7 @@ def _native_incremental_cli_prompt(
     if not missed and not mobile_delta and not changed_summary:
         return ""
     context_window = _cli_context_window(spec)
+    fixed_prompt = response_policy_prompt(text, response_language)
     history_messages = task_history_messages(
         missed,
         text,
@@ -1602,18 +1626,16 @@ def _native_incremental_cli_prompt(
     compiled = compile_context(
         merge_context_messages(mobile_delta, history_messages),
         previous_summary=changed_summary,
-        fixed_prompt=CODEX_STYLE_RESPONSE_POLICY,
+        fixed_prompt=fixed_prompt,
         budget=ContextBudget(
             context_window_tokens=context_window,
             reserved_output_tokens=min(8_192, max(1_024, context_window // 8)),
         ),
     )
-    language = response_language(text)
     preamble = (
-        f"{CODEX_STYLE_RESPONSE_POLICY}\n"
+        f"{fixed_prompt}\n"
         "The following recent turns were completed through other SignalASI resources. "
-        "Treat them as prior dialogue and continue the same conversation.\n"
-        f"- Turn language: {language}. Respond in {language} unless the user explicitly requests another language."
+        "Treat them as prior dialogue and continue the same conversation."
     )
     return render_prompt(compiled, text, preamble=preamble)
 

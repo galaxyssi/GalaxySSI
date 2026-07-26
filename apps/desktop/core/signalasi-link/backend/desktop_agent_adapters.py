@@ -88,6 +88,7 @@ class AgentAdapterRequest:
     conversation_id: str = ""
     source_message_id: str = ""
     return_path: str = ""
+    response_language: str = ""
     checkpoint: dict = field(default_factory=dict)
     artifacts: tuple[dict, ...] = ()
 
@@ -105,6 +106,7 @@ class AgentAdapterRequest:
             conversation_id=str(self.conversation_id or "").strip(),
             source_message_id=str(self.source_message_id or "").strip(),
             return_path=str(self.return_path or "").strip(),
+            response_language=str(self.response_language or "").strip(),
             checkpoint=dict(self.checkpoint or {}),
             artifacts=tuple(dict(item) for item in self.artifacts if isinstance(item, dict)),
         )

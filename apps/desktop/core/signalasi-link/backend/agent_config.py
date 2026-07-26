@@ -45,6 +45,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_output_tokens": 4_096,
         "context_model_summary": True,
     },
+    "language_policy": {
+        "response_language": "auto",
+        "asr_language": "auto",
+        "tts_language": "auto",
+    },
     "custom_agent": {
         "name": "Custom Agent",
     },
@@ -79,6 +84,13 @@ def save_config(incoming: dict[str, Any]) -> dict[str, Any]:
     for section in ("local_model", "cloud_model"):
         if sanitized.get(section, {}).get("api_key") == MASK:
             sanitized[section]["api_key"] = current.get(section, {}).get("api_key", "")
+
+    from language_policy import normalize_language
+
+    language_policy = sanitized.get("language_policy")
+    if isinstance(language_policy, dict):
+        for key in ("response_language", "asr_language", "tts_language"):
+            language_policy[key] = normalize_language(language_policy.get(key))
 
     _merge(updated, sanitized)
     _write_config(_config_path(), updated)
@@ -130,6 +142,17 @@ def cloud_model_config() -> dict[str, Any]:
         "context_window_tokens": _bounded_int(data.get("context_window_tokens"), 64_000, 4_096, 1_000_000),
         "max_output_tokens": _bounded_int(data.get("max_output_tokens"), 4_096, 512, 128_000),
         "context_model_summary": _as_bool(data.get("context_model_summary"), True),
+    }
+
+
+def language_policy_config() -> dict[str, str]:
+    from language_policy import normalize_language
+
+    data = load_config().get("language_policy", {})
+    return {
+        "response_language": normalize_language(data.get("response_language")),
+        "asr_language": normalize_language(data.get("asr_language")),
+        "tts_language": normalize_language(data.get("tts_language")),
     }
 
 

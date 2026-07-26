@@ -20,7 +20,8 @@ object AgentBackupData {
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
         return JSONObject()
-            .put("version", 28)
+            .put("version", 29)
+            .put("interface_language", AppLanguage.current(context))
             .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
             .put("knowledge", readArray(context, KNOWLEDGE_PREFS, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS))
             .put("tasks", if (includeSessionHistory) SQLiteAgentTaskStore(context).exportJson() else JSONArray())
@@ -81,6 +82,8 @@ object AgentBackupData {
                     .put("asr_model", voiceAssistant.asrModel)
                     .put("asr_language", voiceAssistant.asrLanguage)
                     .put("tts_provider", voiceAssistant.ttsProvider)
+                    .put("tts_language", voiceAssistant.ttsLanguage)
+                    .put("response_language", voiceAssistant.responseLanguage)
                     .put("microsoft_voice", voiceAssistant.microsoftVoice)
                     .put("welcome_text", voiceAssistant.welcomeText)
                     .put("target_contact_id", voiceAssistant.targetContactId)
@@ -98,6 +101,9 @@ object AgentBackupData {
     }
 
     fun restore(context: Context, payload: JSONObject) {
+        if (payload.has("interface_language")) {
+            AppLanguage.set(context, payload.optString("interface_language", AppLanguage.AUTO))
+        }
         payload.optJSONArray("memory")?.let { input ->
             val sanitized = sanitizeArray(input, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS)
             AgentEncryptedDatabase(context, MEMORY_DATABASE)
@@ -205,6 +211,8 @@ object AgentBackupData {
             VoiceAssistantSettings.setAsrModel(context, json.optString("asr_model", "tiny"))
             VoiceAssistantSettings.setAsrLanguage(context, json.optString("asr_language"))
             VoiceAssistantSettings.setTtsProvider(context, json.optString("tts_provider"))
+            VoiceAssistantSettings.setTtsLanguage(context, json.optString("tts_language"))
+            VoiceAssistantSettings.setResponseLanguage(context, json.optString("response_language"))
             VoiceAssistantSettings.setMicrosoftVoice(context, json.optString("microsoft_voice"))
             VoiceAssistantSettings.setWelcomeText(context, json.optString("welcome_text"))
             VoiceAssistantSettings.setTargetContact(context, json.optString("target_contact_id"))

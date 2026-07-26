@@ -6336,6 +6336,16 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             ?: installedAppOpenAction(request)
             ?: directDeviceStatusAction(request)
 
+    private fun configuredResponseLanguageCode(goal: String): String {
+        val languageTag = context?.let { appContext ->
+            runCatching { LanguagePolicySettings.resolvedResponseLanguage(appContext) }.getOrNull()
+        }
+        return languageTag
+            ?.substringBefore('-')
+            ?.lowercase(Locale.ROOT)
+            ?: if (goal.any { it in '\u3400'..'\u9fff' }) "zh" else "en"
+    }
+
     private fun actionsFor(request: AgentRequest): List<AgentAction> {
         phoneDevelopmentActions(request)?.let { return it }
         genericWebResearchActions(request)?.let { return it }
@@ -6412,7 +6422,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 "tool_id" to runtime.id,
                 "tool_version" to runtime.version,
                 "native_tool_risk" to runtime.risk.wireValue,
-                "response_language" to if (request.goal.any { it in '\u3400'..'\u9fff' }) "zh" else "en",
+                "response_language" to configuredResponseLanguageCode(request.goal),
                 "input_json" to runtimeInput.toString(),
                 "depends_on" to manifestAction.id,
                 "use_outputs_from" to manifestAction.id,
@@ -6816,7 +6826,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 "tool_id" to descriptor.id,
                 "tool_version" to descriptor.version,
                 "native_tool_risk" to descriptor.risk.wireValue,
-                "response_language" to if (request.goal.any { it in '\u3400'..'\u9fff' }) "zh" else "en",
+                "response_language" to configuredResponseLanguageCode(request.goal),
                 "input_json" to input.toString()
             )
         )
@@ -7200,7 +7210,7 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     "tool_id" to AgentHomeAssistantNativeTools.SERVICE_CALL,
                     "input_json" to toolInput,
                     "connector_id" to "home-assistant",
-                    "response_language" to if (request.goal.any { it in '\u3400'..'\u9fff' }) "zh" else "en"
+                    "response_language" to configuredResponseLanguageCode(request.goal)
                 )
             )
         }
@@ -8991,7 +9001,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
         ].orEmpty()
         val screenBlock = action.parameters[INTERNAL_SCREEN_CONTEXT].orEmpty()
         return assembleBoundedModelPrompt(
-            preamble = "${CodexStyleResponsePolicy.PROMPT}\n\n$RICH_RESPONSE_CONTRACT",
+            preamble = "${CodexStyleResponsePolicy.prompt(context)}\n\n$RICH_RESPONSE_CONTRACT",
             optionalSections = listOf(
                 contextBlock,
                 memoryBlock.takeIf(String::isNotBlank)?.let { "Relevant personal memory:\n$it" }.orEmpty(),
