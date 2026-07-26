@@ -96,10 +96,8 @@ const elements = {
   selectedAgent: $("#selectedAgentLabel"),
   agentCount: $("#agentCount"),
   capabilityCount: $("#capabilityCount"),
-  headerAgentCount: $("#headerAgentCount"),
   gatewayCount: $("#gatewayCount"),
-  headerGatewayCount: $("#headerGatewayCount"),
-  backendDot: $("#backendDot"),
+  desktopVersion: $("#desktopVersion"),
   backendBadge: $("#backendBadge"),
   backendDetail: $("#backendDetail"),
   drawer: $("#utilityDrawer"),
@@ -556,16 +554,13 @@ async function refreshBackend() {
     state.backend = { running: false, error: error.message || String(error) };
   }
   const online = Boolean(state.backend?.running);
-  elements.backendDot.classList.toggle("online", online);
   elements.backendBadge.className = `state-badge ${online ? "ok" : "bad"}`;
   elements.backendBadge.textContent = t(online ? "Online" : "Offline");
   elements.backendDetail.textContent = online ? state.backend.origin : (state.backend?.error || t("Backend unavailable"));
 }
 
 function updateAgentCounters() {
-  const ready = state.agents.filter((agent) => ["ready", "detected"].includes(agent.status)).length;
   elements.agentCount.textContent = String(state.agents.length);
-  elements.headerAgentCount.textContent = t("{count} Agents", { count: ready || state.agents.length });
 }
 
 function renderAgentContacts() {
@@ -797,7 +792,6 @@ function renderGateway() {
   const clients = Array.isArray(status.clients) ? status.clients : [];
   const count = Number(status.client_count || clients.length || 0);
   elements.gatewayCount.textContent = count ? t("{count} online", { count }) : t("Offline");
-  elements.headerGatewayCount.textContent = t("{count} phones", { count });
   $("#gatewaySummary .status-orb").classList.toggle("online", count > 0);
   $("#gatewaySummary p").textContent = count ? t("{count} verified phone(s) connected", { count }) : t("No phone paired");
   $("#pairedClientList").innerHTML = clients.length ? clients.map((client) => {
@@ -1451,6 +1445,8 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  const appVersion = await window.signalasi.getAppVersion();
+  elements.desktopVersion.textContent = `v${appVersion}`;
   await setLanguage(state.languagePreference, false);
   renderAgentContacts();
   updateAgentCounters();

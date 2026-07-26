@@ -339,6 +339,32 @@ if (!html.includes('<div class="sidebar-brand-copy"><strong>SignalASI</strong><s
 }
 
 if (
+  !html.includes('class="sidebar-action sidebar-settings-row"')
+  || !html.includes('id="desktopVersion"')
+  || !main.includes('ipcMain.handle("app:version"')
+  || !preload.includes("getAppVersion")
+  || !workspaceRenderer.includes("window.signalasi.getAppVersion()")
+) {
+  throw new Error("Desktop sidebar settings row must show the runtime app version");
+}
+
+if (
+  html.includes('id="headerAgentCount"')
+  || html.includes('id="headerGatewayCount"')
+  || html.includes('id="backendDot"')
+  || html.includes('<div id="emptyState" class="empty-state">\n          <img')
+) {
+  throw new Error("Desktop workspace must not duplicate navigation, backend status, or the empty-state brand mark");
+}
+
+if (
+  !html.includes('id="workspaceMenuButton" class="icon-button more-button"')
+  || !/\.more-button::before\s*\{[^}]*box-shadow:\s*6px 0 currentColor,\s*12px 0 currentColor;/s.test(styles)
+) {
+  throw new Error("Desktop workspace menu must use a centered three-dot control");
+}
+
+if (
   !/\.sidebar-brand-copy\s*\{[^}]*width:\s*64px;[^}]*text-align:\s*center;/s.test(styles)
   || !/\.sidebar-brand strong,\s*\.sidebar-brand span\s*\{[^}]*width:\s*100%;[^}]*text-align:\s*center;/s.test(styles)
 ) {

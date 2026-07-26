@@ -22,12 +22,11 @@
         <button class="sidebar-action" data-open-panel="agents"><span class="line-icon agent-icon"></span><b data-i18n="Agents">Agents</b><em id="agentCount">0</em></button>
         <button class="sidebar-action" data-open-panel="capabilities"><span class="line-icon capability-icon"></span><b data-i18n="Capabilities">Capabilities</b><em id="capabilityCount">0</em></button>
         <button class="sidebar-action" data-open-panel="gateway"><span class="line-icon gateway-icon"></span><b data-i18n="Mobile Gateway">Mobile Gateway</b><em id="gatewayCount">Offline</em></button>
-        <button class="sidebar-action" data-open-panel="settings"><span class="line-icon settings-icon"></span><b data-i18n="Settings">Settings</b></button>
-        <div class="desktop-profile">
-          <img src="./signalasi-mark.png" alt="">
-          <div><strong id="desktopName">Desktop</strong><span data-i18n="Super agent">Super agent</span></div>
-          <i id="backendDot" title="Backend status"></i>
-        </div>
+        <button class="sidebar-action sidebar-settings-row" data-open-panel="settings">
+          <span class="line-icon settings-icon"></span>
+          <b data-i18n="Settings">Settings</b>
+          <span id="desktopVersion" class="sidebar-version">v0.2.19</span>
+        </button>
       </div>
     </aside>
 
@@ -39,9 +38,7 @@
         </div>
         <div class="workspace-status">
           <button class="compact-status active" data-open-panel="computer" title="Computer control"><span class="computer-symbol"></span><b data-i18n="Computer">Computer</b></button>
-          <button class="compact-status" data-open-panel="agents" title="Agents"><span class="agent-symbol"></span><b id="headerAgentCount">0 Agents</b></button>
-          <button class="compact-status" data-open-panel="gateway" title="Mobile Gateway"><span class="gateway-symbol"></span><b id="headerGatewayCount">0 phones</b></button>
-          <button id="workspaceMenuButton" class="icon-button more-button" title="More" aria-label="More">...</button>
+          <button id="workspaceMenuButton" class="icon-button more-button" title="More" aria-label="More"></button>
         </div>
         <div id="workspaceMenu" class="workspace-menu" hidden>
           <button id="cancelRunningTask" data-i18n="Stop running task">Stop running task</button>
@@ -52,7 +49,6 @@
 
       <section id="conversationStream" class="conversation-stream" aria-live="polite">
         <div id="emptyState" class="empty-state">
-          <img src="./signalasi-mark.png" alt="">
           <h2 data-i18n="What should we work on?">What should we work on?</h2>
           <p data-i18n="Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.">Ask SignalASI to work with files, code, the browser, desktop tools, or a paired phone.</p>
         </div>
