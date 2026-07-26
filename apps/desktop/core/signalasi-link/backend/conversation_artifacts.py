@@ -1,4 +1,4 @@
-"""Safe restoration of prior conversation inputs into a new Agent task."""
+"""Safe restoration of prior conversation artifacts into a new Agent task."""
 from __future__ import annotations
 
 import filecmp
@@ -7,7 +7,11 @@ import shutil
 from pathlib import Path
 from typing import Iterable
 
-from conversation_context import ContextAttachment, MobileConversationContext
+from conversation_context import (
+    CURRENT_REQUEST_MARKER,
+    ContextAttachment,
+    MobileConversationContext,
+)
 import task_workspace
 
 
@@ -15,6 +19,61 @@ MAX_CONTEXT_ARTIFACTS = 10
 MAX_CONTEXT_ARTIFACT_BYTES = 64 * 1024 * 1024
 MAX_CONTEXT_TOTAL_BYTES = 128 * 1024 * 1024
 _TRANSPORT_PREFIX = re.compile(r"^\d{2}-")
+_ARTIFACT_SUFFIXES = {
+    ".7z", ".apk", ".csv", ".doc", ".docx", ".gif", ".html", ".jpeg", ".jpg",
+    ".json", ".md", ".mp3", ".mp4", ".pdf", ".png", ".ppt", ".pptx", ".py",
+    ".tar", ".tgz", ".txt", ".wav", ".webp", ".xls", ".xlsx", ".xml", ".zip",
+}
+_ARTIFACT_TYPE_TERMS = {
+    ".7z": ("7z",),
+    ".apk": ("apk",),
+    ".csv": ("csv",),
+    ".doc": ("doc", "document"),
+    ".docx": ("docx", "document"),
+    ".gif": ("gif", "image"),
+    ".html": ("html", "web page"),
+    ".jpeg": ("jpeg", "image"),
+    ".jpg": ("jpg", "image"),
+    ".json": ("json",),
+    ".md": ("markdown",),
+    ".mp3": ("mp3", "audio"),
+    ".mp4": ("mp4", "video"),
+    ".pdf": ("pdf", "document"),
+    ".png": ("png", "image"),
+    ".ppt": ("ppt", "presentation"),
+    ".pptx": ("pptx", "presentation"),
+    ".py": ("python file", "source"),
+    ".tar": ("tar", "archive"),
+    ".tgz": ("tgz", "archive"),
+    ".txt": ("text file",),
+    ".wav": ("wav", "audio"),
+    ".webp": ("webp", "image"),
+    ".xls": ("xls", "spreadsheet"),
+    ".xlsx": ("xlsx", "spreadsheet"),
+    ".xml": ("xml",),
+    ".zip": ("zip", "archive"),
+}
+_CONTINUATION_ACTIONS = (
+    "continue", "update", "modify", "edit", "change", "fix", "refine", "revise",
+    "regenerate", "rebuild", "improve", "use", "return", "send", "export",
+    "\u7ee7\u7eed", "\u66f4\u65b0", "\u4fee\u6539", "\u6539\u4e00\u4e0b",
+    "\u4fee\u590d", "\u4f18\u5316", "\u91cd\u65b0", "\u4f7f\u7528", "\u8fd4\u56de",
+    "\u53d1\u56de", "\u5bfc\u51fa",
+)
+_CONTINUATION_REFERENCES = (
+    "same project", "same file", "same image", "same document", "previous",
+    "latest", "last one", "that file", "this file", "that image", "this image",
+    "it", "project", "source", "attachment", "artifact",
+    "\u540c\u4e00\u4e2a\u9879\u76ee", "\u540c\u4e00\u4e2a\u6587\u4ef6",
+    "\u4e0a\u4e00\u4e2a", "\u4e0a\u4e00\u8f6e", "\u521a\u624d", "\u4e4b\u524d",
+    "\u8fd9\u4e2a\u6587\u4ef6", "\u90a3\u4e2a\u6587\u4ef6", "\u8fd9\u5f20\u56fe",
+    "\u90a3\u5f20\u56fe", "\u9879\u76ee", "\u6e90\u7801", "\u9644\u4ef6",
+)
+_MULTIPLE_ARTIFACT_TERMS = (
+    "all files", "all artifacts", "both files", "these files", "combine",
+    "\u6240\u6709\u6587\u4ef6", "\u5168\u90e8\u6587\u4ef6",
+    "\u8fd9\u4e9b\u6587\u4ef6", "\u4e24\u4e2a\u6587\u4ef6", "\u5408\u5e76",
+)
 
 
 def conversation_input_artifact_paths(
@@ -77,13 +136,75 @@ def conversation_input_artifact_paths(
     return resolved
 
 
-def stage_conversation_input_artifacts(
+def conversation_output_artifact_paths(
+    content: str,
+    task_history: Iterable[dict],
+    *,
+    current_task_id: str = "",
+    limit: int = MAX_CONTEXT_ARTIFACTS,
+) -> list[Path]:
+    """Resolve prior Agent outputs only when the current turn refers to them."""
+    safe_limit = max(1, min(int(limit or 1), MAX_CONTEXT_ARTIFACTS))
+    tasks = sorted(
+        (
+            task
+            for task in task_history
+            if str(task.get("task_id") or "").strip() != current_task_id
+            and str(task.get("status") or "completed") == "completed"
+        ),
+        key=lambda item: (
+            int(item.get("completed_at") or item.get("updated_at") or item.get("created_at") or 0),
+            str(item.get("task_id") or ""),
+        ),
+        reverse=True,
+    )
+    candidates_by_task: list[list[Path]] = []
+    for task in tasks:
+        candidates = _task_output_candidates(task)
+        if candidates:
+            candidates_by_task.append(candidates)
+    if not candidates_by_task:
+        return []
+
+    active_content = str(content or "")
+    if CURRENT_REQUEST_MARKER in active_content:
+        active_content = active_content.rsplit(CURRENT_REQUEST_MARKER, 1)[-1]
+    normalized = " ".join(active_content.casefold().split())
+    named = [
+        path
+        for candidates in candidates_by_task
+        for path in candidates
+        if path.name.casefold() in normalized
+    ]
+    if named:
+        return _deduplicate_paths(named)[:safe_limit]
+    if not _artifact_continuation_requested(normalized):
+        return []
+
+    requested_suffixes = {
+        suffix
+        for suffix, terms in _ARTIFACT_TYPE_TERMS.items()
+        if any(_contains_term(normalized, term) for term in terms)
+    }
+    wants_multiple = any(term in normalized for term in _MULTIPLE_ARTIFACT_TERMS)
+    for candidates in candidates_by_task:
+        relevant = [
+            path for path in candidates
+            if not requested_suffixes or path.suffix.casefold() in requested_suffixes
+        ]
+        if not relevant:
+            continue
+        return relevant[:safe_limit] if wants_multiple else relevant[:1]
+    return []
+
+
+def stage_conversation_artifacts(
     task_id: str,
     sources: Iterable[Path],
     *,
     limit: int = MAX_CONTEXT_ARTIFACTS,
 ) -> list[Path]:
-    """Copy prior inputs into the current task before giving paths to an Agent."""
+    """Copy trusted prior inputs or outputs into the current task."""
     safe_limit = max(1, min(int(limit or 1), MAX_CONTEXT_ARTIFACTS))
     current_root = task_workspace.task_workspace(task_id).resolve()
     destination = (current_root / "downloads" / "context").resolve()
@@ -102,11 +223,7 @@ def stage_conversation_input_artifacts(
             relative = source.relative_to(tasks_root)
         except ValueError:
             continue
-        if (
-            len(relative.parts) < 4
-            or relative.parts[1:3] != ("downloads", "input")
-            or not source.is_file()
-        ):
+        if not _valid_conversation_source(source, relative):
             continue
         size = source.stat().st_size
         if size <= 0 or size > MAX_CONTEXT_ARTIFACT_BYTES:
@@ -121,6 +238,116 @@ def stage_conversation_input_artifacts(
         if len(staged) >= safe_limit:
             break
     return staged
+
+
+def stage_conversation_input_artifacts(
+    task_id: str,
+    sources: Iterable[Path],
+    *,
+    limit: int = MAX_CONTEXT_ARTIFACTS,
+) -> list[Path]:
+    """Backward-compatible alias for staging trusted conversation artifacts."""
+    return stage_conversation_artifacts(task_id, sources, limit=limit)
+
+
+def _task_output_candidates(task: dict) -> list[Path]:
+    task_id = _safe_component(task.get("task_id"))
+    if not task_id:
+        return []
+    tasks_root = (task_workspace.workspace_root() / "tasks").resolve()
+    task_root = (tasks_root / task_id).resolve()
+    if not _is_within(task_root, tasks_root) or not task_root.is_dir():
+        return []
+    metadata = task.get("output_files")
+    values = metadata if isinstance(metadata, list) and metadata else task_workspace.task_artifacts(task_id)
+    candidates: list[Path] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        relative_value = str(value.get("relative_path") or "").replace("\\", "/").strip("/")
+        relative = Path(*relative_value.split("/")) if relative_value else Path()
+        if (
+            not relative_value
+            or any(part in {"", ".", ".."} for part in relative.parts)
+            or relative.parts[0].casefold() not in {"outputs", "downloads", "screenshots"}
+        ):
+            continue
+        if (
+            relative.parts[0].casefold() == "downloads"
+            and len(relative.parts) > 1
+            and relative.parts[1].casefold() in {"input", "context"}
+        ):
+            continue
+        source = (task_root / relative).resolve()
+        if not _valid_output_file(source, task_root):
+            continue
+        candidates.append(source)
+    return sorted(
+        _deduplicate_paths(candidates),
+        key=lambda path: (path.stat().st_mtime_ns, path.name.casefold()),
+        reverse=True,
+    )
+
+
+def _artifact_continuation_requested(normalized: str) -> bool:
+    if not normalized:
+        return False
+    if normalized in {"continue", "continue.", "\u7ee7\u7eed", "\u7ee7\u7eed\u3002"}:
+        return True
+    has_action = any(term in normalized for term in _CONTINUATION_ACTIONS)
+    has_reference = any(term in normalized for term in _CONTINUATION_REFERENCES)
+    has_artifact_type = any(
+        _contains_term(normalized, term)
+        for terms in _ARTIFACT_TYPE_TERMS.values()
+        for term in terms
+    )
+    return has_action and (has_reference or has_artifact_type)
+
+
+def _contains_term(content: str, term: str) -> bool:
+    if not term or term not in content:
+        return False
+    if not term.isascii() or " " in term:
+        return True
+    return re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", content) is not None
+
+
+def _valid_conversation_source(source: Path, relative: Path) -> bool:
+    if len(relative.parts) < 3 or not source.is_file():
+        return False
+    category = relative.parts[1].casefold()
+    if category not in {"outputs", "downloads", "screenshots"}:
+        return False
+    return not (
+        category == "downloads"
+        and len(relative.parts) > 2
+        and relative.parts[2].casefold() == "context"
+    )
+
+
+def _valid_output_file(source: Path, task_root: Path) -> bool:
+    try:
+        return (
+            not source.is_symlink()
+            and _is_within(source, task_root)
+            and source.is_file()
+            and source.suffix.casefold() in _ARTIFACT_SUFFIXES
+            and 0 < source.stat().st_size <= MAX_CONTEXT_ARTIFACT_BYTES
+        )
+    except OSError:
+        return False
+
+
+def _deduplicate_paths(values: Iterable[Path]) -> list[Path]:
+    result: list[Path] = []
+    seen: set[str] = set()
+    for path in values:
+        key = str(path).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(path)
+    return result
 
 
 def _valid_input_file(path: Path, input_root: Path) -> bool:

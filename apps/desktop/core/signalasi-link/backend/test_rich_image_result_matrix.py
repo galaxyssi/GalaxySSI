@@ -31,14 +31,14 @@ class RichImageResultMatrixTests(unittest.TestCase):
         names = (
             "result.png",
             "marked homework.jpg",
-            "批改结果.jpeg",
+            "\u6279\u6539\u7ed3\u679c.jpeg",
             "preview.webp",
             "animation.gif",
             "answer (final).png",
-            "作业 批改.jpg",
+            "\u4f5c\u4e1a \u6279\u6539.jpg",
             "result-v2.jpeg",
             "scan_001.webp",
-            "图像结果.gif",
+            "\u56fe\u50cf\u7ed3\u679c.gif",
         )
         for index, (category, name) in enumerate(
             (category, name) for category in categories for name in names
@@ -136,25 +136,25 @@ class RichImageResultMatrixTests(unittest.TestCase):
     def _run_current_conversation_cases(self, root: Path, executed: list[str]) -> None:
         names = (
             "annotated.png",
-            "批改图.jpg",
+            "\u6279\u6539\u56fe.jpg",
             "result 01.jpeg",
             "scan-final.webp",
-            "动画.gif",
+            "\u52a8\u753b.gif",
             "answer.png",
-            "老师批注.jpg",
+            "\u8001\u5e08\u6279\u6ce8.jpg",
             "worksheet.jpeg",
-            "数学作业.webp",
+            "\u6570\u5b66\u4f5c\u4e1a.webp",
             "english-homework.gif",
             "photo result.png",
-            "红笔批改.jpg",
+            "\u7ea2\u7b14\u6279\u6539.jpg",
             "reviewed.jpeg",
             "page-2.webp",
             "revision.gif",
             "final answer.png",
-            "检查结果.jpg",
+            "\u68c0\u67e5\u7ed3\u679c.jpg",
             "verified.jpeg",
             "output-copy.webp",
-            "完成.gif",
+            "\u5b8c\u6210.gif",
         )
         for index, name in enumerate(names):
             label = f"conversation-{index + 1:02d}-{name}"

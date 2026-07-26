@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import android.content.Context
+import java.util.concurrent.ConcurrentHashMap
 
 enum class AgentWorkspaceStatus {
     CREATED,
@@ -389,7 +390,7 @@ abstract class AbstractAgentWorkspaceStore(
     }
 
     @Synchronized
-    final override fun recoverable(): List<AgentWorkspace> =
+    open override fun recoverable(): List<AgentWorkspace> =
         load()
             .filter { !it.status.isTerminal && !it.cancellationRequested }
             .sortedWith(NEWEST_FIRST)
@@ -450,25 +451,294 @@ class InMemoryAgentWorkspaceStore(
 class EncryptedAgentWorkspaceStore(
     context: Context,
     databaseName: String = DATABASE_NAME,
-    clock: () -> Long = { System.currentTimeMillis() }
-) : AbstractAgentWorkspaceStore(clock) {
-    private val database = AgentEncryptedDatabase(context.applicationContext, databaseName)
+    private val clock: () -> Long = { System.currentTimeMillis() }
+) : AgentWorkspaceStore {
+    private val state = sharedState(context.applicationContext, databaseName)
 
-    override fun readPersisted(): List<AgentWorkspace> =
-        AgentWorkspaceJsonCodec.decodeList(database.readString(KEY_WORKSPACES, AgentWorkspaceJsonCodec.emptyDocument()))
-
-    override fun writePersisted(workspaces: List<AgentWorkspace>) {
-        database.writeString(KEY_WORKSPACES, AgentWorkspaceJsonCodec.encodeList(workspaces))
+    override fun list(): List<AgentWorkspace> = synchronized(state) {
+        ensureIndexes()
+        state.workspaceIds.mapNotNull(::loadWorkspace).sortedWith(NEWEST_FIRST)
     }
 
-    override fun clearPersisted() {
-        database.clear()
+    override fun find(workspaceId: String): AgentWorkspace? = synchronized(state) {
+        ensureIndexes()
+        workspaceId.trim().takeIf(String::isNotBlank)?.let(::loadWorkspace)
     }
+
+    override fun upsert(
+        workspace: AgentWorkspace,
+        expectedRevision: Long
+    ): AgentWorkspace = synchronized(state) {
+        ensureIndexes()
+        val normalized = AgentWorkspaceBounds.normalizeOrNull(workspace)
+        requireNotNull(normalized) { "Agent workspace fields are invalid or exceed storage limits" }
+        val existing = loadWorkspace(normalized.workspaceId)
+        val actualRevision = existing?.revision ?: 0L
+        checkRevision(normalized.workspaceId, expectedRevision, actualRevision)
+        require(actualRevision < Long.MAX_VALUE) { "Agent workspace revision exhausted" }
+        if (existing != null) {
+            require(existing.key == normalized.key) { "Agent workspace identity fields cannot change" }
+            require(normalized.eventSequence >= existing.eventSequence) {
+                "Agent workspace event sequence cannot move backwards"
+            }
+        }
+        val now = now()
+        val createdAt = existing?.createdAtMillis
+            ?: normalized.createdAtMillis.takeIf { it > 0L }
+            ?: now
+        persistWorkspace(
+            normalized.copy(
+                createdAtMillis = createdAt,
+                updatedAtMillis = maxOf(
+                    createdAt,
+                    normalized.updatedAtMillis,
+                    existing?.updatedAtMillis ?: 0L,
+                    now
+                ),
+                revision = actualRevision + 1L
+            ),
+            isNew = existing == null
+        )
+    }
+
+    override fun appendEvent(
+        workspaceId: String,
+        event: AgentWorkspaceEvent,
+        expectedRevision: Long?
+    ): AgentWorkspace? = synchronized(state) {
+        ensureIndexes()
+        val current = loadWorkspace(workspaceId.trim()) ?: return@synchronized null
+        checkRevisionIfPresent(current, expectedRevision)
+        require(current.eventSequence < Long.MAX_VALUE) { "Agent workspace event sequence exhausted" }
+        require(current.revision < Long.MAX_VALUE) { "Agent workspace revision exhausted" }
+        val mutationTime = now()
+        val timestamp = event.timestampMillis.takeIf { it > 0L } ?: mutationTime
+        val appended = AgentWorkspaceBounds.normalizeEventOrNull(
+            event.copy(
+                sequence = current.eventSequence + 1L,
+                timestampMillis = timestamp
+            )
+        )
+        requireNotNull(appended) { "Agent workspace event is invalid or exceeds storage limits" }
+        persistWorkspace(
+            current.copy(
+                eventSequence = appended.sequence,
+                eventJournal = (current.eventJournal + appended).takeLast(AgentWorkspaceLimits.MAX_EVENTS),
+                updatedAtMillis = maxOf(current.updatedAtMillis, timestamp, mutationTime),
+                revision = current.revision + 1L
+            )
+        )
+    }
+
+    override fun checkpoint(
+        workspaceId: String,
+        checkpoint: AgentWorkspaceCheckpoint,
+        expectedRevision: Long?
+    ): AgentWorkspace? = synchronized(state) {
+        ensureIndexes()
+        val current = loadWorkspace(workspaceId.trim()) ?: return@synchronized null
+        checkRevisionIfPresent(current, expectedRevision)
+        require(current.revision < Long.MAX_VALUE) { "Agent workspace revision exhausted" }
+        val mutationTime = now()
+        val timestamp = checkpoint.createdAtMillis.takeIf { it > 0L } ?: mutationTime
+        val normalized = AgentWorkspaceBounds.normalizeCheckpointOrNull(
+            checkpoint.copy(
+                eventSequence = current.eventSequence,
+                planSnapshot = checkpoint.planSnapshot.ifBlank { current.currentPlanSnapshot },
+                createdAtMillis = timestamp
+            )
+        )
+        requireNotNull(normalized) { "Agent workspace checkpoint is invalid or exceeds storage limits" }
+        val checkpoints = current.checkpoints
+            .filterNot { it.id == normalized.id }
+            .plus(normalized)
+            .sortedWith(CHECKPOINT_OLDEST_FIRST)
+            .takeLast(AgentWorkspaceLimits.MAX_CHECKPOINTS)
+        persistWorkspace(
+            current.copy(
+                currentPlanSnapshot = normalized.planSnapshot,
+                checkpoints = checkpoints,
+                updatedAtMillis = maxOf(current.updatedAtMillis, timestamp, mutationTime),
+                revision = current.revision + 1L
+            )
+        )
+    }
+
+    override fun requestCancel(
+        workspaceId: String,
+        expectedRevision: Long?,
+        timestampMillis: Long
+    ): AgentWorkspace? = synchronized(state) {
+        ensureIndexes()
+        val current = loadWorkspace(workspaceId.trim()) ?: return@synchronized null
+        checkRevisionIfPresent(current, expectedRevision)
+        if (current.cancellationRequested) return@synchronized current
+        require(current.revision < Long.MAX_VALUE) { "Agent workspace revision exhausted" }
+        val mutationTime = now()
+        val timestamp = timestampMillis.takeIf { it > 0L } ?: mutationTime
+        persistWorkspace(
+            current.copy(
+                cancellationRequested = true,
+                updatedAtMillis = maxOf(current.updatedAtMillis, timestamp, mutationTime),
+                revision = current.revision + 1L
+            )
+        )
+    }
+
+    override fun delete(workspaceId: String, expectedRevision: Long?): Boolean = synchronized(state) {
+        ensureIndexes()
+        val cleanId = workspaceId.trim()
+        val current = cleanId.takeIf(String::isNotBlank)?.let(::loadWorkspace)
+            ?: return@synchronized false
+        checkRevisionIfPresent(current, expectedRevision)
+        state.database.remove(workspaceKey(cleanId))
+        state.cache.remove(cleanId)
+        val allChanged = state.workspaceIds.remove(cleanId)
+        val recoverableChanged = state.recoverableIds.remove(cleanId)
+        if (allChanged) saveIds(KEY_WORKSPACE_IDS, state.workspaceIds)
+        if (recoverableChanged) saveIds(KEY_RECOVERABLE_WORKSPACE_IDS, state.recoverableIds)
+        true
+    }
+
+    override fun clear() = synchronized(state) {
+        state.database.clear()
+        state.cache.clear()
+        state.workspaceIds.clear()
+        state.recoverableIds.clear()
+        state.initialized = true
+        saveIds(KEY_WORKSPACE_IDS, state.workspaceIds)
+        saveIds(KEY_RECOVERABLE_WORKSPACE_IDS, state.recoverableIds)
+    }
+
+    override fun recoverable(): List<AgentWorkspace> = synchronized(state) {
+        ensureIndexes()
+        state.recoverableIds.mapNotNull(::loadWorkspace)
+            .filter(::isRecoverable)
+            .sortedWith(NEWEST_FIRST)
+    }
+
+    private fun persistWorkspace(
+        workspace: AgentWorkspace,
+        isNew: Boolean = false
+    ): AgentWorkspace {
+        val normalized = AgentWorkspaceBounds.normalizeOrNull(workspace)
+        requireNotNull(normalized) { "Agent workspace fields are invalid or exceed storage limits" }
+        state.database.writeString(workspaceKey(normalized.workspaceId), AgentWorkspaceJsonCodec.encode(normalized))
+        state.cache[normalized.workspaceId] = normalized
+        var workspaceIndexChanged = false
+        if (isNew || normalized.workspaceId !in state.workspaceIds) {
+            state.workspaceIds += normalized.workspaceId
+            workspaceIndexChanged = true
+        }
+        while (state.workspaceIds.size > AgentWorkspaceLimits.MAX_WORKSPACES) {
+            val staleId = state.workspaceIds
+                .mapNotNull(::loadWorkspace)
+                .minWithOrNull(NEWEST_FIRST.reversed())
+                ?.workspaceId
+                ?: state.workspaceIds.first()
+            state.workspaceIds.remove(staleId)
+            state.recoverableIds.remove(staleId)
+            state.cache.remove(staleId)
+            state.database.remove(workspaceKey(staleId))
+            workspaceIndexChanged = true
+        }
+        val recoverable = isRecoverable(normalized)
+        val recoverableChanged = if (recoverable) {
+            if (normalized.workspaceId in state.recoverableIds) false
+            else state.recoverableIds.add(normalized.workspaceId)
+        } else {
+            state.recoverableIds.remove(normalized.workspaceId)
+        }
+        if (workspaceIndexChanged) saveIds(KEY_WORKSPACE_IDS, state.workspaceIds)
+        if (recoverableChanged || workspaceIndexChanged) {
+            saveIds(KEY_RECOVERABLE_WORKSPACE_IDS, state.recoverableIds)
+        }
+        return normalized
+    }
+
+    private fun ensureIndexes() {
+        if (state.initialized) return
+        if (!state.database.contains(KEY_WORKSPACE_IDS)) {
+            state.database.remove(LEGACY_KEY_WORKSPACES)
+            state.database.remove(LEGACY_KEY_RECOVERABLE_WORKSPACES)
+            saveIds(KEY_WORKSPACE_IDS, state.workspaceIds)
+            saveIds(KEY_RECOVERABLE_WORKSPACE_IDS, state.recoverableIds)
+            state.initialized = true
+            return
+        }
+        state.workspaceIds += loadIds(KEY_WORKSPACE_IDS)
+        state.recoverableIds += loadIds(KEY_RECOVERABLE_WORKSPACE_IDS)
+            .filter { it in state.workspaceIds }
+        state.initialized = true
+    }
+
+    private fun loadWorkspace(workspaceId: String): AgentWorkspace? {
+        state.cache[workspaceId]?.let { return it }
+        val loaded = AgentWorkspaceJsonCodec.decode(
+            state.database.readString(workspaceKey(workspaceId), "")
+        ) ?: return null
+        state.cache[workspaceId] = loaded
+        return loaded
+    }
+
+    private fun loadIds(key: String): List<String> = runCatching {
+        val root = org.json.JSONArray(state.database.readString(key, "[]"))
+        buildList {
+            for (index in 0 until root.length()) {
+                root.optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveIds(key: String, ids: Collection<String>) {
+        state.database.writeString(key, org.json.JSONArray(ids.toList()).toString())
+    }
+
+    private fun checkRevisionIfPresent(workspace: AgentWorkspace, expectedRevision: Long?) {
+        expectedRevision?.let { checkRevision(workspace.workspaceId, it, workspace.revision) }
+    }
+
+    private fun checkRevision(workspaceId: String, expected: Long, actual: Long) {
+        if (expected != actual) {
+            throw AgentWorkspaceRevisionConflictException(workspaceId, expected, actual)
+        }
+    }
+
+    private fun isRecoverable(workspace: AgentWorkspace): Boolean =
+        !workspace.status.isTerminal && !workspace.cancellationRequested
+
+    private fun now(): Long = clock().coerceAtLeast(0L)
+
+    private fun workspaceKey(workspaceId: String): String = "$WORKSPACE_KEY_PREFIX$workspaceId"
 
     companion object {
         const val DATABASE_NAME = "signalasi_agent_workspaces"
-        const val KEY_WORKSPACES = "workspaces"
+        private const val KEY_WORKSPACE_IDS = "workspace_ids_v2"
+        private const val KEY_RECOVERABLE_WORKSPACE_IDS = "recoverable_workspace_ids_v2"
+        private const val WORKSPACE_KEY_PREFIX = "workspace_v2:"
+        private const val LEGACY_KEY_WORKSPACES = "workspaces"
+        private const val LEGACY_KEY_RECOVERABLE_WORKSPACES = "recoverable_workspaces"
+        private val NEWEST_FIRST = compareByDescending<AgentWorkspace> { it.updatedAtMillis }
+            .thenByDescending { it.createdAtMillis }
+            .thenBy { it.workspaceId }
+        private val CHECKPOINT_OLDEST_FIRST = compareBy<AgentWorkspaceCheckpoint> { it.eventSequence }
+            .thenBy { it.createdAtMillis }
+            .thenBy { it.id }
+        private val STATES = ConcurrentHashMap<String, SharedWorkspaceState>()
+
+        private fun sharedState(context: Context, databaseName: String): SharedWorkspaceState =
+            STATES.computeIfAbsent(databaseName) {
+                SharedWorkspaceState(AgentEncryptedDatabase(context, databaseName))
+            }
     }
+
+    private class SharedWorkspaceState(
+        val database: AgentEncryptedDatabase,
+        var initialized: Boolean = false,
+        val workspaceIds: MutableList<String> = mutableListOf(),
+        val recoverableIds: MutableList<String> = mutableListOf(),
+        val cache: MutableMap<String, AgentWorkspace> = linkedMapOf()
+    )
 }
 
 object AgentWorkspaceJsonCodec {

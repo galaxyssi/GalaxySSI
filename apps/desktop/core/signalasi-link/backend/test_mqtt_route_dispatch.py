@@ -123,15 +123,18 @@ class MqttRouteDispatchTests(unittest.TestCase):
     def test_large_transfer_never_occupies_reserved_small_message_slots(self) -> None:
         mqttc = RecordingMqtt()
         large = '{"scheme":"signal","from":"phone","to":"desktop","body":"' + ("x" * 300_000) + '"}'
+        packet_count = len(mqtt_wire_chunking.encode_wire_payload(large))
+        initial_fragment_count = min(
+            packet_count,
+            mqtt_bridge.MAX_FRAGMENT_INFLIGHT_PER_TRANSFER,
+        )
 
         fragmented = mqtt_bridge._publish_mqtt_wire_payload(mqttc, "large", large)
 
         self.assertLess(fragmented.mid, 0)
-        self.assertEqual(mqtt_bridge.MAX_FRAGMENT_INFLIGHT_PER_TRANSFER, len(mqttc.published))
-        self.assertEqual(
-            mqtt_bridge.MAX_FRAGMENT_INFLIGHT_PER_TRANSFER,
-            mqtt_bridge.fragment_publish_inflight,
-        )
+        self.assertEqual(initial_fragment_count, len(mqttc.published))
+        self.assertEqual(initial_fragment_count, mqtt_bridge.fragment_publish_inflight)
+        self.assertLess(mqtt_bridge.fragment_publish_inflight, mqtt_bridge.MQTT_MAX_INFLIGHT)
 
         direct = mqtt_bridge._publish_mqtt_wire_payload(
             mqttc,
@@ -140,12 +143,15 @@ class MqttRouteDispatchTests(unittest.TestCase):
         )
 
         self.assertGreater(direct.mid, 0)
-        self.assertEqual(mqtt_bridge.MAX_FRAGMENT_INFLIGHT_PER_TRANSFER + 1, len(mqttc.published))
+        self.assertEqual(initial_fragment_count + 1, len(mqttc.published))
         first_fragment_mid = mqttc.published[0][3].mid
         handled, logical_mid = mqtt_bridge._complete_fragment_publish(mqttc, first_fragment_mid)
         self.assertTrue(handled)
         self.assertIsNone(logical_mid)
-        self.assertEqual(mqtt_bridge.MAX_FRAGMENT_INFLIGHT_PER_TRANSFER + 2, len(mqttc.published))
+        expected_after_ack = initial_fragment_count + 1
+        if initial_fragment_count < packet_count:
+            expected_after_ack += 1
+        self.assertEqual(expected_after_ack, len(mqttc.published))
 
     def test_fragmented_envelope_is_decrypted_only_after_complete_integrity_check(self) -> None:
         encrypted_wire = json.dumps(
@@ -188,10 +194,70 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
         decrypt.assert_called_once()
 
+    def test_signal_ciphertext_replay_is_acknowledged_without_decrypting_again(self) -> None:
+        message_id = "11111111-1111-4111-8111-111111111111"
+        encrypted_wire = {
+            "scheme": "signal",
+            "from": "phone-signal-id",
+            "to": "desktop-signal-id",
+            "message_type": 2,
+            "body": "ciphertext",
+        }
+        paired_client = {
+            "signal_name": "phone-signal-id",
+            "topics": {"control": "control-topic", "down": "down-topic"},
+        }
+        mqttc = RecordingMqtt()
+
+        with (
+            patch.object(
+                mqtt_bridge,
+                "parse_topic",
+                return_value=("server-route", "client-route", "up"),
+            ),
+            patch.object(mqtt_bridge, "server_route_id", return_value="server-route"),
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-signal-id"),
+            patch.object(mqtt_bridge, "get_client", return_value=paired_client),
+            patch.object(mqtt_bridge, "message_for_ciphertext", return_value=message_id),
+            patch.object(mqtt_bridge, "previous_acknowledgement", return_value={"status": "accepted"}),
+            patch.object(mqtt_bridge, "decrypt_signal_envelope") as decrypt,
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
+        ):
+            mqtt_bridge._process_message(
+                mqttc,
+                None,
+                FakeMessage("topic", json.dumps(encrypted_wire).encode("utf-8")),
+            )
+
+        decrypt.assert_not_called()
+        publish.assert_called_once()
+        self.assertEqual("delivery_ack", publish.call_args.args[2]["type"])
+        self.assertEqual(message_id, publish.call_args.args[2]["message_id"])
+        self.assertTrue(publish.call_args.args[2]["duplicate"])
+
     def test_returned_image_intent_is_detected_without_matching_plain_grading(self) -> None:
         self.assertTrue(mqtt_bridge._requests_returned_image("Annotate this and return the image"))
         self.assertTrue(mqtt_bridge._requests_returned_image("\u6279\u6539\u4f5c\u4e1a\u5e76\u53d1\u56de\u6765\u56fe\u7247"))
         self.assertFalse(mqtt_bridge._requests_returned_image("\u6279\u6539\u4f5c\u4e1a"))
+
+    def test_returned_image_intent_uses_only_the_current_user_request(self) -> None:
+        prompt = (
+            "[SIGNALASI_CONVERSATION_CONTEXT_V1]\n"
+            '{"turns":[{"role":"user","content":"Annotate this and return the image"}]}\n'
+            "[/SIGNALASI_CONVERSATION_CONTEXT_V1]\n\n"
+            "Current user request:\n"
+            "What is the brand title in this image? Reply only with the title."
+        )
+        self.assertFalse(mqtt_bridge._current_request_needs_returned_image(prompt))
+
+        prompt = (
+            "[SIGNALASI_CONVERSATION_CONTEXT_V1]\n"
+            '{"turns":[{"role":"assistant","content":"The brand is SignalASI"}]}\n'
+            "[/SIGNALASI_CONVERSATION_CONTEXT_V1]\n\n"
+            "Current user request:\n"
+            "Add a blue border and return the edited image."
+        )
+        self.assertTrue(mqtt_bridge._current_request_needs_returned_image(prompt))
 
     def test_returned_image_contract_targets_output_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

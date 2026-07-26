@@ -44,6 +44,7 @@ object AgentTaskEventKinds {
     const val PROGRESS = "task.progress"
     const val STALLED = "task.stalled"
     const val TIMED_OUT = "task.timed_out"
+    const val LATE_RESPONSE = "task.late_response"
 }
 
 fun interface AgentTaskResumeHook {
@@ -398,6 +399,43 @@ class AgentTaskSupervisor(
     ): AgentWorkspace = synchronized(storeMutationLock) {
         mutateWorkspaceLocked(workspaceId) { current ->
             appendEventCandidate(current, kind, message, payloadJson)
+        }
+    }
+
+    /**
+     * Reopens a connector task only when an authenticated response is bound to
+     * the original handoff. This is the narrow exception to terminal workspace
+     * transitions used when a valid remote result arrives after local timeout.
+     */
+    fun reconcileLateConnectorResponse(
+        workspaceId: String,
+        sourceMessageId: Long
+    ): AgentWorkspace? = synchronized(storeMutationLock) {
+        if (sourceMessageId <= 0L) return@synchronized null
+        val current = workspaceStore.find(workspaceId.trim()) ?: return@synchronized null
+        if (current.status != AgentWorkspaceStatus.FAILED || current.cancellationRequested) {
+            return@synchronized current.takeUnless { it.cancellationRequested }
+        }
+        val sourceSuffix = ":$sourceMessageId"
+        val handoffMatches = current.handoffIds.any { it.endsWith(sourceSuffix) } ||
+            current.remoteRunId == sourceMessageId.toString()
+        if (!handoffMatches) return@synchronized null
+        mutateWorkspaceLocked(current.workspaceId) { latest ->
+            if (latest.status != AgentWorkspaceStatus.FAILED || latest.cancellationRequested) {
+                latest
+            } else {
+                appendEventCandidate(
+                    current = latest,
+                    kind = AgentTaskEventKinds.LATE_RESPONSE,
+                    message = "Authenticated connector response received after local timeout",
+                    payloadJson = AgentNativeJsonCodec.stringify(
+                        mapOf("source_message_id" to sourceMessageId)
+                    )
+                ).copy(
+                    status = AgentWorkspaceStatus.WAITING_RESPONSE,
+                    errorMessage = ""
+                )
+            }
         }
     }
 

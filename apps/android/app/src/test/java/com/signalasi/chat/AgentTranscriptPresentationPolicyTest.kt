@@ -64,6 +64,27 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
+    fun processGroupKeepsStableRenderIdWhenItsOnlyStatusRowIsReplaced() {
+        val user = entry("user", AgentTranscriptRole.USER, "conversation", "turn", 10L)
+        val accepted = entry("accepted", AgentTranscriptRole.PROCESS, "conversation", "turn", 20L)
+        val running = entry("running", AgentTranscriptRole.PROCESS, "conversation", "turn", 30L)
+
+        val initial = AgentTranscriptPresentationPolicy.collapseProcessGroups(listOf(user, accepted))
+        val updated = AgentTranscriptPresentationPolicy.collapseProcessGroups(listOf(user, running))
+        val diff = AgentTranscriptRenderPolicy.diff(
+            renderedIds = initial.map(AgentTranscriptEntry::id),
+            renderedSignatures = initial.associate { entry ->
+                entry.id to AgentTranscriptRenderPolicy.signature(entry)
+            },
+            incoming = updated
+        )
+
+        assertEquals(initial[1].id, updated[1].id)
+        assertFalse(diff.reset)
+        assertEquals(listOf(1), diff.replacementIndices)
+    }
+
+    @Test
     fun classifiesProcessRowsForCodexStyleIcons() {
         assertEquals(
             AgentTranscriptPresentationPolicy.ProcessVisualKind.ANALYSIS,
@@ -265,6 +286,78 @@ class AgentTranscriptPresentationPolicyTest {
     }
 
     @Test
+    fun rendersModelNarrationButNotInternalToolActivityInTheConversation() {
+        val entries = listOf(
+            entry("I will inspect the workbook before changing it.", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 1L,
+                "connector-event:task:REASONING_SUMMARY:codex:commentary:1"),
+            entry("Ran python validate_workbook.py", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 2L,
+                "connector-event:task:TOOL_EVENT:codex:command:1"),
+            entry("Viewed 1 image", AgentTranscriptRole.PROCESS,
+                "conversation", "turn", 3L,
+                "connector-event:task:TOOL_EVENT:codex:image_view:2")
+        )
+
+        val visible = AgentTranscriptPresentationPolicy.narrationSegments(entries)
+
+        assertEquals(1, visible.size)
+        assertEquals(
+            AgentTranscriptPresentationPolicy.ProcessContentKind.NARRATION,
+            visible.single().kind
+        )
+        assertEquals(
+            listOf("I will inspect the workbook before changing it."),
+            visible.single().entries.map(AgentTranscriptEntry::text)
+        )
+    }
+
+    @Test
+    fun hidesToolOnlyProcessDetailsFromTheConversation() {
+        val entries = listOf(
+            entry("Running Codex", AgentTranscriptRole.PROCESS, "conversation", "turn", 1L,
+                "audit:1:TOOL_STARTED:codex"),
+            entry("Codex completed", AgentTranscriptRole.PROCESS, "conversation", "turn", 2L,
+                "audit:2:TOOL_COMPLETED:codex")
+        )
+
+        assertTrue(AgentTranscriptPresentationPolicy.narrationSegments(entries).isEmpty())
+    }
+
+    @Test
+    fun hidesLegacyAggregatedToolStepSummariesFromStoredConversations() {
+        val entries = listOf(
+            entry("user", AgentTranscriptRole.USER, "conversation", "turn", 1L),
+            entry("\u8fd0\u884c\u4e86 3 \u4e2a\u5de5\u5177\u6b65\u9aa4", AgentTranscriptRole.PROCESS, "conversation", "turn", 2L,
+                "pending:legacy:tool-summary"),
+            entry("Ran 2 tool steps.", AgentTranscriptRole.PROCESS, "conversation", "turn", 3L,
+                "pending:legacy:tool-summary-en"),
+            entry("assistant", AgentTranscriptRole.ASSISTANT, "conversation", "turn", 4L)
+        )
+
+        val visible = AgentTranscriptPresentationPolicy.collapseProcessGroups(entries)
+
+        assertEquals(listOf("user", "assistant"), visible.map(AgentTranscriptEntry::text))
+        assertTrue(AgentTranscriptPresentationPolicy.processSegments(entries).isEmpty())
+    }
+
+    @Test
+    fun recognizesInternalCancellationMessagesForUiLocalization() {
+        assertEquals(
+            AgentTranscriptPresentationPolicy.ControlMessageKind.CANCELLED,
+            AgentTranscriptPresentationPolicy.controlMessageKind("Task cancelled")
+        )
+        assertEquals(
+            AgentTranscriptPresentationPolicy.ControlMessageKind.CANCELLED,
+            AgentTranscriptPresentationPolicy.controlMessageKind(" task CANCELED ")
+        )
+        assertEquals(
+            null,
+            AgentTranscriptPresentationPolicy.controlMessageKind("The user discussed a cancelled task")
+        )
+    }
+
+    @Test
     fun removesRedundantConnectorCompletionFromTheRenderedTurn() {
         val entries = listOf(
             entry("user", AgentTranscriptRole.USER, "conversation", "turn", 1L),
@@ -399,6 +492,25 @@ class AgentTranscriptPresentationPolicyTest {
 
         assertTrue(answered.isEmpty())
         assertTrue(active.isEmpty())
+    }
+
+    @Test
+    fun stopsProcessClockForUserControlledAndTerminalWorkspaceStates() {
+        val stopped = setOf(
+            AgentWorkspaceStatus.WAITING_CONFIRMATION,
+            AgentWorkspaceStatus.PAUSED,
+            AgentWorkspaceStatus.BLOCKED,
+            AgentWorkspaceStatus.COMPLETED,
+            AgentWorkspaceStatus.FAILED,
+            AgentWorkspaceStatus.CANCELLED
+        )
+
+        AgentWorkspaceStatus.entries.forEach { status ->
+            assertEquals(
+                status in stopped,
+                AgentTranscriptPresentationPolicy.processClockStopsFor(status)
+            )
+        }
     }
 
     private fun entry(

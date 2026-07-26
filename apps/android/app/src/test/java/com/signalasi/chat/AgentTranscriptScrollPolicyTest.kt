@@ -6,6 +6,44 @@ import org.junit.Test
 
 class AgentTranscriptScrollPolicyTest {
     @Test
+    fun layoutChangesDoNotDisableAutoFollow() {
+        assertTrue(
+            AgentTranscriptScrollPolicy.nextAutoFollow(
+                current = true,
+                userScrollActive = false,
+                itemCount = 3,
+                lastVisiblePosition = 2,
+                remainingPx = 600,
+                thresholdPx = 56
+            )
+        )
+    }
+
+    @Test
+    fun userScrollControlsAutoFollow() {
+        assertFalse(
+            AgentTranscriptScrollPolicy.nextAutoFollow(
+                current = true,
+                userScrollActive = true,
+                itemCount = 3,
+                lastVisiblePosition = 1,
+                remainingPx = Int.MAX_VALUE,
+                thresholdPx = 56
+            )
+        )
+        assertTrue(
+            AgentTranscriptScrollPolicy.nextAutoFollow(
+                current = false,
+                userScrollActive = true,
+                itemCount = 3,
+                lastVisiblePosition = 2,
+                remainingPx = 20,
+                thresholdPx = 56
+            )
+        )
+    }
+
+    @Test
     fun upwardScrollNearStartLoadsOlderHistory() {
         assertTrue(
             AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(

@@ -135,6 +135,19 @@ class PairingRegistryTests(unittest.TestCase):
         link_delivery.complete_message(route_id, message_id, "accepted", {"status": "accepted"})
         self.assertEqual("accepted", link_delivery.previous_acknowledgement(route_id, message_id)["status"])
 
+    def test_signal_ciphertext_is_bound_to_one_logical_message(self):
+        route_id = link_protocol.new_route_id()
+        message_id = str(uuid.uuid4())
+        digest = "a" * 64
+
+        self.assertIsNone(link_delivery.message_for_ciphertext(route_id, digest))
+        link_delivery.bind_ciphertext(route_id, digest, message_id)
+        link_delivery.bind_ciphertext(route_id, digest, message_id)
+
+        self.assertEqual(message_id, link_delivery.message_for_ciphertext(route_id, digest))
+        with self.assertRaises(ValueError):
+            link_delivery.bind_ciphertext(route_id, digest, str(uuid.uuid4()))
+
     def test_outbound_message_survives_until_client_ack(self):
         route_id = link_protocol.new_route_id()
         message_id = str(uuid.uuid4())

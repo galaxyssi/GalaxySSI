@@ -188,6 +188,7 @@ class ResponsePolicyTest(unittest.TestCase):
 
     def test_input_artifacts_are_identified(self):
         self.assertTrue(is_input_artifact({"relative_path": "downloads/input/01-test.xlsx"}))
+        self.assertTrue(is_input_artifact({"relative_path": "downloads/context/prior-image.jpg"}))
         self.assertFalse(is_input_artifact({"relative_path": "outputs/result.xlsx"}))
 
     def test_task_artifacts_exclude_uploaded_inputs(self):
@@ -196,8 +197,10 @@ class ResponsePolicyTest(unittest.TestCase):
             with patch.object(task_workspace, "workspace_root", return_value=Path(root)):
                 task = Path(root) / "tasks" / "case"
                 (task / "downloads" / "input").mkdir(parents=True)
+                (task / "downloads" / "context").mkdir(parents=True)
                 (task / "outputs").mkdir(parents=True)
                 (task / "downloads" / "input" / "test.xlsx").write_bytes(b"input")
+                (task / "downloads" / "context" / "prior.xlsx").write_bytes(b"context")
                 (task / "outputs" / "summary.csv").write_bytes(b"output")
                 artifacts = task_workspace.task_artifacts("case")
         self.assertEqual(["outputs/summary.csv"], [item["relative_path"] for item in artifacts])

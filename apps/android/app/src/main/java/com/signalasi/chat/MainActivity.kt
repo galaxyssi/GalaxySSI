@@ -149,6 +149,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
         private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
+        private const val AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS = 16L
         private const val UNROUTABLE_CONNECTOR_GRACE_MILLIS = 5L * 60L * 1_000L
         private const val GLOBAL_AGENT_FOREGROUND_RETRY_MILLIS = 5_000L
         private const val AGENT_BRAND_LOGO_BASE_DP = 39
@@ -239,6 +240,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentConnectorResponsesInFlight = ConcurrentHashMap.newKeySet<String>()
     private val agentTimelineOperationsInFlight = ConcurrentHashMap.newKeySet<String>()
     private val remoteAgentApprovalsInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val remoteAgentApprovalTaskIds = ConcurrentHashMap.newKeySet<String>()
+    private val remoteTaskEventFingerprints = ConcurrentHashMap<String, String>()
     private var pendingDirectSystemAction: PendingDirectSystemAction? = null
     private lateinit var agentScreenSearchInput: EditText
     private lateinit var agentScreenDetailList: LinearLayout
@@ -330,6 +333,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         handler.post(::refreshGlobalAgentCognition)
     }
     private val historyExecutor = Executors.newSingleThreadExecutor()
+    private val agentRegistryHeartbeatExecutor = Executors.newSingleThreadExecutor()
+    private val agentSubmissionExecutor = Executors.newSingleThreadExecutor()
+    private val agentRoutingExecutor = Executors.newSingleThreadExecutor()
+    private val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
     private val cloudExecutor = Executors.newCachedThreadPool()
     private val pendingHistoryMessages = linkedMapOf<Long, JSONObject>()
     private val loadedHistoryContacts = mutableSetOf<String>()
@@ -350,6 +357,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentHandoffStore: EncryptedAgentHandoffStore
     private lateinit var encryptedAgentRegistry: EncryptedAgentRegistry
     @Volatile private var lastAgentRegistrySyncAtMillis = 0L
+    private val agentTurnGoals = ConcurrentHashMap<String, String>()
     private lateinit var agentMcpRegistry: AgentMcpRegistry
     private lateinit var agentMcpPackageRepository: AgentMcpPackageRepository
     private lateinit var agentRuntimePackCatalogManager: AgentRuntimePackCatalogManager
@@ -411,13 +419,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var agentTranscriptAllLoaded = false
     private var agentRenderedConversationId = ""
     private var agentTranscriptAutoFollow = true
+    private var agentTranscriptUserScrollActive = false
     private val agentTranscriptWindow = AgentTranscriptWindow()
     private val renderedAgentTranscriptIds = linkedSetOf<String>()
     private val renderedAgentTranscriptSignatures = mutableMapOf<String, Int>()
     private var renderedAgentTranscriptSourceEntries: List<AgentTranscriptEntry> = emptyList()
     private val expandedAgentProcessGroups = linkedSetOf<String>()
     private val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
-    private val expandedAgentToolSegments = linkedSetOf<String>()
     private val directoryContacts = mutableListOf<Contact>()
     private var pendingExportPassword: String? = null
     private var pendingExportSkill: Pair<String, String>? = null
@@ -547,9 +555,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentMcpRegistry = AgentMcpRegistry(EncryptedAgentMcpStore(this))
         agentMcpPackageRepository = AgentMcpPackageRepository(this)
         agentRuntimePackCatalogManager = AgentRuntimePackCatalogManager(this)
-        agentTranscriptStore.removeExactText("Create a safe local task plan")
-        agentTranscriptStore.removeExactText("Task plan confirmed")
-        agentTranscriptStore.removeObsoletePlannerProcessEntries()
         traceStartup("agent_stores")
         microsoftTts = MicrosoftEdgeTts(applicationContext)
         androidTts = TextToSpeech(this) { status ->
@@ -694,9 +699,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             thread(name = "signalasi-agent-initial-hydration") {
                 val hydrationStartedAt = SystemClock.elapsedRealtime()
                 val outcome = runCatching {
-                    val state = mobileNativeAgent.snapshot()
+                    val materializedRichEntries = agentTranscriptStore.materializeInlineRichContent()
+                    if (materializedRichEntries > 0) {
+                        Log.i(
+                            "SignalASIStartup",
+                            "Materialized inline rich entries=$materializedRichEntries"
+                        )
+                    }
                     val conversation = agentTranscriptStore.activeConversation()
                     val initialEntries = agentTranscriptStore.list(conversation.id)
+                    val state = restoreRecoverableAgentRuntime(
+                        conversationId = conversation.id,
+                        transcriptEntries = initialEntries
+                    ) ?: mobileNativeAgent.snapshot()
                     val tasks = SQLiteAgentTaskStore(applicationContext).forSession(conversation.id)
                     AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
                         entries = initialEntries,
@@ -757,6 +772,58 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
         }, 100L)
+    }
+
+    private fun restoreRecoverableAgentRuntime(
+        conversationId: String,
+        transcriptEntries: List<AgentTranscriptEntry>
+    ): AgentUiState? {
+        val resolvedConversationId = agentTranscriptStore.resolveMergedConversationId(conversationId)
+            ?: conversationId
+        val workspace = EncryptedAgentWorkspaceStore(this).list().firstOrNull { candidate ->
+            val candidateConversationId = agentTranscriptStore
+                .resolveMergedConversationId(candidate.conversationId)
+                ?: candidate.conversationId
+            candidateConversationId == resolvedConversationId &&
+                candidate.status in setOf(
+                    AgentWorkspaceStatus.WAITING_CONFIRMATION,
+                    AgentWorkspaceStatus.WAITING_RESPONSE,
+                    AgentWorkspaceStatus.PAUSED
+                ) &&
+                !AgentTaskTerminalReplyPolicy.hasTerminalReply(
+                    transcriptEntries,
+                    candidate.taskId
+                )
+        } ?: return null
+        val runtime = MobileNativeAgent(
+            this,
+            sessionStore = SharedPreferencesAgentSessionStore(this, "task:${workspace.workspaceId}"),
+            nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
+        )
+        val state = runtime.snapshot()
+        val recoverable = when (workspace.status) {
+            AgentWorkspaceStatus.WAITING_CONFIRMATION ->
+                state.phase == AgentPhase.WAITING_CONFIRMATION && state.pendingAction != null
+            AgentWorkspaceStatus.WAITING_RESPONSE ->
+                state.phase == AgentPhase.WAITING_RESPONSE
+            AgentWorkspaceStatus.PAUSED ->
+                state.phase == AgentPhase.PAUSED
+            else -> false
+        }
+        if (!recoverable) return null
+        mobileNativeAgent = runtime
+        agentRuntimeConversationIds[runtime] = resolvedConversationId
+        agentRuntimeTurnIds[runtime] = workspace.workspaceId
+        state.lastActionResult?.metadata
+            ?.get("source_message_id")
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L }
+            ?.let { sourceMessageId -> activeAgentTasks[sourceMessageId] = runtime }
+        Log.i(
+            "SignalASIAgentLifecycle",
+            "restored active workspace=${workspace.workspaceId.take(8)} phase=${state.phase.name}"
+        )
+        return state
     }
 
     private fun scheduleAgentSkillBootstrap() {
@@ -842,6 +909,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentTaskRuntime.removeLivenessListener(agentTaskLivenessListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
         if (::agentRuntimePackCatalogManager.isInitialized) agentRuntimePackCatalogManager.close()
+        agentRegistryHeartbeatExecutor.shutdown()
+        agentSubmissionExecutor.shutdown()
+        agentRoutingExecutor.shutdown()
+        agentTaskPersistenceExecutor.shutdown()
         historyExecutor.shutdown()
         super.onDestroy()
     }
@@ -1014,6 +1085,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (turnId.isBlank()) {
             consumeLegacyAgentConnectorResponse(response, runtime, responseKey, conversationId)
             return
+        }
+        if (response.success) {
+            supervisor.reconcileLateConnectorResponse(turnId, response.sourceMessageId)
         }
         if (turnId in supervisor.activeTaskIds()) {
             if (attempt < 100) {
@@ -1397,85 +1471,109 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     override fun onMessage(payload: String) {
         runOnUiThread {
-            val envelope = runCatching { JSONObject(payload) }.getOrNull()
-            envelope?.optString("desktop_id")?.takeIf(String::isNotBlank)?.let(::markDesktopDomainAvailableById)
-            if (envelope?.optString("type") == "delivery_ack") {
-                val acknowledgedId = envelope.optString("source_message_id")
-                    .ifBlank { envelope.optString("reply_to") }
-                    .toLongOrNull()
-                if (acknowledgedId != null) {
-                    runtimeForConnectorResponse(acknowledgedId, "")
-                        ?.recordConnectorTransportAccepted(acknowledgedId)
+            var handled = true
+            try {
+                val envelope = runCatching { JSONObject(payload) }.getOrNull()
+                envelope?.optString("desktop_id")?.takeIf(String::isNotBlank)?.let(::markDesktopDomainAvailableById)
+                if (envelope?.optString("type") == "delivery_ack") {
+                    val acknowledgedId = envelope.optString("source_message_id")
+                        .ifBlank { envelope.optString("reply_to") }
+                        .toLongOrNull()
+                    if (acknowledgedId != null) {
+                        runtimeForConnectorResponse(acknowledgedId, "")
+                            ?.recordConnectorTransportAccepted(acknowledgedId)
+                    }
                 }
-            }
-            if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
-            if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
-            if (handleAgentTaskEvent(envelope)) return@runOnUiThread
-            val msg = parseIncomingMessage(payload)
-            if (msg.content.isBlank()) return@runOnUiThread
-            markDesktopDomainAvailable(msg.contact.id)
-            if (msg.taskId.isNotBlank() && messages[msg.contact.id].orEmpty().any {
-                    !it.isMine && it.taskId == msg.taskId && it.content == msg.content
+                if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
+                if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
+                if (handleAgentTaskEvent(envelope)) return@runOnUiThread
+                val msg = parseIncomingMessage(payload)
+                if (msg.content.isBlank()) return@runOnUiThread
+                markDesktopDomainAvailable(msg.contact.id)
+                if (msg.taskId.isNotBlank() && messages[msg.contact.id].orEmpty().any {
+                        !it.isMine && it.taskId == msg.taskId && it.content == msg.content
+                    }
+                ) return@runOnUiThread
+                val sourceMessageId = envelope?.optString("source_message_id")?.toLongOrNull()
+                    ?: envelope?.optLong("source_message_id", 0L)
+                    ?: 0L
+                val responseConversationId = envelope?.optString("conversation_id").orEmpty()
+                val resolvedResponseConversationId = responseConversationId.takeIf(String::isNotBlank)
+                    ?.let(agentTranscriptStore::resolveMergedConversationId)
+                    .orEmpty()
+                val responseTurnId = envelope?.optString("turn_id").orEmpty()
+                val responseTaskId = envelope?.optString("task_id").orEmpty()
+                val supersededResponse = sourceMessageId > 0L && sourceMessageId in supersededConnectorSourceIds
+                val matchingAgentRuntime = if (sourceMessageId > 0L) {
+                    runtimeForConnectorResponse(
+                        sourceMessageId,
+                        msg.contact.id,
+                        responseConversationId,
+                        responseTurnId
+                    )
+                } else null
+                val nativeAgentResponse = supersededResponse || matchingAgentRuntime != null
+                if (publishAgentConnectorResponse(envelope, msg)) return@runOnUiThread
+                msg.deliveryTrace.add(newTraceEvent("phone_reply_received", msg.taskId))
+                msg.deliveryTrace.add(newTraceEvent("received", "MQTT inbound"))
+                msg.deliveryTrace.add(newTraceEvent("decrypted", "SignalASI Link"))
+                addMessage(msg, fromIncoming = true)
+                if (supersededResponse) supersededConnectorSourceIds.remove(sourceMessageId)
+                if (responseTaskId.isNotBlank()) {
+                    completedConnectorTaskIds.add(responseTaskId)
                 }
-            ) return@runOnUiThread
-            val sourceMessageId = envelope?.optString("source_message_id")?.toLongOrNull()
-                ?: envelope?.optLong("source_message_id", 0L)
-                ?: 0L
-            val responseConversationId = envelope?.optString("conversation_id").orEmpty()
-            val resolvedResponseConversationId = responseConversationId.takeIf(String::isNotBlank)
-                ?.let(agentTranscriptStore::resolveMergedConversationId)
-                .orEmpty()
-            val responseTurnId = envelope?.optString("turn_id").orEmpty()
-            val responseTaskId = envelope?.optString("task_id").orEmpty()
-            val supersededResponse = sourceMessageId > 0L && sourceMessageId in supersededConnectorSourceIds
-            val matchingAgentRuntime = if (sourceMessageId > 0L) {
-                runtimeForConnectorResponse(
-                    sourceMessageId,
-                    msg.contact.id,
-                    responseConversationId,
-                    responseTurnId
-                )
-            } else null
-            val nativeAgentResponse = supersededResponse || matchingAgentRuntime != null
-            if (publishAgentConnectorResponse(envelope, msg)) return@runOnUiThread
-            msg.deliveryTrace.add(newTraceEvent("phone_reply_received", msg.taskId))
-            msg.deliveryTrace.add(newTraceEvent("received", "MQTT inbound"))
-            msg.deliveryTrace.add(newTraceEvent("decrypted", "SignalASI Link"))
-            addMessage(msg, fromIncoming = true)
-            if (supersededResponse) supersededConnectorSourceIds.remove(sourceMessageId)
-            if (responseTaskId.isNotBlank()) {
-                completedConnectorTaskIds.add(responseTaskId)
-            }
-            if (!nativeAgentResponse && resolvedResponseConversationId.isNotBlank()) {
-                val directResponseTurnId = responseTurnId.ifBlank {
-                    latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
-                }
-                agentTranscriptStore.upsert(
-                    AgentTranscriptRole.ASSISTANT,
-                    msg.content,
-                    dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                if (!nativeAgentResponse && resolvedResponseConversationId.isNotBlank()) {
+                    val directResponseTurnId = responseTurnId.ifBlank {
+                        latestUnansweredAgentTurnId(resolvedResponseConversationId).orEmpty()
+                    }
+                    agentTranscriptStore.upsert(
+                        AgentTranscriptRole.ASSISTANT,
+                        msg.content,
+                        dedupeKey = AgentFinalResponseIdentity.dedupeKey(
+                            turnId = directResponseTurnId,
+                            sourceMessageId = sourceMessageId,
+                            taskId = responseTaskId
+                        ),
+                        conversationId = resolvedResponseConversationId,
                         turnId = directResponseTurnId,
-                        sourceMessageId = sourceMessageId,
-                        taskId = responseTaskId
-                    ),
-                    conversationId = resolvedResponseConversationId,
-                    turnId = directResponseTurnId,
-                    taskId = responseTaskId,
-                    richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
-                )
-                if (resolvedResponseConversationId == agentTranscriptStore.activeConversation().id) {
-                    refreshAgentTranscriptWindow(resolvedResponseConversationId)
+                        taskId = responseTaskId,
+                        richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
+                    )
+                    if (resolvedResponseConversationId == agentTranscriptStore.activeConversation().id) {
+                        refreshAgentTranscriptWindow(resolvedResponseConversationId)
+                    }
                 }
-            }
-            if (!nativeAgentResponse) {
-                showVoiceAssistantReply(msg)
-                maybeSpeakIncomingReply(msg)
+                if (!nativeAgentResponse) {
+                    showVoiceAssistantReply(msg)
+                    maybeSpeakIncomingReply(msg)
+                }
+            } catch (error: Throwable) {
+                handled = false
+                Log.e("SignalASILink", "Deferred inbound message after UI handling failure", error)
+            } finally {
+                if (handled) SignalASIMqttClient.completeIncomingDelivery(this, payload)
             }
         }
     }
 
     private fun handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         if (envelope?.optString("type") != "agent_task_event") return false
+        val perfStartedAt = SystemClock.elapsedRealtime()
+        var perfCheckpointAt = perfStartedAt
+        fun traceTaskEvent(stage: String) {
+            if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+            val now = SystemClock.elapsedRealtime()
+            val stepMillis = now - perfCheckpointAt
+            if (stepMillis >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS) {
+                Log.d(
+                    "SignalASIPerf",
+                    "task_event stage=$stage status=${envelope.optString("task_status")} " +
+                        "task=${envelope.optString("task_id").take(8)} step_ms=$stepMillis " +
+                        "total_ms=${now - perfStartedAt}"
+                )
+            }
+            perfCheckpointAt = now
+        }
         val sourceMessageId = envelope.optString("source_message_id").toLongOrNull()
             ?: envelope.optLong("source_message_id", 0L).takeIf { it > 0L }
             ?: return true
@@ -1530,6 +1628,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ChatHistoryStore.applyAgentTaskEvent(this, envelope)
             reloadChatHistoryIfChanged(force = true)
         }
+        traceTaskEvent("chat_history")
         val envelopeConversationId = envelope.optString("conversation_id")
         val envelopeTurnId = envelope.optString("turn_id")
         val taskRuntime = runtimeForConnectorResponse(
@@ -1554,6 +1653,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         } else {
             taskStatusState
         }
+        traceTaskEvent("runtime_status")
         if (isSteeredCompletion) {
             activeAgentTasks.remove(sourceMessageId)
             if (taskId.isNotBlank()) completedConnectorTaskIds.add(taskId)
@@ -1602,6 +1702,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             taskId = taskId,
             targetName = targetName
         )
+        traceTaskEvent("approval")
         envelope.optJSONObject("progress_event")?.let { progress ->
             val eventId = progress.optString("event_id").trim()
             val progressText = connectorProgressText(progress)
@@ -1628,6 +1729,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 )
             }
         }
+        traceTaskEvent("progress_entry")
         // A task can gain a Codex turn id after it starts. Keep one stable key so
         // accepted, running steps, and completion update one process row in place.
         val connectorProcessKey = "connector-task:$taskId"
@@ -1650,52 +1752,30 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             taskId = taskId,
             targetName = targetName
         )
+        traceTaskEvent("remote_events")
         if (taskId.isNotBlank()) {
-            val taskStore = SQLiteAgentTaskStore(this)
-            val existingTask = taskStore.find(taskId)
-            val outputFiles = buildList {
-                val files = envelope.optJSONArray("output_files") ?: org.json.JSONArray()
-                for (index in 0 until files.length()) {
-                    val item = files.optJSONObject(index) ?: continue
-                    item.optString("relative_path").takeIf { it.isNotBlank() }?.let(::add)
-                }
-            }
-            val sourceGoal = agentTranscriptStore.list(conversationId)
-                .lastOrNull { it.turnId == turnId && it.role == AgentTranscriptRole.USER }
-                ?.text.orEmpty()
-            val eventTime = listTime(envelope.optLong("updated_at", System.currentTimeMillis()))
-            val eventLine = "$eventTime · $targetName · $statusLabel"
-            val executionLog = (existingTask?.executionLog.orEmpty() + eventLine)
-                .distinct()
-            taskStore.upsert(AgentTaskRecord(
+            persistRemoteAgentTaskAsync(
+                envelope = JSONObject(envelope.toString()),
+                conversationId = conversationId,
+                turnId = turnId,
                 taskId = taskId,
-                sessionId = conversationId,
-                goal = existingTask?.goal ?: sourceGoal.ifBlank { targetName },
-                phase = when (status) {
-                    "completed" -> AgentPhase.COMPLETED
-                    "failed", "timed_out", "not_found" -> AgentPhase.FAILED
-                    "cancelled" -> AgentPhase.CANCELLED
-                    "waiting_input", "waiting_approval" -> AgentPhase.PAUSED
-                    else -> AgentPhase.EXECUTING
-                },
-                routeKind = existingTask?.routeKind ?: AgentRouteKind.DESKTOP_AGENT,
-                targetTitle = targetName,
-                risk = existingTask?.risk ?: AgentRisk.LOW,
-                blocked = status == "waiting_approval",
-                result = envelope.optString("error").ifBlank { existingTask?.result.orEmpty() },
-                verification = existingTask?.verification.orEmpty(),
-                outputFiles = if (outputFiles.isNotEmpty()) outputFiles else existingTask?.outputFiles.orEmpty(),
-                executionLog = executionLog,
-                createdAtMillis = existingTask?.createdAtMillis
-                    ?: envelope.optLong("created_at", System.currentTimeMillis()),
-                updatedAtMillis = envelope.optLong("updated_at", System.currentTimeMillis())
-            ))
+                targetName = targetName,
+                status = status,
+                statusLabel = statusLabel
+            )
         }
+        traceTaskEvent("task_store")
         if (conversationId == agentTranscriptStore.activeConversation().id) {
             refreshAgentTranscriptWindow(conversationId)
         }
+        traceTaskEvent("transcript_refresh")
         if (nativeState != null) {
-            renderAgentState(nativeState, conversationId, turnId)
+            renderAgentState(
+                nativeState,
+                conversationId,
+                turnId,
+                syncTranscript = false
+            )
             when (status) {
                 "cancelled" -> {
                     activeAgentTasks.remove(sourceMessageId)
@@ -1717,7 +1797,65 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 )
             }
         }
+        traceTaskEvent("render_state")
         return true
+    }
+
+    private fun persistRemoteAgentTaskAsync(
+        envelope: JSONObject,
+        conversationId: String,
+        turnId: String,
+        taskId: String,
+        targetName: String,
+        status: String,
+        statusLabel: String
+    ) {
+        agentTaskPersistenceExecutor.execute {
+            val taskStore = SQLiteAgentTaskStore(applicationContext)
+            val existingTask = taskStore.find(taskId)
+            val outputFiles = buildList {
+                val files = envelope.optJSONArray("output_files") ?: org.json.JSONArray()
+                for (index in 0 until files.length()) {
+                    val item = files.optJSONObject(index) ?: continue
+                    item.optString("relative_path").takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+            val sourceGoal = existingTask?.goal.orEmpty().ifBlank {
+                agentTurnGoals[turnId].orEmpty()
+            }
+            val eventTime = listTime(envelope.optLong("updated_at", System.currentTimeMillis()))
+            val eventLine = "$eventTime · $targetName · $statusLabel"
+            val executionLog = (existingTask?.executionLog.orEmpty() + eventLine).distinct()
+            taskStore.upsert(
+                AgentTaskRecord(
+                    taskId = taskId,
+                    sessionId = conversationId,
+                    goal = existingTask?.goal ?: sourceGoal.ifBlank { targetName },
+                    phase = when (status) {
+                        "completed" -> AgentPhase.COMPLETED
+                        "failed", "timed_out", "not_found" -> AgentPhase.FAILED
+                        "cancelled" -> AgentPhase.CANCELLED
+                        "waiting_input", "waiting_approval" -> AgentPhase.PAUSED
+                        else -> AgentPhase.EXECUTING
+                    },
+                    routeKind = existingTask?.routeKind ?: AgentRouteKind.DESKTOP_AGENT,
+                    targetTitle = targetName,
+                    risk = existingTask?.risk ?: AgentRisk.LOW,
+                    blocked = status == "waiting_approval",
+                    result = envelope.optString("error").ifBlank { existingTask?.result.orEmpty() },
+                    verification = existingTask?.verification.orEmpty(),
+                    outputFiles = if (outputFiles.isNotEmpty()) {
+                        outputFiles
+                    } else {
+                        existingTask?.outputFiles.orEmpty()
+                    },
+                    executionLog = executionLog,
+                    createdAtMillis = existingTask?.createdAtMillis
+                        ?: envelope.optLong("created_at", System.currentTimeMillis()),
+                    updatedAtMillis = envelope.optLong("updated_at", System.currentTimeMillis())
+                )
+            )
+        }
     }
 
     private fun syncRemoteAgentApproval(
@@ -1729,11 +1867,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     ) {
         val request = AgentRemoteApprovalRequest.fromTaskEvent(envelope)
         if (request == null) {
-            if (taskId.isNotBlank() && envelope.optString("task_status") != "waiting_approval") {
+            if (taskId in remoteAgentApprovalTaskIds &&
+                envelope.optString("task_status") != "waiting_approval"
+            ) {
                 removeRemoteAgentApprovals(taskId)
             }
             return
         }
+        remoteAgentApprovalTaskIds.add(taskId)
         val richOutput = AgentRichContentCodec.encode(
             listOf(
                 AgentRichBlock(
@@ -1851,6 +1992,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 },
                 Toast.LENGTH_SHORT
             ).show()
+            remoteAgentApprovalTaskIds.remove(taskId)
         } else {
             Toast.makeText(
                 this,
@@ -1881,6 +2023,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun removeRemoteAgentApprovals(taskId: String) {
+        if (!remoteAgentApprovalTaskIds.remove(taskId)) return
         val entries = agentTranscriptStore.taskEntries(taskId).filter { entry ->
             isRemoteAgentApprovalEntry(entry)
         }
@@ -1918,6 +2061,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             } else {
                 kind.ifBlank { "TOOL" }.uppercase(Locale.ROOT)
             }
+            val eventKey = "$taskId:$contentKind:$eventId"
+            if (remoteTaskEventFingerprints.put(eventKey, rendered) == rendered) continue
             agentTranscriptStore.upsert(
                 role = AgentTranscriptRole.PROCESS,
                 text = rendered,
@@ -1930,6 +2075,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 turnId = turnId,
                 taskId = taskId
             )
+        }
+        if (remoteTaskEventFingerprints.size > 10_000) {
+            remoteTaskEventFingerprints.keys.take(2_000).forEach(remoteTaskEventFingerprints::remove)
         }
     }
 
@@ -2088,29 +2236,39 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun updateAgentRegistryTaskHeartbeat(contactId: String, taskStatus: String) {
         if (contactId.isBlank() || !::encryptedAgentRegistry.isInitialized) return
-        requestAgentRegistrySnapshotSync(force = true)
-        val registrations = encryptedAgentRegistry.list()
-        val registration = registrations.firstOrNull { it.agentId == contactId }
-            ?: registrations.firstOrNull { it.deviceId == contactId }
-            ?: registrations.firstOrNull { it.agentId.endsWith(":$contactId") || contactId.endsWith(":${it.agentId}") }
-            ?: return
-        val endpointStatus = when (taskStatus) {
-            "accepted", "queued", "starting", "recovering", "running", "waiting_input", "waiting_approval" -> AgentEndpointStatus.BUSY
-            "timed_out" -> AgentEndpointStatus.DEGRADED
-            "completed", "failed", "cancelled", "not_found" -> AgentEndpointStatus.IDLE
-            else -> registration.status
+        runCatching {
+            agentRegistryHeartbeatExecutor.execute {
+                val registrations = encryptedAgentRegistry.list()
+                val registration = registrations.firstOrNull { it.agentId == contactId }
+                    ?: registrations.firstOrNull { it.deviceId == contactId }
+                    ?: registrations.firstOrNull {
+                        it.agentId.endsWith(":$contactId") || contactId.endsWith(":${it.agentId}")
+                    }
+                    ?: return@execute
+                val endpointStatus = when (taskStatus) {
+                    "accepted", "queued", "starting", "recovering", "running",
+                    "waiting_input", "waiting_approval" -> AgentEndpointStatus.BUSY
+                    "timed_out" -> AgentEndpointStatus.DEGRADED
+                    "completed", "failed", "cancelled", "not_found" -> AgentEndpointStatus.IDLE
+                    else -> registration.status
+                }
+                val activeRuns = if (endpointStatus == AgentEndpointStatus.BUSY) {
+                    registration.activeRuns.coerceAtLeast(1)
+                } else {
+                    0
+                }
+                encryptedAgentRegistry.heartbeat(
+                    agentId = registration.agentId,
+                    status = endpointStatus,
+                    activeRuns = activeRuns,
+                    timestampMillis = System.currentTimeMillis()
+                )
+            }
+        }.onFailure {
+            if (!isFinishing && !isDestroyed) {
+                Log.w("SignalASIAgent", "Agent registry heartbeat was not scheduled", it)
+            }
         }
-        val activeRuns = if (endpointStatus == AgentEndpointStatus.BUSY) {
-            registration.activeRuns.coerceAtLeast(1)
-        } else {
-            0
-        }
-        encryptedAgentRegistry.heartbeat(
-            agentId = registration.agentId,
-            status = endpointStatus,
-            activeRuns = activeRuns,
-            timestampMillis = System.currentTimeMillis()
-        )
     }
 
     private fun handleAgentTaskLivenessSignal(signal: AgentTaskLivenessSignal) {
@@ -2594,6 +2752,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             })
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
+                    when (newState) {
+                        RecyclerView.SCROLL_STATE_DRAGGING -> agentTranscriptUserScrollActive = true
+                        RecyclerView.SCROLL_STATE_IDLE -> agentTranscriptUserScrollActive = false
+                    }
+                }
+
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     val itemCount = agentTranscriptAdapter.itemCount
                     val lastPosition = agentOutputLayout.findLastVisibleItemPosition()
@@ -2603,7 +2768,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     } else {
                         Int.MAX_VALUE
                     }
-                    agentTranscriptAutoFollow = itemCount == 0 || remaining <= dp(56)
+                    agentTranscriptAutoFollow = AgentTranscriptScrollPolicy.nextAutoFollow(
+                        current = agentTranscriptAutoFollow,
+                        userScrollActive = agentTranscriptUserScrollActive,
+                        itemCount = itemCount,
+                        lastVisiblePosition = lastPosition,
+                        remainingPx = remaining,
+                        thresholdPx = dp(56)
+                    )
                     if (AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(
                             dy = dy,
                             firstVisiblePosition = agentOutputLayout.findFirstVisibleItemPosition(),
@@ -2746,6 +2918,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun refreshAgentTranscriptWindow(
         conversationId: String = agentTranscriptStore.activeConversation().id
     ) {
+        val refreshStartedAt = SystemClock.elapsedRealtime()
+        var loadedEntries = 0
         if (agentTranscriptWindow.conversationId != conversationId ||
             agentTranscriptWindow.newestSequence == null
         ) {
@@ -2754,6 +2928,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
             )
             agentTranscriptWindow.replace(conversationId, page)
+            loadedEntries += page.entries.size
             agentTranscriptAllLoaded = !page.hasMore
         } else {
             var afterSequence = checkNotNull(agentTranscriptWindow.newestSequence)
@@ -2764,11 +2939,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     afterSequenceExclusive = afterSequence
                 )
                 agentTranscriptWindow.appendNewer(conversationId, delta)
+                loadedEntries += delta.entries.size
                 afterSequence = delta.newestSequence ?: afterSequence
                 hasMore = delta.hasMore
             } while (hasMore)
         }
         renderAgentTranscript(agentTranscriptWindow.entries)
+        val elapsed = SystemClock.elapsedRealtime() - refreshStartedAt
+        if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS) {
+            Log.d(
+                "SignalASIPerf",
+                "transcript_refresh conversation=${conversationId.take(8)} " +
+                    "loaded=$loadedEntries window=${agentTranscriptWindow.entries.size} elapsed_ms=$elapsed"
+            )
+        }
     }
 
     private fun publishRemoteAgentTaskCancellation(state: AgentUiState): Boolean? {
@@ -2878,12 +3062,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             addAll(provisionalAgentTasks)
             add(mobileNativeAgent)
         }.distinct()
+        val linkedTurnId = entry.turnId.ifBlank { entry.taskId }
+        if (linkedTurnId.isNotBlank()) {
+            candidates.firstOrNull { runtime ->
+                agentRuntimeTurnIds[runtime] == linkedTurnId
+            }?.let { return it }
+        }
         return candidates.firstOrNull { runtime ->
-            val turnMatches = entry.turnId.isNotBlank() &&
-                agentRuntimeTurnIds[runtime] == entry.turnId
             val taskMatches = entry.taskId.isNotBlank() &&
                 runtime.snapshot().sessionId == entry.taskId
-            turnMatches || taskMatches
+            taskMatches
         }
     }
 
@@ -3022,29 +3210,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val conversation = agentTranscriptStore.activeConversation()
-        AgentLearningAnalyzer.correctionFeedback(goal)?.let { feedback ->
-            agentRunRecorder.addFeedback(conversation.id, feedback)?.let { correctedRun ->
-                agentLearningEngine.observeFeedback(correctedRun, agentRunRecorder.recentRuns())
-            }
-        }
         val turnId = UUID.randomUUID().toString()
+        agentTranscriptAutoFollow = true
         val attachmentLabel = when (attachments.size) {
             0 -> ""
             1 -> "[${attachments.first().displayName}]"
             else -> getString(R.string.agent_attachment_count, attachments.size)
         }
-        agentTranscriptStore.append(
-            AgentTranscriptRole.USER,
-            goal.ifBlank { attachmentLabel },
-            conversationId = conversation.id,
-            turnId = turnId,
-            taskId = turnId,
-            richOutputJson = AgentRichContentCodec.encode(attachments.map(AgentInputAttachment::richBlock))
-        )
-        refreshGlobalAgentCognition()
         AgentTurnAttachmentRegistry.put(turnId, attachments)
-        refreshAgentConversationHeader()
-        refreshAgentTranscriptWindow()
         agentGoalInput.setText("")
         agentInputAttachments.clear()
         renderAgentInputAttachments()
@@ -3052,10 +3225,53 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         getSystemService(InputMethodManager::class.java)
             .hideSoftInputFromWindow(agentGoalInput.windowToken, 0)
         val baseGoal = goal.ifBlank { getString(R.string.agent_attachment_default_goal) }
-        if (attachments.isEmpty()) {
-            continueAgentGoalSubmission(baseGoal, conversation.id, turnId)
-            return
+        agentTurnGoals[turnId] = goal.ifBlank { attachmentLabel }.ifBlank { baseGoal }
+        if (agentTurnGoals.size > 2_000) {
+            agentTurnGoals.keys.take(400).forEach(agentTurnGoals::remove)
         }
+        val submittedText = goal.ifBlank { attachmentLabel }
+        val richOutputJson = AgentRichContentCodec.encode(attachments.map(AgentInputAttachment::richBlock))
+        agentSubmissionExecutor.execute {
+            AgentLearningAnalyzer.correctionFeedback(goal)?.let { feedback ->
+                agentRunRecorder.addFeedback(conversation.id, feedback)?.let { correctedRun ->
+                    agentLearningEngine.observeFeedback(correctedRun, agentRunRecorder.recentRuns())
+                }
+            }
+            agentTranscriptStore.append(
+                AgentTranscriptRole.USER,
+                submittedText,
+                conversationId = conversation.id,
+                turnId = turnId,
+                taskId = turnId,
+                richOutputJson = richOutputJson
+            )
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                refreshGlobalAgentCognition()
+                refreshAgentConversationHeader()
+                refreshAgentTranscriptWindow(conversation.id)
+                if (attachments.isEmpty()) {
+                    continueAgentGoalSubmission(baseGoal, conversation.id, turnId)
+                } else {
+                    stageAgentGoalAttachments(
+                        goal = goal,
+                        baseGoal = baseGoal,
+                        conversation = conversation,
+                        turnId = turnId,
+                        attachments = attachments
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stageAgentGoalAttachments(
+        goal: String,
+        baseGoal: String,
+        conversation: AgentConversation,
+        turnId: String,
+        attachments: List<AgentInputAttachment>
+    ) {
         thread(name = "signalasi-agent-attachments") {
             val staged = runCatching {
                 AgentAttachmentWorkspaceStager.stage(
@@ -3133,91 +3349,106 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         forcedAction: AgentAction? = null
     ) {
         val routingStartedAt = SystemClock.elapsedRealtime()
-        val localConversationContext = agentTranscriptStore.context(
-            conversationId = conversationId,
-            excludeTurnId = turnId
-        )
-        AgentFastLocalResponse.reply(goal, localConversationContext)?.let { response ->
-            agentTranscriptStore.append(
-                AgentTranscriptRole.ASSISTANT,
-                response,
-                dedupeKey = "fast-local:$turnId",
-                conversationId = conversationId,
-                turnId = turnId,
-                taskId = turnId
-            )
-            Log.d("SignalASIAgent", "fast_local_completed turn=${turnId.take(8)}")
-            refreshAgentTranscriptWindow(conversationId)
-            return
-        }
-        val conversationContext = globalSuperAgentRuntime.augmentContext(
-            localConversationContext,
-            goal
-        )
         if (handleAgentSkillCommand(goal, conversationId, turnId)) return
-        val skillMatch = agentSkillMatcher.match(goal)
-        val deterministicAction = forcedAction ?: deterministicSystemActionFor(goal, conversationContext)
-        Log.d(
-            "SignalASIAgent",
-            "route_resolved turn=${turnId.take(8)} tool=${deterministicAction?.parameters?.get("tool_id").orEmpty()} " +
-                "action=${deterministicAction?.id.orEmpty()} skill=${skillMatch != null} " +
-                "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
-        )
-        val run = agentRunRecorder.begin(
-            conversationId = conversationId,
-            request = goal,
-            activeSkillId = if (deterministicAction == null) skillMatch?.installation?.id.orEmpty() else ""
-        )
-        val selectedAgentId = (forcedAction ?: deterministicAction)
-            ?.parameters?.get("connector_id")
-            .orEmpty()
-            .ifBlank { "signalasi-mobile" }
-        appendRunControlEvent(
-            run = run,
-            messageId = turnId,
-            taskId = turnId,
-            agentId = selectedAgentId,
-            type = AgentRunControlEventType.RUN_CREATED
-        )
-        appendRunControlEvent(
-            run = run,
-            messageId = turnId,
-            taskId = turnId,
-            agentId = selectedAgentId,
-            type = AgentRunControlEventType.RUN_STARTED
-        )
-        Log.d(
-            "SignalASIAgent",
-            "run_recorded turn=${turnId.take(8)} elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
-        )
-        agentRunIdsByTurn[turnId] = run.runId
-        if (forcedAction != null) {
-            Log.d("SignalASIAgent", "route_forced_connector turn=${turnId.take(8)} action=${forcedAction.id}")
-            executeConcurrentAgentGoal(
-                goal,
-                conversationContext,
-                conversationId,
-                turnId,
-                forcedAction
+        agentRoutingExecutor.execute {
+            val localConversationContext = agentTranscriptStore.context(
+                conversationId = conversationId,
+                excludeTurnId = turnId
             )
-        } else if (deterministicAction != null) {
-            if (AgentConfirmationPolicy.tier(deterministicAction) == AgentConfirmationTier.DIRECT) {
-                Log.d("SignalASIAgent", "route_direct turn=${turnId.take(8)} action=${deterministicAction.id}")
-                executeDirectSystemAction(deterministicAction, conversationId, turnId)
-            } else {
-                Log.d("SignalASIAgent", "route_protected turn=${turnId.take(8)} action=${deterministicAction.id}")
-                executeConcurrentAgentGoal(
-                    goal,
-                    conversationContext,
-                    conversationId,
-                    turnId,
-                    deterministicAction
+            AgentFastLocalResponse.reply(goal, localConversationContext)?.let { response ->
+                agentTranscriptStore.append(
+                    AgentTranscriptRole.ASSISTANT,
+                    response,
+                    dedupeKey = "fast-local:$turnId",
+                    conversationId = conversationId,
+                    turnId = turnId,
+                    taskId = turnId
                 )
+                Log.d("SignalASIAgent", "fast_local_completed turn=${turnId.take(8)}")
+                runOnUiThread { refreshAgentTranscriptWindow(conversationId) }
+                return@execute
             }
-        } else if (skillMatch != null && executeMatchedSkill(skillMatch, conversationId, turnId, goal, conversationContext)) {
-            return
-        } else {
-            executeConcurrentAgentGoal(goal, conversationContext, conversationId, turnId)
+            val conversationContext = globalSuperAgentRuntime.augmentContext(
+                localConversationContext,
+                goal
+            )
+            val skillMatch = agentSkillMatcher.match(goal)
+            val deterministicAction = forcedAction ?: deterministicSystemActionFor(goal, conversationContext)
+            Log.d(
+                "SignalASIAgent",
+                "route_resolved turn=${turnId.take(8)} tool=${deterministicAction?.parameters?.get("tool_id").orEmpty()} " +
+                    "action=${deterministicAction?.id.orEmpty()} skill=${skillMatch != null} " +
+                    "elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
+            )
+            val run = agentRunRecorder.begin(
+                conversationId = conversationId,
+                request = goal,
+                activeSkillId = if (deterministicAction == null) skillMatch?.installation?.id.orEmpty() else ""
+            )
+            val selectedAgentId = (forcedAction ?: deterministicAction)
+                ?.parameters?.get("connector_id")
+                .orEmpty()
+                .ifBlank { "signalasi-mobile" }
+            appendRunControlEvent(
+                run = run,
+                messageId = turnId,
+                taskId = turnId,
+                agentId = selectedAgentId,
+                type = AgentRunControlEventType.RUN_CREATED
+            )
+            appendRunControlEvent(
+                run = run,
+                messageId = turnId,
+                taskId = turnId,
+                agentId = selectedAgentId,
+                type = AgentRunControlEventType.RUN_STARTED
+            )
+            Log.d(
+                "SignalASIAgent",
+                "run_recorded turn=${turnId.take(8)} elapsed_ms=${SystemClock.elapsedRealtime() - routingStartedAt}"
+            )
+            agentRunIdsByTurn[turnId] = run.runId
+            runOnUiThread {
+                when {
+                    forcedAction != null -> {
+                        Log.d(
+                            "SignalASIAgent",
+                            "route_forced_connector turn=${turnId.take(8)} action=${forcedAction.id}"
+                        )
+                        executeConcurrentAgentGoal(
+                            goal,
+                            conversationContext,
+                            conversationId,
+                            turnId,
+                            forcedAction
+                        )
+                    }
+                    deterministicAction != null &&
+                        AgentConfirmationPolicy.tier(deterministicAction) == AgentConfirmationTier.DIRECT -> {
+                        Log.d(
+                            "SignalASIAgent",
+                            "route_direct turn=${turnId.take(8)} action=${deterministicAction.id}"
+                        )
+                        executeDirectSystemAction(deterministicAction, conversationId, turnId)
+                    }
+                    deterministicAction != null -> {
+                        Log.d(
+                            "SignalASIAgent",
+                            "route_protected turn=${turnId.take(8)} action=${deterministicAction.id}"
+                        )
+                        executeConcurrentAgentGoal(
+                            goal,
+                            conversationContext,
+                            conversationId,
+                            turnId,
+                            deterministicAction
+                        )
+                    }
+                    skillMatch != null &&
+                        executeMatchedSkill(skillMatch, conversationId, turnId, goal, conversationContext) -> Unit
+                    else -> executeConcurrentAgentGoal(goal, conversationContext, conversationId, turnId)
+                }
+            }
         }
     }
 
@@ -10189,7 +10420,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val toolCallId = action?.takeIf {
             it.kind == AgentActionKind.CALL_NATIVE_TOOL || it.kind == AgentActionKind.CALL_CONNECTOR
         }?.id.orEmpty()
-        val latest = agentRunEventStore.events(runId).lastOrNull()
+        val latest = agentRunEventStore.latestEvent(runId)
         if (latest?.type == eventType && latest.stepId == stepId && latest.toolCallId == toolCallId) return
         val agentId = state.plan?.route?.targetId.orEmpty()
             .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() }
@@ -10245,7 +10476,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 artifactIds = action.outputSourceIds(),
                 checkpoint = mapOf(
                     "source_message_id" to sourceMessageId,
-                    "last_event_sequence" to (agentRunEventStore.events(run.runId).lastOrNull()?.sequence ?: 0L)
+                    "last_event_sequence" to (agentRunEventStore.latestEvent(run.runId)?.sequence ?: 0L)
                 ),
                 context = mapOf(
                     "turn_id" to turnId,
@@ -10340,7 +10571,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 taskId = state.sessionId
             )
         }
-        state.pendingAction?.takeIf { it.kind != AgentActionKind.CALL_CONNECTOR }?.let { pending ->
+        state.pendingAction?.let { pending ->
             val description = pending.description.trim()
             val processDescription = localizedAgentProcessText(description)
             if (state.phase == AgentPhase.WAITING_CONFIRMATION &&
@@ -10497,14 +10728,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
 
         override fun onBindViewHolder(holder: AgentTranscriptViewHolder, position: Int) {
+            val bindStartedAt = SystemClock.elapsedRealtime()
+            val entry = entries[position]
             holder.container.removeAllViews()
             holder.container.addView(
-                agentTranscriptRow(entries[position]),
+                agentTranscriptRow(entry),
                 FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
+            val elapsed = SystemClock.elapsedRealtime() - bindStartedAt
+            if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS) {
+                Log.d(
+                    "SignalASIPerf",
+                    "transcript_bind role=${entry.role} id=${entry.id.take(12)} " +
+                        "rich=${entry.richOutputJson.length} elapsed_ms=$elapsed"
+                )
+            }
         }
 
         override fun onViewRecycled(holder: AgentTranscriptViewHolder) {
@@ -10574,6 +10815,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
+        val renderStartedAt = SystemClock.elapsedRealtime()
         val filteredEntries = entries.filterNot { entry ->
             val staleApproval = isLocalAgentApprovalEntry(entry) &&
                 (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
@@ -10624,6 +10866,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         renderedAgentTranscriptSignatures.keys.retainAll(incomingIds.toSet())
         if (!changed) return
+        val elapsed = SystemClock.elapsedRealtime() - renderStartedAt
+        if (elapsed >= AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS || reset) {
+            Log.d(
+                "SignalASIPerf",
+                "transcript_render source=${entries.size} visible=${visibleEntries.size} " +
+                    "reset=$reset replacements=${diff.replacementIndices.size} " +
+                    "appended=${visibleEntries.size - diff.appendFromIndex} elapsed_ms=$elapsed"
+            )
+        }
         agentOutputList.post {
             if (shouldFollow) {
                 scrollAgentTranscriptToBottom()
@@ -10695,7 +10946,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 onAction = { action -> handleAgentRichAction(entry, action) },
                 onFormSubmit = { block, values -> handleAgentRichForm(entry, block, values) }
             ).create(entry.copy(
-                text = CodexStyleResponsePolicy.sanitizeAssistantText(entry.text),
+                text = CodexStyleResponsePolicy.sanitizeAssistantText(
+                    localizedAgentAssistantText(entry.text)
+                ),
                 richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(entry.richOutputJson)
             ))
             AgentTranscriptRole.PROCESS -> agentProcessTranscriptRow(entry)
@@ -10750,7 +11003,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .sortedBy(AgentTranscriptEntry::timestampMillis)
             .distinctBy { it.text.trim() }
             .takeLast(MAX_VISIBLE_AGENT_PROCESS_STEPS)
-        val processSegments = AgentTranscriptPresentationPolicy.processSegments(
+        val processSegments = AgentTranscriptPresentationPolicy.narrationSegments(
             processEntries.ifEmpty { listOf(entry) }
         )
         val hasProcessDetails = processSegments.isNotEmpty()
@@ -10767,8 +11020,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             emptyList()
         } else {
             agentTimelineRuntime(entry)
-                ?.snapshot()
-                ?.phase
+                ?.phaseSnapshot()
                 ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
                 .orEmpty()
         }
@@ -10874,17 +11126,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             })
             if (expanded) {
-                processSegments.forEachIndexed { index, segment ->
-                    when (segment.kind) {
-                        AgentTranscriptPresentationPolicy.ProcessContentKind.NARRATION ->
-                            segment.entries.forEach { narration ->
-                                addView(agentProcessNarrationRow(narration))
-                            }
-                        AgentTranscriptPresentationPolicy.ProcessContentKind.TOOL_ACTIVITY -> {
-                            val segmentKey =
-                                "$groupKey:tools:$index:${segment.entries.firstOrNull()?.id.orEmpty()}"
-                            addView(agentToolSegmentRow(segmentKey, segment.entries))
-                        }
+                processSegments.forEach { segment ->
+                    segment.entries.forEach { narration ->
+                        addView(agentProcessNarrationRow(narration))
                     }
                 }
             }
@@ -10905,103 +11149,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         setLineSpacing(dp(4).toFloat(), 1f)
         setPadding(0, dp(8), 0, dp(8))
         attachAgentTranscriptActions(this, entry)
-    }
-
-    private fun agentToolSegmentRow(
-        segmentKey: String,
-        entries: List<AgentTranscriptEntry>
-    ): View = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        val detailsExpanded = segmentKey in expandedAgentToolSegments
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(31)
-            isClickable = true
-            isFocusable = true
-            addView(ImageView(this@MainActivity).apply {
-                setImageResource(agentProcessIconResource(entries.firstOrNull()?.text.orEmpty()))
-                imageTintList = android.content.res.ColorStateList.valueOf(
-                    getColorCompat(R.color.text_secondary)
-                )
-                contentDescription = null
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) })
-            addView(TextView(this@MainActivity).apply {
-                text = if (entries.size == 1) {
-                    localizedAgentProcessText(entries.single().text)
-                } else {
-                    getString(R.string.agent_trace_tool_group_count, entries.size)
-                }
-                setTextColor(getColorCompat(R.color.text_secondary))
-                textSize = 14f
-                includeFontPadding = false
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(ImageView(this@MainActivity).apply {
-                setImageResource(R.drawable.ic_chevron_down)
-                imageTintList = android.content.res.ColorStateList.valueOf(
-                    getColorCompat(R.color.text_secondary)
-                )
-                rotation = if (detailsExpanded) 180f else 0f
-                contentDescription = getString(R.string.agent_trace_tool_group_details)
-            }, LinearLayout.LayoutParams(dp(15), dp(15)).apply { marginStart = dp(4) })
-            setOnClickListener {
-                if (detailsExpanded) expandedAgentToolSegments.remove(segmentKey)
-                else expandedAgentToolSegments.add(segmentKey)
-                clearAgentTranscriptRows()
-                refreshAgentTranscriptWindow()
-            }
-        })
-        if (detailsExpanded) {
-            val commandEntries = entries.filter { detail ->
-                detail.dedupeKey.contains(":TOOL_STARTED:") &&
-                    (detail.text.startsWith("Phone Linux:", true) || detail.text.startsWith("\u672c\u673a Linux:", true))
-            }
-            (commandEntries.ifEmpty { entries }).forEach { detail ->
-                addView(agentProcessStepRow(detail), LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { marginStart = dp(24) })
-            }
-        }
-    }
-
-    private fun agentProcessStepRow(entry: AgentTranscriptEntry): View = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dp(31)
-        addView(ImageView(this@MainActivity).apply {
-            setImageResource(agentProcessIconResource(entry.text))
-            imageTintList = android.content.res.ColorStateList.valueOf(
-                getColorCompat(R.color.text_secondary)
-            )
-            contentDescription = null
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dp(16), dp(16)).apply {
-            marginEnd = dp(8)
-        })
-        addView(TextView(this@MainActivity).apply {
-            text = localizedAgentProcessText(entry.text)
-            setTextColor(getColorCompat(R.color.text_secondary))
-            textSize = 13f
-            includeFontPadding = false
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            attachAgentTranscriptActions(this, entry)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-    }
-
-    private fun agentProcessIconResource(value: String): Int = when (
-        AgentTranscriptPresentationPolicy.processVisualKind(value)
-    ) {
-        AgentTranscriptPresentationPolicy.ProcessVisualKind.ANALYSIS -> R.drawable.ic_process_analysis
-        AgentTranscriptPresentationPolicy.ProcessVisualKind.COMMAND -> R.drawable.ic_process_terminal
-        AgentTranscriptPresentationPolicy.ProcessVisualKind.FILE -> R.drawable.ic_process_file
-        AgentTranscriptPresentationPolicy.ProcessVisualKind.IMAGE -> R.drawable.ic_process_image
-        AgentTranscriptPresentationPolicy.ProcessVisualKind.NETWORK -> R.drawable.ic_process_network
-        AgentTranscriptPresentationPolicy.ProcessVisualKind.GENERIC -> R.drawable.ic_process_terminal
     }
 
     private fun agentUserTranscriptRow(entry: AgentTranscriptEntry): View = LinearLayout(this).apply {
@@ -11600,17 +11747,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun agentProcessCompletionTimestamp(
         entry: AgentTranscriptEntry,
         entries: List<AgentTranscriptEntry> = agentTranscriptStore.list(entry.conversationId)
-    ): Long? = entries.asSequence()
-        .filter { candidate ->
-            candidate.role == AgentTranscriptRole.ASSISTANT &&
-                !isAgentApprovalEntry(candidate) &&
-                when {
-                    entry.turnId.isNotBlank() -> candidate.turnId == entry.turnId
-                    entry.taskId.isNotBlank() -> candidate.taskId == entry.taskId
-                    else -> candidate.timestampMillis >= entry.timestampMillis
-                }
-        }
-        .maxOfOrNull(AgentTranscriptEntry::timestampMillis)
+    ): Long? {
+        val assistantTimestamp = entries.asSequence()
+            .filter { candidate ->
+                candidate.role == AgentTranscriptRole.ASSISTANT &&
+                    !isAgentApprovalEntry(candidate) &&
+                    when {
+                        entry.turnId.isNotBlank() -> candidate.turnId == entry.turnId
+                        entry.taskId.isNotBlank() -> candidate.taskId == entry.taskId
+                        else -> candidate.timestampMillis >= entry.timestampMillis
+                    }
+            }
+            .maxOfOrNull(AgentTranscriptEntry::timestampMillis)
+        if (assistantTimestamp != null) return assistantTimestamp
+
+        val workspaceId = entry.turnId.trim()
+        if (workspaceId.isBlank()) return null
+        val workspace = runCatching {
+            EncryptedAgentWorkspaceStore(this).find(workspaceId)
+        }.getOrNull() ?: return null
+        return workspace
+            .takeIf { AgentTranscriptPresentationPolicy.processClockStopsFor(it.status) }
+            ?.updatedAtMillis
+            ?.takeIf { it > 0L }
+            ?.coerceAtLeast(entry.timestampMillis)
+    }
 
     private fun agentTraceTargetLabel(target: String): String {
         val normalized = target.lowercase(Locale.US)
@@ -11650,6 +11811,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ignoreCase = true
             )
         }
+    }
+
+    private fun localizedAgentAssistantText(value: String): String = when (
+        AgentTranscriptPresentationPolicy.controlMessageKind(value)
+    ) {
+        AgentTranscriptPresentationPolicy.ControlMessageKind.CANCELLED ->
+            getString(R.string.agent_loop_timeline_cancelled)
+        null -> value
     }
 
     private fun renderAgentToolbox(state: AgentUiState) {

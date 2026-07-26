@@ -34,6 +34,7 @@ import java.util.UUID
 
 private const val INTERNAL_CONVERSATION_ID = "_signalasi_conversation_id"
 private const val INTERNAL_CONVERSATION_CONTEXT = "_signalasi_conversation_context"
+private const val INTERNAL_CONVERSATION_HAS_ATTACHMENTS = "_signalasi_conversation_has_attachments"
 private const val INTERNAL_TURN_ID = "_signalasi_turn_id"
 private const val INTERNAL_MEMORY_CONTEXT = "_signalasi_memory_context"
 private const val INTERNAL_CLOUD_KNOWLEDGE_CONTEXT = "_signalasi_cloud_knowledge_context"
@@ -166,7 +167,7 @@ class MobileNativeAgent(
     private var sessionId: String = UUID.randomUUID().toString()
     private var activeConversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false)
     private var activeConversationTurnId: String = ""
-    private var phase: AgentPhase = AgentPhase.OBSERVING
+    @Volatile private var phase: AgentPhase = AgentPhase.OBSERVING
     private var currentGoal: String = ""
     private var currentScreen: ScreenContext = captureScreen()
     private var currentPlan: AgentPlan? = null
@@ -192,6 +193,8 @@ class MobileNativeAgent(
     }
 
     fun executionLoopSnapshot(): AgentExecutionLoopSnapshot? = executionLoop.snapshot
+
+    fun phaseSnapshot(): AgentPhase = phase
 
     fun beginExecutionFinalization(): Boolean =
         advanceExecutionLoop(
@@ -1667,6 +1670,7 @@ class MobileNativeAgent(
                 action.copy(parameters = action.parameters + mapOf(
                     INTERNAL_CONVERSATION_ID to activeConversationContext.conversationId,
                     INTERNAL_CONVERSATION_CONTEXT to conversationPrompt,
+                    INTERNAL_CONVERSATION_HAS_ATTACHMENTS to activeConversationContext.hasAttachments.toString(),
                     INTERNAL_TURN_ID to activeConversationTurnId,
                     INTERNAL_MEMORY_CONTEXT to memoryPrompt,
                     INTERNAL_CLOUD_KNOWLEDGE_CONTEXT to cloudKnowledgePrompt,
@@ -8805,7 +8809,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                 "failure_domain" to AppStore.desktopIdForContact(context, contactId).ifBlank { "peer:$contactId" },
                 "resource_location" to if (AppStore.usesPcConnectorTunnel(context, contactId)) "desktop" else "peer",
                 "resource_started_at" to System.currentTimeMillis().toString(),
-                "has_attachments" to action.id.startsWith("attachment-").toString(),
+                "has_attachments" to (
+                    action.id.startsWith("attachment-") ||
+                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
+                    ).toString(),
                 "routing_requires_live_data" to action.parameters["routing_requires_live_data"].orEmpty(),
                 "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
             )

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from rich_output import build_rich_output
+from rich_output import MAX_TOTAL_INLINE_ARTIFACT_B64, build_rich_output
 
 
 class RichOutputTests(unittest.TestCase):
@@ -18,7 +18,8 @@ class RichOutputTests(unittest.TestCase):
         fallback, document = build_rich_output(content)
         self.assertEqual(fallback, "Summary")
         self.assertEqual(document["version"], 1)
-        self.assertEqual(document["blocks"][0]["type"], "table")
+        self.assertEqual([item["type"] for item in document["blocks"]], ["text", "table"])
+        self.assertEqual(document["blocks"][0]["text"], "Summary")
 
     def test_converts_artifacts_to_media_blocks(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
@@ -33,8 +34,41 @@ class RichOutputTests(unittest.TestCase):
                 "task-1",
             )
         self.assertEqual(fallback, "Created the requested output.")
-        self.assertEqual(document["blocks"][0]["type"], "image")
-        self.assertTrue(document["blocks"][0]["uri"].startswith("signalasi-artifact://"))
+        self.assertEqual(document["blocks"][0]["type"], "text")
+        self.assertEqual(document["blocks"][1]["type"], "image")
+        self.assertTrue(document["blocks"][1]["uri"].startswith("signalasi-artifact://"))
+
+    def test_does_not_return_conversation_context_as_output(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
+        ):
+            task = Path(temporary) / "tasks" / "task-context"
+            context = task / "downloads" / "context" / "original.png"
+            output = task / "outputs" / "edited.png"
+            context.parent.mkdir(parents=True)
+            output.parent.mkdir(parents=True)
+            context.write_bytes(b"original")
+            output.write_bytes(b"edited")
+            _, document = build_rich_output(
+                "Created the edited image.",
+                [
+                    {
+                        "name": context.name,
+                        "relative_path": "downloads/context/original.png",
+                        "size": context.stat().st_size,
+                    },
+                    {
+                        "name": output.name,
+                        "relative_path": "outputs/edited.png",
+                        "size": output.stat().st_size,
+                    },
+                ],
+                "task-context",
+            )
+
+        self.assertEqual(2, len(document["blocks"]))
+        self.assertEqual("Created the edited image.", document["blocks"][0]["text"])
+        self.assertEqual("edited.png", document["blocks"][1]["title"])
 
     def test_preserves_self_contained_html_animation(self):
         fallback, document = build_rich_output(
@@ -89,7 +123,7 @@ class RichOutputTests(unittest.TestCase):
                 [{"name": "report.pdf", "relative_path": "outputs/report.pdf", "size": 2048}],
                 "task-2",
             )
-        self.assertEqual("2.0 KB", document["blocks"][0]["metadata"]["size"])
+        self.assertEqual("2.0 KB", document["blocks"][1]["metadata"]["size"])
 
     def test_small_image_artifact_is_embedded_for_encrypted_phone_delivery(self):
         png = base64.b64decode(
@@ -107,9 +141,36 @@ class RichOutputTests(unittest.TestCase):
                 "task-inline",
             )
 
-        block = document["blocks"][0]
+        block = document["blocks"][1]
         self.assertEqual(base64.b64encode(png).decode("ascii"), block["data_b64"])
         self.assertEqual("encrypted-inline", block["metadata"]["transport"])
+
+    def test_multiple_images_share_one_bounded_inline_transport_budget(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
+        ):
+            output = Path(temporary) / "tasks" / "task-gallery" / "outputs"
+            output.mkdir(parents=True)
+            first = output / "first.png"
+            second = output / "second.png"
+            first.write_bytes(b"a" * 200_000)
+            second.write_bytes(b"b" * 200_000)
+            _, document = build_rich_output(
+                "Created two images.",
+                [
+                    {"name": first.name, "relative_path": "outputs/first.png", "size": first.stat().st_size},
+                    {"name": second.name, "relative_path": "outputs/second.png", "size": second.stat().st_size},
+                ],
+                "task-gallery",
+            )
+
+        encoded = [
+            str(block.get("data_b64") or "")
+            for block in document["blocks"]
+            if block["type"] in {"image", "file", "video", "audio"}
+        ]
+        self.assertLessEqual(sum(map(len, encoded)), MAX_TOTAL_INLINE_ARTIFACT_B64)
+        self.assertEqual(1, sum(bool(value) for value in encoded))
 
     def test_hydrates_relative_image_and_deduplicates_auto_discovery(self):
         png = base64.b64decode(
@@ -118,31 +179,56 @@ class RichOutputTests(unittest.TestCase):
         content = """Done.
 
 ```signalasi-rich
-{"blocks":[{"type":"file","title":"作业批改_全对.jpg","uri":"outputs/作业批改_全对.jpg"}]}
+{"blocks":[{"type":"file","title":"\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg","uri":"outputs/\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg"}]}
 ```"""
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
         ):
-            output = Path(temporary) / "tasks" / "current" / "outputs" / "作业批改_全对.jpg"
+            output = Path(temporary) / "tasks" / "current" / "outputs" / "\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg"
             output.parent.mkdir(parents=True)
             output.write_bytes(png)
             fallback, document = build_rich_output(
                 content,
                 [{
                     "name": output.name,
-                    "relative_path": "outputs/作业批改_全对.jpg",
+                    "relative_path": "outputs/\u4f5c\u4e1a\u6279\u6539_\u5168\u5bf9.jpg",
                     "size": len(png),
                 }],
                 "current",
             )
 
         self.assertEqual("Done.", fallback)
-        self.assertEqual(1, len(document["blocks"]))
-        block = document["blocks"][0]
+        self.assertEqual(2, len(document["blocks"]))
+        self.assertEqual("Done.", document["blocks"][0]["text"])
+        block = document["blocks"][1]
         self.assertEqual("image", block["type"])
         self.assertEqual("image/jpeg", block["mime_type"])
         self.assertEqual(base64.b64encode(png).decode("ascii"), block["data_b64"])
         self.assertRegex(block["metadata"]["sha256"], r"^[0-9a-f]{64}$")
+
+    def test_keeps_failure_explanation_and_removes_duplicate_sandbox_artifact_link(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
+        ):
+            output = Path(temporary) / "tasks" / "snake" / "outputs" / "SnakeGame-source.zip"
+            output.parent.mkdir(parents=True)
+            output.write_bytes(b"source")
+            fallback, document = build_rich_output(
+                "Source is ready.\n\n"
+                "[Download source](sandbox:/outputs/SnakeGame-source.zip)\n\n"
+                "APK was not generated because the build environment is unavailable.",
+                [{
+                    "name": output.name,
+                    "relative_path": "outputs/SnakeGame-source.zip",
+                    "size": output.stat().st_size,
+                }],
+                "snake",
+            )
+
+        self.assertNotIn("sandbox:", fallback)
+        self.assertIn("APK was not generated", fallback)
+        self.assertEqual(["text", "file"], [item["type"] for item in document["blocks"]])
+        self.assertEqual(fallback, document["blocks"][0]["text"])
 
     def test_drops_unresolvable_relative_card_without_exposing_protocol(self):
         fallback, document = build_rich_output(

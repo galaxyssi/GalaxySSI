@@ -14,6 +14,7 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.IBinder
 import android.util.Base64
+import android.util.Log
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -117,34 +118,42 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
 
     override fun onMessage(payload: String) {
         if (AppForegroundTracker.isForeground()) return
-        val envelope = runCatching { JSONObject(payload) }.getOrNull()
-        if (envelope != null && ChatHistoryStore.applyAgentTaskEvent(this, envelope)) return
-        if (envelope?.optString("type").orEmpty().ifBlank { "text" } == "text") {
-            val sourceMessageId = envelope?.optString("source_message_id")?.toLongOrNull()
-                ?: envelope?.optLong("source_message_id", 0L)?.takeIf { it > 0L }
-            if (sourceMessageId != null) {
-                val preview = ChatHistoryStore.inspectIncoming(this, payload) ?: return
-                val response = AgentConnectorResponse(
-                    sourceMessageId = sourceMessageId,
-                    contactId = envelope?.optString("contact_id").orEmpty().ifBlank { preview.contactId },
-                    content = preview.content,
-                    conversationId = envelope?.optString("conversation_id").orEmpty(),
-                    turnId = envelope?.optString("turn_id").orEmpty(),
-                    taskId = envelope?.optString("task_id").orEmpty(),
-                    richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
-                )
-                val globalRuntime = GlobalSuperAgentRuntime.get(this)
-                if (globalRuntime.consumeResearchResponse(response)) {
-                    globalAgentExecutor.execute(::processGlobalAgentEvents)
-                    return
+        var handled = true
+        try {
+            val envelope = runCatching { JSONObject(payload) }.getOrNull()
+            if (envelope != null && ChatHistoryStore.applyAgentTaskEvent(this, envelope)) return
+            if (envelope?.optString("type").orEmpty().ifBlank { "text" } == "text") {
+                val sourceMessageId = envelope?.optString("source_message_id")?.toLongOrNull()
+                    ?: envelope?.optLong("source_message_id", 0L)?.takeIf { it > 0L }
+                if (sourceMessageId != null) {
+                    val preview = ChatHistoryStore.inspectIncoming(this, payload) ?: return
+                    val response = AgentConnectorResponse(
+                        sourceMessageId = sourceMessageId,
+                        contactId = envelope?.optString("contact_id").orEmpty().ifBlank { preview.contactId },
+                        content = preview.content,
+                        conversationId = envelope?.optString("conversation_id").orEmpty(),
+                        turnId = envelope?.optString("turn_id").orEmpty(),
+                        taskId = envelope?.optString("task_id").orEmpty(),
+                        richOutputJson = AgentRichContentCodec.fromEnvelope(envelope)
+                    )
+                    val globalRuntime = GlobalSuperAgentRuntime.get(this)
+                    if (globalRuntime.consumeResearchResponse(response)) {
+                        globalAgentExecutor.execute(::processGlobalAgentEvents)
+                        return
+                    }
+                    if (AgentConnectorResponseBus.publish(this, response)) return
                 }
-                if (AgentConnectorResponseBus.publish(this, response)) return
             }
-        }
-        val stored = ChatHistoryStore.appendIncoming(this, payload) ?: return
-        if (stored.notify) {
-            showIncomingNotification(stored)
-            ChatHistoryStore.markNotified(this, stored.contactId, stored.messageId)
+            val stored = ChatHistoryStore.appendIncoming(this, payload) ?: return
+            if (stored.notify) {
+                showIncomingNotification(stored)
+                ChatHistoryStore.markNotified(this, stored.contactId, stored.messageId)
+            }
+        } catch (error: Throwable) {
+            handled = false
+            Log.e("SignalASILink", "Deferred inbound message after background handling failure", error)
+        } finally {
+            if (handled) SignalASIMqttClient.completeIncomingDelivery(this, payload)
         }
     }
 

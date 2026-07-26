@@ -1229,8 +1229,6 @@
     <string name="agent_loop_timeline_replan_action">重新规划</string>
     <string name="agent_loop_timeline_action_unavailable">此任务已不可操作</string>
     <string name="agent_loop_timeline_remote_cancel_failed">已在本机停止任务，但远程取消指令未能送达</string>
-    <string name="agent_trace_tool_group_count">运行了 %1$d 个工具步骤</string>
-    <string name="agent_trace_tool_group_details">查看工具详情</string>
     <string name="agent_trace_connector_progress_running">正在执行：%1$s%2$s</string>
     <string name="agent_trace_connector_progress_completed">已完成：%1$s%2$s</string>
     <string name="agent_trace_connector_progress_failed">执行失败：%1$s%2$s</string>

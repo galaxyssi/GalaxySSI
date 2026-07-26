@@ -9,6 +9,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import java.security.KeyStore
+import java.util.concurrent.ConcurrentHashMap
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -49,61 +50,54 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
 class AgentEncryptedDatabase(
     context: Context,
     private val databaseName: String
-) : SQLiteOpenHelper(context.applicationContext, "$databaseName.db", null, 1) {
-    override fun onCreate(db: SQLiteDatabase) {
-        db.execSQL("CREATE TABLE encrypted_values (storage_key TEXT PRIMARY KEY NOT NULL, encrypted_value TEXT NOT NULL)")
-    }
+) {
+    private val database = sharedDatabase(context.applicationContext, databaseName)
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
-
-    @Synchronized
-    fun readString(key: String, defaultValue: String): String {
-        readableDatabase.query(
-            "encrypted_values", arrayOf("encrypted_value"), "storage_key = ?", arrayOf(key),
+    fun readString(key: String, defaultValue: String): String = synchronized(database) {
+        database.readableDatabase.query(
+            TABLE_VALUES, arrayOf("encrypted_value"), "storage_key = ?", arrayOf(key),
             null, null, null, "1"
         ).use { cursor ->
-            if (cursor.moveToFirst()) {
-                return AgentStorageCipher.decrypt(cursor.getString(0), associatedData(key)) ?: defaultValue
+            if (!cursor.moveToFirst()) {
+                defaultValue
+            } else {
+                AgentStorageCipher.decrypt(cursor.getString(0), associatedData(key)) ?: defaultValue
             }
         }
-        return defaultValue
     }
 
-    @Synchronized
-    fun writeString(key: String, value: String) {
+    fun writeString(key: String, value: String) = synchronized(database) {
         val encrypted = AgentStorageCipher.encrypt(value, associatedData(key))
         val values = ContentValues().apply {
             put("storage_key", key)
             put("encrypted_value", encrypted)
         }
-        check(writableDatabase.insertWithOnConflict(
-            "encrypted_values", null, values, SQLiteDatabase.CONFLICT_REPLACE
+        check(database.writableDatabase.insertWithOnConflict(
+            TABLE_VALUES, null, values, SQLiteDatabase.CONFLICT_REPLACE
         ) != -1L) { "Agent encrypted database write failed" }
     }
 
-    @Synchronized
-    fun remove(key: String) {
-        writableDatabase.delete("encrypted_values", "storage_key = ?", arrayOf(key))
+    fun remove(key: String): Unit = synchronized(database) {
+        database.writableDatabase.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
+        Unit
     }
 
-    @Synchronized
-    fun clear() {
-        writableDatabase.delete("encrypted_values", null, null)
+    fun clear(): Unit = synchronized(database) {
+        database.writableDatabase.delete(TABLE_VALUES, null, null)
+        Unit
     }
 
-    fun contains(key: String): Boolean {
-        readableDatabase.rawQuery(
-            "SELECT 1 FROM encrypted_values WHERE storage_key = ? LIMIT 1", arrayOf(key)
-        ).use { if (it.moveToFirst()) return true }
-        return false
+    fun contains(key: String): Boolean = synchronized(database) {
+        database.readableDatabase.rawQuery(
+            "SELECT 1 FROM $TABLE_VALUES WHERE storage_key = ? LIMIT 1", arrayOf(key)
+        ).use { it.moveToFirst() }
     }
 
-    @Synchronized
-    fun keys(prefix: String = ""): List<String> {
+    fun keys(prefix: String = ""): List<String> = synchronized(database) {
         val selection = if (prefix.isBlank()) null else "substr(storage_key, 1, ?) = ?"
         val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix.length.toString(), prefix)
-        readableDatabase.query(
-            "encrypted_values",
+        database.readableDatabase.query(
+            TABLE_VALUES,
             arrayOf("storage_key"),
             selection,
             selectionArgs,
@@ -111,14 +105,45 @@ class AgentEncryptedDatabase(
             null,
             "storage_key ASC"
         ).use { cursor ->
-            return buildList {
+            buildList {
                 while (cursor.moveToNext()) add(cursor.getString(0))
             }
         }
     }
 
+    /**
+     * Connections are process-scoped and shared by database name. Individual
+     * repository wrappers can be short-lived without creating leaked pools.
+     */
+    fun close() = Unit
+
     private fun associatedData(key: String): ByteArray =
         "database:$databaseName:$key".toByteArray(Charsets.UTF_8)
+
+    private class SharedEncryptedDatabase(
+        context: Context,
+        databaseName: String
+    ) : SQLiteOpenHelper(context, "$databaseName.db", null, 1) {
+        override fun onCreate(db: SQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE $TABLE_VALUES (" +
+                    "storage_key TEXT PRIMARY KEY NOT NULL, " +
+                    "encrypted_value TEXT NOT NULL)"
+            )
+        }
+
+        override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    }
+
+    private companion object {
+        const val TABLE_VALUES = "encrypted_values"
+        val DATABASES = ConcurrentHashMap<String, SharedEncryptedDatabase>()
+
+        fun sharedDatabase(context: Context, databaseName: String): SharedEncryptedDatabase =
+            DATABASES.computeIfAbsent(databaseName) {
+                SharedEncryptedDatabase(context.applicationContext, databaseName)
+            }
+    }
 }
 
 object AgentStorageCipher {

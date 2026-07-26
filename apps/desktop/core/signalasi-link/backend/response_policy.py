@@ -176,4 +176,4 @@ def attachment_clarification(names: list[str], chinese: bool = True) -> str:
 
 def is_input_artifact(item: dict) -> bool:
     relative = str(item.get("relative_path") or "").replace("\\", "/").strip("/").lower()
-    return relative.startswith("downloads/input/")
+    return relative.startswith(("downloads/input/", "downloads/context/"))
