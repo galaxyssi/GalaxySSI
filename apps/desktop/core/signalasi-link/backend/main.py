@@ -1100,6 +1100,8 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                     f"{prompt.rstrip()}\n\n"
                     f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
                 )
+        from agent_execution_harness import execution_policy_for
+
         result = deliver_agent_sync(
             agent_id,
             compiled_prompt,
@@ -1108,9 +1110,20 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
             source_message_id=task.source_message_id,
             return_path="desktop-ui",
             response_language=response_language,
+            execution_prompt=prompt,
+            execution_policy=execution_policy_for(
+                prompt,
+                attachments=attachments,
+            ).public(),
         )
         return str(result.get("reply") or "")
 
+    from agent_execution_harness import execution_policy_for
+
+    desktop_execution_policy = execution_policy_for(
+        prompt,
+        attachments=attachments,
+    )
     task = agent_task_manager.create(
         agent_id=agent_id,
         contact_id=agent_id,
@@ -1123,6 +1136,8 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
         attachments=attachments,
         retry_of=str(req.retry_of or ""),
         attempt=max(1, int(req.attempt or 1)),
+        execution_prompt=prompt,
+        execution_policy=desktop_execution_policy.public(),
     )
     payload = task.public(include_prompt=True)
     payload["attachments"] = attachments

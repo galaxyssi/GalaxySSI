@@ -37,9 +37,11 @@ def test_desktop_task_runs_async_and_reuses_conversation_context(tmp_path, monke
         },
     )
     prompts: list[str] = []
+    deliveries: list[dict] = []
 
     def fake_delivery(agent_id, prompt, **kwargs):
         prompts.append(prompt)
+        deliveries.append(kwargs)
         return {"reply": f"reply-{len(prompts)}", "agent_id": agent_id}
 
     monkeypatch.setattr(main, "deliver_agent_sync", fake_delivery)
@@ -58,6 +60,9 @@ def test_desktop_task_runs_async_and_reuses_conversation_context(tmp_path, monke
     assert first_task.result == "reply-1"
     assert first_task.attachments == ["downloads/input/brief.txt"]
     assert "downloads/input/brief.txt" in prompts[0]
+    assert deliveries[0]["execution_prompt"] == "Inspect the attached release brief"
+    assert deliveries[0]["execution_policy"]["task_kind"] == "artifact"
+    assert deliveries[0]["execution_policy"]["requires_artifact"] is False
 
     second = main.api_start_desktop_task(
         main.DesktopTaskStartReq(
@@ -70,6 +75,8 @@ def test_desktop_task_runs_async_and_reuses_conversation_context(tmp_path, monke
     assert second_task.result == "reply-2"
     assert "Inspect the attached release brief" in prompts[1]
     assert "reply-1" in prompts[1]
+    assert deliveries[1]["execution_prompt"] == "Continue with the release notes"
+    assert deliveries[1]["execution_policy"]["task_kind"] == "chat"
 
     listed = main.api_list_desktop_tasks(LoopbackRequest(), limit=10)["tasks"]
     assert [item["task_id"] for item in listed[:2]] == [second["task_id"], first["task_id"]]

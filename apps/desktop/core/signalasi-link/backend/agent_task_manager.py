@@ -175,10 +175,19 @@ class AgentTaskManager:
         attachments: list[str] | None = None,
         retry_of: str = "",
         attempt: int = 1,
+        execution_prompt: str = "",
+        execution_policy: dict | None = None,
     ) -> AgentTask:
-        from agent_execution_harness import execution_policy_for
+        from agent_execution_harness import AgentExecutionPolicy, execution_policy_for
 
-        policy = execution_policy_for(prompt, attachments=attachments or [])
+        policy = (
+            AgentExecutionPolicy.from_public(execution_policy)
+            if isinstance(execution_policy, dict) and execution_policy
+            else execution_policy_for(
+                execution_prompt or prompt,
+                attachments=attachments or [],
+            )
+        )
         task = AgentTask(
             task_id=task_id.strip() or str(uuid.uuid4()),
             agent_id=agent_id,
@@ -210,10 +219,19 @@ class AgentTaskManager:
         client_conversation_id: str = "",
         client_route_id: str = "", client_turn_id: str = "",
         attachments: list[str] | None = None,
+        execution_prompt: str = "",
+        execution_policy: dict | None = None,
     ) -> AgentTask:
-        from agent_execution_harness import execution_policy_for
+        from agent_execution_harness import AgentExecutionPolicy, execution_policy_for
 
-        policy = execution_policy_for(prompt, attachments=attachments or [])
+        policy = (
+            AgentExecutionPolicy.from_public(execution_policy)
+            if isinstance(execution_policy, dict) and execution_policy
+            else execution_policy_for(
+                execution_prompt or prompt,
+                attachments=attachments or [],
+            )
+        )
         task = AgentTask(
             task_id=task_id.strip() or str(uuid.uuid4()), agent_id=agent_id,
             contact_id=contact_id, source_message_id=source_message_id, prompt=prompt,

@@ -105,6 +105,15 @@ data class AgentConnectorRouteSelection(
 )
 
 object AgentConnectorRouteSelector {
+    fun isDeliverable(target: AgentCallableTarget?): Boolean =
+        target != null && (
+            target.status == AgentConnectorStatus.AVAILABLE ||
+                (
+                    target.status == AgentConnectorStatus.DISCONNECTED &&
+                        hasReasoningCapability(target)
+                    )
+            )
+
     fun select(
         targets: List<AgentCallableTarget>,
         decision: AgentRoutingDecision?,
@@ -117,7 +126,7 @@ object AgentConnectorRouteSelector {
                 // A paired Desktop can briefly look disconnected while its first status
                 // heartbeat is in flight. Keep it recoverable and let delivery/watchdog
                 // supervision determine actual reachability instead of drafting a local plan.
-                reasoningTargets.filter { target -> target.status == AgentConnectorStatus.DISCONNECTED }
+                reasoningTargets.filter(::isDeliverable)
             }
         if (eligible.isEmpty()) return null
 

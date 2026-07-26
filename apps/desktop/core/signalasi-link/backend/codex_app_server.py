@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import logging
 import os
 import queue
 import subprocess
@@ -23,6 +24,7 @@ from agent_execution_harness import (
 )
 
 
+log = logging.getLogger("signalasi.codex")
 TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".signalasi" / "codex_conversation_threads.json"
 CONVERSATION_THREAD_VERSION = "v2"
@@ -1021,7 +1023,12 @@ class CodexAppServer:
                     waiter.put(message)
                 continue
             if "method" in message:
-                self._handle_event(message)
+                try:
+                    self._handle_event(message)
+                except Exception:
+                    log.exception(
+                        "Codex event handling failed; JSON-RPC reader will continue"
+                    )
 
     def _handle_event(self, message: dict) -> None:
         method = str(message.get("method") or "")
@@ -1211,7 +1218,14 @@ class CodexAppServer:
         **verification: object,
     ) -> None:
         if run.execution_harness is not None:
-            run.execution_harness.progress(phase, **verification)
+            try:
+                run.execution_harness.progress(phase, **verification)
+            except Exception:
+                log.exception(
+                    "Codex checkpoint update failed task_id=%s phase=%s",
+                    run.task_id,
+                    phase,
+                )
 
     @staticmethod
     def _checkpoint_phase(method: str) -> str:

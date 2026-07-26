@@ -462,7 +462,9 @@ def _agent_adapter_descriptors() -> list[AgentAdapterDescriptor]:
 def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) -> str:
     from agent_execution_harness import (
         AgentExecutionHarness,
+        AgentExecutionPolicy,
         execution_contract,
+        execution_policy_for,
         finalize_task_artifacts,
         looks_failed_reply,
         replan_instruction,
@@ -473,14 +475,30 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
 
     spec = all_agent_specs().get(agent_id)
     preferred_language = request.response_language or language_policy_config()["response_language"]
+    execution_prompt = str(
+        request.checkpoint.get("execution_prompt") or request.prompt
+    ).strip()
+    serialized_policy = request.checkpoint.get("execution_policy")
+    execution_policy = (
+        AgentExecutionPolicy.from_public(serialized_policy)
+        if isinstance(serialized_policy, dict) and serialized_policy
+        else execution_policy_for(
+            execution_prompt,
+            attachments=(
+                str(item.get("name") or item.get("relative_path") or "")
+                for item in request.artifacts
+            ),
+        )
+    )
     harness = AgentExecutionHarness(
         request.run_id,
         agent_id,
-        request.prompt,
+        execution_prompt,
         attachments=(
             str(item.get("name") or item.get("relative_path") or "")
             for item in request.artifacts
         ),
+        policy=execution_policy,
     )
     contract = execution_contract(harness.policy)
     current_prompt = request.prompt.rstrip()
@@ -546,7 +564,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             if request.run_id and workspace_capable:
                 artifact_finalization = finalize_task_artifacts(
                     request.run_id,
-                    request.prompt,
+                    execution_prompt,
                     agent_id,
                     allow_device_install=(
                         str(request.checkpoint.get("desktop_access_profile") or "")
@@ -1204,10 +1222,20 @@ def deliver_agent_sync(
     required_features: tuple[str, ...] = (),
     desktop_access_profile: str = "desktop_executor",
     response_language: str = "",
+    execution_prompt: str = "",
+    execution_policy: dict | None = None,
 ) -> dict:
+    from agent_execution_harness import execution_policy_for
+
     spec = all_agent_specs().get(contact_id)
     if spec is None:
         raise AgentAdapterExecutionError(f"Unknown Agent: {contact_id}")
+    resolved_execution_prompt = str(execution_prompt or text).strip()
+    resolved_execution_policy = (
+        dict(execution_policy)
+        if isinstance(execution_policy, dict) and execution_policy
+        else execution_policy_for(resolved_execution_prompt).public()
+    )
     mode = AgentDeliveryMode.parse(delivery_mode)
     start = time.perf_counter()
     if mode == AgentDeliveryMode.RESPOND:
@@ -1226,7 +1254,13 @@ def deliver_agent_sync(
                 source_message_id=source_message_id,
                 return_path=return_path,
                 response_language=response_language,
-                checkpoint={"desktop_access_profile": str(desktop_access_profile or "restricted")},
+                checkpoint={
+                    "desktop_access_profile": str(
+                        desktop_access_profile or "restricted"
+                    ),
+                    "execution_prompt": resolved_execution_prompt,
+                    "execution_policy": resolved_execution_policy,
+                },
             )
         )
         if mode == AgentDeliveryMode.RESPOND:
