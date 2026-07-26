@@ -1814,6 +1814,12 @@ internal class SignalASIPinchZoomViewport(context: Context) : FrameLayout(contex
         return super.dispatchTouchEvent(event)
     }
 
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        // A plain ImageView does not consume ACTION_DOWN. The viewport must
+        // retain that stream or Android will never deliver the second pointer.
+        return zoomTarget != null || super.onTouchEvent(event)
+    }
+
     private fun clampTranslation(target: View) {
         val maxTranslationX = width * (zoomScale - 1f) / 2f
         val maxTranslationY = height * (zoomScale - 1f) / 2f
