@@ -66,7 +66,7 @@ object DesktopRemoteControl {
     private const val PREFS = "signalasi_desktop_control_v1"
     private const val KEY_DESKTOPS = "desktops"
     private const val ACTION_TTL_MS = 30_000L
-    private const val MAX_SCREENSHOT_BYTES = 300 * 1024
+    private const val MAX_SCREENSHOT_BYTES = 100_000
 
     private data class RuntimeState(
         var status: String = "",

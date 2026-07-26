@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from rich_output import MAX_TOTAL_INLINE_ARTIFACT_B64, build_rich_output
+from rich_output import MAX_INLINE_ARTIFACT_BYTES, MAX_TOTAL_INLINE_ARTIFACT_B64, build_rich_output
 
 
 class RichOutputTests(unittest.TestCase):
@@ -144,6 +144,51 @@ class RichOutputTests(unittest.TestCase):
         block = document["blocks"][1]
         self.assertEqual(base64.b64encode(png).decode("ascii"), block["data_b64"])
         self.assertEqual("encrypted-inline", block["metadata"]["transport"])
+        self.assertEqual(str(len(png)), block["metadata"]["size_bytes"])
+        self.assertEqual(str(len(png)), block["metadata"]["original_size_bytes"])
+
+    def test_large_image_is_compressed_below_one_hundred_kilobytes_without_modifying_source(self):
+        from PIL import Image
+
+        width, height = 1200, 1920
+        pixels = bytearray(width * height * 3)
+        state = 0x13579BDF
+        for index in range(0, len(pixels), 3):
+            state = (state * 1103515245 + 12345) & 0xFFFFFFFF
+            pixels[index:index + 3] = bytes((state & 0xFF, (state >> 8) & 0xFF, (state >> 16) & 0xFF))
+
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ, {"SIGNALASI_WORKSPACE_ROOT": temporary}
+        ):
+            output = Path(temporary) / "tasks" / "task-large" / "outputs" / "marked.png"
+            output.parent.mkdir(parents=True)
+            Image.frombytes("RGB", (width, height), bytes(pixels)).save(output, format="PNG")
+            original = output.read_bytes()
+            _, document = build_rich_output(
+                "Created output.",
+                [{"name": output.name, "relative_path": "outputs/marked.png", "size": output.stat().st_size}],
+                "task-large",
+            )
+            self.assertEqual(original, output.read_bytes())
+
+        block = document["blocks"][1]
+        transported = base64.b64decode(block["data_b64"], validate=True)
+        self.assertLessEqual(len(transported), MAX_INLINE_ARTIFACT_BYTES)
+        self.assertEqual("image/jpeg", block["mime_type"])
+        self.assertEqual(str(len(transported)), block["metadata"]["size_bytes"])
+        self.assertEqual(str(len(original)), block["metadata"]["original_size_bytes"])
+        self.assertEqual(f"outputs · {block['metadata']['size']}", block["text"])
+        self.assertNotEqual(block["metadata"]["sha256"], block["metadata"]["original_sha256"])
+
+    def test_oversized_explicit_inline_image_is_not_truncated_into_invalid_base64(self):
+        encoded = base64.b64encode(b"x" * (MAX_INLINE_ARTIFACT_BYTES + 1)).decode("ascii")
+        _, document = build_rich_output(
+            f"""```signalasi-rich
+{{"blocks":[{{"type":"image","title":"oversized.png","mime_type":"image/png","data_b64":"{encoded}"}}]}}
+```"""
+        )
+
+        self.assertNotIn("data_b64", document["blocks"][0])
 
     def test_multiple_images_share_one_bounded_inline_transport_budget(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
@@ -153,8 +198,8 @@ class RichOutputTests(unittest.TestCase):
             output.mkdir(parents=True)
             first = output / "first.png"
             second = output / "second.png"
-            first.write_bytes(b"a" * 200_000)
-            second.write_bytes(b"b" * 200_000)
+            first.write_bytes(b"a" * 80_000)
+            second.write_bytes(b"b" * 80_000)
             _, document = build_rich_output(
                 "Created two images.",
                 [

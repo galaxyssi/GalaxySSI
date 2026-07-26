@@ -7,18 +7,19 @@ import hashlib
 import json
 import mimetypes
 import re
-from io import BytesIO
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
+
+from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_image_file
 
 
 MAX_BLOCKS = 100
 MAX_TEXT = 32_000
 MAX_ROWS = 500
 MAX_COLUMNS = 24
-MAX_INLINE_ARTIFACT_BYTES = 300_000
+MAX_INLINE_ARTIFACT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
 MAX_INLINE_ARTIFACT_B64 = ((MAX_INLINE_ARTIFACT_BYTES + 2) // 3) * 4
 MAX_TOTAL_INLINE_ARTIFACT_B64 = MAX_INLINE_ARTIFACT_B64
 ALLOWED_TYPES = {
@@ -135,11 +136,14 @@ def _normalize_block(raw: dict) -> dict:
     }
     for key, limit in (
         ("title", 500), ("text", MAX_TEXT), ("uri", 4096), ("mime_type", 160),
-        ("language", 80), ("fallback_text", MAX_TEXT), ("data_b64", MAX_INLINE_ARTIFACT_B64),
+        ("language", 80), ("fallback_text", MAX_TEXT),
     ):
         value = str(raw.get(key) or "").strip()[:limit]
         if value:
             block[key] = value
+    encoded = str(raw.get("data_b64") or "").strip()
+    if encoded and len(encoded) <= MAX_INLINE_ARTIFACT_B64:
+        block["data_b64"] = encoded
     if block_type in {"file", "webpage"} and _is_image_uri(block.get("uri", ""), block.get("mime_type", "")):
         block["type"] = "image"
         block_type = "image"
@@ -203,31 +207,41 @@ def _artifact_block(raw: dict, task_id: str) -> dict:
         block_type = "audio"
     else:
         block_type = "file"
-    size = source.stat().st_size
-    digest = _file_sha256(source)
+    original_size = source.stat().st_size
+    original_digest = _file_sha256(source)
     category = PurePosixPath(relative).parts[0].lower()
     safe_task = quote(str(task_id or "task"), safe="")
     safe_path = quote(relative, safe="/")
     block = {
-        "id": f"artifact-{digest[:24]}",
+        "id": f"artifact-{original_digest[:24]}",
         "type": block_type,
         "title": name,
-        "text": f"{category} · {_human_size(size)}",
+        "text": f"{category} · {_human_size(original_size)}",
         "uri": f"signalasi-artifact://{safe_task}/{safe_path}",
         "mime_type": mime_type,
         "fallback_text": relative,
         "metadata": {
-            "size": _human_size(size),
+            "size": _human_size(original_size),
+            "size_bytes": str(original_size),
             "category": category,
-            "sha256": digest,
+            "sha256": original_digest,
         },
     }
     inline = _inline_artifact(task_id, relative, mime_type)
     if inline is not None:
-        encoded, inline_mime = inline
+        encoded, inline_mime, transport_size, transport_digest = inline
         block["data_b64"] = encoded
         block["mime_type"] = inline_mime
-        block["metadata"]["transport"] = "encrypted-inline"
+        block["text"] = f"{category} · {_human_size(transport_size)}"
+        block["metadata"].update({
+            "size": _human_size(transport_size),
+            "size_bytes": str(transport_size),
+            "sha256": transport_digest,
+            "original_size": _human_size(original_size),
+            "original_size_bytes": str(original_size),
+            "original_sha256": original_digest,
+            "transport": "encrypted-inline",
+        })
     return block
 
 
@@ -242,9 +256,14 @@ def _hydrate_explicit_artifact(block: dict, task_id: str) -> dict | None:
         metadata = dict(block.get("metadata") or {})
         try:
             raw = base64.b64decode(encoded, validate=True)
+            if len(raw) > MAX_INLINE_ARTIFACT_BYTES:
+                block.pop("data_b64", None)
+                return block
             metadata.setdefault("sha256", hashlib.sha256(raw).hexdigest())
+            metadata.setdefault("size", _human_size(len(raw)))
+            metadata.setdefault("size_bytes", str(len(raw)))
         except (TypeError, ValueError):
-            pass
+            block.pop("data_b64", None)
         if metadata:
             block["metadata"] = metadata
         return block
@@ -400,7 +419,7 @@ def _file_sha256(source: Path) -> str:
     return digest.hexdigest()
 
 
-def _inline_artifact(task_id: str, relative: str, mime_type: str) -> tuple[str, str] | None:
+def _inline_artifact(task_id: str, relative: str, mime_type: str) -> tuple[str, str, int, str] | None:
     if not str(mime_type or "").lower().startswith("image/"):
         return None
     try:
@@ -410,39 +429,17 @@ def _inline_artifact(task_id: str, relative: str, mime_type: str) -> tuple[str, 
         raw = source.read_bytes()
         output_mime = mime_type
         if len(raw) > MAX_INLINE_ARTIFACT_BYTES:
-            raw = _compress_image_for_transport(source)
-            output_mime = "image/jpeg"
+            compressed = compress_image_file(source, MAX_INLINE_ARTIFACT_BYTES)
+            if compressed is None:
+                return None
+            raw = compressed.data
+            output_mime = compressed.mime_type
         if not raw or len(raw) > MAX_INLINE_ARTIFACT_BYTES:
             return None
-        return base64.b64encode(raw).decode("ascii"), output_mime
+        digest = hashlib.sha256(raw).hexdigest()
+        return base64.b64encode(raw).decode("ascii"), output_mime, len(raw), digest
     except Exception:
         return None
-
-
-def _compress_image_for_transport(source: Path) -> bytes:
-    from PIL import Image, ImageOps
-    with Image.open(source) as opened:
-        image = ImageOps.exif_transpose(opened)
-        image.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
-        if image.mode not in {"RGB", "L"}:
-            background = Image.new("RGB", image.size, "white")
-            if "A" in image.getbands():
-                background.paste(image, mask=image.getchannel("A"))
-            else:
-                background.paste(image.convert("RGB"))
-            image = background
-        elif image.mode == "L":
-            image = image.convert("RGB")
-        best = b""
-        for quality in (92, 88, 84, 80, 74, 68, 60, 52, 44, 36):
-            output = BytesIO()
-            image.save(output, format="JPEG", quality=quality, optimize=True, progressive=True)
-            candidate = output.getvalue()
-            if not best or len(candidate) < len(best):
-                best = candidate
-            if len(candidate) <= MAX_INLINE_ARTIFACT_BYTES:
-                return candidate
-        return best
 
 
 def _fallback_text(blocks: list[dict]) -> str:
