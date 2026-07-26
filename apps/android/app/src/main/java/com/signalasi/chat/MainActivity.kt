@@ -1475,8 +1475,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 val envelope = runCatching { JSONObject(payload) }.getOrNull()
                 envelope?.optString("desktop_id")?.takeIf(String::isNotBlank)?.let(::markDesktopDomainAvailableById)
                 if (envelope?.optString("type") == "delivery_ack") {
-                    val acknowledgedId = envelope.optString("source_message_id")
-                        .ifBlank { envelope.optString("reply_to") }
+                    val acknowledgedId = SignalASILinkDeliveryAckPolicy.clientSourceMessageId(envelope)
                         .toLongOrNull()
                     if (acknowledgedId != null) {
                         runtimeForConnectorResponse(acknowledgedId, "")
@@ -16059,8 +16058,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun applyDeliveryAck(json: JSONObject, trace: List<DeliveryTraceEvent>) {
-        val messageId = json.optString("source_message_id").toLongOrNull()
-            ?: json.optLong("source_message_id", 0L).takeIf { it > 0L }
+        val messageId = SignalASILinkDeliveryAckPolicy.clientSourceMessageId(json).toLongOrNull()
             ?: return
         val contactId = json.optString("contact_id").takeIf { it.isNotBlank() } ?: selectedContact?.id ?: return
         val status = when (json.optString("delivery_status")) {

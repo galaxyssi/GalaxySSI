@@ -3,16 +3,28 @@ package com.signalasi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.security.MessageDigest
+import java.util.UUID
 
 object SignalASILinkDeliveryStore {
     private const val PREFS = "signalasi_link_delivery_v1"
     private const val INBOUND_DATABASE = "signalasi_link_inbound_v1"
     private const val KEY_OUTBOX = "outbox"
     private const val KEY_INBOX = "inbox"
+    private const val KEY_TRANSPORT_EPOCH = "transport_epoch"
     private const val PENDING_INBOUND_PREFIX = "pending:"
+    private const val CIPHERTEXT_PREFIX = "ciphertext:"
     private const val MAX_INBOX_IDS = 4096
     private const val MAX_PENDING_INBOUND = 256
+    private const val MAX_CIPHERTEXT_BINDINGS = 4096
     private const val MAX_PENDING_INBOUND_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+    private const val MAX_CIPHERTEXT_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+    private const val PENDING_PRUNE_INTERVAL = 64
+    private const val CIPHERTEXT_PRUNE_INTERVAL = 256
+    private val INBOUND_LOCK = Any()
+    private val CIPHERTEXT_LOCK = Any()
+    private var pendingWritesSincePrune = 0
+    private var ciphertextWritesSincePrune = 0
 
     enum class IncomingStageResult { STAGED, PENDING, COMPLETED, INVALID }
 
@@ -29,6 +41,23 @@ object SignalASILinkDeliveryStore {
         val payload: String,
         val createdAt: Long
     )
+
+    data class KnownCiphertext(
+        val messageId: String,
+        val receiptRequired: Boolean
+    )
+
+    @Synchronized
+    fun ensureTransportEpoch(context: Context, epoch: String): Boolean {
+        require(epoch.isNotBlank()) { "Transport epoch is required" }
+        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (preferences.getString(KEY_TRANSPORT_EPOCH, "") == epoch) return false
+        preferences.edit()
+            .putString(KEY_OUTBOX, "[]")
+            .putString(KEY_TRANSPORT_EPOCH, epoch)
+            .commit()
+        return true
+    }
 
     @Synchronized
     fun enqueue(context: Context, messageId: String, topic: String, wirePayload: String) {
@@ -53,8 +82,12 @@ object SignalASILinkDeliveryStore {
     @Synchronized
     fun markPublished(context: Context, messageId: String) {
         updateOutbox(context, messageId) { item ->
+            val attempts = item.optInt("attempts").coerceAtLeast(1)
             item.put("status", "published")
-                .put("next_attempt_at", System.currentTimeMillis() + 30_000L)
+                .put(
+                    "next_attempt_at",
+                    System.currentTimeMillis() + SignalASILinkRetryPolicy.delayMillis(attempts)
+                )
                 .put("updated_at", System.currentTimeMillis())
         }
     }
@@ -98,6 +131,21 @@ object SignalASILinkDeliveryStore {
         pendingFromArray(outboxArray(context), System.currentTimeMillis())
 
     @Synchronized
+    fun nextRetryDelayMillis(context: Context, nowMillis: Long = System.currentTimeMillis()): Long? {
+        return nextRetryDelayFromArray(outboxArray(context), nowMillis)
+    }
+
+    internal fun nextRetryDelayFromArray(values: JSONArray, nowMillis: Long): Long? {
+        var earliest: Long? = null
+        for (index in 0 until values.length()) {
+            val item = values.optJSONObject(index) ?: continue
+            val nextAttemptAt = item.optLong("next_attempt_at", nowMillis)
+            earliest = minOf(earliest ?: nextAttemptAt, nextAttemptAt)
+        }
+        return earliest?.let { (it - nowMillis).coerceAtLeast(0L) }
+    }
+
+    @Synchronized
     fun makePendingImmediatelyRetryable(context: Context) {
         val values = outboxArray(context)
         val now = System.currentTimeMillis()
@@ -131,31 +179,37 @@ object SignalASILinkDeliveryStore {
             }
         }
 
-    @Synchronized
-    fun claimIncoming(context: Context, messageId: String): Boolean {
-        if (messageId.isBlank()) return false
+    fun claimIncoming(context: Context, messageId: String): Boolean = synchronized(INBOUND_LOCK) {
+        if (messageId.isBlank()) return@synchronized false
         val values = readArray(context, KEY_INBOX)
         for (index in 0 until values.length()) {
-            if (values.optString(index) == messageId) return false
+            if (values.optString(index) == messageId) return@synchronized false
         }
         values.put(messageId)
         val trimmed = JSONArray()
         val start = (values.length() - MAX_INBOX_IDS).coerceAtLeast(0)
         for (index in start until values.length()) trimmed.put(values.optString(index))
         writeArray(context, KEY_INBOX, trimmed)
-        return true
+        true
     }
 
-    @Synchronized
-    fun stageIncoming(context: Context, messageId: String, payload: String): IncomingStageResult {
-        if (messageId.isBlank() || payload.isBlank()) return IncomingStageResult.INVALID
+    fun stageIncoming(
+        context: Context,
+        messageId: String,
+        payload: String
+    ): IncomingStageResult = synchronized(INBOUND_LOCK) {
+        if (messageId.isBlank() || payload.isBlank()) {
+            return@synchronized IncomingStageResult.INVALID
+        }
         val completed = readArray(context, KEY_INBOX)
         for (index in 0 until completed.length()) {
-            if (completed.optString(index) == messageId) return IncomingStageResult.COMPLETED
+            if (completed.optString(index) == messageId) {
+                return@synchronized IncomingStageResult.COMPLETED
+            }
         }
         val database = inboundDatabase(context)
         val key = pendingInboundKey(messageId)
-        if (database.contains(key)) return IncomingStageResult.PENDING
+        if (database.contains(key)) return@synchronized IncomingStageResult.PENDING
         val now = System.currentTimeMillis()
         database.writeString(
             key,
@@ -165,20 +219,21 @@ object SignalASILinkDeliveryStore {
                 .put("created_at", now)
                 .toString()
         )
-        prunePendingIncoming(database, now)
-        return IncomingStageResult.STAGED
+        pendingWritesSincePrune += 1
+        if (pendingWritesSincePrune >= PENDING_PRUNE_INTERVAL) {
+            pendingWritesSincePrune = 0
+            prunePendingIncoming(database, now)
+        }
+        IncomingStageResult.STAGED
     }
 
-    @Synchronized
-    fun pendingIncoming(context: Context): List<PendingIncoming> {
+    fun pendingIncoming(context: Context): List<PendingIncoming> = synchronized(INBOUND_LOCK) {
         val database = inboundDatabase(context)
         val now = System.currentTimeMillis()
-        prunePendingIncoming(database, now)
-        return database.keys(PENDING_INBOUND_PREFIX)
-            .mapNotNull { key ->
-                val value = runCatching {
-                    JSONObject(database.readString(key, ""))
-                }.getOrNull() ?: return@mapNotNull null
+        database.entries(PENDING_INBOUND_PREFIX)
+            .mapNotNull { (_, raw) ->
+                val value = runCatching { JSONObject(raw) }.getOrNull()
+                    ?: return@mapNotNull null
                 val messageId = value.optString("message_id")
                 val payload = value.optString("payload")
                 if (messageId.isBlank() || payload.isBlank()) return@mapNotNull null
@@ -191,19 +246,59 @@ object SignalASILinkDeliveryStore {
             .sortedBy(PendingIncoming::createdAt)
     }
 
-    @Synchronized
-    fun completeIncoming(context: Context, messageId: String) {
-        if (messageId.isBlank()) return
+    fun completeIncoming(context: Context, messageId: String): Unit = synchronized(INBOUND_LOCK) {
+        if (messageId.isBlank()) return@synchronized
         inboundDatabase(context).remove(pendingInboundKey(messageId))
         val values = readArray(context, KEY_INBOX)
         for (index in 0 until values.length()) {
-            if (values.optString(index) == messageId) return
+            if (values.optString(index) == messageId) return@synchronized
         }
         values.put(messageId)
         val trimmed = JSONArray()
         val start = (values.length() - MAX_INBOX_IDS).coerceAtLeast(0)
         for (index in start until values.length()) trimmed.put(values.optString(index))
         writeArray(context, KEY_INBOX, trimmed)
+    }
+
+    fun bindCiphertext(
+        context: Context,
+        ciphertextDigest: String,
+        messageId: String,
+        receiptRequired: Boolean
+    ): Unit = synchronized(CIPHERTEXT_LOCK) {
+        if (ciphertextDigest.isBlank() || messageId.isBlank()) return@synchronized
+        val database = inboundDatabase(context)
+        val key = ciphertextKey(ciphertextDigest)
+        val existing = runCatching { JSONObject(database.readString(key, "")) }.getOrNull()
+        if (existing != null && existing.optString("message_id") != messageId) {
+            throw IllegalArgumentException("Signal ciphertext is already bound to another message")
+        }
+        database.writeString(
+            key,
+            JSONObject()
+                .put("message_id", messageId)
+                .put("receipt_required", receiptRequired)
+                .put("created_at", existing?.optLong("created_at") ?: System.currentTimeMillis())
+                .toString()
+        )
+        ciphertextWritesSincePrune += 1
+        if (ciphertextWritesSincePrune >= CIPHERTEXT_PRUNE_INTERVAL) {
+            ciphertextWritesSincePrune = 0
+            pruneCiphertextBindings(database, System.currentTimeMillis())
+        }
+    }
+
+    fun messageForCiphertext(context: Context, ciphertextDigest: String): KnownCiphertext? {
+        if (ciphertextDigest.isBlank()) return null
+        val value = runCatching {
+            JSONObject(inboundDatabase(context).readString(ciphertextKey(ciphertextDigest), ""))
+        }.getOrNull() ?: return null
+        val messageId = value.optString("message_id")
+        if (messageId.isBlank()) return null
+        return KnownCiphertext(
+            messageId = messageId,
+            receiptRequired = value.optBoolean("receipt_required", true)
+        )
     }
 
     @Synchronized
@@ -228,14 +323,13 @@ object SignalASILinkDeliveryStore {
 
     private fun pendingInboundKey(messageId: String): String = "$PENDING_INBOUND_PREFIX$messageId"
 
+    private fun ciphertextKey(ciphertextDigest: String): String = "$CIPHERTEXT_PREFIX$ciphertextDigest"
+
     private fun prunePendingIncoming(database: AgentEncryptedDatabase, nowMillis: Long) {
-        val pending = database.keys(PENDING_INBOUND_PREFIX)
-            .mapNotNull { key ->
-                val value = runCatching {
-                    JSONObject(database.readString(key, ""))
-                }.getOrNull()
+        val pending = database.entries(PENDING_INBOUND_PREFIX)
+            .mapNotNull { (key, raw) ->
+                val value = runCatching { JSONObject(raw) }.getOrNull()
                 if (value == null) {
-                    database.remove(key)
                     null
                 } else {
                     key to value.optLong("created_at", nowMillis)
@@ -244,9 +338,31 @@ object SignalASILinkDeliveryStore {
             .sortedBy { it.second }
         val cutoff = nowMillis - MAX_PENDING_INBOUND_AGE_MILLIS
         val overflow = (pending.size - MAX_PENDING_INBOUND).coerceAtLeast(0)
-        pending.forEachIndexed { index, (key, createdAt) ->
-            if (index < overflow || createdAt < cutoff) database.remove(key)
-        }
+        database.removeAll(
+            pending.mapIndexedNotNull { index, (key, createdAt) ->
+                key.takeIf { index < overflow || createdAt < cutoff }
+            }
+        )
+    }
+
+    private fun pruneCiphertextBindings(database: AgentEncryptedDatabase, nowMillis: Long) {
+        val bindings = database.entries(CIPHERTEXT_PREFIX)
+            .mapNotNull { (key, raw) ->
+                val value = runCatching { JSONObject(raw) }.getOrNull()
+                if (value == null) {
+                    null
+                } else {
+                    key to value.optLong("created_at", nowMillis)
+                }
+            }
+            .sortedBy { it.second }
+        val cutoff = nowMillis - MAX_CIPHERTEXT_AGE_MILLIS
+        val overflow = (bindings.size - MAX_CIPHERTEXT_BINDINGS).coerceAtLeast(0)
+        database.removeAll(
+            bindings.mapIndexedNotNull { index, (key, createdAt) ->
+                key.takeIf { index < overflow || createdAt < cutoff }
+            }
+        )
     }
 
     private fun readArray(context: Context, key: String): JSONArray {
@@ -266,6 +382,52 @@ object SignalASILinkDeliveryStore {
             if (item.optString("topic") !in discardedTopics) kept.put(JSONObject(item.toString()))
         }
         return kept
+    }
+}
+
+internal object SignalASILinkDeliveryAckPolicy {
+    private const val TRANSPORT_MESSAGE_ID = "transport_message_id"
+    private const val CLIENT_SOURCE_MESSAGE_ID = "client_source_message_id"
+
+    fun transportMessageId(payload: JSONObject): String =
+        payload.optString(TRANSPORT_MESSAGE_ID)
+            .takeIf(::isUuid)
+            ?: payload.optString("source_message_id").takeIf(::isUuid)
+            ?: payload.optString("reply_to").takeIf(::isUuid)
+            .orEmpty()
+
+    fun clientSourceMessageId(payload: JSONObject): String =
+        payload.optString(CLIENT_SOURCE_MESSAGE_ID)
+            .ifBlank { payload.optString("source_message_id").takeUnless(::isUuid).orEmpty() }
+
+    private fun isUuid(value: String): Boolean =
+        value.isNotBlank() && runCatching { UUID.fromString(value) }.isSuccess
+}
+
+internal object SignalASILinkCiphertextReplayPolicy {
+    private val ENCRYPTED_FIELDS = listOf(
+        "scheme",
+        "from",
+        "to",
+        "signal_type",
+        "type",
+        "message_type",
+        "messageType",
+        "body"
+    )
+
+    fun digest(wire: JSONObject): String {
+        val canonical = buildString {
+            ENCRYPTED_FIELDS.forEach { key ->
+                if (!wire.has(key)) return@forEach
+                val value = wire.opt(key)?.toString().orEmpty()
+                append(key.length).append(':').append(key)
+                    .append('=').append(value.length).append(':').append(value).append(';')
+            }
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 }
 

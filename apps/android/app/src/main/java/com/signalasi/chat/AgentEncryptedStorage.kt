@@ -82,6 +82,20 @@ class AgentEncryptedDatabase(
         Unit
     }
 
+    fun removeAll(keys: Collection<String>): Unit = synchronized(database) {
+        if (keys.isEmpty()) return@synchronized
+        val writable = database.writableDatabase
+        writable.beginTransaction()
+        try {
+            keys.forEach { key ->
+                writable.delete(TABLE_VALUES, "storage_key = ?", arrayOf(key))
+            }
+            writable.setTransactionSuccessful()
+        } finally {
+            writable.endTransaction()
+        }
+    }
+
     fun clear(): Unit = synchronized(database) {
         database.writableDatabase.delete(TABLE_VALUES, null, null)
         Unit
@@ -94,8 +108,8 @@ class AgentEncryptedDatabase(
     }
 
     fun keys(prefix: String = ""): List<String> = synchronized(database) {
-        val selection = if (prefix.isBlank()) null else "substr(storage_key, 1, ?) = ?"
-        val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix.length.toString(), prefix)
+        val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
+        val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
         database.readableDatabase.query(
             TABLE_VALUES,
             arrayOf("storage_key"),
@@ -107,6 +121,28 @@ class AgentEncryptedDatabase(
         ).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+    }
+
+    fun entries(prefix: String = ""): List<Pair<String, String>> = synchronized(database) {
+        val selection = if (prefix.isBlank()) null else "storage_key >= ? AND storage_key < ?"
+        val selectionArgs = if (prefix.isBlank()) null else arrayOf(prefix, "$prefix\uffff")
+        database.readableDatabase.query(
+            TABLE_VALUES,
+            arrayOf("storage_key", "encrypted_value"),
+            selection,
+            selectionArgs,
+            null,
+            null,
+            "storage_key ASC"
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val key = cursor.getString(0)
+                    AgentStorageCipher.decrypt(cursor.getString(1), associatedData(key))
+                        ?.let { value -> add(key to value) }
+                }
             }
         }
     }

@@ -109,6 +109,7 @@ internal class MqttSubscriptionRecoveryState {
 object SignalASIMqttClient {
     private const val TAG = "SignalASILink"
     private const val SERVER_URI = "ssl://broker.emqx.io:8883"
+    private const val MQTT_TRANSPORT_EPOCH = "v7-flow-control"
     private const val MQTT_QOS = 1
     private const val MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
     private const val PAIRING_CLAIM_MAX_AGE_MILLIS = 9 * 60_000L
@@ -116,6 +117,9 @@ object SignalASIMqttClient {
     private const val MQTT_MAX_INFLIGHT = 64
     private const val MAX_FRAGMENT_INFLIGHT = 48
     private const val MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 24
+    private const val MAX_OUTBOX_RETRY_BATCH = 4
+    private const val MIN_OUTBOX_RETRY_DELAY_MILLIS = 250L
+    private const val MAX_OUTBOX_RETRY_DELAY_MILLIS = 30_000L
 
     private data class PendingPairingClaim(
         val desktopId: String,
@@ -157,7 +161,7 @@ object SignalASIMqttClient {
         override fun run() {
             if (connected) {
                 retryPendingMessages()
-                retryHandler.postDelayed(this, 30_000L)
+                scheduleOutboxRetries()
             }
         }
     }
@@ -339,6 +343,9 @@ object SignalASIMqttClient {
 
     fun connect(context: Context) {
         appContext = context.applicationContext
+        if (SignalASILinkDeliveryStore.ensureTransportEpoch(context.applicationContext, MQTT_TRANSPORT_EPOCH)) {
+            Log.i(TAG, "MQTT transport epoch advanced; obsolete phone outbox entries were cleared")
+        }
         SignalASICrypto.initialize(context.applicationContext)
         schedulePendingIncomingReplay()
         val current = client
@@ -384,6 +391,7 @@ object SignalASIMqttClient {
                     if (completeFragmentDelivery(context, mid)) return
                     val messageId = deliveryMessageIds.remove(mid) ?: return
                     SignalASILinkDeliveryStore.markPublished(context, messageId)
+                    retryHandler.post { scheduleOutboxRetries() }
                 }
             })
         }
@@ -861,7 +869,7 @@ object SignalASIMqttClient {
         val context = appContext ?: return
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
-        for (pending in SignalASILinkDeliveryStore.pending(context)) {
+        for (pending in SignalASILinkDeliveryStore.pending(context).take(MAX_OUTBOX_RETRY_BATCH)) {
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
             if (isFragmentTransferActive(pending.messageId)) continue
             SignalASILinkDeliveryStore.markAttempt(context, pending.messageId)
@@ -878,7 +886,16 @@ object SignalASIMqttClient {
 
     private fun scheduleOutboxRetries() {
         retryHandler.removeCallbacks(retryRunnable)
-        retryHandler.postDelayed(retryRunnable, 3_000L)
+        if (!connected) return
+        val context = appContext ?: return
+        val delayMillis = SignalASILinkDeliveryStore.nextRetryDelayMillis(context) ?: return
+        retryHandler.postDelayed(
+            retryRunnable,
+            delayMillis.coerceIn(
+                MIN_OUTBOX_RETRY_DELAY_MILLIS,
+                MAX_OUTBOX_RETRY_DELAY_MILLIS
+            )
+        )
     }
 
     private fun scheduleConnectionRetry(reason: String, delayOverrideMillis: Long? = null) {
@@ -1135,6 +1152,12 @@ object SignalASIMqttClient {
             Log.w(TAG, "Rejected Signal envelope with mismatched endpoint identity")
             return
         }
+        val ciphertextDigest = SignalASILinkCiphertextReplayPolicy.digest(wire)
+        SignalASILinkDeliveryStore.messageForCiphertext(context, ciphertextDigest)?.let { known ->
+            if (known.receiptRequired) publishInboundReceipt(link, known.messageId)
+            Log.i(TAG, "MQTT encrypted replay handled before Signal decrypt message=${known.messageId}")
+            return
+        }
         val decrypted = SignalASICrypto.decryptEnvelope(wire) ?: return
         if (decrypted.optString("source_id") != link.desktopId ||
             decrypted.optString("target_id") != SignalASICrypto.localSignalasiId()
@@ -1144,13 +1167,24 @@ object SignalASIMqttClient {
         }
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
         val incomingMessageId = payload.optString("message_id")
+        SignalASILinkDeliveryStore.bindCiphertext(
+            context,
+            ciphertextDigest,
+            incomingMessageId,
+            receiptRequired = payload.optString("type") != "delivery_ack"
+        )
         if (payload.optString("type") == "delivery_ack") {
-            if (!SignalASILinkDeliveryStore.claimIncoming(context, incomingMessageId)) {
+            SignalASILinkDeliveryAckPolicy.transportMessageId(payload)
+                .takeIf(String::isNotBlank)
+                ?.let {
+                    SignalASILinkDeliveryStore.acknowledge(context, it)
+                    retryHandler.post { scheduleOutboxRetries() }
+                }
+            val firstReceipt = SignalASILinkDeliveryStore.claimIncoming(context, incomingMessageId)
+            if (!firstReceipt) {
                 Log.i(TAG, "Ignored duplicate inbound receipt $incomingMessageId")
                 return
             }
-            val acknowledgedId = payload.optString("source_message_id").ifBlank { payload.optString("reply_to") }
-            SignalASILinkDeliveryStore.acknowledge(context, acknowledgedId)
             dispatchIncomingPayload(context, payload, link.desktopId)
             return
         }
@@ -1267,6 +1301,7 @@ object SignalASIMqttClient {
         if (!mqtt.isConnected) return
         val payload = JSONObject()
             .put("type", "delivery_ack")
+            .put("transport_message_id", receivedMessageId)
             .put("source_message_id", receivedMessageId)
             .put("delivery_status", "accepted")
             .put("sender", "system")
@@ -1467,7 +1502,6 @@ object SignalASIMqttClient {
         retryHandler.postDelayed(
             {
                 requestConnectorStatuses(context)
-                retryPendingMessages()
             },
             800L
         )
@@ -1475,7 +1509,7 @@ object SignalASIMqttClient {
 
     private fun stableClientId(): String {
         val identity = runCatching { SignalASICrypto.localIdentitySha256().take(16) }.getOrDefault("unknown")
-        return "signalasi-android-$identity"
+        return "signalasi-android-$MQTT_TRANSPORT_EPOCH-$identity"
     }
 
     private fun setConnected(value: Boolean): Boolean {

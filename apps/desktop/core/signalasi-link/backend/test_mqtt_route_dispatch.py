@@ -44,6 +44,10 @@ class RecordingMqtt:
         self.published.append((topic, payload, qos, info))
         return info
 
+    @staticmethod
+    def is_connected() -> bool:
+        return True
+
 
 class MqttRouteDispatchTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -119,6 +123,74 @@ class MqttRouteDispatchTests(unittest.TestCase):
 
         mark_published.assert_called_once_with("route", "message")
         self.assertNotIn(AlreadyPublishedInfo.mid, mqtt_bridge.pending_outbound_acks)
+
+    def test_durable_flush_never_exceeds_available_application_ack_window(self) -> None:
+        mqttc = RecordingMqtt()
+        pending = [
+            {
+                "client_route_id": "client",
+                "message_id": f"message-{index}",
+                "topic": "topic/down",
+                "wire_payload": f"wire-{index}",
+            }
+            for index in range(4)
+        ]
+        with (
+            patch.object(mqtt_bridge, "outbound_inflight_count", return_value=7),
+            patch.object(mqtt_bridge, "pending_outbound", return_value=pending[:1]) as select,
+            patch.object(mqtt_bridge, "get_client", return_value={"client_route_id": "client"}),
+            patch.object(mqtt_bridge, "mark_outbound_sending") as mark_sending,
+            patch.object(mqtt_bridge, "track_outbound_publish") as track,
+        ):
+            published = mqtt_bridge.flush_outbound_messages(mqttc)
+
+        select.assert_called_once_with(limit=1)
+        mark_sending.assert_called_once_with("client", "message-0")
+        track.assert_called_once()
+        self.assertEqual({("client", "message-0")}, set(published))
+        self.assertEqual(1, len(mqttc.published))
+
+    def test_deferred_durable_publish_does_not_claim_a_broker_ack(self) -> None:
+        paired_client = {
+            "client_route_id": "client",
+            "topics": {"down": "topic/down", "control": "topic/control"},
+        }
+        with (
+            patch.object(mqtt_bridge, "_wire_client", return_value=paired_client),
+            patch.object(
+                mqtt_bridge,
+                "_publish_to_registered_client",
+                return_value=mqtt_bridge._DeferredPublishInfo(),
+            ),
+            patch.object(mqtt_bridge, "track_delivery_ack") as track,
+        ):
+            published = mqtt_bridge._publish_phone_payload(
+                object(),
+                {"_client_route_id": "client"},
+                {"type": "chat", "source_message_id": "source"},
+            )
+
+        self.assertTrue(published)
+        track.assert_not_called()
+
+    def test_running_task_progress_is_volatile_but_failure_is_durable(self) -> None:
+        pending = mqtt_bridge._PendingTaskEvent(
+            wire_payload={"_client_route_id": "client"},
+            task={"task_id": "task", "status": "running", "events": []},
+            trace=[],
+        )
+        with (
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+            patch.object(mqtt_bridge, "mobile_connector_agents", return_value=[]),
+            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True) as publish,
+        ):
+            self.assertTrue(mqtt_bridge._try_publish_task_event(RecordingMqtt(), pending))
+            pending.task["status"] = "failed"
+            self.assertTrue(mqtt_bridge._try_publish_task_event(RecordingMqtt(), pending))
+
+        self.assertFalse(publish.call_args_list[0].kwargs["durable"])
+        self.assertTrue(publish.call_args_list[1].kwargs["durable"])
 
     def test_large_transfer_never_occupies_reserved_small_message_slots(self) -> None:
         mqttc = RecordingMqtt()
@@ -232,7 +304,8 @@ class MqttRouteDispatchTests(unittest.TestCase):
         decrypt.assert_not_called()
         publish.assert_called_once()
         self.assertEqual("delivery_ack", publish.call_args.args[2]["type"])
-        self.assertEqual(message_id, publish.call_args.args[2]["message_id"])
+        self.assertEqual(message_id, publish.call_args.args[2]["transport_message_id"])
+        self.assertNotIn("message_id", publish.call_args.args[2])
         self.assertTrue(publish.call_args.args[2]["duplicate"])
 
     def test_returned_image_intent_is_detected_without_matching_plain_grading(self) -> None:

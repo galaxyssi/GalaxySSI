@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Test
+import java.util.UUID
 
 class SignalASILinkProtocolTest {
     @Test
@@ -78,6 +79,80 @@ class SignalASILinkProtocolTest {
         val pending = SignalASILinkDeliveryStore.pendingFromArray(values, now)
         assertEquals(1, pending.size)
         assertEquals("many-attempts", pending.single().messageId)
+    }
+
+    @Test
+    fun outboxSchedulerUsesEarliestDueMessageInsteadOfFixedPolling() {
+        val now = 1_000_000L
+        val values = JSONArray()
+            .put(outboxMessage("later", "topic").put("next_attempt_at", now + 30_000L))
+            .put(outboxMessage("next", "topic").put("next_attempt_at", now + 750L))
+            .put(outboxMessage("past-due", "topic").put("next_attempt_at", now - 1L))
+
+        assertEquals(0L, SignalASILinkDeliveryStore.nextRetryDelayFromArray(values, now))
+        values.remove(2)
+        assertEquals(750L, SignalASILinkDeliveryStore.nextRetryDelayFromArray(values, now))
+        assertNull(SignalASILinkDeliveryStore.nextRetryDelayFromArray(JSONArray(), now))
+    }
+
+    @Test
+    fun deliveryAckSeparatesTransportAndClientMessageIds() {
+        val transportId = UUID.randomUUID().toString()
+        val payload = JSONObject()
+            .put("type", "delivery_ack")
+            .put("transport_message_id", transportId)
+            .put("source_message_id", "521")
+            .put("client_source_message_id", "521")
+
+        assertEquals(transportId, SignalASILinkDeliveryAckPolicy.transportMessageId(payload))
+        assertEquals("521", SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload))
+    }
+
+    @Test
+    fun deliveryAckNeverTreatsLogicalMessageNumberAsTransportId() {
+        val payload = JSONObject()
+            .put("type", "delivery_ack")
+            .put("source_message_id", "521")
+
+        assertEquals("", SignalASILinkDeliveryAckPolicy.transportMessageId(payload))
+        assertEquals("521", SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload))
+    }
+
+    @Test
+    fun legacyTransportAckWithUuidSourceStillClearsOutbox() {
+        val transportId = UUID.randomUUID().toString()
+        val payload = JSONObject()
+            .put("type", "delivery_ack")
+            .put("source_message_id", transportId)
+
+        assertEquals(transportId, SignalASILinkDeliveryAckPolicy.transportMessageId(payload))
+        assertEquals("", SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload))
+    }
+
+    @Test
+    fun ciphertextReplayDigestIsStableAndSensitiveToCiphertext() {
+        val first = JSONObject()
+            .put("scheme", "signal")
+            .put("from", "desktop")
+            .put("to", "phone")
+            .put("message_type", 2)
+            .put("body", "ciphertext-a")
+        val reordered = JSONObject()
+            .put("body", "ciphertext-a")
+            .put("message_type", 2)
+            .put("to", "phone")
+            .put("from", "desktop")
+            .put("scheme", "signal")
+        val changed = JSONObject(first.toString()).put("body", "ciphertext-b")
+
+        assertEquals(
+            SignalASILinkCiphertextReplayPolicy.digest(first),
+            SignalASILinkCiphertextReplayPolicy.digest(reordered)
+        )
+        assertNotEquals(
+            SignalASILinkCiphertextReplayPolicy.digest(first),
+            SignalASILinkCiphertextReplayPolicy.digest(changed)
+        )
     }
 
     @Test
