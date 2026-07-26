@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from desktop_agent_loop import AgentLoopBudget
 from desktop_super_agent import DesktopSuperAgent
+from task_workspace import task_artifacts, task_workspace
 
 
 class FakeTaskManager:
@@ -91,6 +96,18 @@ def failed(code: str, message: str, *, retryable: bool = False) -> dict:
 
 
 class DesktopSuperAgentTest(unittest.TestCase):
+    def setUp(self):
+        self.temporary_workspace = tempfile.TemporaryDirectory()
+        self.workspace_environment = patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": self.temporary_workspace.name},
+        )
+        self.workspace_environment.start()
+
+    def tearDown(self):
+        self.workspace_environment.stop()
+        self.temporary_workspace.cleanup()
+
     def test_launches_named_application_as_a_direct_desktop_action(self):
         manager = FakeTaskManager()
         registry = FakeRegistry({
@@ -145,6 +162,55 @@ class DesktopSuperAgentTest(unittest.TestCase):
 
         self.assertEqual(outcome.delegate_agent_id, "codex")
         self.assertEqual(delivered[0][0], "codex")
+
+    def test_build_task_uses_medium_policy_checkpoint_and_verified_project_archive(self):
+        manager = FakeTaskManager()
+        delegated_prompts: list[str] = []
+
+        def deliver(agent_id, delegated_prompt, **kwargs):
+            delegated_prompts.append(delegated_prompt)
+            root = task_workspace(kwargs["task_id"], agent_id)
+            project = root / "demo"
+            project.mkdir()
+            (project / "main.py").write_text("print('ok')\n", encoding="utf-8")
+            (project / "README.md").write_text("# Demo\n", encoding="utf-8")
+            return {"reply": "Built and verified the project."}
+
+        coordinator = DesktopSuperAgent(
+            task_manager=manager,
+            diagnostics=lambda quick=True: {"agents": [{"id": "codex", "status": "ready"}]},
+            deliver=deliver,
+            registry=FakeRegistry({}),
+            memory=FakeMemory(),
+            skills=FakeSkills(),
+            mcp=FakeMcp(),
+        )
+
+        outcome = coordinator.run(
+            task_id="task-build-policy",
+            conversation_id="conversation-build-policy",
+            prompt="Build a small program and return the project",
+            compiled_prompt="compiled build request",
+            attachments=[],
+        )
+
+        checkpoint = json.loads(
+            (
+                task_workspace("task-build-policy", "desktop")
+                / ".signalasi"
+                / "execution-checkpoint.json"
+            ).read_text(encoding="utf-8")
+        )
+        outputs = task_artifacts("task-build-policy")
+
+        self.assertEqual("codex", outcome.delegate_agent_id)
+        self.assertIn("reasoning effort: medium", delegated_prompts[0])
+        self.assertEqual("build", checkpoint["policy"]["task_kind"])
+        self.assertEqual("medium", checkpoint["policy"]["reasoning_effort"])
+        self.assertIsNone(checkpoint["policy"]["absolute_timeout_seconds"])
+        self.assertEqual("finalize", checkpoint["phase"])
+        self.assertEqual(1, len(outputs))
+        self.assertTrue(outputs[0]["name"].endswith(".zip"))
 
     def test_explicit_mcp_capability_executes_without_external_agent(self):
         manager = FakeTaskManager()

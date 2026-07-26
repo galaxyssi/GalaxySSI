@@ -1161,10 +1161,10 @@
     <string name="on_device_agent_max_loop_iterations_subtitle">Bound Plan, Act, Observe, and Replan cycles for every task</string>
     <string name="on_device_agent_max_phase_retries">Maximum Phase Retries</string>
     <string name="on_device_agent_max_phase_retries_subtitle">Limit retries after failed actions or verification</string>
-    <string name="on_device_agent_execution_time_budget">Active Execution Budget</string>
-    <string name="on_device_agent_execution_time_budget_subtitle">Waiting for a user or remote resource does not consume this budget</string>
-    <string name="on_device_agent_execution_time_minutes">%1$d min</string>
-    <string name="on_device_agent_execution_time_seconds">%1$d s</string>
+    <string name="on_device_agent_no_progress_timeout">No-progress Recovery</string>
+    <string name="on_device_agent_no_progress_timeout_subtitle">Replan only when execution stops making meaningful progress; there is no fixed task deadline</string>
+    <string name="on_device_agent_no_progress_minutes">%1$d min</string>
+    <string name="on_device_agent_no_progress_seconds">%1$d s</string>
     <string name="on_device_agent_section_capabilities">Capability Access</string>
     <string name="on_device_agent_visual_model">On-device Visual Model</string>
     <string name="on_device_agent_visual_model_subtitle">Fuse offline OCR geometry with the UI tree for grounded complex-page actions</string>

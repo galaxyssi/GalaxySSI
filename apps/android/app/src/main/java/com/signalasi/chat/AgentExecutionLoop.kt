@@ -36,7 +36,8 @@ data class AgentExecutionLoopBudget(
     val maxReplans: Int = 3,
     val maxToolCalls: Int = 16,
     val maxRetries: Int = 2,
-    val maxActiveDurationMillis: Long = 10 * 60_000L
+    val maxSameFailureAttempts: Int = 2,
+    val noProgressTimeoutMillis: Long = 3 * 60_000L
 ) {
     init {
         require(maxIterations > 0) { "Maximum loop iterations must be positive" }
@@ -44,7 +45,8 @@ data class AgentExecutionLoopBudget(
         require(maxReplans >= 0) { "Maximum replans cannot be negative" }
         require(maxToolCalls > 0) { "Maximum tool calls must be positive" }
         require(maxRetries >= 0) { "Maximum retries cannot be negative" }
-        require(maxActiveDurationMillis > 0L) { "Maximum active duration must be positive" }
+        require(maxSameFailureAttempts > 0) { "Same-failure budget must be positive" }
+        require(noProgressTimeoutMillis > 0L) { "No-progress timeout must be positive" }
     }
 }
 
@@ -74,6 +76,10 @@ data class AgentExecutionLoopSnapshot(
     val lastActionId: String = "",
     val lastReason: String = "",
     val budgetFailure: String = "",
+    val taskKind: AgentExecutionTaskKind = AgentExecutionTaskKind.CHAT,
+    val reasoningEffort: AgentExecutionReasoningEffort = AgentExecutionReasoningEffort.LOW,
+    val lastProgressAtMillis: Long,
+    val failureCounts: Map<String, Int> = emptyMap(),
     val startedAtMillis: Long,
     val updatedAtMillis: Long,
     val revision: Long = 1L
@@ -99,9 +105,10 @@ fun interface AgentExecutionLoopEventSink {
 /**
  * Deterministic, bounded execution state for one mobile Agent task.
  *
- * Waiting and paused phases do not consume the active-duration budget. Every
- * accepted transition returns a complete snapshot so callers can persist it
- * before allowing the next side effect.
+ * Tasks have no absolute duration deadline. Waiting and paused phases do not
+ * count as active work, while no-progress and bounded retry policies recover
+ * stalled execution. Every transition returns a complete snapshot so callers
+ * can persist it before allowing the next side effect.
  */
 class AgentExecutionLoop private constructor(
     initialSnapshot: AgentExecutionLoopSnapshot?,
@@ -112,7 +119,8 @@ class AgentExecutionLoop private constructor(
 
     fun start(
         taskId: String,
-        budget: AgentExecutionLoopBudget
+        budget: AgentExecutionLoopBudget,
+        profile: AgentExecutionProfile = AgentExecutionProfile.forGoal("")
     ): AgentExecutionLoopEvent {
         val now = clock()
         val next = AgentExecutionLoopSnapshot(
@@ -125,6 +133,9 @@ class AgentExecutionLoop private constructor(
             ),
             resumePhase = AgentExecutionLoopPhase.PLAN,
             lastReason = "Task accepted",
+            taskKind = profile.taskKind,
+            reasoningEffort = profile.reasoningEffort,
+            lastProgressAtMillis = now,
             startedAtMillis = now,
             updatedAtMillis = now
         )
@@ -179,6 +190,7 @@ class AgentExecutionLoop private constructor(
             lastActionId = actionId.trim().ifBlank { current.lastActionId },
             lastReason = resolvedReason,
             budgetFailure = budgetFailure,
+            lastProgressAtMillis = now,
             updatedAtMillis = now,
             revision = current.revision + 1L
         )
@@ -190,6 +202,68 @@ class AgentExecutionLoop private constructor(
             snapshot = next,
             toolCall = toolCall,
             retry = retry
+        )
+    }
+
+    fun recordFailure(
+        failureClass: String,
+        reason: String,
+        actionId: String = ""
+    ): AgentExecutionLoopEvent {
+        val current = requireNotNull(snapshot) { "Agent execution loop has not started" }
+        val now = clock()
+        val key = failureFingerprint(failureClass, reason)
+        val count = current.failureCounts.getOrDefault(key, 0) + 1
+        val failures = current.failureCounts + (key to count)
+        val exhausted = count >= current.budget.maxSameFailureAttempts
+        val nextPhase = if (exhausted) {
+            AgentExecutionLoopPhase.FAILED
+        } else {
+            AgentExecutionLoopPhase.REPLAN
+        }
+        val accounted = accountActiveDuration(current, now)
+        val usage = accounted.usage.copy(
+            iterations = accounted.usage.iterations + if (exhausted) 0 else 1,
+            replans = accounted.usage.replans + if (exhausted) 0 else 1,
+            activeSinceMillis = if (nextPhase.isActive) now else 0L
+        )
+        val budgetFailure = if (exhausted) {
+            "Same failure repeated $count times"
+        } else {
+            budgetFailure(usage, current.budget)
+        }
+        val resolvedPhase = if (budgetFailure.isBlank()) nextPhase else AgentExecutionLoopPhase.FAILED
+        val next = accounted.copy(
+            phase = resolvedPhase,
+            usage = usage.copy(activeSinceMillis = if (resolvedPhase.isActive) now else 0L),
+            resumePhase = if (resolvedPhase.isActive) resolvedPhase else current.resumePhase,
+            lastActionId = actionId.trim().ifBlank { current.lastActionId },
+            lastReason = reason.trim().ifBlank { failureClass },
+            budgetFailure = budgetFailure,
+            lastProgressAtMillis = now,
+            failureCounts = failures,
+            updatedAtMillis = now,
+            revision = current.revision + 1L
+        )
+        snapshot = next
+        return AgentExecutionLoopEvent(
+            previousPhase = current.phase,
+            phase = next.phase,
+            reason = next.lastReason,
+            snapshot = next,
+            retry = !exhausted
+        )
+    }
+
+    fun checkNoProgress(nowMillis: Long = clock()): AgentExecutionLoopEvent? {
+        val current = snapshot ?: return null
+        if (!current.phase.isActive) return null
+        val stalledFor = (nowMillis - current.lastProgressAtMillis).coerceAtLeast(0L)
+        if (stalledFor < current.budget.noProgressTimeoutMillis) return null
+        return recordFailure(
+            failureClass = "no_progress",
+            reason = "No meaningful progress for ${current.budget.noProgressTimeoutMillis} ms",
+            actionId = current.lastActionId
         )
     }
 
@@ -244,9 +318,17 @@ class AgentExecutionLoop private constructor(
             "Tool-call budget exhausted (${budget.maxToolCalls})"
         usage.retries > budget.maxRetries ->
             "Retry budget exhausted (${budget.maxRetries})"
-        usage.activeDurationMillis > budget.maxActiveDurationMillis ->
-            "Active execution time budget exhausted (${budget.maxActiveDurationMillis} ms)"
         else -> ""
+    }
+
+    private fun failureFingerprint(failureClass: String, reason: String): String {
+        val normalized = reason
+            .lowercase(Locale.US)
+            .replace(Regex("\\b\\d+(?:\\.\\d+)?\\b"), "#")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(300)
+        return "${failureClass.lowercase(Locale.US).trim()}:$normalized"
     }
 
     private fun requireTransition(
@@ -348,13 +430,17 @@ class AgentExecutionLoop private constructor(
 
 object AgentExecutionLoopJsonCodec {
     fun encode(snapshot: AgentExecutionLoopSnapshot): String = JSONObject()
-        .put("version", 1)
+        .put("version", 2)
         .put("task_id", snapshot.taskId)
         .put("phase", snapshot.phase.name)
         .put("resume_phase", snapshot.resumePhase.name)
         .put("last_action_id", snapshot.lastActionId)
         .put("last_reason", snapshot.lastReason)
         .put("budget_failure", snapshot.budgetFailure)
+        .put("task_kind", snapshot.taskKind.name)
+        .put("reasoning_effort", snapshot.reasoningEffort.name)
+        .put("last_progress_at", snapshot.lastProgressAtMillis)
+        .put("failure_counts", JSONObject(snapshot.failureCounts))
         .put("started_at", snapshot.startedAtMillis)
         .put("updated_at", snapshot.updatedAtMillis)
         .put("revision", snapshot.revision)
@@ -364,7 +450,8 @@ object AgentExecutionLoopJsonCodec {
             .put("max_replans", snapshot.budget.maxReplans)
             .put("max_tool_calls", snapshot.budget.maxToolCalls)
             .put("max_retries", snapshot.budget.maxRetries)
-            .put("max_active_duration_ms", snapshot.budget.maxActiveDurationMillis))
+            .put("max_same_failure_attempts", snapshot.budget.maxSameFailureAttempts)
+            .put("no_progress_timeout_ms", snapshot.budget.noProgressTimeoutMillis))
         .put("usage", JSONObject()
             .put("iterations", snapshot.usage.iterations)
             .put("actions", snapshot.usage.actions)
@@ -388,7 +475,8 @@ object AgentExecutionLoopJsonCodec {
                 maxReplans = budget.getInt("max_replans"),
                 maxToolCalls = budget.getInt("max_tool_calls"),
                 maxRetries = budget.getInt("max_retries"),
-                maxActiveDurationMillis = budget.getLong("max_active_duration_ms")
+                maxSameFailureAttempts = budget.optInt("max_same_failure_attempts", 2),
+                noProgressTimeoutMillis = budget.optLong("no_progress_timeout_ms", 180_000L)
             ),
             usage = AgentExecutionLoopUsage(
                 iterations = usage.getInt("iterations"),
@@ -406,6 +494,20 @@ object AgentExecutionLoopJsonCodec {
             lastActionId = root.optString("last_action_id"),
             lastReason = root.optString("last_reason"),
             budgetFailure = root.optString("budget_failure"),
+            taskKind = enumValue(root.optString("task_kind"), AgentExecutionTaskKind.CHAT),
+            reasoningEffort = enumValue(
+                root.optString("reasoning_effort"),
+                AgentExecutionReasoningEffort.LOW
+            ),
+            lastProgressAtMillis = root.optLong(
+                "last_progress_at",
+                root.getLong("updated_at")
+            ),
+            failureCounts = root.optJSONObject("failure_counts")?.let { failures ->
+                failures.keys().asSequence().associateWith { key ->
+                    failures.optInt(key, 0)
+                }
+            }.orEmpty(),
             startedAtMillis = root.getLong("started_at"),
             updatedAtMillis = root.getLong("updated_at"),
             revision = root.optLong("revision", 1L)
@@ -427,14 +529,20 @@ object AgentExecutionLoopJsonCodec {
     }
 }
 
-internal fun AgentModelPlannerSettings.executionLoopBudget(): AgentExecutionLoopBudget =
+internal fun AgentModelPlannerSettings.executionLoopBudget(
+    profile: AgentExecutionProfile = AgentExecutionProfile.forGoal("")
+): AgentExecutionLoopBudget =
     AgentExecutionLoopBudget(
         maxIterations = maxLoopIterations,
         maxActions = maxActions.coerceAtLeast(1),
         maxReplans = maxReplans.coerceAtLeast(0),
         maxToolCalls = maxToolCalls.coerceAtLeast(1),
         maxRetries = maxPhaseRetries,
-        maxActiveDurationMillis = maxExecutionSeconds * 1_000L
+        maxSameFailureAttempts = profile.maxSameFailureAttempts,
+        noProgressTimeoutMillis = maxOf(
+            noProgressTimeoutSeconds * 1_000L,
+            profile.noProgressTimeoutMillis
+        )
     )
 
 internal fun AgentTaskContext.persistExecutionLoop(event: AgentExecutionLoopEvent) {

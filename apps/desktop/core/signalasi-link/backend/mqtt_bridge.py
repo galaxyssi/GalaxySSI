@@ -2255,8 +2255,20 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     image_artifact_required = has_image_attachment and _current_request_needs_returned_image(content)
     has_attachments = bool(attachments) if isinstance(attachments, list) else False
+    from agent_execution_harness import execution_contract, execution_policy_for
+
+    execution_policy = execution_policy_for(
+        current_user_request,
+        attachments=(
+            str(item.get("name") or "")
+            for item in attachments
+            if isinstance(item, dict)
+        ),
+    )
     image_artifact_repair_attempts = 0
     image_artifact_repair_lock = threading.Lock()
+    artifact_repair_attempts = 0
+    artifact_repair_lock = threading.Lock()
     codex_runtime: dict[str, object] = {
         "server": None,
         "workspace": None,
@@ -2410,6 +2422,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         return reply
 
     def publish_result(task: dict) -> None:
+        from agent_execution_harness import finalize_task_artifacts
         from artifact_delivery import (
             discard_task_workspace_if_no_artifacts,
             prepare_artifacts,
@@ -2426,7 +2439,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         ]
         raw_result = str(task.get("result") or "")
         hidden_artifact_paths = [str(path) for path in referenced_task_artifact_paths(raw_result)]
-        output_files = list(task.get("output_files") or [])
+        finalization = finalize_task_artifacts(
+            task_id,
+            current_user_request,
+            agent_id,
+            allow_device_install=full_desktop_executor,
+        )
+        output_files = list(finalization.output_files)
         artifacts = prepare_artifacts(task_id, output_files)
         deliverable_paths = {item.relative_path.casefold() for item in artifacts}
         deliverable_output_files = [
@@ -2476,6 +2495,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         }
         if rich_output:
             reply_payload["rich_output"] = rich_output
+        reply_payload["artifact_verification"] = finalization.verification
         receipt, reputation_snapshot = _task_reputation_evidence(task)
         if receipt:
             reply_payload["execution_receipt"] = receipt
@@ -2553,6 +2573,66 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 codex_run_conversation_id = ""
         add_task_trace("desktop_task_created", task.task_id)
 
+        def schedule_required_artifact_repair(verification: dict) -> bool:
+            nonlocal artifact_repair_attempts
+            with artifact_repair_lock:
+                server = codex_runtime.get("server")
+                workspace = codex_runtime.get("workspace")
+                if (
+                    artifact_repair_attempts >= max(
+                        1,
+                        execution_policy.max_same_failure_attempts - 1,
+                    )
+                    or not isinstance(server, CodexAppServer)
+                    or not isinstance(workspace, Path)
+                ):
+                    return False
+                artifact_repair_attempts += 1
+                attempt = artifact_repair_attempts
+            repair_prompt = (
+                "The task result cannot be finalized because the required deliverable is missing "
+                "or failed verification. Continue from the existing workspace; do not restart valid work.\n\n"
+                f"Original request:\n{current_user_request}\n\n"
+                f"Verification:\n{json.dumps(verification, ensure_ascii=False)[:2_000]}\n\n"
+                f"{execution_contract(execution_policy)}"
+            )
+
+            def repair() -> None:
+                time.sleep(0.05)
+                try:
+                    add_task_trace("artifact_repair_started", f"attempt={attempt}")
+                    server.start_task(
+                        task.task_id,
+                        repair_prompt,
+                        str(workspace),
+                        conversation_id=codex_run_conversation_id,
+                        approval_policy=codex_approval_policy,
+                        sandbox=codex_sandbox,
+                        execution_policy=execution_policy,
+                    )
+                except Exception as exc:
+                    add_task_trace("artifact_repair_failed", str(exc)[:240])
+                    app_event(task.task_id, {
+                        "status": "failed",
+                        "current_step": "",
+                        "result": (
+                            "\u5df2\u5b8c\u6210\u4e3b\u8981\u5904\u7406\uff0c\u4f46\u9700\u8981\u7684\u4ea7\u7269\u672a\u901a\u8fc7\u6700\u7ec8\u9a8c\u8bc1\u3002"
+                            if any("\u4e00" <= character <= "\u9fff" for character in content)
+                            else
+                            "The main work completed, but the required artifact did not pass final verification."
+                        ),
+                        "error": f"Artifact repair failed: {exc}",
+                    })
+                    with codex_task_callbacks_lock:
+                        codex_task_callbacks.pop(task.task_id, None)
+
+            threading.Thread(
+                target=repair,
+                daemon=True,
+                name=f"codex-artifact-repair-{task.task_id[:8]}",
+            ).start()
+            return True
+
         def schedule_image_artifact_repair() -> bool:
             nonlocal image_artifact_repair_attempts
             with image_artifact_repair_lock:
@@ -2589,6 +2669,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         image_paths=[str(path.resolve()) for path in image_paths],
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
+                        execution_policy=execution_policy,
                     )
                 except Exception as exc:
                     add_task_trace("returned_image_repair_failed", str(exc)[:240])
@@ -2657,6 +2738,36 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 )
                 if imported:
                     add_task_trace("referenced_artifacts_imported", len(imported))
+            if (
+                event_status == "completed"
+                and execution_policy.requires_artifact
+                and not image_artifact_required
+            ):
+                from agent_execution_harness import finalize_task_artifacts
+
+                finalization = finalize_task_artifacts(
+                    task_id,
+                    current_user_request,
+                    agent_id,
+                    allow_device_install=full_desktop_executor,
+                )
+                if finalization.verification.get("status") != "passed":
+                    if schedule_required_artifact_repair(finalization.verification):
+                        event_status = "running"
+                        event_result = ""
+                        event["status"] = "running"
+                        event["result"] = ""
+                        event["current_step"] = "Repairing required artifact"
+                        event.pop("error", None)
+                    else:
+                        event_status = "failed"
+                        event_result = (
+                            "\u9700\u8981\u7684\u4ea7\u7269\u672a\u751f\u6210\u6216\u672a\u901a\u8fc7\u6700\u7ec8\u9a8c\u8bc1\u3002"
+                            if any("\u4e00" <= character <= "\u9fff" for character in content)
+                            else
+                            "The required artifact was not produced or did not pass final verification."
+                        )
+                        event["error"] = "Required artifact verification failed"
             if event_status == "completed" and image_artifact_required:
                 from task_workspace import task_artifacts
                 generated_images = [
@@ -2861,6 +2972,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 if restored_context_note:
                     task_prompt += restored_context_note
                 fresh_task_prompt = full_turn
+                task_prompt += f"\n\n{execution_contract(execution_policy)}"
+                fresh_task_prompt += f"\n\n{execution_contract(execution_policy)}"
                 input_paths = sorted((workspace / "downloads" / "input").glob("*"))
                 image_paths = [
                     str(path.resolve()) for path in input_paths
@@ -2942,6 +3055,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         fresh_thread_prompt=fresh_task_prompt,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
+                        execution_policy=execution_policy,
                     )
                     if not parallel_codex_task:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
@@ -2987,6 +3101,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         fresh_thread_prompt=fresh_task_prompt,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
+                        execution_policy=execution_policy,
                     )
                     if not parallel_codex_task:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)

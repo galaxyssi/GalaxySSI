@@ -1,3 +1,4 @@
+import os
 import tempfile
 import time
 import unittest
@@ -8,6 +9,18 @@ import codex_app_server
 
 
 class CodexConversationThreadTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_workspace = tempfile.TemporaryDirectory()
+        self.workspace_environment = patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": self.temporary_workspace.name},
+        )
+        self.workspace_environment.start()
+
+    def tearDown(self):
+        self.workspace_environment.stop()
+        self.temporary_workspace.cleanup()
+
     def test_app_server_exposes_visible_tool_events_without_reasoning_content(self):
         events = []
         server = codex_app_server.CodexAppServer(
@@ -298,8 +311,71 @@ class CodexConversationThreadTests(unittest.TestCase):
             turn_inputs = [params["input"][0]["text"] for method, params, _ in calls if method == "turn/start"]
             self.assertIn("first", turn_inputs[0])
             self.assertIn("Do not synthesize replacement media or data.", turn_inputs[0])
+            self.assertIn("SignalASI execution contract:", turn_inputs[0])
+            turn_starts = [params for method, params, _ in calls if method == "turn/start"]
+            self.assertEqual(["low", "low"], [params["effort"] for params in turn_starts])
             self.assertTrue(server.delete_conversation("conversation-1"))
             self.assertNotIn(server._conversation_key("conversation-1"), server._conversation_threads)
+
+    def test_build_task_uses_medium_reasoning_without_an_absolute_deadline(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            codex_app_server,
+            "CONVERSATION_THREADS_PATH",
+            Path(temporary) / "threads.json",
+        ), patch.object(codex_app_server.threading, "Thread"):
+            server = codex_app_server.CodexAppServer("codex", {}, lambda _task, _event: None)
+            server._ensure_started = lambda: None
+            calls = []
+
+            def request(method, params, timeout):
+                calls.append((method, params, timeout))
+                if method == "thread/start":
+                    return {"thread": {"id": "thread-build"}}
+                return {"turn": {"id": "turn-build"}}
+
+            server._request = request
+            run = server.start_task(
+                "task-build",
+                "Build an Android phone game and return the APK",
+                temporary,
+            )
+
+            turn = next(params for method, params, _ in calls if method == "turn/start")
+            self.assertEqual("medium", turn["effort"])
+            self.assertEqual("build", run.execution_policy.task_kind.value)
+            self.assertIsNone(run.execution_policy.public()["absolute_timeout_seconds"])
+            self.assertIn(
+                "multi-file project must be packaged as ZIP",
+                turn["input"][0]["text"],
+            )
+
+    def test_same_tool_failure_replans_once_then_exhausts_the_budget(self):
+        server, run, _events = self._event_server()
+        started = []
+
+        class ImmediateThread:
+            def __init__(self, target, args=(), kwargs=None, **_ignored):
+                self.target = target
+                self.args = args
+                self.kwargs = kwargs or {}
+
+            def start(self):
+                started.append((self.target, self.args, self.kwargs))
+
+        failed_item = {
+            "id": "command-failure",
+            "type": "commandExecution",
+            "status": "failed",
+            "command": ["python", "verify.py"],
+        }
+        with patch.object(codex_app_server.threading, "Thread", ImmediateThread):
+            server._record_failed_item(run, failed_item)
+            server._record_failed_item(run, failed_item)
+
+        self.assertEqual(2, len(started))
+        self.assertEqual(server._attempt_replan, started[0][0])
+        self.assertEqual("tool_failure", started[0][2]["source"])
+        self.assertEqual(server._stop_repeated_failure, started[1][0])
 
     def test_reused_thread_moves_workspace_to_each_turn(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(

@@ -211,8 +211,13 @@ private object AgentModelPlanningPrompt {
         val appItemLimit = if (compact) 30 else 80
         val connectorItemLimit = if (compact) 20 else 40
         val promptLimit = if (compact) COMPACT_PROMPT_CHARACTERS else MAX_PROMPT_CHARACTERS
+        val executionProfile = AgentExecutionProfile.forGoal(
+            goal = request.goal,
+            hasAttachments = request.conversationContext.hasAttachments
+        )
         return buildString {
         append("Create an executable ActionPlan for the user goal. The phone validates every field locally.\n\n")
+        append(executionProfile.contract()).append("\n\n")
         append("JSON schema:\n")
         append("{\"summary\":\"...\",\"expected_result\":\"...\",\"rollback_strategy\":\"...\",")
         append("\"actions\":[{\"ref\":\"step_name\",\"kind\":\"ACTION_KIND\",\"target\":\"...\",")

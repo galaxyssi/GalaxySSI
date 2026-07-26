@@ -259,7 +259,7 @@ class AgentTaskConversationTests(unittest.TestCase):
             registered_process = RegisteredProcess()
             manager = agent_task_manager.AgentTaskManager(
                 heartbeat_interval_seconds=0.01,
-                task_timeout_seconds=0.05,
+                stall_timeout_seconds=0.05,
             )
 
             def run(running_task):
@@ -286,8 +286,16 @@ class AgentTaskConversationTests(unittest.TestCase):
                 self.assertTrue(terminal.wait(1))
                 timed_out = manager.get(task.task_id)
                 self.assertEqual("timed_out", timed_out.status)
-                self.assertIn("execution time limit", timed_out.result)
+                self.assertIn("no meaningful progress", timed_out.result.lower())
                 self.assertEqual("", timed_out.current_step)
+                self.assertEqual(
+                    2,
+                    len([
+                        event
+                        for event in timed_out.events
+                        if event.get("metadata", {}).get("reason") == "no_progress_timeout"
+                    ]),
+                )
                 terminal_seq = timed_out.status_seq
                 terminate.assert_called_once_with(registered_process)
 
@@ -307,7 +315,7 @@ class AgentTaskConversationTests(unittest.TestCase):
                 self.assertEqual(1, len(terminal_events))
 
                 restored = agent_task_manager.AgentTaskManager(
-                    task_timeout_seconds=0.05
+                    stall_timeout_seconds=0.05
                 ).get(task.task_id)
                 self.assertEqual("timed_out", restored.status)
 
@@ -319,7 +327,7 @@ class AgentTaskConversationTests(unittest.TestCase):
             events = []
             manager = agent_task_manager.AgentTaskManager(
                 heartbeat_interval_seconds=0.01,
-                task_timeout_seconds=0.2,
+                stall_timeout_seconds=0.2,
             )
 
             def capture(event):

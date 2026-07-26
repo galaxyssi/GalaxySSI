@@ -996,27 +996,110 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
             )
             return outcome.reply
         if agent_id.startswith("mcp:"):
+            from agent_execution_harness import (
+                AgentExecutionHarness,
+                execution_contract,
+                finalize_task_artifacts,
+                replan_instruction,
+            )
             from desktop_mcp import desktop_mcp_registry
 
             connection_id = agent_id.split(":", 1)[1]
             connection = desktop_mcp_registry().get(connection_id)
-            agent_task_manager.add_event(
+            label = connection.name if connection else connection_id
+            harness = AgentExecutionHarness(
                 task.task_id,
-                "mcp",
-                f"Using {connection.name if connection else connection_id}",
-            )
-            result = desktop_mcp_registry().invoke_prompt(
-                connection_id,
+                agent_id,
                 prompt,
-                process_callback=lambda process: agent_task_manager.register_process(task.task_id, process),
+                attachments=attachments,
             )
-            agent_task_manager.add_event(
-                task.task_id,
-                "result",
-                f"Received result from {connection.name if connection else connection_id}",
-                metadata={"duration_ms": int(result.get("duration_ms") or 0)},
-            )
-            return str(result.get("result") or "")
+            current_prompt = f"{prompt.rstrip()}\n\n{execution_contract(harness.policy)}"
+            while True:
+                attempt = harness.begin_attempt()
+                agent_task_manager.add_event(
+                    task.task_id,
+                    "act",
+                    f"Using {label}",
+                    event_id=f"execution-harness:mcp:{attempt}",
+                    status="running",
+                    metadata={
+                        "task_kind": harness.policy.task_kind.value,
+                        "reasoning_effort": harness.policy.reasoning_effort.value,
+                        "attempt": attempt,
+                    },
+                )
+                try:
+                    result = desktop_mcp_registry().invoke_prompt(
+                        connection_id,
+                        current_prompt,
+                        process_callback=lambda process: agent_task_manager.register_process(
+                            task.task_id,
+                            process,
+                        ),
+                    )
+                    reply = str(result.get("result") or "").strip()
+                    if not reply:
+                        raise RuntimeError(f"{label} returned no result")
+                    harness.progress("observe")
+                    finalization = finalize_task_artifacts(
+                        task.task_id,
+                        prompt,
+                        agent_id,
+                        allow_device_install=True,
+                    )
+                    if finalization.verification.get("status") == "passed":
+                        harness.progress(
+                            "verify",
+                            artifacts=finalization.verification,
+                        )
+                        agent_task_manager.add_event(
+                            task.task_id,
+                            "verify",
+                            f"Verified {label}'s result",
+                            event_id=f"execution-harness:mcp-verify:{attempt}",
+                            metadata={
+                                "duration_ms": int(result.get("duration_ms") or 0),
+                                "artifact_verification": finalization.verification,
+                            },
+                        )
+                        harness.progress("finalize")
+                        return reply
+                    failure = (
+                        "Required artifact verification failed: "
+                        + json.dumps(
+                            finalization.verification,
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        )[:1_000]
+                    )
+                except Exception as exc:
+                    failure = str(exc) or f"{label} failed"
+                can_replan, same_failure_attempt = harness.record_failure(
+                    "mcp_execution",
+                    failure,
+                )
+                agent_task_manager.add_event(
+                    task.task_id,
+                    "observe",
+                    f"{label} did not complete the task",
+                    event_id=f"execution-harness:mcp-observe:{attempt}",
+                    status="failed",
+                    detail=failure[:1_000],
+                    metadata={"same_failure_attempt": same_failure_attempt},
+                )
+                if not can_replan:
+                    raise RuntimeError(failure)
+                agent_task_manager.add_event(
+                    task.task_id,
+                    "replan",
+                    "Replanning from the latest MCP checkpoint",
+                    event_id=f"execution-harness:mcp-replan:{attempt}",
+                    status="running",
+                )
+                current_prompt = (
+                    f"{prompt.rstrip()}\n\n"
+                    f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
+                )
         result = deliver_agent_sync(
             agent_id,
             compiled_prompt,

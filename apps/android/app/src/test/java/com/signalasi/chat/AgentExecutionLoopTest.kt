@@ -79,10 +79,7 @@ class AgentExecutionLoopTest {
     fun waitingForADeviceDoesNotConsumeActiveExecutionTime() {
         var now = 1_000L
         val loop = AgentExecutionLoop.create { now }
-        loop.start(
-            "task-5",
-            AgentExecutionLoopBudget(maxActiveDurationMillis = 2_000L)
-        )
+        loop.start("task-5", AgentExecutionLoopBudget())
         now = 1_500L
         loop.transition(AgentExecutionLoopPhase.WAITING_RESPONSE)
         now = 91_500L
@@ -157,6 +154,75 @@ class AgentExecutionLoopTest {
         assertEquals(AgentExecutionLoopPhase.PAUSED, recovered?.phase)
         assertEquals(AgentExecutionLoopPhase.ACT, recovered?.snapshot?.resumePhase)
         assertFalse(recovered?.snapshot?.phase?.isActive ?: true)
+    }
+
+    @Test
+    fun buildTasksUseMediumReasoningWithoutAnAbsoluteDeadline() {
+        val profile = AgentExecutionProfile.forGoal(
+            "Build an Android phone game and return the APK"
+        )
+        val loop = AgentExecutionLoop.create { 1_000L }
+        val started = loop.start(
+            "task-build",
+            AgentModelPlannerSettings().executionLoopBudget(profile),
+            profile
+        )
+
+        assertEquals(AgentExecutionTaskKind.BUILD, started.snapshot.taskKind)
+        assertEquals(AgentExecutionReasoningEffort.MEDIUM, started.snapshot.reasoningEffort)
+        assertTrue(started.snapshot.budget.noProgressTimeoutMillis >= 420_000L)
+    }
+
+    @Test
+    fun inputAttachmentUsesMediumReasoningWithoutRequiringANewArtifact() {
+        val profile = AgentExecutionProfile.forGoal(
+            goal = "Summarize this spreadsheet",
+            hasAttachments = true
+        )
+
+        assertEquals(AgentExecutionTaskKind.ARTIFACT, profile.taskKind)
+        assertEquals(AgentExecutionReasoningEffort.MEDIUM, profile.reasoningEffort)
+        assertFalse(profile.requiresArtifact)
+    }
+
+    @Test
+    fun repeatedFailureReplansOnceThenStopsTheUnchangedPath() {
+        val loop = AgentExecutionLoop.create { 1_000L }
+        loop.start(
+            "task-failure",
+            AgentExecutionLoopBudget(maxSameFailureAttempts = 2)
+        )
+        loop.transition(AgentExecutionLoopPhase.ACT, actionId = "verify")
+        loop.transition(AgentExecutionLoopPhase.OBSERVE, actionId = "verify")
+
+        val first = loop.recordFailure("command", "python verify.py exited 1", "verify")
+        val second = loop.recordFailure("command", "python verify.py exited 2", "verify")
+
+        assertEquals(AgentExecutionLoopPhase.REPLAN, first.phase)
+        assertTrue(first.retry)
+        assertEquals(AgentExecutionLoopPhase.FAILED, second.phase)
+        assertFalse(second.retry)
+        assertTrue(second.snapshot.budgetFailure.contains("repeated 2"))
+    }
+
+    @Test
+    fun noProgressUsesTheSameRecoveryBudgetInsteadOfElapsedTaskTime() {
+        var now = 1_000L
+        val loop = AgentExecutionLoop.create { now }
+        loop.start(
+            "task-stalled",
+            AgentExecutionLoopBudget(
+                maxSameFailureAttempts = 2,
+                noProgressTimeoutMillis = 5_000L
+            )
+        )
+        now += 4_999L
+        assertEquals(null, loop.checkNoProgress())
+        now += 1L
+
+        val recovery = requireNotNull(loop.checkNoProgress())
+        assertEquals(AgentExecutionLoopPhase.REPLAN, recovery.phase)
+        assertTrue(recovery.snapshot.budgetFailure.isBlank())
     }
 
     @Test
