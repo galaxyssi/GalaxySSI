@@ -103,6 +103,8 @@ pending_outbound_acks: dict[int, tuple[str, str]] = {}
 pending_outbound_acks_lock = threading.Lock()
 MAX_MQTT_WIRE_BYTES = MAX_MQTT_PACKET_BYTES
 MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
+MAX_READABLE_PROGRESS_REPLAY_EVENTS = 64
+MAX_READABLE_PROGRESS_REPLAY_CHARACTERS = 48_000
 IMAGE_ATTACHMENT_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif"}
 PRESENCE_INTERVAL_SECONDS = max(
     15,
@@ -1128,6 +1130,7 @@ class _PendingTaskEvent:
     wire_payload: dict
     task: dict
     trace: list[dict]
+    replay_progress: bool = False
 
 
 pending_task_events: dict[str, _PendingTaskEvent] = {}
@@ -1853,6 +1856,44 @@ def _task_reputation_evidence(task: dict) -> tuple[dict, dict]:
         return {}, {}
 
 
+def _readable_progress_replay(events: list[dict]) -> list[dict]:
+    """Return bounded user-facing narration so reconnects do not lose progress."""
+    remaining_characters = MAX_READABLE_PROGRESS_REPLAY_CHARACTERS
+    replay: list[dict] = []
+    for event in reversed(events):
+        if not isinstance(event, dict):
+            continue
+        kind = str(event.get("kind") or "").strip().lower()
+        detail = str(event.get("detail") or "").strip()
+        title = str(event.get("title") or "").strip()
+        if kind not in {"narration", "reasoning", "plan"}:
+            continue
+        if kind in {"reasoning", "plan"} and not detail:
+            continue
+        visible_text = detail or title
+        if not visible_text:
+            continue
+        if replay and len(visible_text) > remaining_characters:
+            break
+        bounded_detail = detail[:remaining_characters]
+        bounded_title = title[: min(240, remaining_characters)]
+        replay.append({
+            "event_id": str(event.get("event_id") or ""),
+            "kind": "narration",
+            "code": str(event.get("code") or kind),
+            "title": bounded_title,
+            "status": str(event.get("status") or "completed"),
+            "detail": bounded_detail,
+            "created_at": int(event.get("created_at") or 0),
+            "updated_at": int(event.get("updated_at") or event.get("created_at") or 0),
+        })
+        remaining_characters -= len(bounded_detail or bounded_title)
+        if len(replay) >= MAX_READABLE_PROGRESS_REPLAY_EVENTS or remaining_characters <= 0:
+            break
+    replay.reverse()
+    return replay
+
+
 def _agent_task_payload(
     task: dict,
     trace: list[dict],
@@ -1860,11 +1901,17 @@ def _agent_task_payload(
     resolved_desktop_id: str,
     resolved_desktop_name: str,
     resolved_connector_agents: list[dict],
+    include_progress_replay: bool = False,
 ) -> dict:
     status = str(task.get("status") or "")
     stage = f"agent_{status}"
     events = task.get("events") if isinstance(task.get("events"), list) else []
     progress_event = events[-1] if events and isinstance(events[-1], dict) else {}
+    readable_progress = (
+        _readable_progress_replay(events)
+        if include_progress_replay or status in TERMINAL_STATES
+        else []
+    )
     payload = {
         "type": "agent_task_event",
         "task_id": task.get("task_id", ""),
@@ -1899,6 +1946,8 @@ def _agent_task_payload(
         "delivery_trace": _delivery_trace({"delivery_trace": trace}, _trace_event(stage, task.get("agent_id", ""))),
         "latency": _trace_metrics(trace),
     }
+    if readable_progress:
+        payload["events"] = readable_progress
     receipt, snapshot = _task_reputation_evidence(task)
     if receipt:
         payload["execution_receipt"] = receipt
@@ -1919,6 +1968,7 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
         resolved_desktop_id=desktop_id(),
         resolved_desktop_name=desktop_name(),
         resolved_connector_agents=mobile_connector_agents(),
+        include_progress_replay=pending.replay_progress,
     )
     return bool(_publish_phone_payload(mqttc, pending.wire_payload, payload))
 
@@ -1941,6 +1991,7 @@ def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: l
             if queued is None or _task_event_order(queued.task) <= _task_event_order(task):
                 pending_task_events.pop(task_id, None)
         elif task_id:
+            pending.replay_progress = True
             queued = pending_task_events.get(task_id)
             if queued is None or _task_event_order(queued.task) <= _task_event_order(task):
                 pending_task_events[task_id] = pending

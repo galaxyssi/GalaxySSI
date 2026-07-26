@@ -91,8 +91,20 @@ class TaskLatencyTests(unittest.TestCase):
             "events": [completed],
         }, now_ms=1_100))
 
-    def test_task_payload_carries_only_latest_structured_progress_event(self):
-        first = {"event_id": "one", "status": "completed"}
+    def test_task_payload_carries_latest_event_and_replays_only_readable_progress(self):
+        first = {
+            "event_id": "one",
+            "kind": "command",
+            "status": "completed",
+            "detail": "python hidden.py",
+        }
+        empty_reasoning = {
+            "event_id": "planning",
+            "kind": "reasoning",
+            "status": "completed",
+            "title": "Planning",
+            "detail": "",
+        }
         latest = {
             "event_id": "two",
             "kind": "narration",
@@ -103,16 +115,52 @@ class TaskLatencyTests(unittest.TestCase):
             {
                 "task_id": "task-1",
                 "status": "running",
-                "events": [first, latest],
+                "events": [first, empty_reasoning, latest],
             },
             [],
             resolved_desktop_id="desktop-1",
             resolved_desktop_name="Desktop",
             resolved_connector_agents=[],
+            include_progress_replay=True,
         )
 
         self.assertEqual(latest, payload["progress_event"])
-        self.assertNotIn("events", payload)
+        self.assertEqual(
+            [{
+                "event_id": "two",
+                "kind": "narration",
+                "code": "narration",
+                "title": "",
+                "status": "completed",
+                "detail": "Inspecting the worksheet.",
+                "created_at": 0,
+                "updated_at": 0,
+            }],
+            payload["events"],
+        )
+
+    def test_readable_progress_replay_is_bounded_and_keeps_latest_narration(self):
+        events = [
+            {
+                "event_id": f"narration-{index}",
+                "kind": "narration",
+                "status": "completed",
+                "detail": f"Visible update {index}",
+            }
+            for index in range(80)
+        ]
+        payload = _agent_task_payload(
+            {"task_id": "task-1", "status": "running", "events": events},
+            [],
+            resolved_desktop_id="desktop-1",
+            resolved_desktop_name="Desktop",
+            resolved_connector_agents=[],
+            include_progress_replay=True,
+        )
+
+        self.assertEqual(64, len(payload["events"]))
+        self.assertEqual("narration-16", payload["events"][0]["event_id"])
+        self.assertEqual("narration-79", payload["events"][-1]["event_id"])
 
     def test_terminal_failure_is_not_throttled(self):
         gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)

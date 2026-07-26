@@ -143,7 +143,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val REQUEST_IMPORT_MCP_PACKAGE = 2017
         private const val REQUEST_IMPORT_RUNTIME_PACK = 2018
         private const val REQUEST_EXPORT_RUNTIME_ARTIFACT = 2019
-        private const val MAX_VISIBLE_AGENT_PROCESS_STEPS = 20
         private const val INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS = 24
         private const val AGENT_TRANSCRIPT_PAGE_ITEMS = 24
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
@@ -2063,7 +2062,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (eventId.isBlank() || (title.isBlank() && detail.isBlank())) continue
             val rendered = remoteTaskEventText(kind, title, detail, targetName)
             if (rendered.isBlank()) continue
-            val contentKind = if (kind in setOf("reasoning", "plan")) {
+            val contentKind = if (kind in setOf("narration", "reasoning", "plan")) {
                 "REASONING_SUMMARY"
             } else {
                 kind.ifBlank { "TOOL" }.uppercase(Locale.ROOT)
@@ -2094,6 +2093,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         detail: String,
         targetName: String
     ): String {
+        if (kind == "narration") {
+            return detail.ifBlank { title }.take(MAX_CONNECTOR_PROGRESS_TEXT_CHARACTERS)
+        }
         val base = when (kind) {
             "reasoning" -> getString(R.string.agent_trace_remote_reasoning)
             "plan" -> getString(R.string.agent_trace_remote_plan)
@@ -11013,7 +11015,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             .sortedBy(AgentTranscriptEntry::timestampMillis)
             .distinctBy { it.text.trim() }
-            .takeLast(MAX_VISIBLE_AGENT_PROCESS_STEPS)
         val processSegments = AgentTranscriptPresentationPolicy.narrationSegments(
             processEntries.ifEmpty { listOf(entry) }
         )
