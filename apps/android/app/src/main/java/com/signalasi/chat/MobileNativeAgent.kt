@@ -7650,7 +7650,7 @@ object AgentPlanFactory {
                 permissions += AgentPermissionRequirement(
                     id = "paired_contact",
                     title = "Verified SignalASI contact",
-                    granted = target?.status == AgentConnectorStatus.AVAILABLE
+                    granted = AgentConnectorRouteSelector.isDeliverable(target)
                 )
             }
             AgentActionKind.DRAFT_PLAN,
@@ -8023,7 +8023,10 @@ class DefaultAgentSafetyPolicy(
                 "SignalASISafety",
                 "review mode=${mode.name} actions=${pendingActions.joinToString(",") { action ->
                     "${action.kind.name}:${AgentConfirmationPolicy.tier(action).name}"
-                }} tier_confirmation=$requiresTierConfirmation blocked=$blocked"
+                }} tier_confirmation=$requiresTierConfirmation blocked=$blocked " +
+                    "denied=${deniedPermissions.joinToString(",")} " +
+                    "screen_blocked=$blocksScreenAction execution_blocked=$blocksExecution " +
+                    "high_risk_blocked=$blocksHighRisk"
             )
         }
         val requiresConfirmation = when (mode) {

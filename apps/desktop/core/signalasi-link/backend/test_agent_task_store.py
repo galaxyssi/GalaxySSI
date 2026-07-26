@@ -150,6 +150,42 @@ class AgentTaskStoreTests(unittest.TestCase):
             self.assertEqual(["homework.png"], restored.attachments)
             self.assertEqual(["homework.png"], restored.public()["attachments"])
 
+    def test_external_task_uses_current_turn_policy_instead_of_stale_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            manager = AgentTaskManager(state_path=path)
+            prompt = (
+                "Recent conversation turns:\n"
+                "User: Build and install an Android game.\n"
+                "Assistant: The APK is ready.\n\n"
+                "Current user request:\nhello"
+            )
+
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex-contact",
+                source_message_id="phone-message",
+                prompt=prompt,
+                execution_prompt="hello",
+                execution_policy={
+                    "task_kind": "chat",
+                    "reasoning_effort": "low",
+                    "no_progress_timeout_seconds": 180.0,
+                    "max_replans": 2,
+                    "max_same_failure_attempts": 2,
+                    "requires_artifact": False,
+                    "target_platform": "",
+                    "verify_installation": False,
+                },
+                on_event=lambda _snapshot: None,
+                task_id="current-turn-policy",
+            )
+
+            restored = AgentTaskManager(state_path=path).get(task.task_id)
+            self.assertEqual("chat", restored.execution_policy["task_kind"])
+            self.assertFalse(restored.execution_policy["requires_artifact"])
+            self.assertFalse(restored.execution_policy["verify_installation"])
+
     def test_deleting_one_conversation_does_not_remove_other_history(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"

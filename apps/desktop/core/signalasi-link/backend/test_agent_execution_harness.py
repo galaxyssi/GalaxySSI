@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import threading
 import unittest
 import zipfile
 from pathlib import Path
@@ -85,6 +86,68 @@ class AgentExecutionHarnessTests(unittest.TestCase):
             self.assertEqual("failed", restored.checkpoint.phase)
             self.assertEqual(1, restored.checkpoint.replans)
             self.assertEqual([2], list(restored.checkpoint.failure_counts.values()))
+
+    def test_concurrent_checkpoint_progress_keeps_valid_json(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            harness = AgentExecutionHarness(
+                "task-concurrent-checkpoint",
+                "codex",
+                "Build a small program",
+            )
+            failures = []
+
+            def update(index):
+                try:
+                    harness.progress("act", event_index=index)
+                except Exception as exc:
+                    failures.append(exc)
+
+            threads = [
+                threading.Thread(target=update, args=(index,))
+                for index in range(40)
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            checkpoint = (
+                task_workspace("task-concurrent-checkpoint", "codex")
+                / ".signalasi"
+                / "execution-checkpoint.json"
+            )
+            data = json.loads(checkpoint.read_text(encoding="utf-8"))
+            temporary_files = list(checkpoint.parent.glob("*.tmp"))
+
+            self.assertEqual([], failures)
+            self.assertEqual("task-concurrent-checkpoint", data["task_id"])
+            self.assertEqual("act", data["phase"])
+            self.assertEqual([], temporary_files)
+
+    def test_locked_checkpoint_does_not_interrupt_execution(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            harness = AgentExecutionHarness(
+                "task-locked-checkpoint",
+                "codex",
+                "Build a small program",
+            )
+            with patch(
+                "agent_execution_harness.os.replace",
+                side_effect=PermissionError(5, "access denied"),
+            ):
+                harness.progress("observe", tool="python verify.py")
+
+            self.assertEqual("observe", harness.checkpoint.phase)
+            self.assertEqual(
+                "python verify.py",
+                harness.checkpoint.verification["tool"],
+            )
 
     def test_single_file_stays_native(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(

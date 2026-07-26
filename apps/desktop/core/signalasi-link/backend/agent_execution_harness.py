@@ -3,16 +3,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import zipfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Iterable
+
+
+log = logging.getLogger("signalasi.execution")
+_CHECKPOINT_WRITE_LOCK = threading.RLock()
 
 
 class AgentTaskKind(str, Enum):
@@ -263,6 +269,7 @@ class AgentExecutionHarness:
         attachments: Iterable[str] = (),
         policy: AgentExecutionPolicy | None = None,
     ) -> None:
+        self._state_lock = threading.RLock()
         self.policy = policy or execution_policy_for(prompt, attachments=attachments)
         initial = AgentExecutionCheckpoint(
             task_id=str(task_id or "").strip(),
@@ -275,46 +282,77 @@ class AgentExecutionHarness:
         self._save()
 
     def progress(self, phase: str, **verification: object) -> None:
-        self.checkpoint.phase = str(phase or "act")
-        self.checkpoint.last_progress_at = time.time()
-        if verification:
-            self.checkpoint.verification.update(verification)
-        self._save()
+        with self._state_lock:
+            self.checkpoint.phase = str(phase or "act")
+            self.checkpoint.last_progress_at = time.time()
+            if verification:
+                self.checkpoint.verification.update(verification)
+            self._save()
 
     def begin_attempt(self) -> int:
-        self.checkpoint.attempts += 1
-        self.progress("act")
-        return self.checkpoint.attempts
+        with self._state_lock:
+            self.checkpoint.attempts += 1
+            self.progress("act")
+            return self.checkpoint.attempts
 
     def record_failure(self, kind: str, message: str) -> tuple[bool, int]:
-        signature = failure_fingerprint(kind, message)
-        count = self.checkpoint.failure_counts.get(signature, 0) + 1
-        self.checkpoint.failure_counts[signature] = count
-        self.checkpoint.last_failure = str(message or "")[:2_000]
-        can_replan = (
-            count < self.policy.max_same_failure_attempts
-            and self.checkpoint.replans < self.policy.max_replans
-        )
-        if can_replan:
-            self.checkpoint.replans += 1
-            self.progress("replan")
-        else:
-            self.progress("failed")
-        return can_replan, count
+        with self._state_lock:
+            signature = failure_fingerprint(kind, message)
+            count = self.checkpoint.failure_counts.get(signature, 0) + 1
+            self.checkpoint.failure_counts[signature] = count
+            self.checkpoint.last_failure = str(message or "")[:2_000]
+            can_replan = (
+                count < self.policy.max_same_failure_attempts
+                and self.checkpoint.replans < self.policy.max_replans
+            )
+            if can_replan:
+                self.checkpoint.replans += 1
+                self.progress("replan")
+            else:
+                self.progress("failed")
+            return can_replan, count
 
     def _save(self) -> None:
-        if not self.checkpoint.task_id:
-            return
-        encoded = json.dumps(
-            self.checkpoint.public(),
-            ensure_ascii=False,
-            separators=(",", ":"),
+        with self._state_lock:
+            if not self.checkpoint.task_id:
+                return
+            encoded = json.dumps(
+                self.checkpoint.public(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            targets = self._checkpoint_paths()
+        with _CHECKPOINT_WRITE_LOCK:
+            for target in targets:
+                self._write_checkpoint(target, encoded)
+
+    @staticmethod
+    def _write_checkpoint(target: Path, encoded: str) -> bool:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.parent / (
+            f".{target.name}.{os.getpid()}.{threading.get_ident()}."
+            f"{time.time_ns()}.tmp"
         )
-        for target in self._checkpoint_paths():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            temporary = target.with_suffix(f"{target.suffix}.tmp")
+        try:
             temporary.write_text(encoded, encoding="utf-8")
-            os.replace(temporary, target)
+            for attempt in range(5):
+                try:
+                    os.replace(temporary, target)
+                    return True
+                except PermissionError:
+                    if attempt == 4:
+                        break
+                    time.sleep(0.01 * (2 ** attempt))
+        except OSError as exc:
+            log.warning("Execution checkpoint write failed target=%s: %s", target, exc)
+            return False
+        finally:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        log.warning("Execution checkpoint replace remained locked target=%s", target)
+        return False
 
     def _load(
         self,

@@ -58,6 +58,42 @@ class AgentPlanFactoryTest {
         assertTrue(plan.validation.valid)
     }
 
+    @Test
+    fun disconnectedPairedConnectorRemainsAuthorizedWhileHeartbeatIsInFlight() {
+        val recovering = AgentCallableTarget(
+            id = "desktop:codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.DISCONNECTED,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.REASONING)
+        )
+
+        val plan = AgentPlanFactory.actions(
+            request(targets = listOf(recovering)),
+            listOf(connectorAction("codex", recovering.id))
+        )
+
+        assertTrue(plan.requiredPermissions.single { it.id == "paired_contact" }.granted)
+    }
+
+    @Test
+    fun connectorThatStillNeedsSetupIsNotAuthorized() {
+        val unavailable = AgentCallableTarget(
+            id = "desktop:codex",
+            title = "Codex",
+            kind = AgentConnectorKind.AGENT,
+            status = AgentConnectorStatus.NEEDS_SETUP,
+            capabilities = listOf(AgentCapability.CHAT, AgentCapability.REASONING)
+        )
+
+        val plan = AgentPlanFactory.actions(
+            request(targets = listOf(unavailable)),
+            listOf(connectorAction("codex", unavailable.id))
+        )
+
+        assertFalse(plan.requiredPermissions.single { it.id == "paired_contact" }.granted)
+    }
+
     private fun connectorAction(id: String, connectorId: String) = AgentAction(
         id = id,
         kind = AgentActionKind.CALL_CONNECTOR,

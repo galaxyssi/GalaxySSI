@@ -2392,6 +2392,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
                 ),
                 response_language=preferred_response_language,
+                execution_prompt=current_user_request,
+                execution_policy=execution_policy.public(),
             )
         except Exception:
             agent_task_manager.add_event(
@@ -2550,6 +2552,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     for item in attachments
                     if isinstance(item, dict) and str(item.get("name") or "").strip()
                 ],
+                execution_prompt=current_user_request,
+                execution_policy=execution_policy.public(),
             )
             active_conversation_task = agent_task_manager.active_for_conversation(
                 codex_conversation_id,
@@ -3215,6 +3219,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             client_conversation_id=client_conversation_id,
             client_route_id=client_route_id,
             client_turn_id=str(payload.get("turn_id") or ""),
+            attachments=[
+                str(item.get("name") or "")
+                for item in attachments
+                if isinstance(item, dict) and str(item.get("name") or "").strip()
+            ],
+            execution_prompt=current_user_request,
+            execution_policy=execution_policy.public(),
         )
 
 
