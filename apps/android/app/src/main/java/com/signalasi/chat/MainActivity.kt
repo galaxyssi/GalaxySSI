@@ -11172,10 +11172,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val blocks = AgentRichContentCodec.decode(entry.richOutputJson)
             .filter { it.type == AgentRichBlockType.IMAGE || it.type == AgentRichBlockType.FILE }
         blocks.forEach { block ->
-            addView(agentUserAttachmentBlock(block), LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(6) })
+            val imageAttachment = block.type == AgentRichBlockType.IMAGE
+            addView(
+                agentUserAttachmentBlock(block),
+                LinearLayout.LayoutParams(
+                    if (imageAttachment) {
+                        dp(AGENT_IMAGE_THUMBNAIL_WIDTH_DP)
+                    } else {
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    },
+                    if (imageAttachment) {
+                        dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP)
+                    } else {
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    }
+                ).apply { bottomMargin = dp(6) }
+            )
         }
         val attachmentOnlyLabel = blocks.isNotEmpty() && (
             entry.text == "[${blocks.firstOrNull()?.title.orEmpty()}]" ||
@@ -11206,13 +11218,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 contentDescription = block.title
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(8).toFloat()
+                    cornerRadius = dp(AGENT_IMAGE_THUMBNAIL_RADIUS_DP).toFloat()
                     setColor(Color.parseColor("#F4F6F8"))
                 }
                 clipToOutline = true
                 setOnClickListener { showAgentImagePreview(uri, block.title) }
-                loadAgentImageThumbnail(this, uri, dp(224), dp(168))
-                layoutParams = LinearLayout.LayoutParams(dp(112), dp(84))
+                loadAgentImageThumbnail(
+                    this,
+                    uri,
+                    dp(AGENT_IMAGE_THUMBNAIL_WIDTH_DP * 2),
+                    dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * 2),
+                    adaptToTranscript = true
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    dp(AGENT_IMAGE_THUMBNAIL_WIDTH_DP),
+                    dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP)
+                )
             }
         }
         return LinearLayout(this).apply {
@@ -11254,7 +11275,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun loadAgentImageThumbnail(image: ImageView, uri: Uri, width: Int, height: Int) {
+    private fun loadAgentImageThumbnail(
+        image: ImageView,
+        uri: Uri,
+        width: Int,
+        height: Int,
+        adaptToTranscript: Boolean = false
+    ) {
         val requestKey = uri.toString()
         image.tag = requestKey
         thread(name = "signalasi-image-thumbnail") {
@@ -11262,6 +11289,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             runOnUiThread {
                 if (!isDestroyed && image.tag == requestKey && bitmap != null) {
                     image.setImageBitmap(bitmap)
+                    if (adaptToTranscript) {
+                        val size = agentImageThumbnailSize(bitmap.width, bitmap.height)
+                        image.layoutParams = image.layoutParams.apply {
+                            this.width = dp(size.widthDp)
+                            this.height = dp(size.heightDp)
+                        }
+                    }
                 } else {
                     bitmap?.recycle()
                 }

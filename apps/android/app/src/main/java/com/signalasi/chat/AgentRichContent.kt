@@ -5,6 +5,28 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.UUID
 
+internal const val AGENT_IMAGE_THUMBNAIL_WIDTH_DP = 112
+internal const val AGENT_IMAGE_THUMBNAIL_HEIGHT_DP = 168
+internal const val AGENT_IMAGE_THUMBNAIL_RADIUS_DP = 8
+
+internal data class AgentImageThumbnailSize(
+    val widthDp: Int,
+    val heightDp: Int
+)
+
+internal fun agentImageThumbnailSize(sourceWidth: Int, sourceHeight: Int): AgentImageThumbnailSize =
+    if (sourceWidth > sourceHeight) {
+        AgentImageThumbnailSize(
+            widthDp = AGENT_IMAGE_THUMBNAIL_HEIGHT_DP,
+            heightDp = AGENT_IMAGE_THUMBNAIL_WIDTH_DP
+        )
+    } else {
+        AgentImageThumbnailSize(
+            widthDp = AGENT_IMAGE_THUMBNAIL_WIDTH_DP,
+            heightDp = AGENT_IMAGE_THUMBNAIL_HEIGHT_DP
+        )
+    }
+
 enum class AgentRichBlockType {
     TEXT,
     HEADING,

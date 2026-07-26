@@ -143,14 +143,26 @@ internal object AgentDesktopArtifactStore {
         if (Uri.parse(sourceUri).scheme != "signalasi-artifact") return block
         val record = existingRecord(context, sourceUri) ?: return block
         val file = artifactFile(context, record)?.takeIf(File::isFile) ?: return block
+        val deliveredSizeBytes = record.optLong("size_bytes")
+        val originalSizeBytes = record.optLong("original_size_bytes", deliveredSizeBytes)
+        val category = block.metadata["category"].orEmpty()
+        val generatedSizeText = category.isNotBlank() &&
+            block.text.startsWith("$category \u00b7 ")
         return block.copy(
             uri = contentUri(context, file).toString(),
             mimeType = record.optString("mime_type").ifBlank { block.mimeType },
+            text = if (generatedSizeText) {
+                "$category \u00b7 ${humanSize(deliveredSizeBytes)}"
+            } else {
+                block.text
+            },
             metadata = block.metadata + mapOf(
                 "artifact_id" to record.optString("artifact_id"),
                 "artifact_source_uri" to sourceUri,
-                "size" to humanSize(record.optLong("size_bytes")),
-                "size_bytes" to record.optLong("size_bytes").toString(),
+                "size" to humanSize(deliveredSizeBytes),
+                "size_bytes" to deliveredSizeBytes.toString(),
+                "original_size" to humanSize(originalSizeBytes),
+                "original_size_bytes" to originalSizeBytes.toString(),
                 "sha256" to record.optString("sha256"),
                 "transport" to "encrypted-fragmented",
                 "storage" to "app_private",
