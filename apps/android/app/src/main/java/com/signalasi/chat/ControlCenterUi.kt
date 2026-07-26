@@ -30,6 +30,7 @@ enum class ControlCenterRoute(val wireValue: String) {
     SYSTEM_STATUS("system_status"),
     GLOBAL_AGENT("global_agent"),
     AGENT_CORE("agent_core"),
+    SELF_EVOLUTION("self_evolution"),
     EXECUTION_POLICY("execution_policy"),
     RESOURCE_ROUTING("resource_routing"),
     MEMORY("memory"),

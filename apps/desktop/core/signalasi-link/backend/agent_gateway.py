@@ -1396,6 +1396,7 @@ def ask_cli_agent(
     conversation_id: str = "",
     response_language: str = "",
     restricted_workspace: bool = False,
+    working_directory: Path | None = None,
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -1412,7 +1413,33 @@ def ask_cli_agent(
             conversation_id=conversation_id,
             response_language=response_language,
             restricted_workspace=restricted_workspace,
+            working_directory=working_directory,
         )
+
+
+def ask_evolution_agent(
+    agent_id: str,
+    text: str,
+    *,
+    task_id: str,
+    working_directory: Path,
+) -> str:
+    """Run a configured CLI Agent inside an already-isolated candidate worktree."""
+    spec = all_agent_specs().get(str(agent_id or "").strip().casefold())
+    if spec is None or spec.kind != "cli":
+        raise RuntimeError(f"Evolution requires a configured CLI Agent: {agent_id}")
+    candidate = Path(working_directory).expanduser().resolve()
+    if not candidate.is_dir() or not (candidate / ".git").exists():
+        raise RuntimeError("Evolution candidate is not a Git worktree")
+    return ask_cli_agent(
+        spec,
+        text,
+        task_id=task_id,
+        conversation_id="",
+        response_language="en",
+        restricted_workspace=True,
+        working_directory=candidate,
+    )
 
 
 def _ask_cli_agent_locked(
@@ -1425,6 +1452,7 @@ def _ask_cli_agent_locked(
     response_language: str = "",
     restricted_workspace: bool = False,
     retried_stale_session: bool = False,
+    working_directory: Path | None = None,
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
@@ -1475,6 +1503,7 @@ def _ask_cli_agent_locked(
         response_language=response_language,
         restricted_workspace=restricted_workspace,
         retried_stale_session=retried_stale_session,
+        working_directory=working_directory,
     )
 
 
@@ -1489,6 +1518,7 @@ def _run_cli_agent_process(
     response_language: str,
     restricted_workspace: bool,
     retried_stale_session: bool,
+    working_directory: Path | None = None,
 ) -> str:
     process: subprocess.Popen | None = None
     try:
@@ -1507,14 +1537,21 @@ def _run_cli_agent_process(
                 )
                 for value in args
             ]
-        working_directory = task_workspace(task_id, spec.id)
+        support_directory = task_workspace(task_id, spec.id)
+        execution_directory = (
+            Path(working_directory).expanduser().resolve()
+            if working_directory is not None
+            else support_directory
+        )
+        if not execution_directory.is_dir():
+            raise RuntimeError("Agent working directory is unavailable")
         agent_env = _agent_env(spec, restricted_workspace=restricted_workspace)
         agent_env.update(
             {
-                "SIGNALASI_TASK_ID": task_id or working_directory.name,
-                "SIGNALASI_TASK_WORKSPACE": str(working_directory),
-                "SIGNALASI_OUTPUT_DIR": str(working_directory / "outputs"),
-                "SIGNALASI_TEMP_DIR": str(working_directory / "temp"),
+                "SIGNALASI_TASK_ID": task_id or execution_directory.name,
+                "SIGNALASI_TASK_WORKSPACE": str(execution_directory),
+                "SIGNALASI_OUTPUT_DIR": str(support_directory / "outputs"),
+                "SIGNALASI_TEMP_DIR": str(support_directory / "temp"),
             }
         )
         process = subprocess.Popen(
@@ -1523,7 +1560,7 @@ def _run_cli_agent_process(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=agent_env,
-            cwd=str(working_directory),
+            cwd=str(execution_directory),
         )
         if task_id:
             from agent_task_manager import agent_task_manager
@@ -1556,6 +1593,7 @@ def _run_cli_agent_process(
                     response_language=response_language,
                     restricted_workspace=restricted_workspace,
                     retried_stale_session=True,
+                    working_directory=working_directory,
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()

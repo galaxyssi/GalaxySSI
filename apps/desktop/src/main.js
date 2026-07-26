@@ -217,6 +217,13 @@ async function runUiSmoke() {
           save: Boolean(document.querySelector("#saveCloudModelButton")),
           test: Boolean(document.querySelector("#testCloudModelButton")),
           badge: document.querySelector("#cloudModelBadge")?.textContent || "",
+          evolution: {
+            form: Boolean(document.querySelector(".evolution-create")),
+            problem: Boolean(document.querySelector("#evolutionProblem")),
+            scope: Boolean(document.querySelector("#evolutionScope")),
+            acceptance: Boolean(document.querySelector("#evolutionAcceptance")),
+            list: Boolean(document.querySelector("#evolutionTaskList"))
+          },
           languagePolicy: [
             document.querySelector("#responseLanguageSelect")?.value || "",
             document.querySelector("#asrLanguageSelect")?.value || "",
@@ -249,6 +256,7 @@ async function runUiSmoke() {
     if (!settingsState.active || settingsState.fields < 7 || !settingsState.save || !settingsState.test
         || !settingsState.badge.trim() || settingsState.secureValidation
         || !settingsState.insecureValidation || !settingsState.budgetValidation
+        || Object.values(settingsState.evolution).some((value) => !value)
         || settingsState.languagePolicy.some((value) => value !== "auto")) {
       throw new Error(`Settings drawer did not expose cloud API configuration: ${JSON.stringify(settingsState)}`);
     }
@@ -794,6 +802,51 @@ async function deleteDesktopConversation(conversationId) {
   return fetchJson(`/api/desktop/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
 }
 
+async function listEvolutionTasks(limit = 100) {
+  await startBackend();
+  return fetchJson(`/api/evolution/tasks?limit=${encodeURIComponent(limit)}`);
+}
+
+async function getEvolutionTask(taskId) {
+  await startBackend();
+  return fetchJson(`/api/evolution/tasks/${encodeURIComponent(taskId)}`);
+}
+
+async function createEvolutionTask(payload = {}) {
+  await startBackend();
+  return fetchJson("/api/evolution/tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      problem: String(payload.problem || ""),
+      scope: Array.isArray(payload.scope) ? payload.scope : [],
+      acceptance: Array.isArray(payload.acceptance) ? payload.acceptance : [],
+      reproduction_steps: Array.isArray(payload.reproductionSteps) ? payload.reproductionSteps : [],
+      risk_level: String(payload.riskLevel || "medium"),
+      max_attempts: Number(payload.maxAttempts || 3),
+      agent_id: String(payload.agentId || "codex"),
+      start: payload.start !== false
+    })
+  });
+}
+
+async function cancelEvolutionTask(taskId) {
+  await startBackend();
+  return fetchJson(`/api/evolution/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
+}
+
+async function rollbackEvolutionTask(taskId) {
+  await startBackend();
+  return fetchJson(`/api/evolution/tasks/${encodeURIComponent(taskId)}/rollback`, { method: "POST" });
+}
+
+async function publishEvolutionTask(taskId, approvalHash) {
+  await startBackend();
+  return fetchJson(`/api/evolution/tasks/${encodeURIComponent(taskId)}/publish`, {
+    method: "POST",
+    body: JSON.stringify({ approval_hash: String(approvalHash || ""), base_branch: "main" })
+  });
+}
+
 async function getDesktopControl() {
   await startBackend();
   return fetchJson("/api/desktop-control");
@@ -923,6 +976,13 @@ ipcMain.handle("desktop-tasks:start", (_event, payload) => startDesktopTask(payl
 ipcMain.handle("desktop-tasks:cancel", (_event, taskId) => cancelDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:retry", (_event, taskId) => retryDesktopTask(taskId));
 ipcMain.handle("desktop-conversations:delete", (_event, conversationId) => deleteDesktopConversation(conversationId));
+ipcMain.handle("evolution-tasks:list", (_event, limit) => listEvolutionTasks(limit));
+ipcMain.handle("evolution-tasks:get", (_event, taskId) => getEvolutionTask(taskId));
+ipcMain.handle("evolution-tasks:create", (_event, payload) => createEvolutionTask(payload));
+ipcMain.handle("evolution-tasks:cancel", (_event, taskId) => cancelEvolutionTask(taskId));
+ipcMain.handle("evolution-tasks:rollback", (_event, taskId) => rollbackEvolutionTask(taskId));
+ipcMain.handle("evolution-tasks:publish", (_event, taskId, approvalHash) =>
+  publishEvolutionTask(taskId, approvalHash));
 ipcMain.handle("desktop-control:get", getDesktopControl);
 ipcMain.handle("desktop-memory:list", (_event, query, limit) => getDesktopMemory(query, limit));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));

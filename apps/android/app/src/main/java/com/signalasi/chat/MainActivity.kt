@@ -319,6 +319,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     @Volatile private var runtimeCatalogRefreshInProgress = false
     @Volatile private var pendingRuntimeCatalogPackId: String? = null
     @Volatile private var runtimePackInstallInProgressId: String? = null
+    @Volatile private var lastSelfEvolutionRemoteSyncAtMillis = 0L
 
     // State
     private val handler = Handler(Looper.getMainLooper())
@@ -358,6 +359,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     @Volatile private var lastAgentRegistrySyncAtMillis = 0L
     private val agentTurnGoals = ConcurrentHashMap<String, String>()
     private lateinit var agentMcpRegistry: AgentMcpRegistry
+    private lateinit var remoteSelfEvolutionStore: EncryptedAgentRemoteSelfEvolutionStore
     private lateinit var agentMcpPackageRepository: AgentMcpPackageRepository
     private lateinit var agentRuntimePackCatalogManager: AgentRuntimePackCatalogManager
     private val agentRunIdsByTurn = ConcurrentHashMap<String, String>()
@@ -552,6 +554,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         )
         agentMcpRegistry = AgentMcpRegistry(EncryptedAgentMcpStore(this))
+        remoteSelfEvolutionStore = EncryptedAgentRemoteSelfEvolutionStore(this)
         agentMcpPackageRepository = AgentMcpPackageRepository(this)
         agentRuntimePackCatalogManager = AgentRuntimePackCatalogManager(this)
         traceStartup("agent_stores")
@@ -1491,6 +1494,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
                 if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
+                if (handleSelfEvolutionEvent(envelope)) return@runOnUiThread
                 if (handleAgentTaskEvent(envelope)) return@runOnUiThread
                 val msg = parseIncomingMessage(payload)
                 if (msg.content.isBlank()) return@runOnUiThread
@@ -1557,6 +1561,43 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 Log.e("SignalASILink", "Deferred inbound message after UI handling failure", error)
             } finally {
                 if (handled) SignalASIMqttClient.completeIncomingDelivery(this, payload)
+            }
+        }
+    }
+
+    private fun handleSelfEvolutionEvent(envelope: JSONObject?): Boolean {
+        val type = envelope?.optString("type").orEmpty()
+        if (type !in setOf("evolution_task_event", "evolution_task_snapshot")) return false
+        val desktopId = envelope?.optString("desktop_id").orEmpty()
+        if (desktopId.isBlank()) return true
+        if (type == "evolution_task_snapshot") {
+            val tasks = envelope?.optJSONArray("tasks").orEmptyJsonObjects()
+            remoteSelfEvolutionStore.replace(desktopId, tasks)
+        } else {
+            envelope?.optJSONObject("task")?.let { remoteSelfEvolutionStore.save(desktopId, it) }
+            val event = envelope?.optString("event").orEmpty()
+            if (event in setOf("candidate_ready", "attempt_failed", "failed", "command_failed")) {
+                val message = when (event) {
+                    "candidate_ready" -> getString(R.string.cc_evolution_remote_candidate_ready)
+                    "attempt_failed", "failed" -> getString(R.string.cc_evolution_remote_failed)
+                    else -> envelope?.optString("error")
+                        ?.takeIf(String::isNotBlank)
+                        ?: getString(R.string.cc_evolution_remote_command_failed)
+                }
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        }
+        if (controlCenterDestination?.route == ControlCenterRoute.SELF_EVOLUTION) {
+            renderControlCenterSelfEvolutionPage()
+        }
+        return true
+    }
+
+    private fun JSONArray?.orEmptyJsonObjects(): List<JSONObject> {
+        val array = this ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                array.optJSONObject(index)?.let(::add)
             }
         }
     }
@@ -6191,6 +6232,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 if (globalSettings.enabled) ControlCenterTone.VIOLET else ControlCenterTone.AMBER
                             ),
                             ccRouteRow(ControlCenterRoute.AGENT_CORE, R.string.cc_agent_core_title, R.string.cc_agent_core_subtitle, R.drawable.ic_agent_node, getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.cc_status_online), if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.GREEN),
+                            ccRouteRow(
+                                ControlCenterRoute.SELF_EVOLUTION,
+                                R.string.cc_evolution_title,
+                                R.string.cc_evolution_subtitle,
+                                R.drawable.ic_reset_data,
+                                getString(R.string.cc_evolution_candidate_count, AgentSelfEvolutionService.manager(this).list(500).count { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL }),
+                                ControlCenterTone.VIOLET
+                            ),
                             ccRouteRow(ControlCenterRoute.RESOURCE_ROUTING, R.string.cc_resource_routing_title, R.string.cc_resource_routing_subtitle, R.drawable.ic_settings_model, getString(if (availableResources > 0) R.string.cc_status_available else R.string.status_needs_setup), if (availableResources > 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER),
                             ccRouteRow(ControlCenterRoute.MEMORY, getString(R.string.cc_memory_title), getString(R.string.cc_memory_subtitle, memoryCount), R.drawable.ic_agent_memory, getString(if (safety.memoryCapture) R.string.status_enabled else R.string.common_off), if (safety.memoryCapture) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL),
                             ccRouteRow(ControlCenterRoute.LEARNING, R.string.cc_learning_title, R.string.cc_learning_subtitle, R.drawable.ic_agent_skill, agentLearningEngine.proposals(AgentLearningProposalStatus.PENDING).size.toString(), ControlCenterTone.VIOLET),
@@ -6423,6 +6472,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 mobileNativeAgent.updateModelPlannerMaxActions(if (current < 8) 8 else if (current < 12) 12 else 4)
                 showAgentPlannerSettingsPage()
             }
+            "evolution.create" -> showCreateSelfEvolutionTaskDialog()
+            "evolution.desktop.create" -> showCreateDesktopEvolutionTaskPicker()
             "agent.planner.max_iterations" -> {
                 val current = mobileNativeAgent.modelPlannerSettings().maxLoopIterations
                 val next = when {
@@ -6557,6 +6608,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     )
                     recreateIntoControlCenterChild(CONTROL_CENTER_CHILD_TEXT_SIZE)
                 }
+                actionId.startsWith("evolution.task:") -> {
+                    showSelfEvolutionTaskDialog(actionId.substringAfter("evolution.task:"))
+                }
+                actionId.startsWith("evolution.remote:") -> {
+                    val encoded = actionId.removePrefix("evolution.remote:")
+                    val desktopId = Uri.decode(encoded.substringBefore(':'))
+                    val taskId = Uri.decode(encoded.substringAfter(':', ""))
+                    showRemoteSelfEvolutionTaskDialog(desktopId, taskId)
+                }
                 actionId.startsWith("memory.group:") -> {
                     val kinds = when (actionId.substringAfter("memory.group:")) {
                         "identity" -> setOf(AgentMemoryKind.IDENTITY, AgentMemoryKind.PREFERENCE)
@@ -6612,6 +6672,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ControlCenterRoute.SYSTEM_STATUS -> renderControlCenterSystemStatusPage()
                 ControlCenterRoute.GLOBAL_AGENT -> renderControlCenterGlobalAgentPage()
                 ControlCenterRoute.AGENT_CORE -> renderControlCenterAgentCorePage()
+                ControlCenterRoute.SELF_EVOLUTION -> renderControlCenterSelfEvolutionPage()
                 ControlCenterRoute.EXECUTION_POLICY -> renderControlCenterExecutionPolicyPage()
                 ControlCenterRoute.RESOURCE_ROUTING -> renderControlCenterRoutingPage()
                 ControlCenterRoute.MEMORY -> renderControlCenterMemoryPage()
@@ -7707,6 +7768,478 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 )
             )
         )
+    }
+
+    private fun renderControlCenterSelfEvolutionPage() {
+        val manager = AgentSelfEvolutionService.manager(this)
+        val tasks = manager.list(100)
+        val desktopLinks = SignalASILinkProtocol.allServerLinks(this)
+            .filter { it.paired && it.fullDesktopExecutor }
+        val now = System.currentTimeMillis()
+        if (now - lastSelfEvolutionRemoteSyncAtMillis >= 10_000L) {
+            lastSelfEvolutionRemoteSyncAtMillis = now
+            desktopLinks.forEach { SignalASIMqttClient.requestDesktopEvolutionTasks(it.desktopId) }
+        }
+        val remoteTasks = remoteSelfEvolutionStore.list(100)
+            .filter { remote -> desktopLinks.any { it.desktopId == remote.desktopId } }
+        val runtime = AgentOnDeviceRuntimeManager(this).status()
+        val runtimeReady = runtime.backendReady && runtime.languageReady(AgentRuntimeLanguage.SHELL)
+        val candidates = (tasks + remoteTasks.map(AgentRemoteSelfEvolutionTask::task))
+            .count { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL }
+        val active = tasks.count {
+            it.status in setOf(
+                AgentSelfEvolutionStatus.PREPARING,
+                AgentSelfEvolutionStatus.RUNNING,
+                AgentSelfEvolutionStatus.VALIDATING
+            )
+        }
+        val failed = tasks.count {
+            it.status in setOf(AgentSelfEvolutionStatus.FAILED, AgentSelfEvolutionStatus.BLOCKED)
+        }
+        val recentRows = tasks.take(8).map { task ->
+            ControlCenterRowSpec(
+                actionId = "evolution.task:${task.taskId}",
+                title = task.problem,
+                subtitle = getString(
+                    R.string.cc_evolution_task_summary,
+                    task.attempts.size,
+                    task.maxAttempts,
+                    selfEvolutionStatusLabel(task.status)
+                ),
+                iconRes = R.drawable.ic_agent_history,
+                status = selfEvolutionStatusLabel(task.status),
+                tone = selfEvolutionStatusTone(task.status)
+            )
+        }
+        val remoteRows = remoteTasks.take(8).map { remote ->
+            val desktopName = desktopLinks.firstOrNull { it.desktopId == remote.desktopId }
+                ?.desktopName.orEmpty()
+            ControlCenterRowSpec(
+                actionId = "evolution.remote:${Uri.encode(remote.desktopId)}:${Uri.encode(remote.task.taskId)}",
+                title = remote.task.problem,
+                subtitle = getString(
+                    R.string.cc_evolution_remote_task_summary,
+                    desktopName.ifBlank { getString(R.string.cc_evolution_desktop_executor) },
+                    remote.task.attempts.size,
+                    remote.task.maxAttempts
+                ),
+                iconRes = R.drawable.ic_device_node,
+                status = selfEvolutionStatusLabel(remote.task.status),
+                tone = selfEvolutionStatusTone(remote.task.status)
+            )
+        }
+        showControlCenterFeature(
+            getString(R.string.cc_evolution_title),
+            ControlCenterPageSpec(
+                hero = ControlCenterHeroSpec(
+                    title = getString(R.string.cc_evolution_hero_title),
+                    subtitle = getString(R.string.cc_evolution_hero_subtitle),
+                    iconRes = R.drawable.ic_reset_data,
+                    badges = listOf(
+                        ControlCenterBadgeSpec(
+                            getString(
+                                if (runtimeReady) R.string.cc_evolution_local_ready
+                                else R.string.cc_evolution_runtime_needed
+                            ),
+                            if (runtimeReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER
+                        ),
+                        ControlCenterBadgeSpec(
+                            getString(R.string.cc_evolution_production_protected),
+                            ControlCenterTone.BLUE
+                        )
+                    ),
+                    metrics = listOf(
+                        ControlCenterMetricSpec(active.toString(), getString(R.string.cc_evolution_metric_active)),
+                        ControlCenterMetricSpec(candidates.toString(), getString(R.string.cc_evolution_metric_review)),
+                        ControlCenterMetricSpec(failed.toString(), getString(R.string.cc_evolution_metric_attention))
+                    ),
+                    actionId = "evolution.create"
+                ),
+                banner = ControlCenterBannerSpec(
+                    title = getString(
+                        if (runtimeReady) R.string.cc_evolution_banner_ready
+                        else R.string.cc_evolution_banner_setup
+                    ),
+                    subtitle = getString(
+                        if (runtimeReady) R.string.cc_evolution_banner_ready_subtitle
+                        else R.string.cc_evolution_banner_setup_subtitle
+                    ),
+                    iconRes = R.drawable.ic_security_shield,
+                    tone = if (runtimeReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER,
+                    actionId = if (runtimeReady) "evolution.create"
+                    else routeAction(ControlCenterRoute.ON_DEVICE_RUNTIME)
+                ),
+                sections = buildList {
+                    add(
+                        ControlCenterSectionSpec(
+                            getString(R.string.cc_evolution_section_pipeline),
+                            listOf(
+                                ControlCenterRowSpec(
+                                    "evolution.create",
+                                    getString(R.string.cc_evolution_new_task),
+                                    getString(R.string.cc_evolution_new_task_subtitle),
+                                    R.drawable.ic_agent_node,
+                                    "",
+                                    ControlCenterTone.VIOLET
+                                ),
+                                ControlCenterRowSpec(
+                                    routeAction(ControlCenterRoute.ON_DEVICE_RUNTIME),
+                                    getString(R.string.cc_evolution_local_runtime),
+                                    getString(R.string.cc_evolution_local_runtime_subtitle),
+                                    R.drawable.ic_settings_diagnostics,
+                                    getString(
+                                        if (runtimeReady) R.string.cc_status_ready
+                                        else R.string.status_needs_setup
+                                    ),
+                                    if (runtimeReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER
+                                ),
+                                ControlCenterRowSpec(
+                                    "evolution.desktop.create",
+                                    getString(R.string.cc_evolution_desktop_executor),
+                                    getString(R.string.cc_evolution_desktop_executor_subtitle),
+                                    R.drawable.ic_device_node,
+                                    desktopLinks.size.toString(),
+                                    if (desktopLinks.isEmpty()) ControlCenterTone.NEUTRAL else ControlCenterTone.GREEN,
+                                    enabled = desktopLinks.isNotEmpty()
+                                ),
+                                ControlCenterRowSpec(
+                                    "",
+                                    getString(R.string.cc_evolution_quality_gates),
+                                    getString(R.string.cc_evolution_quality_gates_subtitle),
+                                    R.drawable.ic_security_shield,
+                                    getString(R.string.cc_evolution_immutable),
+                                    ControlCenterTone.BLUE,
+                                    showChevron = false
+                                ),
+                                ControlCenterRowSpec(
+                                    "",
+                                    getString(R.string.cc_evolution_rollback),
+                                    getString(R.string.cc_evolution_rollback_subtitle),
+                                    R.drawable.ic_reset_data,
+                                    getString(R.string.cc_status_ready),
+                                    ControlCenterTone.AMBER,
+                                    showChevron = false
+                                )
+                            )
+                        )
+                    )
+                    add(
+                        ControlCenterSectionSpec(
+                            getString(R.string.cc_evolution_section_recent),
+                            recentRows.ifEmpty {
+                                listOf(
+                                    ControlCenterRowSpec(
+                                        "evolution.create",
+                                        getString(R.string.cc_evolution_empty_title),
+                                        getString(R.string.cc_evolution_empty_subtitle),
+                                        R.drawable.ic_agent_history,
+                                        "",
+                                        ControlCenterTone.NEUTRAL
+                                    )
+                                )
+                            }
+                        )
+                    )
+                    if (remoteRows.isNotEmpty()) {
+                        add(
+                            ControlCenterSectionSpec(
+                                getString(R.string.cc_evolution_section_desktop),
+                                remoteRows
+                            )
+                        )
+                    }
+                },
+                footer = getString(R.string.cc_evolution_footer)
+            )
+        )
+    }
+
+    private fun selfEvolutionStatusLabel(status: AgentSelfEvolutionStatus): String = getString(
+        when (status) {
+            AgentSelfEvolutionStatus.PROPOSED -> R.string.cc_evolution_status_proposed
+            AgentSelfEvolutionStatus.PREPARING -> R.string.cc_evolution_status_preparing
+            AgentSelfEvolutionStatus.RUNNING -> R.string.cc_evolution_status_running
+            AgentSelfEvolutionStatus.VALIDATING -> R.string.cc_evolution_status_validating
+            AgentSelfEvolutionStatus.WAITING_APPROVAL -> R.string.cc_evolution_status_review
+            AgentSelfEvolutionStatus.PUBLISHING -> R.string.cc_evolution_status_publishing
+            AgentSelfEvolutionStatus.PUBLISHED -> R.string.cc_evolution_status_published
+            AgentSelfEvolutionStatus.COMPLETED -> R.string.cc_evolution_status_completed
+            AgentSelfEvolutionStatus.FAILED -> R.string.cc_evolution_status_failed
+            AgentSelfEvolutionStatus.BLOCKED -> R.string.cc_evolution_status_blocked
+            AgentSelfEvolutionStatus.CANCELLED -> R.string.cc_evolution_status_cancelled
+            AgentSelfEvolutionStatus.ROLLED_BACK -> R.string.cc_evolution_status_rolled_back
+        }
+    )
+
+    private fun selfEvolutionStatusTone(status: AgentSelfEvolutionStatus): ControlCenterTone = when (status) {
+        AgentSelfEvolutionStatus.WAITING_APPROVAL,
+        AgentSelfEvolutionStatus.PUBLISHING -> ControlCenterTone.VIOLET
+        AgentSelfEvolutionStatus.PREPARING,
+        AgentSelfEvolutionStatus.RUNNING,
+        AgentSelfEvolutionStatus.VALIDATING -> ControlCenterTone.BLUE
+        AgentSelfEvolutionStatus.FAILED,
+        AgentSelfEvolutionStatus.BLOCKED -> ControlCenterTone.AMBER
+        AgentSelfEvolutionStatus.CANCELLED,
+        AgentSelfEvolutionStatus.ROLLED_BACK -> ControlCenterTone.NEUTRAL
+        AgentSelfEvolutionStatus.PROPOSED -> ControlCenterTone.NEUTRAL
+        AgentSelfEvolutionStatus.PUBLISHED,
+        AgentSelfEvolutionStatus.COMPLETED -> ControlCenterTone.GREEN
+    }
+
+    private fun showCreateDesktopEvolutionTaskPicker() {
+        val links = SignalASILinkProtocol.allServerLinks(this)
+            .filter { it.paired && it.fullDesktopExecutor }
+        if (links.isEmpty()) {
+            Toast.makeText(this, getString(R.string.cc_evolution_no_desktop_executor), Toast.LENGTH_LONG).show()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.cc_evolution_choose_desktop))
+            .setItems(links.map { it.desktopName }.toTypedArray()) { _, index ->
+                showCreateSelfEvolutionTaskDialog(links[index].desktopId)
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
+    }
+
+    private fun showCreateSelfEvolutionTaskDialog(desktopId: String = "") {
+        val problemInput = EditText(this).apply {
+            hint = getString(R.string.cc_evolution_problem_hint)
+            minLines = 2
+            maxLines = 5
+        }
+        val scopeInput = EditText(this).apply {
+            hint = getString(R.string.cc_evolution_scope_hint)
+            setText(if (desktopId.isBlank()) "apps/android/app" else "apps/desktop")
+            maxLines = 4
+        }
+        val acceptanceInput = EditText(this).apply {
+            hint = getString(R.string.cc_evolution_acceptance_hint)
+            setText(getString(R.string.cc_evolution_acceptance_default))
+            minLines = 2
+            maxLines = 6
+        }
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(4), dp(20), 0)
+            addView(problemInput)
+            addView(scopeInput)
+            addView(acceptanceInput)
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(
+                getString(
+                    if (desktopId.isBlank()) R.string.cc_evolution_new_task
+                    else R.string.cc_evolution_new_desktop_task
+                )
+            )
+            .setView(form)
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.common_create), null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val problem = problemInput.text.toString().trim()
+                val scope = scopeInput.text.toString().split(',', '\n')
+                    .map(String::trim).filter(String::isNotBlank)
+                val acceptance = acceptanceInput.text.toString().split('\n')
+                    .map(String::trim).filter(String::isNotBlank)
+                val outcome = runCatching {
+                    if (desktopId.isBlank()) {
+                        AgentSelfEvolutionService.manager(this).create(
+                            problem = problem,
+                            scope = scope,
+                            acceptance = acceptance,
+                            risk = AgentSelfEvolutionRisk.MEDIUM,
+                            maxAttempts = 3
+                        )
+                    } else {
+                        check(
+                            SignalASIMqttClient.createDesktopEvolutionTask(
+                                desktopId = desktopId,
+                                problem = problem,
+                                scope = scope,
+                                acceptance = acceptance
+                            )
+                        ) { getString(R.string.cc_evolution_remote_send_failed) }
+                        null
+                    }
+                }
+                if (outcome.isFailure) {
+                    Toast.makeText(
+                        this,
+                        outcome.exceptionOrNull()?.message ?: getString(R.string.cc_evolution_create_failed),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@setOnClickListener
+                }
+                dialog.dismiss()
+                renderControlCenterSelfEvolutionPage()
+                outcome.getOrNull()?.let(::showSelfEvolutionTaskDialog)
+                if (desktopId.isNotBlank()) {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.cc_evolution_remote_started),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        }
+        dialog.show()
+    }
+
+    private fun showSelfEvolutionTaskDialog(taskId: String) {
+        AgentSelfEvolutionService.manager(this).get(taskId)?.let(::showSelfEvolutionTaskDialog)
+            ?: Toast.makeText(this, getString(R.string.cc_evolution_task_missing), Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showSelfEvolutionTaskDialog(task: AgentSelfEvolutionTask) {
+        val latest = task.attempts.lastOrNull()
+        val gateSummary = latest?.gates.orEmpty().joinToString("\n") { gate ->
+            "${gate.id}: ${gate.status.wireValue}"
+        }.ifBlank { getString(R.string.cc_evolution_no_gates) }
+        val message = getString(
+            R.string.cc_evolution_task_detail,
+            selfEvolutionStatusLabel(task.status),
+            task.scope.joinToString("\n"),
+            task.acceptance.joinToString("\n"),
+            gateSummary,
+            task.lastError.ifBlank { getString(R.string.common_none) }
+        )
+        val builder = AlertDialog.Builder(this)
+            .setTitle(task.problem)
+            .setMessage(message)
+            .setNegativeButton(getString(R.string.common_close), null)
+        if (task.status in setOf(AgentSelfEvolutionStatus.PROPOSED, AgentSelfEvolutionStatus.BLOCKED)) {
+            builder.setPositiveButton(getString(R.string.cc_evolution_prepare)) { _, _ ->
+                prepareSelfEvolutionTask(task.taskId)
+            }
+        }
+        if (task.status !in setOf(
+                AgentSelfEvolutionStatus.CANCELLED,
+                AgentSelfEvolutionStatus.ROLLED_BACK,
+                AgentSelfEvolutionStatus.PUBLISHED,
+                AgentSelfEvolutionStatus.COMPLETED
+            )
+        ) {
+            builder.setNeutralButton(getString(R.string.cc_evolution_discard)) { _, _ ->
+                AgentSelfEvolutionService.manager(this).rollback(task.taskId)
+                renderControlCenterSelfEvolutionPage()
+            }
+        }
+        builder.show()
+    }
+
+    private fun showRemoteSelfEvolutionTaskDialog(desktopId: String, taskId: String) {
+        val task = remoteSelfEvolutionStore.get(desktopId, taskId)
+        if (task == null) {
+            Toast.makeText(this, getString(R.string.cc_evolution_task_missing), Toast.LENGTH_SHORT).show()
+            return
+        }
+        val latest = task.attempts.lastOrNull()
+        val gateSummary = latest?.gates.orEmpty().joinToString("\n") { gate ->
+            "${gate.id}: ${gate.status.wireValue}"
+        }.ifBlank { getString(R.string.cc_evolution_no_gates) }
+        val message = getString(
+            R.string.cc_evolution_task_detail,
+            selfEvolutionStatusLabel(task.status),
+            task.scope.joinToString("\n"),
+            task.acceptance.joinToString("\n"),
+            gateSummary,
+            task.lastError.ifBlank { getString(R.string.common_none) }
+        )
+        val builder = AlertDialog.Builder(this)
+            .setTitle(task.problem)
+            .setMessage(message)
+            .setNegativeButton(getString(R.string.common_close), null)
+        if (task.status == AgentSelfEvolutionStatus.WAITING_APPROVAL) {
+            builder.setPositiveButton(getString(R.string.cc_evolution_publish_pr)) { _, _ ->
+                showRemoteEvolutionPublishConfirmation(desktopId, task)
+            }
+        } else if (task.status in setOf(
+                AgentSelfEvolutionStatus.PREPARING,
+                AgentSelfEvolutionStatus.RUNNING,
+                AgentSelfEvolutionStatus.VALIDATING
+            )
+        ) {
+            builder.setPositiveButton(getString(R.string.common_cancel)) { _, _ ->
+                SignalASIMqttClient.controlDesktopEvolutionTask(
+                    desktopId,
+                    task.taskId,
+                    "cancel"
+                )
+            }
+        }
+        if (task.status !in setOf(
+                AgentSelfEvolutionStatus.ROLLED_BACK,
+                AgentSelfEvolutionStatus.PUBLISHED,
+                AgentSelfEvolutionStatus.COMPLETED
+            )
+        ) {
+            builder.setNeutralButton(getString(R.string.cc_evolution_discard)) { _, _ ->
+                SignalASIMqttClient.controlDesktopEvolutionTask(
+                    desktopId,
+                    task.taskId,
+                    "rollback"
+                )
+            }
+        }
+        builder.show()
+    }
+
+    private fun showRemoteEvolutionPublishConfirmation(
+        desktopId: String,
+        task: AgentSelfEvolutionTask
+    ) {
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.cc_evolution_publish_pr))
+            .setMessage(
+                getString(
+                    R.string.cc_evolution_publish_confirmation,
+                    task.candidateCommit.take(12),
+                    task.approvalHash.take(16)
+                )
+            )
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.cc_evolution_publish_pr)) { _, _ ->
+                val sent = SignalASIMqttClient.controlDesktopEvolutionTask(
+                    desktopId,
+                    task.taskId,
+                    "publish",
+                    task.approvalHash
+                )
+                Toast.makeText(
+                    this,
+                    getString(
+                        if (sent) R.string.cc_evolution_publish_sent
+                        else R.string.cc_evolution_remote_send_failed
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            .show()
+    }
+
+    private fun prepareSelfEvolutionTask(taskId: String) {
+        Toast.makeText(this, getString(R.string.cc_evolution_preparing_notice), Toast.LENGTH_SHORT).show()
+        cloudExecutor.execute {
+            val outcome = runCatching { AgentSelfEvolutionService.manager(this).prepare(taskId) }
+            runOnUiThread {
+                if (controlCenterDestination?.route == ControlCenterRoute.SELF_EVOLUTION) {
+                    renderControlCenterSelfEvolutionPage()
+                }
+                outcome.fold(
+                    onSuccess = { showSelfEvolutionTaskDialog(it) },
+                    onFailure = {
+                        Toast.makeText(
+                            this,
+                            it.message ?: getString(R.string.cc_evolution_prepare_failed),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                )
+            }
+        }
     }
 
     private fun renderControlCenterMemoryPage() {

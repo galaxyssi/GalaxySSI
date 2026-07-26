@@ -31,7 +31,7 @@
             <circle cx="12" cy="12" r="3.2"></circle>
           </svg>
           <b data-i18n="Settings">Settings</b>
-          <span id="desktopVersion" class="sidebar-version">v0.2.24</span>
+          <span id="desktopVersion" class="sidebar-version">v0.2.28</span>
         </button>
       </div>
     </aside>
@@ -237,6 +237,30 @@
         </div>
         <div id="runtimeManagerSummary" class="runtime-manager-summary" data-i18n="Runtime inventory has not been checked.">Runtime inventory has not been checked.</div>
         <div id="runtimeManagerList" class="runtime-manager-list"></div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-heading">
+          <h3 data-i18n="Self-evolution">Self-evolution</h3>
+          <span id="evolutionSummaryBadge" class="state-badge" data-i18n="No candidates">No candidates</span>
+        </div>
+        <div class="evolution-safety-note">
+          <strong data-i18n="Isolated candidate workspace">Isolated candidate workspace</strong>
+          <small data-i18n="Agents edit a disposable Git worktree. Production stays unchanged until review and PR approval.">Agents edit a disposable Git worktree. Production stays unchanged until review and PR approval.</small>
+        </div>
+        <details class="evolution-create">
+          <summary data-i18n="Create candidate">Create candidate</summary>
+          <div class="form-stack compact-forms">
+            <label><span data-i18n="Problem or improvement">Problem or improvement</span><textarea id="evolutionProblem" rows="3" maxlength="4000" data-i18n-placeholder="Describe the behavior that should change"></textarea></label>
+            <label><span data-i18n="Allowed source paths">Allowed source paths</span><input id="evolutionScope" maxlength="1200" spellcheck="false" placeholder="apps/desktop/src"></label>
+            <label><span data-i18n="Acceptance criteria">Acceptance criteria</span><textarea id="evolutionAcceptance" rows="3" maxlength="4000" data-i18n-placeholder="One verifiable result per line"></textarea></label>
+            <div class="cloud-settings-grid">
+              <label><span data-i18n="Execution Agent">Execution Agent</span><select id="evolutionAgent"><option value="codex">Codex</option><option value="claude">Claude Code</option><option value="hermes">Hermes</option><option value="openclaw">OpenClaw</option></select></label>
+              <label><span data-i18n="Risk level">Risk level</span><select id="evolutionRisk"><option value="low" data-i18n="Low">Low</option><option value="medium" data-i18n="Medium" selected>Medium</option><option value="high" data-i18n="High">High</option></select></label>
+            </div>
+            <button id="createEvolutionButton" class="primary-button" data-i18n="Prepare isolated candidate">Prepare isolated candidate</button>
+          </div>
+        </details>
+        <div id="evolutionTaskList" class="evolution-task-list"></div>
       </div>
       <div class="settings-group">
         <h3 data-i18n="Agent commands">Agent commands</h3>

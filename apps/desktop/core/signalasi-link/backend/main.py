@@ -494,6 +494,138 @@ class DesktopControlSettingsReq(BaseModel):
     require_unlocked: bool | None = None
 
 
+class EvolutionTaskCreateReq(BaseModel):
+    problem: str
+    scope: list[str] = Field(default_factory=list)
+    acceptance: list[str] = Field(default_factory=list)
+    reproduction_steps: list[str] = Field(default_factory=list)
+    risk_level: str = "medium"
+    max_attempts: int = 3
+    agent_id: str = "codex"
+    start: bool = True
+
+
+class EvolutionCandidatePublishReq(BaseModel):
+    approval_hash: str
+    base_branch: str = "main"
+
+
+def _desktop_evolution_manager():
+    from evolution_manager import (
+        default_evolution_patch_agent,
+        evolution_manager,
+    )
+
+    def publish_event(event: dict[str, Any]) -> None:
+        try:
+            from mqtt_bridge import publish_evolution_task_event_all
+
+            publish_evolution_task_event_all(event)
+        except (ImportError, AttributeError):
+            pass
+        except Exception as exc:
+            log.warning("Evolution event publish deferred: %s", exc)
+
+    return evolution_manager(
+        patch_agent=default_evolution_patch_agent,
+        event_sink=publish_event,
+    )
+
+
+def _evolution_http_error(exc: Exception) -> HTTPException:
+    from evolution_manager import EvolutionError
+
+    if not isinstance(exc, EvolutionError):
+        return HTTPException(status_code=500, detail=api_error("evolution_failed", str(exc)[:500]))
+    status = 404 if exc.code == "task_not_found" else 409 if exc.code in {
+        "candidate_already_ready",
+        "candidate_not_ready",
+        "quality_gate_incomplete",
+    } else 400
+    return HTTPException(status_code=status, detail=api_error(exc.code, str(exc)))
+
+
+@app.get("/api/evolution/tasks")
+def api_list_evolution_tasks(request: Request, limit: int = Query(100)):
+    require_loopback(request)
+    manager = _desktop_evolution_manager()
+    return {"tasks": [task.public() for task in manager.store.list(limit=limit)]}
+
+
+@app.post("/api/evolution/tasks")
+def api_create_evolution_task(req: EvolutionTaskCreateReq, request: Request):
+    require_loopback(request)
+    try:
+        manager = _desktop_evolution_manager()
+        task = manager.create(
+            problem=req.problem,
+            scope=req.scope,
+            acceptance=req.acceptance,
+            reproduction_steps=req.reproduction_steps,
+            risk_level=req.risk_level,
+            max_attempts=req.max_attempts,
+            agent_id=req.agent_id,
+        )
+        if req.start:
+            task = manager.start(task.task_id)
+        return task.public()
+    except Exception as exc:
+        raise _evolution_http_error(exc) from exc
+
+
+@app.get("/api/evolution/tasks/{task_id}")
+def api_get_evolution_task(task_id: str, request: Request):
+    require_loopback(request)
+    try:
+        return _desktop_evolution_manager().require(task_id).public()
+    except Exception as exc:
+        raise _evolution_http_error(exc) from exc
+
+
+@app.post("/api/evolution/tasks/{task_id}/start")
+def api_start_evolution_task(task_id: str, request: Request):
+    require_loopback(request)
+    try:
+        return _desktop_evolution_manager().start(task_id).public()
+    except Exception as exc:
+        raise _evolution_http_error(exc) from exc
+
+
+@app.post("/api/evolution/tasks/{task_id}/cancel")
+def api_cancel_evolution_task(task_id: str, request: Request):
+    require_loopback(request)
+    try:
+        return _desktop_evolution_manager().cancel(task_id).public()
+    except Exception as exc:
+        raise _evolution_http_error(exc) from exc
+
+
+@app.post("/api/evolution/tasks/{task_id}/rollback")
+def api_rollback_evolution_task(task_id: str, request: Request):
+    require_loopback(request)
+    try:
+        return _desktop_evolution_manager().discard(task_id).public()
+    except Exception as exc:
+        raise _evolution_http_error(exc) from exc
+
+
+@app.post("/api/evolution/tasks/{task_id}/publish")
+def api_publish_evolution_candidate(
+    task_id: str,
+    req: EvolutionCandidatePublishReq,
+    request: Request,
+):
+    require_loopback(request)
+    try:
+        return _desktop_evolution_manager().publish(
+            task_id,
+            req.approval_hash,
+            base_branch=req.base_branch,
+        ).public()
+    except Exception as exc:
+        raise _evolution_http_error(exc) from exc
+
+
 @app.get("/api/agent-adapters")
 def api_agent_adapters(request: Request):
     require_loopback(request)

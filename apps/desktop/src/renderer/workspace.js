@@ -66,6 +66,7 @@ const state = {
   skills: [],
   mcp: [],
   runtime: { summary: {}, runtimes: [], error: "" },
+  evolutionTasks: [],
   tasks: [],
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
@@ -251,6 +252,7 @@ async function setLanguage(language, persist = true) {
   $("#languageSelect").value = state.languagePreference;
   renderHistory();
   renderConversation(true);
+  renderEvolutionTasks();
   updateHeaderStatus();
 }
 
@@ -1050,6 +1052,153 @@ async function refreshRuntimeManager(refresh = false) {
   }
 }
 
+const ACTIVE_EVOLUTION_STATES = new Set(["proposed", "preparing", "running", "validating", "publishing"]);
+
+function evolutionStatusLabel(status) {
+  const labels = {
+    proposed: "Proposed",
+    preparing: "Preparing",
+    running: "Editing",
+    validating: "Validating",
+    waiting_approval: "Ready for review",
+    publishing: "Publishing",
+    published: "PR created",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    rolled_back: "Rolled back"
+  };
+  return t(labels[status] || status || "Proposed");
+}
+
+function parseEvolutionList(value) {
+  return String(value || "")
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function evolutionGateSummary(task) {
+  const attempt = Array.isArray(task.attempts) ? task.attempts.at(-1) : null;
+  const gates = Array.isArray(attempt?.gates) ? attempt.gates : [];
+  if (!gates.length) return t("Quality gates pending");
+  const passed = gates.filter((gate) => gate.status === "passed").length;
+  return t("{passed} of {total} quality gates passed", { passed, total: gates.length });
+}
+
+function renderEvolutionTasks() {
+  const tasks = Array.isArray(state.evolutionTasks) ? state.evolutionTasks : [];
+  const active = tasks.filter((task) => ACTIVE_EVOLUTION_STATES.has(task.status)).length;
+  const ready = tasks.filter((task) => task.status === "waiting_approval").length;
+  const badge = $("#evolutionSummaryBadge");
+  badge.textContent = tasks.length
+    ? (ready ? t("{count} ready for review", { count: ready }) : active ? t("{count} active", { count: active }) : t("{count} candidates", { count: tasks.length }))
+    : t("No candidates");
+  badge.className = `state-badge ${ready ? "ok" : ""}`;
+  $("#evolutionTaskList").innerHTML = tasks.map((task) => {
+    const status = String(task.status || "proposed");
+    const candidate = String(task.candidate_commit || "");
+    const error = String(task.last_error || "");
+    const detail = error
+      ? error
+      : candidate
+        ? `${t("Candidate")} ${candidate.slice(0, 10)}`
+        : evolutionGateSummary(task);
+    const actions = [];
+    if (ACTIVE_EVOLUTION_STATES.has(status) && status !== "publishing") {
+      actions.push(`<button class="secondary-button" data-cancel-evolution="${escapeHtml(task.task_id)}">${escapeHtml(t("Cancel"))}</button>`);
+    }
+    if (status === "waiting_approval") {
+      actions.push(`<button class="secondary-button" data-rollback-evolution="${escapeHtml(task.task_id)}">${escapeHtml(t("Rollback"))}</button>`);
+      actions.push(`<button class="primary-button" data-publish-evolution="${escapeHtml(task.task_id)}">${escapeHtml(t("Create PR"))}</button>`);
+    }
+    return `<article class="evolution-task-row" data-evolution-task="${escapeHtml(task.task_id)}">
+      <div>
+        <strong>${escapeHtml(task.problem || task.task_id)}</strong>
+        <small><span class="evolution-gate-summary">${escapeHtml(evolutionStatusLabel(status))}</span> · ${escapeHtml(detail)}</small>
+      </div>
+      <div class="evolution-task-actions">${actions.join("")}</div>
+    </article>`;
+  }).join("");
+}
+
+async function refreshEvolutionTasks(showError = false) {
+  try {
+    const response = await window.signalasi.listEvolutionTasks(50);
+    state.evolutionTasks = Array.isArray(response?.tasks) ? response.tasks : [];
+    renderEvolutionTasks();
+  } catch (error) {
+    if (showError) showToast(error.message || String(error));
+  }
+}
+
+async function createEvolutionCandidate() {
+  const button = $("#createEvolutionButton");
+  const problem = $("#evolutionProblem").value.trim();
+  const scope = parseEvolutionList($("#evolutionScope").value);
+  const acceptance = parseEvolutionList($("#evolutionAcceptance").value);
+  if (problem.length < 12 || !scope.length || !acceptance.length) {
+    showToast(t("Add a clear problem, allowed source path, and acceptance criteria."));
+    return;
+  }
+  button.disabled = true;
+  try {
+    await window.signalasi.createEvolutionTask({
+      problem,
+      scope,
+      acceptance,
+      riskLevel: $("#evolutionRisk").value,
+      agentId: $("#evolutionAgent").value,
+      maxAttempts: 3,
+      start: true
+    });
+    $("#evolutionProblem").value = "";
+    $("#evolutionAcceptance").value = "";
+    $(".evolution-create").open = false;
+    showToast(t("Isolated candidate started."));
+    await refreshEvolutionTasks(true);
+  } catch (error) {
+    showToast(error.message || String(error));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleEvolutionAction(event) {
+  const cancel = event.target.closest("[data-cancel-evolution]");
+  const rollback = event.target.closest("[data-rollback-evolution]");
+  const publish = event.target.closest("[data-publish-evolution]");
+  const button = cancel || rollback || publish;
+  if (!button) return;
+  button.disabled = true;
+  try {
+    if (cancel) {
+      await window.signalasi.cancelEvolutionTask(cancel.dataset.cancelEvolution);
+    } else if (rollback) {
+      if (!window.confirm(t("Discard this isolated candidate and its worktree?"))) return;
+      await window.signalasi.rollbackEvolutionTask(rollback.dataset.rollbackEvolution);
+    } else {
+      const task = state.evolutionTasks.find((item) => item.task_id === publish.dataset.publishEvolution);
+      if (!task?.approval_hash || !task?.candidate_commit) {
+        showToast(t("Candidate identity is incomplete."));
+        return;
+      }
+      const approved = window.confirm(t("Create a PR for candidate {commit}?\n\nApproval hash:\n{hash}", {
+        commit: task.candidate_commit.slice(0, 12),
+        hash: task.approval_hash
+      }));
+      if (!approved) return;
+      const result = await window.signalasi.publishEvolutionTask(task.task_id, task.approval_hash);
+      showToast(result.pull_request_url ? t("Pull request created.") : t("Candidate published."));
+      if (result.pull_request_url) await window.signalasi.openExternal(result.pull_request_url);
+    }
+    await refreshEvolutionTasks(true);
+  } catch (error) {
+    showToast(error.message || String(error));
+  } finally {
+    button.disabled = false;
+  }
+}
+
 const PANEL_META = {
   agents: ["Agents", "Private agents and local execution engines"],
   capabilities: ["Capabilities", "Long-term memory, Skills, and MCP"],
@@ -1073,7 +1222,7 @@ async function openPanel(name) {
   }
   if (name === "capabilities") await refreshCapabilities();
   if (name === "settings") {
-    await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false)]);
+    await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false), refreshEvolutionTasks(false)]);
   }
 }
 
@@ -1320,6 +1469,8 @@ function bindEvents() {
   });
   $("#runDiagnosticsButton").addEventListener("click", runDiagnostics);
   $("#refreshRuntimeButton").addEventListener("click", () => refreshRuntimeManager(true));
+  $("#createEvolutionButton").addEventListener("click", createEvolutionCandidate);
+  $("#evolutionTaskList").addEventListener("click", handleEvolutionAction);
   $("#languageSelect").addEventListener("change", (event) => setLanguage(event.target.value));
   $("#responseLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
   $("#asrLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
@@ -1353,6 +1504,10 @@ async function init() {
   window.setInterval(() => {
     if (elements.drawer.classList.contains("open") && $("#gatewayPanel").classList.contains("active")) {
       refreshDesktopControl();
+    }
+    if (elements.drawer.classList.contains("open") && $("#settingsPanel").classList.contains("active")
+        && state.evolutionTasks.some((task) => ACTIVE_EVOLUTION_STATES.has(task.status))) {
+      refreshEvolutionTasks(false);
     }
   }, 2_000);
 }

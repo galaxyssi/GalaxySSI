@@ -580,6 +580,60 @@ button:disabled { cursor: default; opacity: 0.48; }
   white-space: nowrap;
 }
 .runtime-row .state-badge { margin-left: 0; }
+.evolution-safety-note {
+  margin-bottom: 7px;
+  padding: 9px 10px;
+  border-left: 3px solid #48a978;
+  background: #f3f8f5;
+}
+.evolution-safety-note strong,
+.evolution-safety-note small { display: block; }
+.evolution-safety-note strong { color: #30463a; font-size: 9px; }
+.evolution-safety-note small { margin-top: 3px; color: #617068; font-size: 8px; line-height: 1.45; }
+.evolution-create {
+  margin-bottom: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.evolution-create summary {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  color: #30373d;
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 600;
+  list-style: none;
+}
+.evolution-create summary::-webkit-details-marker { display: none; }
+.evolution-create summary::after { content: "+"; margin-left: auto; color: var(--muted); font-size: 15px; font-weight: 400; }
+.evolution-create[open] summary::after { content: "\2212"; }
+.evolution-create .form-stack { padding: 0 10px 10px; border-top: 1px solid var(--line); }
+.evolution-create textarea { resize: vertical; }
+.evolution-task-list {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.evolution-task-list:empty { display: none; }
+.evolution-task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.evolution-task-row:last-child { border-bottom: 0; }
+.evolution-task-row strong,
+.evolution-task-row small { display: block; }
+.evolution-task-row strong { overflow-wrap: anywhere; color: #30373d; font-size: 9px; line-height: 1.4; }
+.evolution-task-row small { margin-top: 3px; color: var(--muted); font-size: 8px; line-height: 1.4; }
+.evolution-task-actions { display: flex; align-items: center; gap: 5px; }
+.evolution-task-actions button { min-height: 25px; padding: 0 7px; }
+.evolution-gate-summary { color: #4b5962; }
 
 .toast { position: fixed; z-index: 60; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: min(520px, 80vw); padding: 9px 12px; border-radius: 6px; background: #24292e; color: #fff; box-shadow: var(--shadow); font-size: 9px; }
 
