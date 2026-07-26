@@ -274,6 +274,61 @@ object SignalASIMqttClient {
                 .put("time", System.currentTimeMillis())
         )
 
+    fun requestDesktopEvolutionTasks(desktopId: String): Boolean =
+        publishDesktopControlPayload(
+            desktopId,
+            JSONObject()
+                .put("type", "evolution_task_list_request")
+                .put("time", System.currentTimeMillis())
+        )
+
+    fun createDesktopEvolutionTask(
+        desktopId: String,
+        problem: String,
+        scope: List<String>,
+        acceptance: List<String>,
+        reproductionSteps: List<String> = emptyList(),
+        riskLevel: String = "medium",
+        maxAttempts: Int = 3,
+        agentId: String = "codex"
+    ): Boolean = publishDesktopControlPayload(
+        desktopId,
+        JSONObject()
+            .put("type", "evolution_task_create")
+            .put("problem", problem)
+            .put("scope", JSONArray(scope))
+            .put("acceptance", JSONArray(acceptance))
+            .put("reproduction_steps", JSONArray(reproductionSteps))
+            .put("risk_level", riskLevel)
+            .put("max_attempts", maxAttempts.coerceIn(1, 5))
+            .put("agent_id", agentId)
+            .put("start", true)
+            .put("time", System.currentTimeMillis())
+    )
+
+    fun controlDesktopEvolutionTask(
+        desktopId: String,
+        taskId: String,
+        action: String,
+        approvalHash: String = ""
+    ): Boolean {
+        val type = when (action) {
+            "cancel" -> "evolution_task_cancel"
+            "rollback" -> "evolution_candidate_rollback"
+            "publish" -> "evolution_candidate_publish"
+            else -> return false
+        }
+        return publishDesktopControlPayload(
+            desktopId,
+            JSONObject()
+                .put("type", type)
+                .put("task_id", taskId)
+                .put("approval_hash", approvalHash)
+                .put("base_branch", "main")
+                .put("time", System.currentTimeMillis())
+        )
+    }
+
     fun publishDesktopToolCancel(
         desktopId: String,
         callId: String,

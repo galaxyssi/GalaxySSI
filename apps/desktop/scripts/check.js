@@ -1055,7 +1055,8 @@ for (const requiredVoicePipelineText of [
 for (const requiredWorkspaceText of [
   "SignalASIWorkspace",
   "task_workspace(task_id, spec.id)",
-  "cwd=str(working_directory)",
+  "cwd=str(execution_directory)",
+  "restricted_workspace=True",
   "SIGNALASI_OUTPUT_DIR",
   "task_workspace(task.task_id, agent_id)"
 ]) {

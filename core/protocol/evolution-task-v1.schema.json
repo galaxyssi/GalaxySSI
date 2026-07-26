@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signalasi.org/protocol/evolution-task-v1.schema.json",
+  "title": "SignalASI Evolution Task v1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "task_id",
+    "problem",
+    "scope",
+    "acceptance",
+    "risk_level",
+    "status",
+    "max_attempts",
+    "created_at_millis",
+    "updated_at_millis"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "signalasi.evolution-task.v1"
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+    },
+    "problem": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 4000
+    },
+    "reproduction_steps": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
+    "scope": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 40,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
+    "risk_level": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "status": {
+      "enum": [
+        "proposed",
+        "preparing",
+        "running",
+        "validating",
+        "waiting_approval",
+        "publishing",
+        "published",
+        "completed",
+        "failed",
+        "blocked",
+        "cancelled",
+        "rolled_back"
+      ]
+    },
+    "execution_target": {
+      "enum": [
+        "android",
+        "desktop"
+      ]
+    },
+    "max_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{0,64}$"
+    },
+    "candidate_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{0,64}$"
+    },
+    "candidate_branch": {
+      "type": "string",
+      "maxLength": 240
+    },
+    "approval_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{0,64}$"
+    },
+    "attempts": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/attempt"
+      }
+    },
+    "created_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updated_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "gate": {
+      "type": "object",
+      "required": [
+        "id",
+        "status",
+        "duration_millis"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 96
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "passed",
+            "failed",
+            "skipped",
+            "cancelled"
+          ]
+        },
+        "duration_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "log_path": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "required": [
+        "number",
+        "status",
+        "branch",
+        "worktree",
+        "changed_files",
+        "gates",
+        "started_at_millis",
+        "completed_at_millis"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "status": {
+          "type": "string",
+          "maxLength": 48
+        },
+        "branch": {
+          "type": "string",
+          "maxLength": 240
+        },
+        "worktree": {
+          "type": "string",
+          "maxLength": 1024
+        },
+        "changed_files": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "type": "string",
+            "maxLength": 512
+          }
+        },
+        "gates": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/gate"
+          }
+        },
+        "failure_code": {
+          "type": "string",
+          "maxLength": 96
+        },
+        "failure_summary": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "agent_summary": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "started_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "completed_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

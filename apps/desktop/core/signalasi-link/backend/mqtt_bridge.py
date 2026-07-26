@@ -147,6 +147,20 @@ DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE = "desktop_control_authorization_chan
 DESKTOP_CONTROL_REQUEST_SLOTS = threading.BoundedSemaphore(4)
 ARTIFACT_CHUNK_TYPE = "artifact_chunk"
 ARTIFACT_RECEIPT_TYPE = "artifact_receipt"
+EVOLUTION_TASK_EVENT_TYPE = "evolution_task_event"
+EVOLUTION_TASK_SNAPSHOT_TYPE = "evolution_task_snapshot"
+EVOLUTION_TASK_CREATE_TYPE = "evolution_task_create"
+EVOLUTION_TASK_CANCEL_TYPE = "evolution_task_cancel"
+EVOLUTION_CANDIDATE_ROLLBACK_TYPE = "evolution_candidate_rollback"
+EVOLUTION_CANDIDATE_PUBLISH_TYPE = "evolution_candidate_publish"
+EVOLUTION_TASK_LIST_REQUEST_TYPE = "evolution_task_list_request"
+EVOLUTION_COMMAND_TYPES = {
+    EVOLUTION_TASK_CREATE_TYPE,
+    EVOLUTION_TASK_CANCEL_TYPE,
+    EVOLUTION_CANDIDATE_ROLLBACK_TYPE,
+    EVOLUTION_CANDIDATE_PUBLISH_TYPE,
+    EVOLUTION_TASK_LIST_REQUEST_TYPE,
+}
 
 
 class PhoneToolSessionRoutingError(RuntimeError):
@@ -1767,6 +1781,7 @@ def _publish_phone_payload(
         DESKTOP_TOOL_CALL_RESULT_TYPE, DESKTOP_TOOL_CANCEL_ACK_TYPE,
         DESKTOP_EXECUTOR_EVENT_TYPE, DESKTOP_ACTION_RECEIPT_TYPE,
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
+        EVOLUTION_TASK_EVENT_TYPE, EVOLUTION_TASK_SNAPSHOT_TYPE,
     } else "down"
     target_topic = paired_client["topics"][channel]
     reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
@@ -1790,6 +1805,155 @@ def _publish_phone_payload(
         else:
             log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
         return info.rc == mqtt.MQTT_ERR_SUCCESS
+
+
+def publish_evolution_task_event_all(event: dict) -> dict:
+    mqttc = client
+    if mqttc is None:
+        return {"ok": False, "published": 0, "code": "mqtt_unavailable"}
+    value = dict(event or {})
+    requested_route = str(value.pop("_client_route_id", "") or "").strip()
+    value["type"] = EVOLUTION_TASK_EVENT_TYPE
+    value.setdefault("desktop_id", desktop_id())
+    value.setdefault("desktop_name", desktop_name())
+    candidates = (
+        [get_client(requested_route)]
+        if requested_route
+        else list_clients()
+    )
+    published = 0
+    for paired_client in candidates:
+        if (
+            not paired_client
+            or paired_client.get("revoked_at")
+            or not has_full_executor(paired_client)
+        ):
+            continue
+        route_id = str(paired_client.get("client_route_id") or "")
+        if not route_id:
+            continue
+        if _publish_phone_payload(
+            mqttc,
+            {"scheme": "signal", "_client_route_id": route_id},
+            dict(value),
+            durable=True,
+        ):
+            published += 1
+    return {"ok": published > 0, "published": published}
+
+
+def _publish_evolution_snapshot(mqttc, paired_client: dict) -> None:
+    from evolution_manager import evolution_manager
+
+    route_id = str(paired_client.get("client_route_id") or "")
+    manager = evolution_manager()
+    tasks = [
+        task.public()
+        for task in manager.store.list(limit=100)
+        if task.client_route_id == route_id
+    ]
+    _publish_phone_payload(
+        mqttc,
+        {"scheme": "signal", "_client_route_id": route_id},
+        {
+            "type": EVOLUTION_TASK_SNAPSHOT_TYPE,
+            "protocol": "signalasi.evolution-task.v1",
+            "execution_target": "desktop",
+            "desktop_id": desktop_id(),
+            "desktop_name": desktop_name(),
+            "tasks": tasks,
+            "time": time.time(),
+        },
+        durable=True,
+    )
+
+
+def _route_evolution_payload(mqttc, paired_client: dict, payload: dict) -> bool:
+    message_type = str(payload.get("type") or "")
+    if message_type not in EVOLUTION_COMMAND_TYPES:
+        return False
+    route_id = str(paired_client.get("client_route_id") or "")
+    wire_payload = {"scheme": "signal", "_client_route_id": route_id}
+    if not has_full_executor(paired_client):
+        _publish_phone_payload(
+            mqttc,
+            wire_payload,
+            {
+                "type": EVOLUTION_TASK_EVENT_TYPE,
+                "event": "command_rejected",
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+                "error_code": "desktop_executor_required",
+                "error": "Re-pair and enable Desktop Executor before controlling Desktop evolution.",
+                "time": time.time(),
+            },
+            durable=True,
+        )
+        return True
+    try:
+        from evolution_manager import (
+            EvolutionError,
+            default_evolution_patch_agent,
+            evolution_manager,
+        )
+
+        manager = evolution_manager(
+            patch_agent=default_evolution_patch_agent,
+            event_sink=publish_evolution_task_event_all,
+        )
+        if message_type == EVOLUTION_TASK_LIST_REQUEST_TYPE:
+            _publish_evolution_snapshot(mqttc, paired_client)
+            return True
+        if message_type == EVOLUTION_TASK_CREATE_TYPE:
+            task = manager.create(
+                problem=str(payload.get("problem") or ""),
+                scope=payload.get("scope") or [],
+                acceptance=payload.get("acceptance") or [],
+                reproduction_steps=payload.get("reproduction_steps") or [],
+                risk_level=str(payload.get("risk_level") or "medium"),
+                max_attempts=int(payload.get("max_attempts") or 3),
+                agent_id=str(payload.get("agent_id") or "codex"),
+                client_route_id=route_id,
+            )
+            if payload.get("start", True):
+                manager.start(task.task_id)
+            return True
+        task_id = str(payload.get("task_id") or "").strip()
+        task = manager.require(task_id)
+        if not task.client_route_id or task.client_route_id != route_id:
+            raise EvolutionError(
+                "task_owner_mismatch",
+                "This evolution task was not created by the current paired phone.",
+            )
+        if message_type == EVOLUTION_TASK_CANCEL_TYPE:
+            manager.cancel(task_id)
+        elif message_type == EVOLUTION_CANDIDATE_ROLLBACK_TYPE:
+            manager.discard(task_id)
+        elif message_type == EVOLUTION_CANDIDATE_PUBLISH_TYPE:
+            manager.publish(
+                task_id,
+                str(payload.get("approval_hash") or ""),
+                base_branch=str(payload.get("base_branch") or "main"),
+            )
+        return True
+    except Exception as exc:
+        code = getattr(exc, "code", "evolution_command_failed")
+        _publish_phone_payload(
+            mqttc,
+            wire_payload,
+            {
+                "type": EVOLUTION_TASK_EVENT_TYPE,
+                "event": "command_failed",
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+                "task_id": str(payload.get("task_id") or ""),
+                "error_code": str(code),
+                "error": str(exc)[:1_000],
+                "time": time.time(),
+            },
+            durable=True,
+        )
+        return True
 
 
 def _client_task_turn_id(task: dict) -> str:
@@ -3500,6 +3664,9 @@ def _process_message(mqttc, userdata, msg):
             payload,
             channel,
         ):
+            return
+
+        if _route_evolution_payload(mqttc, paired_client, payload):
             return
 
         content = payload.get("content", "")
