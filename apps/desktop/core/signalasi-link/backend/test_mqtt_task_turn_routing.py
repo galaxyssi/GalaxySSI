@@ -161,6 +161,55 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
 
         self.assertFalse(published)
         self.assertEqual(task, mqtt_bridge.pending_task_events["task-offline"].task)
+        self.assertTrue(mqtt_bridge.pending_task_events["task-offline"].replay_progress)
+
+    def test_reconnected_task_event_replays_readable_progress_only(self):
+        task = {
+            "task_id": "task-reconnect-progress",
+            "status": "running",
+            "status_seq": 5,
+            "updated_at": 200,
+            "client_turn_id": "phone-turn-2",
+            "events": [
+                {
+                    "event_id": "command-1",
+                    "kind": "command",
+                    "status": "completed",
+                    "detail": "python internal.py",
+                },
+                {
+                    "event_id": "narration-1",
+                    "kind": "narration",
+                    "status": "completed",
+                    "detail": "I found the workbook and am checking its formulas.",
+                },
+            ],
+        }
+        mqtt_bridge._publish_or_queue_task_event(
+            DisconnectedMqtt(),
+            {"scheme": "signal", "_client_route_id": "phone-1"},
+            task,
+            [],
+        )
+        published_payloads = []
+
+        with (
+            patch.object(mqtt_bridge, "desktop_id", return_value="desktop-1"),
+            patch.object(mqtt_bridge, "desktop_name", return_value="Desktop"),
+            patch.object(mqtt_bridge, "mobile_connector_agents", return_value=[]),
+            patch.object(
+                mqtt_bridge,
+                "_publish_phone_payload",
+                side_effect=lambda _client, _wire, payload: published_payloads.append(payload) or True,
+            ),
+        ):
+            mqtt_bridge.flush_pending_task_events(ConnectedMqtt())
+
+        self.assertNotIn("task-reconnect-progress", mqtt_bridge.pending_task_events)
+        self.assertEqual(
+            ["narration-1"],
+            [event["event_id"] for event in published_payloads[0]["events"]],
+        )
 
     def test_queued_task_event_resolves_identity_only_when_flushed(self):
         task = {
