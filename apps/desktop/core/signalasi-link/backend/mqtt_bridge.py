@@ -134,6 +134,8 @@ DESKTOP_CONTROL_AUTHORIZATIONS_TYPE = "desktop_control_authorizations"
 DESKTOP_CONTROL_REVOKE_TYPE = "desktop_control_revoke"
 DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE = "desktop_control_authorization_changed"
 DESKTOP_CONTROL_REQUEST_SLOTS = threading.BoundedSemaphore(4)
+ARTIFACT_CHUNK_TYPE = "artifact_chunk"
+ARTIFACT_RECEIPT_TYPE = "artifact_receipt"
 
 
 class PhoneToolSessionRoutingError(RuntimeError):
@@ -1695,6 +1697,7 @@ def _publish_phone_payload(mqttc, wire_payload: dict, reply_payload: dict) -> bo
     channel = "control" if reply_payload.get("type") in {
         "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
         "agent_task_approval_result",
+        ARTIFACT_RECEIPT_TYPE,
         DESKTOP_TOOL_CALL_RESULT_TYPE, DESKTOP_TOOL_CANCEL_ACK_TYPE,
         DESKTOP_EXECUTOR_EVENT_TYPE, DESKTOP_ACTION_RECEIPT_TYPE,
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
@@ -2016,6 +2019,44 @@ def flush_pending_task_results(mqttc) -> None:
                 log.warning("Agent task result replay deferred task_id=%s: %s", task_id, exc)
 
 
+def _publish_task_artifacts(
+    mqttc,
+    wire_payload: dict,
+    artifacts: list,
+    *,
+    common: dict,
+) -> bool:
+    from artifact_delivery import artifact_chunk_payloads
+
+    all_published = True
+    for artifact in artifacts:
+        for payload in artifact_chunk_payloads(artifact, common=common):
+            try:
+                all_published = _publish_phone_payload(mqttc, wire_payload, payload) and all_published
+            except Exception as exc:
+                all_published = False
+                log.warning(
+                    "Artifact chunk queued task_id=%s artifact=%s chunk=%s: %s",
+                    artifact.task_id,
+                    artifact.artifact_id[:12],
+                    payload.get("chunk_index"),
+                    exc,
+                )
+    return all_published
+
+
+def _requests_desktop_artifact_retention(prompt: str) -> bool:
+    value = re.sub(r"\s+", " ", str(prompt or "").strip()).lower()
+    if not value:
+        return False
+    return any(pattern.search(value) for pattern in (
+        re.compile(r"(?:save|keep|store).{0,24}(?:on|to|in).{0,12}(?:desktop|pc|computer)"),
+        re.compile(r"(?:desktop|pc|computer).{0,12}(?:save|keep|store)"),
+        re.compile(r"(?:\u4fdd\u5b58|\u4fdd\u7559|\u5b58\u5230|\u653e\u5230).{0,12}(?:\u7535\u8111|\u684c\u9762|pc)"),
+        re.compile(r"(?:\u7535\u8111|\u684c\u9762|pc).{0,12}(?:\u4fdd\u5b58|\u4fdd\u7559)"),
+    ))
+
+
 def _requests_returned_image(prompt: str) -> bool:
     value = str(prompt or "").strip().lower()
     return bool(re.search(
@@ -2318,23 +2359,46 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         return reply
 
     def publish_result(task: dict) -> None:
+        from artifact_delivery import (
+            discard_task_workspace_if_no_artifacts,
+            prepare_artifacts,
+            register_artifact_batch,
+        )
         from rich_output import build_rich_output
         from response_policy import remove_unfulfilled_artifact_claims, sanitize_assistant_response
         from task_workspace import referenced_task_artifact_paths, task_workspace
+        task_id = str(task.get("task_id") or "")
         hidden_inputs = [
             str(path) for path in (
-                task_workspace(str(task.get("task_id") or ""), agent_id) / "downloads" / "input"
+                task_workspace(task_id, agent_id) / "downloads" / "input"
             ).glob("*")
         ]
         raw_result = str(task.get("result") or "")
         hidden_artifact_paths = [str(path) for path in referenced_task_artifact_paths(raw_result)]
         output_files = list(task.get("output_files") or [])
+        artifacts = prepare_artifacts(task_id, output_files)
+        deliverable_paths = {item.relative_path.casefold() for item in artifacts}
+        deliverable_output_files = [
+            item for item in output_files
+            if str(item.get("relative_path") or "").replace("\\", "/").strip("/").casefold()
+            in deliverable_paths
+        ]
+        retain_on_desktop = bool(
+            full_desktop_executor
+            and _requests_desktop_artifact_retention(current_user_request)
+        )
+        register_artifact_batch(
+            artifacts,
+            client_route_id=client_route_id,
+            retain_on_desktop=retain_on_desktop,
+        )
         cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs + hidden_artifact_paths)
-        cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
+        cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, deliverable_output_files)
         reply, rich_output = build_rich_output(
             cleaned_reply,
-            output_files,
-            str(task.get("task_id") or ""),
+            deliverable_output_files,
+            task_id,
+            inline_artifacts=False,
         )
         reply_payload = {
             "type": "text",
@@ -2370,6 +2434,26 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             reply_payload["exact_content_b64"] = base64.b64encode(raw_result.encode("utf-8")).decode("ascii")
         reply_payload["latency"] = _trace_metrics(reply_payload["delivery_trace"])
         _publish_or_queue_task_result(mqttc, wire_payload, reply_payload)
+        _publish_task_artifacts(
+            mqttc,
+            wire_payload,
+            artifacts,
+            common={
+                "source_message_id": source_message_id,
+                "conversation_id": task.get("client_conversation_id") or client_conversation_id,
+                "turn_id": _client_task_turn_id(task),
+                "contact_id": contact_id,
+                "agent_id": agent_id,
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+            },
+        )
+        if not output_files:
+            discard_task_workspace_if_no_artifacts(
+                task_id,
+                artifacts,
+                retain_on_desktop=retain_on_desktop,
+            )
         _log_task_latency(str(task.get("task_id") or ""), reply_payload["delivery_trace"])
 
     if agent_id == "codex":
@@ -3103,6 +3187,18 @@ def _process_message(mqttc, userdata, msg):
                 wire_payload,
                 accepted_delivery_ack_payload(payload, message_id, trace),
             )
+
+        if payload.get("type") == ARTIFACT_RECEIPT_TYPE:
+            from artifact_delivery import acknowledge_artifact
+
+            accepted = acknowledge_artifact(payload, client_route_id=client_route_id)
+            if not accepted:
+                log.warning(
+                    "Rejected artifact receipt artifact_id=%s client=%s",
+                    str(payload.get("artifact_id") or "")[:12],
+                    client_route_id[-8:],
+                )
+            return
 
         if _route_desktop_control_payload(
             mqttc,
@@ -3896,7 +3992,12 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
     output_files = list(task.get("output_files") or [])
     cleaned_reply = sanitize_assistant_response(raw_result, hidden_inputs)
     cleaned_reply = remove_unfulfilled_artifact_claims(cleaned_reply, output_files)
-    reply, rich_output = build_rich_output(cleaned_reply, output_files, task_id)
+    reply, rich_output = build_rich_output(
+        cleaned_reply,
+        output_files,
+        task_id,
+        inline_artifacts=False,
+    )
     trace = _desktop_trace(
         _trace_event("desktop_task_result_replay", task_id),
         _trace_event("agent_replied", f"{agent_id} chars={len(reply)}"),
@@ -3941,9 +4042,31 @@ def republish_agent_task_result(task_id: str) -> dict:
     route_id = str(task.client_route_id or "")
     if not route_id or get_client(route_id) is None:
         return api_error("client_route_unavailable", task_id=task.task_id)
+    from artifact_delivery import prepare_artifacts, register_artifact_batch
+
+    artifacts = prepare_artifacts(task.task_id, list(task.output_files or []))
+    register_artifact_batch(
+        artifacts,
+        client_route_id=route_id,
+        retain_on_desktop=False,
+    )
     payload = _build_republished_task_result(task.public(), route_id)
     wire_payload = {"scheme": "signal", "_client_route_id": route_id}
     if _publish_or_queue_task_result(client, wire_payload, payload):
+        _publish_task_artifacts(
+            client,
+            wire_payload,
+            artifacts,
+            common={
+                "source_message_id": str(task.source_message_id or ""),
+                "conversation_id": str(task.client_conversation_id or task.conversation_id or ""),
+                "turn_id": _client_task_turn_id(task.public()),
+                "contact_id": str(task.contact_id or ""),
+                "agent_id": str(task.agent_id or ""),
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+            },
+        )
         return api_ok("agent_task_result_republished", task_id=task.task_id)
     return api_ok("agent_task_result_queued", task_id=task.task_id, queued=True)
 

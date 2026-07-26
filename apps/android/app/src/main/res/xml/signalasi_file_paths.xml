@@ -3,4 +3,7 @@
     <files-path
         name="agent_rich_output"
         path="agent-rich-output/" />
+    <files-path
+        name="desktop_artifacts"
+        path="desktop-artifacts/" />
 </paths>

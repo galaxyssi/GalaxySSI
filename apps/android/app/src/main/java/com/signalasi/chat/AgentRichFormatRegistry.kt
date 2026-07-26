@@ -13,6 +13,7 @@ enum class AgentRichFormatFamily {
     AUDIO,
     DOCUMENT,
     ARCHIVE,
+    APPLICATION,
     WEB,
     INTERACTIVE,
     UNKNOWN
@@ -61,6 +62,7 @@ object AgentRichFormatRegistry {
             mime.startsWith("audio/") || extension in AUDIO_EXTENSIONS -> AgentRichFormatFamily.AUDIO
             mime in STRUCTURED_MIME_TYPES || extension in STRUCTURED_EXTENSIONS -> AgentRichFormatFamily.STRUCTURED_DATA
             mime.startsWith("text/") || language.isNotBlank() || extension in CODE_EXTENSIONS -> AgentRichFormatFamily.CODE
+            mime in APPLICATION_MIME_TYPES || extension in APPLICATION_EXTENSIONS -> AgentRichFormatFamily.APPLICATION
             mime in ARCHIVE_MIME_TYPES || extension in ARCHIVE_EXTENSIONS -> AgentRichFormatFamily.ARCHIVE
             mime in DOCUMENT_MIME_TYPES || extension in DOCUMENT_EXTENSIONS -> AgentRichFormatFamily.DOCUMENT
             mime == "text/html" || extension in WEB_EXTENSIONS -> AgentRichFormatFamily.WEB
@@ -74,6 +76,7 @@ object AgentRichFormatRegistry {
             AgentRichFormatFamily.STRUCTURED_DATA -> extension.removePrefix(".").uppercase(Locale.ROOT).ifBlank { "Data" }
             AgentRichFormatFamily.DOCUMENT -> extension.removePrefix(".").uppercase(Locale.ROOT).ifBlank { "Document" }
             AgentRichFormatFamily.ARCHIVE -> extension.removePrefix(".").uppercase(Locale.ROOT).ifBlank { "Archive" }
+            AgentRichFormatFamily.APPLICATION -> extension.removePrefix(".").uppercase(Locale.ROOT).ifBlank { "Application" }
             AgentRichFormatFamily.WEB -> "Web"
             AgentRichFormatFamily.TABLE -> "Table"
             AgentRichFormatFamily.INTERACTIVE -> "Interactive"
@@ -163,10 +166,12 @@ object AgentRichFormatRegistry {
         ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".tsv", ".ppt", ".pptx",
         ".odt", ".ods", ".odp", ".rtf", ".epub"
     )
-    private val ARCHIVE_EXTENSIONS = setOf(".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz", ".apk")
+    private val ARCHIVE_EXTENSIONS = setOf(".zip", ".7z", ".rar", ".tar", ".gz", ".bz2", ".xz")
+    private val APPLICATION_EXTENSIONS = setOf(".apk", ".aab", ".apks")
     private val WEB_EXTENSIONS = setOf(".html", ".htm")
     private val STRUCTURED_MIME_TYPES = setOf("application/json", "application/ld+json", "application/xml", "text/xml", "application/yaml", "text/yaml")
     private val ARCHIVE_MIME_TYPES = setOf("application/zip", "application/x-7z-compressed", "application/vnd.rar", "application/gzip", "application/x-tar")
+    private val APPLICATION_MIME_TYPES = setOf("application/vnd.android.package-archive")
     private val DOCUMENT_MIME_TYPES = setOf(
         "application/pdf",
         "application/msword",

@@ -1554,6 +1554,17 @@
     <string name="rich_output_copy">Copy</string>
     <string name="rich_output_copied">Copied</string>
     <string name="rich_output_open">Open</string>
+    <string name="rich_output_download">Save to Downloads</string>
+    <string name="rich_output_downloaded">Saved to %1$s</string>
+    <string name="rich_output_download_failed">Could not save this file</string>
+    <string name="rich_output_saved">Saved</string>
+    <string name="rich_output_extract">Extract</string>
+    <string name="rich_output_extracted">Extracted to %1$s</string>
+    <string name="rich_output_extract_failed">Could not extract this archive</string>
+    <string name="rich_output_compress">Compress</string>
+    <string name="rich_output_compressed">ZIP saved to %1$s</string>
+    <string name="rich_output_compress_failed">Could not create the ZIP file</string>
+    <string name="rich_output_install_permission">Allow SignalASI to install apps, then tap the APK again.</string>
     <string name="rich_output_show_more">Show more</string>
     <string name="rich_output_show_less">Show less</string>
     <string name="rich_output_more_rows">%1$d more rows</string>
@@ -1576,6 +1587,7 @@
     <string name="rich_output_type_audio">Audio</string>
     <string name="rich_output_type_document">Document</string>
     <string name="rich_output_type_archive">Archive</string>
+    <string name="rich_output_type_application">Application</string>
     <string name="rich_output_type_web">Web</string>
     <string name="rich_output_type_interactive">Interactive</string>
     <string name="rich_output_type_file">File</string>

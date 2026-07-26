@@ -44,9 +44,22 @@ IMAGE_MIME_TYPES = {
     ".png": "image/png",
     ".webp": "image/webp",
 }
+MIME_TYPE_OVERRIDES = {
+    ".apk": "application/vnd.android.package-archive",
+    ".apks": "application/zip",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
 
 
-def build_rich_output(content: str, output_files: list[dict] | None = None, task_id: str = "") -> tuple[str, dict | None]:
+def build_rich_output(
+    content: str,
+    output_files: list[dict] | None = None,
+    task_id: str = "",
+    *,
+    inline_artifacts: bool = True,
+) -> tuple[str, dict | None]:
     """Return accessible fallback text and an optional validated rich document."""
     source = str(content or "")
     blocks: list[dict] = []
@@ -66,12 +79,12 @@ def build_rich_output(content: str, output_files: list[dict] | None = None, task
         hydrated
         for item in blocks
         if item
-        for hydrated in [_hydrate_explicit_artifact(item, task_id)]
+        for hydrated in [_hydrate_explicit_artifact(item, task_id, inline_artifacts)]
         if hydrated
     ]
     from response_policy import is_input_artifact
     blocks.extend(
-        _artifact_block(item, task_id)
+        _artifact_block(item, task_id, inline_artifacts)
         for item in (output_files or [])
         if isinstance(item, dict) and not is_input_artifact(item)
     )
@@ -192,7 +205,7 @@ def _normalize_block(raw: dict) -> dict:
     return block
 
 
-def _artifact_block(raw: dict, task_id: str) -> dict:
+def _artifact_block(raw: dict, task_id: str, inline_artifacts: bool = True) -> dict:
     relative = _safe_relative_artifact_path(str(raw.get("relative_path") or ""))
     source = _artifact_source(task_id, relative)
     if source is None:
@@ -227,7 +240,9 @@ def _artifact_block(raw: dict, task_id: str) -> dict:
             "sha256": original_digest,
         },
     }
-    inline = _inline_artifact(task_id, relative, mime_type)
+    if not inline_artifacts:
+        block["metadata"]["transport"] = "encrypted-fragmented"
+    inline = _inline_artifact(task_id, relative, mime_type) if inline_artifacts else None
     if inline is not None:
         encoded, inline_mime, transport_size, transport_digest = inline
         block["data_b64"] = encoded
@@ -245,7 +260,11 @@ def _artifact_block(raw: dict, task_id: str) -> dict:
     return block
 
 
-def _hydrate_explicit_artifact(block: dict, task_id: str) -> dict | None:
+def _hydrate_explicit_artifact(
+    block: dict,
+    task_id: str,
+    inline_artifacts: bool = True,
+) -> dict | None:
     if str(block.get("type") or "") not in ARTIFACT_TYPES:
         return block
     if str(block.get("type") or "") == "gallery":
@@ -278,6 +297,7 @@ def _hydrate_explicit_artifact(block: dict, task_id: str) -> dict | None:
                 "mime_type": block.get("mime_type"),
             },
             task_id,
+            inline_artifacts,
         )
         if not canonical:
             return None
@@ -467,7 +487,12 @@ def _is_image_uri(uri: str, mime_type: str) -> bool:
 
 def _guess_mime_type(name: str) -> str:
     suffix = Path(str(name or "")).suffix.lower()
-    return IMAGE_MIME_TYPES.get(suffix) or mimetypes.guess_type(str(name or ""))[0] or "application/octet-stream"
+    return (
+        MIME_TYPE_OVERRIDES.get(suffix)
+        or IMAGE_MIME_TYPES.get(suffix)
+        or mimetypes.guess_type(str(name or ""))[0]
+        or "application/octet-stream"
+    )
 
 
 def _human_size(size: int) -> str:

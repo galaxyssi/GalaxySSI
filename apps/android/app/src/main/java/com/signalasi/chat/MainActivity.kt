@@ -1484,6 +1484,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             ?.recordConnectorTransportAccepted(acknowledgedId)
                     }
                 }
+                if (envelope?.optString("type") == "artifact_available") {
+                    if (::agentTranscriptAdapter.isInitialized) {
+                        agentTranscriptAdapter.notifyDataSetChanged()
+                    }
+                    messageAdapter?.notifyDataSetChanged()
+                    return@runOnUiThread
+                }
                 if (handleAgentTaskApprovalResult(envelope)) return@runOnUiThread
                 if (handleDesktopRemoteControlEvent(envelope)) return@runOnUiThread
                 if (handleAgentTaskEvent(envelope)) return@runOnUiThread

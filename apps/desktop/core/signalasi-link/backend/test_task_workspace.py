@@ -50,6 +50,16 @@ class TaskWorkspaceTests(unittest.TestCase):
             self.assertFalse((directory / "logs").exists())
             self.assertEqual((directory / "outputs" / "result.txt").read_text(encoding="utf-8"), "keep")
 
+    def test_task_artifacts_hide_signing_sidecars(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "SignalASIWorkspace"
+            with patch.dict(os.environ, {"SIGNALASI_WORKSPACE_ROOT": str(root)}):
+                directory = task_workspace.task_workspace("signed-apk", "codex")
+                (directory / "outputs" / "SignalASI.apk").write_bytes(b"apk")
+                (directory / "outputs" / "SignalASI.apk.idsig").write_bytes(b"internal")
+                artifacts = task_workspace.task_artifacts("signed-apk")
+            self.assertEqual(["SignalASI.apk"], [item["name"] for item in artifacts])
+
     def test_imports_artifact_referenced_from_an_earlier_task(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "SignalASIWorkspace"
