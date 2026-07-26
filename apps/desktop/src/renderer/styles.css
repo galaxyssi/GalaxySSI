@@ -234,16 +234,15 @@ button:disabled { cursor: default; opacity: 0.48; }
 .compact-status.active > span { background: var(--green-soft); color: var(--green); }
 .compact-status b { font-size: 8px; font-weight: 550; white-space: nowrap; }
 .compact-status em { color: var(--soft); font-size: 7px; font-style: normal; white-space: nowrap; }
-.computer-symbol::before { content: ""; width: 12px; height: 8px; border: 1.3px solid currentColor; border-radius: 1px; }
-.computer-symbol::after { content: ""; position: absolute; width: 7px; height: 1px; bottom: 5px; background: currentColor; }
-.agent-symbol::before { content: ""; width: 6px; height: 6px; position: absolute; top: 4px; border: 1.2px solid currentColor; border-radius: 50%; }
-.agent-symbol::after { content: ""; width: 12px; height: 6px; position: absolute; bottom: 3px; border: 1.2px solid currentColor; border-radius: 7px 7px 3px 3px; }
-.capability-symbol::before,
-.capability-symbol::after { content: ""; position: absolute; border: 1.2px solid currentColor; transform: rotate(45deg); }
-.capability-symbol::before { width: 8px; height: 8px; top: 4px; left: 4px; }
-.capability-symbol::after { width: 5px; height: 5px; right: 4px; bottom: 4px; }
-.gateway-symbol::before { content: ""; width: 8px; height: 13px; border: 1.2px solid currentColor; border-radius: 2px; }
-.gateway-symbol::after { content: ""; width: 3px; height: 1px; position: absolute; bottom: 4px; background: currentColor; }
+.compact-status svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .icon-button { display: grid; place-items: center; border: 0; background: transparent; color: #59616a; }
 .more-button { width: 32px; height: 32px; margin-left: 2px; border-radius: 6px; }
