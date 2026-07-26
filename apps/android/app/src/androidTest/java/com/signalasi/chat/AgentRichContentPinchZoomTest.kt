@@ -7,6 +7,7 @@ import android.view.MotionEvent
 import android.app.Instrumentation
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.ScrollView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -16,6 +17,51 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class AgentRichContentPinchZoomTest {
+    @Test
+    fun plainImageTargetSupportsPinchZoomAndSingleFingerPan() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(
+            Intent(instrumentation.targetContext, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        ) as MainActivity
+        lateinit var viewport: SignalASIPinchZoomViewport
+        lateinit var image: ImageView
+        val location = IntArray(2)
+        var centerX = 0f
+        var centerY = 0f
+        instrumentation.runOnMainSync {
+            image = ImageView(activity).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }
+            viewport = SignalASIPinchZoomViewport(activity).apply {
+                attach(image)
+            }
+            activity.setContentView(viewport)
+        }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync {
+            viewport.getLocationOnScreen(location)
+            centerX = location[0] + viewport.width / 2f
+            centerY = location[1] + viewport.height / 2f
+        }
+
+        dispatchPinch(instrumentation, centerX, centerY)
+        instrumentation.waitForIdleSync()
+        val translationBefore = image.translationX
+        dispatchDrag(instrumentation, centerX, centerY, centerX + 140f, centerY + 80f)
+        instrumentation.waitForIdleSync()
+
+        assertTrue(
+            "Expected plain image preview zoom above 1.2, got ${viewport.currentZoomScale}",
+            viewport.currentZoomScale > 1.2f
+        )
+        assertTrue(
+            "Expected a single-finger drag to pan the zoomed image",
+            image.translationX > translationBefore + 40f
+        )
+        instrumentation.runOnMainSync { activity.finish() }
+    }
+
     @Test
     fun twoFingerSpreadReachesWebContentInsideAgentOutput() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -110,6 +156,38 @@ class AgentRichContentPinchZoomTest {
             listOf(coords(centerX - 230f, centerY), coords(centerX + 230f, centerY))
         ))
         instrumentation.sendPointerSync(event(downTime, downTime + 80, MotionEvent.ACTION_UP, listOf(first), listOf(coords(centerX - 230f, centerY))))
+    }
+
+    private fun dispatchDrag(
+        instrumentation: Instrumentation,
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float
+    ) {
+        val downTime = SystemClock.uptimeMillis()
+        val pointer = pointerProperties(0)
+        instrumentation.sendPointerSync(
+            event(downTime, downTime, MotionEvent.ACTION_DOWN, listOf(pointer), listOf(coords(startX, startY)))
+        )
+        instrumentation.sendPointerSync(
+            event(
+                downTime,
+                downTime + 24,
+                MotionEvent.ACTION_MOVE,
+                listOf(pointer),
+                listOf(coords(endX, endY))
+            )
+        )
+        instrumentation.sendPointerSync(
+            event(
+                downTime,
+                downTime + 48,
+                MotionEvent.ACTION_UP,
+                listOf(pointer),
+                listOf(coords(endX, endY))
+            )
+        )
     }
 
     private fun findZoomViewport(view: View): SignalASIPinchZoomViewport? {
