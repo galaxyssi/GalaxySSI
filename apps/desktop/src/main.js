@@ -280,21 +280,25 @@ async function runUiSmoke() {
     const gatewayState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         document.querySelector('[data-open-panel="gateway"]')?.click();
+        const pairing = document.querySelector("#pairingDetails");
+        if (pairing) pairing.open = true;
         for (let attempt = 0; attempt < 60; attempt += 1) {
-          const hasFrame = Boolean(document.querySelector("#pairingFrame")?.src);
-          const hasClient = document.querySelectorAll("#pairedClientList .paired-client").length > 0;
-          if (hasFrame || hasClient) break;
+          const frame = document.querySelector("#pairingFrame");
+          const hasFrame = Boolean(frame?.src && frame.complete);
+          if (hasFrame) break;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
+        const frame = document.querySelector("#pairingFrame");
         return {
           active: document.querySelector("#gatewayPanel")?.classList.contains("active") || false,
-          frame: Boolean(document.querySelector("#pairingFrame")?.src),
+          frame: Boolean(frame?.src && frame.complete),
+          frameWidth: Math.round(frame?.getBoundingClientRect().width || 0),
           clients: document.querySelectorAll("#pairedClientList .paired-client").length,
           summary: document.querySelector("#gatewaySummary")?.textContent || ""
         };
       })()
     `);
-    if (!gatewayState.active || (!gatewayState.frame && gatewayState.clients < 1) || !gatewayState.summary.trim()) {
+    if (!gatewayState.active || !gatewayState.frame || gatewayState.frameWidth > 161 || !gatewayState.summary.trim()) {
       throw new Error(`Gateway drawer did not render: ${JSON.stringify(gatewayState)}`);
     }
     await captureSmokeScreenshot(matrixPath);
