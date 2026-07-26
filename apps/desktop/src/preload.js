@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("signalasi", {
+  getAppVersion: () => ipcRenderer.invoke("app:version"),
   startBackend: () => ipcRenderer.invoke("backend:start"),
   backendStatus: () => ipcRenderer.invoke("backend:status"),
   getRuntimeDiagnostics: (refresh = false) => ipcRenderer.invoke("runtime:diagnostics", refresh),
