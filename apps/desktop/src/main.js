@@ -906,6 +906,7 @@ async function revealTaskWorkspace(taskId) {
   return { ok: true, path: target };
 }
 
+ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.handle("backend:start", startBackend);
 ipcMain.handle("backend:status", backendStatus);
 ipcMain.handle("runtime:diagnostics", (_event, refresh = false) => runtimeDiagnostics(Boolean(refresh)));

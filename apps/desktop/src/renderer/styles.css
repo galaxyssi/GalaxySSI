@@ -174,22 +174,15 @@ button:disabled { cursor: default; opacity: 0.48; }
 .settings-icon { border: 1.4px solid currentColor; border-radius: 50%; }
 .settings-icon::after { content: ""; position: absolute; inset: 4px; border: 1.2px solid currentColor; border-radius: 50%; }
 
-.desktop-profile {
-  display: grid;
-  grid-template-columns: 31px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 9px;
-  margin-top: 8px;
-  padding: 10px 8px 3px;
-  border-top: 1px solid var(--line);
+.sidebar-settings-row {
+  margin-top: 3px;
 }
-.desktop-profile img { width: 31px; height: 31px; border-radius: 7px; }
-.desktop-profile strong,
-.desktop-profile span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.desktop-profile strong { font-size: 10px; }
-.desktop-profile span { color: var(--muted); font-size: 8px; }
-.desktop-profile i { width: 7px; height: 7px; border-radius: 50%; background: #a3aab1; }
-.desktop-profile i.online { background: var(--green); box-shadow: 0 0 0 3px var(--green-soft); }
+.sidebar-version {
+  margin-left: auto;
+  color: #8f969e;
+  font-size: 8px;
+  white-space: nowrap;
+}
 
 .agent-workspace {
   min-width: 0;
@@ -240,15 +233,29 @@ button:disabled { cursor: default; opacity: 0.48; }
 }
 .compact-status.active > span { background: var(--green-soft); color: var(--green); }
 .compact-status b { font-size: 8px; font-weight: 550; white-space: nowrap; }
+.compact-status em { color: var(--soft); font-size: 7px; font-style: normal; white-space: nowrap; }
 .computer-symbol::before { content: ""; width: 12px; height: 8px; border: 1.3px solid currentColor; border-radius: 1px; }
 .computer-symbol::after { content: ""; position: absolute; width: 7px; height: 1px; bottom: 5px; background: currentColor; }
 .agent-symbol::before { content: ""; width: 6px; height: 6px; position: absolute; top: 4px; border: 1.2px solid currentColor; border-radius: 50%; }
 .agent-symbol::after { content: ""; width: 12px; height: 6px; position: absolute; bottom: 3px; border: 1.2px solid currentColor; border-radius: 7px 7px 3px 3px; }
+.capability-symbol::before,
+.capability-symbol::after { content: ""; position: absolute; border: 1.2px solid currentColor; transform: rotate(45deg); }
+.capability-symbol::before { width: 8px; height: 8px; top: 4px; left: 4px; }
+.capability-symbol::after { width: 5px; height: 5px; right: 4px; bottom: 4px; }
 .gateway-symbol::before { content: ""; width: 8px; height: 13px; border: 1.2px solid currentColor; border-radius: 2px; }
 .gateway-symbol::after { content: ""; width: 3px; height: 1px; position: absolute; bottom: 4px; background: currentColor; }
 
 .icon-button { display: grid; place-items: center; border: 0; background: transparent; color: #59616a; }
-.more-button { width: 32px; height: 32px; margin-left: 2px; border-radius: 6px; font-size: 17px; line-height: 1; }
+.more-button { width: 32px; height: 32px; margin-left: 2px; border-radius: 6px; }
+.more-button::before {
+  content: "";
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 6px 0 currentColor, 12px 0 currentColor;
+  transform: translateX(-6px);
+}
 .more-button:hover { background: #f0f3f5; }
 .workspace-menu {
   position: absolute;
@@ -267,8 +274,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 
 .conversation-stream { min-height: 0; overflow-y: auto; padding: 22px 34px 40px; scroll-behavior: smooth; scrollbar-width: thin; }
 .empty-state { width: min(520px, 80%); margin: 18vh auto 0; text-align: center; }
-.empty-state img { width: 42px; height: 42px; border-radius: 8px; }
-.empty-state h2 { margin: 13px 0 6px; font-size: 16px; }
+.empty-state h2 { margin: 0 0 6px; font-size: 16px; }
 .empty-state p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .message-list { width: min(900px, 100%); margin: 0 auto; }
 .message-list:empty { display: none; }
@@ -587,7 +593,8 @@ button:disabled { cursor: default; opacity: 0.48; }
 
 @media (max-width: 1080px) {
   .desktop-shell { grid-template-columns: 205px minmax(0, 1fr); }
-  .compact-status b { display: none; }
+  .compact-status b,
+  .compact-status em { display: none; }
   .workspace-title h1 { max-width: 420px; }
   .conversation-stream { padding-left: 24px; padding-right: 24px; }
 }
