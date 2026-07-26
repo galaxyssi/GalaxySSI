@@ -61,7 +61,6 @@ const state = {
   agentConfig: null,
   pairing: null,
   pairingGrantDesktopExecutor: false,
-  tools: [],
   desktopControl: null,
   memory: { memories: [], stats: {} },
   skills: [],
@@ -836,16 +835,6 @@ async function loadPairingFrame() {
   }
 }
 
-function renderDesktopTools() {
-  const available = state.tools.filter((tool) => tool.availability?.status === "available").length;
-  $("#computerSummary .status-orb").classList.toggle("online", available > 0);
-  $("#computerSummary p").textContent = t("{available} of {total} local tools ready", { available, total: state.tools.length });
-  $("#desktopToolList").innerHTML = state.tools.map((tool) => {
-    const status = tool.availability?.status || "unknown";
-    return `<article class="desktop-tool"><strong>${escapeHtml(tool.title || tool.id)}</strong><p>${escapeHtml(tool.description || "")}</p><span class="${escapeHtml(status)}">${escapeHtml(t(status === "available" ? "Available" : "Requires setup"))}</span></article>`;
-  }).join("");
-}
-
 function formatControlTime(value) {
   const timestamp = Number(value || 0);
   if (!timestamp) return t("Never");
@@ -854,48 +843,14 @@ function formatControlTime(value) {
   }).format(new Date(timestamp));
 }
 
-function renderControlPhone(row, pending = false) {
-  const id = escapeHtml(row.authorization_id || "");
-  const fingerprint = row.phone_fingerprint_short || String(row.phone_fingerprint || "").slice(0, 16);
-  const detail = pending
-    ? t("Fingerprint {fingerprint} · requested {time}", { fingerprint, time: formatControlTime(row.requested_at) })
-    : t("Fingerprint {fingerprint} · last used {time}", { fingerprint, time: formatControlTime(row.last_used_at) });
-  const actions = pending
-    ? `<div class="control-phone-actions"><button class="approve-control" data-control-action="approve" data-control-id="${id}">${escapeHtml(t("Allow"))}</button><button data-control-action="reject" data-control-id="${id}">${escapeHtml(t("Reject"))}</button></div>`
-    : `<div class="control-phone-actions"><button class="revoke-control" data-control-action="revoke" data-control-id="${id}">${escapeHtml(t("Revoke"))}</button></div>`;
-  return `<article class="control-phone"><span class="control-phone-icon"></span><div><strong>${escapeHtml(row.phone_name || t("SignalASI phone"))}</strong><small>${escapeHtml(detail)}</small></div>${actions}</article>`;
-}
-
 function renderDesktopControl() {
-  const control = state.desktopControl || { authorizations: [], recent_audit: [] };
-  const rows = Array.isArray(control.authorizations) ? control.authorizations : [];
-  const pending = rows.filter((row) => row.status === "pending");
-  const active = rows.filter((row) => row.status === "active");
-  const availableTools = state.tools.filter((tool) => tool.availability?.status === "available").length;
-  $("#desktopExecutorEnabled").checked = Boolean(control.enabled);
-  $("#desktopControlRequireUnlocked").checked = Boolean(control.require_unlocked);
-  $("#desktopControlPendingCount").textContent = String(pending.length);
-  $("#desktopControlActiveCount").textContent = String(active.length);
-  $("#desktopControlPendingList").innerHTML = pending.length
-    ? pending.map((row) => renderControlPhone(row, true)).join("")
-    : `<div class="history-empty">${escapeHtml(t("No pending authorization requests."))}</div>`;
-  $("#desktopControlAuthorizedList").innerHTML = active.length
-    ? active.map((row) => renderControlPhone(row, false)).join("")
-    : `<div class="history-empty">${escapeHtml(t("No phones are authorized for control."))}</div>`;
-  const audit = Array.isArray(control.recent_audit) ? control.recent_audit.slice(0, 20) : [];
+  const control = state.desktopControl || { recent_audit: [] };
+  const audit = Array.isArray(control.recent_audit)
+    ? control.recent_audit.filter((row) => row.event_type !== "settings_changed").slice(0, 20)
+    : [];
   $("#desktopControlAuditList").innerHTML = audit.length
     ? audit.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.event_type || "")}</strong><small>${escapeHtml(`${formatControlTime(row.created_at)} · ${row.status || ""}`)}</small></article>`).join("")
     : `<div class="history-empty">${escapeHtml(t("No remote-control activity yet."))}</div>`;
-  $("#desktopControlHint").textContent = control.enabled
-    ? t("The executor is on. Scan the refreshed QR, then approve the phone once.")
-    : t("Enable the executor, refresh the pairing QR, then approve the phone once.");
-  $("#computerSummary .status-orb").classList.toggle("online", Boolean(control.enabled));
-  $("#computerSummary p").textContent = control.enabled
-    ? t("Remote control on · {phones} authorized · {available} local tools ready", {
-      phones: active.length,
-      available: availableTools
-    })
-    : t("Remote control off · {available} local tools ready", { available: availableTools });
 }
 
 async function refreshDesktopControl() {
@@ -903,64 +858,7 @@ async function refreshDesktopControl() {
     state.desktopControl = await window.signalasi.getDesktopControl();
     renderDesktopControl();
   } catch (error) {
-    $("#desktopControlHint").textContent = error.message || String(error);
-  }
-}
-
-async function updateDesktopControlSetting(field, value) {
-  state.desktopControl = await window.signalasi.updateDesktopControl({ [field]: Boolean(value) });
-  renderDesktopControl();
-  if (field === "enabled") {
-    $("#pairingFrame").removeAttribute("src");
-    showToast(value ? t("Desktop Executor enabled. Refresh the pairing QR before scanning.") : t("Desktop Executor disabled."));
-  }
-}
-
-async function showDesktopControlPairingQr() {
-  if (!state.desktopControl?.enabled) {
-    state.desktopControl = await window.signalasi.updateDesktopControl({ enabled: true });
-    renderDesktopControl();
-  }
-  state.pairingGrantDesktopExecutor = true;
-  $("#pairingDesktopExecutorEnabled").checked = true;
-  $("#pairingDetails").open = true;
-  $("#pairingFrame").removeAttribute("src");
-  await openPanel("gateway");
-  showToast(t("Scan this QR code with the SignalASI phone app, then approve the phone here."));
-}
-
-async function runDesktopControlAuthorizationAction(id, action) {
-  state.desktopControl = await window.signalasi.desktopControlAuthorizationAction(id, action);
-  renderDesktopControl();
-  showToast(t(action === "approve" ? "Phone authorized for Desktop control." : action === "reject" ? "Authorization request rejected." : "Desktop control authorization revoked."));
-}
-
-async function refreshDesktopTools() {
-  try {
-    const payload = await window.signalasi.getDesktopTools();
-    state.tools = Array.isArray(payload.tools) ? payload.tools : [];
-    renderDesktopTools();
-  } catch (error) {
-    $("#computerSummary p").textContent = error.message || String(error);
-  }
-  await refreshDesktopControl();
-}
-
-async function readSystemStatus() {
-  const output = $("#systemStatusOutput");
-  output.hidden = false;
-  output.textContent = t("Reading system status...");
-  try {
-    const result = await window.signalasi.invokeDesktopTool({
-      tool_id: "signalasi.desktop.windows.system.status",
-      arguments: {},
-      invocation_id: crypto.randomUUID(),
-      task_id: `desktop-ui-${Date.now()}`,
-      idempotency_key: crypto.randomUUID()
-    });
-    output.textContent = JSON.stringify(result.output || result, null, 2);
-  } catch (error) {
-    output.textContent = error.message || String(error);
+    $("#desktopControlAuditList").innerHTML = `<div class="history-empty">${escapeHtml(error.message || String(error))}</div>`;
   }
 }
 
@@ -1156,7 +1054,6 @@ const PANEL_META = {
   agents: ["Agents", "Private agents and local execution engines"],
   capabilities: ["Capabilities", "Long-term memory, Skills, and MCP"],
   gateway: ["Mobile Gateway", "Trusted phones and SignalASI Link"],
-  computer: ["Computer", "Local tools and desktop permissions"],
   settings: ["Settings", "Language, cloud API, commands, and diagnostics"]
 };
 
@@ -1170,8 +1067,10 @@ async function openPanel(name) {
   elements.drawer.classList.add("open");
   elements.drawer.setAttribute("aria-hidden", "false");
   if (name === "agents") await refreshAgents();
-  if (name === "gateway") { await refreshGateway(); await loadPairingFrame(); }
-  if (name === "computer") await refreshDesktopTools();
+  if (name === "gateway") {
+    await Promise.all([refreshGateway(), refreshDesktopControl()]);
+    await loadPairingFrame();
+  }
   if (name === "capabilities") await refreshCapabilities();
   if (name === "settings") {
     await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false)]);
@@ -1355,12 +1254,17 @@ function bindEvents() {
   $("#cloudProvider").addEventListener("change", applyCloudProviderPreset);
   $("#saveCloudModelButton").addEventListener("click", () => saveCloudModelSettings(false));
   $("#testCloudModelButton").addEventListener("click", () => saveCloudModelSettings(true));
-  $("#refreshGatewayButton").addEventListener("click", async () => { $("#pairingFrame").removeAttribute("src"); await refreshGateway(); await loadPairingFrame(); });
+  $("#refreshGatewayButton").addEventListener("click", async () => {
+    $("#pairingFrame").removeAttribute("src");
+    await Promise.all([refreshGateway(), refreshDesktopControl()]);
+    await loadPairingFrame();
+  });
   $("#pairingDesktopExecutorEnabled").addEventListener("change", async (event) => {
     state.pairingGrantDesktopExecutor = Boolean(event.target.checked);
     $("#pairingFrame").removeAttribute("src");
     try {
       await loadPairingFrame();
+      await refreshDesktopControl();
     } catch (error) {
       showToast(error.message || String(error));
     }
@@ -1370,21 +1274,7 @@ function bindEvents() {
     if (!button || !window.confirm(t("Revoke this phone? It must scan the QR code again."))) return;
     await window.signalasi.clearPairing(button.dataset.revokeClient);
     await refreshGateway();
-  });
-  $("#readSystemStatusButton").addEventListener("click", readSystemStatus);
-  $("#desktopExecutorEnabled").addEventListener("change", (event) =>
-    updateDesktopControlSetting("enabled", event.target.checked).catch((error) => showToast(error.message || String(error))));
-  $("#desktopControlRequireUnlocked").addEventListener("change", (event) =>
-    updateDesktopControlSetting("require_unlocked", event.target.checked).catch((error) => showToast(error.message || String(error))));
-  $("#showDesktopControlQrButton").addEventListener("click", () =>
-    showDesktopControlPairingQr().catch((error) => showToast(error.message || String(error))));
-  $("#computerPanel").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-control-action]");
-    if (!button) return;
-    const action = button.dataset.controlAction;
-    if (action === "revoke" && !window.confirm(t("Revoke Desktop control for this phone?"))) return;
-    runDesktopControlAuthorizationAction(button.dataset.controlId, action)
-      .catch((error) => showToast(error.message || String(error)));
+    await refreshDesktopControl();
   });
   $$('[data-capability-tab]').forEach((button) => button.addEventListener("click", () => selectCapabilityTab(button.dataset.capabilityTab)));
   $("#refreshMemoryButton").addEventListener("click", () => refreshMemory($("#memorySearch").value.trim()));
@@ -1453,7 +1343,7 @@ async function init() {
   updateSelectedAgent();
   updateSendState();
   await refreshBackend();
-  await Promise.all([refreshAgents(), refreshGateway(), refreshDesktopTools(), refreshCapabilities(), refreshTasks(true)]);
+  await Promise.all([refreshAgents(), refreshGateway(), refreshDesktopControl(), refreshCapabilities(), refreshTasks(true)]);
   connectTaskStream();
   window.setInterval(updateElapsedLabels, 1000);
   window.setInterval(() => {
@@ -1461,7 +1351,7 @@ async function init() {
   }, 10_000);
   window.setInterval(() => { refreshBackend(); refreshGateway(); }, 30_000);
   window.setInterval(() => {
-    if (elements.drawer.classList.contains("open") && $("#computerPanel").classList.contains("active")) {
+    if (elements.drawer.classList.contains("open") && $("#gatewayPanel").classList.contains("active")) {
       refreshDesktopControl();
     }
   }, 2_000);

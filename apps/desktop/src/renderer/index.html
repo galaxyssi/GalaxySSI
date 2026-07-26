@@ -22,7 +22,7 @@
         <button class="sidebar-action sidebar-settings-row" data-open-panel="settings">
           <span class="line-icon settings-icon"></span>
           <b data-i18n="Settings">Settings</b>
-          <span id="desktopVersion" class="sidebar-version">v0.2.20</span>
+          <span id="desktopVersion" class="sidebar-version">v0.2.21</span>
         </button>
       </div>
     </aside>
@@ -34,7 +34,6 @@
           <p><span id="taskStateText" data-i18n="Ready">Ready</span><span class="header-separator">·</span><span id="routeText" data-i18n="Automatic routing">Automatic routing</span></p>
         </div>
         <div class="workspace-status">
-          <button class="compact-status active" data-open-panel="computer" title="Computer control"><span><svg class="lucide lucide-monitor" viewBox="0 0 24 24" aria-hidden="true"><rect width="20" height="14" x="2" y="3" rx="2"></rect><line x1="8" x2="16" y1="21" y2="21"></line><line x1="12" x2="12" y1="17" y2="21"></line></svg></span><b data-i18n="Computer">Computer</b></button>
           <button class="compact-status" data-open-panel="agents" title="Agents"><span><svg class="lucide lucide-bot" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg></span><b data-i18n="Agents">Agents</b><em id="agentCount">0</em></button>
           <button class="compact-status" data-open-panel="capabilities" title="Capabilities"><span><svg class="lucide lucide-sparkles" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path><path d="M5 3v4"></path><path d="M19 17v4"></path><path d="M3 5h4"></path><path d="M17 19h4"></path></svg></span><b data-i18n="Capabilities">Capabilities</b><em id="capabilityCount">0</em></button>
           <button class="compact-status" data-open-panel="gateway" title="Mobile Gateway"><span><svg class="lucide lucide-smartphone" viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"></rect><path d="M12 18h.01"></path></svg></span><b data-i18n="Mobile Gateway">Mobile Gateway</b><em id="gatewayCount">Offline</em></button>
@@ -114,31 +113,12 @@
           <small id="pairingAccessSummary"></small>
         </div>
       </details>
-    </section>
-
-    <section id="computerPanel" class="drawer-panel">
-      <div id="computerSummary" class="computer-summary"><span class="status-orb"></span><div><strong data-i18n="Desktop control">Desktop control</strong><p data-i18n="Loading available local tools">Loading available local tools</p></div></div>
-      <div class="desktop-control-settings">
-        <label class="setting-row compact-setting"><span><strong data-i18n="Enable Desktop Executor">Enable Desktop Executor</strong><small data-i18n="Only approved phones can view or control this desktop">Only approved phones can view or control this desktop</small></span><input id="desktopExecutorEnabled" type="checkbox"></label>
-        <label class="setting-row compact-setting"><span><strong data-i18n="Require unlocked desktop">Require unlocked desktop</strong><small data-i18n="Reject remote actions while Windows is locked">Reject remote actions while Windows is locked</small></span><input id="desktopControlRequireUnlocked" type="checkbox"></label>
-        <p id="desktopControlHint" class="control-hint" data-i18n="Enable the executor, refresh the pairing QR, then approve the phone once.">Enable the executor, refresh the pairing QR, then approve the phone once.</p>
-        <button id="showDesktopControlQrButton" class="primary-button full-width" data-i18n="Add control phone">Add control phone</button>
-      </div>
-      <section class="control-list-section">
-        <div class="mini-section-title"><strong data-i18n="Authorization requests">Authorization requests</strong><span id="desktopControlPendingCount">0</span></div>
-        <div id="desktopControlPendingList" class="desktop-control-list"></div>
+      <section class="gateway-control-section">
+        <details class="drawer-details gateway-access-history">
+          <summary data-i18n="Recent access history">Recent access history</summary>
+          <div id="desktopControlAuditList" class="desktop-control-audit"></div>
+        </details>
       </section>
-      <section class="control-list-section">
-        <div class="mini-section-title"><strong data-i18n="Authorized phones">Authorized phones</strong><span id="desktopControlActiveCount">0</span></div>
-        <div id="desktopControlAuthorizedList" class="desktop-control-list"></div>
-      </section>
-      <details class="drawer-details">
-        <summary data-i18n="Recent control activity">Recent control activity</summary>
-        <div id="desktopControlAuditList" class="desktop-control-audit"></div>
-      </details>
-      <button id="readSystemStatusButton" class="primary-button full-width" data-i18n="Read system status">Read system status</button>
-      <pre id="systemStatusOutput" class="tool-output" hidden></pre>
-      <div id="desktopToolList" class="desktop-tool-list"></div>
     </section>
 
     <section id="capabilitiesPanel" class="drawer-panel">
