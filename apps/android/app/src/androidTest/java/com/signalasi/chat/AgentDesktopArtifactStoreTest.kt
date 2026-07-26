@@ -33,12 +33,12 @@ class AgentDesktopArtifactStoreTest {
 
         val pending = AgentDesktopArtifactStore.ingest(
             context,
-            payload(artifactId, artifactUri, fullDigest, bytes.size, 0, 2, first)
+            payload(artifactId, artifactUri, fullDigest, bytes.size, 0, 2, first, 500_000)
         )
         assertFalse(pending.completed)
         val complete = AgentDesktopArtifactStore.ingest(
             context,
-            payload(artifactId, artifactUri, fullDigest, bytes.size, 1, 2, second)
+            payload(artifactId, artifactUri, fullDigest, bytes.size, 1, 2, second, 500_000)
         )
         assertTrue(complete.completed)
 
@@ -48,12 +48,21 @@ class AgentDesktopArtifactStoreTest {
                 id = "artifact",
                 type = AgentRichBlockType.FILE,
                 title = "result.bin",
+                text = "outputs \u00b7 488.3 KB",
                 uri = artifactUri,
                 mimeType = "application/octet-stream",
-                metadata = mapOf("transport" to "encrypted-fragmented")
+                metadata = mapOf(
+                    "transport" to "encrypted-fragmented",
+                    "category" to "outputs",
+                    "size" to "488.3 KB",
+                    "size_bytes" to "500000"
+                )
             )
         )
         assertEquals("content", android.net.Uri.parse(resolved.uri).scheme)
+        assertEquals("outputs \u00b7 293.0 KB", resolved.text)
+        assertEquals("300000", resolved.metadata["size_bytes"])
+        assertEquals("500000", resolved.metadata["original_size_bytes"])
         val restored = context.contentResolver.openInputStream(android.net.Uri.parse(resolved.uri))
             ?.use { it.readBytes() }
         assertTrue(bytes.contentEquals(restored))
@@ -66,7 +75,8 @@ class AgentDesktopArtifactStoreTest {
         fullSize: Int,
         index: Int,
         count: Int,
-        chunk: ByteArray
+        chunk: ByteArray,
+        originalSize: Int = fullSize
     ): JSONObject = JSONObject()
         .put("type", "artifact_chunk")
         .put("artifact_id", artifactId)
@@ -76,7 +86,7 @@ class AgentDesktopArtifactStoreTest {
         .put("mime_type", "application/octet-stream")
         .put("size_bytes", fullSize)
         .put("sha256", fullDigest)
-        .put("original_size_bytes", fullSize)
+        .put("original_size_bytes", originalSize)
         .put("original_sha256", fullDigest)
         .put("chunk_index", index)
         .put("chunk_count", count)

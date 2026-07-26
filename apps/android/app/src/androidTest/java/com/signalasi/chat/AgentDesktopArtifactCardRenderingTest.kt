@@ -8,17 +8,39 @@ import android.os.SystemClock
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Base64
+import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.ScrollView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.security.MessageDigest
 
 @RunWith(AndroidJUnit4::class)
 class AgentDesktopArtifactCardRenderingTest {
+    @Test
+    fun thumbnailDimensionsFollowImageOrientation() {
+        assertEquals(
+            AgentImageThumbnailSize(
+                AGENT_IMAGE_THUMBNAIL_WIDTH_DP,
+                AGENT_IMAGE_THUMBNAIL_HEIGHT_DP
+            ),
+            agentImageThumbnailSize(sourceWidth = 900, sourceHeight = 1_440)
+        )
+        assertEquals(
+            AgentImageThumbnailSize(
+                AGENT_IMAGE_THUMBNAIL_HEIGHT_DP,
+                AGENT_IMAGE_THUMBNAIL_WIDTH_DP
+            ),
+            agentImageThumbnailSize(sourceWidth = 1_440, sourceHeight = 900)
+        )
+    }
+
     @Test
     fun rendersCodexStyleImageAndDownloadableFileCards() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -63,8 +85,9 @@ class AgentDesktopArtifactCardRenderingTest {
             Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         ) as MainActivity
+        lateinit var content: View
         instrumentation.runOnMainSync {
-            val content = AgentRichContentView(activity, {}, {}, { _, _ -> }).create(
+            content = AgentRichContentView(activity, {}, {}, { _, _ -> }).create(
                 AgentTranscriptEntry(
                     id = "desktop-artifacts",
                     role = AgentTranscriptRole.ASSISTANT,
@@ -86,6 +109,14 @@ class AgentDesktopArtifactCardRenderingTest {
         }
         instrumentation.waitForIdleSync()
         SystemClock.sleep(700)
+        instrumentation.runOnMainSync {
+            val preview = findImage(content, "preview.png")
+            assertNotNull(preview)
+            val density = context.resources.displayMetrics.density
+            assertEquals((AGENT_IMAGE_THUMBNAIL_WIDTH_DP * density).toInt(), preview!!.width)
+            assertEquals((AGENT_IMAGE_THUMBNAIL_HEIGHT_DP * density).toInt(), preview.height)
+            assertEquals(ImageView.ScaleType.CENTER_CROP, preview.scaleType)
+        }
         val screenshot = instrumentation.uiAutomation.takeScreenshot()
         val screenshotUri = context.contentResolver.insert(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
@@ -137,6 +168,15 @@ class AgentDesktopArtifactCardRenderingTest {
         MessageDigest.getInstance("SHA-256")
             .digest(bytes)
             .joinToString("") { "%02x".format(it) }
+
+    private fun findImage(view: View, description: String): ImageView? {
+        if (view is ImageView && view.contentDescription?.toString() == description) return view
+        if (view !is ViewGroup) return null
+        for (index in 0 until view.childCount) {
+            findImage(view.getChildAt(index), description)?.let { return it }
+        }
+        return null
+    }
 
     private data class StoredFixture(
         val name: String,

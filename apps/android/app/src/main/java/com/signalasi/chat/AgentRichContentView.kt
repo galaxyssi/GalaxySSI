@@ -364,7 +364,13 @@ class AgentRichContentView(
                     gravity = Gravity.CENTER_VERTICAL
                     addView(selectableText(block.title, 15f).apply {
                         setTypeface(typeface, Typeface.BOLD)
-                    }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                        maxWidth = (activity.resources.displayMetrics.widthPixels * 0.68f).toInt()
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ))
                     if (desktopArtifact) addView(ImageButton(activity).apply {
                         setImageResource(
                             if (savedToDownloads) R.drawable.ic_rich_saved else R.drawable.ic_rich_download
@@ -376,40 +382,53 @@ class AgentRichContentView(
                         setPadding(dp(8), dp(8), dp(8), dp(8))
                         isEnabled = !savedToDownloads
                         setOnClickListener { saveDesktopArtifact(block, this) }
-                    }, LinearLayout.LayoutParams(dp(40), dp(40)))
+                    }, LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                        marginStart = dp(4)
+                    })
                 }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(5) })
             }
-        val image = ImageView(activity).apply {
-            adjustViewBounds = true
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            contentDescription = block.title.ifBlank { block.text }
-            background = roundedBackground("#F6F8FA", 7f, "#E1E6EA")
-            setPadding(dp(1), dp(1), dp(1), dp(1))
-            minimumHeight = dp(120)
-            maxHeight = dp(240)
-            setOnClickListener { showImageFullscreen(block) }
-        }
-        val loading = ProgressBar(activity).apply {
-            isIndeterminate = true
-            contentDescription = activity.getString(R.string.rich_output_loading)
-        }
-        addView(FrameLayout(activity).apply {
-            addView(image, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            addView(loading, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        loadImage(block, image) { success ->
-            loading.visibility = View.GONE
-            if (!success) {
-                image.setImageResource(android.R.drawable.ic_menu_report_image)
-                image.contentDescription = activity.getString(R.string.rich_output_load_failed)
+            val image = ImageView(activity).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                contentDescription = block.title.ifBlank { block.text }
+                background = roundedBackground(
+                    "#F4F6F8",
+                    AGENT_IMAGE_THUMBNAIL_RADIUS_DP.toFloat(),
+                    "#F4F6F8"
+                )
+                clipToOutline = true
+                setOnClickListener { showImageFullscreen(block) }
             }
-        }
+            val loading = ProgressBar(activity).apply {
+                isIndeterminate = true
+                contentDescription = activity.getString(R.string.rich_output_loading)
+            }
+            val frame = FrameLayout(activity).apply {
+                addView(image, FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                ))
+                addView(loading, FrameLayout.LayoutParams(dp(32), dp(32), Gravity.CENTER))
+            }
+            addView(frame, LinearLayout.LayoutParams(
+                dp(AGENT_IMAGE_THUMBNAIL_WIDTH_DP),
+                dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP)
+            ))
+            loadImage(block, image) { success ->
+                loading.visibility = View.GONE
+                if (success) {
+                    applyImageThumbnailSize(
+                        frame,
+                        image.drawable?.intrinsicWidth ?: 0,
+                        image.drawable?.intrinsicHeight ?: 0
+                    )
+                } else {
+                    image.setImageResource(android.R.drawable.ic_menu_report_image)
+                    image.contentDescription = activity.getString(R.string.rich_output_load_failed)
+                }
+            }
             if (block.text.isNotBlank()) addView(selectableText(block.text, 13f).apply {
                 setTextColor(Color.parseColor("#66717D"))
                 setPadding(0, dp(6), 0, 0)
@@ -452,16 +471,40 @@ class AgentRichContentView(
                             contentDescription = itemBlock.title.ifBlank {
                                 "${activity.getString(R.string.rich_output_type_image)} ${index + 1}"
                             }
-                            background = roundedBackground("#F6F8FA", 7f, "#E1E6EA")
+                            background = roundedBackground(
+                                "#F4F6F8",
+                                AGENT_IMAGE_THUMBNAIL_RADIUS_DP.toFloat(),
+                                "#F4F6F8"
+                            )
+                            clipToOutline = true
                             setOnClickListener { showImageFullscreen(itemBlock) }
-                            loadImage(itemBlock.uri, this)
-                        }, LinearLayout.LayoutParams(dp(168), dp(168)).apply {
+                            loadImage(itemBlock.uri, this) { success ->
+                                if (success) {
+                                    applyImageThumbnailSize(
+                                        this,
+                                        drawable?.intrinsicWidth ?: 0,
+                                        drawable?.intrinsicHeight ?: 0
+                                    )
+                                }
+                            }
+                        }, LinearLayout.LayoutParams(
+                            dp(AGENT_IMAGE_THUMBNAIL_WIDTH_DP),
+                            dp(AGENT_IMAGE_THUMBNAIL_HEIGHT_DP)
+                        ).apply {
                             if (index > 0) marginStart = dp(8)
                         })
                     }
                 })
             })
         }
+    }
+
+    private fun applyImageThumbnailSize(view: View, sourceWidth: Int, sourceHeight: Int) {
+        val size = agentImageThumbnailSize(sourceWidth, sourceHeight)
+        val params = view.layoutParams ?: return
+        params.width = dp(size.widthDp)
+        params.height = dp(size.heightDp)
+        view.layoutParams = params
     }
 
     private fun chartBlock(block: AgentRichBlock): View {
