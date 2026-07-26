@@ -231,14 +231,28 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         resume.assert_not_called()
         retain.assert_called_once_with("task-2")
 
-    def test_delivery_ack_preserves_phone_source_message_id(self):
+    def test_delivery_ack_separates_transport_and_client_message_ids(self):
         ack = mqtt_bridge.accepted_delivery_ack_payload(
             {"source_message_id": "42"},
             "signal-envelope-uuid",
             [{"stage": "desktop_received"}],
         )
         self.assertEqual("42", ack["source_message_id"])
-        self.assertEqual("signal-envelope-uuid", ack["message_id"])
+        self.assertEqual("42", ack["client_source_message_id"])
+        self.assertEqual("signal-envelope-uuid", ack["transport_message_id"])
+        self.assertNotIn("message_id", ack)
+
+    def test_delivery_ack_prefers_explicit_transport_message_id(self):
+        self.assertEqual(
+            "transport-uuid",
+            mqtt_bridge.acknowledged_transport_message_id(
+                {
+                    "transport_message_id": "transport-uuid",
+                    "source_message_id": "42",
+                },
+                {"reply_to": "fallback"},
+            ),
+        )
 
 
 class _ImmediateTimer:

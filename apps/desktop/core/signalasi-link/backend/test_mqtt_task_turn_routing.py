@@ -200,7 +200,7 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "_publish_phone_payload",
-                side_effect=lambda _client, _wire, payload: published_payloads.append(payload) or True,
+                side_effect=lambda _client, _wire, payload, **_kwargs: published_payloads.append(payload) or True,
             ),
         ):
             mqtt_bridge.flush_pending_task_events(ConnectedMqtt())

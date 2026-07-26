@@ -32,7 +32,10 @@ from link_delivery import (
     complete_message,
     ensure_transport_epoch,
     mark_outbound_published,
+    mark_outbound_retryable,
+    mark_outbound_sending,
     message_for_ciphertext,
+    outbound_inflight_count,
     outbound_status,
     pending_outbound,
     pending_task_results as pending_persisted_task_results,
@@ -89,7 +92,7 @@ PORT = int(os.environ.get("SIGNALASI_MQTT_PORT", "8883"))
 MQTT_TLS = os.environ.get("SIGNALASI_MQTT_TLS", "1") != "0"
 FILES_DIR = Path.home() / "signalasi_files"
 MQTT_QOS = 1
-MQTT_TRANSPORT_EPOCH = "v4-fragment"
+MQTT_TRANSPORT_EPOCH = "v7-flow-control"
 MOBILE_HIDDEN_AGENT_IDS = {"cloud-model"}
 
 client = None
@@ -118,6 +121,12 @@ INBOUND_ROUTE_IDLE_SECONDS = 120
 MQTT_MAX_INFLIGHT = 64
 MAX_FRAGMENT_INFLIGHT = 48
 MAX_FRAGMENT_INFLIGHT_PER_TRANSFER = 24
+MAX_DURABLE_OUTBOUND_INFLIGHT = 8
+MAX_DURABLE_OUTBOUND_BATCH = 4
+OUTBOUND_RETRY_POLL_SECONDS = 1.0
+durable_outbound_lock = threading.RLock()
+outbound_retry_stop_event = threading.Event()
+outbound_retry_thread: threading.Thread | None = None
 
 TOOL_SESSION_START_TYPE = "tool_session_start"
 TOOL_CALL_REQUEST_TYPE = "tool_call_request"
@@ -178,6 +187,16 @@ class _FragmentPublishInfo:
     def mark_published(self) -> None:
         with self._lock:
             self._published = True
+
+
+class _DeferredPublishInfo:
+    mid = 0
+    rc = mqtt.MQTT_ERR_SUCCESS
+    deferred = True
+
+    @staticmethod
+    def is_published() -> bool:
+        return False
 
 
 @dataclass
@@ -1135,7 +1154,10 @@ class _PendingTaskEvent:
 
 pending_task_events: dict[str, _PendingTaskEvent] = {}
 pending_task_events_lock = threading.Lock()
-task_event_publish_queue: queue.Queue[tuple[object, dict, dict, list[dict]] | None] = queue.Queue()
+task_event_publish_queue: queue.Queue[str | None] = queue.Queue()
+task_event_publish_snapshots: dict[str, tuple[object, dict, dict, list[dict]]] = {}
+task_event_publish_scheduled: set[str] = set()
+task_event_publish_snapshots_lock = threading.Lock()
 task_event_publisher_started = threading.Event()
 task_event_publisher_lock = threading.Lock()
 
@@ -1297,15 +1319,25 @@ class _TaskProgressEventGate:
 
 def _task_event_publish_loop() -> None:
     while True:
-        item = task_event_publish_queue.get()
+        task_id = task_event_publish_queue.get()
         try:
-            if item is None:
+            if task_id is None:
                 return
+            with task_event_publish_snapshots_lock:
+                item = task_event_publish_snapshots.pop(task_id, None)
+            if item is None:
+                continue
             mqttc, wire_payload, task, trace = item
             _publish_or_queue_task_event(mqttc, wire_payload, task, trace)
         except Exception as exc:
             log.warning("Agent task event publish failed: %s", exc)
         finally:
+            if task_id is not None:
+                with task_event_publish_snapshots_lock:
+                    if task_id in task_event_publish_snapshots:
+                        task_event_publish_queue.put(task_id)
+                    else:
+                        task_event_publish_scheduled.discard(task_id)
             task_event_publish_queue.task_done()
 
 
@@ -1325,7 +1357,16 @@ def _ensure_task_event_publisher() -> None:
 
 def _enqueue_task_event(mqttc, wire_payload: dict, task: dict, trace: list[dict]) -> None:
     _ensure_task_event_publisher()
-    task_event_publish_queue.put((mqttc, dict(wire_payload), dict(task), list(trace)))
+    task_id = str(task.get("task_id") or "").strip()
+    if not task_id:
+        return
+    snapshot = (mqttc, dict(wire_payload), dict(task), list(trace))
+    with task_event_publish_snapshots_lock:
+        task_event_publish_snapshots[task_id] = snapshot
+        if task_id in task_event_publish_scheduled:
+            return
+        task_event_publish_scheduled.add(task_id)
+        task_event_publish_queue.put(task_id)
 
 
 def _reason_code_value(reason_code):
@@ -1521,6 +1562,10 @@ def _complete_fragment_publish(mqttc, mid: int) -> tuple[bool, int | None]:
 def _clear_mqtt_wire_transport_state() -> None:
     global fragment_publish_inflight
     inbound_chunk_assembler.clear()
+    with pending_outbound_acks_lock:
+        pending_outbound_acks.clear()
+    with pending_delivery_acks_lock:
+        pending_delivery_acks.clear()
     with fragment_publish_lock:
         fragment_publish_transfers.clear()
         fragment_publish_transfer_by_mid.clear()
@@ -1582,6 +1627,7 @@ def build_delivery_ack_payload(payload: dict, stage: str, detail: object = "") -
     return {
         "type": "delivery_ack",
         "source_message_id": source_message_id,
+        "client_source_message_id": source_message_id,
         "contact_id": payload.get("contact_id", ""),
         "agent_id": payload.get("agent_id", ""),
         "desktop_id": desktop_id(),
@@ -1595,15 +1641,26 @@ def build_delivery_ack_payload(payload: dict, stage: str, detail: object = "") -
 
 
 def accepted_delivery_ack_payload(payload: dict, message_id: str, trace: list[dict]) -> dict:
+    client_source_message_id = str(payload.get("source_message_id") or "").strip()
     return {
         "type": "delivery_ack",
-        "message_id": message_id,
-        "source_message_id": str(payload.get("source_message_id") or message_id),
+        "transport_message_id": message_id,
+        "source_message_id": client_source_message_id,
+        "client_source_message_id": client_source_message_id,
         "delivery_status": "accepted",
         "sender": "system",
         "time": time.time(),
         "delivery_trace": trace,
     }
+
+
+def acknowledged_transport_message_id(payload: dict, application_envelope: dict) -> str:
+    return str(
+        payload.get("transport_message_id")
+        or payload.get("source_message_id")
+        or application_envelope.get("reply_to")
+        or ""
+    ).strip()
 
 
 def publish_delivery_ack(mqttc, ack: dict, reason_code=None):
@@ -1692,7 +1749,13 @@ def clean_audio_reply(reply: str) -> str:
     return "\n\n".join(parts).strip()
 
 
-def _publish_phone_payload(mqttc, wire_payload: dict, reply_payload: dict) -> bool:
+def _publish_phone_payload(
+    mqttc,
+    wire_payload: dict,
+    reply_payload: dict,
+    *,
+    durable: bool | None = None,
+) -> bool:
     paired_client = _wire_client(wire_payload)
     if not paired_client:
         log.warning("Phone publish skipped: no active client route")
@@ -1706,13 +1769,15 @@ def _publish_phone_payload(mqttc, wire_payload: dict, reply_payload: dict) -> bo
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
     } else "down"
     target_topic = paired_client["topics"][channel]
+    reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
     with phone_publish_lock:
         info = _publish_to_registered_client(
             mqttc, paired_client, reply_payload, channel,
-            durable=reply_payload.get("type") != "delivery_ack",
+            durable=reliable,
         )
         reply_payload["_client_route_id"] = wire_payload.get("_client_route_id", "")
-        if reply_payload.get("type") != "delivery_ack":
+        deferred = bool(getattr(info, "deferred", False))
+        if reliable and not deferred:
             track_delivery_ack(
                 mqttc,
                 info,
@@ -1720,7 +1785,10 @@ def _publish_phone_payload(mqttc, wire_payload: dict, reply_payload: dict) -> bo
                 "desktop_reply_broker_ack",
                 target_topic,
             )
-        log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
+        if deferred:
+            log.debug("MQTT encrypted reply queued behind durable window topic=%s", target_topic)
+        else:
+            log.info(f"MQTT encrypted reply published mid={info.mid} rc={info.rc}")
         return info.rc == mqtt.MQTT_ERR_SUCCESS
 
 
@@ -1970,7 +2038,18 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
         resolved_connector_agents=mobile_connector_agents(),
         include_progress_replay=pending.replay_progress,
     )
-    return bool(_publish_phone_payload(mqttc, pending.wire_payload, payload))
+    status = str(pending.task.get("status") or "").strip().lower()
+    durable = status in TERMINAL_STATES or status in {
+        "waiting_approval", "waiting_input", "paused", "interrupted",
+    }
+    return bool(
+        _publish_phone_payload(
+            mqttc,
+            pending.wire_payload,
+            payload,
+            durable=durable,
+        )
+    )
 
 
 def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: list[dict]) -> bool:
@@ -3308,9 +3387,14 @@ def _process_message(mqttc, userdata, msg):
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             if replay_message_id:
                 previous = previous_acknowledgement(client_route_id, replay_message_id)
+                client_source_message_id = str(
+                    previous.get("client_source_message_id") or ""
+                )
                 _publish_phone_payload(mqttc, wire_payload, {
                     "type": "delivery_ack",
-                    "message_id": replay_message_id,
+                    "transport_message_id": replay_message_id,
+                    "source_message_id": client_source_message_id,
+                    "client_source_message_id": client_source_message_id,
                     "delivery_status": previous.get("status", "duplicate"),
                     "duplicate": True,
                     "sender": "system",
@@ -3333,9 +3417,14 @@ def _process_message(mqttc, userdata, msg):
                 if application_envelope.get("payload", {}).get("type") == "delivery_ack":
                     return
                 previous = previous_acknowledgement(client_route_id, message_id)
+                client_source_message_id = str(
+                    previous.get("client_source_message_id") or ""
+                )
                 _publish_phone_payload(mqttc, wire_payload, {
                     "type": "delivery_ack",
-                    "message_id": message_id,
+                    "transport_message_id": message_id,
+                    "source_message_id": client_source_message_id,
+                    "client_source_message_id": client_source_message_id,
                     "delivery_status": previous.get("status", "duplicate"),
                     "duplicate": True,
                     "sender": "system",
@@ -3354,11 +3443,20 @@ def _process_message(mqttc, userdata, msg):
                 _trace_event("desktop_decrypted", "SignalASI Link"),
             )
             if payload.get("type") == "delivery_ack":
-                acknowledged_id = str(payload.get("source_message_id") or application_envelope.get("reply_to") or "")
-                acknowledge_outbound(client_route_id, acknowledged_id)
+                acknowledged_id = acknowledged_transport_message_id(payload, application_envelope)
+                if acknowledge_outbound(client_route_id, acknowledged_id):
+                    flush_outbound_messages(mqttc)
                 complete_message(client_route_id, message_id, "completed", {"status": "completed"})
                 return
-            complete_message(client_route_id, message_id, "accepted", {"status": "accepted"})
+            complete_message(
+                client_route_id,
+                message_id,
+                "accepted",
+                {
+                    "status": "accepted",
+                    "client_source_message_id": str(payload.get("source_message_id") or ""),
+                },
+            )
             _publish_phone_payload(
                 mqttc,
                 wire_payload,
@@ -3941,21 +4039,83 @@ def _publish_to_registered_client(
     topic = paired_client["topics"][channel]
     wire_payload = json.dumps(encrypted, ensure_ascii=False)
     message_id = application_envelope["message_id"]
-    if durable:
-        queue_outbound(paired_client["client_route_id"], message_id, topic, wire_payload)
-    info = _publish_mqtt_wire_payload(mqttc, topic, wire_payload)
-    if durable:
-        track_outbound_publish(info, paired_client["client_route_id"], message_id)
-    return info
+    if not durable:
+        return _publish_mqtt_wire_payload(mqttc, topic, wire_payload)
+    client_route_id = paired_client["client_route_id"]
+    queue_outbound(client_route_id, message_id, topic, wire_payload)
+    published = flush_outbound_messages(mqttc)
+    return published.get((client_route_id, message_id), _DeferredPublishInfo())
 
 
-def flush_outbound_messages(mqttc) -> None:
-    for pending in pending_outbound():
-        paired_client = get_client(pending["client_route_id"])
-        if not paired_client:
-            continue
-        info = _publish_mqtt_wire_payload(mqttc, pending["topic"], pending["wire_payload"])
-        track_outbound_publish(info, pending["client_route_id"], pending["message_id"])
+def flush_outbound_messages(mqttc) -> dict[tuple[str, str], object]:
+    if mqttc is None or (hasattr(mqttc, "is_connected") and not mqttc.is_connected()):
+        return {}
+    published: dict[tuple[str, str], object] = {}
+    with durable_outbound_lock:
+        available = max(
+            0,
+            MAX_DURABLE_OUTBOUND_INFLIGHT - outbound_inflight_count(),
+        )
+        batch_size = min(MAX_DURABLE_OUTBOUND_BATCH, available)
+        if batch_size <= 0:
+            return published
+        for pending in pending_outbound(limit=batch_size):
+            client_route_id = str(pending["client_route_id"])
+            message_id = str(pending["message_id"])
+            if not get_client(client_route_id):
+                acknowledge_outbound(client_route_id, message_id)
+                continue
+            mark_outbound_sending(client_route_id, message_id)
+            try:
+                info = _publish_mqtt_wire_payload(
+                    mqttc,
+                    pending["topic"],
+                    pending["wire_payload"],
+                )
+            except Exception:
+                mark_outbound_retryable(client_route_id, message_id)
+                raise
+            if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                mark_outbound_retryable(client_route_id, message_id)
+                log.warning(
+                    "MQTT durable publish deferred rc=%s client=%s message=%s",
+                    info.rc,
+                    client_route_id[-8:],
+                    message_id[:12],
+                )
+                break
+            track_outbound_publish(info, client_route_id, message_id)
+            published[(client_route_id, message_id)] = info
+    return published
+
+
+def _outbound_retry_loop() -> None:
+    global outbound_retry_thread
+    try:
+        while not outbound_retry_stop_event.wait(OUTBOUND_RETRY_POLL_SECONDS):
+            mqttc = client
+            if mqttc is None or not mqttc.is_connected():
+                continue
+            try:
+                flush_outbound_messages(mqttc)
+            except Exception as exc:
+                log.debug("MQTT durable replay deferred: %s", exc)
+    finally:
+        if threading.current_thread() is outbound_retry_thread:
+            outbound_retry_thread = None
+
+
+def _ensure_outbound_retry_thread() -> None:
+    global outbound_retry_thread
+    if outbound_retry_thread is not None and outbound_retry_thread.is_alive():
+        return
+    outbound_retry_stop_event.clear()
+    outbound_retry_thread = threading.Thread(
+        target=_outbound_retry_loop,
+        daemon=True,
+        name="signalasi-outbound-retry",
+    )
+    outbound_retry_thread.start()
 
 
 def _target_clients(client_route_id: str = "", broadcast: bool = False) -> list[dict]:
@@ -4352,6 +4512,7 @@ def start_background():
     """Start MQTT in a background thread."""
     _ensure_task_event_publisher()
     _ensure_presence_thread()
+    _ensure_outbound_retry_thread()
     threading.Thread(target=warm_codex_app_server, daemon=True, name="signalasi-codex-prewarm").start()
     t = threading.Thread(target=start, daemon=True)
     t.start()
@@ -4359,9 +4520,10 @@ def start_background():
 
 
 def stop():
-    global client, running, codex_app_server, presence_thread
+    global client, running, codex_app_server, presence_thread, outbound_retry_thread
     running = False
     presence_stop_event.set()
+    outbound_retry_stop_event.set()
     _stop_inbound_route_workers()
     _close_phone_tool_sessions(reason="Desktop MQTT bridge stopped")
     if client:

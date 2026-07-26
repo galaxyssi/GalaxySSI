@@ -12,6 +12,8 @@ from pairing_state import DATA_DIR
 DB_PATH = Path(DATA_DIR) / "signalasi_link_delivery.db"
 _lock = threading.RLock()
 OUTBOUND_RETENTION_SECONDS = 7 * 24 * 60 * 60
+OUTBOUND_RETRY_BASE_SECONDS = 5.0
+OUTBOUND_RETRY_MAX_SECONDS = 300.0
 
 
 def _connect() -> sqlite3.Connection:
@@ -83,6 +85,7 @@ def ensure_transport_epoch(epoch: str) -> bool:
             if row and str(row[0]) == normalized:
                 return False
             db.execute("DELETE FROM outbound_messages")
+            db.execute("DELETE FROM task_result_outbox")
             db.execute(
                 """INSERT INTO delivery_metadata(key,value) VALUES('transport_epoch',?)
                    ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
@@ -196,12 +199,21 @@ def queue_outbound(client_route_id: str, message_id: str, topic: str, wire_paylo
             db.close()
 
 
-def mark_outbound_published(client_route_id: str, message_id: str) -> None:
+def outbound_retry_delay_seconds(attempts: int) -> float:
+    exponent = max(0, min(int(attempts or 0) - 1, 10))
+    return min(
+        OUTBOUND_RETRY_MAX_SECONDS,
+        OUTBOUND_RETRY_BASE_SECONDS * (2 ** exponent),
+    )
+
+
+def mark_outbound_sending(client_route_id: str, message_id: str) -> None:
     with _lock:
         db = _connect()
         try:
             db.execute(
-                """UPDATE outbound_messages SET status='published', attempts=attempts+1, updated_at=?
+                """UPDATE outbound_messages
+                   SET status='sending', attempts=attempts+1, updated_at=?
                    WHERE client_route_id=? AND message_id=?""",
                 (time.time(), client_route_id, message_id),
             )
@@ -210,15 +222,44 @@ def mark_outbound_published(client_route_id: str, message_id: str) -> None:
             db.close()
 
 
-def acknowledge_outbound(client_route_id: str, message_id: str) -> None:
+def mark_outbound_published(client_route_id: str, message_id: str) -> None:
     with _lock:
         db = _connect()
         try:
             db.execute(
+                """UPDATE outbound_messages SET status='published', updated_at=?
+                   WHERE client_route_id=? AND message_id=?""",
+                (time.time(), client_route_id, message_id),
+            )
+            db.commit()
+        finally:
+            db.close()
+
+
+def mark_outbound_retryable(client_route_id: str, message_id: str) -> None:
+    with _lock:
+        db = _connect()
+        try:
+            db.execute(
+                """UPDATE outbound_messages SET status='queued', updated_at=?
+                   WHERE client_route_id=? AND message_id=?""",
+                (time.time(), client_route_id, message_id),
+            )
+            db.commit()
+        finally:
+            db.close()
+
+
+def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
+    with _lock:
+        db = _connect()
+        try:
+            cursor = db.execute(
                 "DELETE FROM outbound_messages WHERE client_route_id=? AND message_id=?",
                 (client_route_id, message_id),
             )
             db.commit()
+            return cursor.rowcount > 0
         finally:
             db.close()
 
@@ -319,7 +360,39 @@ def remove_task_result(task_id: str) -> None:
             db.close()
 
 
-def pending_outbound(max_attempts: int = 8) -> list[dict]:
+def _outbound_retry_due(status: str, attempts: int, updated_at: float, now: float) -> bool:
+    if status == "queued":
+        return attempts <= 0 or now >= updated_at + outbound_retry_delay_seconds(attempts)
+    return now >= updated_at + outbound_retry_delay_seconds(attempts)
+
+
+def outbound_inflight_count(now: float | None = None) -> int:
+    observed_at = time.time() if now is None else float(now)
+    with _lock:
+        db = _connect()
+        try:
+            rows = db.execute(
+                """SELECT status,attempts,updated_at
+                   FROM outbound_messages
+                   WHERE status IN ('sending','published')"""
+            ).fetchall()
+        finally:
+            db.close()
+    return sum(
+        1
+        for status, attempts, updated_at in rows
+        if not _outbound_retry_due(str(status), int(attempts), float(updated_at), observed_at)
+    )
+
+
+def pending_outbound(
+    max_attempts: int | None = None,
+    *,
+    limit: int | None = None,
+    now: float | None = None,
+) -> list[dict]:
+    del max_attempts
+    observed_at = time.time() if now is None else float(now)
     with _lock:
         db = _connect()
         try:
@@ -328,16 +401,16 @@ def pending_outbound(max_attempts: int = 8) -> list[dict]:
                 (time.time() - OUTBOUND_RETENTION_SECONDS,),
             )
             rows = db.execute(
-                """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at
+                """SELECT client_route_id,message_id,topic,wire_payload,attempts,created_at,
+                          updated_at,status
                    FROM outbound_messages
-                   WHERE status='queued' AND attempts < ?
-                   ORDER BY created_at""",
-                (max_attempts,),
+                   WHERE status IN ('queued','sending','published')
+                   ORDER BY CASE status WHEN 'queued' THEN 0 ELSE 1 END, created_at"""
             ).fetchall()
             db.commit()
         finally:
             db.close()
-    return [
+    pending = [
         {
             "client_route_id": row[0],
             "message_id": row[1],
@@ -345,6 +418,10 @@ def pending_outbound(max_attempts: int = 8) -> list[dict]:
             "wire_payload": row[3],
             "attempts": row[4],
             "created_at": row[5],
+            "updated_at": row[6],
+            "status": row[7],
         }
         for row in rows
+        if _outbound_retry_due(str(row[7]), int(row[4]), float(row[6]), observed_at)
     ]
+    return pending if limit is None else pending[:max(0, int(limit))]
