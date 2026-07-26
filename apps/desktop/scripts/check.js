@@ -349,6 +349,26 @@ if (
 }
 
 if (
+  !html.includes('class="lucide lucide-square-pen"')
+  || !html.includes('class="sidebar-settings-icon"')
+  || html.includes('class="line-icon settings-icon"')
+  || !/\.new-task-button\s*\{[^}]*height:\s*34px;[^}]*justify-content:\s*flex-start;[^}]*background:\s*#eef5f8;/s.test(styles)
+  || !/\.new-task-button b\s*\{[^}]*font-size:\s*10px;[^}]*font-weight:\s*400;/s.test(styles)
+  || !/\.sidebar-settings-icon\s*\{[^}]*stroke-width:\s*1\.7;/s.test(styles)
+  || !/\.sidebar-version\s*\{[^}]*font-size:\s*12px;/s.test(styles)
+) {
+  throw new Error("Desktop sidebar must use the compact Codex-style new-task row, phone Settings icon, and readable version");
+}
+
+if (
+  !/\.workspace-title h1\s*\{[^}]*font-size:\s*11\.2px;[^}]*font-weight:\s*400;/s.test(styles)
+  || !/\.empty-state h2\s*\{[^}]*font-size:\s*11\.2px;[^}]*font-weight:\s*400;/s.test(styles)
+  || !/\.pairing-qr-surface img\s*\{[^}]*width:\s*min\(160px,\s*100%\);/s.test(styles)
+) {
+  throw new Error("Desktop task headings must use the reduced regular weight and the Gateway QR must stay compact");
+}
+
+if (
   html.includes('id="headerAgentCount"')
   || html.includes('id="headerGatewayCount"')
   || html.includes('id="backendDot"')
