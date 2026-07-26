@@ -30,9 +30,9 @@ def _environment_timeout_seconds(name: str, default: float, minimum: float) -> f
     return max(minimum, value) if math.isfinite(value) else default
 
 
-DEFAULT_TASK_TIMEOUT_SECONDS = _environment_timeout_seconds(
-    "SIGNALASI_AGENT_TASK_TIMEOUT_SECONDS",
-    default=900.0,
+DEFAULT_STALL_TIMEOUT_SECONDS = _environment_timeout_seconds(
+    "SIGNALASI_AGENT_STALL_TIMEOUT_SECONDS",
+    default=300.0,
     minimum=30.0,
 )
 
@@ -67,6 +67,10 @@ class AgentTask:
     attachments: list[str] = field(default_factory=list)
     retry_of: str = ""
     attempt: int = 1
+    execution_policy: dict = field(default_factory=dict)
+    last_progress_at: int = field(default_factory=lambda: int(time.time() * 1000))
+    replan_count: int = 0
+    failure_counts: dict[str, int] = field(default_factory=dict)
     process: subprocess.Popen | None = field(default=None, repr=False, compare=False)
     cancel_requested: bool = field(default=False, repr=False, compare=False)
 
@@ -105,6 +109,10 @@ class AgentTask:
             "attachments": self.attachments,
             "retry_of": self.retry_of,
             "attempt": self.attempt,
+            "execution_policy": dict(self.execution_policy),
+            "last_progress_at": self.last_progress_at,
+            "replan_count": self.replan_count,
+            "failure_counts": dict(self.failure_counts),
             "process_id": self.process.pid if self.process is not None and self.process.poll() is None else 0,
         }
         if include_prompt:
@@ -116,7 +124,7 @@ class AgentTaskManager:
     def __init__(
         self,
         heartbeat_interval_seconds: float = 5.0,
-        task_timeout_seconds: float | None = None,
+        stall_timeout_seconds: float | None = None,
         state_path: Path | None = None,
     ) -> None:
         self._lock = threading.RLock()
@@ -126,14 +134,15 @@ class AgentTaskManager:
         self._external_heartbeat_stops: dict[str, threading.Event] = {}
         self._listeners: dict[str, EventCallback] = {}
         self._heartbeat_interval_seconds = max(0.01, float(heartbeat_interval_seconds))
-        self._task_timeout_seconds = max(
+        self._default_stall_timeout_seconds = max(
             0.01,
             float(
-                DEFAULT_TASK_TIMEOUT_SECONDS
-                if task_timeout_seconds is None
-                else task_timeout_seconds
+                DEFAULT_STALL_TIMEOUT_SECONDS
+                if stall_timeout_seconds is None
+                else stall_timeout_seconds
             ),
         )
+        self._stall_timeout_override = stall_timeout_seconds is not None
         self._store = AgentTaskStore(state_path or TASKS_DB_PATH)
         self._load()
 
@@ -167,6 +176,9 @@ class AgentTaskManager:
         retry_of: str = "",
         attempt: int = 1,
     ) -> AgentTask:
+        from agent_execution_harness import execution_policy_for
+
+        policy = execution_policy_for(prompt, attachments=attachments or [])
         task = AgentTask(
             task_id=task_id.strip() or str(uuid.uuid4()),
             agent_id=agent_id,
@@ -180,6 +192,7 @@ class AgentTaskManager:
             attachments=[str(value) for value in (attachments or [])[:12]],
             retry_of=str(retry_of or ""),
             attempt=max(1, int(attempt or 1)),
+            execution_policy=policy.public(),
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:
@@ -198,6 +211,9 @@ class AgentTaskManager:
         client_route_id: str = "", client_turn_id: str = "",
         attachments: list[str] | None = None,
     ) -> AgentTask:
+        from agent_execution_harness import execution_policy_for
+
+        policy = execution_policy_for(prompt, attachments=attachments or [])
         task = AgentTask(
             task_id=task_id.strip() or str(uuid.uuid4()), agent_id=agent_id,
             contact_id=contact_id, source_message_id=source_message_id, prompt=prompt,
@@ -206,6 +222,7 @@ class AgentTaskManager:
             client_route_id=client_route_id,
             client_turn_id=client_turn_id,
             attachments=[str(value) for value in (attachments or [])[:12]],
+            execution_policy=policy.public(),
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:
@@ -252,8 +269,18 @@ class AgentTaskManager:
             if task is None or task.status in TERMINAL_STATES:
                 return task
             now = int(time.time() * 1000)
+            meaningful_progress = (
+                status != task.status
+                or (thread_id is not None and thread_id != task.thread_id)
+                or (turn_id is not None and turn_id != task.turn_id)
+                or (current_step is not None and current_step != task.current_step)
+                or (result is not None and result != task.result)
+                or (error is not None and error != task.error)
+            )
             task.status = status
             task.updated_at = now
+            if meaningful_progress:
+                task.last_progress_at = now
             task.status_seq += 1
             if not task.started_at and status not in {"accepted", "queued"}:
                 task.started_at = now
@@ -339,6 +366,7 @@ class AgentTaskManager:
                     task.started_at = now
             task.current_step = event["title"]
             task.updated_at = now
+            task.last_progress_at = now
             task.status_seq += 1
             self._save_locked(task)
         self._emit(task, on_event)
@@ -359,12 +387,12 @@ class AgentTaskManager:
         heartbeat_stop = threading.Event()
         heartbeat = threading.Thread(target=self._heartbeat, args=(task, on_event, heartbeat_stop), daemon=True)
         heartbeat.start()
-        deadline_stop = threading.Event()
+        watchdog_stop = threading.Event()
         threading.Thread(
-            target=self._deadline_watchdog,
-            args=(task, on_event, on_result, deadline_stop),
+            target=self._progress_watchdog,
+            args=(task, on_event, on_result, watchdog_stop),
             daemon=True,
-            name=f"signalasi-task-deadline-{task.task_id[:8]}",
+            name=f"signalasi-task-progress-{task.task_id[:8]}",
         ).start()
         try:
             result = runner(task)
@@ -382,7 +410,7 @@ class AgentTaskManager:
         except Exception as exc:
             self._finish(task, "failed", on_event, error=str(exc)[:500])
         finally:
-            deadline_stop.set()
+            watchdog_stop.set()
             heartbeat_stop.set()
             task.process = None
 
@@ -397,36 +425,84 @@ class AgentTaskManager:
                 snapshot = task.public()
             self._emit_snapshot(snapshot, on_event)
 
-    def _deadline_watchdog(
+    def _progress_watchdog(
         self,
         task: AgentTask,
         on_event: EventCallback,
         on_result: EventCallback | None,
         stop: threading.Event,
     ) -> None:
-        if stop.wait(self._task_timeout_seconds):
+        while not stop.wait(min(5.0, max(0.01, self._stall_timeout_seconds(task) / 4))):
+            with self._lock:
+                if task.status in TERMINAL_STATES:
+                    return
+                if task.status in {"waiting_approval", "waiting_input", "paused"}:
+                    continue
+                now = int(time.time() * 1000)
+                stalled_for = max(0.0, (now - task.last_progress_at) / 1000.0)
+                stall_timeout = self._stall_timeout_seconds(task)
+                if stalled_for < stall_timeout:
+                    continue
+                max_replans = max(0, int(task.execution_policy.get("max_replans") or 0))
+                process = task.process
+                task.process = None
+                if task.replan_count < max_replans:
+                    task.replan_count += 1
+                    task.last_progress_at = now
+                    task.updated_at = now
+                    task.status_seq += 1
+                    event = {
+                        "event_id": f"execution-stall-replan:{task.replan_count}",
+                        "created_at": now,
+                        "updated_at": now,
+                        "kind": "replan",
+                        "title": "Replanning after stalled execution",
+                        "status": "running",
+                        "detail": f"No meaningful progress for {stall_timeout:g} seconds",
+                        "metadata": {
+                            "replan": task.replan_count,
+                            "reason": "no_progress_timeout",
+                        },
+                    }
+                    task.events.append(event)
+                    del task.events[:-MAX_TASK_EVENTS]
+                    task.current_step = event["title"]
+                    self._save_locked(task)
+                    snapshot = task.public()
+                    should_replan = True
+                else:
+                    snapshot = {}
+                    should_replan = False
+            if process is not None:
+                self._terminate(process)
+            if should_replan:
+                self._emit_snapshot(snapshot, on_event)
+                continue
+            prefers_chinese = any("\u4e00" <= character <= "\u9fff" for character in task.prompt)
+            result = (
+                "\u4efb\u52a1\u957f\u65f6\u95f4\u6ca1\u6709\u5b9e\u8d28\u8fdb\u5c55\uff0c\u5df2\u5728\u5b8c\u6210\u81ea\u52a8\u91cd\u89c4\u5212\u540e\u505c\u6b62\u3002"
+                if prefers_chinese else
+                "The task made no meaningful progress and stopped after exhausting automatic replanning."
+            )
+            transitioned = self._finish(
+                task,
+                "timed_out",
+                on_event,
+                result=result,
+                error=f"No meaningful progress for {stall_timeout:g} seconds",
+            )
+            if transitioned and on_result is not None:
+                self._emit(task, on_result)
             return
-        with self._lock:
-            if task.status in TERMINAL_STATES:
-                return
-            process = task.process
-        if process is not None:
-            self._terminate(process)
-        prefers_chinese = any("\u4e00" <= character <= "\u9fff" for character in task.prompt)
-        result = (
-            "\u4efb\u52a1\u8d85\u8fc7\u6700\u957f\u6267\u884c\u65f6\u95f4\uff0c\u5df2\u505c\u6b62\u4ee5\u907f\u514d\u6301\u7eed\u5360\u7528\u961f\u5217\u3002"
-            if prefers_chinese else
-            "The task exceeded its execution time limit and was stopped to keep the queue responsive."
-        )
-        transitioned = self._finish(
-            task,
-            "timed_out",
-            on_event,
-            result=result,
-            error=f"Task exceeded {self._task_timeout_seconds:g} seconds",
-        )
-        if transitioned and on_result is not None:
-            self._emit(task, on_result)
+
+    def _stall_timeout_seconds(self, task: AgentTask) -> float:
+        if self._stall_timeout_override:
+            return self._default_stall_timeout_seconds
+        try:
+            value = float(task.execution_policy.get("no_progress_timeout_seconds") or 0)
+        except (TypeError, ValueError):
+            value = 0
+        return max(30.0, value) if value else self._default_stall_timeout_seconds
 
     def _ensure_external_heartbeat_locked(
         self,
@@ -659,6 +735,7 @@ class AgentTaskManager:
             task.pending_approval = {}
             task.process = None
             task.cancel_requested = False
+            task.last_progress_at = now
             task.status_seq += 1
             task.events.append({
                 "event_id": str(uuid.uuid4()),
@@ -678,6 +755,7 @@ class AgentTaskManager:
                 return
             task.status = status
             task.updated_at = int(time.time() * 1000)
+            task.last_progress_at = task.updated_at
             task.status_seq += 1
             self._save_locked(task)
         self._emit(task, on_event)
@@ -812,6 +890,18 @@ class AgentTaskManager:
             attachments=[str(value) for value in list(row.get("attachments") or [])[:12]],
             retry_of=str(row.get("retry_of") or ""),
             attempt=max(1, int(row.get("attempt") or 1)),
+            execution_policy=dict(row.get("execution_policy") or {}),
+            last_progress_at=int(
+                row.get("last_progress_at")
+                or row.get("updated_at")
+                or row.get("created_at")
+                or 0
+            ),
+            replan_count=max(0, int(row.get("replan_count") or 0)),
+            failure_counts={
+                str(key): max(0, int(value or 0))
+                for key, value in dict(row.get("failure_counts") or {}).items()
+            },
         )
 
     @staticmethod

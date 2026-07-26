@@ -7,6 +7,13 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Callable
 
+from agent_execution_harness import (
+    AgentExecutionHarness,
+    AgentTaskKind,
+    execution_contract,
+    finalize_task_artifacts,
+    looks_failed_reply,
+)
 from desktop_agent_loop import (
     AgentLoopBudget,
     AgentLoopFailureKind,
@@ -76,7 +83,10 @@ class DesktopSuperAgent:
         self.memory = memory or desktop_memory_store()
         self.skills = skills or desktop_skill_registry()
         self.mcp = mcp or desktop_mcp_registry()
+        self._configured_loop_budget = loop_budget
         self.loop_budget = loop_budget or AgentLoopBudget(max_iterations=16)
+        self._execution_harness: AgentExecutionHarness | None = None
+        self._artifact_finalization = None
 
     def run(
         self,
@@ -88,6 +98,23 @@ class DesktopSuperAgent:
         attachments: list[str],
         response_language: str = "",
     ) -> DesktopAgentOutcome:
+        self._execution_harness = AgentExecutionHarness(
+            task_id,
+            "desktop",
+            prompt,
+            attachments=attachments,
+        )
+        self._artifact_finalization = None
+        if self._configured_loop_budget is None:
+            self.loop_budget = self._budget_for_policy(
+                self._execution_harness.policy.task_kind,
+                self._execution_harness.policy.max_same_failure_attempts,
+                self._execution_harness.policy.max_replans,
+            )
+        compiled_prompt = (
+            f"{compiled_prompt.rstrip()}\n\n"
+            f"{execution_contract(self._execution_harness.policy)}"
+        )
         trace = AgentLoopTrace(self.loop_budget)
         self._phase(
             task_id,
@@ -145,20 +172,43 @@ class DesktopSuperAgent:
                 trace=trace,
             )
             if mcp_reply and observation.verified:
+                artifact_observation = self._verify_required_artifacts(
+                    task_id=task_id,
+                    prompt=prompt,
+                    actor_id=f"mcp:{mcp_connection.id}",
+                    trace=trace,
+                )
+                if artifact_observation is None or artifact_observation.verified:
+                    return self._finalize(
+                        task_id=task_id,
+                        conversation_id=conversation_id,
+                        prompt=prompt,
+                        reply=mcp_reply,
+                        delegate_agent_id=f"mcp:{mcp_connection.id}",
+                        learn=True,
+                    )
+                observation = artifact_observation
+            can_replan, same_failure_attempt = self._record_failure(
+                observation.failure_kind.value if observation.failure_kind else "mcp_execution",
+                observation.message,
+            )
+            if not can_replan:
                 return self._finalize(
                     task_id=task_id,
                     conversation_id=conversation_id,
                     prompt=prompt,
-                    reply=mcp_reply,
-                    delegate_agent_id=f"mcp:{mcp_connection.id}",
-                    learn=True,
+                    reply=self._recovery_reply(prompt, trace.observations),
+                    learn=False,
                 )
             self._phase(
                 task_id,
                 AgentLoopPhase.REPLAN,
                 "Selecting another path after the MCP result",
                 detail=observation.message,
-                metadata={"failure_kind": (observation.failure_kind or AgentLoopFailureKind.PERMANENT).value},
+                metadata={
+                    "failure_kind": (observation.failure_kind or AgentLoopFailureKind.PERMANENT).value,
+                    "same_failure_attempt": same_failure_attempt,
+                },
             )
 
         observations: list[AgentLoopObservation] = []
@@ -176,14 +226,22 @@ class DesktopSuperAgent:
 
         successful = [item for item in observations if item.verified]
         if direct_kind and successful:
-            reply = self._format_direct(direct_kind, dict(successful[-1].output), prompt)
-            return self._finalize(
+            artifact_observation = self._verify_required_artifacts(
                 task_id=task_id,
-                conversation_id=conversation_id,
                 prompt=prompt,
-                reply=reply,
-                learn=True,
+                actor_id=successful[-1].actor_id,
+                trace=trace,
             )
+            if artifact_observation is None or artifact_observation.verified:
+                reply = self._format_direct(direct_kind, dict(successful[-1].output), prompt)
+                return self._finalize(
+                    task_id=task_id,
+                    conversation_id=conversation_id,
+                    prompt=prompt,
+                    reply=reply,
+                    learn=True,
+                )
+            observations.append(artifact_observation)
         if direct_kind:
             self._phase(
                 task_id,
@@ -204,6 +262,7 @@ class DesktopSuperAgent:
         for candidate_index, delegate in enumerate(candidates):
             self._raise_if_cancelled(task_id)
             iteration = trace.next_iteration()
+            self._begin_attempt()
             label = self._agent_label(delegate)
             self.task_manager.update(
                 task_id,
@@ -238,7 +297,7 @@ class DesktopSuperAgent:
                     response_language=response_language,
                 )
                 reply = str(result.get("reply") or "").strip()
-                if not reply:
+                if not reply or looks_failed_reply(reply):
                     raise RuntimeError(f"{label} returned no result")
                 observation = AgentLoopObservation(
                     actor_id=delegate,
@@ -295,23 +354,40 @@ class DesktopSuperAgent:
                 metadata={"actor_id": delegate, "verified": observation.verified},
             )
             if observation.verified:
-                return self._finalize(
+                artifact_observation = self._verify_required_artifacts(
                     task_id=task_id,
-                    conversation_id=conversation_id,
                     prompt=prompt,
-                    reply=str(observation.output["reply"]),
-                    delegate_agent_id=delegate,
-                    learn=True,
+                    actor_id=delegate,
+                    trace=trace,
                 )
-            if candidate_index + 1 < len(candidates):
+                if artifact_observation is None or artifact_observation.verified:
+                    return self._finalize(
+                        task_id=task_id,
+                        conversation_id=conversation_id,
+                        prompt=prompt,
+                        reply=str(observation.output["reply"]),
+                        delegate_agent_id=delegate,
+                        learn=True,
+                    )
+                observation = artifact_observation
+            can_replan, same_failure_attempt = self._record_failure(
+                observation.failure_kind.value if observation.failure_kind else "agent_execution",
+                observation.message,
+            )
+            if can_replan and candidate_index + 1 < len(candidates):
                 self._phase(
                     task_id,
                     AgentLoopPhase.REPLAN,
                     "Replanning after an Agent failure",
                     iteration=iteration,
                     detail=f"{label} failed; selecting the next available Agent.",
-                    metadata={"failed_actor_id": delegate},
+                    metadata={
+                        "failed_actor_id": delegate,
+                        "same_failure_attempt": same_failure_attempt,
+                    },
                 )
+            elif not can_replan:
+                break
 
         return self._finalize(
             task_id=task_id,
@@ -330,6 +406,7 @@ class DesktopSuperAgent:
         trace: AgentLoopTrace,
     ) -> tuple[str, AgentLoopObservation]:
         iteration = trace.next_iteration()
+        self._begin_attempt()
         actor_id = f"mcp:{connection.id}"
         event_id = f"agent-loop:{iteration}:mcp:{connection.id}"
         self.task_manager.update(
@@ -428,6 +505,7 @@ class DesktopSuperAgent:
         for attempt in range(1, self.loop_budget.max_tool_attempts + 1):
             self._raise_if_cancelled(task_id)
             iteration = trace.next_iteration()
+            self._begin_attempt()
             event_id = f"agent-loop:{iteration}:tool:{sequence}:{attempt}"
             self.task_manager.update(task_id, "running", current_step=title)
             self._phase(
@@ -524,8 +602,13 @@ class DesktopSuperAgent:
             )
             if final_observation.verified:
                 return final_observation
+            can_replan, same_failure_attempt = self._record_failure(
+                failure_kind.value if failure_kind else "tool_execution",
+                final_observation.message,
+            )
             if (
-                final_observation.retryable
+                can_replan
+                and final_observation.retryable
                 and self._tool_can_retry(tool_id)
                 and attempt < self.loop_budget.max_tool_attempts
             ):
@@ -535,7 +618,11 @@ class DesktopSuperAgent:
                     "Retrying the tool with the same verified inputs",
                     iteration=iteration,
                     detail=final_observation.message,
-                    metadata={"actor_id": tool_id, "next_attempt": attempt + 1},
+                    metadata={
+                        "actor_id": tool_id,
+                        "next_attempt": attempt + 1,
+                        "same_failure_attempt": same_failure_attempt,
+                    },
                 )
                 continue
             break
@@ -546,6 +633,89 @@ class DesktopSuperAgent:
             message="The tool did not produce an observation",
             failure_kind=AgentLoopFailureKind.PERMANENT,
         )
+
+    @staticmethod
+    def _budget_for_policy(
+        task_kind: AgentTaskKind,
+        max_same_failure_attempts: int,
+        max_replans: int,
+    ) -> AgentLoopBudget:
+        complex_task = task_kind in {
+            AgentTaskKind.RESEARCH,
+            AgentTaskKind.ARTIFACT,
+            AgentTaskKind.BUILD,
+            AgentTaskKind.INSTALL,
+        }
+        return AgentLoopBudget(
+            max_iterations=24 if complex_task else 12,
+            max_tool_attempts=max(1, max_same_failure_attempts),
+            max_delegate_attempts=max(1, max_replans + 1),
+            max_observations=48 if complex_task else 24,
+        )
+
+    def _begin_attempt(self) -> int:
+        if self._execution_harness is None:
+            return 0
+        return self._execution_harness.begin_attempt()
+
+    def _record_failure(self, kind: str, message: str) -> tuple[bool, int]:
+        if self._execution_harness is None:
+            return True, 1
+        return self._execution_harness.record_failure(kind, message)
+
+    def _verify_required_artifacts(
+        self,
+        *,
+        task_id: str,
+        prompt: str,
+        actor_id: str,
+        trace: AgentLoopTrace,
+    ) -> AgentLoopObservation | None:
+        harness = self._execution_harness
+        if harness is None or not harness.policy.requires_artifact:
+            return None
+        finalization = finalize_task_artifacts(
+            task_id,
+            prompt,
+            "desktop",
+            allow_device_install=True,
+        )
+        self._artifact_finalization = finalization
+        verification = dict(finalization.verification)
+        verified = verification.get("status") == "passed"
+        message = (
+            "Required task artifacts passed integrity and installation checks"
+            if verified
+            else "The requested deliverable is missing or did not pass verification"
+        )
+        observation = AgentLoopObservation(
+            actor_id=actor_id,
+            action_id="artifact.finalize",
+            status="succeeded" if verified else "failed",
+            message=message,
+            output={"files": [dict(item) for item in finalization.output_files]},
+            error={} if verified else {"message": message},
+            verification=verification,
+            failure_kind=None if verified else AgentLoopFailureKind.VERIFICATION_FAILED,
+            retryable=not verified,
+        )
+        trace.record(observation)
+        self._phase(
+            task_id,
+            AgentLoopPhase.VERIFY,
+            "Verified final deliverables" if verified else "Final deliverable verification failed",
+            status="completed" if verified else "failed",
+            event_id=f"agent-loop:artifact-verify:{actor_id}",
+            detail=message,
+            metadata={
+                "actor_id": actor_id,
+                "verified": verified,
+                "output_count": len(finalization.output_files),
+                "packaged": finalization.packaged,
+                "installation": dict(verification.get("installation") or {}),
+            },
+        )
+        return observation
 
     def _tool_can_retry(self, tool_id: str) -> bool:
         spec = getattr(self.registry, "specs", {}).get(tool_id)
@@ -593,6 +763,22 @@ class DesktopSuperAgent:
         delegate_agent_id: str = "",
         learn: bool,
     ) -> DesktopAgentOutcome:
+        artifact_verification: dict = {}
+        if self._execution_harness is not None:
+            if self._artifact_finalization is None:
+                self._artifact_finalization = finalize_task_artifacts(
+                    task_id,
+                    prompt,
+                    "desktop",
+                    allow_device_install=True,
+                )
+            artifact_verification = dict(self._artifact_finalization.verification)
+            if (
+                self._execution_harness.policy.requires_artifact
+                and artifact_verification.get("status") != "passed"
+            ):
+                learn = False
+                reply = self._artifact_failure_reply(prompt)
         self._phase(
             task_id,
             AgentLoopPhase.FINALIZE,
@@ -620,9 +806,26 @@ class DesktopSuperAgent:
             AgentLoopPhase.FINALIZE,
             "Final result is ready",
             event_id="agent-loop:finalize",
-            metadata={"delegate_agent_id": delegate_agent_id, "learned": learn},
+            metadata={
+                "delegate_agent_id": delegate_agent_id,
+                "learned": learn,
+                "artifact_verification": artifact_verification,
+            },
         )
         return DesktopAgentOutcome(reply, delegate_agent_id)
+
+    @staticmethod
+    def _artifact_failure_reply(prompt: str) -> str:
+        if re.search(r"[\u4e00-\u9fff]", str(prompt or "")):
+            return (
+                "\u4efb\u52a1\u5df2\u6267\u884c\uff0c\u4f46\u8bf7\u6c42\u7684\u4ea7\u7269\u672a\u751f\u6210"
+                "\u6216\u672a\u901a\u8fc7\u5b8c\u6574\u6027\u9a8c\u8bc1\u3002\u5df2\u4fdd\u7559\u5f53\u524d"
+                "\u5de5\u4f5c\u533a\uff0c\u53ef\u4ee5\u4ece\u6700\u65b0\u68c0\u67e5\u70b9\u7ee7\u7eed\u3002"
+            )
+        return (
+            "The task ran, but the requested deliverable was not produced or did not pass "
+            "integrity verification. The current workspace is preserved for recovery."
+        )
 
     @staticmethod
     def _recovery_reply(prompt: str, observations: list[AgentLoopObservation]) -> str:
@@ -874,6 +1077,20 @@ class DesktopSuperAgent:
         detail: str = "",
         metadata: dict | None = None,
     ) -> None:
+        policy_metadata: dict = {}
+        if self._execution_harness is not None:
+            self._execution_harness.progress(
+                phase.value,
+                event_status=status,
+            )
+            policy_metadata = {
+                "task_kind": self._execution_harness.policy.task_kind.value,
+                "reasoning_effort": self._execution_harness.policy.reasoning_effort.value,
+                "no_progress_timeout_seconds": (
+                    self._execution_harness.policy.no_progress_timeout_seconds
+                ),
+                "absolute_timeout_seconds": None,
+            }
         self.task_manager.add_event(
             task_id,
             "agent_loop",
@@ -885,6 +1102,7 @@ class DesktopSuperAgent:
                 "phase": phase.value,
                 "iteration": iteration,
                 "max_iterations": self.loop_budget.max_iterations,
+                **policy_metadata,
                 **dict(metadata or {}),
             },
         )

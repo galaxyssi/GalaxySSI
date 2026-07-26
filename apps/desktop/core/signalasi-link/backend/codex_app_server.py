@@ -13,6 +13,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from agent_execution_harness import (
+    AgentExecutionHarness,
+    AgentExecutionPolicy,
+    execution_contract,
+    execution_policy_for,
+    failure_fingerprint,
+    replan_instruction,
+)
+
 
 TaskEvent = Callable[[str, dict], None]
 CONVERSATION_THREADS_PATH = Path.home() / ".signalasi" / "codex_conversation_threads.json"
@@ -33,10 +42,6 @@ SignalASI execution policy:
 - If the requested media-editing capability is unavailable, say so briefly and still return every useful textual finding.
 """.strip()
 CODEX_STALL_TIMEOUT_SECONDS = max(30, int(os.environ.get("SIGNALASI_CODEX_STALL_TIMEOUT_SECONDS", "180")))
-CODEX_MAX_TASK_SECONDS = max(
-    CODEX_STALL_TIMEOUT_SECONDS,
-    int(os.environ.get("SIGNALASI_CODEX_MAX_TASK_SECONDS", "900")),
-)
 CODEX_APPROVAL_TTL_SECONDS = max(
     60,
     int(os.environ.get("SIGNALASI_CODEX_APPROVAL_TTL_SECONDS", "300")),
@@ -103,6 +108,17 @@ class CodexRun:
     pending_requests: dict[str, CodexPendingApproval] = field(default_factory=dict)
     started_monotonic: float = field(default_factory=time.monotonic)
     last_event_monotonic: float = field(default_factory=time.monotonic)
+    last_meaningful_progress_monotonic: float = field(default_factory=time.monotonic)
+    execution_policy: AgentExecutionPolicy = field(
+        default_factory=lambda: execution_policy_for("")
+    )
+    execution_harness: AgentExecutionHarness | None = field(
+        default=None,
+        repr=False,
+    )
+    stall_replans: int = 0
+    failure_counts: dict[str, int] = field(default_factory=dict)
+    replan_inflight: bool = False
     finished: bool = False
     prefers_chinese: bool = False
 
@@ -149,6 +165,7 @@ class CodexAppServer:
         fresh_thread_prompt: str = "",
         approval_policy: str = "on-request",
         sandbox: str = "workspace-write",
+        execution_policy: AgentExecutionPolicy | None = None,
     ) -> CodexRun:
         self._ensure_started()
         local_images = self._existing_image_paths(image_paths)
@@ -156,10 +173,23 @@ class CodexAppServer:
             [*local_images, *(fresh_thread_image_paths or [])]
         )
         clean_conversation_id = str(conversation_id or "").strip()
+        resolved_policy = execution_policy or execution_policy_for(
+            prompt,
+            attachments=[*(image_paths or []), *(fresh_thread_image_paths or [])],
+        )
+        execution_harness = AgentExecutionHarness(
+            task_id,
+            "codex",
+            prompt,
+            attachments=[*(image_paths or []), *(fresh_thread_image_paths or [])],
+            policy=resolved_policy,
+        )
         run = CodexRun(
             task_id=task_id,
             conversation_id=clean_conversation_id,
             prefers_chinese=self._contains_chinese(prompt),
+            execution_policy=resolved_policy,
+            execution_harness=execution_harness,
         )
         reused_thread = False
         try:
@@ -186,7 +216,11 @@ class CodexAppServer:
             self._discard_run(run)
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
-        turn_prompt = prompt if reused_thread else (fresh_thread_prompt or prompt)
+        execution_harness.begin_attempt()
+        turn_prompt = self._with_execution_contract(
+            prompt if reused_thread else (fresh_thread_prompt or prompt),
+            run.execution_policy,
+        )
         turn_images = local_images if reused_thread else restored_images
         try:
             try:
@@ -196,6 +230,7 @@ class CodexAppServer:
                     model,
                     turn_images,
                     cwd=cwd,
+                    reasoning_effort=run.execution_policy.reasoning_effort.value,
                 )
             except RuntimeError as exc:
                 if not run.thread_id or "thread not found" not in str(exc).lower():
@@ -216,10 +251,14 @@ class CodexAppServer:
                 })
                 response = self._start_turn(
                     run.thread_id,
-                    fresh_thread_prompt or prompt,
+                    self._with_execution_contract(
+                        fresh_thread_prompt or prompt,
+                        run.execution_policy,
+                    ),
                     model,
                     restored_images,
                     cwd=cwd,
+                    reasoning_effort=run.execution_policy.reasoning_effort.value,
                 )
         except Exception:
             self._discard_run(run)
@@ -279,6 +318,17 @@ class CodexAppServer:
             started_monotonic=now - max(0.0, float(elapsed_seconds or 0)),
             last_event_monotonic=now,
             prefers_chinese=self._contains_chinese(original_prompt),
+            execution_policy=execution_policy_for(original_prompt),
+        )
+        run.execution_harness = AgentExecutionHarness(
+            task_id,
+            "codex",
+            original_prompt,
+            policy=run.execution_policy,
+        )
+        run.execution_harness.progress(
+            "observe",
+            recovery="thread_resume",
         )
         with self._lock:
             self._runs[task_id] = run
@@ -411,11 +461,32 @@ class CodexAppServer:
                 except RuntimeError:
                     pass
             now = time.monotonic()
-            stalled = now - run.last_event_monotonic >= CODEX_STALL_TIMEOUT_SECONDS
-            exceeded = now - run.started_monotonic >= CODEX_MAX_TASK_SECONDS
-            if run.pending_requests and not exceeded:
+            stall_timeout = max(
+                float(CODEX_STALL_TIMEOUT_SECONDS),
+                run.execution_policy.no_progress_timeout_seconds,
+            )
+            stalled = (
+                now - run.last_meaningful_progress_monotonic >= stall_timeout
+            )
+            if run.pending_requests:
                 continue
-            if not stalled and not exceeded:
+            if not stalled:
+                continue
+            stall_failure = (
+                f"No meaningful progress was observed for {stall_timeout:g} seconds. "
+                "Inspect the current workspace checkpoint and choose a different path."
+            )
+            can_replan = True
+            if run.execution_harness is not None:
+                can_replan, _ = run.execution_harness.record_failure(
+                    "no_progress",
+                    stall_failure,
+                )
+            if can_replan and self._attempt_replan(
+                run,
+                stall_failure,
+                source="stall_watchdog",
+            ):
                 continue
             run.finished = True
             message = (
@@ -436,6 +507,147 @@ class CodexAppServer:
             except Exception:
                 pass
             return
+
+    def _attempt_replan(self, run: CodexRun, failure: str, *, source: str) -> bool:
+        with self._lock:
+            if (
+                run.finished
+                or run.replan_inflight
+                or not run.thread_id
+                or not run.turn_id
+                or run.stall_replans >= run.execution_policy.max_replans
+            ):
+                return False
+            run.replan_inflight = True
+            run.stall_replans += 1
+            replan_number = run.stall_replans
+            run.last_meaningful_progress_monotonic = time.monotonic()
+        self._checkpoint_progress(
+            run,
+            "replan",
+            replan=replan_number,
+            replan_source=source,
+        )
+        progress = self._narration_progress(
+            f"replan-{replan_number}",
+            (
+                "Replanning from the latest verified workspace state."
+                if not run.prefers_chinese else
+                "\u6b63\u5728\u4ece\u6700\u65b0\u5df2\u9a8c\u8bc1\u7684\u5de5\u4f5c\u533a\u72b6\u6001\u91cd\u65b0\u89c4\u5212\u3002"
+            ),
+            "automatic_replan",
+        )
+        progress["metadata"].update({
+            "source": source,
+            "replan": replan_number,
+            "max_replans": run.execution_policy.max_replans,
+        })
+        self._emit_progress(
+            run.task_id,
+            {"thread_id": run.thread_id, "turn_id": run.turn_id},
+            progress,
+        )
+        try:
+            self._request("turn/steer", {
+                "threadId": run.thread_id,
+                "expectedTurnId": run.turn_id,
+                "input": self._user_input(
+                    replan_instruction(
+                        run.execution_policy,
+                        failure=failure,
+                        attempt=replan_number,
+                    ),
+                    [],
+                    include_task_policy=False,
+                ),
+            }, timeout=30)
+            return True
+        except Exception:
+            return False
+        finally:
+            run.replan_inflight = False
+
+    def _record_failed_item(self, run: CodexRun, item: dict) -> None:
+        raw_status = str(item.get("status") or "").lower()
+        if "fail" not in raw_status and raw_status != "declined":
+            return
+        item_type = str(item.get("type") or "tool")
+        detail = self._item_detail(item, item_type) or raw_status or item_type
+        signature = failure_fingerprint(item_type, detail)
+        count = run.failure_counts.get(signature, 0) + 1
+        run.failure_counts[signature] = count
+        can_replan = count < run.execution_policy.max_same_failure_attempts
+        if run.execution_harness is not None:
+            can_replan, count = run.execution_harness.record_failure(
+                item_type,
+                detail,
+            )
+            run.failure_counts[signature] = count
+        if can_replan:
+            threading.Thread(
+                target=self._attempt_replan,
+                args=(run, f"{item_type} failed: {detail}"),
+                kwargs={"source": "tool_failure"},
+                daemon=True,
+                name=f"codex-replan-{run.task_id[:8]}",
+            ).start()
+            return
+        threading.Thread(
+            target=self._stop_repeated_failure,
+            args=(run, item_type, detail, count),
+            daemon=True,
+            name=f"codex-failure-budget-{run.task_id[:8]}",
+        ).start()
+
+    def _stop_repeated_failure(
+        self,
+        run: CodexRun,
+        item_type: str,
+        detail: str,
+        count: int,
+    ) -> None:
+        with self._lock:
+            if run.finished:
+                return
+            run.finished = True
+        self._checkpoint_progress(
+            run,
+            "failed",
+            repeated_failure_kind=item_type,
+            repeated_failure_count=count,
+        )
+        message = (
+            f"Codex stopped after the same {item_type} failure repeated {count} times. "
+            "The latest verified workspace state was preserved."
+        )
+        progress = self._narration_progress(
+            f"failure-budget-{count}",
+            message,
+            "failure_budget_exhausted",
+        )
+        progress["status"] = "failed"
+        self._emit_progress(
+            run.task_id,
+            {"thread_id": run.thread_id, "turn_id": run.turn_id},
+            progress,
+        )
+        self.on_event(run.task_id, {
+            "thread_id": run.thread_id,
+            "turn_id": run.turn_id,
+            "status": "failed",
+            "current_step": "",
+            "result": message,
+            "error": f"Repeated {item_type} failure: {detail[:500]}",
+        })
+        try:
+            self._request(
+                "turn/interrupt",
+                {"threadId": run.thread_id, "turnId": run.turn_id},
+                timeout=10,
+            )
+        except Exception:
+            pass
+        self._remove_turn_mapping(run)
 
     def _start_thread(
         self,
@@ -543,7 +755,14 @@ class CodexAppServer:
             if self._is_not_steerable_error(exc):
                 return None
             raise
-        run.last_event_monotonic = time.monotonic()
+        now = time.monotonic()
+        run.last_event_monotonic = now
+        run.last_meaningful_progress_monotonic = now
+        self._checkpoint_progress(
+            run,
+            "act",
+            steered=True,
+        )
         return run
 
     def _start_turn(
@@ -554,12 +773,13 @@ class CodexAppServer:
         image_paths: list[str] | None = None,
         *,
         cwd: str,
+        reasoning_effort: str,
     ) -> dict:
         return self._request("turn/start", {
             "threadId": thread_id,
             "input": self._user_input(prompt, image_paths, include_task_policy=True),
             "model": model,
-            "effort": "low",
+            "effort": reasoning_effort,
             "cwd": os.path.abspath(cwd),
         }, timeout=30)
 
@@ -583,6 +803,16 @@ class CodexAppServer:
             for path in (image_paths or [])
         )
         return user_input
+
+    @staticmethod
+    def _with_execution_contract(
+        prompt: str,
+        policy: AgentExecutionPolicy,
+    ) -> str:
+        text = str(prompt or "").rstrip()
+        if "SignalASI execution contract:" in text:
+            return text
+        return f"{text}\n\n{execution_contract(policy)}"
 
     @staticmethod
     def _latest_agent_message(turn: dict) -> str:
@@ -807,7 +1037,16 @@ class CodexAppServer:
         if not task_id:
             return
         run = self._runs[task_id]
-        run.last_event_monotonic = time.monotonic()
+        now = time.monotonic()
+        run.last_event_monotonic = now
+        meaningful_event = self._is_meaningful_event(method, message, params)
+        if meaningful_event:
+            run.last_meaningful_progress_monotonic = now
+            self._checkpoint_progress(
+                run,
+                self._checkpoint_phase(method),
+                app_server_event=method,
+            )
         common = {"thread_id": run.thread_id, "turn_id": turn_id or run.turn_id}
         if "id" in message:
             approval = self._pending_approval(task_id, message)
@@ -853,6 +1092,7 @@ class CodexAppServer:
             )
         elif method == "item/completed":
             item = params.get("item") or {}
+            self._record_failed_item(run, item)
             item_type = str(item.get("type") or "")
             item_id = str(item.get("id") or params.get("itemId") or "")
             if item_type == "agentMessage":
@@ -907,6 +1147,11 @@ class CodexAppServer:
         elif method == "turn/completed":
             status = str((params.get("turn") or {}).get("status") or "completed")
             mapped = {"completed": "completed", "failed": "failed", "interrupted": "cancelled"}.get(status, status)
+            self._checkpoint_progress(
+                run,
+                "finalize" if mapped == "completed" else "failed",
+                turn_status=mapped,
+            )
             if not run.final_text:
                 run.final_text = run.last_agent_text
             run.finished = True
@@ -925,6 +1170,32 @@ class CodexAppServer:
                 elif "waitingOnUserInput" in detail:
                     self.on_event(task_id, {**common, "status": "waiting_input", "current_step": "Waiting for user input"})
 
+    @staticmethod
+    def _is_meaningful_event(method: str, message: dict, params: dict) -> bool:
+        if "id" in message:
+            return True
+        if method in {
+            "turn/started",
+            "turn/completed",
+            "item/started",
+            "item/completed",
+        }:
+            return True
+        if method.endswith("/delta"):
+            return bool(
+                str(
+                    params.get("delta")
+                    or params.get("text")
+                    or params.get("content")
+                    or ""
+                ).strip()
+            )
+        if method == "thread/status/changed":
+            status = params.get("status") or {}
+            flags = status.get("activeFlags", []) if isinstance(status, dict) else []
+            return bool(flags)
+        return False
+
     def _emit_progress(self, task_id: str, common: dict, progress: dict) -> None:
         self.on_event(task_id, {
             **common,
@@ -932,6 +1203,23 @@ class CodexAppServer:
             "current_step": str(progress.get("title") or "Codex is working"),
             "progress_event": progress,
         })
+
+    @staticmethod
+    def _checkpoint_progress(
+        run: CodexRun,
+        phase: str,
+        **verification: object,
+    ) -> None:
+        if run.execution_harness is not None:
+            run.execution_harness.progress(phase, **verification)
+
+    @staticmethod
+    def _checkpoint_phase(method: str) -> str:
+        if method == "turn/completed":
+            return "finalize"
+        if method == "item/completed":
+            return "observe"
+        return "act"
 
     def _emit_item_progress(
         self,

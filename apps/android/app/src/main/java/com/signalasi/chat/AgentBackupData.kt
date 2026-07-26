@@ -68,7 +68,7 @@ object AgentBackupData {
                     .put("max_tool_calls", modelPlanner.maxToolCalls)
                     .put("max_loop_iterations", modelPlanner.maxLoopIterations)
                     .put("max_phase_retries", modelPlanner.maxPhaseRetries)
-                    .put("max_execution_seconds", modelPlanner.maxExecutionSeconds)
+                    .put("no_progress_timeout_seconds", modelPlanner.noProgressTimeoutSeconds)
             )
             .put(
                 "voice_assistant",
@@ -194,7 +194,10 @@ object AgentBackupData {
                     maxToolCalls = json.optInt("max_tool_calls", 16).coerceIn(4, 32),
                     maxLoopIterations = json.optInt("max_loop_iterations", 8).coerceIn(1, 24),
                     maxPhaseRetries = json.optInt("max_phase_retries", 2).coerceIn(0, 5),
-                    maxExecutionSeconds = json.optInt("max_execution_seconds", 600).coerceIn(60, 3_600)
+                    noProgressTimeoutSeconds = json.optInt(
+                        "no_progress_timeout_seconds",
+                        180
+                    ).coerceIn(60, 3_600)
                 )
             )
         }

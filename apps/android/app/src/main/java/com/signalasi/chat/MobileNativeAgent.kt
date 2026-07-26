@@ -222,8 +222,21 @@ class MobileNativeAgent(
 
     private fun startExecutionLoop(turnId: String) {
         val taskId = turnId.trim().ifBlank { sessionId }
-        val event = executionLoop.start(taskId, modelPlannerSettings().executionLoopBudget())
+        val profile = AgentExecutionProfile.forGoal(
+            goal = currentGoal,
+            hasAttachments = activeConversationContext.hasAttachments
+        )
+        val event = executionLoop.start(
+            taskId = taskId,
+            budget = modelPlannerSettings().executionLoopBudget(profile),
+            profile = profile
+        )
         persistExecutionLoopEvent(event)
+        recordAudit(
+            AgentAuditEvent.REASONING_SUMMARY,
+            "execution_profile=${profile.taskKind.name}; effort=${profile.reasoningEffort.name}; " +
+                "no_progress_ms=${event.snapshot.budget.noProgressTimeoutMillis}"
+        )
     }
 
     private fun advanceExecutionLoop(
@@ -259,6 +272,28 @@ class MobileNativeAgent(
     private fun persistExecutionLoopEvent(event: AgentExecutionLoopEvent) {
         persistSession()
         executionLoopEventSink.onEvent(event)
+    }
+
+    private fun recordExecutionFailure(
+        failureClass: String,
+        reason: String,
+        actionId: String
+    ): Boolean {
+        val event = executionLoop.recordFailure(
+            failureClass = failureClass,
+            reason = reason,
+            actionId = actionId
+        )
+        persistExecutionLoopEvent(event)
+        if (event.phase != AgentExecutionLoopPhase.FAILED) return true
+        phase = AgentPhase.FAILED
+        lastActionResult = AgentActionResult(
+            actionId = actionId.ifBlank { "agent-loop-failure" },
+            success = false,
+            message = event.snapshot.budgetFailure.ifBlank { reason }
+        )
+        saveTaskRecord(result = lastActionResult?.message.orEmpty())
+        return false
     }
 
     private fun reconcileExecutionLoop(state: AgentUiState): AgentUiState {
@@ -1956,6 +1991,17 @@ class MobileNativeAgent(
                 "screen_updated_after:${hardenedAction.kind.name}"
             else -> ""
         }
+        if (lastActionResult?.success != true && replanReason.isNotBlank()) {
+            val failureReason = lastActionResult?.message.orEmpty().ifBlank { replanReason }
+            if (!recordExecutionFailure(
+                    failureClass = "action:${hardenedAction.kind.name}",
+                    reason = failureReason,
+                    actionId = hardenedAction.id
+                )
+            ) {
+                return snapshot()
+            }
+        }
         val continuedPlan = if (updatedPlan != null && replanReason.isNotBlank()) {
             if (!advanceExecutionLoop(
                     nextPhase = AgentExecutionLoopPhase.REPLAN,
@@ -2052,6 +2098,14 @@ class MobileNativeAgent(
             )
         }
         if (!success) {
+            if (!recordExecutionFailure(
+                    failureClass = "connector:${pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }}",
+                    reason = content.trim().ifBlank { "Connector returned no usable result" },
+                    actionId = actionId
+                )
+            ) {
+                return snapshot()
+            }
             continueWithConnectorFallback(plan, pendingResult)?.let { return it }
         }
         val completedMetadata = pendingResult.metadata - setOf(
@@ -3033,11 +3087,11 @@ class MobileNativeAgent(
         return snapshot()
     }
 
-    fun updateMaxExecutionSeconds(maxSeconds: Int): AgentUiState {
+    fun updateNoProgressTimeoutSeconds(timeoutSeconds: Int): AgentUiState {
         val store = AgentModelPlannerSettingsStore(appContext)
-        val normalized = maxSeconds.coerceIn(60, 3_600)
-        store.save(store.load().copy(maxExecutionSeconds = normalized))
-        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "max_execution_seconds:$normalized")
+        val normalized = timeoutSeconds.coerceIn(60, 3_600)
+        store.save(store.load().copy(noProgressTimeoutSeconds = normalized))
+        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "no_progress_timeout_seconds:$normalized")
         return snapshot()
     }
 
@@ -6379,7 +6433,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     else -> 3
                 }
             } ?: return null
-        val authoringPrompt = if (request.replanReason == PHONE_DEVELOPMENT_REPLAN_REASON) {
+        val executionProfile = AgentExecutionProfile.forGoal(
+            goal = request.goal,
+            hasAttachments = request.conversationContext.hasAttachments
+        )
+        val baseAuthoringPrompt = if (request.replanReason == PHONE_DEVELOPMENT_REPLAN_REASON) {
             AgentPhoneDevelopmentPolicy.repairPrompt(
                 goal = request.goal,
                 history = request.executionHistory,
@@ -6387,6 +6445,11 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
             ) ?: AgentPhoneDevelopmentPolicy.planningPrompt(request.goal)
         } else {
             AgentPhoneDevelopmentPolicy.planningPrompt(request.goal)
+        }
+        val authoringPrompt = buildString {
+            append(baseAuthoringPrompt)
+            append("\n\n")
+            append(executionProfile.contract())
         }
         val manifestAction = connectorAction(
             request = request,

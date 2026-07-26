@@ -460,41 +460,144 @@ def _agent_adapter_descriptors() -> list[AgentAdapterDescriptor]:
 
 
 def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) -> str:
+    from agent_execution_harness import (
+        AgentExecutionHarness,
+        execution_contract,
+        finalize_task_artifacts,
+        looks_failed_reply,
+        replan_instruction,
+    )
     from agent_conversation_sessions import agent_conversation_sessions
+    from agent_task_manager import agent_task_manager
     from response_policy import apply_response_policy, sanitize_assistant_response
 
     spec = all_agent_specs().get(agent_id)
     preferred_language = request.response_language or language_policy_config()["response_language"]
-    if spec is not None and spec.id == "local-llm":
-        with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
-            messages = _stateless_model_messages(request, spec.id)
-            raw_reply = ask_local_model(request.prompt, timeout=spec.timeout, messages=messages)
-    elif spec is not None and spec.id == "cloud-model":
-        with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
-            raw_reply = _ask_cloud_model_for_request(request, spec)
-    else:
-        prompt = (
-            request.prompt
-            if request.conversation_id
-            else apply_response_policy(request.prompt, preferred_language)
-        )
-        raw_reply = _ask_agent_sync_inner(
-            agent_id,
-            prompt,
-            spec,
-            task_id=request.run_id,
-            conversation_id=request.conversation_id,
-            response_language=preferred_language,
-            restricted_workspace=(
-                str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
-            ),
-        )
-    reply = sanitize_assistant_response(
-        raw_reply
+    harness = AgentExecutionHarness(
+        request.run_id,
+        agent_id,
+        request.prompt,
+        attachments=(
+            str(item.get("name") or item.get("relative_path") or "")
+            for item in request.artifacts
+        ),
     )
-    if not reply or _agent_reply_failed(reply):
-        raise AgentAdapterExecutionError(reply or f"{agent_id} returned no response")
-    return reply
+    contract = execution_contract(harness.policy)
+    current_prompt = request.prompt.rstrip()
+    if "SignalASI execution contract:" not in current_prompt:
+        current_prompt = f"{current_prompt}\n\n{contract}"
+    failure = ""
+
+    def add_phase(phase: str, title: str, *, status: str = "completed", detail: str = "") -> None:
+        if not request.run_id:
+            return
+        agent_task_manager.add_event(
+            request.run_id,
+            phase,
+            title,
+            event_id=f"execution-harness:{phase}:{harness.checkpoint.attempts}:{harness.checkpoint.replans}",
+            status=status,
+            detail=detail,
+            metadata={
+                "provider": agent_id,
+                "task_kind": harness.policy.task_kind.value,
+                "reasoning_effort": harness.policy.reasoning_effort.value,
+            },
+        )
+
+    add_phase("plan", "Execution plan prepared")
+    while True:
+        attempt = harness.begin_attempt()
+        add_phase("act", f"Running {spec.name if spec else agent_id}", status="running")
+        attempt_request = replace(request, prompt=current_prompt)
+        if spec is not None and spec.id == "local-llm":
+            with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
+                messages = _stateless_model_messages(attempt_request, spec.id)
+                raw_reply = ask_local_model(current_prompt, timeout=spec.timeout, messages=messages)
+        elif spec is not None and spec.id == "cloud-model":
+            with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
+                raw_reply = _ask_cloud_model_for_request(attempt_request, spec)
+        else:
+            prompt = (
+                current_prompt
+                if request.conversation_id
+                else apply_response_policy(current_prompt, preferred_language)
+            )
+            raw_reply = _ask_agent_sync_inner(
+                agent_id,
+                prompt,
+                spec,
+                task_id=request.run_id,
+                conversation_id=request.conversation_id,
+                response_language=preferred_language,
+                restricted_workspace=(
+                    str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
+                ),
+            )
+        reply = sanitize_assistant_response(raw_reply)
+        if reply and not _agent_reply_failed(reply) and not looks_failed_reply(reply):
+            harness.progress("observe")
+            add_phase("observe", "Agent result received")
+            workspace_capable = spec is not None and spec.kind not in {
+                "local-model",
+                "cloud-model",
+            }
+            artifact_finalization = None
+            if request.run_id and workspace_capable:
+                artifact_finalization = finalize_task_artifacts(
+                    request.run_id,
+                    request.prompt,
+                    agent_id,
+                    allow_device_install=(
+                        str(request.checkpoint.get("desktop_access_profile") or "")
+                        == "desktop_executor"
+                    ),
+                )
+            verification_passed = (
+                artifact_finalization is None
+                or artifact_finalization.verification.get("status") == "passed"
+            )
+            if verification_passed:
+                harness.progress(
+                    "verify",
+                    response_nonempty=True,
+                    artifacts=(
+                        artifact_finalization.verification
+                        if artifact_finalization is not None else {}
+                    ),
+                )
+                add_phase("verify", "Agent result verified")
+                harness.progress("finalize")
+                return reply
+            failure = (
+                "Required artifact verification failed: "
+                + json.dumps(
+                    artifact_finalization.verification,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )[:1_000]
+            )
+        else:
+            failure = reply or f"{agent_id} returned no response"
+
+        can_replan, same_failure_attempt = harness.record_failure("agent_execution", failure)
+        add_phase(
+            "observe",
+            "Agent execution did not complete",
+            status="failed",
+            detail=failure[:1_000],
+        )
+        if not can_replan:
+            raise AgentAdapterExecutionError(failure)
+        add_phase(
+            "replan",
+            "Replanning from the latest checkpoint",
+            detail=f"same_failure_attempt={same_failure_attempt}",
+        )
+        current_prompt = (
+            f"{request.prompt.rstrip()}\n\n"
+            f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
+        )
 
 
 def _stateless_model_messages(
@@ -1358,6 +1461,18 @@ def _run_cli_agent_process(
         from task_workspace import task_workspace
 
         args, stdin_text = _apply_prompt(command, text)
+        if spec.id == "codex":
+            from agent_execution_harness import execution_policy_for
+
+            effort = execution_policy_for(original_text).reasoning_effort.value
+            args = [
+                (
+                    f'model_reasoning_effort="{effort}"'
+                    if value.startswith("model_reasoning_effort=")
+                    else value
+                )
+                for value in args
+            ]
         working_directory = task_workspace(task_id, spec.id)
         agent_env = _agent_env(spec, restricted_workspace=restricted_workspace)
         agent_env.update(
@@ -1381,7 +1496,7 @@ def _run_cli_agent_process(
             agent_task_manager.register_process(task_id, process)
         stdout, stderr = process.communicate(
             input=stdin_text.encode("utf-8") if stdin_text is not None else None,
-            timeout=spec.timeout,
+            timeout=None if task_id else spec.timeout,
         )
         if task_id:
             agent_task_manager.record_exit_code(task_id, process.returncode)

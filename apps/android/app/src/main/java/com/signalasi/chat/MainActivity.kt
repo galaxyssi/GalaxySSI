@@ -6447,8 +6447,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 mobileNativeAgent.updateMaxPhaseRetries(next)
                 showAgentPlannerSettingsPage()
             }
-            "agent.planner.execution_time" -> {
-                val current = mobileNativeAgent.modelPlannerSettings().maxExecutionSeconds
+            "agent.planner.no_progress_timeout" -> {
+                val current = mobileNativeAgent.modelPlannerSettings().noProgressTimeoutSeconds
                 val next = when {
                     current < 300 -> 300
                     current < 600 -> 600
@@ -6456,7 +6456,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     current < 3_600 -> 3_600
                     else -> 120
                 }
-                mobileNativeAgent.updateMaxExecutionSeconds(next)
+                mobileNativeAgent.updateNoProgressTimeoutSeconds(next)
                 showAgentPlannerSettingsPage()
             }
             "memory.manage" -> openExistingControlCenterPage { showAgentMemoryPage() }
@@ -9179,19 +9179,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             ControlCenterRowSpec("agent.planner.max_iterations", getString(R.string.on_device_agent_max_loop_iterations), getString(R.string.on_device_agent_max_loop_iterations_subtitle), R.drawable.ic_reset_data, settings.maxLoopIterations.toString(), ControlCenterTone.BLUE),
                             ControlCenterRowSpec("agent.planner.max_retries", getString(R.string.on_device_agent_max_phase_retries), getString(R.string.on_device_agent_max_phase_retries_subtitle), R.drawable.ic_agent_history, settings.maxPhaseRetries.toString(), ControlCenterTone.AMBER),
                             ControlCenterRowSpec(
-                                "agent.planner.execution_time",
-                                getString(R.string.on_device_agent_execution_time_budget),
-                                getString(R.string.on_device_agent_execution_time_budget_subtitle),
+                                "agent.planner.no_progress_timeout",
+                                getString(R.string.on_device_agent_no_progress_timeout),
+                                getString(R.string.on_device_agent_no_progress_timeout_subtitle),
                                 R.drawable.ic_agent_control,
-                                if (settings.maxExecutionSeconds % 60 == 0) {
+                                if (settings.noProgressTimeoutSeconds % 60 == 0) {
                                     getString(
-                                        R.string.on_device_agent_execution_time_minutes,
-                                        settings.maxExecutionSeconds / 60
+                                        R.string.on_device_agent_no_progress_minutes,
+                                        settings.noProgressTimeoutSeconds / 60
                                     )
                                 } else {
                                     getString(
-                                        R.string.on_device_agent_execution_time_seconds,
-                                        settings.maxExecutionSeconds
+                                        R.string.on_device_agent_no_progress_seconds,
+                                        settings.noProgressTimeoutSeconds
                                     )
                                 },
                                 ControlCenterTone.VIOLET

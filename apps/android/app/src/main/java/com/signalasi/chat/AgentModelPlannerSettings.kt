@@ -16,7 +16,7 @@ data class AgentModelPlannerSettings(
     val maxToolCalls: Int = 16,
     val maxLoopIterations: Int = 8,
     val maxPhaseRetries: Int = 2,
-    val maxExecutionSeconds: Int = 600
+    val noProgressTimeoutSeconds: Int = 180
 )
 
 class AgentModelPlannerSettingsStore(context: Context) {
@@ -40,8 +40,10 @@ class AgentModelPlannerSettingsStore(context: Context) {
                 .coerceIn(MIN_LOOP_ITERATIONS, MAX_LOOP_ITERATIONS),
             maxPhaseRetries = json.optInt("max_phase_retries", DEFAULT_MAX_PHASE_RETRIES)
                 .coerceIn(MIN_PHASE_RETRIES, MAX_PHASE_RETRIES),
-            maxExecutionSeconds = json.optInt("max_execution_seconds", DEFAULT_MAX_EXECUTION_SECONDS)
-                .coerceIn(MIN_EXECUTION_SECONDS, MAX_EXECUTION_SECONDS)
+            noProgressTimeoutSeconds = json.optInt(
+                "no_progress_timeout_seconds",
+                DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS
+            ).coerceIn(MIN_NO_PROGRESS_TIMEOUT_SECONDS, MAX_NO_PROGRESS_TIMEOUT_SECONDS)
         )
     }
 
@@ -69,8 +71,11 @@ class AgentModelPlannerSettingsStore(context: Context) {
                     settings.maxPhaseRetries.coerceIn(MIN_PHASE_RETRIES, MAX_PHASE_RETRIES)
                 )
                 .put(
-                    "max_execution_seconds",
-                    settings.maxExecutionSeconds.coerceIn(MIN_EXECUTION_SECONDS, MAX_EXECUTION_SECONDS)
+                    "no_progress_timeout_seconds",
+                    settings.noProgressTimeoutSeconds.coerceIn(
+                        MIN_NO_PROGRESS_TIMEOUT_SECONDS,
+                        MAX_NO_PROGRESS_TIMEOUT_SECONDS
+                    )
                 )
                 .toString()
         )
@@ -96,8 +101,8 @@ class AgentModelPlannerSettingsStore(context: Context) {
         const val DEFAULT_MAX_PHASE_RETRIES = 2
         const val MIN_PHASE_RETRIES = 0
         const val MAX_PHASE_RETRIES = 5
-        const val DEFAULT_MAX_EXECUTION_SECONDS = 600
-        const val MIN_EXECUTION_SECONDS = 60
-        const val MAX_EXECUTION_SECONDS = 3_600
+        const val DEFAULT_NO_PROGRESS_TIMEOUT_SECONDS = 180
+        const val MIN_NO_PROGRESS_TIMEOUT_SECONDS = 60
+        const val MAX_NO_PROGRESS_TIMEOUT_SECONDS = 3_600
     }
 }
