@@ -112,19 +112,23 @@ async function openLanguagePage(dumpPath, remoteName) {
 }
 
 function requireEnglish(xml, dumpPath) {
-  requireText(xml, "Language", "English title", dumpPath);
-  requireText(xml, "Choose the display language for SignalASI", "English subtitle", dumpPath);
-  requireText(xml, "Current language", "English current-language row", dumpPath);
+  requireText(xml, "Voice &amp; Language", "English title", dumpPath);
+  requireText(xml, "Interface language", "English interface-language section", dumpPath);
+  requireText(xml, "Automatic (follow system)", "English automatic option", dumpPath);
+  requireText(xml, "Model response language", "English model-language row", dumpPath);
+  requireText(xml, "ASR language", "English ASR-language row", dumpPath);
+  requireText(xml, "TTS language", "English TTS-language row", dumpPath);
   requireText(xml, "English", "English option", dumpPath);
-  requireText(xml, "Selected", "English selected state", dumpPath);
 }
 
 function requireSimplifiedChinese(xml, dumpPath) {
-  requireText(xml, "\u8bed\u8a00", "Simplified Chinese title", dumpPath);
-  requireText(xml, "\u9009\u62e9 SignalASI \u7684\u663e\u793a\u8bed\u8a00", "Simplified Chinese subtitle", dumpPath);
-  requireText(xml, "\u5f53\u524d\u8bed\u8a00", "Simplified Chinese current-language row", dumpPath);
+  requireText(xml, "\u8bed\u97f3\u4e0e\u8bed\u8a00", "Simplified Chinese title", dumpPath);
+  requireText(xml, "\u754c\u9762\u8bed\u8a00", "Simplified Chinese interface-language section", dumpPath);
+  requireText(xml, "\u81ea\u52a8\uff08\u8ddf\u968f\u7cfb\u7edf\uff09", "Simplified Chinese automatic option", dumpPath);
+  requireText(xml, "\u5927\u6a21\u578b\u56de\u590d\u8bed\u8a00", "Simplified Chinese model-language row", dumpPath);
+  requireText(xml, "ASR \u8bed\u8a00", "Simplified Chinese ASR-language row", dumpPath);
+  requireText(xml, "TTS \u8bed\u8a00", "Simplified Chinese TTS-language row", dumpPath);
   requireText(xml, "\u7b80\u4f53\u4e2d\u6587", "Simplified Chinese option", dumpPath);
-  requireText(xml, "\u5df2\u9009\u62e9", "Simplified Chinese selected state", dumpPath);
 }
 
 async function main() {
@@ -141,19 +145,45 @@ async function main() {
   const originalLanguagePrefs = readAppFile(languagePrefs);
 
   try {
-    log("clearing language preference and verifying English default");
+    log("clearing language preference and verifying the system-language default");
     restoreAppFile(languagePrefs, "");
     const defaultXml = await openLanguagePage(defaultDump, "signalasi-language-default.xml");
-    requireEnglish(defaultXml, defaultDump);
+    const systemUsesChinese = defaultXml.includes("\u8bed\u97f3\u4e0e\u8bed\u8a00");
+    if (systemUsesChinese) {
+      requireSimplifiedChinese(defaultXml, defaultDump);
+    } else {
+      requireEnglish(defaultXml, defaultDump);
+    }
+    const autoPrefs = readAppFile(languagePrefs);
+    if (autoPrefs && !autoPrefs.includes(">auto<")) {
+      fail("Cleared language preferences did not remain in automatic mode.");
+    }
 
-    log("switching to Simplified Chinese through the Settings UI");
-    tapText(defaultXml, "Simplified Chinese", "Simplified Chinese option", defaultDump);
+    let zhXml;
+    let enXml;
+    if (systemUsesChinese) {
+      log("switching from the automatic Chinese UI to English");
+      tapText(defaultXml, "English", "English option", defaultDump);
+      await sleep(2000);
+      const firstEnPrefs = readAppFile(languagePrefs);
+      if (!firstEnPrefs.includes(">en<")) {
+        fail("Language preference did not persist English after tapping the Settings row.");
+      }
+      enXml = await openLanguagePage(enDump, "signalasi-language-en.xml");
+      requireEnglish(enXml, enDump);
+
+      log("switching from English to Simplified Chinese");
+      tapText(enXml, "Simplified Chinese", "Simplified Chinese option", enDump);
+    } else {
+      log("switching from the automatic English UI to Simplified Chinese");
+      tapText(defaultXml, "Simplified Chinese", "Simplified Chinese option", defaultDump);
+    }
     await sleep(2000);
     const zhPrefs = readAppFile(languagePrefs);
     if (!zhPrefs.includes(">zh-CN<")) {
       fail("Language preference did not persist Simplified Chinese after tapping the Settings row.");
     }
-    const zhXml = await openLanguagePage(zhDump, "signalasi-language-zh.xml");
+    zhXml = await openLanguagePage(zhDump, "signalasi-language-zh.xml");
     requireSimplifiedChinese(zhXml, zhDump);
 
     log("switching back to English through the Settings UI");
@@ -163,7 +193,7 @@ async function main() {
     if (!enPrefs.includes(">en<")) {
       fail("Language preference did not persist English after tapping the Settings row.");
     }
-    const enXml = await openLanguagePage(enDump, "signalasi-language-en.xml");
+    enXml = await openLanguagePage(enDump, "signalasi-language-en.xml");
     requireEnglish(enXml, enDump);
 
     const finalPrefs = readAppFile(languagePrefs);

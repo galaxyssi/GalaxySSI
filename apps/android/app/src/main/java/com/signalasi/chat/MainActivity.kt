@@ -5037,7 +5037,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val config = VoiceAssistantSettings.get(this)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.asrLanguage)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, LanguagePolicySettings.resolve(config.asrLanguage))
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
@@ -5460,7 +5460,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ensureSpeechRecognizer()
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, config.asrLanguage)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, LanguagePolicySettings.resolve(config.asrLanguage))
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
@@ -5472,7 +5472,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             lastVoiceRecognitionStartAt = System.currentTimeMillis()
             speechRecognizer?.startListening(intent)
             voiceAssistantListening = true
-            Log.i("SignalASIVoice", "ASR start language=${config.asrLanguage} awake=$voiceAssistantAwake")
+            Log.i(
+                "SignalASIVoice",
+                "ASR start language=${LanguagePolicySettings.resolve(config.asrLanguage)} awake=$voiceAssistantAwake"
+            )
         }.onFailure {
             voiceAssistantListening = false
             Log.e("SignalASIVoice", "ASR start failed", it)
@@ -5723,7 +5726,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     after()
                 }
             }, timeoutMs)
-            microsoftTts.speak(text, config.microsoftVoice) { success, _ ->
+            val voice = LanguagePolicySettings.microsoftVoice(config.ttsLanguage, config.microsoftVoice)
+            microsoftTts.speak(text, voice) { success, _ ->
                 runOnUiThread {
                     if (completed) return@runOnUiThread
                     if (success) {
@@ -5763,7 +5767,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun configureAndroidTtsLanguage() {
-        val languageTag = VoiceAssistantSettings.get(this).asrLanguage.ifBlank { "zh-CN" }
+        val languageTag = LanguagePolicySettings.resolvedTtsLanguage(this)
         androidTts?.language = Locale.forLanguageTag(languageTag)
     }
 
@@ -9817,7 +9821,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ControlCenterSectionSpec(
                         getString(R.string.settings_control_general),
                         listOf(
-                            ControlCenterRowSpec("general.language", getString(R.string.settings_language), AppLanguage.displayName(this), R.drawable.ic_settings_language, "", ControlCenterTone.NEUTRAL),
+                            ControlCenterRowSpec("general.language", getString(R.string.language_policy_title), languagePolicySummary(), R.drawable.ic_settings_language, "", ControlCenterTone.NEUTRAL),
                             ControlCenterRowSpec("general.appearance", getString(R.string.cc_appearance_title), getString(R.string.cc_appearance_subtitle), R.drawable.ic_tab_discover, getString(R.string.cc_managed_by_android), ControlCenterTone.BLUE),
                             ControlCenterRowSpec("general.text_size", getString(R.string.cc_text_size_title), appTextScaleLabel(textScale), R.drawable.ic_info_outline, "", ControlCenterTone.NEUTRAL)
                         )
@@ -14868,6 +14872,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .put("pairing_topic", "${SignalASILinkProtocol.TOPIC_ROOT}/$serverRouteId/pair")
                 .put("pairing_token", UUID.randomUUID().toString().replace("-", "") + token.take(12))
                 .put("pairing_secret", pairingSecret)
+                .put(
+                    "pairing_access",
+                    JSONObject()
+                        .put("contract_version", SignalASILinkProtocol.ACCESS_CONTRACT)
+                        .put("version", 1)
+                        .put("profile", SignalASILinkProtocol.ACCESS_RESTRICTED)
+                        .put(
+                            "scopes",
+                            JSONArray(
+                                listOf(
+                                    SignalASILinkProtocol.SCOPE_AGENT_CHAT,
+                                    SignalASILinkProtocol.SCOPE_EXPLICIT_ATTACHMENTS,
+                                    SignalASILinkProtocol.SCOPE_TASK_WORKSPACE
+                                )
+                            )
+                        )
+                )
                 .put("created_at", System.currentTimeMillis())
             AppStore.markDesktopVerified(this, pairing)
             checkNotNull(SignalASILinkProtocol.markPaired(this, desktopId))
@@ -14881,6 +14902,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             VoiceAssistantSettings.setAsrProvider(this, VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER)
             VoiceAssistantSettings.setAsrLanguage(this, "en-US")
             VoiceAssistantSettings.setTtsProvider(this, VoiceAssistantSettings.PROVIDER_ANDROID)
+            VoiceAssistantSettings.setTtsLanguage(this, "zh-TW")
+            VoiceAssistantSettings.setResponseLanguage(this, "zh-HK")
             VoiceAssistantSettings.setMicrosoftVoice(this, "zh-CN-XiaoxiaoNeural")
             VoiceAssistantSettings.setWelcomeText(this, welcome)
             VoiceAssistantSettings.setSpeakReplies(this, false)
@@ -14896,6 +14919,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 config.asrProvider == VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER &&
                 config.asrLanguage == "en-US" &&
                 config.ttsProvider == VoiceAssistantSettings.PROVIDER_ANDROID &&
+                config.ttsLanguage == "zh-TW" &&
+                config.responseLanguage == "zh-HK" &&
                 config.microsoftVoice == "zh-CN-XiaoxiaoNeural" &&
                 config.welcomeText == welcome &&
                 !config.speakReplies &&
@@ -14914,6 +14939,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .put("asr_provider", config.asrProvider)
                     .put("asr_language", config.asrLanguage)
                     .put("tts_provider", config.ttsProvider)
+                    .put("tts_language", config.ttsLanguage)
+                    .put("response_language", config.responseLanguage)
                     .put("microsoft_voice", config.microsoftVoice)
                     .put("welcome_text", config.welcomeText)
                     .put("speak_replies", config.speakReplies)
@@ -15601,7 +15628,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         onSuccess: (String) -> Unit,
         onFailure: () -> Unit = {}
     ) {
-        val language = VoiceAssistantSettings.get(this).asrLanguage
+        val language = LanguagePolicySettings.resolvedAsrLanguage(this)
         voiceAssistantScope.launch {
             val result = runCatching { LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language) }
             sourceFile.delete()
@@ -18165,9 +18192,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ).apply {
             setOnClickListener { showAsrProviderPage() }
         })
-        featureContent.addView(featureRow(getString(R.string.voice_asr_language), config.asrLanguage, R.drawable.ic_protocol_link, getString(R.string.common_select)).apply {
+        featureContent.addView(featureRow(getString(R.string.voice_asr_language), languagePolicyLabel(config.asrLanguage), R.drawable.ic_protocol_link, getString(R.string.common_select)).apply {
             setOnClickListener {
-                showChoiceDialog(getString(R.string.voice_asr_language), listOf("zh-CN", "en-US", "zh-HK", "zh-TW"), config.asrLanguage) {
+                showLanguagePolicyDialog(getString(R.string.voice_asr_language), config.asrLanguage) {
                     VoiceAssistantSettings.setAsrLanguage(this@MainActivity, it)
                     configureAndroidTtsLanguage()
                     showVoiceAssistantSettingsPage()
@@ -18183,6 +18210,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 showChoiceDialog(getString(R.string.voice_tts_provider), listOf(microsoft, androidTts), ttsProviderLabel(config.ttsProvider)) {
                     val provider = if (it == microsoft) VoiceAssistantSettings.PROVIDER_MICROSOFT_EDGE else VoiceAssistantSettings.PROVIDER_ANDROID
                     VoiceAssistantSettings.setTtsProvider(this@MainActivity, provider)
+                    showVoiceAssistantSettingsPage()
+                }
+            }
+        })
+        featureContent.addView(featureRow(getString(R.string.language_policy_tts_language), languagePolicyLabel(config.ttsLanguage), R.drawable.ic_settings_language, getString(R.string.common_select)).apply {
+            setOnClickListener {
+                showLanguagePolicyDialog(getString(R.string.language_policy_tts_language), config.ttsLanguage) {
+                    VoiceAssistantSettings.setTtsLanguage(this@MainActivity, it)
+                    configureAndroidTtsLanguage()
                     showVoiceAssistantSettingsPage()
                 }
             }
@@ -19325,15 +19361,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showLanguageSettingsPage() {
-        showFeaturePage(getString(R.string.settings_language_title))
+        val policy = LanguagePolicySettings.get(this)
+        showFeaturePage(getString(R.string.language_policy_title))
         featureContent.addView(featureHeroCard(
-            getString(R.string.settings_language_title),
-            getString(R.string.settings_language_subtitle),
-            R.drawable.ic_protocol_link,
+            getString(R.string.language_policy_title),
+            getString(R.string.language_policy_subtitle),
+            R.drawable.ic_settings_language,
             "#14C66A",
-            AppLanguage.displayName(this)
+            languagePolicySummary()
         ))
-        addSectionTitle(getString(R.string.settings_current_language))
+        addSectionTitle(getString(R.string.language_policy_interface_section))
+        featureContent.addView(languageChoiceRow(
+            getString(R.string.settings_language_auto),
+            AppLanguage.AUTO
+        ))
         featureContent.addView(languageChoiceRow(
             getString(R.string.settings_language_zh),
             AppLanguage.ZH_CN
@@ -19342,6 +19383,52 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             getString(R.string.settings_language_en),
             AppLanguage.EN
         ))
+
+        addSectionTitle(getString(R.string.language_policy_voice_section))
+        featureContent.addView(featureRow(
+            getString(R.string.language_policy_response_language),
+            getString(R.string.language_policy_response_subtitle),
+            R.drawable.ic_agent_node,
+            languagePolicyCompactLabel(policy.responseLanguage)
+        ).apply {
+            setOnClickListener {
+                showLanguagePolicyDialog(
+                    getString(R.string.language_policy_response_language),
+                    policy.responseLanguage
+                ) {
+                    VoiceAssistantSettings.setResponseLanguage(this@MainActivity, it)
+                    Toast.makeText(this@MainActivity, getString(R.string.language_policy_saved), Toast.LENGTH_SHORT).show()
+                    showLanguageSettingsPage()
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.language_policy_asr_language),
+            getString(R.string.language_policy_asr_subtitle),
+            R.drawable.ic_settings_voice,
+            languagePolicyCompactLabel(policy.asrLanguage)
+        ).apply {
+            setOnClickListener {
+                showLanguagePolicyDialog(getString(R.string.language_policy_asr_language), policy.asrLanguage) {
+                    VoiceAssistantSettings.setAsrLanguage(this@MainActivity, it)
+                    showLanguageSettingsPage()
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.language_policy_tts_language),
+            getString(R.string.language_policy_tts_subtitle),
+            R.drawable.ic_send_plane,
+            languagePolicyCompactLabel(policy.ttsLanguage)
+        ).apply {
+            setOnClickListener {
+                showLanguagePolicyDialog(getString(R.string.language_policy_tts_language), policy.ttsLanguage) {
+                    VoiceAssistantSettings.setTtsLanguage(this@MainActivity, it)
+                    configureAndroidTtsLanguage()
+                    showLanguageSettingsPage()
+                }
+            }
+        })
     }
 
     private fun languageChoiceRow(title: String, language: String): View {
@@ -19364,6 +19451,78 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
         }
+    }
+
+    private fun languagePolicySummary(): String {
+        val policy = LanguagePolicySettings.get(this)
+        return if (
+            AppLanguage.current(this) == AppLanguage.AUTO &&
+            policy.responseLanguage == LanguagePolicySettings.AUTO &&
+            policy.asrLanguage == LanguagePolicySettings.AUTO &&
+            policy.ttsLanguage == LanguagePolicySettings.AUTO
+        ) {
+            getString(R.string.language_policy_auto_short)
+        } else {
+            getString(R.string.language_policy_configured_short)
+        }
+    }
+
+    private fun languagePolicyCompactLabel(value: String): String {
+        val normalized = LanguagePolicySettings.choices.firstOrNull { it.equals(value, true) }
+            ?: LanguagePolicySettings.AUTO
+        return getString(
+            when (normalized) {
+                LanguagePolicySettings.ZH_CN -> R.string.language_policy_zh_cn_short
+                LanguagePolicySettings.EN_US -> R.string.language_policy_en_us_short
+                LanguagePolicySettings.ZH_HK -> R.string.language_policy_zh_hk_short
+                LanguagePolicySettings.ZH_TW -> R.string.language_policy_zh_tw_short
+                else -> R.string.language_policy_auto_short
+            }
+        )
+    }
+
+    private fun languagePolicyLabel(value: String): String {
+        val normalized = LanguagePolicySettings.choices.firstOrNull { it.equals(value, true) }
+            ?: LanguagePolicySettings.AUTO
+        if (normalized == LanguagePolicySettings.AUTO) {
+            val resolved = LanguagePolicySettings.resolve(normalized)
+            val effective = languagePolicyLabel(
+                when {
+                    resolved.equals(LanguagePolicySettings.ZH_HK, true) -> LanguagePolicySettings.ZH_HK
+                    resolved.equals(LanguagePolicySettings.ZH_TW, true) -> LanguagePolicySettings.ZH_TW
+                    resolved.startsWith("zh", true) -> LanguagePolicySettings.ZH_CN
+                    else -> LanguagePolicySettings.EN_US
+                }
+            )
+            return getString(R.string.language_policy_effective, effective)
+        }
+        return getString(
+            when (normalized) {
+                LanguagePolicySettings.ZH_CN -> R.string.language_policy_zh_cn
+                LanguagePolicySettings.EN_US -> R.string.language_policy_en_us
+                LanguagePolicySettings.ZH_HK -> R.string.language_policy_zh_hk
+                LanguagePolicySettings.ZH_TW -> R.string.language_policy_zh_tw
+                else -> R.string.language_policy_auto
+            }
+        )
+    }
+
+    private fun showLanguagePolicyDialog(
+        title: String,
+        current: String,
+        onChoose: (String) -> Unit
+    ) {
+        val values = LanguagePolicySettings.choices
+        val labels = values.map(::languagePolicyLabel)
+        val selected = values.indexOfFirst { it.equals(current, true) }.coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setSingleChoiceItems(labels.toTypedArray(), selected) { dialog, which ->
+                onChoose(values[which])
+                dialog.dismiss()
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
     }
 
     private fun showFeaturePage(title: String) {

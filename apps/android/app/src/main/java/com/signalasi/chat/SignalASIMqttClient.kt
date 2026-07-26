@@ -462,6 +462,12 @@ object SignalASIMqttClient {
             .put("content", content)
             .put("contact_id", contactId)
             .put("time", System.currentTimeMillis())
+        if (context != null) {
+            val policy = LanguagePolicySettings.get(context)
+            payload
+                .put("response_language", LanguagePolicySettings.resolve(policy.responseLanguage))
+                .put("response_language_preference", policy.responseLanguage)
+        }
         clientMessageId?.let { payload.put("client_message_id", it) }
         if (conversationId.isNotBlank()) payload.put("conversation_id", conversationId)
         if (turnId.isNotBlank()) {

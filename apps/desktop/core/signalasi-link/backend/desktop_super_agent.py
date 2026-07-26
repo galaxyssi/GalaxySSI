@@ -86,6 +86,7 @@ class DesktopSuperAgent:
         prompt: str,
         compiled_prompt: str,
         attachments: list[str],
+        response_language: str = "",
     ) -> DesktopAgentOutcome:
         trace = AgentLoopTrace(self.loop_budget)
         self._phase(
@@ -234,6 +235,7 @@ class DesktopSuperAgent:
                     conversation_id=conversation_id,
                     source_message_id=f"desktop:{task_id}",
                     return_path="desktop-ui",
+                    response_language=response_language,
                 )
                 reply = str(result.get("reply") or "").strip()
                 if not reply:

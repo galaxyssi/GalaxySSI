@@ -88,11 +88,17 @@ async function runUiSmoke() {
       (() => ({
         lang: document.documentElement.lang,
         selected: document.querySelector("#languageSelect")?.value || "",
-        title: document.querySelector("#conversationTitle")?.textContent || ""
+        title: document.querySelector("#conversationTitle")?.textContent || "",
+        system: navigator.language || ""
       }))()
     `);
-    if (defaultLanguage.lang !== "en" || defaultLanguage.selected !== "en" || defaultLanguage.title !== "New task") {
-      throw new Error(`Desktop did not default to English: ${JSON.stringify(defaultLanguage)}`);
+    const systemUsesChinese = String(defaultLanguage.system || "").toLowerCase().startsWith("zh");
+    const expectedDefaultLanguage = systemUsesChinese ? "zh-Hans" : "en";
+    const expectedDefaultTitle = systemUsesChinese ? "\u65b0\u5efa\u4efb\u52a1" : "New task";
+    if (defaultLanguage.lang !== expectedDefaultLanguage
+        || defaultLanguage.selected !== "auto"
+        || defaultLanguage.title !== expectedDefaultTitle) {
+      throw new Error(`Desktop did not follow the system language by default: ${JSON.stringify(defaultLanguage)}`);
     }
     await captureSmokeScreenshot(languageEnPath);
     const zhLanguage = await mainWindow.webContents.executeJavaScript(`
@@ -195,6 +201,11 @@ async function runUiSmoke() {
           save: Boolean(document.querySelector("#saveCloudModelButton")),
           test: Boolean(document.querySelector("#testCloudModelButton")),
           badge: document.querySelector("#cloudModelBadge")?.textContent || "",
+          languagePolicy: [
+            document.querySelector("#responseLanguageSelect")?.value || "",
+            document.querySelector("#asrLanguageSelect")?.value || "",
+            document.querySelector("#ttsLanguageSelect")?.value || ""
+          ],
           secureValidation: validateCloudModelSettings({
             url: "https://api.example.com/v1/chat/completions",
             model: "test-model",
@@ -221,7 +232,8 @@ async function runUiSmoke() {
     `);
     if (!settingsState.active || settingsState.fields < 7 || !settingsState.save || !settingsState.test
         || !settingsState.badge.trim() || settingsState.secureValidation
-        || !settingsState.insecureValidation || !settingsState.budgetValidation) {
+        || !settingsState.insecureValidation || !settingsState.budgetValidation
+        || settingsState.languagePolicy.some((value) => value !== "auto")) {
       throw new Error(`Settings drawer did not expose cloud API configuration: ${JSON.stringify(settingsState)}`);
     }
     await captureSmokeScreenshot(settingsPath);
@@ -741,7 +753,8 @@ async function startDesktopTask(payload = {}) {
       prompt: String(payload.prompt || ""),
       agent_id: String(payload.agentId || "auto"),
       conversation_id: String(payload.conversationId || ""),
-      attachments: Array.isArray(payload.attachments) ? payload.attachments : []
+      attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      response_language: String(payload.responseLanguage || "")
     })
   });
 }

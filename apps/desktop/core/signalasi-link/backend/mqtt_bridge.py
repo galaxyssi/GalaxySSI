@@ -2136,6 +2136,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     codex_approval_policy = "never"
     codex_sandbox = "danger-full-access" if full_desktop_executor else "workspace-write"
     client_conversation_id = str(payload.get("conversation_id") or "")
+    preferred_response_language = str(
+        payload.get("response_language")
+        or payload.get("response_language_preference")
+        or ""
+    ).strip()
     backend_conversation_id = str(payload.get("_backend_conversation_id") or "").strip() or (
         _scoped_agent_conversation_id(client_route_id, client_conversation_id)
     )
@@ -2282,6 +2287,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 desktop_access_profile=(
                     DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
                 ),
+                response_language=preferred_response_language,
             )
         except Exception:
             agent_task_manager.add_event(
@@ -2640,7 +2646,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
                 from agent_conversation_sessions import agent_conversation_sessions
                 from agent_gateway import _native_incremental_cli_prompt
-                from response_policy import compact_codex_turn_prompt
+                from response_policy import apply_response_policy, compact_codex_turn_prompt
                 from desktop_file_tools import try_execute_explicit_file_task
 
                 sessions = agent_conversation_sessions()
@@ -2683,8 +2689,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             "conversation_attachments_restored",
                             len(restored_context_paths),
                         )
-                compact_turn = compact_codex_turn_prompt(content)
-                full_turn = content_with_attachments(task.task_id, content)
+                styled_turn = apply_response_policy(content, preferred_response_language)
+                compact_turn = compact_codex_turn_prompt(content, preferred_response_language)
+                full_turn = content_with_attachments(task.task_id, styled_turn)
                 restored_context_note = ""
                 if restored_context_paths:
                     restored_context_note = "\n\nPrior conversation artifacts restored for this thread:"
@@ -2709,11 +2716,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                             synced_turn_ids=session_binding.synced_turn_ids,
                             synced_entry_ids=session_binding.synced_entry_ids,
                             summary_digest=session_binding.summary_digest,
+                            response_language=preferred_response_language,
                         )
                         or compact_turn
                     )
                 else:
-                    selected_turn = content
+                    selected_turn = styled_turn
                 task_prompt = content_with_attachments(task.task_id, selected_turn)
                 if restored_context_note:
                     task_prompt += restored_context_note
@@ -2851,8 +2859,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             except Exception as exc:
                 error = str(exc)[:500]
                 recovered = payload.get("_recovered_task") is True
-                prefers_chinese = any(
-                    "\u4e00" <= character <= "\u9fff" for character in content
+                from response_policy import response_language
+
+                prefers_chinese = "Chinese" in response_language(
+                    content,
+                    preferred_response_language,
                 )
                 if recovered:
                     result = (

@@ -26,7 +26,7 @@ from agent_gateway import (
     recent_agent_execution_log,
     reset_inactive_agent_runtime,
 )
-from agent_config import load_config, save_config
+from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
 from backend_instance_lock import BackendInstanceLock
@@ -385,6 +385,7 @@ class AgentConfigReq(BaseModel):
     commands: dict[str, str] = {}
     local_model: dict[str, Any] = {}
     cloud_model: dict[str, Any] = {}
+    language_policy: dict[str, str] = {}
     custom_agent: dict[str, str] = {}
     custom_agents: list[dict[str, str]] = []
 
@@ -443,6 +444,7 @@ class AgentDeliveryReq(BaseModel):
     return_path: str = ""
     protocol: str = "1.0"
     required_features: list[str] = []
+    response_language: str = ""
 
 
 class DesktopNativeToolInvokeReq(BaseModel):
@@ -741,6 +743,7 @@ def api_deliver_agent(agent_id: str, req: AgentDeliveryReq, request: Request):
             return_path=req.return_path,
             protocol=req.protocol,
             required_features=tuple(req.required_features),
+            response_language=req.response_language,
         )
     except Exception as exc:
         raise HTTPException(
@@ -858,6 +861,7 @@ class DesktopTaskStartReq(BaseModel):
     agent_id: str = "auto"
     conversation_id: str = ""
     attachments: list[str] = Field(default_factory=list)
+    response_language: str = ""
     retry_of: str = ""
     attempt: int = 1
 
@@ -880,7 +884,12 @@ def _desktop_agent_for(prompt: str, requested: str = "auto") -> str:
     return requested_id
 
 
-def _desktop_task_prompt(prompt: str, conversation_id: str, attachment_paths: list[str]) -> str:
+def _desktop_task_prompt(
+    prompt: str,
+    conversation_id: str,
+    attachment_paths: list[str],
+    response_language: str = "",
+) -> str:
     from conversation_context import (
         ContextBudget,
         compacted_history_cursor,
@@ -889,6 +898,7 @@ def _desktop_task_prompt(prompt: str, conversation_id: str, attachment_paths: li
         render_prompt,
         task_history_messages,
     )
+    from response_policy import response_policy_prompt
 
     summary_store = conversation_summary_store()
     summary_key = f"desktop-task:{conversation_id}"
@@ -897,7 +907,7 @@ def _desktop_task_prompt(prompt: str, conversation_id: str, attachment_paths: li
         conversation_id,
         after_cursor=summary_state.cursor,
     )
-    preamble = (
+    preamble = response_policy_prompt(prompt, response_language) + "\n\n" + (
         "You are executing a task from SignalASI Desktop. Work directly, use the available local tools, "
         "verify the result, and return a concise final response with artifact paths when files are created."
     )
@@ -960,7 +970,8 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
     conversation_id = str(req.conversation_id or "").strip() or str(uuid.uuid4())
     agent_id = _desktop_agent_for(prompt, req.agent_id)
     attachments = _copy_desktop_attachments(task_id, req.attachments)
-    compiled_prompt = _desktop_task_prompt(prompt, conversation_id, attachments)
+    response_language = str(req.response_language or "").strip() or language_policy_config()["response_language"]
+    compiled_prompt = _desktop_task_prompt(prompt, conversation_id, attachments, response_language)
 
     def runner(task):
         agent_task_manager.update(
@@ -981,6 +992,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                 prompt=prompt,
                 compiled_prompt=compiled_prompt,
                 attachments=attachments,
+                response_language=response_language,
             )
             return outcome.reply
         if agent_id.startswith("mcp:"):
@@ -1012,6 +1024,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
             conversation_id=conversation_id,
             source_message_id=task.source_message_id,
             return_path="desktop-ui",
+            response_language=response_language,
         )
         return str(result.get("reply") or "")
 

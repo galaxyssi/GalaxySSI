@@ -101,6 +101,12 @@ class _SteeringTaskManager:
     def active_for_conversation(self, conversation_id, **_options):
         return self.prior if conversation_id == self.prior.conversation_id else None
 
+    def list(self, limit=500):
+        tasks = [self.prior]
+        if self.current is not None:
+            tasks.append(self.current)
+        return [task.public() for task in tasks[:limit]]
+
     def add_event(self, task_id, _kind, _title, on_event=None, **_values):
         task = self.current if self.current and self.current.task_id == task_id else self.prior
         if on_event is not None:

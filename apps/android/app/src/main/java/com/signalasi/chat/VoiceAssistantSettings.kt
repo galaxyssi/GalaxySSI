@@ -12,6 +12,8 @@ data class VoiceAssistantConfig(
     val asrModel: String,
     val asrLanguage: String,
     val ttsProvider: String,
+    val ttsLanguage: String,
+    val responseLanguage: String,
     val microsoftVoice: String,
     val welcomeText: String,
     val targetContactId: String,
@@ -28,7 +30,6 @@ object VoiceAssistantSettings {
     private const val KEY_WAKE_THRESHOLD = "wake_threshold"
     private const val KEY_ASR_PROVIDER = "asr_provider"
     private const val KEY_ASR_MODEL = "asr_model"
-    private const val KEY_ASR_LANGUAGE = "asr_language"
     private const val KEY_TTS_PROVIDER = "tts_provider"
     private const val KEY_MICROSOFT_VOICE = "microsoft_voice"
     private const val KEY_WELCOME_TEXT = "welcome_text"
@@ -48,6 +49,7 @@ object VoiceAssistantSettings {
 
     fun get(context: Context): VoiceAssistantConfig {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val languagePolicy = LanguagePolicySettings.get(context)
         val defaultWakeWords = context.getString(R.string.voice_default_wake_words)
         val defaultWelcomeText = context.getString(R.string.voice_default_welcome_text)
         return VoiceAssistantConfig(
@@ -70,9 +72,11 @@ object VoiceAssistantSettings {
                         ?.let { WhisperModelManager.isAvailable(context, it) } == true
                 }
                 ?: "tiny",
-            asrLanguage = prefs.getString(KEY_ASR_LANGUAGE, "zh-CN").orEmpty().ifBlank { "zh-CN" },
+            asrLanguage = languagePolicy.asrLanguage,
             ttsProvider = prefs.getString(KEY_TTS_PROVIDER, PROVIDER_MICROSOFT_EDGE).orEmpty()
                 .ifBlank { PROVIDER_MICROSOFT_EDGE },
+            ttsLanguage = languagePolicy.ttsLanguage,
+            responseLanguage = languagePolicy.responseLanguage,
             microsoftVoice = prefs.getString(KEY_MICROSOFT_VOICE, "zh-CN-XiaoxiaoNeural").orEmpty()
                 .ifBlank { "zh-CN-XiaoxiaoNeural" },
             welcomeText = prefs.getString(KEY_WELCOME_TEXT, defaultWelcomeText).orEmpty()
@@ -113,7 +117,15 @@ object VoiceAssistantSettings {
     }
 
     fun setAsrLanguage(context: Context, value: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_ASR_LANGUAGE, value).apply()
+        LanguagePolicySettings.setAsrLanguage(context, value)
+    }
+
+    fun setTtsLanguage(context: Context, value: String) {
+        LanguagePolicySettings.setTtsLanguage(context, value)
+    }
+
+    fun setResponseLanguage(context: Context, value: String) {
+        LanguagePolicySettings.setResponseLanguage(context, value)
     }
 
     fun setAsrModel(context: Context, value: String) {
@@ -149,5 +161,6 @@ object VoiceAssistantSettings {
 
     fun clear(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        LanguagePolicySettings.clear(context)
     }
 }

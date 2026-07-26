@@ -10,6 +10,7 @@ const packageName = "com.signalasi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
 const voicePrefs = "shared_prefs/signalasi_voice_assistant.xml";
+const languagePolicyPrefs = "shared_prefs/signalasi_language_policy.xml";
 const debugPrefs = "shared_prefs/signalasi_debug.xml";
 const outDir = path.join(root, "ui-smoke");
 const debugDump = path.join(outDir, "android-voice-settings-debug.xml");
@@ -116,12 +117,14 @@ async function main() {
 
   const originalAppStore = readAppFile(appStorePrefs);
   const originalVoice = readAppFile(voicePrefs);
+  const originalLanguagePolicy = readAppFile(languagePolicyPrefs);
   const originalDebug = readAppFile(debugPrefs);
 
   try {
     log("resetting isolated voice settings state");
     restoreAppFile(appStorePrefs, "");
     restoreAppFile(voicePrefs, "");
+    restoreAppFile(languagePolicyPrefs, "");
     restoreAppFile(debugPrefs, "");
     adb(["shell", "am", "force-stop", packageName]);
 
@@ -138,7 +141,8 @@ async function main() {
     if (result.wake_provider !== "android_asr" || result.asr_provider !== "local_whisper_cpp" || result.tts_provider !== "android") {
       fail(`Voice providers were not persisted: ${JSON.stringify(result)}`);
     }
-    if (result.asr_language !== "en-US" || result.speak_replies !== false) {
+    if (result.asr_language !== "en-US" || result.tts_language !== "zh-TW"
+        || result.response_language !== "zh-HK" || result.speak_replies !== false) {
       fail(`Voice language or speak-replies settings were not persisted: ${JSON.stringify(result)}`);
     }
     if (!String(result.welcome_text || "").includes(token) || !String(result.target_contact_id || "").endsWith(":codex")) {
@@ -147,15 +151,18 @@ async function main() {
 
     const prefsXml = readAppFile(voicePrefs);
     fs.writeFileSync(voicePrefsDump, prefsXml || "");
-    for (const text of ["android_asr", "local_whisper_cpp", "en-US", "android", "zh-CN-XiaoxiaoNeural", token]) {
+    for (const text of ["android_asr", "local_whisper_cpp", "android", "zh-CN-XiaoxiaoNeural", token]) {
       requireText(prefsXml, text, voicePrefsDump);
+    }
+    const languagePolicyXml = readAppFile(languagePolicyPrefs);
+    for (const text of ["en-US", "zh-TW", "zh-HK"]) {
+      requireText(languagePolicyXml, text, voicePrefsDump);
     }
 
     const settingsXml = await collectSettingsXml();
     for (const text of [
       "Android",
       "ASR",
-      "en-US",
       "TTS",
       "zh-CN-XiaoxiaoNeural",
       token,
@@ -169,6 +176,7 @@ async function main() {
     log("restoring original app state");
     restoreAppFile(appStorePrefs, originalAppStore);
     restoreAppFile(voicePrefs, originalVoice);
+    restoreAppFile(languagePolicyPrefs, originalLanguagePolicy);
     restoreAppFile(debugPrefs, originalDebug);
     adb(["shell", "am", "force-stop", packageName]);
   }

@@ -4,6 +4,16 @@ from __future__ import annotations
 
 import re
 
+from language_policy import (
+    EN_US,
+    ZH_CN,
+    ZH_HK,
+    ZH_TW,
+    language_name,
+    normalize_language,
+    resolve_language,
+)
+
 
 POLICY_MARKER = "SignalASI response policy:"
 CURRENT_REQUEST_MARKER = "\nCurrent user request:\n"
@@ -32,44 +42,61 @@ def _current_request(prompt: str) -> str:
     return value
 
 
-def response_language(prompt: str) -> str:
-    """Infer the response language from this turn instead of prior history."""
+def response_language_tag(prompt: str, preferred_language: str | None = None) -> str:
+    """Resolve a BCP-47 response language while preserving explicit turn overrides."""
     request = _current_request(prompt)
     lower = request.lower()
     if re.search(r"\b(?:reply|respond|answer|write)\s+in\s+(?:english|en)\b", lower):
-        return "English"
+        return EN_US
+    if re.search(r"\b(?:reply|respond|answer|write)\s+in\s+traditional chinese\b", lower):
+        configured = resolve_language(preferred_language)
+        return configured if configured in {ZH_HK, ZH_TW} else ZH_TW
     if re.search(r"\b(?:reply|respond|answer|write)\s+in\s+(?:chinese|simplified chinese|zh-cn)\b", lower):
-        return "Simplified Chinese"
+        return ZH_CN
     if any(term in request for term in ("\u7528\u82f1\u6587", "\u82f1\u6587\u56de\u590d", "\u56de\u7b54\u82f1\u6587")):
-        return "English"
+        return EN_US
+    if any(term in request for term in ("\u7e41\u9ad4\u4e2d\u6587", "\u7e41\u4f53\u4e2d\u6587", "\u7e41\u9ad4\u56de\u8986", "\u7e41\u4f53\u56de\u590d")):
+        configured = resolve_language(preferred_language)
+        return configured if configured in {ZH_HK, ZH_TW} else ZH_TW
     if any(term in request for term in ("\u7528\u4e2d\u6587", "\u4e2d\u6587\u56de\u590d", "\u7b80\u4f53\u4e2d\u6587", "\u7b80\u4f53\u56de\u590d")):
-        return "Simplified Chinese"
-    han_count = len(re.findall(r"[\u3400-\u9fff]", request))
-    latin_count = len(re.findall(r"[A-Za-z]", request))
-    if han_count >= 2:
-        return "Simplified Chinese"
-    if latin_count >= 2:
-        return "English"
-    return "Simplified Chinese"
+        return ZH_CN
+    preference = str(preferred_language or "").strip()
+    if not preference:
+        from agent_config import language_policy_config
+
+        preference = language_policy_config()["response_language"]
+    return resolve_language(normalize_language(preference))
 
 
-def _turn_language_policy(prompt: str) -> str:
-    language = response_language(prompt)
-    return f"Turn language: {language}. Respond in {language} unless the user explicitly requests another language."
+def response_language(prompt: str, preferred_language: str | None = None) -> str:
+    return language_name(response_language_tag(prompt, preferred_language))
 
 
-def apply_response_policy(prompt: str) -> str:
+def _turn_language_policy(prompt: str, preferred_language: str | None = None) -> str:
+    language_tag = response_language_tag(prompt, preferred_language)
+    language = language_name(language_tag)
+    return (
+        f"Turn language: {language} ({language_tag}). "
+        f"Respond in {language} unless the user explicitly requests another language."
+    )
+
+
+def response_policy_prompt(prompt: str = "", preferred_language: str | None = None) -> str:
+    return f"{CODEX_STYLE_RESPONSE_POLICY}\n- {_turn_language_policy(prompt, preferred_language)}"
+
+
+def apply_response_policy(prompt: str, preferred_language: str | None = None) -> str:
     value = str(prompt or "").strip()
     if not value or POLICY_MARKER in value:
         return value
-    return f"{CODEX_STYLE_RESPONSE_POLICY}\n- {_turn_language_policy(value)}\n\n{value}"
+    return f"{response_policy_prompt(value, preferred_language)}\n\n{value}"
 
 
-def compact_codex_turn_prompt(prompt: str) -> str:
+def compact_codex_turn_prompt(prompt: str, preferred_language: str | None = None) -> str:
     """Send only the new request when Codex already owns the conversation thread."""
     value = str(prompt or "").strip()
     request = value.rsplit(CURRENT_REQUEST_MARKER, 1)[1].strip() if CURRENT_REQUEST_MARKER in value else value
-    return f"SignalASI turn policy: {_turn_language_policy(request)}\n\n{request}"
+    return f"SignalASI turn policy: {_turn_language_policy(request, preferred_language)}\n\n{request}"
 
 
 def sanitize_assistant_response(response: str, hidden_input_paths: list[str] | None = None) -> str:

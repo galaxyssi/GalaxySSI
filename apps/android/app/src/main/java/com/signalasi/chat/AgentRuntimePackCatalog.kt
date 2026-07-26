@@ -324,7 +324,7 @@ internal class AgentRuntimePackDownloader(
         sourceCandidates = { url ->
             AgentRuntimeDistributionSources.downloadCandidates(
                 url,
-                AppLanguage.current(context.applicationContext)
+                AppLanguage.resolved(context.applicationContext)
             )
         }
     )
@@ -678,7 +678,7 @@ class AgentRuntimePackCatalogManager(
             }.getOrNull()
         }
         val candidates = if (url == null) {
-            AgentRuntimeDistributionSources.catalogCandidates(AppLanguage.current(appContext))
+            AgentRuntimeDistributionSources.catalogCandidates(AppLanguage.resolved(appContext))
         } else {
             listOf(url)
         }
