@@ -26,6 +26,7 @@ from desktop_native_tools import (
     DesktopNativeToolRegistry,
     _digest,
 )
+from web_intelligence import TOOL_OPERATIONS as WEB_INTELLIGENCE_OPERATIONS
 
 
 class DesktopNativeToolRegistryTests(unittest.TestCase):
@@ -77,10 +78,37 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             SYSTEM_STATUS, RUNTIME_STATUS, PROCESS_LIST, FILE_LIST, FILE_READ_TEXT, FILE_WRITE_TEXT,
             FILE_SHA256, ARCHIVE_CREATE, TERMINAL_RUN, OFFICE_INSPECT, OFFICE_CONVERT,
             APP_LIST, APP_LAUNCH, HOST_FILE_SEARCH, BROWSER_OPEN, WEB_FETCH,
+            *WEB_INTELLIGENCE_OPERATIONS.keys(),
         ):
             self.assertIn(tool_id, tools)
             self.assertEqual("desktop", tools[tool_id]["location"])
             self.assertFalse(tools[tool_id]["input_schema"]["additionalProperties"])
+
+    def test_web_intelligence_tools_delegate_to_bounded_native_service(self):
+        calls = []
+
+        class StubWebIntelligence:
+            def invoke(self, operation, arguments):
+                calls.append((operation, arguments))
+                return {
+                    "protocol": "signalasi.web-intelligence.v1",
+                    "operation": operation,
+                    "request_id": "web-test",
+                    "status": "completed",
+                    "started_at_millis": 1,
+                    "completed_at_millis": 2,
+                    "receipts": [],
+                    "results": [],
+                }
+
+        self.registry.web_intelligence = StubWebIntelligence()
+        tool_id = "signalasi.web.intelligence.search"
+        result = self.invoke(tool_id, {"query": "SignalASI", "limit": 5})
+
+        self.assertEqual("succeeded", result["status"])
+        self.assertEqual("signalasi.web-intelligence.v1", result["output"]["protocol"])
+        self.assertEqual([("search", {"query": "SignalASI", "limit": 5})], calls)
+        self.assertEqual("passed", result["verification"]["status"])
 
     def test_search_launch_and_browser_tools_are_bounded(self):
         source = self.workspace() / "release-notes.md"

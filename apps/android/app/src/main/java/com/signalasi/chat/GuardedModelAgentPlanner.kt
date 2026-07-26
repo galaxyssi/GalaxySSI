@@ -46,7 +46,11 @@ class GuardedModelAgentPlanner(
         val directInformationRoute = fallbackPlan.actions.isNotEmpty() && fallbackPlan.actions.all { action ->
             action.kind == AgentActionKind.CALL_CONNECTOR ||
                 (action.kind == AgentActionKind.CALL_NATIVE_TOOL &&
-                    action.parameters["tool_id"] == AgentWebMediaNativeTools.WEB_SEARCH)
+                    (
+                        action.parameters["tool_id"] == AgentWebMediaNativeTools.WEB_SEARCH ||
+                            action.parameters["tool_id"] in AgentWebIntelligenceNativeTools.toolIds
+                        )
+                    )
         }
         if (directInformationRoute &&
             AgentCapability.CODE !in requirements.capabilities &&
@@ -376,8 +380,12 @@ private object AgentModelPlanningPrompt {
         AgentPhoneNativeToolCatalog.WORKSPACE_ZIP_LIST,
         AgentPhoneNativeToolCatalog.WORKSPACE_ZIP_EXTRACT,
         AgentOnDeviceRuntimeTools.EXECUTE,
-        AgentWebMediaNativeTools.WEB_SEARCH,
-        AgentWebMediaNativeTools.WEB_FETCH,
+        AgentWebIntelligenceNativeTools.SEARCH,
+        AgentWebIntelligenceNativeTools.FETCH,
+        AgentWebIntelligenceNativeTools.RESEARCH,
+        AgentWebIntelligenceNativeTools.AGENT,
+        AgentWebIntelligenceNativeTools.FIND_SIMILAR,
+        AgentWebIntelligenceNativeTools.DIFF,
         AgentWebMediaNativeTools.WEB_DOWNLOAD
     )
 }

@@ -1,0 +1,31 @@
+{
+  "model": "signalasi-web-ranker",
+  "version": 1,
+  "license": "Apache-2.0",
+  "features": [
+    "bias",
+    "reciprocal_rank",
+    "lexical_alignment",
+    "engine_consensus",
+    "source_authority",
+    "freshness",
+    "title_exactness",
+    "query_coverage",
+    "url_quality",
+    "duplicate_penalty"
+  ],
+  "weights": [
+    -1.15,
+    2.35,
+    1.8,
+    1.25,
+    0.9,
+    0.55,
+    0.75,
+    1.1,
+    0.45,
+    -1.4
+  ],
+  "normalization": "sigmoid",
+  "notes": "Small local feature ranker used when a neural reranker is unavailable. Inputs and score decomposition remain inspectable."
+}

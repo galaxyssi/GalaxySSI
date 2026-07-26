@@ -33,6 +33,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from desktop_runtime import DesktopRuntimeManager, desktop_runtime_manager
+from web_intelligence import (
+    TOOL_OPERATIONS as WEB_INTELLIGENCE_OPERATIONS,
+    WebIntelligenceError,
+    WebIntelligenceService,
+)
 
 
 CONTRACT_VERSION = "signalasi.desktop-native-tools/1.0"
@@ -423,6 +428,169 @@ def _specs() -> tuple[DesktopToolSpec, ...]:
             confirmation="write",
             availability=_office_availability,
         ),
+    ) + _web_intelligence_specs()
+
+
+def _web_intelligence_specs() -> tuple[DesktopToolSpec, ...]:
+    request_id = _string(max_length=96)
+    query = _string(max_length=4_096)
+    url = _string(max_length=4_096)
+    engines = _array(_string(max_length=64), 32)
+    verticals = _array(_string(max_length=32), 10)
+    common = {"request_id": request_id}
+    return (
+        DesktopToolSpec(
+            "signalasi.web.intelligence.search",
+            "Search the web intelligence network",
+            "Fans a query across selected public sources, then deduplicates and locally reranks evidence with source receipts.",
+            _object_schema({
+                **common,
+                "query": query,
+                "limit": _integer(1, 100),
+                "engine_fanout": _integer(1, 32),
+                "engines": engines,
+                "verticals": verticals,
+                "freshness": _string(max_length=32),
+                "timeout_seconds": _integer(1, 60),
+                "use_cache": {"type": "boolean"},
+            }, ("query",)),
+            capabilities=("web.search", "web.evidence.rank", "web.source.receipts"),
+            timeout_ms=65_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.fetch",
+            "Fetch and cache public evidence",
+            "Fetches one public page, extracts readable content, and stores a verified local evidence snapshot.",
+            _object_schema({
+                **common,
+                "url": url,
+                "timeout_seconds": _integer(1, 120),
+                "max_bytes": _integer(1_024, 2 * 1024 * 1024),
+                "cache_ttl_seconds": _integer(60, 30 * 24 * 60 * 60),
+                "force": {"type": "boolean"},
+            }, ("url",)),
+            capabilities=("web.fetch", "web.extract", "web.cache"),
+            timeout_ms=125_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.crawl",
+            "Crawl a bounded public site",
+            "Crawls a bounded same-origin site graph with explicit page, depth, pattern, and time budgets.",
+            _object_schema({
+                **common,
+                "url": url,
+                "max_pages": _integer(1, 100),
+                "max_depth": _integer(0, 5),
+                "same_origin": {"type": "boolean"},
+                "include_pattern": _string(max_length=512),
+                "exclude_pattern": _string(max_length=512),
+                "timeout_seconds": _integer(1, 600),
+            }, ("url",)),
+            capabilities=("web.crawl", "web.extract", "web.cache"),
+            timeout_ms=605_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.extract",
+            "Extract structured public content",
+            "Extracts readable text, metadata, JSON-LD, links, and selected fields from a URL or supplied text.",
+            _object_schema({
+                **common,
+                "url": url,
+                "content": _string(max_length=512 * 1024),
+                "title": _string(max_length=2_048),
+                "source_url": url,
+                "fields": _array(_string(max_length=128), 100),
+                "timeout_seconds": _integer(1, 120),
+                "force": {"type": "boolean"},
+            }),
+            capabilities=("web.extract", "web.structured_data"),
+            timeout_ms=125_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.cache",
+            "Query local web evidence",
+            "Queries, reads, reports, or cleans the persistent local keyword and vector evidence cache.",
+            _object_schema({
+                **common,
+                "action": _string(max_length=32, enum=("status", "query", "get", "clear", "clear_expired")),
+                "query": query,
+                "url": url,
+                "limit": _integer(1, 100),
+            }),
+            capabilities=("web.cache", "web.offline_search"),
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.find_similar",
+            "Find similar public evidence",
+            "Finds related local evidence with a tiny on-device embedding and optionally fills gaps from public search.",
+            _object_schema({
+                **common,
+                "query": query,
+                "url": url,
+                "limit": _integer(1, 100),
+                "search_web": {"type": "boolean"},
+                "timeout_seconds": _integer(1, 120),
+            }),
+            capabilities=("web.similarity", "web.cache", "web.search"),
+            timeout_ms=125_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.research",
+            "Research with cited public evidence",
+            "Decomposes a question, gathers diverse evidence, fetches sources, and emits a cited brief for the selected Agent.",
+            _object_schema({
+                **common,
+                "query": query,
+                "max_rounds": _integer(1, 8),
+                "source_budget": _integer(2, 40),
+                "timeout_seconds": _integer(5, 900),
+            }, ("query",)),
+            capabilities=("web.research", "web.search", "web.fetch", "web.citations"),
+            timeout_ms=905_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.agent",
+            "Run an autonomous evidence-gathering loop",
+            "Runs bounded multi-round search, gap discovery, source fetch, and citation assembly without hiding source failures.",
+            _object_schema({
+                **common,
+                "query": query,
+                "max_rounds": _integer(1, 8),
+                "source_budget": _integer(2, 40),
+                "timeout_seconds": _integer(5, 900),
+            }, ("query",)),
+            capabilities=("web.agent", "web.research", "web.replan", "web.citations"),
+            timeout_ms=905_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.diff",
+            "Detect public page changes",
+            "Fetches a fresh snapshot and compares it with the prior verified local snapshot.",
+            _object_schema({
+                **common,
+                "url": url,
+                "timeout_seconds": _integer(1, 120),
+            }, ("url",)),
+            capabilities=("web.diff", "web.cache"),
+            timeout_ms=125_000,
+        ),
+        DesktopToolSpec(
+            "signalasi.web.intelligence.watch",
+            "Manage persistent public page watches",
+            "Creates, lists, checks, and removes bounded persistent page-change watches.",
+            _object_schema({
+                **common,
+                "action": _string(max_length=32, enum=("create", "list", "remove", "check", "check_due")),
+                "watch_id": _string(max_length=96),
+                "url": url,
+                "interval_minutes": _integer(15, 10_080),
+                "enabled": {"type": "boolean"},
+                "limit": _integer(1, 100),
+                "timeout_seconds": _integer(1, 120),
+            }),
+            capabilities=("web.watch", "web.diff", "web.cache"),
+            timeout_ms=125_000,
+        ),
     )
 
 
@@ -569,6 +737,7 @@ class DesktopNativeToolRegistry:
         app_launcher: Callable[[dict[str, str]], None] | None = None,
         browser_opener: Callable[[str], bool] | None = None,
         runtime_manager: DesktopRuntimeManager | None = None,
+        web_intelligence_service: WebIntelligenceService | None = None,
     ) -> None:
         root = Path(state_root) if state_root else Path(
             os.environ.get("SIGNALASI_STATE_DIR") or Path(os.environ.get("APPDATA") or Path.home()) / "SignalASI"
@@ -587,6 +756,9 @@ class DesktopNativeToolRegistry:
         self.app_launcher = app_launcher or self._launch_catalog_entry
         self.browser_opener = browser_opener or webbrowser.open
         self.runtime_manager = runtime_manager or desktop_runtime_manager()
+        self.web_intelligence = web_intelligence_service or WebIntelligenceService(
+            root / "web-intelligence"
+        )
         self.specs = {spec.tool_id: spec for spec in _specs()}
         self.handlers: dict[str, Callable[[dict[str, Any], dict[str, Any]], DesktopToolExecution]] = {
             SYSTEM_STATUS: self._system_status,
@@ -606,6 +778,13 @@ class DesktopNativeToolRegistry:
             OFFICE_INSPECT: self._office_inspect,
             OFFICE_CONVERT: self._office_convert,
         }
+        self.handlers.update({
+            tool_id: (
+                lambda arguments, context, operation=operation:
+                self._web_intelligence(operation, arguments, context)
+            )
+            for tool_id, operation in WEB_INTELLIGENCE_OPERATIONS.items()
+        })
         self._process_lock = threading.RLock()
         self._processes: dict[str, subprocess.Popen[str]] = {}
         self._cancelled: set[str] = set()
@@ -1122,6 +1301,82 @@ class DesktopNativeToolRegistry:
             "fetched_at": int(self.now() * 1_000),
         }
         return DesktopToolExecution(output, f"Fetched {len(raw)} bytes from public web", verification_evidence={"url": final_url, "status_code": status})
+
+    def _web_intelligence(
+        self,
+        operation: str,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+    ) -> DesktopToolExecution:
+        invocation_id = str(context.get("invocation_id") or "")
+        if invocation_id and self._is_cancelled(invocation_id):
+            raise DesktopNativeToolError("cancelled", "Web intelligence task was cancelled")
+        try:
+            output = self.web_intelligence.invoke(operation, arguments)
+        except WebIntelligenceError as exc:
+            raise DesktopNativeToolError(
+                exc.code,
+                str(exc),
+                retryable=exc.retryable,
+                details=exc.details,
+            ) from exc
+        bounded = self._bounded_web_intelligence_output(output)
+        status = str(bounded.get("status") or "completed")
+        message = {
+            "search": "Web intelligence search completed",
+            "fetch": "Public evidence fetched and cached",
+            "crawl": "Bounded site crawl completed",
+            "extract": "Structured content extraction completed",
+            "cache": "Local web evidence cache query completed",
+            "find_similar": "Similar evidence search completed",
+            "research": "Cited research brief prepared",
+            "agent": "Autonomous evidence-gathering loop completed",
+            "diff": "Page change comparison completed",
+            "watch": "Page watch operation completed",
+        }.get(operation, "Web intelligence operation completed")
+        return DesktopToolExecution(
+            bounded,
+            message,
+            verification_status="passed" if status in {"completed", "partial"} else "failed",
+            verification_message="Source receipts and content hashes are included in the result",
+            verification_evidence={
+                "protocol": bounded.get("protocol"),
+                "operation": operation,
+                "status": status,
+                "receipt_count": len(bounded.get("receipts") or []),
+            },
+        )
+
+    @staticmethod
+    def _bounded_web_intelligence_output(output: dict[str, Any]) -> dict[str, Any]:
+        cloned = json.loads(json.dumps(output, ensure_ascii=False))
+        if len(_canonical_json(cloned).encode("utf-8")) <= MAX_JSON_BYTES:
+            return cloned
+        documents = cloned.get("documents")
+        if isinstance(documents, list):
+            per_document = 96_000 if len(documents) <= 1 else max(2_000, 160_000 // max(1, len(documents)))
+            for document in documents:
+                if not isinstance(document, dict):
+                    continue
+                content = str(document.get("content") or "")
+                if len(content) > per_document:
+                    document["content"] = content[:per_document]
+                    document["content_truncated"] = True
+                links = document.get("links")
+                if isinstance(links, list) and len(links) > 100:
+                    document["links"] = links[:100]
+                    document["links_truncated"] = True
+        if isinstance(cloned.get("brief"), str):
+            cloned["brief"] = cloned["brief"][:64_000]
+        if isinstance(cloned.get("results"), list):
+            cloned["results"] = cloned["results"][:100]
+        if isinstance(cloned.get("receipts"), list):
+            cloned["receipts"] = cloned["receipts"][:128]
+        cloned.setdefault("metadata", {})["output_truncated"] = True
+        if len(_canonical_json(cloned).encode("utf-8")) > MAX_JSON_BYTES:
+            cloned["documents"] = []
+            cloned["metadata"]["documents_retained_in_local_cache"] = True
+        return cloned
 
     def _file_list(self, arguments: dict[str, Any], _context: dict[str, Any]) -> DesktopToolExecution:
         workspace_id = arguments["workspace_id"]
