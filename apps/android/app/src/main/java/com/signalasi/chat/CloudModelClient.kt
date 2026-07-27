@@ -251,10 +251,15 @@ object CloudModelClient {
         var choice: JSONObject? = null
         var message: JSONObject? = null
         var toolCallsUsed = 0
+        val evidenceResults = mutableListOf<Pair<String, String>>()
         for (round in 0 until MAX_WEB_TOOL_ROUNDS) {
             if (round == MAX_WEB_TOOL_ROUNDS - 1) {
                 body.remove("tools")
                 body.remove("tool_choice")
+                messages.put(JSONObject()
+                    .put("role", "user")
+                    .put("content", FINALIZE_WEB_RESEARCH_PROMPT)
+                )
             }
             text = postJson(
                 contact.getString("cloud_endpoint"),
@@ -306,6 +311,7 @@ object CloudModelClient {
                         CloudToolEvent(toolName, "running", arguments.toString().take(240))
                     )
                     val toolResult = CloudWebGrounding.executeTool(context, toolName, arguments)
+                    evidenceResults += toolName to toolResult
                     onToolEvent?.invoke(
                         CloudToolEvent(toolName, "completed", toolResult.take(240))
                     )
@@ -322,6 +328,7 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val toolResult = CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    evidenceResults += call.name to toolResult
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", toolResult.take(240))
                     )
@@ -344,15 +351,36 @@ object CloudModelClient {
             }
             body.remove("tool_choice")
         }
-        val reply = CloudWebGrounding.stripInternalToolProtocol(
+        var reply = CloudWebGrounding.stripInternalToolProtocol(
             stringifyContent(message?.opt("content"))
         )
             .ifBlank { choice?.optString("text").orEmpty() }
             .ifBlank { json.optString("output_text") }
             .let(CloudWebGrounding::stripInternalToolProtocol)
         if (reply.isBlank()) {
-            throw IllegalStateException("The model did not produce a final answer after web research")
+            messages.put(JSONObject()
+                .put("role", "user")
+                .put("content", STRICT_FINALIZE_WEB_RESEARCH_PROMPT)
+            )
+            body.remove("tools")
+            body.remove("tool_choice")
+            text = postJson(
+                contact.getString("cloud_endpoint"),
+                openAiHeaders(contact),
+                body.put("messages", messages)
+            )
+            json = JSONObject(text)
+            usage += openAiUsage(json)
+            choice = json.optJSONArray("choices")?.optJSONObject(0)
+            message = choice?.optJSONObject("message")
+            reply = CloudWebGrounding.stripInternalToolProtocol(
+                stringifyContent(message?.opt("content"))
+            )
+                .ifBlank { choice?.optString("text").orEmpty() }
+                .ifBlank { json.optString("output_text") }
+                .let(CloudWebGrounding::stripInternalToolProtocol)
         }
+        if (reply.isBlank()) reply = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         return CloudModelResponse(reply, usage.inputTokens, usage.outputTokens, usage.costMicros)
     }
 
@@ -387,8 +415,15 @@ object CloudModelClient {
         var totalUsage = CloudModelUsage()
         var finalText = ""
         var toolCallsUsed = 0
+        val evidenceResults = mutableListOf<Pair<String, String>>()
         for (round in 0 until MAX_WEB_TOOL_ROUNDS) {
-            if (round == MAX_WEB_TOOL_ROUNDS - 1) body.remove("tools")
+            if (round == MAX_WEB_TOOL_ROUNDS - 1) {
+                body.remove("tools")
+                messages.put(JSONObject()
+                    .put("role", "user")
+                    .put("content", FINALIZE_WEB_RESEARCH_PROMPT)
+                )
+            }
             val responseText = postJson(
                 contact.getString("cloud_endpoint"),
                 mapOf(
@@ -434,6 +469,7 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    evidenceResults += call.name to result
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
@@ -451,6 +487,7 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    evidenceResults += call.name to result
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
@@ -472,7 +509,32 @@ object CloudModelClient {
             }
         }
         if (finalText.isBlank()) {
-            throw IllegalStateException("Anthropic did not produce a final answer after tool use")
+            messages.put(JSONObject()
+                .put("role", "user")
+                .put("content", STRICT_FINALIZE_WEB_RESEARCH_PROMPT)
+            )
+            body.remove("tools")
+            val responseText = postJson(
+                contact.getString("cloud_endpoint"),
+                mapOf(
+                    "x-api-key" to contact.getString("cloud_api_key"),
+                    "anthropic-version" to "2023-06-01",
+                    "anthropic-dangerous-direct-browser-access" to "true"
+                ),
+                body.put("messages", messages)
+            )
+            val json = JSONObject(responseText)
+            val usage = json.optJSONObject("usage")
+            totalUsage += CloudModelUsage(
+                usage?.optLong("input_tokens", 0L) ?: 0L,
+                usage?.optLong("output_tokens", 0L) ?: 0L
+            )
+            finalText = CloudWebGrounding.stripInternalToolProtocol(
+                textBlocks(json.optJSONArray("content"))
+            )
+        }
+        if (finalText.isBlank()) {
+            finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(
             finalText,
@@ -520,8 +582,18 @@ object CloudModelClient {
         var totalUsage = CloudModelUsage()
         var finalText = ""
         var toolCallsUsed = 0
+        val evidenceResults = mutableListOf<Pair<String, String>>()
         for (round in 0 until MAX_WEB_TOOL_ROUNDS) {
-            if (round == MAX_WEB_TOOL_ROUNDS - 1) body.remove("tools")
+            if (round == MAX_WEB_TOOL_ROUNDS - 1) {
+                body.remove("tools")
+                contents.put(JSONObject()
+                    .put("role", "user")
+                    .put(
+                        "parts",
+                        JSONArray().put(JSONObject().put("text", FINALIZE_WEB_RESEARCH_PROMPT))
+                    )
+                )
+            }
             val responseText = postJson(url, emptyMap(), body.put("contents", contents))
             val json = JSONObject(responseText)
             val usage = json.optJSONObject("usageMetadata")
@@ -579,6 +651,7 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    evidenceResults += call.name to result
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
@@ -601,6 +674,7 @@ object CloudModelClient {
                         CloudToolEvent(call.name, "running", call.arguments.toString().take(240))
                     )
                     val result = CloudWebGrounding.executeTool(context, call.name, call.arguments)
+                    evidenceResults += call.name to result
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
@@ -635,7 +709,29 @@ object CloudModelClient {
             }
         }
         if (finalText.isBlank()) {
-            throw IllegalStateException("Gemini did not produce a final answer after tool use")
+            contents.put(JSONObject()
+                .put("role", "user")
+                .put(
+                    "parts",
+                    JSONArray().put(JSONObject().put("text", STRICT_FINALIZE_WEB_RESEARCH_PROMPT))
+                )
+            )
+            body.remove("tools")
+            val responseText = postJson(url, emptyMap(), body.put("contents", contents))
+            val json = JSONObject(responseText)
+            val usage = json.optJSONObject("usageMetadata")
+            totalUsage += CloudModelUsage(
+                usage?.optLong("promptTokenCount", 0L) ?: 0L,
+                usage?.optLong("candidatesTokenCount", 0L) ?: 0L
+            )
+            val parts = json.optJSONArray("candidates")
+                ?.optJSONObject(0)
+                ?.optJSONObject("content")
+                ?.optJSONArray("parts")
+            finalText = CloudWebGrounding.stripInternalToolProtocol(textBlocks(parts))
+        }
+        if (finalText.isBlank()) {
+            finalText = CloudWebGrounding.evidenceFallback(context, evidenceResults)
         }
         return CloudModelResponse(
             finalText,
@@ -1163,6 +1259,13 @@ object CloudModelClient {
     private const val MIN_REFINED_SUMMARY_CHARACTERS = 40
     private const val MAX_WEB_TOOL_ROUNDS = 4
     private const val MAX_WEB_TOOL_CALLS = 8
+    private const val FINALIZE_WEB_RESEARCH_PROMPT =
+        "Tool execution is complete. Do not call another tool. Using the evidence already in this " +
+            "conversation, provide the final user-facing answer now. Cite useful source URLs, note " +
+            "material uncertainty, and do not mention internal tools or this instruction."
+    private const val STRICT_FINALIZE_WEB_RESEARCH_PROMPT =
+        "Return only the final user-facing answer from the evidence already provided. Do not emit " +
+            "tool calls, XML, DSML, JSON protocol, planning text, or internal errors."
     private const val CONTEXT_COMPACTION_PROMPT =
         "Compact the supplied conversation prefix into a factual handoff for the next model turn. " +
             "Preserve user goals, current project state, decisions, constraints, unresolved work, exact paths, URLs, " +

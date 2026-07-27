@@ -223,7 +223,8 @@ class AgentBoundedWebService(
         maxBytes: Long = policy.maxFetchBytes,
         timeoutMillis: Long = policy.maxTimeoutMillis,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
-        checkpoint: () -> Unit = {}
+        checkpoint: () -> Unit = {},
+        headers: Map<String, String> = emptyMap()
     ): AgentWebResource {
         if (maxBytes !in 1..policy.maxFetchBytes) {
             throw AgentWebMediaException("invalid_limit", "Fetch limit must be between 1 and ${policy.maxFetchBytes} bytes")
@@ -233,6 +234,7 @@ class AgentBoundedWebService(
             url,
             maxBytes,
             timeoutMillis,
+            headers,
             cancellationToken,
             checkpoint,
             ::isFetchContentType
@@ -257,6 +259,7 @@ class AgentBoundedWebService(
             url,
             maxBytes,
             timeoutMillis,
+            emptyMap(),
             cancellationToken,
             checkpoint,
             ::isDownloadContentType
@@ -268,6 +271,7 @@ class AgentBoundedWebService(
         url: String,
         maxBodyBytes: Long,
         timeoutMillis: Long,
+        additionalHeaders: Map<String, String> = emptyMap(),
         cancellationToken: AgentNativeToolCancellationToken,
         checkpoint: () -> Unit,
         contentTypeAllowed: (String) -> Boolean = { true }
@@ -299,7 +303,14 @@ class AgentBoundedWebService(
                     AgentWebTransportRequest(
                         method = method,
                         uri = current,
-                        headers = requestHeaders(method),
+                        headers = requestHeaders(
+                            method,
+                            if (current.host.equals(initial.host, ignoreCase = true)) {
+                                additionalHeaders
+                            } else {
+                                emptyMap()
+                            }
+                        ),
                         resolvedAddresses = addresses,
                         timeoutMillis = remaining,
                         maxBodyBytes = maxBodyBytes,
@@ -471,11 +482,28 @@ class AgentBoundedWebService(
         return addresses
     }
 
-    private fun requestHeaders(method: AgentWebMethod): Map<String, String> = mapOf(
+    private fun requestHeaders(
+        method: AgentWebMethod,
+        additional: Map<String, String>
+    ): Map<String, String> = linkedMapOf(
         "Accept" to if (method == AgentWebMethod.HEAD) "*/*" else "text/*, application/json, application/xml;q=0.9, */*;q=0.5",
         "Accept-Encoding" to "identity",
         "User-Agent" to "SignalASI-Android-NativeTools/1.0"
-    )
+    ).apply {
+        additional.forEach { (rawName, rawValue) ->
+            val name = rawName.trim()
+            val value = rawValue.trim()
+            if (
+                name.lowercase(Locale.ROOT) in ALLOWED_ADDITIONAL_REQUEST_HEADERS &&
+                value.length in 1..MAX_HEADER_VALUE_CHARS &&
+                '\r' !in value &&
+                '\n' !in value
+            ) {
+                put(name, value)
+            }
+        }
+        put("Accept-Encoding", "identity")
+    }
 
     private fun contentLength(headers: Map<String, List<String>>): Long? {
         val value = header(headers, "Content-Length") ?: return null
@@ -494,6 +522,15 @@ class AgentBoundedWebService(
 
     companion object {
         private const val MAX_HEADER_VALUE_CHARS = 2_048
+        private val ALLOWED_ADDITIONAL_REQUEST_HEADERS = setOf(
+            "accept",
+            "api-key",
+            "authorization",
+            "referer",
+            "user-agent",
+            "x-github-api-version",
+            "x-subscription-token"
+        )
         private val REDIRECT_STATUS_CODES = setOf(301, 302, 303, 307, 308)
         private val SELECTED_RESPONSE_HEADERS = listOf(
             "Content-Type",

@@ -107,6 +107,8 @@
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible custom endpoint</string>
     <string name="cloud_request_failed">Cloud model call failed: %1$s</string>
     <string name="cloud_unknown_error">Unknown error</string>
+    <string name="cloud_web_fallback_sources">I found these current sources:</string>
+    <string name="cloud_web_fallback_empty">The live search finished, but no reliable source could be summarized. Please try again.</string>
     <string name="discover_segment_all">All</string>
     <string name="discover_segment_local">Local</string>
     <string name="discover_segment_official">Official</string>
@@ -1919,4 +1921,28 @@
     <string name="cc_evolution_remote_candidate_ready">A Desktop evolution candidate is ready for review</string>
     <string name="cc_evolution_remote_failed">A Desktop evolution attempt needs attention</string>
     <string name="cc_evolution_remote_command_failed">Desktop evolution command failed</string>
+    <string name="web_sources_title">Web intelligence sources</string>
+    <string name="web_sources_subtitle">287 sources across daily life, technology, research, media, and local evidence</string>
+    <string name="web_sources_hero_title">SignalASI Web Intelligence</string>
+    <string name="web_sources_hero_subtitle">Independent adapters with encrypted credentials and per-source health routing</string>
+    <string name="web_sources_count">%1$d sources</string>
+    <string name="web_sources_domain_coverage">Domain coverage</string>
+    <string name="web_sources_domain_coverage_subtitle">Each domain has five to ten independently routed sources</string>
+    <string name="web_sources_category_count">%1$d categories</string>
+    <string name="web_sources_learning">Source learning</string>
+    <string name="web_sources_learning_subtitle">New domains are promoted only after repeated independent evidence</string>
+    <string name="web_sources_learning_value">%1$d verified · %2$d candidates</string>
+    <string name="web_sources_compatibility">Wigolo source coverage</string>
+    <string name="web_sources_compatibility_subtitle">All 18 public Wigolo adapters are available, plus SignalASI sources</string>
+    <string name="web_sources_compatibility_value">18 / 18</string>
+    <string name="web_sources_brave_key">Brave Search API key</string>
+    <string name="web_sources_brave_key_subtitle">Optional; enables Brave Image search</string>
+    <string name="web_sources_github_token">GitHub token</string>
+    <string name="web_sources_github_token_subtitle">Optional; raises repository and code-search rate limits</string>
+    <string name="web_sources_configured">Configured</string>
+    <string name="web_sources_not_configured">Not configured</string>
+    <string name="web_sources_secret_hint">Enter a new value, or use Clear to remove the saved credential</string>
+    <string name="web_sources_clear">Clear</string>
+    <string name="web_sources_saved">Source credential saved</string>
+    <string name="web_sources_cleared">Source credential removed</string>
 </resources>

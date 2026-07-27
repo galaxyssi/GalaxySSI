@@ -95,6 +95,27 @@ class AgentConfigStorageTest(unittest.TestCase):
             self.assertEqual("en-US", persisted["tts_language"])
             self.assertEqual(persisted, effective)
 
+    def test_web_source_credentials_round_trip_without_exposing_secrets(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory) / "state"
+            with patch.dict(
+                os.environ,
+                {"SIGNALASI_STATE_DIR": str(state_dir), "SIGNALASI_CONFIG_PATH": ""},
+                clear=False,
+            ):
+                masked = agent_config.save_config({
+                    "web_search": {
+                        "brave_api_key": "brave-secret",
+                        "github_token": "github-secret",
+                    }
+                })
+                persisted = agent_config.web_search_config()
+
+            self.assertEqual(agent_config.MASK, masked["web_search"]["brave_api_key"])
+            self.assertEqual(agent_config.MASK, masked["web_search"]["github_token"])
+            self.assertEqual("brave-secret", persisted["brave_api_key"])
+            self.assertEqual("github-secret", persisted["github_token"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_output_tokens": 4_096,
         "context_model_summary": True,
     },
+    "web_search": {
+        "brave_api_key": "",
+        "github_token": "",
+    },
     "language_policy": {
         "response_language": "auto",
         "asr_language": "auto",
@@ -69,9 +73,11 @@ def load_config(mask_secrets: bool = False) -> dict[str, Any]:
             pass
     if mask_secrets:
         for section in ("local_model", "cloud_model"):
-            key = config.get(section, {}).get("api_key", "")
-            if key:
+            if config.get(section, {}).get("api_key", ""):
                 config[section]["api_key"] = MASK
+        for key in ("brave_api_key", "github_token"):
+            if config.get("web_search", {}).get(key, ""):
+                config["web_search"][key] = MASK
     return config
 
 
@@ -84,6 +90,9 @@ def save_config(incoming: dict[str, Any]) -> dict[str, Any]:
     for section in ("local_model", "cloud_model"):
         if sanitized.get(section, {}).get("api_key") == MASK:
             sanitized[section]["api_key"] = current.get(section, {}).get("api_key", "")
+    for key in ("brave_api_key", "github_token"):
+        if sanitized.get("web_search", {}).get(key) == MASK:
+            sanitized["web_search"][key] = current.get("web_search", {}).get(key, "")
 
     from language_policy import normalize_language
 
@@ -153,6 +162,14 @@ def language_policy_config() -> dict[str, str]:
         "response_language": normalize_language(data.get("response_language")),
         "asr_language": normalize_language(data.get("asr_language")),
         "tts_language": normalize_language(data.get("tts_language")),
+    }
+
+
+def web_search_config() -> dict[str, str]:
+    data = load_config().get("web_search", {})
+    return {
+        "brave_api_key": str(data.get("brave_api_key", "")).strip(),
+        "github_token": str(data.get("github_token", "")).strip(),
     }
 
 

@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.security.MessageDigest
 import java.util.ArrayDeque
 
 class AgentWebIntelligenceTest {
@@ -12,13 +13,135 @@ class AgentWebIntelligenceTest {
     fun catalogExceedsEighteenSourcesAndCoversDistinctVerticals() {
         val entries = AgentWebIntelligenceEngineCatalog.entries
 
-        assertTrue(entries.size > 18)
+        assertEquals(287, entries.size)
         assertEquals(entries.size, entries.map { it.id }.distinct().size)
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.NEWS })
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.CODE })
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.ACADEMIC })
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.COMMUNITY })
         assertTrue(entries.any { it.vertical == AgentWebIntelligenceVertical.DOCS })
+        assertTrue(
+            setOf(
+                "bing", "bing_news", "brave", "brave_image", "duckduckgo",
+                "duckduckgo_image", "mojeek", "marginalia", "wikipedia",
+                "stackoverflow", "hacker_news", "lobsters", "github_code",
+                "devdocs", "mdn", "arxiv", "semantic_scholar", "crates_io"
+            ).all { expected -> entries.any { it.id == expected } }
+        )
+        val counts = entries.filter(AgentWebIntelligenceEngineSpec::enabledByDefault)
+            .groupingBy(AgentWebIntelligenceEngineSpec::vertical)
+            .eachCount()
+        AgentWebIntelligenceVertical.entries
+            .filterNot { it == AgentWebIntelligenceVertical.LOCAL }
+            .forEach { vertical ->
+                assertTrue(
+                    "${vertical.wireValue} must expose five to ten sources",
+                    counts.getOrDefault(vertical, 0) in 5..10
+                )
+            }
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(entries.map { it.id }.sorted().joinToString("\n").toByteArray())
+            .joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+        assertEquals(
+            "ebe2e39787edab5166db322b0322e1440ccc733a150db5375443e6bd721f56a9",
+            digest
+        )
+    }
+
+    @Test
+    fun wigoloGapSourcesUseNativeAdaptersAndPreserveImageMetadata() {
+        val fetcher = WigoloFetcher()
+        val coordinator = AgentWebIntelligenceSearchCoordinator(
+            fetcher = fetcher,
+            credentialProvider = AgentWebIntelligenceCredentialProvider { key ->
+                if (key == AgentEncryptedWebIntelligenceCredentials.BRAVE_API_KEY) {
+                    "brave-secret"
+                } else {
+                    ""
+                }
+            }
+        )
+
+        val result = coordinator.search(
+            query = "React SignalASI image code",
+            limit = 10,
+            engineFanout = 5,
+            requestedEngines = listOf(
+                "brave_image",
+                "duckduckgo_image",
+                "marginalia",
+                "devdocs",
+                "github_code"
+            ),
+            timeoutMillis = 5_000L
+        )
+
+        assertEquals("completed", result.status)
+        val engines = result.results.flatMap { it.engineRanks.keys }.toSet()
+        assertTrue(
+            setOf(
+                "brave_image",
+                "duckduckgo_image",
+                "marginalia",
+                "devdocs",
+                "github_code"
+            ).all(engines::contains)
+        )
+        val image = result.results.first { it.vertical == AgentWebIntelligenceVertical.IMAGE }
+        val public = image.publicValue(1)
+        assertTrue(public["image_url"].toString().startsWith("https://cdn.example.test/"))
+        assertTrue((public["image_width"] as Int) > 0)
+        assertTrue(fetcher.requests.any {
+            it.url.contains("api.search.brave.com") &&
+                it.headers["X-Subscription-Token"] == "brave-secret"
+        })
+        assertTrue(fetcher.requests.any {
+            it.url.contains("duckduckgo.com/i.js") &&
+                it.headers.containsKey("Referer")
+        })
+    }
+
+    @Test
+    fun braveImageIsSkippedWithoutCredentialDuringAdaptiveRouting() {
+        val coordinator = AgentWebIntelligenceSearchCoordinator(FixedFetcher())
+
+        val engines = coordinator.selectEngines(
+            query = "SignalASI images",
+            fanout = 32,
+            requested = emptyList(),
+            verticals = setOf(AgentWebIntelligenceVertical.IMAGE)
+        )
+
+        assertFalse("brave_image" in engines)
+        assertTrue("duckduckgo_image" in engines)
+    }
+
+    @Test
+    fun indexedSourceRejectsResultsOutsideItsDeclaredDomain() {
+        val coordinator = AgentWebIntelligenceSearchCoordinator(
+            FixedFetcher(
+                response(
+                    "https://html.duckduckgo.com/html/?q=travel",
+                    "text/html",
+                    """
+                    <a href="https://www.tripadvisor.com/Hotel_Review-test">Trusted result</a>
+                    <a href="https://attacker.example/fake">Injected result</a>
+                    """.trimIndent()
+                )
+            )
+        )
+
+        val result = coordinator.search(
+            query = "Shanghai hotel",
+            requestedEngines = listOf("tripadvisor"),
+            engineFanout = 1
+        )
+
+        assertEquals(1, result.results.size)
+        assertEquals(
+            "tripadvisor.com",
+            java.net.URI(result.results.single().url).host.removePrefix("www.")
+        )
     }
 
     @Test
@@ -318,6 +441,75 @@ class AgentWebIntelligenceTest {
         assertEquals(1, (metadata["source_health"] as List<*>).size)
     }
 
+    @Test
+    fun repeatedIndependentEvidencePromotesARestrictedLearnedSource() {
+        val store = AgentInMemoryWebIntelligenceStore { 500_000L }
+        val result = AgentWebIntelligenceResult(
+            title = "Independent travel guide",
+            url = "https://independent-travel.example/shanghai",
+            excerpt = "A current destination guide",
+            publishedAt = "",
+            vertical = AgentWebIntelligenceVertical.TRAVEL
+        )
+
+        store.observeSourceCandidates("Shanghai hotel guide", setOf("travel"), listOf(result))
+        store.observeSourceCandidates("Shanghai visitor itinerary", setOf("travel"), listOf(result))
+        store.observeSourceCandidates("Shanghai hotel guide", setOf("travel"), listOf(result))
+
+        val learned = store.learnedSources().single()
+        assertEquals("verified", learned.status)
+        assertEquals(3, learned.observations)
+        assertEquals(2, learned.queryFingerprints.size)
+        assertEquals(setOf("independent-travel.example"), learned.toEngineSpec(0).allowedHosts)
+
+        val coordinator = AgentWebIntelligenceSearchCoordinator(
+            fetcher = FixedFetcher(),
+            learnedSourceProvider = store::learnedSources
+        )
+        assertTrue(
+            learned.sourceId in coordinator.selectEngines(
+                query = "Shanghai travel",
+                fanout = 32,
+                requested = emptyList(),
+                verticals = setOf(AgentWebIntelligenceVertical.TRAVEL)
+            )
+        )
+    }
+
+    @Test
+    fun learnedCategoryTagsCanGrowBeyondTheBuiltInTaxonomy() {
+        val store = AgentInMemoryWebIntelligenceStore { 600_000L }
+        val result = AgentWebIntelligenceResult(
+            title = "Robotics field notes",
+            url = "https://robotics-field-notes.example/latest",
+            excerpt = "Independent robotics engineering evidence",
+            publishedAt = "",
+            vertical = AgentWebIntelligenceVertical.TECHNOLOGY
+        )
+        store.observeSourceCandidates("robot motion planning", setOf("robotics"), listOf(result))
+        store.observeSourceCandidates("robot actuator guide", setOf("robotics"), listOf(result))
+        store.observeSourceCandidates("robot motion planning", setOf("robotics"), listOf(result))
+
+        val learned = store.learnedSources().single()
+        val coordinator = AgentWebIntelligenceSearchCoordinator(
+            fetcher = FixedFetcher(),
+            learnedSourceProvider = store::learnedSources
+        )
+
+        assertEquals("verified", learned.status)
+        assertTrue("robotics" in learned.categoryTags)
+        assertEquals(
+            learned.sourceId,
+            coordinator.selectEngines(
+                query = "specialized field notes",
+                fanout = 1,
+                requested = emptyList(),
+                verticals = emptySet(),
+                categoryTags = setOf("robotics")
+            ).single()
+        )
+    }
+
     private fun raw(engine: String, rank: Int, title: String, url: String) =
         AgentWebIntelligenceRawResult(engine, rank, title, url, "Evidence")
 
@@ -377,5 +569,85 @@ class AgentWebIntelligenceTest {
             checkpoint()
             return responses.removeFirst()
         }
+    }
+
+    private data class RecordedRequest(
+        val url: String,
+        val headers: Map<String, String>
+    )
+
+    private class WigoloFetcher :
+        AgentWebIntelligenceFetcher,
+        AgentWebIntelligenceRequestFetcher {
+        val requests = mutableListOf<RecordedRequest>()
+
+        override fun fetch(
+            url: String,
+            maxBytes: Long,
+            timeoutMillis: Long,
+            cancellationToken: AgentNativeToolCancellationToken,
+            checkpoint: () -> Unit
+        ): AgentWebIntelligenceFetched =
+            fetch(url, maxBytes, timeoutMillis, emptyMap(), cancellationToken, checkpoint)
+
+        @Synchronized
+        override fun fetch(
+            url: String,
+            maxBytes: Long,
+            timeoutMillis: Long,
+            headers: Map<String, String>,
+            cancellationToken: AgentNativeToolCancellationToken,
+            checkpoint: () -> Unit
+        ): AgentWebIntelligenceFetched {
+            checkpoint()
+            requests += RecordedRequest(url, headers)
+            return when {
+                url.contains("api.search.brave.com") -> fetched(
+                    url,
+                    "application/json",
+                    """
+                    {"results":[{"title":"SignalASI interface","url":"https://design.example.test/signalasi",
+                    "source":"design.example.test","properties":{"url":"https://cdn.example.test/interface.jpg",
+                    "width":1600,"height":900},"thumbnail":{"src":"https://cdn.example.test/interface-thumb.jpg"}}]}
+                    """.trimIndent()
+                )
+                url.contains("duckduckgo.com/?") -> fetched(
+                    url,
+                    "text/html",
+                    """<script>window.__search = {vqd='123-456'};</script>"""
+                )
+                url.contains("duckduckgo.com/i.js") -> fetched(
+                    url,
+                    "application/json",
+                    """
+                    {"results":[{"title":"SignalASI mobile agent","url":"https://images.example.test/article",
+                    "image":"https://cdn.example.test/signalasi.png","thumbnail":"https://cdn.example.test/signalasi-thumb.png",
+                    "width":1200,"height":800}]}
+                    """.trimIndent()
+                )
+                url.contains("api2.marginalia-search.com") -> fetched(
+                    url,
+                    "application/json",
+                    """
+                    {"results":[{"title":"Independent SignalASI notes","url":"https://indie.example.test/signalasi",
+                    "description":"A small-web SignalASI source."}]}
+                    """.trimIndent()
+                )
+                url.contains("api.github.com/search/code") -> fetched(
+                    url,
+                    "application/json",
+                    """
+                    {"items":[{"name":"AgentLoop.kt","path":"apps/android/AgentLoop.kt",
+                    "html_url":"https://github.com/signalasi/SignalASI/blob/main/apps/android/AgentLoop.kt",
+                    "repository":{"full_name":"signalasi/SignalASI","description":"Mobile super agent",
+                    "updated_at":"2026-07-27T00:00:00Z"}}]}
+                    """.trimIndent()
+                )
+                else -> error("No Wigolo test route for $url")
+            }
+        }
+
+        private fun fetched(url: String, contentType: String, body: String) =
+            AgentWebIntelligenceFetched(url, contentType, body.toByteArray(), 5L)
     }
 }

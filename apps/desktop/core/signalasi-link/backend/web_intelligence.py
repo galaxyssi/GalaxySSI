@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import concurrent.futures
 import contextlib
+import csv
 import dataclasses
 import datetime as dt
 import difflib
@@ -102,6 +103,15 @@ _INTERNAL_TOOL_WRAPPER = re.compile(
 )
 MAX_CLOUD_TOOL_CALLS = 8
 MAX_CLOUD_TOOL_RESULT_CHARS = 24_000
+FINALIZE_WEB_RESEARCH_PROMPT = (
+    "Tool execution is complete. Do not call another tool. Using the evidence already "
+    "in this conversation, provide the final user-facing answer now. Cite useful source "
+    "URLs, note material uncertainty, and do not mention internal tools or this instruction."
+)
+STRICT_FINALIZE_WEB_RESEARCH_PROMPT = (
+    "Return only the final user-facing answer from the evidence already provided. Do not "
+    "emit tool calls, XML, DSML, JSON protocol, planning text, or internal errors."
+)
 
 MAX_QUERY_CHARS = 4_096
 MAX_URL_CHARS = 4_096
@@ -125,6 +135,98 @@ SEARCH_PROFILES: Mapping[str, tuple[int, float]] = {
     "balanced": (DEFAULT_ENGINE_FANOUT, DEFAULT_TIMEOUT_SECONDS),
     "deep": (MAX_ENGINE_FANOUT, 35.0),
 }
+
+WEB_VERTICALS: tuple[str, ...] = (
+    "general",
+    "regional",
+    "news",
+    "knowledge",
+    "publishing",
+    "code",
+    "docs",
+    "packages",
+    "qa",
+    "community",
+    "social",
+    "academic",
+    "research_index",
+    "medical",
+    "healthcare",
+    "biology",
+    "technology",
+    "agents",
+    "hardware",
+    "image",
+    "video",
+    "travel",
+    "lifestyle",
+    "games",
+    "shopping",
+    "finance",
+    "business",
+    "sports",
+    "weather",
+    "maps_local",
+    "food",
+    "education",
+    "jobs",
+    "government",
+    "legal",
+    "patents",
+    "books",
+    "audio",
+    "entertainment",
+    "cybersecurity",
+    "ai_models",
+    "datasets",
+    "automotive",
+    "real_estate",
+    "events",
+    "smart_home",
+    "local",
+)
+
+VERTICAL_HINT_RULES: tuple[tuple[tuple[str, ...], re.Pattern[str]], ...] = tuple(
+    (verticals, re.compile(pattern, re.IGNORECASE))
+    for verticals, pattern in (
+        (("news",), r"\b(today|latest|breaking|news|current)\b|" "\u4eca\u5929|\u6700\u65b0|\u65b0\u95fb|\u5b9e\u65f6"),
+        (("code", "docs", "packages", "qa", "community"), r"\b(code|api|sdk|library|package|bug|github|python|javascript|rust|java)\b|" "\u4ee3\u7801|\u7f16\u7a0b|\u63a5\u53e3|\u5f00\u53d1"),
+        (("academic", "research_index"), r"\b(paper|study|research|doi|journal|citation)\b|" "\u8bba\u6587|\u7814\u7a76|\u6587\u732e|\u5b66\u672f"),
+        (("medical",), r"\b(medical|medicine|clinical|disease|drug|treatment|trial)\b|" "\u533b\u5b66|\u4e34\u5e8a|\u75be\u75c5|\u836f\u7269|\u6cbb\u7597|\u8bd5\u9a8c"),
+        (("healthcare",), r"\b(healthcare|health care|hospital|doctor|patient|public health|clinic)\b|" "\u533b\u7597|\u533b\u9662|\u533b\u751f|\u60a3\u8005|\u516c\u5171\u536b\u751f|\u95e8\u8bca"),
+        (("biology",), r"\b(biology|genome|gene|protein|cell|species|biotech)\b|" "\u751f\u7269|\u57fa\u56e0|\u86cb\u767d\u8d28|\u7ec6\u80de|\u7269\u79cd"),
+        (("technology",), r"\b(technology|tech|gadget|innovation|startup)\b|" "\u79d1\u6280|\u6280\u672f\u4ea7\u54c1|\u521b\u65b0|\u521b\u4e1a"),
+        (("agents", "ai_models"), r"\b(ai agent|agentic|multi-agent|agents sdk|autogen|crewai|langchain)\b|" "\u667a\u80fd\u4f53|\u591a\u667a\u80fd\u4f53|\u4ee3\u7406\u6846\u67b6"),
+        (("hardware", "technology"), r"\b(hardware|cpu|gpu|npu|chip|processor|motherboard|ram|ssd)\b|" "\u786c\u4ef6|\u82af\u7247|\u5904\u7406\u5668|\u663e\u5361|\u5185\u5b58|\u4e3b\u677f"),
+        (("qa", "community", "social", "publishing"), r"\b(opinion|discussion|experience|recommend|social|post)\b|" "\u8bc4\u4ef7|\u8ba8\u8bba|\u7ecf\u9a8c|\u63a8\u8350|\u793e\u4ea4|\u7b14\u8bb0|\u516c\u4f17\u53f7|\u77e5\u4e4e"),
+        (("image",), r"\b(image|images|photo|photos|picture|pictures|wallpaper)\b|" "\u56fe\u7247|\u56fe\u50cf|\u7167\u7247|\u58c1\u7eb8"),
+        (("video", "entertainment"), r"\b(video|videos|movie|film|watch|stream)\b|" "\u89c6\u9891|\u7535\u5f71|\u5f71\u7247|\u89c2\u770b"),
+        (("travel",), r"\b(travel|trip|flight|hotel|visa|tourism|vacation)\b|" "\u65c5\u6e38|\u65c5\u884c|\u673a\u7968|\u9152\u5e97|\u7b7e\u8bc1|\u666f\u70b9"),
+        (("lifestyle",), r"\b(lifestyle|home care|cleaning|diy|fashion|beauty)\b|" "\u751f\u6d3b|\u5bb6\u5c45|\u6e05\u6d01|\u7f8e\u5bb9|\u65f6\u5c1a"),
+        (("games",), r"\b(game|games|gaming|steam|playstation|xbox|nintendo)\b|" "\u6e38\u620f|\u624b\u6e38|\u4e3b\u673a\u6e38\u620f"),
+        (("shopping",), r"\b(shop|shopping|buy|price|deal|coupon|product)\b|" "\u8d2d\u7269|\u4e70|\u4ef7\u683c|\u4f18\u60e0|\u5546\u54c1"),
+        (("finance",), r"\b(stock|fund|bond|forex|crypto|investment|market price)\b|" "\u80a1\u7968|\u57fa\u91d1|\u503a\u5238|\u5916\u6c47|\u6295\u8d44|\u884c\u60c5"),
+        (("business",), r"\b(company|business|industry|earnings|economy|corporate)\b|" "\u516c\u53f8|\u5546\u4e1a|\u4ea7\u4e1a|\u8d22\u62a5|\u7ecf\u6d4e"),
+        (("sports",), r"\b(sport|sports|football|soccer|basketball|tennis|score)\b|" "\u4f53\u80b2|\u8db3\u7403|\u7bee\u7403|\u7f51\u7403|\u6bd4\u5206"),
+        (("weather",), r"\b(weather|forecast|temperature|rain|snow|wind|air quality)\b|" "\u5929\u6c14|\u9884\u62a5|\u6e29\u5ea6|\u4e0b\u96e8|\u964d\u96ea|\u7a7a\u6c14\u8d28\u91cf"),
+        (("maps_local",), r"\b(map|maps|route|navigation|nearby|address|directions)\b|" "\u5730\u56fe|\u8def\u7ebf|\u5bfc\u822a|\u9644\u8fd1|\u5730\u5740"),
+        (("food",), r"\b(food|recipe|restaurant|cooking|dish|menu)\b|" "\u7f8e\u98df|\u83dc\u8c31|\u9910\u5385|\u70f9\u996a|\u83dc\u5355"),
+        (("education",), r"\b(course|learn|education|tutorial|school|university)\b|" "\u8bfe\u7a0b|\u5b66\u4e60|\u6559\u80b2|\u6559\u7a0b|\u5b66\u6821|\u5927\u5b66"),
+        (("jobs",), r"\b(job|jobs|career|salary|hiring|resume|recruit)\b|" "\u5de5\u4f5c|\u804c\u4f4d|\u62db\u8058|\u85aa\u8d44|\u7b80\u5386|\u6c42\u804c"),
+        (("government",), r"\b(government|policy|regulation|public service|official notice)\b|" "\u653f\u5e9c|\u653f\u7b56|\u653f\u52a1|\u76d1\u7ba1|\u516c\u544a"),
+        (("legal",), r"\b(law|legal|court|case|statute|lawsuit|compliance)\b|" "\u6cd5\u5f8b|\u6cd5\u9662|\u6848\u4f8b|\u6cd5\u89c4|\u8bc9\u8bbc|\u5408\u89c4"),
+        (("patents",), r"\b(patent|patents|inventor|prior art|trademark)\b|" "\u4e13\u5229|\u53d1\u660e\u4eba|\u73b0\u6709\u6280\u672f|\u5546\u6807"),
+        (("books",), r"\b(book|books|novel|author|isbn|ebook)\b|" "\u56fe\u4e66|\u4e66\u7c4d|\u5c0f\u8bf4|\u4f5c\u8005|\u7535\u5b50\u4e66"),
+        (("audio",), r"\b(music|song|album|podcast|audio|artist)\b|" "\u97f3\u4e50|\u6b4c\u66f2|\u4e13\u8f91|\u64ad\u5ba2|\u97f3\u9891|\u6b4c\u624b"),
+        (("cybersecurity",), r"\b(cve|vulnerability|exploit|malware|cybersecurity|security advisory)\b|" "\u6f0f\u6d1e|\u6076\u610f\u8f6f\u4ef6|\u7f51\u7edc\u5b89\u5168|\u5b89\u5168\u516c\u544a"),
+        (("ai_models",), r"\b(llm|model|embedding|hugging face|ollama|checkpoint)\b|" "\u5927\u6a21\u578b|\u6a21\u578b|\u5411\u91cf|\u6a21\u578b\u6743\u91cd"),
+        (("datasets",), r"\b(dataset|data set|benchmark|corpus|training data)\b|" "\u6570\u636e\u96c6|\u57fa\u51c6|\u8bed\u6599|\u8bad\u7ec3\u6570\u636e"),
+        (("automotive",), r"\b(car|cars|vehicle|automotive|ev|suv|sedan)\b|" "\u6c7d\u8f66|\u8f66\u8f86|\u7535\u52a8\u8f66|\u8f66\u578b"),
+        (("real_estate",), r"\b(real estate|property|house|apartment|rent|mortgage)\b|" "\u623f\u4ea7|\u623f\u5c4b|\u516c\u5bd3|\u79df\u623f|\u623f\u8d37"),
+        (("events",), r"\b(event|events|conference|meetup|concert|exhibition|ticket)\b|" "\u6d3b\u52a8|\u4f1a\u8bae|\u805a\u4f1a|\u6f14\u5531\u4f1a|\u5c55\u89c8|\u95e8\u7968"),
+        (("smart_home",), r"\b(smart home|home assistant|matter|homekit|smartthings|iot device)\b|" "\u667a\u80fd\u5bb6\u5c45|\u5bb6\u5ead\u52a9\u624b|\u7269\u8054\u7f51\u8bbe\u5907"),
+    )
+)
 
 
 @dataclass(frozen=True)
@@ -185,6 +287,16 @@ def cloud_openai_tools() -> list[dict[str, Any]]:
                 "query": string,
                 "max_results": integer(1, 100),
                 "profile": enum("fast", "balanced", "deep"),
+                "verticals": {
+                    "type": "array",
+                    "items": enum(*WEB_VERTICALS),
+                    "maxItems": 10,
+                },
+                "categories": {
+                    "type": "array",
+                    "items": string,
+                    "maxItems": 10,
+                },
             },
             ("query",),
         ),
@@ -218,9 +330,12 @@ def cloud_openai_tools() -> list[dict[str, Any]]:
             "web_cache",
             "Inspect or search the local web evidence cache.",
             {
-                "action": enum("status", "query", "get", "source_health"),
+                "action": enum(
+                    "status", "query", "get", "source_health", "learned_sources"
+                ),
                 "query": string,
                 "url": string,
+                "status": enum("candidate", "verified", "disabled"),
                 "limit": integer(1, 100),
             },
             ("action",),
@@ -371,6 +486,69 @@ def cloud_inline_evidence_message(
     for index, (call, result) in enumerate(results, start=1):
         lines.extend(("", f"[Tool {index}: {call.name}]", result[:per_result]))
     return "\n".join(lines)
+
+
+def cloud_evidence_fallback(
+    results: Sequence[tuple[str, str]],
+    *,
+    prefer_chinese: bool = False,
+) -> str:
+    sources: dict[str, str] = {}
+    for _name, encoded in results:
+        try:
+            value = json.loads(encoded)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        _collect_cloud_sources(value, sources)
+    if not sources:
+        return (
+            "\u8054\u7f51\u68c0\u7d22\u5df2\u5b8c\u6210\uff0c\u4f46\u6682\u65f6"
+            "\u6ca1\u6709\u53ef\u9760\u6c47\u603b\u7684\u6765\u6e90\uff0c\u8bf7\u91cd\u8bd5\u3002"
+            if prefer_chinese
+            else "The live search finished, but no reliable source could be summarized. Please try again."
+        )
+    heading = (
+        "\u6211\u627e\u5230\u4e86\u4ee5\u4e0b\u5f53\u524d\u6765\u6e90\uff1a"
+        if prefer_chinese
+        else "I found these current sources:"
+    )
+    lines = [heading]
+    for url, title in list(sources.items())[:6]:
+        lines.append(f"- {title or url}")
+        if title:
+            lines.append(f"  {url}")
+    return "\n".join(lines)
+
+
+def _collect_cloud_sources(value: Any, sources: dict[str, str], depth: int = 0) -> None:
+    if depth > 6 or len(sources) >= 12:
+        return
+    if isinstance(value, Mapping):
+        url = next(
+            (
+                str(value.get(key) or "")
+                for key in ("url", "uri", "source_url", "link")
+                if str(value.get(key) or "").casefold().startswith("https://")
+            ),
+            "",
+        )
+        if url:
+            title = next(
+                (
+                    str(value.get(key) or "").strip()
+                    for key in ("title", "name", "source")
+                    if str(value.get(key) or "").strip()
+                ),
+                "",
+            )
+            sources.setdefault(url[:4_096], title[:160])
+        for item in value.values():
+            _collect_cloud_sources(item, sources, depth + 1)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        for item in value:
+            _collect_cloud_sources(item, sources, depth + 1)
+            if len(sources) >= 12:
+                break
 
 
 def _parse_inline_tool_arguments(body: str) -> dict[str, Any]:
@@ -589,6 +767,114 @@ class EngineSpec:
     authority: float = 0.5
     default_enabled: bool = True
     requires_key: str = ""
+    allowed_hosts: tuple[str, ...] = ()
+    category_tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LearnedSource:
+    source_id: str
+    host: str
+    vertical: str
+    category_tags: tuple[str, ...] = ()
+    status: str = "candidate"
+    observations: int = 0
+    query_fingerprints: tuple[str, ...] = ()
+    first_seen_at_millis: int = 0
+    last_seen_at_millis: int = 0
+
+    def confidence(self) -> float:
+        evidence = min(1.0, self.observations / 6.0)
+        diversity = min(1.0, len(self.query_fingerprints) / 4.0)
+        return evidence * 0.6 + diversity * 0.4
+
+    def engine_spec(self, index: int) -> EngineSpec:
+        scoped_query = urllib.parse.quote_plus(f"site:{self.host} ")
+        endpoint = (
+            f"https://html.duckduckgo.com/html/?q={scoped_query}{{query}}"
+            if index % 2 == 0
+            else f"https://www.bing.com/search?q={scoped_query}{{query}}&count={{limit}}"
+        )
+        return EngineSpec(
+            self.source_id,
+            self.host,
+            self.vertical,
+            endpoint,
+            parser="site_index",
+            authority=min(0.85, max(0.55, self.confidence())),
+            default_enabled=self.status == "verified",
+            allowed_hosts=(self.host,),
+            category_tags=self.category_tags,
+        )
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "source_id": self.source_id,
+            "host": self.host,
+            "vertical": self.vertical,
+            "category_tags": list(self.category_tags),
+            "status": self.status,
+            "observations": self.observations,
+            "distinct_queries": len(self.query_fingerprints),
+            "confidence": self.confidence(),
+            "first_seen_at_millis": self.first_seen_at_millis,
+            "last_seen_at_millis": self.last_seen_at_millis,
+        }
+
+
+def _load_indexed_engine_specs() -> tuple[EngineSpec, ...]:
+    catalog_path = Path(__file__).with_name("web_source_sites.tsv")
+    if not catalog_path.is_file():
+        raise RuntimeError(f"Web source catalog is missing: {catalog_path}")
+    output: list[EngineSpec] = []
+    seen: set[str] = set()
+    with catalog_path.open("r", encoding="utf-8", newline="") as handle:
+        for index, row in enumerate(csv.DictReader(handle, delimiter="\t")):
+            source_id = str(row.get("id") or "").strip()
+            title = str(row.get("title") or "").strip()
+            vertical = str(row.get("vertical") or "").strip()
+            host = str(row.get("host") or "").strip().casefold().removeprefix("www.")
+            scope = str(row.get("scope") or host).strip().casefold()
+            languages = tuple(
+                item.strip()
+                for item in str(row.get("languages") or "*").split(",")
+                if item.strip()
+            ) or ("*",)
+            if not re.fullmatch(r"[a-z0-9_]{2,64}", source_id):
+                raise RuntimeError(f"Invalid web source id: {source_id!r}")
+            if source_id in seen:
+                raise RuntimeError(f"Duplicate web source id: {source_id}")
+            if vertical not in WEB_VERTICALS or vertical == "local":
+                raise RuntimeError(f"Invalid web source vertical: {vertical!r}")
+            if not re.fullmatch(r"[a-z0-9.-]{3,253}", host) or ".." in host:
+                raise RuntimeError(f"Invalid web source host: {host!r}")
+            if not re.fullmatch(r"[a-z0-9._/-]{3,512}", scope) or ".." in scope:
+                raise RuntimeError(f"Invalid web source scope: {scope!r}")
+            try:
+                authority = min(1.0, max(0.0, float(row.get("authority") or 0.7)))
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(f"Invalid authority for web source {source_id}") from exc
+            scoped_query = urllib.parse.quote_plus(f"site:{scope} ")
+            endpoint = (
+                f"https://html.duckduckgo.com/html/?q={scoped_query}{{query}}"
+                if index % 2 == 0
+                else f"https://www.bing.com/search?q={scoped_query}{{query}}&count={{limit}}"
+            )
+            output.append(
+                EngineSpec(
+                    source_id,
+                    title,
+                    vertical,
+                    endpoint,
+                    parser="site_index",
+                    languages=languages,
+                    authority=authority,
+                    allowed_hosts=(host,),
+                    category_tags=(vertical,),
+                )
+            )
+            seen.add(source_id)
+    return tuple(output)
 
 
 @dataclass(frozen=True)
@@ -600,6 +886,10 @@ class RawSearchResult:
     excerpt: str = ""
     published_at: str = ""
     vertical: str = "general"
+    image_url: str = ""
+    thumbnail_url: str = ""
+    image_width: int = 0
+    image_height: int = 0
 
 
 @dataclass(frozen=True)
@@ -736,6 +1026,10 @@ class FusedSearchResult:
     excerpt: str
     vertical: str
     published_at: str
+    image_url: str = ""
+    thumbnail_url: str = ""
+    image_width: int = 0
+    image_height: int = 0
     engine_ranks: dict[str, int] = field(default_factory=dict)
     engine_weights: dict[str, float] = field(default_factory=dict)
     authority: float = 0.0
@@ -750,6 +1044,10 @@ class FusedSearchResult:
             "published_at": self.published_at[:64],
             "language": detect_language(f"{self.title} {self.excerpt}"),
             "vertical": self.vertical,
+            "image_url": self.image_url[:MAX_URL_CHARS],
+            "thumbnail_url": self.thumbnail_url[:MAX_URL_CHARS],
+            "image_width": max(0, int(self.image_width)),
+            "image_height": max(0, int(self.image_height)),
             "engines": sorted(self.engine_ranks),
             "rank": rank,
             "score": {name: round(float(value), 6) for name, value in self.score.items()},
@@ -759,37 +1057,207 @@ class FusedSearchResult:
 ENGINE_SPECS: tuple[EngineSpec, ...] = (
     EngineSpec("bing", "Bing", "general", "https://www.bing.com/search?q={query}&count={limit}", weight=1.05),
     EngineSpec("duckduckgo", "DuckDuckGo", "general", "https://html.duckduckgo.com/html/?q={query}", weight=1.05),
-    EngineSpec("baidu", "Baidu", "general", "https://www.baidu.com/s?wd={query}&rn={limit}", languages=("zh",), weight=1.05),
+    EngineSpec("baidu", "Baidu", "regional", "https://www.baidu.com/s?wd={query}&rn={limit}", languages=("zh",), weight=1.05),
     EngineSpec("brave", "Brave Search", "general", "https://search.brave.com/search?q={query}&source=web"),
     EngineSpec("mojeek", "Mojeek", "general", "https://www.mojeek.com/search?q={query}"),
-    EngineSpec("qwant", "Qwant", "general", "https://www.qwant.com/?q={query}&t=web"),
+    EngineSpec("qwant", "Qwant", "regional", "https://www.qwant.com/?q={query}&t=web"),
     EngineSpec("yahoo", "Yahoo", "general", "https://search.yahoo.com/search?p={query}"),
-    EngineSpec("yandex", "Yandex", "general", "https://yandex.com/search/?text={query}"),
+    EngineSpec("yandex", "Yandex", "regional", "https://yandex.com/search/?text={query}"),
     EngineSpec("ecosia", "Ecosia", "general", "https://www.ecosia.org/search?q={query}"),
     EngineSpec("startpage", "Startpage", "general", "https://www.startpage.com/sp/search?query={query}"),
-    EngineSpec("sogou", "Sogou", "general", "https://www.sogou.com/web?query={query}", languages=("zh",)),
-    EngineSpec("so360", "360 Search", "general", "https://www.so.com/s?q={query}", languages=("zh",)),
-    EngineSpec("naver", "Naver", "general", "https://search.naver.com/search.naver?query={query}", languages=("ko",)),
+    EngineSpec("sogou", "Sogou", "regional", "https://www.sogou.com/web?query={query}", languages=("zh",)),
+    EngineSpec("naver", "Naver", "regional", "https://search.naver.com/search.naver?query={query}", languages=("ko",)),
     EngineSpec("google", "Google", "general", "https://www.google.com/search?q={query}&num={limit}", default_enabled=False),
     EngineSpec("bing_news", "Bing News", "news", "https://www.bing.com/news/search?q={query}&count={limit}", weight=1.1),
     EngineSpec("brave_news", "Brave News", "news", "https://search.brave.com/news?q={query}"),
+    EngineSpec(
+        "brave_image",
+        "Brave Image",
+        "image",
+        "https://api.search.brave.com/res/v1/images/search?q={query}&count={limit}&safesearch=moderate",
+        parser="brave_image",
+        authority=0.8,
+        requires_key="brave_api_key",
+    ),
+    EngineSpec(
+        "duckduckgo_image",
+        "DuckDuckGo Image",
+        "image",
+        "https://duckduckgo.com/?q={query}&iax=images&ia=images",
+        parser="duckduckgo_image",
+        authority=0.75,
+    ),
+    EngineSpec(
+        "marginalia",
+        "Marginalia",
+        "general",
+        "https://api2.marginalia-search.com/search?query={query}&count={limit}&dc=3",
+        parser="marginalia",
+        authority=0.7,
+    ),
     EngineSpec("wikipedia", "Wikipedia", "knowledge", "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit={limit}&srsearch={query}", parser="wikipedia", authority=0.9),
     EngineSpec("wikipedia_zh", "Wikipedia Chinese", "knowledge", "https://zh.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit={limit}&srsearch={query}", parser="wikipedia_zh", languages=("zh",), authority=0.9),
     EngineSpec("github", "GitHub", "code", "https://api.github.com/search/repositories?q={query}&per_page={limit}", parser="github", authority=0.85),
+    EngineSpec("github_code", "GitHub Code Search", "code", "https://api.github.com/search/code?q={query}&per_page={limit}", parser="github_code", authority=0.9),
     EngineSpec("gitlab", "GitLab", "code", "https://gitlab.com/api/v4/projects?search={query}&per_page={limit}", parser="gitlab", authority=0.8),
-    EngineSpec("stackoverflow", "Stack Overflow", "community", "https://api.stackexchange.com/2.3/search/advanced?site=stackoverflow&pagesize={limit}&q={query}", parser="stackoverflow", authority=0.85),
+    EngineSpec("stackoverflow", "Stack Overflow", "qa", "https://api.stackexchange.com/2.3/search/advanced?site=stackoverflow&pagesize={limit}&q={query}", parser="stackoverflow", authority=0.85),
     EngineSpec("hacker_news", "Hacker News", "community", "https://hn.algolia.com/api/v1/search?hitsPerPage={limit}&query={query}", parser="hacker_news", authority=0.7),
     EngineSpec("lobsters", "Lobsters", "community", "https://lobste.rs/search.json?q={query}", parser="lobsters", authority=0.7),
+    EngineSpec("x_public", "X Public Posts", "social", "https://html.duckduckgo.com/html/?q=site%3Ax.com%2Fstatus+{query}", parser="x_public", authority=0.65),
+    EngineSpec("wechat_public", "WeChat Public Articles", "publishing", "https://weixin.sogou.com/weixin?type=2&query={query}", parser="wechat_public", languages=("zh",), authority=0.75),
+    EngineSpec("zhihu_public", "Zhihu Public Content", "qa", "https://html.duckduckgo.com/html/?q=site%3Azhihu.com+{query}", parser="zhihu_public", languages=("zh",), authority=0.7),
+    EngineSpec("xiaohongshu_public", "Xiaohongshu Public Notes", "social", "https://html.duckduckgo.com/html/?q=site%3Axiaohongshu.com+{query}", parser="xiaohongshu_public", languages=("zh",), authority=0.65),
     EngineSpec("reddit", "Reddit", "community", "https://www.reddit.com/search.json?q={query}&limit={limit}&raw_json=1", parser="reddit", authority=0.65),
-    EngineSpec("crossref", "Crossref", "academic", "https://api.crossref.org/works?rows={limit}&query={query}", parser="crossref", authority=0.9),
+    EngineSpec("crossref", "Crossref", "research_index", "https://api.crossref.org/works?rows={limit}&query={query}", parser="crossref", authority=0.9),
     EngineSpec("semantic_scholar", "Semantic Scholar", "academic", "https://api.semanticscholar.org/graph/v1/paper/search?limit={limit}&fields=title,url,abstract,year,authors&query={query}", parser="semantic_scholar", authority=0.9),
     EngineSpec("arxiv", "arXiv", "academic", "https://export.arxiv.org/api/query?max_results={limit}&search_query=all:{query}", parser="atom", authority=0.9),
-    EngineSpec("pubmed", "PubMed", "academic", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax={limit}&term={query}", parser="pubmed", authority=0.95),
-    EngineSpec("crates_io", "crates.io", "code", "https://crates.io/api/v1/crates?q={query}&per_page={limit}", parser="crates_io", authority=0.8),
-    EngineSpec("npm", "npm", "code", "https://registry.npmjs.org/-/v1/search?size={limit}&text={query}", parser="npm", authority=0.8),
+    EngineSpec("pubmed", "PubMed", "medical", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax={limit}&term={query}", parser="pubmed", authority=0.95),
+    EngineSpec("crates_io", "crates.io", "packages", "https://crates.io/api/v1/crates?q={query}&per_page={limit}", parser="crates_io", authority=0.8),
+    EngineSpec("npm", "npm", "packages", "https://registry.npmjs.org/-/v1/search?size={limit}&text={query}", parser="npm", authority=0.8),
     EngineSpec("mdn", "MDN", "docs", "https://developer.mozilla.org/api/v1/search?q={query}&page_size={limit}", parser="mdn", authority=0.95),
-    EngineSpec("pypi", "PyPI", "code", "https://pypi.org/search/?q={query}", authority=0.8),
+    EngineSpec("devdocs", "DevDocs", "docs", "local://devdocs", parser="devdocs", authority=0.9),
+    EngineSpec("pypi", "PyPI", "packages", "https://pypi.org/search/?q={query}", authority=0.8),
+) + _load_indexed_engine_specs()
+
+
+@dataclass(frozen=True)
+class SourceObservation:
+    source_id: str
+    host: str
+    vertical: str
+    category_tags: tuple[str, ...]
+    query_fingerprint: str
+
+
+BUILT_IN_WEB_SOURCE_HOSTS: frozenset[str] = frozenset(
+    host.casefold().removeprefix("www.")
+    for spec in ENGINE_SPECS
+    for host in (
+        *spec.allowed_hosts,
+        urllib.parse.urlsplit(spec.endpoint).hostname or "",
+    )
+    if host
 )
+
+
+def _source_observations(
+    query: str,
+    category_tags: Sequence[str],
+    results: Sequence[FusedSearchResult],
+) -> tuple[SourceObservation, ...]:
+    fingerprint = hashlib.sha256(query.strip().casefold().encode()).hexdigest()[:24]
+    clean_tags = {
+        tag
+        for value in category_tags
+        if (tag := str(value or "").strip().casefold())
+        and re.fullmatch(r"[a-z0-9_-]{2,40}", tag)
+    }
+    output: dict[str, SourceObservation] = {}
+    for result in results[:20]:
+        host = (
+            urllib.parse.urlsplit(result.url).hostname or ""
+        ).casefold().removeprefix("www.")
+        if (
+            not re.fullmatch(r"[a-z0-9.-]{3,253}", host)
+            or ".." in host
+            or len(host.split(".")) < 2
+            or host.replace(".", "").isdigit()
+            or any(host == known or host.endswith(f".{known}") for known in BUILT_IN_WEB_SOURCE_HOSTS)
+        ):
+            continue
+        vertical = result.vertical if result.vertical in WEB_VERTICALS[:-1] else "general"
+        tags = tuple(sorted((clean_tags | {vertical}))[:12])
+        source_id = "learned_" + hashlib.sha256(f"{host}|{vertical}".encode()).hexdigest()[:16]
+        output[source_id] = SourceObservation(
+            source_id,
+            host,
+            vertical,
+            tags,
+            fingerprint,
+        )
+    return tuple(output.values())
+
+
+def _evolve_learned_source(
+    previous: LearnedSource | None,
+    observation: SourceObservation,
+    now_millis: int,
+) -> LearnedSource:
+    queries = tuple(sorted({
+        *(previous.query_fingerprints if previous else ()),
+        observation.query_fingerprint,
+    }, reverse=True)[:16])
+    observations = (previous.observations if previous else 0) + 1
+    stricter = observation.vertical in {"general", "knowledge"}
+    minimum_observations = 4 if stricter else 3
+    minimum_queries = 3 if stricter else 2
+    status = (
+        "disabled"
+        if previous and previous.status == "disabled"
+        else "verified"
+        if observations >= minimum_observations and len(queries) >= minimum_queries
+        else "candidate"
+    )
+    return LearnedSource(
+        source_id=observation.source_id,
+        host=observation.host,
+        vertical=observation.vertical,
+        category_tags=tuple(sorted({
+            *(previous.category_tags if previous else ()),
+            *observation.category_tags,
+        })),
+        status=status,
+        observations=observations,
+        query_fingerprints=queries,
+        first_seen_at_millis=(
+            previous.first_seen_at_millis
+            if previous and previous.first_seen_at_millis > 0
+            else now_millis
+        ),
+        last_seen_at_millis=now_millis,
+    )
+
+
+DEV_DOCS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("React", "react", ("react", "reactjs")),
+    ("Vue", "vue~3", ("vue", "vuejs")),
+    ("Angular", "angular", ("angular",)),
+    ("Svelte", "svelte", ("svelte",)),
+    ("TypeScript", "typescript", ("typescript", "ts")),
+    ("JavaScript", "javascript", ("javascript", "js", "ecmascript")),
+    ("Node.js", "node", ("node", "nodejs", "node.js")),
+    ("Python", "python~3.13", ("python", "python3")),
+    ("Go", "go", ("golang",)),
+    ("Rust", "rust", ("rust",)),
+    ("CSS", "css", ("css",)),
+    ("HTML", "html", ("html",)),
+    ("HTTP", "http", ("http",)),
+    ("PostgreSQL", "postgresql~17", ("postgresql", "postgres")),
+    ("SQLite", "sqlite", ("sqlite",)),
+    ("Redis", "redis", ("redis",)),
+    ("Docker", "docker", ("docker",)),
+    ("Git", "git", ("git",)),
+    ("Bash", "bash", ("bash", "shell")),
+    ("nginx", "nginx", ("nginx",)),
+    ("webpack", "webpack~5", ("webpack",)),
+    ("Tailwind CSS", "tailwindcss", ("tailwind", "tailwindcss")),
+)
+
+
+def _default_web_credential(key: str) -> str:
+    environment_names = {
+        "brave_api_key": ("SIGNALASI_BRAVE_API_KEY", "BRAVE_API_KEY"),
+        "github_token": ("SIGNALASI_GITHUB_TOKEN", "GITHUB_TOKEN"),
+    }
+    for name in environment_names.get(key, ()):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    with contextlib.suppress(ImportError, AttributeError, TypeError):
+        from agent_config import web_search_config
+
+        return str(web_search_config().get(key) or "").strip()
+    return ""
 
 
 def engine_catalog() -> list[dict[str, Any]]:
@@ -801,6 +1269,8 @@ def engine_catalog() -> list[dict[str, Any]]:
             "languages": list(spec.languages),
             "default_enabled": spec.default_enabled,
             "requires_key": spec.requires_key,
+            "category_tags": list(spec.category_tags),
+            "source_mode": "site_index" if spec.parser == "site_index" else "direct",
         }
         for spec in ENGINE_SPECS
     ]
@@ -810,6 +1280,13 @@ def _safe_text(value: Any, limit: int) -> str:
     if value is None:
         return ""
     return re.sub(r"\s+", " ", html.unescape(str(value))).strip()[:limit]
+
+
+def _nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def citation_id(url: str, excerpt: str = "") -> str:
@@ -1009,23 +1486,148 @@ class ReadableHtmlParser(HTMLParser):
 
 
 class SearchEngineAdapter:
-    def __init__(self, spec: EngineSpec, transport: WebTransport) -> None:
+    def __init__(
+        self,
+        spec: EngineSpec,
+        transport: WebTransport,
+        credential_provider: Callable[[str], str] | None = None,
+    ) -> None:
         self.spec = spec
         self.transport = transport
+        self.credential_provider = credential_provider or (lambda _key: "")
 
     def search(self, query: str, limit: int, timeout_seconds: float) -> list[RawSearchResult]:
+        if self.spec.parser == "devdocs":
+            return self._search_devdocs(query, limit)
+        if self.spec.requires_key and not self._credential(self.spec.requires_key):
+            raise WebIntelligenceError(
+                "credential_unavailable",
+                f"{self.spec.title} requires a configured credential",
+            )
         encoded = urllib.parse.quote_plus(query)
         url = self.spec.endpoint.format(query=encoded, limit=limit)
+        if self.spec.parser == "duckduckgo_image":
+            return self._search_duckduckgo_images(
+                query,
+                encoded,
+                url,
+                limit,
+                timeout_seconds,
+            )
         response = self.transport.fetch(
             url,
             timeout_seconds=timeout_seconds,
             max_bytes=MAX_FETCH_BYTES,
-            headers={"Accept": self._accept_header()},
+            headers=self._request_headers(),
         )
         return self._parse(response, limit)
 
+    def _credential(self, key: str) -> str:
+        return str(self.credential_provider(key) or "").strip()
+
+    def _request_headers(self) -> dict[str, str]:
+        headers = {"Accept": self._accept_header()}
+        if self.spec.parser == "brave_image":
+            headers["X-Subscription-Token"] = self._credential("brave_api_key")
+        elif self.spec.parser == "marginalia":
+            headers["API-Key"] = "public"
+        elif self.spec.parser in {"github", "github_code"}:
+            headers.update({
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            })
+            token = self._credential("github_token")
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _search_duckduckgo_images(
+        self,
+        query: str,
+        encoded: str,
+        landing_url: str,
+        limit: int,
+        timeout_seconds: float,
+    ) -> list[RawSearchResult]:
+        del query
+        user_agent = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 Chrome/124 Safari/537.36"
+        )
+        landing = self.transport.fetch(
+            landing_url,
+            timeout_seconds=timeout_seconds,
+            max_bytes=MAX_FETCH_BYTES,
+            headers={
+                "Accept": "text/html,application/xhtml+xml",
+                "User-Agent": user_agent,
+            },
+        )
+        match = re.search(
+            rb"""vqd\s*=\s*['"]([^'"]+)['"]""",
+            landing.body,
+            re.IGNORECASE,
+        )
+        if match is None:
+            raise WebIntelligenceError(
+                "invalid_engine_response",
+                "DuckDuckGo Image did not return a search token",
+                retryable=True,
+            )
+        token = urllib.parse.quote_plus(match.group(1).decode("utf-8", errors="replace"))
+        endpoint = (
+            f"https://duckduckgo.com/i.js?l=wt-wt&o=json&q={encoded}"
+            f"&vqd={token}&f=,,,,,&p=1"
+        )
+        response = self.transport.fetch(
+            endpoint,
+            timeout_seconds=timeout_seconds,
+            max_bytes=MAX_FETCH_BYTES,
+            headers={
+                "Accept": "application/json",
+                "Referer": landing_url,
+                "User-Agent": user_agent,
+            },
+        )
+        return self._parse(response, limit)
+
+    def _search_devdocs(self, query: str, limit: int) -> list[RawSearchResult]:
+        normalized = unicodedata.normalize("NFKC", query).casefold()
+        matches = [
+            entry
+            for entry in DEV_DOCS
+            if any(
+                re.search(
+                    rf"(^|[^a-z0-9]){re.escape(alias)}([^a-z0-9]|$)",
+                    normalized,
+                )
+                for alias in entry[2]
+            )
+        ]
+        if not matches:
+            tokens = [item for item in _tokens(normalized) if len(item) >= 3]
+            matches = [
+                entry
+                for entry in DEV_DOCS
+                if any(token in entry[0].casefold() or token in entry[1] for token in tokens)
+            ]
+        return [
+            RawSearchResult(
+                engine_id=self.spec.engine_id,
+                rank=index,
+                title=f"{title} documentation",
+                url=f"https://devdocs.io/{slug}",
+                excerpt=f"Offline DevDocs index match for {title}.",
+                vertical=self.spec.vertical,
+            )
+            for index, (title, slug, _aliases) in enumerate(matches[:limit], start=1)
+        ]
+
     def _accept_header(self) -> str:
-        if self.spec.parser in {"html"}:
+        if self.spec.parser in {
+            "html", "site_index", "x_public", "wechat_public",
+            "zhihu_public", "xiaohongshu_public",
+        }:
             return "text/html,application/xhtml+xml"
         if self.spec.parser == "atom":
             return "application/atom+xml,application/xml,text/xml"
@@ -1037,6 +1639,14 @@ class SearchEngineAdapter:
         parser = self.spec.parser
         if parser == "html":
             return self._parse_html(text, response.url, limit)
+        if parser == "site_index":
+            return self._parse_site_index(text, response.url, limit)
+        if parser == "x_public":
+            return self._parse_x_public(text, response.url, limit)
+        if parser == "wechat_public":
+            return self._parse_wechat_public(text, response.url, limit)
+        if parser in {"zhihu_public", "xiaohongshu_public"}:
+            return self._parse_indexed_social(text, response.url, limit)
         if parser == "atom":
             return self._parse_atom(text, limit)
         try:
@@ -1074,6 +1684,34 @@ class SearchEngineAdapter:
             vertical=self.spec.vertical,
         )
 
+    def _image_result(
+        self,
+        rank: int,
+        title: Any,
+        url: Any,
+        excerpt: Any,
+        image_url: Any,
+        thumbnail_url: Any,
+        width: Any,
+        height: Any,
+    ) -> RawSearchResult | None:
+        base = self._result(rank, title, url, excerpt)
+        clean_image = _safe_text(image_url, MAX_URL_CHARS)
+        if base is None or not clean_image.startswith(("http://", "https://")):
+            return None
+        clean_thumbnail = _safe_text(thumbnail_url, MAX_URL_CHARS)
+        return dataclasses.replace(
+            base,
+            image_url=clean_image,
+            thumbnail_url=(
+                clean_thumbnail
+                if clean_thumbnail.startswith(("http://", "https://"))
+                else ""
+            ),
+            image_width=_nonnegative_int(width),
+            image_height=_nonnegative_int(height),
+        )
+
     def _parse_html(self, text: str, base_url: str, limit: int) -> list[RawSearchResult]:
         parser = SearchAnchorParser(base_url)
         parser.feed(text)
@@ -1099,6 +1737,97 @@ class SearchEngineAdapter:
                 break
         return results
 
+    def _parse_x_public(
+        self,
+        text: str,
+        base_url: str,
+        limit: int,
+    ) -> list[RawSearchResult]:
+        candidates = self._parse_html(text, base_url, limit * 4)
+        return [
+            row
+            for row in candidates
+            if (
+                (urllib.parse.urlsplit(row.url).hostname or "").lower().removeprefix("www.")
+                in {"x.com", "twitter.com"}
+                and "/status/" in urllib.parse.urlsplit(row.url).path
+            )
+        ][:limit]
+
+    def _parse_site_index(
+        self,
+        text: str,
+        base_url: str,
+        limit: int,
+    ) -> list[RawSearchResult]:
+        allowed = tuple(
+            host.casefold().removeprefix("www.")
+            for host in self.spec.allowed_hosts
+            if host
+        )
+        if not allowed:
+            return []
+        output: list[RawSearchResult] = []
+        for row in self._parse_html(text, base_url, limit * 4):
+            host = (
+                urllib.parse.urlsplit(row.url).hostname or ""
+            ).casefold().removeprefix("www.")
+            if any(host == target or host.endswith(f".{target}") for target in allowed):
+                output.append(row)
+            if len(output) >= limit:
+                break
+        return output
+
+    def _parse_wechat_public(
+        self,
+        text: str,
+        base_url: str,
+        limit: int,
+    ) -> list[RawSearchResult]:
+        parser = SearchAnchorParser(base_url)
+        parser.feed(text)
+        output = []
+        seen = set()
+        for title, url in parser.results:
+            parsed = urllib.parse.urlsplit(url)
+            host = (parsed.hostname or "").lower().removeprefix("www.")
+            accepted = host == "mp.weixin.qq.com" or (
+                host == "weixin.sogou.com" and parsed.path.startswith("/link")
+            )
+            normalized = canonical_url(url)
+            if not accepted or normalized in seen:
+                continue
+            seen.add(normalized)
+            result = self._result(len(output) + 1, title, normalized)
+            if result:
+                output.append(result)
+            if len(output) >= limit:
+                break
+        return output
+
+    def _parse_indexed_social(
+        self,
+        text: str,
+        base_url: str,
+        limit: int,
+    ) -> list[RawSearchResult]:
+        output = []
+        for row in self._parse_html(text, base_url, limit * 4):
+            parsed = urllib.parse.urlsplit(row.url)
+            host = (parsed.hostname or "").lower().removeprefix("www.")
+            if self.spec.parser == "zhihu_public":
+                accepted = host in {"zhihu.com", "zhuanlan.zhihu.com"}
+            else:
+                accepted = host == "xiaohongshu.com" and (
+                    parsed.path.startswith("/explore/")
+                    or parsed.path.startswith("/discovery/item/")
+                )
+            if accepted:
+                output.append(row)
+            if len(output) >= limit:
+                break
+        return output
+
     def _parse_wikipedia(self, value: Any, limit: int) -> list[RawSearchResult]:
         return self._parse_wikipedia_common(value, limit, "en")
 
@@ -1120,6 +1849,26 @@ class SearchEngineAdapter:
     def _parse_github(self, value: Any, limit: int) -> list[RawSearchResult]:
         rows = value.get("items", []) if isinstance(value, dict) else []
         return self._rows(rows, limit, "full_name", "html_url", "description", "updated_at")
+
+    def _parse_github_code(self, value: Any, limit: int) -> list[RawSearchResult]:
+        rows = value.get("items", []) if isinstance(value, dict) else []
+        output = []
+        for row in rows[:limit]:
+            repository = row.get("repository") if isinstance(row, dict) else {}
+            repository = repository if isinstance(repository, dict) else {}
+            path = row.get("path") or row.get("name")
+            repo = repository.get("full_name")
+            title = " · ".join(item for item in (repo, path) if item)
+            result = self._result(
+                len(output) + 1,
+                title,
+                row.get("html_url"),
+                repository.get("description") or path,
+                repository.get("updated_at"),
+            )
+            if result:
+                output.append(result)
+        return output
 
     def _parse_gitlab(self, value: Any, limit: int) -> list[RawSearchResult]:
         rows = value if isinstance(value, list) else []
@@ -1248,6 +1997,57 @@ class SearchEngineAdapter:
                 row.get("title"),
                 location,
                 row.get("summary"),
+            )
+            if result:
+                output.append(result)
+        return output
+
+    def _parse_marginalia(self, value: Any, limit: int) -> list[RawSearchResult]:
+        rows = value.get("results", []) if isinstance(value, dict) else []
+        return self._rows(rows, limit, "title", "url", "description", "")
+
+    def _parse_brave_image(self, value: Any, limit: int) -> list[RawSearchResult]:
+        rows = value.get("results", []) if isinstance(value, dict) else []
+        output = []
+        for row in rows[:limit]:
+            if not isinstance(row, dict):
+                continue
+            properties = row.get("properties")
+            properties = properties if isinstance(properties, dict) else {}
+            thumbnail = row.get("thumbnail")
+            thumbnail = thumbnail if isinstance(thumbnail, dict) else {}
+            image_url = properties.get("url")
+            source_url = row.get("url") or image_url
+            result = self._image_result(
+                len(output) + 1,
+                row.get("title") or urllib.parse.urlsplit(str(source_url or "")).hostname,
+                source_url,
+                row.get("source") or row.get("provider"),
+                image_url,
+                thumbnail.get("src"),
+                properties.get("width"),
+                properties.get("height"),
+            )
+            if result:
+                output.append(result)
+        return output
+
+    def _parse_duckduckgo_image(self, value: Any, limit: int) -> list[RawSearchResult]:
+        rows = value.get("results", []) if isinstance(value, dict) else []
+        output = []
+        for row in rows[:limit]:
+            if not isinstance(row, dict):
+                continue
+            source_url = row.get("url") or row.get("image")
+            result = self._image_result(
+                len(output) + 1,
+                row.get("title") or urllib.parse.urlsplit(str(source_url or "")).hostname,
+                source_url,
+                row.get("source") or row.get("provider"),
+                row.get("image"),
+                row.get("thumbnail"),
+                row.get("width"),
+                row.get("height"),
             )
             if result:
                 output.append(result)
@@ -1484,7 +2284,12 @@ class SearchFusion:
                 normalized = canonical_url(raw.url)
                 if not normalized or not urllib.parse.urlsplit(normalized).hostname:
                     continue
-                current = merged.get(normalized)
+                merge_key = (
+                    canonical_url(raw.image_url)
+                    if raw.vertical == "image" and raw.image_url
+                    else normalized
+                )
+                current = merged.get(merge_key)
                 spec = self._specs.get(raw.engine_id)
                 weight = spec.weight if spec else 1.0
                 authority = spec.authority if spec else 0.5
@@ -1495,9 +2300,13 @@ class SearchFusion:
                         excerpt=raw.excerpt,
                         vertical=raw.vertical,
                         published_at=raw.published_at,
+                        image_url=raw.image_url,
+                        thumbnail_url=raw.thumbnail_url,
+                        image_width=raw.image_width,
+                        image_height=raw.image_height,
                         authority=authority,
                     )
-                    merged[normalized] = current
+                    merged[merge_key] = current
                 else:
                     if len(raw.title) > len(current.title) and len(raw.title) < 2_048:
                         current.title = raw.title
@@ -1505,6 +2314,14 @@ class SearchFusion:
                         current.excerpt = raw.excerpt
                     if not current.published_at and raw.published_at:
                         current.published_at = raw.published_at
+                    if not current.image_url and raw.image_url:
+                        current.image_url = raw.image_url
+                    if not current.thumbnail_url and raw.thumbnail_url:
+                        current.thumbnail_url = raw.thumbnail_url
+                    if current.image_width <= 0 and raw.image_width > 0:
+                        current.image_width = raw.image_width
+                    if current.image_height <= 0 and raw.image_height > 0:
+                        current.image_height = raw.image_height
                     if current.vertical == "general" and raw.vertical != "general":
                         current.vertical = raw.vertical
                     current.authority = max(current.authority, authority)
@@ -1666,6 +2483,19 @@ class WebIntelligenceStore:
                 );
                 CREATE INDEX IF NOT EXISTS source_health_circuit_idx
                     ON source_health(circuit_open_until_millis);
+                CREATE TABLE IF NOT EXISTS learned_sources (
+                    source_id TEXT PRIMARY KEY,
+                    host TEXT NOT NULL,
+                    vertical TEXT NOT NULL,
+                    category_tags_json TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    observations INTEGER NOT NULL,
+                    query_fingerprints_json TEXT NOT NULL,
+                    first_seen_at_millis INTEGER NOT NULL,
+                    last_seen_at_millis INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS learned_sources_status_idx
+                    ON learned_sources(status, last_seen_at_millis DESC);
                 """
             )
 
@@ -1812,6 +2642,14 @@ class WebIntelligenceStore:
                 """,
                 (now_millis,),
             ).fetchone()
+            learned_sources = connection.execute(
+                """
+                SELECT COUNT(*) AS count,
+                       COALESCE(SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END), 0)
+                           AS verified
+                FROM learned_sources
+                """
+            ).fetchone()
         return {
             "entry_count": int(documents["count"]),
             "bytes": int(documents["bytes"]),
@@ -1819,6 +2657,8 @@ class WebIntelligenceStore:
             "watch_count": int(watches["count"]),
             "source_health_count": int(source_health["count"]),
             "source_circuits_open": int(source_health["circuits_open"]),
+            "learned_source_count": int(learned_sources["count"]),
+            "verified_learned_source_count": int(learned_sources["verified"]),
             "embedding_model": self.embedder.model_id,
         }
 
@@ -1835,7 +2675,154 @@ class WebIntelligenceStore:
             else:
                 documents = connection.execute("DELETE FROM documents").rowcount
                 searches = connection.execute("DELETE FROM searches").rowcount
-        return {"documents_removed": max(0, documents), "searches_removed": max(0, searches)}
+                learned_sources = connection.execute("DELETE FROM learned_sources").rowcount
+        return {
+            "documents_removed": max(0, documents),
+            "searches_removed": max(0, searches),
+            "learned_sources_removed": 0 if expired_only else max(0, learned_sources),
+        }
+
+    def learned_sources(self, statuses: Sequence[str] = ()) -> tuple[LearnedSource, ...]:
+        clean_statuses = tuple(
+            dict.fromkeys(str(item) for item in statuses if str(item))
+        )
+        with self._lock, self._connection() as connection:
+            if clean_statuses:
+                placeholders = ",".join("?" for _ in clean_statuses)
+                rows = connection.execute(
+                    f"""
+                    SELECT * FROM learned_sources
+                    WHERE status IN ({placeholders})
+                    ORDER BY last_seen_at_millis DESC
+                    """,
+                    clean_statuses,
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM learned_sources
+                    ORDER BY CASE WHEN status = 'verified' THEN 0 ELSE 1 END,
+                             last_seen_at_millis DESC
+                    """
+                ).fetchall()
+        return tuple(
+            source
+            for row in rows
+            if (source := self._decode_learned_source(row)) is not None
+        )
+
+    def observe_source_candidates(
+        self,
+        query: str,
+        category_tags: Sequence[str],
+        results: Sequence[FusedSearchResult],
+    ) -> tuple[LearnedSource, ...]:
+        observations = _source_observations(query, category_tags, results)
+        if not observations:
+            return ()
+        changed: list[LearnedSource] = []
+        now_millis = int(self.now() * 1_000)
+        with self._lock, self._connection() as connection:
+            for observation in observations:
+                previous = self._decode_learned_source(
+                    connection.execute(
+                        "SELECT * FROM learned_sources WHERE source_id = ?",
+                        (observation.source_id,),
+                    ).fetchone()
+                )
+                current = _evolve_learned_source(previous, observation, now_millis)
+                connection.execute(
+                    """
+                    INSERT INTO learned_sources (
+                        source_id, host, vertical, category_tags_json, status,
+                        observations, query_fingerprints_json,
+                        first_seen_at_millis, last_seen_at_millis
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_id) DO UPDATE SET
+                        host=excluded.host,
+                        vertical=excluded.vertical,
+                        category_tags_json=excluded.category_tags_json,
+                        status=excluded.status,
+                        observations=excluded.observations,
+                        query_fingerprints_json=excluded.query_fingerprints_json,
+                        first_seen_at_millis=excluded.first_seen_at_millis,
+                        last_seen_at_millis=excluded.last_seen_at_millis
+                    """,
+                    (
+                        current.source_id,
+                        current.host,
+                        current.vertical,
+                        json.dumps(current.category_tags, separators=(",", ":")),
+                        current.status,
+                        current.observations,
+                        json.dumps(current.query_fingerprints, separators=(",", ":")),
+                        current.first_seen_at_millis,
+                        current.last_seen_at_millis,
+                    ),
+                )
+                changed.append(current)
+            connection.execute(
+                """
+                DELETE FROM learned_sources
+                WHERE source_id IN (
+                    SELECT source_id FROM learned_sources
+                    ORDER BY last_seen_at_millis DESC
+                    LIMIT -1 OFFSET 512
+                )
+                """
+            )
+        return tuple(changed)
+
+    @staticmethod
+    def _decode_learned_source(row: sqlite3.Row | None) -> LearnedSource | None:
+        if row is None:
+            return None
+        with contextlib.suppress(
+            json.JSONDecodeError,
+            TypeError,
+            ValueError,
+        ):
+            source_id = _identifier(str(row["source_id"]))
+            host = str(row["host"]).casefold().removeprefix("www.")
+            vertical = str(row["vertical"])
+            status = str(row["status"])
+            category_tags = tuple(json.loads(row["category_tags_json"]))
+            fingerprints = tuple(json.loads(row["query_fingerprints_json"]))
+            expected_source_id = (
+                "learned_"
+                + hashlib.sha256(f"{host}|{vertical}".encode()).hexdigest()[:16]
+            )
+            if (
+                not re.fullmatch(r"[a-z0-9.-]{3,253}", host)
+                or ".." in host
+                or len(host.split(".")) < 2
+                or host.replace(".", "").isdigit()
+                or vertical not in WEB_VERTICALS[:-1]
+                or source_id != expected_source_id
+                or any(
+                    host == known or host.endswith(f".{known}")
+                    for known in BUILT_IN_WEB_SOURCE_HOSTS
+                )
+                or status not in {"candidate", "verified", "disabled"}
+                or len(category_tags) > 12
+                or not all(re.fullmatch(r"[a-z0-9_-]{2,40}", item) for item in category_tags)
+                or len(fingerprints) > 16
+                or not all(re.fullmatch(r"[a-f0-9]{24}", item) for item in fingerprints)
+                or not 1 <= int(row["observations"]) <= 1_000_000
+            ):
+                return None
+            return LearnedSource(
+                source_id=source_id,
+                host=host,
+                vertical=vertical,
+                category_tags=category_tags,
+                status=status,
+                observations=max(0, int(row["observations"])),
+                query_fingerprints=fingerprints,
+                first_seen_at_millis=max(0, int(row["first_seen_at_millis"])),
+                last_seen_at_millis=max(0, int(row["last_seen_at_millis"])),
+            )
+        return None
 
     def source_health(self, source_ids: Sequence[str] = ()) -> dict[str, SourceHealth]:
         clean_ids = tuple(dict.fromkeys(str(item) for item in source_ids if str(item)))
@@ -2043,6 +3030,7 @@ class WebIntelligenceService:
         *,
         transport: WebTransport | None = None,
         browser_fetcher: Callable[[str, float], str | Mapping[str, Any]] | None = None,
+        credentials: Mapping[str, str] | Callable[[str], str] | None = None,
         now: Callable[[], float] = time.time,
         max_workers: int = 8,
     ) -> None:
@@ -2054,11 +3042,25 @@ class WebIntelligenceService:
         self.max_workers = max(1, min(16, int(max_workers)))
         self.store = WebIntelligenceStore(self.state_root / "web-intelligence.sqlite3", now=now)
         self.fusion = SearchFusion()
+        self._catalog_lock = threading.RLock()
+        if credentials is None:
+            self.credential_provider = _default_web_credential
+        elif callable(credentials):
+            self.credential_provider = credentials
+        else:
+            configured = dict(credentials or {})
+            self.credential_provider = lambda key: str(configured.get(key) or "")
+        self.base_source_ids = {spec.engine_id for spec in ENGINE_SPECS}
         self.specs = {spec.engine_id: spec for spec in ENGINE_SPECS}
         self.engines = {
-            spec.engine_id: SearchEngineAdapter(spec, self.transport)
+            spec.engine_id: SearchEngineAdapter(
+                spec,
+                self.transport,
+                self.credential_provider,
+            )
             for spec in ENGINE_SPECS
         }
+        self._refresh_learned_sources()
 
     def invoke(self, operation: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
         handler = getattr(self, str(operation or ""), None)
@@ -2090,9 +3092,21 @@ class WebIntelligenceService:
         )
         requested_engines = _string_list(arguments.get("engines"), limit=MAX_ENGINE_FANOUT, max_length=64)
         verticals = _string_list(arguments.get("verticals"), limit=10, max_length=32)
+        categories = tuple(
+            value.casefold()
+            for value in _string_list(arguments.get("categories"), limit=10, max_length=40)
+            if re.fullmatch(r"[a-z0-9_-]{2,40}", value.casefold())
+        )
         freshness = str(arguments.get("freshness") or "any")
         use_cache = bool(arguments.get("use_cache", True))
-        selection = self._select_engines(query, fanout, requested_engines, verticals)
+        self._refresh_learned_sources()
+        selection = self._select_engines(
+            query,
+            fanout,
+            requested_engines,
+            verticals,
+            categories,
+        )
         engine_ids = list(selection.selected)
         cache_key = hashlib.sha256(json.dumps(
             {
@@ -2101,6 +3115,7 @@ class WebIntelligenceService:
                 "engines": engine_ids,
                 "freshness": freshness,
                 "profile": profile,
+                "categories": categories,
                 "version": MODEL_VERSION,
             },
             sort_keys=True,
@@ -2198,6 +3213,12 @@ class WebIntelligenceService:
             self.store.record_source_receipt(receipt)
 
         fused = self.fusion.fuse(query, raw_groups, limit=limit)
+        learned = self.store.observe_source_candidates(
+            query,
+            (*categories, *verticals),
+            fused,
+        )
+        self._refresh_learned_sources()
         status = "completed" if fused and all(item.status in {"completed", "empty"} for item in receipts) else (
             "partial" if fused else "failed"
         )
@@ -2205,6 +3226,10 @@ class WebIntelligenceService:
         result.update({
             "query": query,
             "results": [item.public(index + 1) for index, item in enumerate(fused)],
+            "learning": {
+                "observed": len(learned),
+                "promoted": sum(item.status == "verified" for item in learned),
+            },
             "receipts": [receipt.public() for receipt in sorted(receipts, key=lambda item: item.source_id)],
             "cache": {
                 "hit": False,
@@ -2212,7 +3237,7 @@ class WebIntelligenceService:
                 "expires_at_millis": self._millis() + DEFAULT_CACHE_TTL_SECONDS * 1_000,
             },
             "metadata": {
-                "engine_catalog_size": len(ENGINE_SPECS),
+                "engine_catalog_size": len(self.specs),
                 "engines_requested": engine_ids,
                 "engines_completed": sum(receipt.status == "completed" for receipt in receipts),
                 "engine_failures": sum(receipt.status not in {"completed", "empty"} for receipt in receipts),
@@ -2432,6 +3457,18 @@ class WebIntelligenceService:
             metadata = {
                 **self.store.stats(),
                 "source_health_removed": removed,
+            }
+        elif action == "learned_sources":
+            status = str(arguments.get("status") or "").strip().casefold()
+            if status and status not in {"candidate", "verified", "disabled"}:
+                raise WebIntelligenceError(
+                    "invalid_source_status",
+                    f"Unsupported learned-source status: {status}",
+                )
+            values = self.store.learned_sources((status,) if status else ())
+            metadata = {
+                **self.store.stats(),
+                "learned_sources": [item.public() for item in values],
             }
         else:
             raise WebIntelligenceError("invalid_cache_action", f"Unsupported cache action: {action}")
@@ -2861,12 +3898,29 @@ class WebIntelligenceService:
             return available
         return {field: available.get(field) for field in fields}
 
+    def _refresh_learned_sources(self) -> None:
+        with self._catalog_lock:
+            for index, learned in enumerate(
+                self.store.learned_sources(("verified",)),
+                start=len(self.base_source_ids),
+            ):
+                if learned.source_id in self.specs:
+                    continue
+                spec = learned.engine_spec(index)
+                self.specs[spec.engine_id] = spec
+                self.engines[spec.engine_id] = SearchEngineAdapter(
+                    spec,
+                    self.transport,
+                    self.credential_provider,
+                )
+
     def _select_engines(
         self,
         query: str,
         fanout: int,
         requested: Sequence[str],
         verticals: Sequence[str],
+        categories: Sequence[str] = (),
     ) -> SourceSelection:
         if requested:
             unknown = [item for item in requested if item not in self.engines]
@@ -2882,12 +3936,30 @@ class WebIntelligenceService:
             )
         language = detect_language(query)
         desired = set(verticals or self._infer_verticals(query))
+        desired_categories = {
+            str(item).strip().casefold()
+            for item in categories
+            if str(item).strip()
+        }
         now_millis = self._millis()
         health_by_source = self.store.source_health()
         scored: list[tuple[float, int, str]] = []
         skipped: list[SourceHealth] = []
-        for index, spec in enumerate(ENGINE_SPECS):
+        ordered_specs = (
+            *ENGINE_SPECS,
+            *sorted(
+                (
+                    spec
+                    for source_id, spec in self.specs.items()
+                    if source_id not in self.base_source_ids
+                ),
+                key=lambda item: item.engine_id,
+            ),
+        )
+        for index, spec in enumerate(ordered_specs):
             if not spec.default_enabled:
+                continue
+            if spec.requires_key and not self.credential_provider(spec.requires_key):
                 continue
             health = health_by_source.get(spec.engine_id, SourceHealth(spec.engine_id))
             if health.circuit_state(now_millis) == "open":
@@ -2896,6 +3968,8 @@ class WebIntelligenceService:
             score = spec.weight
             if spec.vertical in desired:
                 score += 2.5
+            if desired_categories.intersection(spec.category_tags):
+                score += 2.0
             if spec.vertical == "general":
                 score += 1.0
             if "*" in spec.languages or language in spec.languages:
@@ -2907,7 +3981,23 @@ class WebIntelligenceService:
             scored.append((score, -index, spec.engine_id))
         ranked = sorted(scored, reverse=True)
         selected: list[str] = []
+        for category in sorted(desired_categories):
+            match = next(
+                (
+                    item[2]
+                    for item in ranked
+                    if category in self.specs[item[2]].category_tags
+                    and item[2] not in selected
+                ),
+                None,
+            )
+            if match:
+                selected.append(match)
+            if len(selected) >= fanout:
+                break
         for vertical in sorted(desired):
+            if len(selected) >= fanout:
+                break
             match = next(
                 (
                     item[2]
@@ -2921,12 +4011,12 @@ class WebIntelligenceService:
             if len(selected) >= fanout:
                 break
         for _, _, source_id in ranked:
-            if source_id not in selected:
-                selected.append(source_id)
             if len(selected) >= fanout:
                 break
+            if source_id not in selected:
+                selected.append(source_id)
         return SourceSelection(
-            tuple(selected),
+            tuple(selected[:fanout]),
             tuple(sorted(skipped, key=lambda item: item.circuit_open_until_millis)),
         )
 
@@ -2946,30 +4036,11 @@ class WebIntelligenceService:
     def _infer_verticals(query: str) -> list[str]:
         lower = query.lower()
         values = {"general", "knowledge"}
-        if re.search(
-            r"\b(today|latest|breaking|news|current)\b|"
-            r"\u4eca\u5929|\u6700\u65b0|\u65b0\u95fb|\u5b9e\u65f6",
-            lower,
-        ):
-            values.add("news")
-        if re.search(
-            r"\b(code|api|sdk|library|package|bug|github|python|javascript|rust|java)\b|"
-            r"\u4ee3\u7801|\u7f16\u7a0b|\u63a5\u53e3|\u5f00\u53d1",
-            lower,
-        ):
-            values.update({"code", "docs", "community"})
-        if re.search(
-            r"\b(paper|study|research|doi|journal|citation)\b|"
-            r"\u8bba\u6587|\u7814\u7a76|\u6587\u732e|\u5b66\u672f",
-            lower,
-        ):
-            values.add("academic")
-        if re.search(
-            r"\b(opinion|discussion|experience|recommend)\b|"
-            r"\u8bc4\u4ef7|\u8ba8\u8bba|\u7ecf\u9a8c|\u63a8\u8350",
-            lower,
-        ):
-            values.add("community")
+        if detect_language(query) in {"zh", "ko"}:
+            values.add("regional")
+        for verticals, pattern in VERTICAL_HINT_RULES:
+            if pattern.search(lower):
+                values.update(verticals)
         return sorted(values)
 
     @staticmethod

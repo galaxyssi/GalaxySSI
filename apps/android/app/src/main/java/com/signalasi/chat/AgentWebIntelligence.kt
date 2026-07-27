@@ -14,6 +14,7 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.Locale
 import java.util.concurrent.Callable
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -31,14 +32,51 @@ private const val WEB_SOURCE_EWMA_ALPHA = 0.25
 
 enum class AgentWebIntelligenceVertical(val wireValue: String) {
     GENERAL("general"),
+    REGIONAL("regional"),
     NEWS("news"),
+    KNOWLEDGE("knowledge"),
+    PUBLISHING("publishing"),
     CODE("code"),
     DOCS("docs"),
-    ACADEMIC("academic"),
+    PACKAGES("packages"),
+    QA("qa"),
     COMMUNITY("community"),
-    KNOWLEDGE("knowledge"),
+    SOCIAL("social"),
+    ACADEMIC("academic"),
+    RESEARCH_INDEX("research_index"),
+    MEDICAL("medical"),
+    HEALTHCARE("healthcare"),
+    BIOLOGY("biology"),
+    TECHNOLOGY("technology"),
+    AGENTS("agents"),
+    HARDWARE("hardware"),
     IMAGE("image"),
     VIDEO("video"),
+    TRAVEL("travel"),
+    LIFESTYLE("lifestyle"),
+    GAMES("games"),
+    SHOPPING("shopping"),
+    FINANCE("finance"),
+    BUSINESS("business"),
+    SPORTS("sports"),
+    WEATHER("weather"),
+    MAPS_LOCAL("maps_local"),
+    FOOD("food"),
+    EDUCATION("education"),
+    JOBS("jobs"),
+    GOVERNMENT("government"),
+    LEGAL("legal"),
+    PATENTS("patents"),
+    BOOKS("books"),
+    AUDIO("audio"),
+    ENTERTAINMENT("entertainment"),
+    CYBERSECURITY("cybersecurity"),
+    AI_MODELS("ai_models"),
+    DATASETS("datasets"),
+    AUTOMOTIVE("automotive"),
+    REAL_ESTATE("real_estate"),
+    EVENTS("events"),
+    SMART_HOME("smart_home"),
     LOCAL("local")
 }
 
@@ -67,8 +105,62 @@ data class AgentWebIntelligenceEngineSpec(
     val languages: Set<String> = setOf("*"),
     val weight: Double = 1.0,
     val authority: Double = 0.5,
-    val enabledByDefault: Boolean = true
+    val enabledByDefault: Boolean = true,
+    val requiresKey: String = "",
+    val allowedHosts: Set<String> = emptySet(),
+    val categoryTags: Set<String> = emptySet()
 )
+
+data class AgentWebIntelligenceLearnedSource(
+    val sourceId: String,
+    val host: String,
+    val vertical: AgentWebIntelligenceVertical,
+    val categoryTags: Set<String> = emptySet(),
+    val status: String = "candidate",
+    val observations: Int = 0,
+    val queryFingerprints: Set<String> = emptySet(),
+    val firstSeenAtMillis: Long = 0L,
+    val lastSeenAtMillis: Long = 0L
+) {
+    fun toEngineSpec(index: Int): AgentWebIntelligenceEngineSpec {
+        val scopedQuery = URLEncoder.encode("site:$host ", Charsets.UTF_8.name())
+        val endpoint = if (index % 2 == 0) {
+            "https://html.duckduckgo.com/html/?q=$scopedQuery{query}"
+        } else {
+            "https://www.bing.com/search?q=$scopedQuery{query}&count={limit}"
+        }
+        return AgentWebIntelligenceEngineSpec(
+            id = sourceId,
+            title = host,
+            vertical = vertical,
+            endpoint = endpoint,
+            parser = "site_index",
+            authority = confidence().coerceIn(0.55, 0.85),
+            enabledByDefault = status == "verified",
+            allowedHosts = setOf(host),
+            categoryTags = categoryTags
+        )
+    }
+
+    fun confidence(): Double {
+        val evidence = (observations / 6.0).coerceAtMost(1.0)
+        val diversity = (queryFingerprints.size / 4.0).coerceAtMost(1.0)
+        return evidence * 0.6 + diversity * 0.4
+    }
+
+    fun publicValue(): AgentNativeJsonObject = linkedMapOf(
+        "source_id" to sourceId,
+        "host" to host,
+        "vertical" to vertical.wireValue,
+        "category_tags" to categoryTags.sorted(),
+        "status" to status,
+        "observations" to observations,
+        "distinct_queries" to queryFingerprints.size,
+        "confidence" to confidence(),
+        "first_seen_at_millis" to firstSeenAtMillis,
+        "last_seen_at_millis" to lastSeenAtMillis
+    )
+}
 
 data class AgentWebIntelligenceFetched(
     val url: String,
@@ -87,9 +179,28 @@ fun interface AgentWebIntelligenceFetcher {
     ): AgentWebIntelligenceFetched
 }
 
+fun interface AgentWebIntelligenceRequestFetcher {
+    fun fetch(
+        url: String,
+        maxBytes: Long,
+        timeoutMillis: Long,
+        headers: Map<String, String>,
+        cancellationToken: AgentNativeToolCancellationToken,
+        checkpoint: () -> Unit
+    ): AgentWebIntelligenceFetched
+}
+
+fun interface AgentWebIntelligenceCredentialProvider {
+    fun credential(key: String): String
+
+    companion object {
+        val NONE = AgentWebIntelligenceCredentialProvider { "" }
+    }
+}
+
 class AgentBoundedWebIntelligenceFetcher(
     private val web: AgentBoundedWebService
-) : AgentWebIntelligenceFetcher {
+) : AgentWebIntelligenceFetcher, AgentWebIntelligenceRequestFetcher {
     override fun fetch(
         url: String,
         maxBytes: Long,
@@ -97,8 +208,26 @@ class AgentBoundedWebIntelligenceFetcher(
         cancellationToken: AgentNativeToolCancellationToken,
         checkpoint: () -> Unit
     ): AgentWebIntelligenceFetched {
+        return fetch(url, maxBytes, timeoutMillis, emptyMap(), cancellationToken, checkpoint)
+    }
+
+    override fun fetch(
+        url: String,
+        maxBytes: Long,
+        timeoutMillis: Long,
+        headers: Map<String, String>,
+        cancellationToken: AgentNativeToolCancellationToken,
+        checkpoint: () -> Unit
+    ): AgentWebIntelligenceFetched {
         val started = System.currentTimeMillis()
-        val resource = web.fetch(url, maxBytes, timeoutMillis, cancellationToken, checkpoint)
+        val resource = web.fetch(
+            url = url,
+            maxBytes = maxBytes,
+            timeoutMillis = timeoutMillis,
+            cancellationToken = cancellationToken,
+            checkpoint = checkpoint,
+            headers = headers
+        )
         return AgentWebIntelligenceFetched(
             url = resource.finalUrl,
             contentType = resource.contentType,
@@ -115,7 +244,11 @@ data class AgentWebIntelligenceRawResult(
     val url: String,
     val excerpt: String = "",
     val publishedAt: String = "",
-    val vertical: AgentWebIntelligenceVertical = AgentWebIntelligenceVertical.GENERAL
+    val vertical: AgentWebIntelligenceVertical = AgentWebIntelligenceVertical.GENERAL,
+    val imageUrl: String = "",
+    val thumbnailUrl: String = "",
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0
 )
 
 data class AgentWebIntelligenceReceipt(
@@ -250,6 +383,10 @@ data class AgentWebIntelligenceResult(
     var excerpt: String,
     var publishedAt: String,
     var vertical: AgentWebIntelligenceVertical,
+    var imageUrl: String = "",
+    var thumbnailUrl: String = "",
+    var imageWidth: Int = 0,
+    var imageHeight: Int = 0,
     val engineRanks: MutableMap<String, Int> = linkedMapOf(),
     val engineWeights: MutableMap<String, Double> = linkedMapOf(),
     var authority: Double = 0.0,
@@ -263,6 +400,10 @@ data class AgentWebIntelligenceResult(
         "published_at" to publishedAt.take(64),
         "language" to AgentWebIntelligenceText.language("$title $excerpt"),
         "vertical" to vertical.wireValue,
+        "image_url" to imageUrl.take(4_096),
+        "thumbnail_url" to thumbnailUrl.take(4_096),
+        "image_width" to imageWidth.coerceAtLeast(0),
+        "image_height" to imageHeight.coerceAtLeast(0),
         "engines" to engineRanks.keys.sorted(),
         "rank" to rank,
         "score" to score.publicValue()
@@ -270,40 +411,373 @@ data class AgentWebIntelligenceResult(
 }
 
 object AgentWebIntelligenceEngineCatalog {
+    private data class IndexedSource(
+        val id: String,
+        val title: String,
+        val vertical: String,
+        val host: String,
+        val scope: String = host,
+        val languages: Set<String> = setOf("*"),
+        val authority: Double = 0.7
+    )
+
+    private val indexedSources = listOf(
+        IndexedSource("reuters_news", "Reuters", "news", "reuters.com", authority = 0.9),
+        IndexedSource("ap_news", "AP News", "news", "apnews.com", authority = 0.9),
+        IndexedSource("bbc_news", "BBC News", "news", "bbc.com", "bbc.com/news", authority = 0.9),
+        IndexedSource("xinhua_news", "Xinhua", "news", "news.cn", languages = setOf("zh"), authority = 0.85),
+        IndexedSource("cna_news", "Channel News Asia", "news", "channelnewsasia.com", authority = 0.85),
+
+        IndexedSource("britannica", "Britannica", "knowledge", "britannica.com", authority = 0.9),
+        IndexedSource("wikidata", "Wikidata", "knowledge", "wikidata.org", authority = 0.9),
+        IndexedSource("stanford_encyclopedia", "Stanford Encyclopedia of Philosophy", "knowledge", "plato.stanford.edu", authority = 0.95),
+        IndexedSource("baidu_baike", "Baidu Baike", "knowledge", "baike.baidu.com", languages = setOf("zh"), authority = 0.75),
+
+        IndexedSource("medium", "Medium", "publishing", "medium.com"),
+        IndexedSource("substack", "Substack", "publishing", "substack.com"),
+        IndexedSource("jianshu", "Jianshu", "publishing", "jianshu.com", languages = setOf("zh")),
+        IndexedSource("toutiao", "Toutiao", "publishing", "toutiao.com", languages = setOf("zh")),
+        IndexedSource("wordpress", "WordPress.com", "publishing", "wordpress.com"),
+
+        IndexedSource("codeberg", "Codeberg", "code", "codeberg.org", authority = 0.8),
+        IndexedSource("gitee", "Gitee", "code", "gitee.com", languages = setOf("zh"), authority = 0.8),
+        IndexedSource("sourceforge", "SourceForge", "code", "sourceforge.net", authority = 0.75),
+
+        IndexedSource("microsoft_learn", "Microsoft Learn", "docs", "learn.microsoft.com", authority = 0.95),
+        IndexedSource("android_developers", "Android Developers", "docs", "developer.android.com", authority = 0.95),
+        IndexedSource("apple_developer", "Apple Developer", "docs", "developer.apple.com", authority = 0.95),
+        IndexedSource("python_docs", "Python Documentation", "docs", "docs.python.org", authority = 0.95),
+        IndexedSource("rust_docs", "Rust Documentation", "docs", "doc.rust-lang.org", authority = 0.95),
+
+        IndexedSource("maven_central", "Maven Central", "packages", "central.sonatype.com", authority = 0.9),
+        IndexedSource("nuget", "NuGet", "packages", "nuget.org", authority = 0.9),
+        IndexedSource("go_packages", "Go Packages", "packages", "pkg.go.dev", authority = 0.9),
+        IndexedSource("packagist", "Packagist", "packages", "packagist.org", authority = 0.85),
+        IndexedSource("rubygems", "RubyGems", "packages", "rubygems.org", authority = 0.85),
+
+        IndexedSource("quora", "Quora", "qa", "quora.com"),
+        IndexedSource("stackexchange", "Stack Exchange", "qa", "stackexchange.com", authority = 0.8),
+        IndexedSource("superuser", "Super User", "qa", "superuser.com", authority = 0.8),
+        IndexedSource("serverfault", "Server Fault", "qa", "serverfault.com", authority = 0.8),
+        IndexedSource("askubuntu", "Ask Ubuntu", "qa", "askubuntu.com", authority = 0.8),
+
+        IndexedSource("product_hunt", "Product Hunt", "community", "producthunt.com"),
+        IndexedSource("slashdot", "Slashdot", "community", "slashdot.org"),
+        IndexedSource("dev_community", "DEV Community", "community", "dev.to"),
+        IndexedSource("hashnode", "Hashnode", "community", "hashnode.com"),
+
+        IndexedSource("bluesky", "Bluesky", "social", "bsky.app"),
+        IndexedSource("threads", "Threads", "social", "threads.net"),
+        IndexedSource("weibo", "Weibo", "social", "weibo.com", languages = setOf("zh")),
+        IndexedSource("douban", "Douban", "social", "douban.com", languages = setOf("zh")),
+
+        IndexedSource("core_academic", "CORE", "academic", "core.ac.uk", authority = 0.9),
+        IndexedSource("doaj", "Directory of Open Access Journals", "academic", "doaj.org", authority = 0.9),
+        IndexedSource("ssrn", "SSRN", "academic", "ssrn.com", authority = 0.85),
+        IndexedSource("biorxiv", "bioRxiv", "academic", "biorxiv.org", authority = 0.9),
+        IndexedSource("medrxiv", "medRxiv", "academic", "medrxiv.org", authority = 0.85),
+
+        IndexedSource("openalex", "OpenAlex", "research_index", "openalex.org", authority = 0.9),
+        IndexedSource("datacite", "DataCite", "research_index", "datacite.org", authority = 0.9),
+        IndexedSource("orcid", "ORCID", "research_index", "orcid.org", authority = 0.9),
+        IndexedSource("researchgate", "ResearchGate", "research_index", "researchgate.net", authority = 0.75),
+        IndexedSource("base_search", "BASE", "research_index", "base-search.net", authority = 0.85),
+
+        IndexedSource("nih", "NIH", "medical", "nih.gov", authority = 0.95),
+        IndexedSource("cochrane", "Cochrane", "medical", "cochrane.org", authority = 0.95),
+        IndexedSource("clinical_trials", "ClinicalTrials.gov", "medical", "clinicaltrials.gov", authority = 0.95),
+        IndexedSource("nejm", "New England Journal of Medicine", "medical", "nejm.org", authority = 0.95),
+        IndexedSource("bmj", "BMJ", "medical", "bmj.com", authority = 0.95),
+        IndexedSource("jama", "JAMA Network", "medical", "jamanetwork.com", authority = 0.95),
+
+        IndexedSource("who_healthcare", "World Health Organization", "healthcare", "who.int", authority = 0.95),
+        IndexedSource("cdc_healthcare", "CDC", "healthcare", "cdc.gov", authority = 0.95),
+        IndexedSource("nhs", "NHS", "healthcare", "nhs.uk", authority = 0.95),
+        IndexedSource("mayo_clinic", "Mayo Clinic", "healthcare", "mayoclinic.org", authority = 0.9),
+        IndexedSource("cleveland_clinic", "Cleveland Clinic", "healthcare", "clevelandclinic.org", authority = 0.9),
+        IndexedSource("medlineplus", "MedlinePlus", "healthcare", "medlineplus.gov", authority = 0.95),
+
+        IndexedSource("ncbi", "NCBI", "biology", "ncbi.nlm.nih.gov", authority = 0.95),
+        IndexedSource("uniprot", "UniProt", "biology", "uniprot.org", authority = 0.95),
+        IndexedSource("ensembl", "Ensembl", "biology", "ensembl.org", authority = 0.95),
+        IndexedSource("protein_data_bank", "RCSB Protein Data Bank", "biology", "rcsb.org", authority = 0.95),
+        IndexedSource("kegg", "KEGG", "biology", "kegg.jp", authority = 0.9),
+        IndexedSource("nature_biology", "Nature Biology", "biology", "nature.com", "nature.com/subjects/biological-sciences", authority = 0.9),
+
+        IndexedSource("ars_technica", "Ars Technica", "technology", "arstechnica.com"),
+        IndexedSource("techcrunch", "TechCrunch", "technology", "techcrunch.com"),
+        IndexedSource("the_verge", "The Verge", "technology", "theverge.com"),
+        IndexedSource("wired", "WIRED", "technology", "wired.com"),
+        IndexedSource("zdnet", "ZDNET", "technology", "zdnet.com"),
+        IndexedSource("thirty_six_kr", "36Kr", "technology", "36kr.com", languages = setOf("zh")),
+
+        IndexedSource("openai_agents_sdk", "OpenAI Agents SDK", "agents", "openai.github.io", "openai.github.io/openai-agents-python", authority = 0.95),
+        IndexedSource("anthropic_agents", "Anthropic Agent Guidance", "agents", "anthropic.com", "anthropic.com/research/building-effective-agents", authority = 0.95),
+        IndexedSource("langchain_agents", "LangChain Agents", "agents", "docs.langchain.com", authority = 0.9),
+        IndexedSource("autogen_agents", "Microsoft AutoGen", "agents", "microsoft.github.io", "microsoft.github.io/autogen", authority = 0.9),
+        IndexedSource("crewai_agents", "CrewAI", "agents", "docs.crewai.com", authority = 0.85),
+        IndexedSource("google_adk", "Google Agent Development Kit", "agents", "google.github.io", "google.github.io/adk-docs", authority = 0.9),
+
+        IndexedSource("intel_ark", "Intel ARK", "hardware", "intel.com", "intel.com/content/www/us/en/ark", authority = 0.95),
+        IndexedSource("amd_products", "AMD Products", "hardware", "amd.com", "amd.com/en/products", authority = 0.95),
+        IndexedSource("nvidia_products", "NVIDIA Products", "hardware", "nvidia.com", "nvidia.com/en-us/products", authority = 0.95),
+        IndexedSource("qualcomm_products", "Qualcomm Products", "hardware", "qualcomm.com", "qualcomm.com/products", authority = 0.95),
+        IndexedSource("arm_developer", "Arm Developer", "hardware", "developer.arm.com", authority = 0.95),
+        IndexedSource("toms_hardware", "Tom's Hardware", "hardware", "tomshardware.com", authority = 0.8),
+
+        IndexedSource("wikimedia_commons", "Wikimedia Commons", "image", "commons.wikimedia.org", authority = 0.85),
+        IndexedSource("unsplash", "Unsplash", "image", "unsplash.com"),
+        IndexedSource("pexels", "Pexels", "image", "pexels.com"),
+        IndexedSource("pixabay", "Pixabay", "image", "pixabay.com"),
+        IndexedSource("openverse", "Openverse", "image", "openverse.org", authority = 0.8),
+
+        IndexedSource("youtube", "YouTube", "video", "youtube.com"),
+        IndexedSource("vimeo", "Vimeo", "video", "vimeo.com"),
+        IndexedSource("bilibili", "Bilibili", "video", "bilibili.com", languages = setOf("zh")),
+        IndexedSource("dailymotion", "Dailymotion", "video", "dailymotion.com"),
+        IndexedSource("archive_video", "Internet Archive Video", "video", "archive.org", "archive.org/details/movies", authority = 0.8),
+        IndexedSource("ted_video", "TED", "video", "ted.com", "ted.com/talks", authority = 0.85),
+
+        IndexedSource("tripadvisor", "Tripadvisor", "travel", "tripadvisor.com"),
+        IndexedSource("booking", "Booking.com", "travel", "booking.com"),
+        IndexedSource("skyscanner", "Skyscanner", "travel", "skyscanner.com"),
+        IndexedSource("trip_com", "Trip.com", "travel", "trip.com"),
+        IndexedSource("lonely_planet", "Lonely Planet", "travel", "lonelyplanet.com"),
+        IndexedSource("klook", "Klook", "travel", "klook.com"),
+
+        IndexedSource("wikihow", "wikiHow", "lifestyle", "wikihow.com"),
+        IndexedSource("lifehacker", "Lifehacker", "lifestyle", "lifehacker.com"),
+        IndexedSource("the_spruce", "The Spruce", "lifestyle", "thespruce.com"),
+        IndexedSource("good_housekeeping", "Good Housekeeping", "lifestyle", "goodhousekeeping.com"),
+        IndexedSource("martha_stewart", "Martha Stewart", "lifestyle", "marthastewart.com"),
+        IndexedSource("better_homes", "Better Homes & Gardens", "lifestyle", "bhg.com"),
+
+        IndexedSource("steam", "Steam", "games", "store.steampowered.com"),
+        IndexedSource("ign", "IGN", "games", "ign.com"),
+        IndexedSource("gamespot", "GameSpot", "games", "gamespot.com"),
+        IndexedSource("metacritic_games", "Metacritic Games", "games", "metacritic.com", "metacritic.com/game"),
+        IndexedSource("pcgamingwiki", "PCGamingWiki", "games", "pcgamingwiki.com"),
+        IndexedSource("taptap", "TapTap", "games", "taptap.cn", languages = setOf("zh")),
+
+        IndexedSource("amazon", "Amazon", "shopping", "amazon.com"),
+        IndexedSource("jd", "JD.com", "shopping", "jd.com", languages = setOf("zh")),
+        IndexedSource("taobao", "Taobao", "shopping", "taobao.com", languages = setOf("zh")),
+        IndexedSource("tmall", "Tmall", "shopping", "tmall.com", languages = setOf("zh")),
+        IndexedSource("ebay", "eBay", "shopping", "ebay.com"),
+        IndexedSource("aliexpress", "AliExpress", "shopping", "aliexpress.com"),
+
+        IndexedSource("yahoo_finance", "Yahoo Finance", "finance", "finance.yahoo.com", authority = 0.85),
+        IndexedSource("investing", "Investing.com", "finance", "investing.com"),
+        IndexedSource("marketwatch", "MarketWatch", "finance", "marketwatch.com", authority = 0.8),
+        IndexedSource("tradingview", "TradingView", "finance", "tradingview.com"),
+        IndexedSource("eastmoney", "Eastmoney", "finance", "eastmoney.com", languages = setOf("zh")),
+        IndexedSource("sina_finance", "Sina Finance", "finance", "finance.sina.com.cn", languages = setOf("zh")),
+
+        IndexedSource("bloomberg", "Bloomberg", "business", "bloomberg.com", authority = 0.85),
+        IndexedSource("financial_times", "Financial Times", "business", "ft.com", authority = 0.85),
+        IndexedSource("forbes", "Forbes", "business", "forbes.com"),
+        IndexedSource("fortune", "Fortune", "business", "fortune.com"),
+        IndexedSource("cnbc", "CNBC", "business", "cnbc.com"),
+        IndexedSource("caixin", "Caixin", "business", "caixin.com", languages = setOf("zh"), authority = 0.8),
+
+        IndexedSource("espn", "ESPN", "sports", "espn.com"),
+        IndexedSource("cbs_sports", "CBS Sports", "sports", "cbssports.com"),
+        IndexedSource("sky_sports", "Sky Sports", "sports", "skysports.com"),
+        IndexedSource("the_athletic", "The Athletic", "sports", "nytimes.com", "nytimes.com/athletic"),
+        IndexedSource("hupu", "Hupu", "sports", "hupu.com", languages = setOf("zh")),
+        IndexedSource("sina_sports", "Sina Sports", "sports", "sports.sina.com.cn", languages = setOf("zh")),
+
+        IndexedSource("weather_com", "The Weather Channel", "weather", "weather.com", authority = 0.8),
+        IndexedSource("accuweather", "AccuWeather", "weather", "accuweather.com", authority = 0.8),
+        IndexedSource("meteoblue", "Meteoblue", "weather", "meteoblue.com", authority = 0.8),
+        IndexedSource("windy", "Windy", "weather", "windy.com"),
+        IndexedSource("noaa_weather", "NOAA Weather", "weather", "weather.gov", authority = 0.95),
+        IndexedSource("china_weather", "China Weather", "weather", "weather.com.cn", languages = setOf("zh"), authority = 0.85),
+
+        IndexedSource("openstreetmap", "OpenStreetMap", "maps_local", "openstreetmap.org", authority = 0.85),
+        IndexedSource("google_maps", "Google Maps", "maps_local", "maps.google.com"),
+        IndexedSource("bing_maps", "Bing Maps", "maps_local", "bing.com", "bing.com/maps"),
+        IndexedSource("amap", "Amap", "maps_local", "amap.com", languages = setOf("zh")),
+        IndexedSource("baidu_maps", "Baidu Maps", "maps_local", "map.baidu.com", languages = setOf("zh")),
+        IndexedSource("mapquest", "MapQuest", "maps_local", "mapquest.com"),
+
+        IndexedSource("allrecipes", "Allrecipes", "food", "allrecipes.com"),
+        IndexedSource("serious_eats", "Serious Eats", "food", "seriouseats.com"),
+        IndexedSource("epicurious", "Epicurious", "food", "epicurious.com"),
+        IndexedSource("food_network", "Food Network", "food", "foodnetwork.com"),
+        IndexedSource("dianping", "Dianping", "food", "dianping.com", languages = setOf("zh")),
+        IndexedSource("xiachufang", "Xiachufang", "food", "xiachufang.com", languages = setOf("zh")),
+
+        IndexedSource("khan_academy", "Khan Academy", "education", "khanacademy.org", authority = 0.85),
+        IndexedSource("coursera", "Coursera", "education", "coursera.org"),
+        IndexedSource("edx", "edX", "education", "edx.org"),
+        IndexedSource("mit_ocw", "MIT OpenCourseWare", "education", "ocw.mit.edu", authority = 0.9),
+        IndexedSource("openstax", "OpenStax", "education", "openstax.org", authority = 0.9),
+        IndexedSource("xuetangx", "XuetangX", "education", "xuetangx.com", languages = setOf("zh")),
+
+        IndexedSource("linkedin_jobs", "LinkedIn Jobs", "jobs", "linkedin.com", "linkedin.com/jobs"),
+        IndexedSource("indeed", "Indeed", "jobs", "indeed.com"),
+        IndexedSource("glassdoor", "Glassdoor", "jobs", "glassdoor.com"),
+        IndexedSource("ziprecruiter", "ZipRecruiter", "jobs", "ziprecruiter.com"),
+        IndexedSource("boss_zhipin", "BOSS Zhipin", "jobs", "zhipin.com", languages = setOf("zh")),
+        IndexedSource("lagou", "Lagou", "jobs", "lagou.com", languages = setOf("zh")),
+
+        IndexedSource("china_government", "China Government", "government", "gov.cn", languages = setOf("zh"), authority = 0.95),
+        IndexedSource("usa_government", "USA.gov", "government", "usa.gov", authority = 0.95),
+        IndexedSource("uk_government", "GOV.UK", "government", "gov.uk", authority = 0.95),
+        IndexedSource("europa", "European Union", "government", "europa.eu", authority = 0.95),
+        IndexedSource("united_nations", "United Nations", "government", "un.org", authority = 0.95),
+        IndexedSource("oecd", "OECD", "government", "oecd.org", authority = 0.9),
+
+        IndexedSource("cornell_law", "Cornell Legal Information Institute", "legal", "law.cornell.edu", authority = 0.95),
+        IndexedSource("courtlistener", "CourtListener", "legal", "courtlistener.com", authority = 0.9),
+        IndexedSource("justia", "Justia", "legal", "justia.com", authority = 0.8),
+        IndexedSource("eur_lex", "EUR-Lex", "legal", "eur-lex.europa.eu", authority = 0.95),
+        IndexedSource("china_laws", "China National Laws Database", "legal", "flk.npc.gov.cn", languages = setOf("zh"), authority = 0.95),
+        IndexedSource("china_judgments", "China Judgments Online", "legal", "wenshu.court.gov.cn", languages = setOf("zh"), authority = 0.9),
+
+        IndexedSource("google_patents", "Google Patents", "patents", "patents.google.com", authority = 0.9),
+        IndexedSource("wipo_patents", "WIPO Patentscope", "patents", "patentscope.wipo.int", authority = 0.95),
+        IndexedSource("uspto_patents", "USPTO Patent Search", "patents", "ppubs.uspto.gov", authority = 0.95),
+        IndexedSource("espacenet", "Espacenet", "patents", "worldwide.espacenet.com", authority = 0.95),
+        IndexedSource("lens_patents", "The Lens", "patents", "lens.org", authority = 0.9),
+        IndexedSource("cnipa_patents", "CNIPA", "patents", "cnipa.gov.cn", languages = setOf("zh"), authority = 0.95),
+
+        IndexedSource("google_books", "Google Books", "books", "books.google.com"),
+        IndexedSource("open_library", "Open Library", "books", "openlibrary.org", authority = 0.85),
+        IndexedSource("project_gutenberg", "Project Gutenberg", "books", "gutenberg.org", authority = 0.85),
+        IndexedSource("worldcat", "WorldCat", "books", "worldcat.org", authority = 0.9),
+        IndexedSource("archive_books", "Internet Archive Books", "books", "archive.org", "archive.org/details/texts", authority = 0.85),
+        IndexedSource("douban_books", "Douban Books", "books", "book.douban.com", languages = setOf("zh")),
+
+        IndexedSource("spotify", "Spotify", "audio", "open.spotify.com"),
+        IndexedSource("apple_music", "Apple Music", "audio", "music.apple.com"),
+        IndexedSource("soundcloud", "SoundCloud", "audio", "soundcloud.com"),
+        IndexedSource("bandcamp", "Bandcamp", "audio", "bandcamp.com"),
+        IndexedSource("podcast_index", "Podcast Index", "audio", "podcastindex.org"),
+        IndexedSource("netease_music", "NetEase Cloud Music", "audio", "music.163.com", languages = setOf("zh")),
+
+        IndexedSource("imdb", "IMDb", "entertainment", "imdb.com"),
+        IndexedSource("tmdb", "The Movie Database", "entertainment", "themoviedb.org"),
+        IndexedSource("rotten_tomatoes", "Rotten Tomatoes", "entertainment", "rottentomatoes.com"),
+        IndexedSource("letterboxd", "Letterboxd", "entertainment", "letterboxd.com"),
+        IndexedSource("douban_movies", "Douban Movies", "entertainment", "movie.douban.com", languages = setOf("zh")),
+        IndexedSource("mtime", "Mtime", "entertainment", "mtime.com", languages = setOf("zh")),
+
+        IndexedSource("nvd", "NVD", "cybersecurity", "nvd.nist.gov", authority = 0.95),
+        IndexedSource("cve", "CVE", "cybersecurity", "cve.org", authority = 0.95),
+        IndexedSource("mitre_attack", "MITRE ATT&CK", "cybersecurity", "attack.mitre.org", authority = 0.95),
+        IndexedSource("cisa", "CISA", "cybersecurity", "cisa.gov", authority = 0.95),
+        IndexedSource("exploit_db", "Exploit Database", "cybersecurity", "exploit-db.com", authority = 0.8),
+        IndexedSource("snyk_vulnerability", "Snyk Vulnerability Database", "cybersecurity", "security.snyk.io", authority = 0.8),
+
+        IndexedSource("huggingface_models", "Hugging Face Models", "ai_models", "huggingface.co", "huggingface.co/models"),
+        IndexedSource("modelscope_models", "ModelScope Models", "ai_models", "modelscope.cn", "modelscope.cn/models", languages = setOf("zh")),
+        IndexedSource("ollama_library", "Ollama Library", "ai_models", "ollama.com", "ollama.com/library"),
+        IndexedSource("openai_models", "OpenAI Models", "ai_models", "platform.openai.com", "platform.openai.com/docs/models", authority = 0.9),
+        IndexedSource("anthropic_models", "Anthropic Models", "ai_models", "docs.anthropic.com", authority = 0.9),
+        IndexedSource("google_ai_models", "Google AI Models", "ai_models", "ai.google.dev", authority = 0.9),
+
+        IndexedSource("kaggle_datasets", "Kaggle Datasets", "datasets", "kaggle.com", "kaggle.com/datasets"),
+        IndexedSource("huggingface_datasets", "Hugging Face Datasets", "datasets", "huggingface.co", "huggingface.co/datasets"),
+        IndexedSource("google_dataset_search", "Google Dataset Search", "datasets", "datasetsearch.research.google.com"),
+        IndexedSource("data_gov", "Data.gov", "datasets", "data.gov", authority = 0.9),
+        IndexedSource("zenodo", "Zenodo", "datasets", "zenodo.org", authority = 0.9),
+        IndexedSource("uci_datasets", "UCI Machine Learning Repository", "datasets", "archive.ics.uci.edu", authority = 0.9),
+
+        IndexedSource("edmunds", "Edmunds", "automotive", "edmunds.com"),
+        IndexedSource("kbb", "Kelley Blue Book", "automotive", "kbb.com"),
+        IndexedSource("car_and_driver", "Car and Driver", "automotive", "caranddriver.com"),
+        IndexedSource("motortrend", "MotorTrend", "automotive", "motortrend.com"),
+        IndexedSource("autohome", "Autohome", "automotive", "autohome.com.cn", languages = setOf("zh")),
+        IndexedSource("dongchedi", "Dongchedi", "automotive", "dongchedi.com", languages = setOf("zh")),
+
+        IndexedSource("zillow", "Zillow", "real_estate", "zillow.com"),
+        IndexedSource("realtor", "Realtor.com", "real_estate", "realtor.com"),
+        IndexedSource("redfin", "Redfin", "real_estate", "redfin.com"),
+        IndexedSource("rightmove", "Rightmove", "real_estate", "rightmove.co.uk"),
+        IndexedSource("fang", "Fang.com", "real_estate", "fang.com", languages = setOf("zh")),
+        IndexedSource("lianjia", "Lianjia", "real_estate", "lianjia.com", languages = setOf("zh")),
+
+        IndexedSource("eventbrite", "Eventbrite", "events", "eventbrite.com"),
+        IndexedSource("meetup", "Meetup", "events", "meetup.com"),
+        IndexedSource("ten_times", "10times", "events", "10times.com"),
+        IndexedSource("ticketmaster", "Ticketmaster", "events", "ticketmaster.com"),
+        IndexedSource("damai", "Damai", "events", "damai.cn", languages = setOf("zh")),
+        IndexedSource("live_nation", "Live Nation", "events", "livenation.com"),
+
+        IndexedSource("home_assistant", "Home Assistant", "smart_home", "home-assistant.io", authority = 0.9),
+        IndexedSource("matter", "Matter", "smart_home", "csa-iot.org", authority = 0.9),
+        IndexedSource("smartthings", "SmartThings", "smart_home", "smartthings.com"),
+        IndexedSource("apple_home", "Apple Home", "smart_home", "support.apple.com", "support.apple.com/home"),
+        IndexedSource("google_nest", "Google Nest", "smart_home", "support.google.com", "support.google.com/googlenest"),
+        IndexedSource("openhab", "openHAB", "smart_home", "openhab.org", authority = 0.85)
+    )
+
     val entries: List<AgentWebIntelligenceEngineSpec> = listOf(
         spec("bing", "Bing", "general", "https://www.bing.com/search?q={query}&count={limit}", weight = 1.05),
         spec("duckduckgo", "DuckDuckGo", "general", "https://html.duckduckgo.com/html/?q={query}", weight = 1.05),
-        spec("baidu", "Baidu", "general", "https://www.baidu.com/s?wd={query}&rn={limit}", languages = setOf("zh"), weight = 1.05),
+        spec("baidu", "Baidu", "regional", "https://www.baidu.com/s?wd={query}&rn={limit}", languages = setOf("zh"), weight = 1.05),
         spec("brave", "Brave Search", "general", "https://search.brave.com/search?q={query}&source=web"),
         spec("mojeek", "Mojeek", "general", "https://www.mojeek.com/search?q={query}"),
-        spec("qwant", "Qwant", "general", "https://www.qwant.com/?q={query}&t=web"),
+        spec("qwant", "Qwant", "regional", "https://www.qwant.com/?q={query}&t=web"),
         spec("yahoo", "Yahoo", "general", "https://search.yahoo.com/search?p={query}"),
-        spec("yandex", "Yandex", "general", "https://yandex.com/search/?text={query}"),
+        spec("yandex", "Yandex", "regional", "https://yandex.com/search/?text={query}"),
         spec("ecosia", "Ecosia", "general", "https://www.ecosia.org/search?q={query}"),
         spec("startpage", "Startpage", "general", "https://www.startpage.com/sp/search?query={query}"),
-        spec("sogou", "Sogou", "general", "https://www.sogou.com/web?query={query}", languages = setOf("zh")),
-        spec("so360", "360 Search", "general", "https://www.so.com/s?q={query}", languages = setOf("zh")),
-        spec("naver", "Naver", "general", "https://search.naver.com/search.naver?query={query}", languages = setOf("ko")),
+        spec("sogou", "Sogou", "regional", "https://www.sogou.com/web?query={query}", languages = setOf("zh")),
+        spec("naver", "Naver", "regional", "https://search.naver.com/search.naver?query={query}", languages = setOf("ko")),
         spec("google", "Google", "general", "https://www.google.com/search?q={query}&num={limit}", enabled = false),
         spec("bing_news", "Bing News", "news", "https://www.bing.com/news/search?q={query}&count={limit}", weight = 1.1),
         spec("brave_news", "Brave News", "news", "https://search.brave.com/news?q={query}"),
+        spec(
+            "brave_image",
+            "Brave Image",
+            "image",
+            "https://api.search.brave.com/res/v1/images/search?q={query}&count={limit}&safesearch=moderate",
+            parser = "brave_image",
+            authority = 0.8,
+            requiresKey = "brave_api_key"
+        ),
+        spec(
+            "duckduckgo_image",
+            "DuckDuckGo Image",
+            "image",
+            "https://duckduckgo.com/?q={query}&iax=images&ia=images",
+            parser = "duckduckgo_image",
+            authority = 0.75
+        ),
+        spec(
+            "marginalia",
+            "Marginalia",
+            "general",
+            "https://api2.marginalia-search.com/search?query={query}&count={limit}&dc=3",
+            parser = "marginalia",
+            authority = 0.7
+        ),
         spec("wikipedia", "Wikipedia", "knowledge", "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit={limit}&srsearch={query}", parser = "wikipedia", authority = 0.9),
         spec("wikipedia_zh", "Wikipedia Chinese", "knowledge", "https://zh.wikipedia.org/w/api.php?action=query&list=search&format=json&srlimit={limit}&srsearch={query}", parser = "wikipedia_zh", languages = setOf("zh"), authority = 0.9),
         spec("github", "GitHub", "code", "https://api.github.com/search/repositories?q={query}&per_page={limit}", parser = "github", authority = 0.85),
+        spec("github_code", "GitHub Code Search", "code", "https://api.github.com/search/code?q={query}&per_page={limit}", parser = "github_code", authority = 0.9),
         spec("gitlab", "GitLab", "code", "https://gitlab.com/api/v4/projects?search={query}&per_page={limit}", parser = "gitlab", authority = 0.8),
-        spec("stackoverflow", "Stack Overflow", "community", "https://api.stackexchange.com/2.3/search/advanced?site=stackoverflow&pagesize={limit}&q={query}", parser = "stackoverflow", authority = 0.85),
+        spec("stackoverflow", "Stack Overflow", "qa", "https://api.stackexchange.com/2.3/search/advanced?site=stackoverflow&pagesize={limit}&q={query}", parser = "stackoverflow", authority = 0.85),
         spec("hacker_news", "Hacker News", "community", "https://hn.algolia.com/api/v1/search?hitsPerPage={limit}&query={query}", parser = "hacker_news", authority = 0.7),
         spec("lobsters", "Lobsters", "community", "https://lobste.rs/search.json?q={query}", parser = "lobsters", authority = 0.7),
+        spec("x_public", "X Public Posts", "social", "https://html.duckduckgo.com/html/?q=site%3Ax.com%2Fstatus+{query}", parser = "x_public", authority = 0.65),
+        spec("wechat_public", "WeChat Public Articles", "publishing", "https://weixin.sogou.com/weixin?type=2&query={query}", parser = "wechat_public", languages = setOf("zh"), authority = 0.75),
+        spec("zhihu_public", "Zhihu Public Content", "qa", "https://html.duckduckgo.com/html/?q=site%3Azhihu.com+{query}", parser = "zhihu_public", languages = setOf("zh"), authority = 0.7),
+        spec("xiaohongshu_public", "Xiaohongshu Public Notes", "social", "https://html.duckduckgo.com/html/?q=site%3Axiaohongshu.com+{query}", parser = "xiaohongshu_public", languages = setOf("zh"), authority = 0.65),
         spec("reddit", "Reddit", "community", "https://www.reddit.com/search.json?q={query}&limit={limit}&raw_json=1", parser = "reddit", authority = 0.65),
-        spec("crossref", "Crossref", "academic", "https://api.crossref.org/works?rows={limit}&query={query}", parser = "crossref", authority = 0.9),
+        spec("crossref", "Crossref", "research_index", "https://api.crossref.org/works?rows={limit}&query={query}", parser = "crossref", authority = 0.9),
         spec("semantic_scholar", "Semantic Scholar", "academic", "https://api.semanticscholar.org/graph/v1/paper/search?limit={limit}&fields=title,url,abstract,year,authors&query={query}", parser = "semantic_scholar", authority = 0.9),
         spec("arxiv", "arXiv", "academic", "https://export.arxiv.org/api/query?max_results={limit}&search_query=all:{query}", parser = "atom", authority = 0.9),
-        spec("pubmed", "PubMed", "academic", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax={limit}&term={query}", parser = "pubmed", authority = 0.95),
-        spec("crates_io", "crates.io", "code", "https://crates.io/api/v1/crates?q={query}&per_page={limit}", parser = "crates_io", authority = 0.8),
-        spec("npm", "npm", "code", "https://registry.npmjs.org/-/v1/search?size={limit}&text={query}", parser = "npm", authority = 0.8),
+        spec("pubmed", "PubMed", "medical", "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&retmode=json&retmax={limit}&term={query}", parser = "pubmed", authority = 0.95),
+        spec("crates_io", "crates.io", "packages", "https://crates.io/api/v1/crates?q={query}&per_page={limit}", parser = "crates_io", authority = 0.8),
+        spec("npm", "npm", "packages", "https://registry.npmjs.org/-/v1/search?size={limit}&text={query}", parser = "npm", authority = 0.8),
         spec("mdn", "MDN", "docs", "https://developer.mozilla.org/api/v1/search?q={query}&page_size={limit}", parser = "mdn", authority = 0.95),
-        spec("pypi", "PyPI", "code", "https://pypi.org/search/?q={query}", authority = 0.8)
-    )
+        spec("devdocs", "DevDocs", "docs", "local://devdocs", parser = "devdocs", authority = 0.9),
+        spec("pypi", "PyPI", "packages", "https://pypi.org/search/?q={query}", authority = 0.8)
+    ) + indexedSources.mapIndexed(::indexedSpec)
 
     private fun spec(
         id: String,
@@ -314,7 +788,10 @@ object AgentWebIntelligenceEngineCatalog {
         languages: Set<String> = setOf("*"),
         weight: Double = 1.0,
         authority: Double = 0.5,
-        enabled: Boolean = true
+        enabled: Boolean = true,
+        requiresKey: String = "",
+        allowedHosts: Set<String> = emptySet(),
+        categoryTags: Set<String> = emptySet()
     ) = AgentWebIntelligenceEngineSpec(
         id = id,
         title = title,
@@ -324,8 +801,34 @@ object AgentWebIntelligenceEngineCatalog {
         languages = languages,
         weight = weight,
         authority = authority,
-        enabledByDefault = enabled
+        enabledByDefault = enabled,
+        requiresKey = requiresKey,
+        allowedHosts = allowedHosts,
+        categoryTags = categoryTags
     )
+
+    private fun indexedSpec(
+        index: Int,
+        source: IndexedSource
+    ): AgentWebIntelligenceEngineSpec {
+        val scopedQuery = URLEncoder.encode("site:${source.scope} ", Charsets.UTF_8.name())
+        val endpoint = if (index % 2 == 0) {
+            "https://html.duckduckgo.com/html/?q=$scopedQuery{query}"
+        } else {
+            "https://www.bing.com/search?q=$scopedQuery{query}&count={limit}"
+        }
+        return spec(
+            id = source.id,
+            title = source.title,
+            vertical = source.vertical,
+            endpoint = endpoint,
+            parser = "site_index",
+            languages = source.languages,
+            authority = source.authority,
+            allowedHosts = setOf(source.host),
+            categoryTags = setOf(source.vertical)
+        )
+    }
 }
 
 class AgentWebIntelligenceRanker(
@@ -470,7 +973,9 @@ object AgentWebIntelligenceText {
 
 class AgentWebIntelligenceSearchAdapter(
     private val spec: AgentWebIntelligenceEngineSpec,
-    private val fetcher: AgentWebIntelligenceFetcher
+    private val fetcher: AgentWebIntelligenceFetcher,
+    private val credentialProvider: AgentWebIntelligenceCredentialProvider =
+        AgentWebIntelligenceCredentialProvider.NONE
 ) {
     fun search(
         query: String,
@@ -479,21 +984,203 @@ class AgentWebIntelligenceSearchAdapter(
         cancellationToken: AgentNativeToolCancellationToken,
         checkpoint: () -> Unit
     ): List<AgentWebIntelligenceRawResult> {
+        if (spec.parser == "devdocs") return devDocs(query, limit)
+        if (spec.requiresKey.isNotBlank() && credentialProvider.credential(spec.requiresKey).isBlank()) {
+            throw AgentWebMediaException(
+                "credential_unavailable",
+                "${spec.title} requires a configured credential"
+            )
+        }
         val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
         val url = spec.endpoint.replace("{query}", encoded).replace("{limit}", limit.toString())
-        val fetched = fetcher.fetch(
-            url = url,
-            maxBytes = 1_048_576L,
-            timeoutMillis = timeoutMillis,
-            cancellationToken = cancellationToken,
-            checkpoint = checkpoint
+        if (spec.parser == "duckduckgo_image") {
+            return duckDuckGoImages(query, encoded, url, limit, timeoutMillis, cancellationToken, checkpoint)
+        }
+        val fetched = fetch(
+            url,
+            timeoutMillis,
+            requestHeaders(),
+            cancellationToken,
+            checkpoint
         )
         val text = fetched.body.toString(Charsets.UTF_8)
         return when (spec.parser) {
             "html" -> parseHtml(text, fetched.url, limit)
+            "site_index" -> parseSiteIndex(text, fetched.url, limit)
+            "x_public" -> parseXPublic(text, fetched.url, limit)
+            "wechat_public" -> parseWeChatPublic(text, fetched.url, limit)
+            "zhihu_public", "xiaohongshu_public" -> parseIndexedSocial(text, fetched.url, limit)
             "atom" -> parseAtom(text, limit)
             else -> parseJsonValue(text, limit)
         }
+    }
+
+    private fun parseXPublic(
+        source: String,
+        baseUrl: String,
+        limit: Int
+    ): List<AgentWebIntelligenceRawResult> = parseHtml(source, baseUrl, limit * 4)
+        .filter { result ->
+            runCatching {
+                val uri = URI(result.url)
+                uri.host.orEmpty().removePrefix("www.").lowercase(Locale.ROOT) in
+                    setOf("x.com", "twitter.com") &&
+                    "/status/" in uri.path.orEmpty()
+            }.getOrDefault(false)
+        }
+        .take(limit)
+
+    private fun parseSiteIndex(
+        source: String,
+        baseUrl: String,
+        limit: Int
+    ): List<AgentWebIntelligenceRawResult> = parseHtml(source, baseUrl, limit * 4)
+        .filter { result ->
+            runCatching {
+                val host = URI(result.url).host.orEmpty()
+                    .removePrefix("www.")
+                    .lowercase(Locale.ROOT)
+                spec.allowedHosts.any { allowed ->
+                    val normalized = allowed.removePrefix("www.").lowercase(Locale.ROOT)
+                    host == normalized || host.endsWith(".$normalized")
+                }
+            }.getOrDefault(false)
+        }
+        .take(limit)
+
+    private fun parseWeChatPublic(
+        source: String,
+        baseUrl: String,
+        limit: Int
+    ): List<AgentWebIntelligenceRawResult> {
+        val anchorPattern = Regex(
+            "<a\\b[^>]*?href\\s*=\\s*([\"'])(.*?)\\1[^>]*>([\\s\\S]*?)</a>",
+            setOf(RegexOption.IGNORE_CASE)
+        )
+        val seen = linkedSetOf<String>()
+        return buildList {
+            anchorPattern.findAll(source).forEach { match ->
+                val title = AgentWebIntelligenceText.clean(match.groupValues[3], 2_048)
+                val url = unwrap(match.groupValues[2], baseUrl)
+                val accepted = runCatching {
+                    val uri = URI(url)
+                    val host = uri.host.orEmpty().removePrefix("www.").lowercase(Locale.ROOT)
+                    host == "mp.weixin.qq.com" ||
+                        (host == "weixin.sogou.com" && uri.path.orEmpty().startsWith("/link"))
+                }.getOrDefault(false)
+                val canonical = AgentWebIntelligenceText.canonicalUrl(url)
+                if (accepted && title.isNotBlank() && seen.add(canonical)) {
+                    add(raw(size + 1, title, canonical))
+                }
+                if (size >= limit) return@buildList
+            }
+        }
+    }
+
+    private fun parseIndexedSocial(
+        source: String,
+        baseUrl: String,
+        limit: Int
+    ): List<AgentWebIntelligenceRawResult> = parseHtml(source, baseUrl, limit * 4)
+        .filter { result ->
+            runCatching {
+                val uri = URI(result.url)
+                val host = uri.host.orEmpty().removePrefix("www.").lowercase(Locale.ROOT)
+                val path = uri.path.orEmpty()
+                when (spec.parser) {
+                    "zhihu_public" ->
+                        host == "zhihu.com" || host == "zhuanlan.zhihu.com"
+                    "xiaohongshu_public" ->
+                        host == "xiaohongshu.com" &&
+                            (path.startsWith("/explore/") || path.startsWith("/discovery/item/"))
+                    else -> false
+                }
+            }.getOrDefault(false)
+        }
+        .take(limit)
+
+    private fun fetch(
+        url: String,
+        timeoutMillis: Long,
+        headers: Map<String, String>,
+        cancellationToken: AgentNativeToolCancellationToken,
+        checkpoint: () -> Unit
+    ): AgentWebIntelligenceFetched {
+        val requestFetcher = fetcher as? AgentWebIntelligenceRequestFetcher
+        return if (requestFetcher != null) {
+            requestFetcher.fetch(
+                url,
+                1_048_576L,
+                timeoutMillis,
+                headers,
+                cancellationToken,
+                checkpoint
+            )
+        } else {
+            fetcher.fetch(url, 1_048_576L, timeoutMillis, cancellationToken, checkpoint)
+        }
+    }
+
+    private fun requestHeaders(): Map<String, String> = buildMap {
+        when (spec.parser) {
+            "brave_image" -> {
+                put("Accept", "application/json")
+                put("X-Subscription-Token", credentialProvider.credential("brave_api_key"))
+            }
+            "marginalia" -> {
+                put("Accept", "application/json")
+                put("API-Key", "public")
+            }
+            "github", "github_code" -> {
+                put("Accept", "application/vnd.github+json")
+                put("X-GitHub-Api-Version", "2022-11-28")
+                credentialProvider.credential("github_token").takeIf(String::isNotBlank)
+                    ?.let { put("Authorization", "Bearer $it") }
+            }
+        }
+    }
+
+    private fun duckDuckGoImages(
+        query: String,
+        encoded: String,
+        landingUrl: String,
+        limit: Int,
+        timeoutMillis: Long,
+        cancellationToken: AgentNativeToolCancellationToken,
+        checkpoint: () -> Unit
+    ): List<AgentWebIntelligenceRawResult> {
+        val commonHeaders = mapOf(
+            "Accept" to "text/html,application/xhtml+xml",
+            "User-Agent" to SEARCH_USER_AGENT
+        )
+        val landing = fetch(landingUrl, timeoutMillis, commonHeaders, cancellationToken, checkpoint)
+        val token = Regex("""vqd\s*=\s*['"]([^'"]+)['"]""")
+            .find(landing.body.toString(Charsets.UTF_8))
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.trim()
+            .orEmpty()
+        if (token.isBlank()) {
+            throw AgentWebMediaException(
+                "invalid_engine_response",
+                "DuckDuckGo Image did not return a search token",
+                retryable = true
+            )
+        }
+        val endpoint = "https://duckduckgo.com/i.js?l=wt-wt&o=json&q=$encoded&vqd=" +
+            URLEncoder.encode(token, Charsets.UTF_8.name()) + "&f=,,,,,&p=1"
+        val response = fetch(
+            endpoint,
+            timeoutMillis,
+            mapOf(
+                "Accept" to "application/json",
+                "Referer" to landingUrl,
+                "User-Agent" to SEARCH_USER_AGENT
+            ),
+            cancellationToken,
+            checkpoint
+        )
+        return parseJson(JSONObject(response.body.toString(Charsets.UTF_8)), limit)
     }
 
     private fun parseHtml(source: String, baseUrl: String, limit: Int): List<AgentWebIntelligenceRawResult> {
@@ -522,6 +1209,7 @@ class AgentWebIntelligenceSearchAdapter(
         "wikipedia" -> wikipedia(root, limit, "en")
         "wikipedia_zh" -> wikipedia(root, limit, "zh")
         "github" -> rows(root.optJSONArray("items"), limit, "full_name", "html_url", "description", "updated_at")
+        "github_code" -> githubCode(root, limit)
         "gitlab" -> rows(root.optJSONArray("_root"), limit, "path_with_namespace", "web_url", "description", "last_activity_at")
         "stackoverflow" -> rows(root.optJSONArray("items"), limit, "title", "link", "excerpt", "last_activity_date")
         "hacker_news" -> hackerNews(root, limit)
@@ -533,7 +1221,77 @@ class AgentWebIntelligenceSearchAdapter(
         "crates_io" -> crates(root, limit)
         "npm" -> npm(root, limit)
         "mdn" -> mdn(root, limit)
+        "marginalia" -> rows(root.optJSONArray("results"), limit, "title", "url", "description", "")
+        "brave_image" -> imageRows(root.optJSONArray("results"), limit, brave = true)
+        "duckduckgo_image" -> imageRows(root.optJSONArray("results"), limit, brave = false)
         else -> emptyList()
+    }
+
+    private fun githubCode(root: JSONObject, limit: Int) = buildList {
+        val values = root.optJSONArray("items") ?: JSONArray()
+        for (index in 0 until min(values.length(), limit)) {
+            val item = values.optJSONObject(index) ?: continue
+            val repository = item.optJSONObject("repository")
+            val path = item.optString("path").ifBlank { item.optString("name") }
+            val repo = repository?.optString("full_name").orEmpty()
+            result(
+                size + 1,
+                listOf(repo, path).filter(String::isNotBlank).joinToString(" · "),
+                item.optString("html_url"),
+                repository?.optString("description").orEmpty().ifBlank { path },
+                repository?.optString("updated_at").orEmpty()
+            )?.let(::add)
+        }
+    }
+
+    private fun imageRows(values: JSONArray?, limit: Int, brave: Boolean) = buildList {
+        val array = values ?: JSONArray()
+        for (index in 0 until min(array.length(), limit)) {
+            val item = array.optJSONObject(index) ?: continue
+            val properties = item.optJSONObject("properties")
+            val thumbnail = item.optJSONObject("thumbnail")
+            val imageUrl = if (brave) properties?.optString("url").orEmpty() else item.optString("image")
+            val thumbnailUrl = if (brave) thumbnail?.optString("src").orEmpty() else item.optString("thumbnail")
+            val sourceUrl = item.optString("url").ifBlank { imageUrl }
+            imageResult(
+                size + 1,
+                item.optString("title").ifBlank { runCatching { URI(sourceUrl).host }.getOrDefault("") },
+                sourceUrl,
+                item.optString("source").ifBlank { item.optString("provider") },
+                imageUrl,
+                thumbnailUrl,
+                if (brave) properties?.optInt("width") ?: 0 else item.optInt("width"),
+                if (brave) properties?.optInt("height") ?: 0 else item.optInt("height")
+            )?.let(::add)
+        }
+    }
+
+    private fun devDocs(query: String, limit: Int): List<AgentWebIntelligenceRawResult> {
+        val normalized = AgentWebIntelligenceText.normalized(query)
+        val matches = DEV_DOCS.filter { entry ->
+            entry.aliases.any { alias ->
+                Regex("(^|[^a-z0-9])${Regex.escape(alias)}([^a-z0-9]|$)").containsMatchIn(normalized)
+            }
+        }.ifEmpty {
+            DEV_DOCS.filter { entry ->
+                AgentWebIntelligenceText.tokens(normalized).any { token ->
+                    token.length >= 3 && (
+                        entry.title.lowercase(Locale.ROOT).contains(token) ||
+                            entry.slug.contains(token)
+                        )
+                }
+            }
+        }
+        return matches.take(limit).mapIndexed { index, entry ->
+            AgentWebIntelligenceRawResult(
+                engineId = spec.id,
+                rank = index + 1,
+                title = "${entry.title} documentation",
+                url = "https://devdocs.io/${entry.slug}",
+                excerpt = "Offline DevDocs index match for ${entry.title}.",
+                vertical = spec.vertical
+            )
+        }
     }
 
     private fun parseJsonValue(source: String, limit: Int): List<AgentWebIntelligenceRawResult> {
@@ -740,6 +1498,30 @@ class AgentWebIntelligenceSearchAdapter(
         )
     }
 
+    private fun imageResult(
+        rank: Int,
+        title: Any?,
+        url: Any?,
+        excerpt: Any?,
+        imageUrl: Any?,
+        thumbnailUrl: Any?,
+        width: Int,
+        height: Int
+    ): AgentWebIntelligenceRawResult? {
+        val base = result(rank, title, url, excerpt) ?: return null
+        val cleanImage = imageUrl?.toString()?.trim().orEmpty()
+        if (!cleanImage.startsWith("http://") && !cleanImage.startsWith("https://")) return null
+        val cleanThumbnail = thumbnailUrl?.toString()?.trim().orEmpty()
+        return base.copy(
+            imageUrl = cleanImage,
+            thumbnailUrl = cleanThumbnail.takeIf {
+                it.startsWith("http://") || it.startsWith("https://")
+            }.orEmpty(),
+            imageWidth = width.coerceAtLeast(0),
+            imageHeight = height.coerceAtLeast(0)
+        )
+    }
+
     private fun raw(rank: Int, title: String, url: String) = AgentWebIntelligenceRawResult(
         engineId = spec.id,
         rank = rank,
@@ -766,15 +1548,57 @@ class AgentWebIntelligenceSearchAdapter(
     }.getOrDefault(raw)
 
     companion object {
+        private const val SEARCH_USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36"
+
+        private data class DevDocsEntry(
+            val title: String,
+            val slug: String,
+            val aliases: Set<String>
+        )
+
+        private val DEV_DOCS = listOf(
+            DevDocsEntry("React", "react", setOf("react", "reactjs")),
+            DevDocsEntry("Vue", "vue~3", setOf("vue", "vuejs")),
+            DevDocsEntry("Angular", "angular", setOf("angular")),
+            DevDocsEntry("Svelte", "svelte", setOf("svelte")),
+            DevDocsEntry("TypeScript", "typescript", setOf("typescript", "ts")),
+            DevDocsEntry("JavaScript", "javascript", setOf("javascript", "js", "ecmascript")),
+            DevDocsEntry("Node.js", "node", setOf("node", "nodejs", "node.js")),
+            DevDocsEntry("Python", "python~3.13", setOf("python", "python3")),
+            DevDocsEntry("Go", "go", setOf("golang")),
+            DevDocsEntry("Rust", "rust", setOf("rust")),
+            DevDocsEntry("CSS", "css", setOf("css")),
+            DevDocsEntry("HTML", "html", setOf("html")),
+            DevDocsEntry("HTTP", "http", setOf("http")),
+            DevDocsEntry("PostgreSQL", "postgresql~17", setOf("postgresql", "postgres")),
+            DevDocsEntry("SQLite", "sqlite", setOf("sqlite")),
+            DevDocsEntry("Redis", "redis", setOf("redis")),
+            DevDocsEntry("Docker", "docker", setOf("docker")),
+            DevDocsEntry("Git", "git", setOf("git")),
+            DevDocsEntry("Bash", "bash", setOf("bash", "shell")),
+            DevDocsEntry("nginx", "nginx", setOf("nginx")),
+            DevDocsEntry("webpack", "webpack~5", setOf("webpack")),
+            DevDocsEntry("Tailwind CSS", "tailwindcss", setOf("tailwind", "tailwindcss"))
+        )
+
         fun parse(
             spec: AgentWebIntelligenceEngineSpec,
             fetched: AgentWebIntelligenceFetched,
             limit: Int
         ): List<AgentWebIntelligenceRawResult> {
-            val adapter = AgentWebIntelligenceSearchAdapter(spec) { _, _, _, _, _ -> fetched }
+            val adapter = AgentWebIntelligenceSearchAdapter(
+                spec = spec,
+                fetcher = AgentWebIntelligenceFetcher { _, _, _, _, _ -> fetched }
+            )
             val source = fetched.body.toString(Charsets.UTF_8)
             return when {
                 spec.parser == "html" -> adapter.parseHtml(source, fetched.url, limit)
+                spec.parser == "site_index" -> adapter.parseSiteIndex(source, fetched.url, limit)
+                spec.parser == "x_public" -> adapter.parseXPublic(source, fetched.url, limit)
+                spec.parser == "wechat_public" -> adapter.parseWeChatPublic(source, fetched.url, limit)
+                spec.parser in setOf("zhihu_public", "xiaohongshu_public") ->
+                    adapter.parseIndexedSocial(source, fetched.url, limit)
                 spec.parser == "atom" -> adapter.parseAtom(source, limit)
                 source.trim().startsWith("[") -> adapter.parseJsonValue(source, limit)
                 else -> adapter.parseJson(JSONObject(source), limit)
@@ -798,20 +1622,33 @@ class AgentWebIntelligenceFusion(
         groups.flatten().forEach { raw ->
             val canonical = AgentWebIntelligenceText.canonicalUrl(raw.url)
             if (canonical.isBlank()) return@forEach
+            val mergeKey = if (raw.vertical == AgentWebIntelligenceVertical.IMAGE && raw.imageUrl.isNotBlank()) {
+                AgentWebIntelligenceText.canonicalUrl(raw.imageUrl)
+            } else {
+                canonical
+            }
             val spec = specs[raw.engineId]
-            val current = merged.getOrPut(canonical) {
+            val current = merged.getOrPut(mergeKey) {
                 AgentWebIntelligenceResult(
                     title = raw.title,
                     url = canonical,
                     excerpt = raw.excerpt,
                     publishedAt = raw.publishedAt,
                     vertical = raw.vertical,
+                    imageUrl = raw.imageUrl,
+                    thumbnailUrl = raw.thumbnailUrl,
+                    imageWidth = raw.imageWidth,
+                    imageHeight = raw.imageHeight,
                     authority = spec?.authority ?: 0.5
                 )
             }
             if (raw.title.length > current.title.length) current.title = raw.title
             if (raw.excerpt.length > current.excerpt.length) current.excerpt = raw.excerpt
             if (current.publishedAt.isBlank() && raw.publishedAt.isNotBlank()) current.publishedAt = raw.publishedAt
+            if (current.imageUrl.isBlank() && raw.imageUrl.isNotBlank()) current.imageUrl = raw.imageUrl
+            if (current.thumbnailUrl.isBlank() && raw.thumbnailUrl.isNotBlank()) current.thumbnailUrl = raw.thumbnailUrl
+            if (current.imageWidth <= 0 && raw.imageWidth > 0) current.imageWidth = raw.imageWidth
+            if (current.imageHeight <= 0 && raw.imageHeight > 0) current.imageHeight = raw.imageHeight
             if (current.vertical == AgentWebIntelligenceVertical.GENERAL &&
                 raw.vertical != AgentWebIntelligenceVertical.GENERAL) current.vertical = raw.vertical
             current.authority = max(current.authority, spec?.authority ?: 0.5)
@@ -916,6 +1753,7 @@ data class AgentWebIntelligenceSearchResponse(
     val sourceHealth: List<AgentWebIntelligenceSourceHealth> = emptyList(),
     val circuitsSkipped: List<AgentWebIntelligenceSourceHealth> = emptyList(),
     val timeoutMillis: Long = AgentWebIntelligenceSearchProfile.BALANCED.defaultTimeoutMillis,
+    val engineCatalogSize: Int = AgentWebIntelligenceEngineCatalog.entries.size,
     val completedAtMillis: Long = System.currentTimeMillis()
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
@@ -926,7 +1764,7 @@ data class AgentWebIntelligenceSearchResponse(
         "results" to results.mapIndexed { index, result -> result.publicValue(index + 1) },
         "receipts" to receipts.sortedBy { it.sourceId }.map(AgentWebIntelligenceReceipt::publicValue),
         "metadata" to linkedMapOf(
-            "engine_catalog_size" to AgentWebIntelligenceEngineCatalog.entries.size,
+            "engine_catalog_size" to engineCatalogSize,
             "engines_requested" to engineIds,
             "engines_completed" to receipts.count { it.status == "completed" },
             "engine_failures" to receipts.count { it.status !in setOf("completed", "empty") },
@@ -944,15 +1782,25 @@ data class AgentWebIntelligenceSearchResponse(
 }
 
 class AgentWebIntelligenceSearchCoordinator(
-    fetcher: AgentWebIntelligenceFetcher,
+    private val fetcher: AgentWebIntelligenceFetcher,
+    private val credentialProvider: AgentWebIntelligenceCredentialProvider =
+        AgentWebIntelligenceCredentialProvider.NONE,
     private val fusion: AgentWebIntelligenceFusion = AgentWebIntelligenceFusion(),
     private val maxWorkers: Int = 8,
     private val clock: () -> Long = System::currentTimeMillis,
     private val healthProvider: () -> Map<String, AgentWebIntelligenceSourceHealth> = { emptyMap() },
-    private val receiptObserver: (AgentWebIntelligenceReceipt) -> Unit = {}
+    private val receiptObserver: (AgentWebIntelligenceReceipt) -> Unit = {},
+    private val learnedSourceProvider: () -> List<AgentWebIntelligenceLearnedSource> = { emptyList() }
 ) {
-    private val specs = AgentWebIntelligenceEngineCatalog.entries.associateBy { it.id }
-    private val adapters = specs.mapValues { AgentWebIntelligenceSearchAdapter(it.value, fetcher) }
+    private val baseSourceIds = AgentWebIntelligenceEngineCatalog.entries.map { it.id }.toSet()
+    private val specs = ConcurrentHashMap(
+        AgentWebIntelligenceEngineCatalog.entries.associateBy { it.id }
+    )
+    private val adapters = ConcurrentHashMap(
+        specs.mapValues {
+            AgentWebIntelligenceSearchAdapter(it.value, fetcher, credentialProvider)
+        }
+    )
 
     fun search(
         query: String,
@@ -960,6 +1808,7 @@ class AgentWebIntelligenceSearchCoordinator(
         engineFanout: Int = 18,
         requestedEngines: List<String> = emptyList(),
         verticals: Set<AgentWebIntelligenceVertical> = emptySet(),
+        categoryTags: Set<String> = emptySet(),
         timeoutMillis: Long = 15_000L,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
         checkpoint: () -> Unit = {},
@@ -969,7 +1818,14 @@ class AgentWebIntelligenceSearchCoordinator(
         require(limit in 1..100)
         require(engineFanout in 1..32)
         require(timeoutMillis in 1_000L..60_000L)
-        val selection = selectEnginePlan(query, engineFanout, requestedEngines, verticals)
+        refreshLearnedSources()
+        val selection = selectEnginePlan(
+            query,
+            engineFanout,
+            requestedEngines,
+            verticals,
+            categoryTags
+        )
         val selected = selection.selected
         val started = clock()
         if (selected.isEmpty()) {
@@ -984,6 +1840,7 @@ class AgentWebIntelligenceSearchCoordinator(
                 selectionStrategy = "adaptive_health_weighted",
                 circuitsSkipped = selection.skipped,
                 timeoutMillis = timeoutMillis,
+                engineCatalogSize = specs.size,
                 completedAtMillis = started
             )
         }
@@ -1088,6 +1945,7 @@ class AgentWebIntelligenceSearchCoordinator(
                 sourceHealth = selected.map { health[it] ?: AgentWebIntelligenceSourceHealth(it) },
                 circuitsSkipped = selection.skipped,
                 timeoutMillis = timeoutMillis,
+                engineCatalogSize = specs.size,
                 completedAtMillis = completedAt
             )
         } finally {
@@ -1099,14 +1957,19 @@ class AgentWebIntelligenceSearchCoordinator(
         query: String,
         fanout: Int,
         requested: List<String>,
-        verticals: Set<AgentWebIntelligenceVertical>
-    ): List<String> = selectEnginePlan(query, fanout, requested, verticals).selected
+        verticals: Set<AgentWebIntelligenceVertical>,
+        categoryTags: Set<String> = emptySet()
+    ): List<String> {
+        refreshLearnedSources()
+        return selectEnginePlan(query, fanout, requested, verticals, categoryTags).selected
+    }
 
     private fun selectEnginePlan(
         query: String,
         fanout: Int,
         requested: List<String>,
-        verticals: Set<AgentWebIntelligenceVertical>
+        verticals: Set<AgentWebIntelligenceVertical>,
+        categoryTags: Set<String>
     ): AgentWebIntelligenceSourceSelection {
         if (requested.isNotEmpty()) {
             val unknown = requested.filterNot(specs::containsKey)
@@ -1118,11 +1981,19 @@ class AgentWebIntelligenceSearchCoordinator(
         }
         val language = AgentWebIntelligenceText.language(query)
         val desired = verticals.ifEmpty { inferVerticals(query) }
+        val desiredTags = categoryTags.map {
+            it.trim().lowercase(Locale.ROOT)
+        }.filter(String::isNotBlank).toSet()
         val nowMillis = clock()
         val health = healthProvider()
         val skipped = mutableListOf<AgentWebIntelligenceSourceHealth>()
-        val ranked = AgentWebIntelligenceEngineCatalog.entries
+        val orderedSpecs = AgentWebIntelligenceEngineCatalog.entries +
+            specs.values.filter { it.id !in baseSourceIds }.sortedBy(AgentWebIntelligenceEngineSpec::id)
+        val ranked = orderedSpecs
             .filter(AgentWebIntelligenceEngineSpec::enabledByDefault)
+            .filter { spec ->
+                spec.requiresKey.isBlank() || credentialProvider.credential(spec.requiresKey).isNotBlank()
+            }
             .mapIndexedNotNull { index, spec ->
                 val sourceHealth = health[spec.id] ?: AgentWebIntelligenceSourceHealth(spec.id)
                 if (sourceHealth.circuitState(nowMillis) == "open") {
@@ -1130,16 +2001,24 @@ class AgentWebIntelligenceSearchCoordinator(
                     return@mapIndexedNotNull null
                 }
                 val score = spec.weight +
-                    if (spec.vertical in desired) 2.5 else 0.0 +
-                    if (spec.vertical == AgentWebIntelligenceVertical.GENERAL) 1.0 else 0.0 +
-                    if ("*" in spec.languages || language in spec.languages) 0.8 else -1.5 +
+                    (if (spec.vertical in desired) 2.5 else 0.0) +
+                    (if (spec.categoryTags.any(desiredTags::contains)) 2.0 else 0.0) +
+                    (if (spec.vertical == AgentWebIntelligenceVertical.GENERAL) 1.0 else 0.0) +
+                    (if ("*" in spec.languages || language in spec.languages) 0.8 else -1.5) +
                     spec.authority * 0.5 +
                     sourceHealth.routingScore()
                 Triple(score, -index, spec.id)
             }
             .sortedWith(compareByDescending<Triple<Double, Int, String>> { it.first }.thenByDescending { it.second })
         val selected = mutableListOf<String>()
-        desired.sortedBy(AgentWebIntelligenceVertical::wireValue).forEach { vertical ->
+        for (category in desiredTags.sorted()) {
+            if (selected.size >= fanout) break
+            ranked.firstOrNull {
+                category in specs.getValue(it.third).categoryTags && it.third !in selected
+            }?.third?.let(selected::add)
+        }
+        for (vertical in desired.sortedBy(AgentWebIntelligenceVertical::wireValue)) {
+            if (selected.size >= fanout) break
             ranked.firstOrNull { specs.getValue(it.third).vertical == vertical && it.third !in selected }
                 ?.third
                 ?.let(selected::add)
@@ -1153,34 +2032,246 @@ class AgentWebIntelligenceSearchCoordinator(
         )
     }
 
+    @Synchronized
+    private fun refreshLearnedSources() {
+        learnedSourceProvider()
+            .filter { it.status == "verified" }
+            .sortedBy(AgentWebIntelligenceLearnedSource::sourceId)
+            .forEachIndexed { index, learned ->
+                if (specs.containsKey(learned.sourceId)) return@forEachIndexed
+                val spec = learned.toEngineSpec(index + baseSourceIds.size)
+                specs[spec.id] = spec
+                adapters[spec.id] = AgentWebIntelligenceSearchAdapter(
+                    spec,
+                    fetcher,
+                    credentialProvider
+                )
+            }
+    }
+
     private fun inferVerticals(query: String): Set<AgentWebIntelligenceVertical> {
         val lower = query.lowercase(Locale.ROOT)
+        val language = AgentWebIntelligenceText.language(query)
+        fun matches(pattern: String) = Regex(pattern).containsMatchIn(lower)
         return buildSet {
             add(AgentWebIntelligenceVertical.GENERAL)
             add(AgentWebIntelligenceVertical.KNOWLEDGE)
-            if (Regex(
+            if (language in setOf("zh", "ko")) add(AgentWebIntelligenceVertical.REGIONAL)
+            if (matches(
                     "\\b(today|latest|breaking|news|current)\\b|" +
                         "\u4eca\u5929|\u6700\u65b0|\u65b0\u95fb|\u5b9e\u65f6"
-                ).containsMatchIn(lower)
+                )
             ) {
                 add(AgentWebIntelligenceVertical.NEWS)
             }
-            if (Regex(
+            if (matches(
                     "\\b(code|api|sdk|library|package|bug|github|python|javascript|rust|java)\\b|" +
                         "\u4ee3\u7801|\u7f16\u7a0b|\u63a5\u53e3|\u5f00\u53d1"
-                ).containsMatchIn(lower)
+                )
             ) {
                 add(AgentWebIntelligenceVertical.CODE)
                 add(AgentWebIntelligenceVertical.DOCS)
+                add(AgentWebIntelligenceVertical.PACKAGES)
+                add(AgentWebIntelligenceVertical.QA)
                 add(AgentWebIntelligenceVertical.COMMUNITY)
             }
-            if (Regex(
+            if (matches(
                     "\\b(paper|study|research|doi|journal|citation)\\b|" +
                         "\u8bba\u6587|\u7814\u7a76|\u6587\u732e|\u5b66\u672f"
-                ).containsMatchIn(lower)
+                )
             ) {
                 add(AgentWebIntelligenceVertical.ACADEMIC)
+                add(AgentWebIntelligenceVertical.RESEARCH_INDEX)
             }
+            if (matches(
+                    "\\b(medical|medicine|clinical|disease|drug|treatment|trial)\\b|" +
+                        "\u533b\u5b66|\u4e34\u5e8a|\u75be\u75c5|\u836f\u7269|\u6cbb\u7597|\u8bd5\u9a8c"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.MEDICAL)
+            }
+            if (matches(
+                    "\\b(healthcare|health care|hospital|doctor|patient|public health|clinic)\\b|" +
+                        "\u533b\u7597|\u533b\u9662|\u533b\u751f|\u60a3\u8005|\u516c\u5171\u536b\u751f|\u95e8\u8bca"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.HEALTHCARE)
+            }
+            if (matches(
+                    "\\b(biology|genome|gene|protein|cell|species|biotech)\\b|" +
+                        "\u751f\u7269|\u57fa\u56e0|\u86cb\u767d\u8d28|\u7ec6\u80de|\u7269\u79cd"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.BIOLOGY)
+            }
+            if (matches(
+                    "\\b(technology|tech|gadget|innovation|startup)\\b|" +
+                        "\u79d1\u6280|\u6280\u672f\u4ea7\u54c1|\u521b\u65b0|\u521b\u4e1a"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.TECHNOLOGY)
+            }
+            if (matches(
+                    "\\b(ai agent|agentic|multi-agent|agents sdk|autogen|crewai|langchain)\\b|" +
+                        "\u667a\u80fd\u4f53|\u591a\u667a\u80fd\u4f53|\u4ee3\u7406\u6846\u67b6"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.AGENTS)
+                add(AgentWebIntelligenceVertical.AI_MODELS)
+            }
+            if (matches(
+                    "\\b(hardware|cpu|gpu|npu|chip|processor|motherboard|ram|ssd)\\b|" +
+                        "\u786c\u4ef6|\u82af\u7247|\u5904\u7406\u5668|\u663e\u5361|\u5185\u5b58|\u4e3b\u677f"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.HARDWARE)
+                add(AgentWebIntelligenceVertical.TECHNOLOGY)
+            }
+            if (matches(
+                    "\\b(opinion|discussion|experience|recommend|social|post)\\b|" +
+                        "\u8bc4\u4ef7|\u8ba8\u8bba|\u7ecf\u9a8c|\u63a8\u8350|\u793e\u4ea4|\u7b14\u8bb0|\u516c\u4f17\u53f7|\u77e5\u4e4e"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.QA)
+                add(AgentWebIntelligenceVertical.COMMUNITY)
+                add(AgentWebIntelligenceVertical.SOCIAL)
+                add(AgentWebIntelligenceVertical.PUBLISHING)
+            }
+            if (matches(
+                    "\\b(image|images|photo|photos|picture|pictures|wallpaper)\\b|" +
+                        "\u56fe\u7247|\u56fe\u50cf|\u7167\u7247|\u58c1\u7eb8"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.IMAGE)
+            }
+            if (matches(
+                    "\\b(video|videos|movie|film|watch|stream)\\b|" +
+                        "\u89c6\u9891|\u7535\u5f71|\u5f71\u7247|\u89c2\u770b"
+                )
+            ) {
+                add(AgentWebIntelligenceVertical.VIDEO)
+                add(AgentWebIntelligenceVertical.ENTERTAINMENT)
+            }
+            if (matches(
+                    "\\b(travel|trip|flight|hotel|visa|tourism|vacation)\\b|" +
+                        "\u65c5\u6e38|\u65c5\u884c|\u673a\u7968|\u9152\u5e97|\u7b7e\u8bc1|\u666f\u70b9"
+                )
+            ) add(AgentWebIntelligenceVertical.TRAVEL)
+            if (matches(
+                    "\\b(lifestyle|home care|cleaning|diy|fashion|beauty)\\b|" +
+                        "\u751f\u6d3b|\u5bb6\u5c45|\u6e05\u6d01|\u7f8e\u5bb9|\u65f6\u5c1a"
+                )
+            ) add(AgentWebIntelligenceVertical.LIFESTYLE)
+            if (matches(
+                    "\\b(game|games|gaming|steam|playstation|xbox|nintendo)\\b|" +
+                        "\u6e38\u620f|\u624b\u6e38|\u4e3b\u673a\u6e38\u620f"
+                )
+            ) add(AgentWebIntelligenceVertical.GAMES)
+            if (matches(
+                    "\\b(shop|shopping|buy|price|deal|coupon|product)\\b|" +
+                        "\u8d2d\u7269|\u4e70|\u4ef7\u683c|\u4f18\u60e0|\u5546\u54c1"
+                )
+            ) add(AgentWebIntelligenceVertical.SHOPPING)
+            if (matches(
+                    "\\b(stock|fund|bond|forex|crypto|investment|market price)\\b|" +
+                        "\u80a1\u7968|\u57fa\u91d1|\u503a\u5238|\u5916\u6c47|\u6295\u8d44|\u884c\u60c5"
+                )
+            ) add(AgentWebIntelligenceVertical.FINANCE)
+            if (matches(
+                    "\\b(company|business|industry|earnings|economy|corporate)\\b|" +
+                        "\u516c\u53f8|\u5546\u4e1a|\u4ea7\u4e1a|\u8d22\u62a5|\u7ecf\u6d4e"
+                )
+            ) add(AgentWebIntelligenceVertical.BUSINESS)
+            if (matches(
+                    "\\b(sport|sports|football|soccer|basketball|tennis|score)\\b|" +
+                        "\u4f53\u80b2|\u8db3\u7403|\u7bee\u7403|\u7f51\u7403|\u6bd4\u5206"
+                )
+            ) add(AgentWebIntelligenceVertical.SPORTS)
+            if (matches(
+                    "\\b(weather|forecast|temperature|rain|snow|wind|air quality)\\b|" +
+                        "\u5929\u6c14|\u9884\u62a5|\u6e29\u5ea6|\u4e0b\u96e8|\u964d\u96ea|\u7a7a\u6c14\u8d28\u91cf"
+                )
+            ) add(AgentWebIntelligenceVertical.WEATHER)
+            if (matches(
+                    "\\b(map|maps|route|navigation|nearby|address|directions)\\b|" +
+                        "\u5730\u56fe|\u8def\u7ebf|\u5bfc\u822a|\u9644\u8fd1|\u5730\u5740"
+                )
+            ) add(AgentWebIntelligenceVertical.MAPS_LOCAL)
+            if (matches(
+                    "\\b(food|recipe|restaurant|cooking|dish|menu)\\b|" +
+                        "\u7f8e\u98df|\u83dc\u8c31|\u9910\u5385|\u70f9\u996a|\u83dc\u5355"
+                )
+            ) add(AgentWebIntelligenceVertical.FOOD)
+            if (matches(
+                    "\\b(course|learn|education|tutorial|school|university)\\b|" +
+                        "\u8bfe\u7a0b|\u5b66\u4e60|\u6559\u80b2|\u6559\u7a0b|\u5b66\u6821|\u5927\u5b66"
+                )
+            ) add(AgentWebIntelligenceVertical.EDUCATION)
+            if (matches(
+                    "\\b(job|jobs|career|salary|hiring|resume|recruit)\\b|" +
+                        "\u5de5\u4f5c|\u804c\u4f4d|\u62db\u8058|\u85aa\u8d44|\u7b80\u5386|\u6c42\u804c"
+                )
+            ) add(AgentWebIntelligenceVertical.JOBS)
+            if (matches(
+                    "\\b(government|policy|regulation|public service|official notice)\\b|" +
+                        "\u653f\u5e9c|\u653f\u7b56|\u653f\u52a1|\u76d1\u7ba1|\u516c\u544a"
+                )
+            ) add(AgentWebIntelligenceVertical.GOVERNMENT)
+            if (matches(
+                    "\\b(law|legal|court|case|statute|lawsuit|compliance)\\b|" +
+                        "\u6cd5\u5f8b|\u6cd5\u9662|\u6848\u4f8b|\u6cd5\u89c4|\u8bc9\u8bbc|\u5408\u89c4"
+                )
+            ) add(AgentWebIntelligenceVertical.LEGAL)
+            if (matches(
+                    "\\b(patent|patents|inventor|prior art|trademark)\\b|" +
+                        "\u4e13\u5229|\u53d1\u660e\u4eba|\u73b0\u6709\u6280\u672f|\u5546\u6807"
+                )
+            ) add(AgentWebIntelligenceVertical.PATENTS)
+            if (matches(
+                    "\\b(book|books|novel|author|isbn|ebook)\\b|" +
+                        "\u56fe\u4e66|\u4e66\u7c4d|\u5c0f\u8bf4|\u4f5c\u8005|\u7535\u5b50\u4e66"
+                )
+            ) add(AgentWebIntelligenceVertical.BOOKS)
+            if (matches(
+                    "\\b(music|song|album|podcast|audio|artist)\\b|" +
+                        "\u97f3\u4e50|\u6b4c\u66f2|\u4e13\u8f91|\u64ad\u5ba2|\u97f3\u9891|\u6b4c\u624b"
+                )
+            ) add(AgentWebIntelligenceVertical.AUDIO)
+            if (matches(
+                    "\\b(cve|vulnerability|exploit|malware|cybersecurity|security advisory)\\b|" +
+                        "\u6f0f\u6d1e|\u6076\u610f\u8f6f\u4ef6|\u7f51\u7edc\u5b89\u5168|\u5b89\u5168\u516c\u544a"
+                )
+            ) add(AgentWebIntelligenceVertical.CYBERSECURITY)
+            if (matches(
+                    "\\b(llm|model|embedding|hugging face|ollama|checkpoint)\\b|" +
+                        "\u5927\u6a21\u578b|\u6a21\u578b|\u5411\u91cf|\u6a21\u578b\u6743\u91cd"
+                )
+            ) add(AgentWebIntelligenceVertical.AI_MODELS)
+            if (matches(
+                    "\\b(dataset|data set|benchmark|corpus|training data)\\b|" +
+                        "\u6570\u636e\u96c6|\u57fa\u51c6|\u8bed\u6599|\u8bad\u7ec3\u6570\u636e"
+                )
+            ) add(AgentWebIntelligenceVertical.DATASETS)
+            if (matches(
+                    "\\b(car|cars|vehicle|automotive|ev|suv|sedan)\\b|" +
+                        "\u6c7d\u8f66|\u8f66\u8f86|\u7535\u52a8\u8f66|\u8f66\u578b"
+                )
+            ) add(AgentWebIntelligenceVertical.AUTOMOTIVE)
+            if (matches(
+                    "\\b(real estate|property|house|apartment|rent|mortgage)\\b|" +
+                        "\u623f\u4ea7|\u623f\u5c4b|\u516c\u5bd3|\u79df\u623f|\u623f\u8d37"
+                )
+            ) add(AgentWebIntelligenceVertical.REAL_ESTATE)
+            if (matches(
+                    "\\b(event|events|conference|meetup|concert|exhibition|ticket)\\b|" +
+                        "\u6d3b\u52a8|\u4f1a\u8bae|\u805a\u4f1a|\u6f14\u5531\u4f1a|\u5c55\u89c8|\u95e8\u7968"
+                )
+            ) add(AgentWebIntelligenceVertical.EVENTS)
+            if (matches(
+                    "\\b(smart home|home assistant|matter|homekit|smartthings|iot device)\\b|" +
+                        "\u667a\u80fd\u5bb6\u5c45|\u5bb6\u5ead\u52a9\u624b|\u7269\u8054\u7f51\u8bbe\u5907"
+                )
+            ) add(AgentWebIntelligenceVertical.SMART_HOME)
         }
     }
 }

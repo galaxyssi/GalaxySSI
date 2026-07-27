@@ -295,6 +295,23 @@
       </div>
       <div class="settings-group">
         <div class="settings-group-heading">
+          <h3 data-i18n="Web intelligence sources">Web intelligence sources</h3>
+          <span class="state-badge ok" data-i18n="287 sources">287 sources</span>
+        </div>
+        <div class="cloud-settings-surface">
+          <div class="form-stack compact-forms">
+            <label><span data-i18n="Brave Search API key">Brave Search API key</span><input id="webBraveApiKey" type="password" maxlength="500" autocomplete="off" spellcheck="false" placeholder="BSA..."><small data-i18n="Optional. Enables the Brave Image source.">Optional. Enables the Brave Image source.</small></label>
+            <label><span data-i18n="GitHub token">GitHub token</span><input id="webGithubToken" type="password" maxlength="500" autocomplete="off" spellcheck="false" placeholder="github_pat_..."><small data-i18n="Optional. Raises GitHub repository and code-search rate limits.">Optional. Raises GitHub repository and code-search rate limits.</small></label>
+            <p class="cloud-test-result" data-i18n="46 categories with five to ten sources each; verified domains can be learned over time.">46 categories with five to ten sources each; verified domains can be learned over time.</p>
+            <p class="cloud-test-result" data-i18n="DuckDuckGo Image, Marginalia, DevDocs, and public GitHub Code Search work without a key.">DuckDuckGo Image, Marginalia, DevDocs, and public GitHub Code Search work without a key.</p>
+            <div class="cloud-settings-actions">
+              <button id="saveWebSearchButton" class="primary-button" data-i18n="Save source credentials">Save source credentials</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-heading">
           <h3 data-i18n="Desktop runtimes">Desktop runtimes</h3>
           <button id="refreshRuntimeButton" class="secondary-button compact-button" data-i18n="Refresh">Refresh</button>
         </div>

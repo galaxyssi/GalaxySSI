@@ -33,9 +33,12 @@ from desktop_agent_adapters import (
     DesktopAgentStateStore,
 )
 from web_intelligence import (
+    FINALIZE_WEB_RESEARCH_PROMPT,
     MAX_CLOUD_TOOL_CALLS,
+    STRICT_FINALIZE_WEB_RESEARCH_PROMPT,
     WebIntelligenceService,
     cloud_current_time_prompt,
+    cloud_evidence_fallback,
     cloud_inline_evidence_message,
     cloud_openai_tools,
     contains_internal_tool_protocol,
@@ -1977,12 +1980,17 @@ def ask_cloud_model(
     payload["tool_choice"] = "auto"
     try:
         tool_calls_used = 0
+        evidence_results: list[tuple[str, str]] = []
         for round_index in range(4):
             request_payload = dict(payload)
             request_payload["messages"] = conversation
             if round_index == 3:
                 request_payload.pop("tools", None)
                 request_payload.pop("tool_choice", None)
+                conversation.append({
+                    "role": "user",
+                    "content": FINALIZE_WEB_RESEARCH_PROMPT,
+                })
             data = _post_json(
                 url,
                 request_payload,
@@ -2055,6 +2063,7 @@ def ask_cloud_model(
                             },
                             ensure_ascii=False,
                         )
+                    evidence_results.append((name, result))
                     conversation.append({
                         "role": "tool",
                         "tool_call_id": str(
@@ -2081,6 +2090,7 @@ def ask_cloud_model(
                             },
                             ensure_ascii=False,
                         )
+                    evidence_results.append((call.name, result))
                     executed.append((call, result))
                     tool_calls_used += 1
                 conversation.extend([
@@ -2097,7 +2107,33 @@ def ask_cloud_model(
                     },
                 ])
             payload.pop("tool_choice", None)
-        raise RuntimeError("Cloud model did not produce a final answer after web research")
+        conversation.append({
+            "role": "user",
+            "content": STRICT_FINALIZE_WEB_RESEARCH_PROMPT,
+        })
+        final_payload = {
+            "model": model,
+            "messages": conversation,
+        }
+        data = _post_json(
+            url,
+            final_payload,
+            timeout=timeout,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        choices = data.get("choices") or []
+        choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+        message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+        answer = strip_internal_tool_protocol(
+            _cloud_message_content(message.get("content"))
+            or str(choice.get("text") or data.get("output_text") or "")
+        )
+        if answer:
+            return answer
+        return cloud_evidence_fallback(
+            evidence_results,
+            prefer_chinese=bool(re.search(r"[\u4e00-\u9fff]", text or "")),
+        )
     except Exception as exc:
         if raise_errors:
             raise
