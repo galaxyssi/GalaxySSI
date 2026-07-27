@@ -33,6 +33,28 @@ The initial catalog contains 32 source adapters across:
 
 Searches use bounded parallel fan-out. Each source receives an independent receipt and failure state. A slow, blocked, malformed, or unavailable source cannot erase successful results from other sources.
 
+## Adaptive source network
+
+Source selection is adaptive rather than a fixed fan-out list. Android and Desktop persist a health ledger for each source containing:
+
+- successful, empty, and failed attempts
+- consecutive failures
+- exponentially weighted latency and result yield
+- last attempt and last success time
+- circuit state and recovery time
+
+Three consecutive failures open a source circuit. Cooldown grows from one minute to at most thirty minutes when recovery probes keep failing. An expired circuit enters a half-open recovery probe on the next relevant request. Cancellation never reduces source reputation.
+
+Automatic routing combines query vertical, language, authority, historical reliability, latency, evidence yield, and a bounded exploration bonus. Explicitly selected sources bypass the circuit so a user or diagnostic task can force a recovery probe. Every response identifies the strategy, selected source health, and skipped circuits.
+
+Search profiles provide predictable resource budgets:
+
+- `fast`: up to 6 sources and a 6 second shared deadline
+- `balanced`: up to 18 sources and a 15 second shared deadline
+- `deep`: up to 32 sources and a 35 second shared deadline
+
+Callers may still override fan-out and deadline explicitly. The `cache` operation exposes `source_health` inspection and `reset_source_health` maintenance without adding a separate external tool.
+
 ## Local intelligence
 
 SignalASI performs local result processing before any final model synthesis:
@@ -47,7 +69,7 @@ SignalASI performs local result processing before any final model synthesis:
 
 The ranker model is stored in `core/models/web-ranker-v1.json`. Android ships the same model as an application asset.
 
-A 192-dimensional feature-hash embedding model supports local semantic cache search without a cloud embedding API. This model is deliberately small, deterministic, inspectable, and replaceable by a signed neural reranker pack later.
+A 192-dimensional feature-hash embedding model supports local semantic cache search without a cloud embedding API. This model is deliberately small, deterministic, inspectable, and replaceable by a signed neural reranker pack later. It ranks and retrieves evidence; it is not presented as a general answer-generation model.
 
 ## Evidence boundary
 
@@ -78,7 +100,7 @@ Public network access uses:
 - no browser cookies
 - no implicit local-network access
 
-Android persists documents, vectors, search responses, and watches in an Android Keystore-protected encrypted database. Desktop uses a process-local SQLite store under the application state root.
+Android persists documents, vectors, search responses, watches, and source health in an Android Keystore-protected encrypted database. Desktop uses a process-local SQLite store under the application state root.
 
 Cache inspection, local extraction, cached similarity search, and watch management remain available offline. Operations that require new public evidence report honest source failures when the network is unavailable.
 
@@ -87,4 +109,3 @@ Cache inspection, local extraction, cached similarity search, and watch manageme
 Android registers the operations through `AgentWebIntelligenceNativeTools` and exposes them to the native planner. Public web research is low risk and executes without an unnecessary confirmation prompt.
 
 Desktop registers the same operation IDs through `DesktopNativeToolRegistry`. The shared IDs allow task plans, Skills, proactive jobs, and test fixtures to remain platform-neutral while preserving platform-specific transport and encrypted-storage implementations.
-

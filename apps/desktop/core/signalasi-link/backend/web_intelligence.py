@@ -80,6 +80,15 @@ DEFAULT_ENGINE_FANOUT = 18
 DEFAULT_TIMEOUT_SECONDS = 15.0
 DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
 DEFAULT_VECTOR_DIMENSIONS = 192
+SOURCE_HEALTH_FAILURE_THRESHOLD = 3
+SOURCE_HEALTH_BASE_COOLDOWN_MILLIS = 60_000
+SOURCE_HEALTH_MAX_COOLDOWN_MILLIS = 30 * 60_000
+SOURCE_HEALTH_EWMA_ALPHA = 0.25
+SEARCH_PROFILES: Mapping[str, tuple[int, float]] = {
+    "fast": (6, 6.0),
+    "balanced": (DEFAULT_ENGINE_FANOUT, DEFAULT_TIMEOUT_SECONDS),
+    "deep": (MAX_ENGINE_FANOUT, 35.0),
+}
 
 
 class WebIntelligenceError(RuntimeError):
@@ -289,6 +298,111 @@ class EngineReceipt:
             "error_message": self.error_message[:2_048],
             "retryable": self.retryable,
         }
+
+
+@dataclass(frozen=True)
+class SourceHealth:
+    source_id: str
+    attempts: int = 0
+    successes: int = 0
+    empty_responses: int = 0
+    failures: int = 0
+    consecutive_failures: int = 0
+    ewma_latency_millis: float = 0.0
+    ewma_result_count: float = 0.0
+    last_status: str = ""
+    last_attempt_at_millis: int = 0
+    last_success_at_millis: int = 0
+    circuit_open_until_millis: int = 0
+
+    def circuit_state(self, now_millis: int) -> str:
+        if self.circuit_open_until_millis > now_millis:
+            return "open"
+        if self.consecutive_failures >= SOURCE_HEALTH_FAILURE_THRESHOLD:
+            return "half_open"
+        return "closed"
+
+    def routing_score(self) -> float:
+        reliable = (self.successes + self.empty_responses + 2.0) / (self.attempts + 4.0)
+        speed = 0.6 if self.ewma_latency_millis <= 0 else 1.0 / (
+            1.0 + self.ewma_latency_millis / 3_000.0
+        )
+        useful = min(1.0, self.ewma_result_count / 8.0)
+        exploration = 1.0 / math.sqrt(self.attempts + 1.0)
+        return reliable * 1.1 + speed * 0.5 + useful * 0.35 + exploration * 0.25
+
+    def public(self, now_millis: int) -> dict[str, Any]:
+        return {
+            "source_id": self.source_id,
+            "attempts": self.attempts,
+            "successes": self.successes,
+            "empty_responses": self.empty_responses,
+            "failures": self.failures,
+            "consecutive_failures": self.consecutive_failures,
+            "ewma_latency_millis": round(self.ewma_latency_millis, 3),
+            "ewma_result_count": round(self.ewma_result_count, 3),
+            "last_status": self.last_status,
+            "last_attempt_at_millis": self.last_attempt_at_millis,
+            "last_success_at_millis": self.last_success_at_millis,
+            "circuit_state": self.circuit_state(now_millis),
+            "circuit_open_until_millis": self.circuit_open_until_millis,
+            "routing_score": round(self.routing_score(), 6),
+        }
+
+
+@dataclass(frozen=True)
+class SourceSelection:
+    selected: tuple[str, ...]
+    skipped: tuple[SourceHealth, ...]
+    explicit: bool = False
+
+
+def evolve_source_health(
+    previous: SourceHealth,
+    receipt: EngineReceipt,
+    now_millis: int,
+) -> SourceHealth:
+    if receipt.status == "cancelled":
+        return dataclasses.replace(
+            previous,
+            last_status=receipt.status,
+            last_attempt_at_millis=now_millis,
+        )
+    alpha = SOURCE_HEALTH_EWMA_ALPHA
+    latency = float(max(0, receipt.duration_millis))
+    result_count = float(max(0, receipt.result_count))
+    ewma_latency = latency if previous.attempts == 0 else (
+        previous.ewma_latency_millis * (1.0 - alpha) + latency * alpha
+    )
+    ewma_results = result_count if previous.attempts == 0 else (
+        previous.ewma_result_count * (1.0 - alpha) + result_count * alpha
+    )
+    successful = receipt.status in {"completed", "empty"}
+    consecutive_failures = 0 if successful else previous.consecutive_failures + 1
+    circuit_open_until = 0
+    if not successful and consecutive_failures >= SOURCE_HEALTH_FAILURE_THRESHOLD:
+        exponent = min(10, consecutive_failures - SOURCE_HEALTH_FAILURE_THRESHOLD)
+        cooldown = min(
+            SOURCE_HEALTH_MAX_COOLDOWN_MILLIS,
+            SOURCE_HEALTH_BASE_COOLDOWN_MILLIS * (2 ** exponent),
+        )
+        circuit_open_until = now_millis + cooldown
+    return SourceHealth(
+        source_id=previous.source_id,
+        attempts=previous.attempts + 1,
+        successes=previous.successes + int(receipt.status == "completed"),
+        empty_responses=previous.empty_responses + int(receipt.status == "empty"),
+        failures=previous.failures + int(not successful),
+        consecutive_failures=consecutive_failures,
+        ewma_latency_millis=ewma_latency,
+        ewma_result_count=ewma_results,
+        last_status=receipt.status,
+        last_attempt_at_millis=now_millis,
+        last_success_at_millis=(
+            now_millis if successful else previous.last_success_at_millis
+        ),
+        circuit_open_until_millis=circuit_open_until,
+    )
 
 
 @dataclass
@@ -1212,6 +1326,22 @@ class WebIntelligenceStore:
                     created_at_millis INTEGER NOT NULL,
                     updated_at_millis INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS source_health (
+                    source_id TEXT PRIMARY KEY,
+                    attempts INTEGER NOT NULL,
+                    successes INTEGER NOT NULL,
+                    empty_responses INTEGER NOT NULL,
+                    failures INTEGER NOT NULL,
+                    consecutive_failures INTEGER NOT NULL,
+                    ewma_latency_millis REAL NOT NULL,
+                    ewma_result_count REAL NOT NULL,
+                    last_status TEXT NOT NULL,
+                    last_attempt_at_millis INTEGER NOT NULL,
+                    last_success_at_millis INTEGER NOT NULL,
+                    circuit_open_until_millis INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS source_health_circuit_idx
+                    ON source_health(circuit_open_until_millis);
                 """
             )
 
@@ -1342,17 +1472,29 @@ class WebIntelligenceStore:
         return None
 
     def stats(self) -> dict[str, Any]:
+        now_millis = int(self.now() * 1_000)
         with self._lock, self._connection() as connection:
             documents = connection.execute(
                 "SELECT COUNT(*) AS count, COALESCE(SUM(LENGTH(content)), 0) AS bytes FROM documents"
             ).fetchone()
             searches = connection.execute("SELECT COUNT(*) AS count FROM searches").fetchone()
             watches = connection.execute("SELECT COUNT(*) AS count FROM watches").fetchone()
+            source_health = connection.execute(
+                """
+                SELECT COUNT(*) AS count,
+                       COALESCE(SUM(CASE WHEN circuit_open_until_millis > ? THEN 1 ELSE 0 END), 0)
+                           AS circuits_open
+                FROM source_health
+                """,
+                (now_millis,),
+            ).fetchone()
         return {
             "entry_count": int(documents["count"]),
             "bytes": int(documents["bytes"]),
             "search_count": int(searches["count"]),
             "watch_count": int(watches["count"]),
+            "source_health_count": int(source_health["count"]),
+            "source_circuits_open": int(source_health["circuits_open"]),
             "embedding_model": self.embedder.model_id,
         }
 
@@ -1370,6 +1512,96 @@ class WebIntelligenceStore:
                 documents = connection.execute("DELETE FROM documents").rowcount
                 searches = connection.execute("DELETE FROM searches").rowcount
         return {"documents_removed": max(0, documents), "searches_removed": max(0, searches)}
+
+    def source_health(self, source_ids: Sequence[str] = ()) -> dict[str, SourceHealth]:
+        clean_ids = tuple(dict.fromkeys(str(item) for item in source_ids if str(item)))
+        with self._lock, self._connection() as connection:
+            if clean_ids:
+                placeholders = ",".join("?" for _ in clean_ids)
+                rows = connection.execute(
+                    f"SELECT * FROM source_health WHERE source_id IN ({placeholders})",
+                    clean_ids,
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM source_health ORDER BY source_id"
+                ).fetchall()
+        return {
+            health.source_id: health
+            for row in rows
+            if (health := self._decode_source_health(row)) is not None
+        }
+
+    def record_source_receipt(self, receipt: EngineReceipt) -> SourceHealth:
+        now_millis = int(self.now() * 1_000)
+        with self._lock, self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM source_health WHERE source_id = ?",
+                (receipt.source_id,),
+            ).fetchone()
+            previous = self._decode_source_health(row) or SourceHealth(receipt.source_id)
+            current = evolve_source_health(previous, receipt, now_millis)
+            connection.execute(
+                """
+                INSERT INTO source_health (
+                    source_id, attempts, successes, empty_responses, failures,
+                    consecutive_failures, ewma_latency_millis, ewma_result_count,
+                    last_status, last_attempt_at_millis, last_success_at_millis,
+                    circuit_open_until_millis
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(source_id) DO UPDATE SET
+                    attempts=excluded.attempts,
+                    successes=excluded.successes,
+                    empty_responses=excluded.empty_responses,
+                    failures=excluded.failures,
+                    consecutive_failures=excluded.consecutive_failures,
+                    ewma_latency_millis=excluded.ewma_latency_millis,
+                    ewma_result_count=excluded.ewma_result_count,
+                    last_status=excluded.last_status,
+                    last_attempt_at_millis=excluded.last_attempt_at_millis,
+                    last_success_at_millis=excluded.last_success_at_millis,
+                    circuit_open_until_millis=excluded.circuit_open_until_millis
+                """,
+                (
+                    current.source_id,
+                    current.attempts,
+                    current.successes,
+                    current.empty_responses,
+                    current.failures,
+                    current.consecutive_failures,
+                    current.ewma_latency_millis,
+                    current.ewma_result_count,
+                    current.last_status,
+                    current.last_attempt_at_millis,
+                    current.last_success_at_millis,
+                    current.circuit_open_until_millis,
+                ),
+            )
+        return current
+
+    def reset_source_health(self) -> int:
+        with self._lock, self._connection() as connection:
+            removed = connection.execute("DELETE FROM source_health").rowcount
+        return max(0, removed)
+
+    @staticmethod
+    def _decode_source_health(row: sqlite3.Row | None) -> SourceHealth | None:
+        if row is None:
+            return None
+        return SourceHealth(
+            source_id=str(row["source_id"]),
+            attempts=int(row["attempts"]),
+            successes=int(row["successes"]),
+            empty_responses=int(row["empty_responses"]),
+            failures=int(row["failures"]),
+            consecutive_failures=int(row["consecutive_failures"]),
+            ewma_latency_millis=float(row["ewma_latency_millis"]),
+            ewma_result_count=float(row["ewma_result_count"]),
+            last_status=str(row["last_status"]),
+            last_attempt_at_millis=int(row["last_attempt_at_millis"]),
+            last_success_at_millis=int(row["last_success_at_millis"]),
+            circuit_open_until_millis=int(row["circuit_open_until_millis"]),
+        )
 
     def upsert_watch(
         self,
@@ -1513,19 +1745,38 @@ class WebIntelligenceService:
     def search(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         query = self._query(arguments)
         limit = _bounded_int(arguments.get("limit"), 10, 1, MAX_RESULTS)
-        fanout = _bounded_int(arguments.get("engine_fanout"), DEFAULT_ENGINE_FANOUT, 1, MAX_ENGINE_FANOUT)
-        timeout_seconds = _bounded_float(arguments.get("timeout_seconds"), DEFAULT_TIMEOUT_SECONDS, 1.0, 60.0)
+        profile = str(arguments.get("profile") or "balanced").strip().lower()
+        if profile not in SEARCH_PROFILES:
+            raise WebIntelligenceError(
+                "invalid_search_profile",
+                f"Unsupported search profile: {profile}",
+            )
+        profile_fanout, profile_timeout = SEARCH_PROFILES[profile]
+        fanout = _bounded_int(
+            arguments.get("engine_fanout"),
+            profile_fanout,
+            1,
+            MAX_ENGINE_FANOUT,
+        )
+        timeout_seconds = _bounded_float(
+            arguments.get("timeout_seconds"),
+            profile_timeout,
+            1.0,
+            60.0,
+        )
         requested_engines = _string_list(arguments.get("engines"), limit=MAX_ENGINE_FANOUT, max_length=64)
         verticals = _string_list(arguments.get("verticals"), limit=10, max_length=32)
         freshness = str(arguments.get("freshness") or "any")
         use_cache = bool(arguments.get("use_cache", True))
-        engine_ids = self._select_engines(query, fanout, requested_engines, verticals)
+        selection = self._select_engines(query, fanout, requested_engines, verticals)
+        engine_ids = list(selection.selected)
         cache_key = hashlib.sha256(json.dumps(
             {
                 "query": query,
                 "limit": limit,
                 "engines": engine_ids,
                 "freshness": freshness,
+                "profile": profile,
                 "version": MODEL_VERSION,
             },
             sort_keys=True,
@@ -1540,6 +1791,11 @@ class WebIntelligenceService:
                 cached["completed_at_millis"] = self._millis()
                 cached.setdefault("cache", {})["hit"] = True
                 cached.setdefault("metadata", {})["cache_hit"] = True
+                cached["metadata"]["profile"] = profile
+                cached["metadata"]["source_health"] = self._source_health_values(engine_ids)
+                cached["metadata"]["circuits_skipped"] = [
+                    item.public(self._millis()) for item in selection.skipped
+                ]
                 return cached
 
         started_at = self._millis()
@@ -1548,70 +1804,74 @@ class WebIntelligenceService:
         receipts: list[EngineReceipt] = []
         futures: dict[concurrent.futures.Future[list[RawSearchResult]], tuple[str, float]] = {}
         per_engine_timeout = max(1.0, min(8.0, timeout_seconds * 0.8))
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=min(self.max_workers, len(engine_ids)),
-            thread_name_prefix="signalasi-web",
-        ) as executor:
-            for engine_id in engine_ids:
-                adapter = self.engines[engine_id]
-                submitted = time.monotonic()
-                future = executor.submit(adapter.search, query, min(20, max(limit, 8)), per_engine_timeout)
-                futures[future] = (engine_id, submitted)
-            deadline = started_monotonic + timeout_seconds
-            pending = set(futures)
-            while pending and time.monotonic() < deadline:
-                wait = max(0.01, deadline - time.monotonic())
-                done, pending = concurrent.futures.wait(
-                    pending,
-                    timeout=wait,
-                    return_when=concurrent.futures.FIRST_COMPLETED,
-                )
-                if not done:
-                    break
-                for future in done:
+        if engine_ids:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=min(self.max_workers, len(engine_ids)),
+                thread_name_prefix="signalasi-web",
+            ) as executor:
+                for engine_id in engine_ids:
+                    adapter = self.engines[engine_id]
+                    submitted = time.monotonic()
+                    future = executor.submit(adapter.search, query, min(20, max(limit, 8)), per_engine_timeout)
+                    futures[future] = (engine_id, submitted)
+                deadline = started_monotonic + timeout_seconds
+                pending = set(futures)
+                while pending and time.monotonic() < deadline:
+                    wait = max(0.01, deadline - time.monotonic())
+                    done, pending = concurrent.futures.wait(
+                        pending,
+                        timeout=wait,
+                        return_when=concurrent.futures.FIRST_COMPLETED,
+                    )
+                    if not done:
+                        break
+                    for future in done:
+                        engine_id, submitted = futures[future]
+                        duration = int((time.monotonic() - submitted) * 1_000)
+                        try:
+                            rows = future.result()
+                            raw_groups.append(rows)
+                            receipts.append(EngineReceipt(
+                                engine_id,
+                                "completed" if rows else "empty",
+                                duration,
+                                len(rows),
+                            ))
+                        except WebIntelligenceError as exc:
+                            receipts.append(EngineReceipt(
+                                engine_id,
+                                _receipt_status(exc),
+                                duration,
+                                0,
+                                exc.code,
+                                str(exc),
+                                exc.retryable,
+                            ))
+                        except Exception as exc:  # Defensive isolation between engines.
+                            receipts.append(EngineReceipt(
+                                engine_id,
+                                "failed",
+                                duration,
+                                0,
+                                "engine_failed",
+                                str(exc),
+                                True,
+                            ))
+                for future in pending:
                     engine_id, submitted = futures[future]
-                    duration = int((time.monotonic() - submitted) * 1_000)
-                    try:
-                        rows = future.result()
-                        raw_groups.append(rows)
-                        receipts.append(EngineReceipt(
-                            engine_id,
-                            "completed" if rows else "empty",
-                            duration,
-                            len(rows),
-                        ))
-                    except WebIntelligenceError as exc:
-                        receipts.append(EngineReceipt(
-                            engine_id,
-                            _receipt_status(exc),
-                            duration,
-                            0,
-                            exc.code,
-                            str(exc),
-                            exc.retryable,
-                        ))
-                    except Exception as exc:  # Defensive isolation between engines.
-                        receipts.append(EngineReceipt(
-                            engine_id,
-                            "failed",
-                            duration,
-                            0,
-                            "engine_failed",
-                            str(exc),
-                            True,
-                        ))
-            for future in pending:
-                engine_id, submitted = futures[future]
-                future.cancel()
-                receipts.append(EngineReceipt(
-                    engine_id,
-                    "timeout",
-                    int((time.monotonic() - submitted) * 1_000),
-                    0,
-                    "engine_timeout",
-                    "Search source exceeded the shared request deadline",
-                    True,
-                ))
+                    future.cancel()
+                    receipts.append(EngineReceipt(
+                        engine_id,
+                        "timeout",
+                        int((time.monotonic() - submitted) * 1_000),
+                        0,
+                        "engine_timeout",
+                        "Search source exceeded the shared request deadline",
+                        True,
+                    ))
+
+        for receipt in receipts:
+            self.store.record_source_receipt(receipt)
 
         fused = self.fusion.fuse(query, raw_groups, limit=limit)
         status = "completed" if fused and all(item.status in {"completed", "empty"} for item in receipts) else (
@@ -1632,6 +1892,16 @@ class WebIntelligenceService:
                 "engines_requested": engine_ids,
                 "engines_completed": sum(receipt.status == "completed" for receipt in receipts),
                 "engine_failures": sum(receipt.status not in {"completed", "empty"} for receipt in receipts),
+                "profile": profile,
+                "engine_fanout": fanout,
+                "timeout_seconds": timeout_seconds,
+                "source_selection": (
+                    "explicit_sources" if selection.explicit else "adaptive_health_weighted"
+                ),
+                "source_health": self._source_health_values(engine_ids),
+                "circuits_skipped": [
+                    item.public(self._millis()) for item in selection.skipped
+                ],
                 "fusion": "weighted_rrf_plus_local_ranker",
                 "ranker_model": self.fusion.ranker.model_name,
                 "ranker_version": self.fusion.ranker.model_version,
@@ -1816,6 +2086,28 @@ class WebIntelligenceService:
             metadata = {
                 **self.store.stats(),
                 **self.store.clear(expired_only=action == "clear_expired"),
+            }
+        elif action == "source_health":
+            source_ids = _string_list(
+                arguments.get("engines"),
+                limit=MAX_ENGINE_FANOUT,
+                max_length=64,
+            )
+            unknown = [item for item in source_ids if item not in self.engines]
+            if unknown:
+                raise WebIntelligenceError(
+                    "unknown_engine",
+                    f"Unknown search sources: {', '.join(unknown)}",
+                )
+            metadata = {
+                **self.store.stats(),
+                "source_health": self._source_health_values(source_ids),
+            }
+        elif action == "reset_source_health":
+            removed = self.store.reset_source_health()
+            metadata = {
+                **self.store.stats(),
+                "source_health_removed": removed,
             }
         else:
             raise WebIntelligenceError("invalid_cache_action", f"Unsupported cache action: {action}")
@@ -2251,7 +2543,7 @@ class WebIntelligenceService:
         fanout: int,
         requested: Sequence[str],
         verticals: Sequence[str],
-    ) -> list[str]:
+    ) -> SourceSelection:
         if requested:
             unknown = [item for item in requested if item not in self.engines]
             if unknown:
@@ -2259,12 +2551,23 @@ class WebIntelligenceService:
                     "unknown_engine",
                     f"Unknown search sources: {', '.join(unknown)}",
                 )
-            return list(dict.fromkeys(requested))[:fanout]
+            return SourceSelection(
+                tuple(list(dict.fromkeys(requested))[:fanout]),
+                (),
+                explicit=True,
+            )
         language = detect_language(query)
         desired = set(verticals or self._infer_verticals(query))
+        now_millis = self._millis()
+        health_by_source = self.store.source_health()
         scored: list[tuple[float, int, str]] = []
+        skipped: list[SourceHealth] = []
         for index, spec in enumerate(ENGINE_SPECS):
             if not spec.default_enabled:
+                continue
+            health = health_by_source.get(spec.engine_id, SourceHealth(spec.engine_id))
+            if health.circuit_state(now_millis) == "open":
+                skipped.append(health)
                 continue
             score = spec.weight
             if spec.vertical in desired:
@@ -2276,9 +2579,44 @@ class WebIntelligenceService:
             elif spec.languages != ("*",):
                 score -= 1.5
             score += spec.authority * 0.5
+            score += health.routing_score()
             scored.append((score, -index, spec.engine_id))
-        selected = [item[2] for item in sorted(scored, reverse=True)[:fanout]]
-        return selected
+        ranked = sorted(scored, reverse=True)
+        selected: list[str] = []
+        for vertical in sorted(desired):
+            match = next(
+                (
+                    item[2]
+                    for item in ranked
+                    if self.specs[item[2]].vertical == vertical and item[2] not in selected
+                ),
+                None,
+            )
+            if match:
+                selected.append(match)
+            if len(selected) >= fanout:
+                break
+        for _, _, source_id in ranked:
+            if source_id not in selected:
+                selected.append(source_id)
+            if len(selected) >= fanout:
+                break
+        return SourceSelection(
+            tuple(selected),
+            tuple(sorted(skipped, key=lambda item: item.circuit_open_until_millis)),
+        )
+
+    def _source_health_values(self, source_ids: Sequence[str] = ()) -> list[dict[str, Any]]:
+        now_millis = self._millis()
+        health_by_source = self.store.source_health(source_ids)
+        if source_ids:
+            values = [
+                health_by_source.get(source_id, SourceHealth(source_id))
+                for source_id in dict.fromkeys(source_ids)
+            ]
+        else:
+            values = list(health_by_source.values())
+        return [item.public(now_millis) for item in values]
 
     @staticmethod
     def _infer_verticals(query: str) -> list[str]:

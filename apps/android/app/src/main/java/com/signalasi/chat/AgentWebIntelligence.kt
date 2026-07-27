@@ -24,6 +24,10 @@ import kotlin.math.min
 import kotlin.math.sqrt
 
 const val AGENT_WEB_INTELLIGENCE_PROTOCOL = "signalasi.web-intelligence.v1"
+private const val WEB_SOURCE_FAILURE_THRESHOLD = 3
+private const val WEB_SOURCE_BASE_COOLDOWN_MILLIS = 60_000L
+private const val WEB_SOURCE_MAX_COOLDOWN_MILLIS = 30 * 60_000L
+private const val WEB_SOURCE_EWMA_ALPHA = 0.25
 
 enum class AgentWebIntelligenceVertical(val wireValue: String) {
     GENERAL("general"),
@@ -36,6 +40,22 @@ enum class AgentWebIntelligenceVertical(val wireValue: String) {
     IMAGE("image"),
     VIDEO("video"),
     LOCAL("local")
+}
+
+enum class AgentWebIntelligenceSearchProfile(
+    val wireValue: String,
+    val defaultFanout: Int,
+    val defaultTimeoutMillis: Long
+) {
+    FAST("fast", 6, 6_000L),
+    BALANCED("balanced", 18, 15_000L),
+    DEEP("deep", 32, 35_000L);
+
+    companion object {
+        fun from(value: String): AgentWebIntelligenceSearchProfile =
+            entries.firstOrNull { it.wireValue == value.lowercase(Locale.ROOT) }
+                ?: throw IllegalArgumentException("Unsupported search profile: $value")
+    }
 }
 
 data class AgentWebIntelligenceEngineSpec(
@@ -117,6 +137,92 @@ data class AgentWebIntelligenceReceipt(
         "retryable" to retryable
     )
 }
+
+data class AgentWebIntelligenceSourceHealth(
+    val sourceId: String,
+    val attempts: Int = 0,
+    val successes: Int = 0,
+    val emptyResponses: Int = 0,
+    val failures: Int = 0,
+    val consecutiveFailures: Int = 0,
+    val ewmaLatencyMillis: Double = 0.0,
+    val ewmaResultCount: Double = 0.0,
+    val lastStatus: String = "",
+    val lastAttemptAtMillis: Long = 0L,
+    val lastSuccessAtMillis: Long = 0L,
+    val circuitOpenUntilMillis: Long = 0L
+) {
+    fun circuitState(nowMillis: Long): String = when {
+        circuitOpenUntilMillis > nowMillis -> "open"
+        consecutiveFailures >= WEB_SOURCE_FAILURE_THRESHOLD -> "half_open"
+        else -> "closed"
+    }
+
+    fun routingScore(): Double {
+        val reliable = (successes + emptyResponses + 2.0) / (attempts + 4.0)
+        val speed = if (ewmaLatencyMillis <= 0.0) 0.6 else 1.0 / (1.0 + ewmaLatencyMillis / 3_000.0)
+        val useful = (ewmaResultCount / 8.0).coerceAtMost(1.0)
+        val exploration = 1.0 / sqrt(attempts + 1.0)
+        return reliable * 1.1 + speed * 0.5 + useful * 0.35 + exploration * 0.25
+    }
+
+    fun evolve(receipt: AgentWebIntelligenceReceipt, nowMillis: Long): AgentWebIntelligenceSourceHealth {
+        if (receipt.status == "cancelled") {
+            return copy(lastStatus = receipt.status, lastAttemptAtMillis = nowMillis)
+        }
+        val latency = receipt.durationMillis.coerceAtLeast(0L).toDouble()
+        val resultCount = receipt.resultCount.coerceAtLeast(0).toDouble()
+        val nextLatency = if (attempts == 0) latency else
+            ewmaLatencyMillis * (1.0 - WEB_SOURCE_EWMA_ALPHA) + latency * WEB_SOURCE_EWMA_ALPHA
+        val nextResults = if (attempts == 0) resultCount else
+            ewmaResultCount * (1.0 - WEB_SOURCE_EWMA_ALPHA) + resultCount * WEB_SOURCE_EWMA_ALPHA
+        val successful = receipt.status in setOf("completed", "empty")
+        val nextFailures = if (successful) 0 else consecutiveFailures + 1
+        val openUntil = if (!successful && nextFailures >= WEB_SOURCE_FAILURE_THRESHOLD) {
+            val exponent = (nextFailures - WEB_SOURCE_FAILURE_THRESHOLD).coerceIn(0, 10)
+            nowMillis + min(
+                WEB_SOURCE_MAX_COOLDOWN_MILLIS,
+                WEB_SOURCE_BASE_COOLDOWN_MILLIS * (1L shl exponent)
+            )
+        } else 0L
+        return copy(
+            attempts = attempts + 1,
+            successes = successes + if (receipt.status == "completed") 1 else 0,
+            emptyResponses = emptyResponses + if (receipt.status == "empty") 1 else 0,
+            failures = failures + if (successful) 0 else 1,
+            consecutiveFailures = nextFailures,
+            ewmaLatencyMillis = nextLatency,
+            ewmaResultCount = nextResults,
+            lastStatus = receipt.status,
+            lastAttemptAtMillis = nowMillis,
+            lastSuccessAtMillis = if (successful) nowMillis else lastSuccessAtMillis,
+            circuitOpenUntilMillis = openUntil
+        )
+    }
+
+    fun publicValue(nowMillis: Long): AgentNativeJsonObject = linkedMapOf(
+        "source_id" to sourceId,
+        "attempts" to attempts,
+        "successes" to successes,
+        "empty_responses" to emptyResponses,
+        "failures" to failures,
+        "consecutive_failures" to consecutiveFailures,
+        "ewma_latency_millis" to ewmaLatencyMillis,
+        "ewma_result_count" to ewmaResultCount,
+        "last_status" to lastStatus,
+        "last_attempt_at_millis" to lastAttemptAtMillis,
+        "last_success_at_millis" to lastSuccessAtMillis,
+        "circuit_state" to circuitState(nowMillis),
+        "circuit_open_until_millis" to circuitOpenUntilMillis,
+        "routing_score" to routingScore()
+    )
+}
+
+private data class AgentWebIntelligenceSourceSelection(
+    val selected: List<String>,
+    val skipped: List<AgentWebIntelligenceSourceHealth> = emptyList(),
+    val explicit: Boolean = false
+)
 
 data class AgentWebIntelligenceScore(
     val final: Double,
@@ -804,7 +910,13 @@ data class AgentWebIntelligenceSearchResponse(
     val results: List<AgentWebIntelligenceResult>,
     val receipts: List<AgentWebIntelligenceReceipt>,
     val engineIds: List<String>,
-    val elapsedMillis: Long
+    val elapsedMillis: Long,
+    val profile: String = AgentWebIntelligenceSearchProfile.BALANCED.wireValue,
+    val selectionStrategy: String = "adaptive_health_weighted",
+    val sourceHealth: List<AgentWebIntelligenceSourceHealth> = emptyList(),
+    val circuitsSkipped: List<AgentWebIntelligenceSourceHealth> = emptyList(),
+    val timeoutMillis: Long = AgentWebIntelligenceSearchProfile.BALANCED.defaultTimeoutMillis,
+    val completedAtMillis: Long = System.currentTimeMillis()
 ) {
     fun publicValue(): AgentNativeJsonObject = linkedMapOf(
         "protocol" to AGENT_WEB_INTELLIGENCE_PROTOCOL,
@@ -818,6 +930,12 @@ data class AgentWebIntelligenceSearchResponse(
             "engines_requested" to engineIds,
             "engines_completed" to receipts.count { it.status == "completed" },
             "engine_failures" to receipts.count { it.status !in setOf("completed", "empty") },
+            "profile" to profile,
+            "engine_fanout" to engineIds.size,
+            "timeout_millis" to timeoutMillis,
+            "source_selection" to selectionStrategy,
+            "source_health" to sourceHealth.map { it.publicValue(completedAtMillis) },
+            "circuits_skipped" to circuitsSkipped.map { it.publicValue(completedAtMillis) },
             "fusion" to "weighted_rrf_plus_local_ranker",
             "ranker_model" to AgentWebIntelligenceRanker.MODEL_ID,
             "elapsed_millis" to elapsedMillis
@@ -829,7 +947,9 @@ class AgentWebIntelligenceSearchCoordinator(
     fetcher: AgentWebIntelligenceFetcher,
     private val fusion: AgentWebIntelligenceFusion = AgentWebIntelligenceFusion(),
     private val maxWorkers: Int = 8,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val healthProvider: () -> Map<String, AgentWebIntelligenceSourceHealth> = { emptyMap() },
+    private val receiptObserver: (AgentWebIntelligenceReceipt) -> Unit = {}
 ) {
     private val specs = AgentWebIntelligenceEngineCatalog.entries.associateBy { it.id }
     private val adapters = specs.mapValues { AgentWebIntelligenceSearchAdapter(it.value, fetcher) }
@@ -842,14 +962,31 @@ class AgentWebIntelligenceSearchCoordinator(
         verticals: Set<AgentWebIntelligenceVertical> = emptySet(),
         timeoutMillis: Long = 15_000L,
         cancellationToken: AgentNativeToolCancellationToken = AgentNativeToolCancellationToken.NONE,
-        checkpoint: () -> Unit = {}
+        checkpoint: () -> Unit = {},
+        profile: String = AgentWebIntelligenceSearchProfile.BALANCED.wireValue
     ): AgentWebIntelligenceSearchResponse {
         require(query.isNotBlank() && query.length <= 4_096)
         require(limit in 1..100)
         require(engineFanout in 1..32)
         require(timeoutMillis in 1_000L..60_000L)
-        val selected = selectEngines(query, engineFanout, requestedEngines, verticals)
+        val selection = selectEnginePlan(query, engineFanout, requestedEngines, verticals)
+        val selected = selection.selected
         val started = clock()
+        if (selected.isEmpty()) {
+            return AgentWebIntelligenceSearchResponse(
+                query = query,
+                status = "failed",
+                results = emptyList(),
+                receipts = emptyList(),
+                engineIds = emptyList(),
+                elapsedMillis = 0L,
+                profile = profile,
+                selectionStrategy = "adaptive_health_weighted",
+                circuitsSkipped = selection.skipped,
+                timeoutMillis = timeoutMillis,
+                completedAtMillis = started
+            )
+        }
         val deadline = started + timeoutMillis
         val executor = Executors.newFixedThreadPool(min(maxWorkers.coerceIn(1, 16), selected.size))
         try {
@@ -926,19 +1063,32 @@ class AgentWebIntelligenceSearchCoordinator(
                     "Search source exceeded the shared request deadline", true
                 )
             }
+            receipts.forEach(receiptObserver)
             val results = fusion.fuse(query, groups, limit)
             val status = when {
                 results.isEmpty() -> "failed"
                 receipts.all { it.status in setOf("completed", "empty") } -> "completed"
                 else -> "partial"
             }
+            val completedAt = clock()
+            val health = healthProvider()
             return AgentWebIntelligenceSearchResponse(
-                query,
-                status,
-                results,
-                receipts,
-                selected,
-                clock() - started
+                query = query,
+                status = status,
+                results = results,
+                receipts = receipts,
+                engineIds = selected,
+                elapsedMillis = completedAt - started,
+                profile = profile,
+                selectionStrategy = if (selection.explicit) {
+                    "explicit_sources"
+                } else {
+                    "adaptive_health_weighted"
+                },
+                sourceHealth = selected.map { health[it] ?: AgentWebIntelligenceSourceHealth(it) },
+                circuitsSkipped = selection.skipped,
+                timeoutMillis = timeoutMillis,
+                completedAtMillis = completedAt
             )
         } finally {
             executor.shutdownNow()
@@ -950,27 +1100,57 @@ class AgentWebIntelligenceSearchCoordinator(
         fanout: Int,
         requested: List<String>,
         verticals: Set<AgentWebIntelligenceVertical>
-    ): List<String> {
+    ): List<String> = selectEnginePlan(query, fanout, requested, verticals).selected
+
+    private fun selectEnginePlan(
+        query: String,
+        fanout: Int,
+        requested: List<String>,
+        verticals: Set<AgentWebIntelligenceVertical>
+    ): AgentWebIntelligenceSourceSelection {
         if (requested.isNotEmpty()) {
             val unknown = requested.filterNot(specs::containsKey)
             require(unknown.isEmpty()) { "Unknown web intelligence engines: ${unknown.joinToString()}" }
-            return requested.distinct().take(fanout)
+            return AgentWebIntelligenceSourceSelection(
+                selected = requested.distinct().take(fanout),
+                explicit = true
+            )
         }
         val language = AgentWebIntelligenceText.language(query)
         val desired = verticals.ifEmpty { inferVerticals(query) }
-        return AgentWebIntelligenceEngineCatalog.entries
+        val nowMillis = clock()
+        val health = healthProvider()
+        val skipped = mutableListOf<AgentWebIntelligenceSourceHealth>()
+        val ranked = AgentWebIntelligenceEngineCatalog.entries
             .filter(AgentWebIntelligenceEngineSpec::enabledByDefault)
-            .mapIndexed { index, spec ->
+            .mapIndexedNotNull { index, spec ->
+                val sourceHealth = health[spec.id] ?: AgentWebIntelligenceSourceHealth(spec.id)
+                if (sourceHealth.circuitState(nowMillis) == "open") {
+                    skipped += sourceHealth
+                    return@mapIndexedNotNull null
+                }
                 val score = spec.weight +
                     if (spec.vertical in desired) 2.5 else 0.0 +
                     if (spec.vertical == AgentWebIntelligenceVertical.GENERAL) 1.0 else 0.0 +
                     if ("*" in spec.languages || language in spec.languages) 0.8 else -1.5 +
-                    spec.authority * 0.5
+                    spec.authority * 0.5 +
+                    sourceHealth.routingScore()
                 Triple(score, -index, spec.id)
             }
             .sortedWith(compareByDescending<Triple<Double, Int, String>> { it.first }.thenByDescending { it.second })
-            .take(fanout)
-            .map { it.third }
+        val selected = mutableListOf<String>()
+        desired.sortedBy(AgentWebIntelligenceVertical::wireValue).forEach { vertical ->
+            ranked.firstOrNull { specs.getValue(it.third).vertical == vertical && it.third !in selected }
+                ?.third
+                ?.let(selected::add)
+        }
+        ranked.forEach { item ->
+            if (selected.size < fanout && item.third !in selected) selected += item.third
+        }
+        return AgentWebIntelligenceSourceSelection(
+            selected = selected.take(fanout),
+            skipped = skipped.sortedBy(AgentWebIntelligenceSourceHealth::circuitOpenUntilMillis)
+        )
     }
 
     private fun inferVerticals(query: String): Set<AgentWebIntelligenceVertical> {

@@ -18,11 +18,15 @@ from web_intelligence import (
     SEARCH,
     WATCH,
     ENGINE_SPECS,
+    EngineReceipt,
     HttpResponse,
     PublicWebTransport,
     WebIntelligenceError,
     WebIntelligenceService,
+    WebIntelligenceStore,
+    SourceHealth,
     engine_catalog,
+    evolve_source_health,
 )
 
 
@@ -247,6 +251,94 @@ class WebIntelligenceServiceTests(unittest.TestCase):
                 max_bytes=4096,
             )
         self.assertEqual("private_network_blocked", caught.exception.code)
+
+    def test_source_health_opens_circuit_and_explicit_source_can_probe(self):
+        for _ in range(3):
+            self.service.store.record_source_receipt(
+                EngineReceipt("bing", "timeout", 5_000, 0, "engine_timeout", "timeout", True)
+            )
+
+        health = self.service.store.source_health(["bing"])["bing"]
+        self.assertEqual("open", health.circuit_state(int(time.time() * 1_000)))
+        adaptive = self.service._select_engines(
+            "current SignalASI news",
+            32,
+            (),
+            (),
+        )
+        explicit = self.service._select_engines(
+            "current SignalASI news",
+            1,
+            ("bing",),
+            (),
+        )
+
+        self.assertNotIn("bing", adaptive.selected)
+        self.assertIn("bing", [item.source_id for item in adaptive.skipped])
+        self.assertEqual(("bing",), explicit.selected)
+        self.assertTrue(explicit.explicit)
+
+    def test_source_health_is_inspectable_and_resettable(self):
+        self.service.store.record_source_receipt(
+            EngineReceipt("duckduckgo", "completed", 120, 4)
+        )
+
+        inspected = self.service.cache({
+            "action": "source_health",
+            "engines": ["duckduckgo"],
+        })
+        rows = inspected["metadata"]["source_health"]
+        self.assertEqual(1, len(rows))
+        self.assertEqual("duckduckgo", rows[0]["source_id"])
+        self.assertEqual("closed", rows[0]["circuit_state"])
+
+        reset = self.service.cache({"action": "reset_source_health"})
+        self.assertEqual(1, reset["metadata"]["source_health_removed"])
+        self.assertEqual(0, reset["metadata"]["source_health_count"])
+
+    def test_source_health_persists_and_recovers_after_cooldown_probe(self):
+        now = [100.0]
+        path = self.root / "source-health.sqlite3"
+        store = WebIntelligenceStore(path, now=lambda: now[0])
+        for _ in range(3):
+            store.record_source_receipt(
+                EngineReceipt("bing", "failed", 1_000, 0, "source_failed", "failed", True)
+            )
+
+        reopened = WebIntelligenceStore(path, now=lambda: now[0])
+        self.assertEqual("open", reopened.source_health(["bing"])["bing"].circuit_state(100_000))
+        now[0] = 161.0
+        self.assertEqual("half_open", reopened.source_health(["bing"])["bing"].circuit_state(161_000))
+
+        recovered = reopened.record_source_receipt(
+            EngineReceipt("bing", "completed", 100, 5)
+        )
+        self.assertEqual("closed", recovered.circuit_state(161_000))
+        self.assertEqual(0, recovered.consecutive_failures)
+
+    def test_cancelled_receipt_does_not_reduce_source_reliability(self):
+        previous = SourceHealth("bing", attempts=2, successes=2)
+        current = evolve_source_health(
+            previous,
+            EngineReceipt("bing", "cancelled", 10, 0),
+            1_000,
+        )
+
+        self.assertEqual(previous.attempts, current.attempts)
+        self.assertEqual(previous.failures, current.failures)
+        self.assertEqual("cancelled", current.last_status)
+
+    def test_search_profiles_supply_budget_defaults_and_metadata(self):
+        result = self.service.search({
+            "query": "SignalASI profile",
+            "profile": "fast",
+            "engines": ["bing"],
+            "use_cache": False,
+        })
+
+        self.assertEqual("fast", result["metadata"]["profile"])
+        self.assertEqual("explicit_sources", result["metadata"]["source_selection"])
+        self.assertEqual(1, len(result["metadata"]["source_health"]))
 
 
 if __name__ == "__main__":
