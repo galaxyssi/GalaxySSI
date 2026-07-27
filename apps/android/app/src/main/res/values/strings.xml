@@ -1869,6 +1869,10 @@
     <string name="cc_evolution_quality_gates">Quality gates</string>
     <string name="cc_evolution_quality_gates_subtitle">Scope check, source validation, unit tests, and product build</string>
     <string name="cc_evolution_immutable">Required</string>
+    <string name="cc_evolution_health">Evolution health</string>
+    <string name="cc_evolution_health_subtitle">%1$d%% gates passed &#183; %2$d retries &#183; %3$d stale</string>
+    <string name="cc_evolution_health_good">Healthy</string>
+    <string name="cc_evolution_health_attention">Needs attention</string>
     <string name="cc_evolution_rollback">Candidate rollback</string>
     <string name="cc_evolution_rollback_subtitle">Discard a failed candidate without changing the installed stable version</string>
     <string name="cc_evolution_section_recent">Recent candidates</string>

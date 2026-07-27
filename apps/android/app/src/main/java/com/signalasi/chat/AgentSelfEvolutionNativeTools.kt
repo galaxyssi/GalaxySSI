@@ -40,21 +40,15 @@ object AgentSelfEvolutionNativeTools {
                 input = AgentNativeJsonSchema.objectSchema(additionalProperties = false),
                 execute = {
                     val runtime = AgentOnDeviceRuntimeManager(appContext).status()
+                    val health = manager.health()
                     AgentNativeToolExecutionResult.success(
                         mapOf(
                             "execution_target" to "android",
                             "runtime_ready" to runtime.backendReady,
                             "runtime_reason" to runtime.reason,
-                            "task_count" to manager.list(500).size,
-                            "active_tasks" to manager.list(500).count { task ->
-                                task.status !in setOf(
-                                    AgentSelfEvolutionStatus.COMPLETED,
-                                    AgentSelfEvolutionStatus.PUBLISHED,
-                                    AgentSelfEvolutionStatus.FAILED,
-                                    AgentSelfEvolutionStatus.CANCELLED,
-                                    AgentSelfEvolutionStatus.ROLLED_BACK
-                                )
-                            }
+                            "task_count" to health.totalTasks,
+                            "active_tasks" to health.activeTasks,
+                            "health" to health.publicValue()
                         ),
                         "Android-local self-evolution inspected"
                     )
@@ -71,8 +65,12 @@ object AgentSelfEvolutionNativeTools {
                 ),
                 execute = { invocation ->
                     val limit = (invocation.input["limit"] as? Number)?.toInt()?.coerceIn(1, 500) ?: 100
+                    val tasks = manager.list(limit)
                     AgentNativeToolExecutionResult.success(
-                        mapOf("tasks" to manager.list(limit).map(AgentSelfEvolutionTask::publicValue)),
+                        mapOf(
+                            "tasks" to tasks.map(AgentSelfEvolutionTask::publicValue),
+                            "health" to manager.health().publicValue()
+                        ),
                         "Android-local evolution tasks listed"
                     )
                 }

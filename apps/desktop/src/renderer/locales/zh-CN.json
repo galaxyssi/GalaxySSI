@@ -498,4 +498,8 @@
 , "Proactive task updated.": "主动任务已更新。"
 , "Delete this proactive task and its run history?": "删除此主动任务及其运行记录？"
 , "Memory, Skills, MCP, and proactive automation": "记忆、技能、MCP 与主动自动化"
+, "Success": "成功率"
+, "Gate pass": "门禁通过率"
+, "Retries": "重试"
+, "Attention": "需处理"
 }

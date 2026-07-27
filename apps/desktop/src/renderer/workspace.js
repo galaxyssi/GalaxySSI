@@ -71,6 +71,7 @@ const state = {
   editingProactiveTaskId: "",
   runtime: { summary: {}, runtimes: [], error: "" },
   evolutionTasks: [],
+  evolutionHealth: null,
   tasks: [],
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
@@ -1386,6 +1387,39 @@ function evolutionGateSummary(task) {
   return t("{passed} of {total} quality gates passed", { passed, total: gates.length });
 }
 
+function renderEvolutionHealth() {
+  const health = state.evolutionHealth && typeof state.evolutionHealth === "object"
+    ? state.evolutionHealth
+    : null;
+  const element = $("#evolutionHealthSummary");
+  if (!health || !Number(health.total_tasks || 0)) {
+    element.hidden = true;
+    element.innerHTML = "";
+    return;
+  }
+  const decidedGates = Number(health.passed_gates || 0) + Number(health.failed_gates || 0);
+  const statusCounts = health.status_counts && typeof health.status_counts === "object"
+    ? health.status_counts
+    : {};
+  const decidedTasks = Number(health.successful_tasks || 0)
+    + Number(statusCounts.failed || 0)
+    + Number(statusCounts.blocked || 0);
+  const metrics = [
+    [decidedTasks ? `${Number(health.success_percent || 0)}%` : "--", t("Success")],
+    [decidedGates ? `${Number(health.gate_pass_percent || 0)}%` : "--", t("Gate pass")],
+    [Number(health.retries || 0), t("Retries")],
+    [Number(health.attention_tasks || 0), t("Attention")]
+  ];
+  element.innerHTML = metrics.map(([value, label]) => `
+    <span class="evolution-health-metric">
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(label)}</small>
+    </span>
+  `).join("");
+  element.classList.toggle("attention", Number(health.attention_tasks || 0) > 0);
+  element.hidden = false;
+}
+
 function renderEvolutionTasks() {
   const tasks = Array.isArray(state.evolutionTasks) ? state.evolutionTasks : [];
   const active = tasks.filter((task) => ACTIVE_EVOLUTION_STATES.has(task.status)).length;
@@ -1395,6 +1429,7 @@ function renderEvolutionTasks() {
     ? (ready ? t("{count} ready for review", { count: ready }) : active ? t("{count} active", { count: active }) : t("{count} candidates", { count: tasks.length }))
     : t("No candidates");
   badge.className = `state-badge ${ready ? "ok" : ""}`;
+  renderEvolutionHealth();
   $("#evolutionTaskList").innerHTML = tasks.map((task) => {
     const status = String(task.status || "proposed");
     const candidate = String(task.candidate_commit || "");
@@ -1426,6 +1461,9 @@ async function refreshEvolutionTasks(showError = false) {
   try {
     const response = await window.signalasi.listEvolutionTasks(50);
     state.evolutionTasks = Array.isArray(response?.tasks) ? response.tasks : [];
+    state.evolutionHealth = response?.health && typeof response.health === "object"
+      ? response.health
+      : null;
     renderEvolutionTasks();
   } catch (error) {
     if (showError) showToast(error.message || String(error));

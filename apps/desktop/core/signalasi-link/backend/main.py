@@ -818,7 +818,10 @@ async def api_receive_proactive_webhook(
 def api_list_evolution_tasks(request: Request, limit: int = Query(100)):
     require_loopback(request)
     manager = _desktop_evolution_manager()
-    return {"tasks": [task.public() for task in manager.store.list(limit=limit)]}
+    return {
+        "tasks": [task.public() for task in manager.store.list(limit=limit)],
+        "health": manager.health(limit=500).public(),
+    }
 
 
 @app.post("/api/evolution/tasks")

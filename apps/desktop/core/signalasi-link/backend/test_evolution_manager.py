@@ -7,11 +7,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from evolution_manager import (
+    EvolutionAttempt,
     EvolutionError,
+    EvolutionGate,
     EvolutionManager,
     EvolutionStore,
+    EvolutionTask,
     GateCommand,
     _discover_android_sdk,
+    evolution_health,
 )
 
 
@@ -172,6 +176,161 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual("approval_hash_invalid", raised.exception.code)
         self.assertEqual("waiting_approval", manager.require(task.task_id).status)
         manager.discard(task.task_id)
+
+    def test_candidate_commit_cannot_change_after_review(self):
+        def patch_candidate(_task, _attempt, worktree, _failure):
+            (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")
+            return "Candidate."
+
+        manager = self.manager(patch_candidate)
+        task = self.task(manager)
+        result = manager.run_sync(task.task_id)
+        candidate = Path(result.attempts[-1].worktree)
+        (candidate / "src" / "value.txt").write_text("unreviewed\n", encoding="utf-8")
+        subprocess.run(["git", "add", "--all"], cwd=candidate, check=True, capture_output=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=SignalASI Test",
+                "-c",
+                "user.email=test@signalasi.local",
+                "commit",
+                "-m",
+                "Unreviewed change",
+            ],
+            cwd=candidate,
+            check=True,
+            capture_output=True,
+        )
+
+        with self.assertRaises(EvolutionError) as raised:
+            manager.publish(task.task_id, result.approval_hash)
+
+        self.assertEqual("candidate_changed_after_review", raised.exception.code)
+        persisted = manager.require(task.task_id)
+        self.assertEqual("waiting_approval", persisted.status)
+        self.assertEqual("candidate_changed_after_review", persisted.last_error_code)
+        self.assertEqual(
+            1,
+            manager.health().failure_counts["candidate_changed_after_review"],
+        )
+        manager.discard(task.task_id)
+
+    def test_uncommitted_candidate_changes_cannot_publish(self):
+        def patch_candidate(_task, _attempt, worktree, _failure):
+            (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")
+            return "Candidate."
+
+        manager = self.manager(patch_candidate)
+        task = self.task(manager)
+        result = manager.run_sync(task.task_id)
+        candidate = Path(result.attempts[-1].worktree)
+        (candidate / "src" / "value.txt").write_text("dirty\n", encoding="utf-8")
+
+        with self.assertRaises(EvolutionError) as raised:
+            manager.publish(task.task_id, result.approval_hash)
+
+        self.assertEqual("candidate_dirty_after_review", raised.exception.code)
+        self.assertEqual(
+            "candidate_dirty_after_review",
+            manager.require(task.task_id).last_error_code,
+        )
+        manager.discard(task.task_id)
+
+    def test_health_uses_persisted_task_attempt_and_gate_facts(self):
+        now = 1_000_000
+        tasks = [
+            EvolutionTask(
+                task_id="published",
+                problem="Published candidate",
+                reproduction_steps=[],
+                scope=["src"],
+                acceptance=["Pass"],
+                risk_level="medium",
+                max_attempts=3,
+                status="published",
+                attempts=[
+                    EvolutionAttempt(
+                        number=1,
+                        status="failed",
+                        branch="evolution/published-a1",
+                        worktree="private-path-one",
+                        failure_code="quality_gate_failed",
+                        started_at_millis=100,
+                        completed_at_millis=1_100,
+                        gates=[EvolutionGate(id="unit", status="failed")],
+                    ),
+                    EvolutionAttempt(
+                        number=2,
+                        status="passed",
+                        branch="evolution/published-a2",
+                        worktree="private-path-two",
+                        started_at_millis=2_000,
+                        completed_at_millis=4_000,
+                        gates=[EvolutionGate(id="unit", status="passed")],
+                    ),
+                ],
+                updated_at_millis=now - 1_000,
+            ),
+            EvolutionTask(
+                task_id="stale-running",
+                problem="Stale task",
+                reproduction_steps=[],
+                scope=["src"],
+                acceptance=["Pass"],
+                risk_level="low",
+                max_attempts=2,
+                status="running",
+                updated_at_millis=now - 360_000,
+            ),
+            EvolutionTask(
+                task_id="old-review",
+                problem="Old review",
+                reproduction_steps=[],
+                scope=["src"],
+                acceptance=["Pass"],
+                risk_level="medium",
+                max_attempts=2,
+                status="waiting_approval",
+                updated_at_millis=now - 420_000,
+            ),
+            EvolutionTask(
+                task_id="blocked",
+                problem="Blocked task",
+                reproduction_steps=[],
+                scope=["src"],
+                acceptance=["Pass"],
+                risk_level="medium",
+                max_attempts=2,
+                status="blocked",
+                last_error_code="runtime_unavailable",
+                updated_at_millis=now - 5_000,
+            ),
+        ]
+
+        health = evolution_health(
+            tasks,
+            now_millis=now,
+            stale_after_millis=300_000,
+        )
+
+        self.assertEqual(4, health.total_tasks)
+        self.assertEqual(1, health.active_tasks)
+        self.assertEqual(1, health.waiting_review)
+        self.assertEqual(1, health.successful_tasks)
+        self.assertEqual(3, health.attention_tasks)
+        self.assertEqual(["stale-running"], health.stale_task_ids)
+        self.assertEqual(2, health.total_attempts)
+        self.assertEqual(1, health.failed_attempts)
+        self.assertEqual(1, health.retries)
+        self.assertEqual(50, health.gate_pass_percent)
+        self.assertEqual(50, health.success_percent)
+        self.assertEqual(1_500, health.average_attempt_duration_millis)
+        self.assertEqual(420_000, health.oldest_review_age_millis)
+        self.assertEqual(1, health.failure_counts["quality_gate_failed"])
+        self.assertEqual(1, health.failure_counts["runtime_unavailable"])
+        self.assertNotIn("private-path", str(health.public()))
 
     def test_protected_and_traversal_scopes_are_rejected(self):
         manager = self.manager(lambda *_args: "")

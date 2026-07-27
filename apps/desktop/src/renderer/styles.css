@@ -593,6 +593,35 @@ button:disabled { cursor: default; opacity: 0.48; }
 .evolution-safety-note small { display: block; }
 .evolution-safety-note strong { color: #30463a; font-size: 9px; }
 .evolution-safety-note small { margin-top: 3px; color: #617068; font-size: 8px; line-height: 1.45; }
+.evolution-health-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 7px;
+  overflow: hidden;
+  border: 1px solid #dce7e1;
+  border-radius: 7px;
+  background: #f8fbf9;
+}
+.evolution-health-summary[hidden] { display: none; }
+.evolution-health-summary.attention { border-color: #eadfca; background: #fcfaf5; }
+.evolution-health-metric {
+  min-width: 0;
+  padding: 7px 6px;
+  text-align: center;
+  border-right: 1px solid var(--line);
+}
+.evolution-health-metric:last-child { border-right: 0; }
+.evolution-health-metric strong,
+.evolution-health-metric small { display: block; }
+.evolution-health-metric strong { color: #30373d; font-size: 10px; font-weight: 600; }
+.evolution-health-metric small {
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .evolution-create {
   margin-bottom: 7px;
   border: 1px solid var(--line);

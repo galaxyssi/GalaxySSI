@@ -7784,18 +7784,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .filter { remote -> desktopLinks.any { it.desktopId == remote.desktopId } }
         val runtime = AgentOnDeviceRuntimeManager(this).status()
         val runtimeReady = runtime.backendReady && runtime.languageReady(AgentRuntimeLanguage.SHELL)
-        val candidates = (tasks + remoteTasks.map(AgentRemoteSelfEvolutionTask::task))
-            .count { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL }
-        val active = tasks.count {
-            it.status in setOf(
-                AgentSelfEvolutionStatus.PREPARING,
-                AgentSelfEvolutionStatus.RUNNING,
-                AgentSelfEvolutionStatus.VALIDATING
-            )
-        }
-        val failed = tasks.count {
-            it.status in setOf(AgentSelfEvolutionStatus.FAILED, AgentSelfEvolutionStatus.BLOCKED)
-        }
+        val health = AgentSelfEvolutionHealthAnalyzer.summarize(
+            tasks + remoteTasks.map(AgentRemoteSelfEvolutionTask::task)
+        )
+        val candidates = health.waitingReview
+        val active = health.activeTasks
+        val failed = health.attentionTasks
         val recentRows = tasks.take(8).map { task ->
             ControlCenterRowSpec(
                 actionId = "evolution.task:${task.taskId}",
@@ -7909,6 +7903,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                     R.drawable.ic_security_shield,
                                     getString(R.string.cc_evolution_immutable),
                                     ControlCenterTone.BLUE,
+                                    showChevron = false
+                                ),
+                                ControlCenterRowSpec(
+                                    "",
+                                    getString(R.string.cc_evolution_health),
+                                    getString(
+                                        R.string.cc_evolution_health_subtitle,
+                                        health.gatePassPercent,
+                                        health.retries,
+                                        health.staleTasks
+                                    ),
+                                    R.drawable.ic_settings_diagnostics,
+                                    getString(
+                                        if (health.attentionTasks == 0) R.string.cc_evolution_health_good
+                                        else R.string.cc_evolution_health_attention
+                                    ),
+                                    if (health.attentionTasks == 0) ControlCenterTone.GREEN
+                                    else ControlCenterTone.AMBER,
                                     showChevron = false
                                 ),
                                 ControlCenterRowSpec(

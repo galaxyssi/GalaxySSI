@@ -1776,6 +1776,10 @@
     <string name="cc_evolution_quality_gates">质量门禁</string>
     <string name="cc_evolution_quality_gates_subtitle">范围检查、源码校验、单元测试与产品构建</string>
     <string name="cc_evolution_immutable">强制</string>
+    <string name="cc_evolution_health">进化健康度</string>
+    <string name="cc_evolution_health_subtitle">门禁通过率 %1$d%% &#183; 重试 %2$d 次 &#183; 卡住 %3$d 项</string>
+    <string name="cc_evolution_health_good">健康</string>
+    <string name="cc_evolution_health_attention">需要处理</string>
     <string name="cc_evolution_rollback">候选回滚</string>
     <string name="cc_evolution_rollback_subtitle">丢弃失败候选，不改变当前安装的稳定版本</string>
     <string name="cc_evolution_section_recent">最近候选</string>
