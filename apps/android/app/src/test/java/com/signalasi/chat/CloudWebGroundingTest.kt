@@ -7,22 +7,73 @@ import org.junit.Test
 
 class CloudWebGroundingTest {
     @Test
-    fun exposesOnlyGenericWebTools() {
+    fun exposesAllUnifiedWebIntelligenceOperations() {
         val tools = CloudWebGrounding.openAiTools()
         val names = (0 until tools.length()).map { index ->
             tools.getJSONObject(index).getJSONObject("function").getString("name")
         }
 
-        assertEquals(listOf("web_search", "web_fetch"), names)
+        assertEquals(
+            listOf(
+                "web_search",
+                "web_fetch",
+                "web_crawl",
+                "web_extract",
+                "web_cache",
+                "web_find_similar",
+                "web_research",
+                "web_agent",
+                "web_diff",
+                "web_watch"
+            ),
+            names
+        )
         assertFalse(names.contains("get_weather"))
     }
 
     @Test
-    fun detectsChangingInformationAndExplicitSearchWithoutDomainRouting() {
-        assertTrue(CloudWebGrounding.requiresLiveData("What is the weather in Shanghai today?"))
-        assertTrue(CloudWebGrounding.requiresLiveData("Latest technology news"))
-        assertTrue(CloudWebGrounding.requiresLiveData("Search the web for SignalASI"))
-        assertTrue(CloudWebGrounding.requiresLiveData("\u8054\u7f51\u641c\u7d22 SignalASI"))
-        assertFalse(CloudWebGrounding.requiresLiveData("Explain binary search"))
+    fun givesEveryModelCurrentTimeAndSemanticToolChoicePolicy() {
+        assertFalse(CloudWebGrounding.currentEvidencePrompt().isBlank())
+        assertTrue(CloudWebGrounding.currentEvidencePrompt().contains("keyword matching"))
+        assertFalse(CloudWebGrounding.currentEvidencePrompt().contains("Asia/Shanghai"))
+    }
+
+    @Test
+    fun parsesDeepSeekDsmlCallsWithoutExposingProtocolText() {
+        val content = """
+            <\uff5cDSML\uff5ctool_calls>
+            <\uff5cDSML\uff5cinvoke name="web_search">
+            <\uff5cDSML\uff5cparam name="query">latest technology news today</\uff5cDSML\uff5c/param>
+            <\uff5cDSML\uff5cparam name="max_results">6</\uff5cDSML\uff5c/param>
+            <\uff5cDSML\uff5c/invoke>
+            <\uff5cDSML\uff5cinvoke name="web_fetch">
+            <\uff5cDSML\uff5cparam name="url">https://example.com/news</\uff5cDSML\uff5c/param>
+            <\uff5cDSML\uff5c/invoke>
+            <\uff5cDSML\uff5c/tool_calls>
+        """.trimIndent()
+
+        val calls = CloudWebGrounding.parseInlineToolCalls(content)
+
+        assertEquals(2, calls.size)
+        assertEquals("web_search", calls[0].name)
+        assertEquals("latest technology news today", calls[0].arguments.getString("query"))
+        assertEquals(6, calls[0].arguments.getInt("max_results"))
+        assertEquals("web_fetch", calls[1].name)
+        assertEquals("https://example.com/news", calls[1].arguments.getString("url"))
+        assertEquals("", CloudWebGrounding.stripInternalToolProtocol(content))
+    }
+
+    @Test
+    fun preservesNormalAnswerWhileRemovingInlineToolMarkup() {
+        val content = """
+            I will verify the current sources.
+            <tool_calls><invoke name="web_search"><param name="query">news</param></invoke></tool_calls>
+            Here is the final summary.
+        """.trimIndent()
+
+        assertEquals(
+            "I will verify the current sources.\nHere is the final summary.",
+            CloudWebGrounding.stripInternalToolProtocol(content)
+        )
     }
 }

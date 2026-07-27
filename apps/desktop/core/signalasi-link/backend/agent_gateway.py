@@ -32,6 +32,17 @@ from desktop_agent_adapters import (
     DesktopAgentProvider,
     DesktopAgentStateStore,
 )
+from web_intelligence import (
+    MAX_CLOUD_TOOL_CALLS,
+    WebIntelligenceService,
+    cloud_current_time_prompt,
+    cloud_inline_evidence_message,
+    cloud_openai_tools,
+    contains_internal_tool_protocol,
+    execute_cloud_web_tool,
+    parse_inline_tool_calls,
+    strip_internal_tool_protocol,
+)
 
 EXECUTION_LOG_MAX_BYTES = 512 * 1024
 AGENT_RUNTIME_FAILURE_TTL_SECONDS = 5 * 60
@@ -57,6 +68,8 @@ _agent_runtime: dict[str, dict] = {}
 _agent_runtime_loaded = False
 _agent_adapter_lock = threading.RLock()
 _agent_adapter_provider: DesktopAgentProvider | None = None
+_cloud_web_lock = threading.RLock()
+_cloud_web_service: WebIntelligenceService | None = None
 
 
 def _agent_runtime_path() -> Path:
@@ -74,6 +87,14 @@ def _agent_adapter_state_path() -> Path:
 def _state_root() -> Path:
     configured = os.environ.get("SIGNALASI_STATE_DIR", "").strip()
     return Path(configured) if configured else Path(os.environ.get("APPDATA") or Path.home()) / "SignalASI"
+
+
+def _desktop_cloud_web_service() -> WebIntelligenceService:
+    global _cloud_web_service
+    with _cloud_web_lock:
+        if _cloud_web_service is None:
+            _cloud_web_service = WebIntelligenceService(_state_root() / "web-intelligence")
+        return _cloud_web_service
 
 
 def _ensure_agent_runtime_loaded_locked() -> None:
@@ -1949,13 +1970,134 @@ def ask_cloud_model(
     model = cfg["model"] or os.environ.get("SIGNALASI_CLOUD_MODEL_NAME", "default")
     if not url or not api_key:
         return "[Cloud Model] \u672a\u914d\u7f6e\u4e91\u7aef\u6a21\u578b\u3002\u8bf7\u5728 SignalASI Desktop \u4e2d\u8bbe\u7f6e API \u5730\u5740\u548c\u5bc6\u94a5\u3002"
-    payload = {
-        "model": model,
-        "messages": messages or [{"role": "user", "content": text}],
-    }
+    conversation = [dict(item) for item in (messages or [{"role": "user", "content": text}])]
+    conversation.insert(0, {"role": "system", "content": cloud_current_time_prompt()})
+    payload = {"model": model, "messages": conversation}
+    payload["tools"] = cloud_openai_tools()
+    payload["tool_choice"] = "auto"
     try:
-        data = _post_json(url, payload, timeout=timeout, headers={"Authorization": f"Bearer {api_key}"})
-        return _extract_chat_completion(data, "Cloud Model")
+        tool_calls_used = 0
+        for round_index in range(4):
+            request_payload = dict(payload)
+            request_payload["messages"] = conversation
+            if round_index == 3:
+                request_payload.pop("tools", None)
+                request_payload.pop("tool_choice", None)
+            data = _post_json(
+                url,
+                request_payload,
+                timeout=timeout,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+            choices = data.get("choices") or []
+            if not choices:
+                answer = strip_internal_tool_protocol(_extract_chat_completion(data, "Cloud Model"))
+                if answer:
+                    return answer
+                raise RuntimeError("Cloud model returned no user-facing answer")
+            choice = choices[0] if isinstance(choices[0], dict) else {}
+            message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+            content = _cloud_message_content(message.get("content"))
+            structured_calls = message.get("tool_calls")
+            if not isinstance(structured_calls, list):
+                structured_calls = []
+            inline_calls = parse_inline_tool_calls(content)
+            if not structured_calls and not inline_calls:
+                answer = strip_internal_tool_protocol(
+                    content or str(choice.get("text") or data.get("output_text") or "")
+                )
+                if answer:
+                    return answer
+                if contains_internal_tool_protocol(content):
+                    conversation.extend([
+                        {
+                            "role": "assistant",
+                            "content": "The previous response contained invalid internal tool markup.",
+                        },
+                        {
+                            "role": "user",
+                            "content": (
+                                "Return the final answer as normal user-facing text. "
+                                "Do not print tool markup."
+                            ),
+                        },
+                    ])
+                    continue
+                raise RuntimeError("Cloud model returned no user-facing answer")
+            if round_index == 3 or tool_calls_used >= MAX_CLOUD_TOOL_CALLS:
+                break
+            remaining = MAX_CLOUD_TOOL_CALLS - tool_calls_used
+            if structured_calls:
+                conversation.append(message)
+                for call in structured_calls[:remaining]:
+                    call_value = call if isinstance(call, dict) else {}
+                    function = call_value.get("function")
+                    function = function if isinstance(function, dict) else {}
+                    name = str(function.get("name") or "")
+                    try:
+                        arguments = json.loads(str(function.get("arguments") or "{}"))
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        arguments = {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                    try:
+                        result = execute_cloud_web_tool(
+                            _desktop_cloud_web_service(),
+                            name,
+                            arguments,
+                        )
+                    except Exception as exc:
+                        result = json.dumps(
+                            {
+                                "status": "failed",
+                                "tool": name[:80],
+                                "error": str(exc)[:300],
+                            },
+                            ensure_ascii=False,
+                        )
+                    conversation.append({
+                        "role": "tool",
+                        "tool_call_id": str(
+                            call_value.get("id") or f"signalasi-{tool_calls_used + 1}"
+                        ),
+                        "content": result,
+                    })
+                    tool_calls_used += 1
+            else:
+                executed = []
+                for call in inline_calls[:remaining]:
+                    try:
+                        result = execute_cloud_web_tool(
+                            _desktop_cloud_web_service(),
+                            call.name,
+                            call.arguments,
+                        )
+                    except Exception as exc:
+                        result = json.dumps(
+                            {
+                                "status": "failed",
+                                "tool": call.name[:80],
+                                "error": str(exc)[:300],
+                            },
+                            ensure_ascii=False,
+                        )
+                    executed.append((call, result))
+                    tool_calls_used += 1
+                conversation.extend([
+                    {
+                        "role": "assistant",
+                        "content": (
+                            strip_internal_tool_protocol(content)
+                            or "I need current public evidence to answer."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": cloud_inline_evidence_message(executed),
+                    },
+                ])
+            payload.pop("tool_choice", None)
+        raise RuntimeError("Cloud model did not produce a final answer after web research")
     except Exception as exc:
         if raise_errors:
             raise
@@ -1976,6 +2118,22 @@ def _extract_chat_completion(data: dict, label: str) -> str:
         message = choices[0].get("message") or {}
         return str(message.get("content") or choices[0].get("text") or data)
     return str(data.get("response") or data.get("message") or f"[{label}] \u65e0\u54cd\u5e94")
+
+
+def _cloud_message_content(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+        return "\n".join(parts).strip()
+    if isinstance(value, dict):
+        return str(value.get("text") or value.get("content") or "").strip()
+    return ""
 
 
 def connector_self_test(include_agent_calls: bool = False, include_mobile_delivery: bool = True) -> dict:

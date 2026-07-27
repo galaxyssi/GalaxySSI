@@ -25,8 +25,14 @@ from web_intelligence import (
     WebIntelligenceService,
     WebIntelligenceStore,
     SourceHealth,
+    cloud_current_time_prompt,
+    cloud_openai_tools,
+    contains_internal_tool_protocol,
+    execute_cloud_web_tool,
     engine_catalog,
     evolve_source_health,
+    parse_inline_tool_calls,
+    strip_internal_tool_protocol,
 )
 
 
@@ -124,6 +130,59 @@ class WebIntelligenceServiceTests(unittest.TestCase):
                 "signalasi.web.intelligence.watch",
             },
         )
+
+    def test_cloud_adapter_exposes_ten_operations_and_current_time(self):
+        names = [
+            item["function"]["name"]
+            for item in cloud_openai_tools()
+        ]
+
+        self.assertEqual(
+            [
+                "web_search", "web_fetch", "web_crawl", "web_extract", "web_cache",
+                "web_find_similar", "web_research", "web_agent", "web_diff", "web_watch",
+            ],
+            names,
+        )
+        self.assertIn(str(time.localtime().tm_year), cloud_current_time_prompt())
+        self.assertIn("Decide from the user's meaning", cloud_current_time_prompt())
+        self.assertNotIn("Asia/Shanghai", cloud_current_time_prompt())
+
+    def test_cloud_adapter_parses_and_hides_deepseek_dsml(self):
+        content = """
+            <\uff5cDSML\uff5ctool_calls>
+            <\uff5cDSML\uff5cinvoke name="web_search">
+            <\uff5cDSML\uff5cparam name="query">current technology news</\uff5cDSML\uff5c/param>
+            <\uff5cDSML\uff5cparam name="max_results">6</\uff5cDSML\uff5c/param>
+            <\uff5cDSML\uff5c/invoke>
+            <\uff5cDSML\uff5c/tool_calls>
+        """.strip()
+
+        calls = parse_inline_tool_calls(content)
+
+        self.assertTrue(contains_internal_tool_protocol(content))
+        self.assertEqual(1, len(calls))
+        self.assertEqual("web_search", calls[0].name)
+        self.assertEqual("current technology news", calls[0].arguments["query"])
+        self.assertEqual(6, calls[0].arguments["max_results"])
+        self.assertEqual("", strip_internal_tool_protocol(content))
+
+    def test_cloud_adapter_executes_through_shared_web_intelligence(self):
+        result = json.loads(execute_cloud_web_tool(
+            self.service,
+            "web_search",
+            {
+                "query": "SignalASI web intelligence",
+                "max_results": 4,
+                "engines": ["bing", "duckduckgo"],
+                "engine_fanout": 2,
+                "use_cache": False,
+            },
+        ))
+
+        self.assertEqual(PROTOCOL, result["protocol"])
+        self.assertEqual("search", result["operation"])
+        self.assertTrue(result["results"])
 
     def test_parallel_search_deduplicates_and_explains_score(self):
         result = self.service.search({
