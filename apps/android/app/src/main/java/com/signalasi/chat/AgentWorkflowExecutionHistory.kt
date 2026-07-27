@@ -8,7 +8,8 @@ import java.util.UUID
 enum class AgentWorkflowExecutionSource {
     MANUAL,
     SCHEDULE,
-    EVENT
+    EVENT,
+    PROACTIVE
 }
 
 enum class AgentWorkflowExecutionStatus {

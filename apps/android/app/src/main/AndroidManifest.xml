@@ -147,6 +147,9 @@
             android:name=".AgentWorkflowAlarmReceiver"
             android:exported="false" />
         <receiver
+            android:name=".AgentProactiveAlarmReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".GlobalAgentWakeReceiver"
             android:exported="false" />
         <receiver

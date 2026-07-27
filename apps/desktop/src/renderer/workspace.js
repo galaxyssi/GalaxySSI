@@ -65,6 +65,10 @@ const state = {
   memory: { memories: [], stats: {} },
   skills: [],
   mcp: [],
+  proactiveTasks: [],
+  proactiveRuns: [],
+  selectedProactiveTaskId: "",
+  editingProactiveTaskId: "",
   runtime: { summary: {}, runtimes: [], error: "" },
   evolutionTasks: [],
   tasks: [],
@@ -905,8 +909,81 @@ function renderMcp() {
     </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No MCP connections configured."))}</div>`;
 }
 
+function proactiveTriggerSummary(trigger = {}) {
+  if (trigger.kind === "cron") return `${trigger.cron || "-"} \u00b7 ${trigger.time_zone || "UTC"}`;
+  if (trigger.kind === "interval" || trigger.kind === "goal_checkpoint") {
+    return t("Every {seconds} seconds", { seconds: Number(trigger.interval_seconds || 0) });
+  }
+  if (trigger.kind === "webhook") return t("Trusted webhook");
+  return t("Manual");
+}
+
+function proactiveStatusLabel(status) {
+  const labels = {
+    queued: "Queued",
+    running: "Running",
+    waiting: "Waiting",
+    retrying: "Retrying",
+    completed: "Completed",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    skipped: "Skipped"
+  };
+  return t(labels[status] || status || "Queued");
+}
+
+function renderProactiveTasks() {
+  const tasks = Array.isArray(state.proactiveTasks) ? state.proactiveTasks : [];
+  const active = tasks.filter((task) => task.enabled).length;
+  $("#proactiveSummary").textContent = tasks.length
+    ? t("{active} active of {total} proactive tasks", { active, total: tasks.length })
+    : t("Durable Cron, goal, webhook, Agent team, workflow, and tool execution");
+  $("#proactiveTaskList").innerHTML = tasks.length ? tasks.map((task) => {
+    const next = Number(task.next_run_at_millis || 0);
+    const detail = [
+      proactiveTriggerSummary(task.trigger),
+      task.action?.kind ? t(task.action.kind.replaceAll("_", " ")) : "",
+      next ? new Date(next).toLocaleString() : ""
+    ].filter(Boolean).join(" \u00b7 ");
+    return `<article class="capability-item ${task.task_id === state.selectedProactiveTaskId ? "selected" : ""}">
+      <div>
+        <strong>${escapeHtml(task.name || task.task_id)}</strong>
+        <small>${escapeHtml(detail)}</small>
+      </div>
+      <div class="capability-item-actions">
+        <button data-toggle-proactive="${escapeHtml(task.task_id)}" data-enabled="${task.enabled ? "1" : "0"}">${escapeHtml(t(task.enabled ? "Pause" : "Enable"))}</button>
+        <button data-edit-proactive="${escapeHtml(task.task_id)}">${escapeHtml(t("Edit"))}</button>
+        <button data-runs-proactive="${escapeHtml(task.task_id)}">${escapeHtml(t("Runs"))}</button>
+        <button class="primary" data-trigger-proactive="${escapeHtml(task.task_id)}">${escapeHtml(t("Run"))}</button>
+        <button data-delete-proactive="${escapeHtml(task.task_id)}">${escapeHtml(t("Delete"))}</button>
+      </div>
+    </article>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t("No proactive tasks configured."))}</div>`;
+  renderProactiveRuns();
+}
+
+function renderProactiveRuns() {
+  const runs = Array.isArray(state.proactiveRuns) ? state.proactiveRuns : [];
+  $("#proactiveRunList").innerHTML = runs.length ? runs.map((run) => {
+    const output = String(run.output?.reply || run.error_message || "").trim();
+    const active = !["completed", "failed", "cancelled", "skipped"].includes(run.status);
+    return `<article class="capability-item">
+      <div>
+        <strong>${escapeHtml(proactiveStatusLabel(run.status))}</strong>
+        <small>${escapeHtml(new Date(Number(run.scheduled_for_millis || Date.now())).toLocaleString())}${output ? ` \u00b7 ${escapeHtml(output.slice(0, 180))}` : ""}</small>
+      </div>
+      <div class="capability-item-actions">
+        ${active ? `<button data-cancel-proactive-run="${escapeHtml(run.run_id)}">${escapeHtml(t("Cancel"))}</button>` : ""}
+      </div>
+    </article>`;
+  }).join("") : "";
+}
+
 function updateCapabilityCount() {
-  const total = Number(state.memory.stats?.active || 0) + state.skills.filter((skill) => skill.enabled).length + state.mcp.filter((item) => item.enabled).length;
+  const total = Number(state.memory.stats?.active || 0)
+    + state.skills.filter((skill) => skill.enabled).length
+    + state.mcp.filter((item) => item.enabled).length
+    + state.proactiveTasks.filter((item) => item.enabled).length;
   elements.capabilityCount.textContent = String(total);
 }
 
@@ -918,20 +995,244 @@ async function refreshMemory(query = "") {
 
 async function refreshCapabilities() {
   try {
-    const [memory, skills, mcp] = await Promise.all([
+    const [memory, skills, mcp, proactive, proactiveRuns] = await Promise.all([
       window.signalasi.getDesktopMemory("", 100),
       window.signalasi.getDesktopSkills(),
-      window.signalasi.getDesktopMcp()
+      window.signalasi.getDesktopMcp(),
+      window.signalasi.listProactiveTasks(200),
+      window.signalasi.listProactiveRuns(state.selectedProactiveTaskId, 100)
     ]);
     state.memory = memory;
     state.skills = Array.isArray(skills.skills) ? skills.skills : [];
     state.mcp = Array.isArray(mcp.connections) ? mcp.connections : [];
+    state.proactiveTasks = Array.isArray(proactive.tasks) ? proactive.tasks : [];
+    state.proactiveRuns = Array.isArray(proactiveRuns.runs) ? proactiveRuns.runs : [];
     renderMemory();
     renderSkills();
     renderMcp();
+    renderProactiveTasks();
     updateCapabilityCount();
   } catch (error) {
     $("#memorySummary").textContent = error.message || String(error);
+  }
+}
+
+function parseProactiveTeam(value) {
+  const team = String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+    const separator = line.indexOf(":");
+    if (separator < 1) throw new Error(t("Use role:agent-id for every team member."));
+    const member = {
+      role: line.slice(0, separator).trim().toLowerCase(),
+      agent_id: line.slice(separator + 1).trim(),
+      instructions: ""
+    };
+    if (!["lead", "executor", "observer", "verifier"].includes(member.role) || !member.agent_id) {
+      throw new Error(t("Use role:agent-id for every team member."));
+    }
+    return member;
+  });
+  if (team.filter((member) => member.role === "lead").length !== 1) {
+    throw new Error(t("A team requires exactly one lead."));
+  }
+  if (new Set(team.map((member) => member.agent_id)).size !== team.length) {
+    throw new Error(t("Each team member must be unique."));
+  }
+  return team;
+}
+
+function proactiveTriggerPayload(kind, schedule, timeZone, name, existing = {}) {
+  if (kind === "cron") return { kind, cron: schedule || "0 9 * * *", time_zone: timeZone || "UTC" };
+  if (kind === "interval") {
+    return { kind, interval_seconds: Math.max(60, Number(schedule || 3600)), time_zone: timeZone || "UTC" };
+  }
+  if (kind === "goal_checkpoint") {
+    return {
+      kind,
+      interval_seconds: Math.max(60, Number(schedule || 3600)),
+      time_zone: timeZone || "UTC",
+      goal_id: existing.goal_id || `goal:${String(name || "task").toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 80) || Date.now()}`
+    };
+  }
+  if (kind === "webhook") {
+    return {
+      kind,
+      time_zone: timeZone || "UTC",
+      ...(existing.webhook_id ? { webhook_id: existing.webhook_id } : {})
+    };
+  }
+  return { kind: "manual", time_zone: timeZone || "UTC" };
+}
+
+function resetProactiveEditor() {
+  state.editingProactiveTaskId = "";
+  $("#proactiveName").value = "";
+  $("#proactiveTriggerKind").value = "manual";
+  $("#proactiveSchedule").value = "";
+  $("#proactiveTimeZone").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  $("#proactiveActionKind").value = "agent";
+  $("#proactiveTarget").value = "codex";
+  $("#proactivePrompt").value = "";
+  $("#proactiveTeam").value = "";
+  $("#proactiveArguments").value = "{}";
+  $("#proactiveDelivery").value = "store";
+  $("#proactiveNetwork").value = "any";
+  $("#proactiveAttempts").value = "3";
+  $("#proactiveConcurrency").value = "1";
+  $("#proactiveCharging").checked = false;
+  $("#cancelProactiveEditButton").hidden = true;
+  $("#createProactiveButton").textContent = t("Create proactive task");
+  syncProactiveFormVisibility();
+}
+
+function editProactiveTask(taskId) {
+  const task = state.proactiveTasks.find((item) => item.task_id === taskId);
+  if (!task) return;
+  state.editingProactiveTaskId = taskId;
+  $("#proactiveName").value = task.name || "";
+  $("#proactiveTriggerKind").value = task.trigger?.kind || "manual";
+  $("#proactiveSchedule").value = task.trigger?.kind === "cron"
+    ? task.trigger.cron || ""
+    : String(task.trigger?.interval_seconds || "");
+  $("#proactiveTimeZone").value = task.trigger?.time_zone || "UTC";
+  $("#proactiveActionKind").value = task.action?.kind || "agent";
+  $("#proactiveTarget").value = task.action?.target_id || "";
+  $("#proactivePrompt").value = task.action?.prompt || "";
+  $("#proactiveTeam").value = (task.action?.team || [])
+    .map((member) => `${member.role}:${member.agent_id}`)
+    .join("\n");
+  $("#proactiveArguments").value = JSON.stringify(task.action?.arguments || {}, null, 2);
+  $("#proactiveDelivery").value = task.action?.delivery?.mode || "store";
+  $("#proactiveNetwork").value = task.policy?.network || "any";
+  $("#proactiveAttempts").value = String(task.policy?.max_attempts || 3);
+  $("#proactiveConcurrency").value = String(task.policy?.max_concurrency || 1);
+  $("#proactiveCharging").checked = Boolean(task.policy?.requires_charging);
+  $("#cancelProactiveEditButton").hidden = false;
+  $("#createProactiveButton").textContent = t("Update proactive task");
+  $("#proactiveCreateDetails").open = true;
+  syncProactiveFormVisibility();
+  $("#proactiveCreateDetails").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function syncProactiveFormVisibility() {
+  const trigger = $("#proactiveTriggerKind").value;
+  const action = $("#proactiveActionKind").value;
+  $("#proactiveScheduleField").hidden = !["cron", "interval", "goal_checkpoint"].includes(trigger);
+  $("#proactiveTimeZoneField").hidden = trigger !== "cron";
+  $("#proactiveTargetField").hidden = action === "subagent_team";
+  $("#proactiveTeamField").hidden = action !== "subagent_team";
+  $("#proactiveArgumentsField").hidden = action !== "native_tool";
+  $("#proactivePromptField").hidden = action === "native_tool";
+  $("#proactiveSchedule").placeholder = trigger === "cron" ? "0 9 * * *" : "3600";
+}
+
+async function createProactiveTask() {
+  const button = $("#createProactiveButton");
+  const name = $("#proactiveName").value.trim();
+  const actionKind = $("#proactiveActionKind").value;
+  if (!name) return showToast(t("Add a task name."));
+  let argumentsValue;
+  let team;
+  try {
+    argumentsValue = JSON.parse($("#proactiveArguments").value.trim() || "{}");
+    team = actionKind === "subagent_team" ? parseProactiveTeam($("#proactiveTeam").value) : [];
+  } catch (error) {
+    return showToast(error.message || String(error));
+  }
+  const targetId = $("#proactiveTarget").value.trim();
+  if (actionKind !== "subagent_team" && !targetId) return showToast(t("Add a target ID."));
+  const prompt = $("#proactivePrompt").value.trim();
+  if (["agent", "subagent_team"].includes(actionKind) && !prompt) {
+    return showToast(t("Add a goal or instructions."));
+  }
+  const editingTask = state.proactiveTasks.find(
+    (task) => task.task_id === state.editingProactiveTaskId
+  );
+  button.disabled = true;
+  try {
+    const payload = {
+      name,
+      trigger: proactiveTriggerPayload(
+        $("#proactiveTriggerKind").value,
+        $("#proactiveSchedule").value.trim(),
+        $("#proactiveTimeZone").value.trim(),
+        name,
+        editingTask?.trigger
+      ),
+      action: {
+        kind: actionKind,
+        target_id: targetId,
+        prompt,
+        arguments: argumentsValue,
+        team,
+        delivery: { mode: $("#proactiveDelivery").value }
+      },
+      policy: {
+        max_attempts: Math.max(1, Number($("#proactiveAttempts").value || 3)),
+        max_concurrency: Math.max(1, Number($("#proactiveConcurrency").value || 1)),
+        network: $("#proactiveNetwork").value,
+        requires_charging: $("#proactiveCharging").checked
+      },
+      enabled: true
+    };
+    if (editingTask) {
+      payload.enabled = Boolean(editingTask.enabled);
+      await window.signalasi.updateProactiveTask(editingTask.task_id, payload);
+    } else {
+      await window.signalasi.createProactiveTask(payload);
+    }
+    const message = editingTask ? t("Proactive task updated.") : t("Proactive task created.");
+    resetProactiveEditor();
+    $("#proactiveCreateDetails").open = false;
+    showToast(message);
+    await refreshCapabilities();
+  } catch (error) {
+    showToast(error.message || String(error));
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function handleProactiveAction(event) {
+  const toggle = event.target.closest("[data-toggle-proactive]");
+  const edit = event.target.closest("[data-edit-proactive]");
+  const runs = event.target.closest("[data-runs-proactive]");
+  const trigger = event.target.closest("[data-trigger-proactive]");
+  const remove = event.target.closest("[data-delete-proactive]");
+  const cancelRun = event.target.closest("[data-cancel-proactive-run]");
+  const button = toggle || edit || runs || trigger || remove || cancelRun;
+  if (!button) return;
+  button.disabled = true;
+  try {
+    if (edit) {
+      editProactiveTask(edit.dataset.editProactive);
+      return;
+    } else if (toggle) {
+      await window.signalasi.updateProactiveTask(toggle.dataset.toggleProactive, {
+        enabled: toggle.dataset.enabled !== "1"
+      });
+    } else if (runs) {
+      state.selectedProactiveTaskId = runs.dataset.runsProactive;
+      const response = await window.signalasi.listProactiveRuns(state.selectedProactiveTaskId, 100);
+      state.proactiveRuns = Array.isArray(response.runs) ? response.runs : [];
+      renderProactiveTasks();
+      return;
+    } else if (trigger) {
+      await window.signalasi.triggerProactiveTask(trigger.dataset.triggerProactive);
+    } else if (remove) {
+      if (!window.confirm(t("Delete this proactive task and its run history?"))) return;
+      await window.signalasi.deleteProactiveTask(remove.dataset.deleteProactive);
+      if (state.selectedProactiveTaskId === remove.dataset.deleteProactive) {
+        state.selectedProactiveTaskId = "";
+        state.proactiveRuns = [];
+      }
+    } else if (cancelRun) {
+      await window.signalasi.cancelProactiveRun(cancelRun.dataset.cancelProactiveRun);
+    }
+    await refreshCapabilities();
+  } catch (error) {
+    showToast(error.message || String(error));
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1201,7 +1502,7 @@ async function handleEvolutionAction(event) {
 
 const PANEL_META = {
   agents: ["Agents", "Private agents and local execution engines"],
-  capabilities: ["Capabilities", "Long-term memory, Skills, and MCP"],
+  capabilities: ["Capabilities", "Memory, Skills, MCP, and proactive automation"],
   gateway: ["Mobile Gateway", "Trusted phones and SignalASI Link"],
   settings: ["Settings", "Language, cloud API, commands, and diagnostics"]
 };
@@ -1467,6 +1768,17 @@ function bindEvents() {
       await refreshCapabilities();
     }
   });
+  $("#refreshProactiveButton").addEventListener("click", () =>
+    refreshCapabilities().catch((error) => showToast(error.message || String(error))));
+  $("#createProactiveButton").addEventListener("click", createProactiveTask);
+  $("#cancelProactiveEditButton").addEventListener("click", () => {
+    resetProactiveEditor();
+    $("#proactiveCreateDetails").open = false;
+  });
+  $("#proactiveTriggerKind").addEventListener("change", syncProactiveFormVisibility);
+  $("#proactiveActionKind").addEventListener("change", syncProactiveFormVisibility);
+  $("#proactiveTaskList").addEventListener("click", handleProactiveAction);
+  $("#proactiveRunList").addEventListener("click", handleProactiveAction);
   $("#runDiagnosticsButton").addEventListener("click", runDiagnostics);
   $("#refreshRuntimeButton").addEventListener("click", () => refreshRuntimeManager(true));
   $("#createEvolutionButton").addEventListener("click", createEvolutionCandidate);
@@ -1489,6 +1801,7 @@ async function init() {
   const appVersion = await window.signalasi.getAppVersion();
   elements.desktopVersion.textContent = `v${appVersion}`;
   await setLanguage(state.languagePreference, false);
+  resetProactiveEditor();
   renderAgentContacts();
   updateAgentCounters();
   updateSelectedAgent();

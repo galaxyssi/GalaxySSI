@@ -451,7 +451,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .check-row small { margin-top: 2px; color: var(--muted); font-size: 8px; }
 .compact-forms { gap: 8px; }
 
-.capability-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px; margin-bottom: 12px; padding: 3px; border-radius: 7px; background: #e9edef; }
+.capability-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-bottom: 12px; padding: 3px; border-radius: 7px; background: #e9edef; }
 .capability-tabs button { height: 29px; border: 0; border-radius: 5px; background: transparent; color: #68717a; font-size: 8px; }
 .capability-tabs button.active { background: var(--surface); color: #242a30; box-shadow: 0 1px 2px rgba(22, 28, 34, 0.08); font-weight: 650; }
 .capability-pane { display: none; }
@@ -473,6 +473,9 @@ button:disabled { cursor: default; opacity: 0.48; }
 .capability-item-actions { display: flex; align-items: center; gap: 4px; }
 .capability-item button { height: 26px; padding: 0 7px; border: 0; border-radius: 5px; background: #eef1f3; color: #56616a; font-size: 8px; }
 .capability-item button.primary { background: var(--green-soft); color: var(--green-ink); }
+.proactive-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.proactive-run-list { margin-top: 10px; }
+.proactive-run-list:empty { display: none; }
 .capability-toggle { width: 30px; height: 18px; position: relative; padding: 0 !important; border-radius: 10px !important; background: #cbd1d6 !important; }
 .capability-toggle::after { content: ""; position: absolute; width: 14px; height: 14px; left: 2px; top: 2px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16); transition: transform 120ms ease; }
 .capability-toggle.on { background: var(--green) !important; }

@@ -40,6 +40,9 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     private val globalResearchExecutor = Executors.newFixedThreadPool(2) { runnable ->
         Thread(runnable, "signalasi-global-research").apply { isDaemon = true }
     }
+    private val proactiveTaskExecutor = Executors.newFixedThreadPool(4) { runnable ->
+        Thread(runnable, "signalasi-proactive-task").apply { isDaemon = true }
+    }
     private val recoverySignalGate = GlobalAgentRecoverySignalGate()
     private var networkRecoveryCallback: ConnectivityManager.NetworkCallback? = null
 
@@ -87,6 +90,14 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
             AgentWorkflowTriggerEngine.ACTION_RUN_TRIGGER -> executeTriggeredWorkflow(
                 intent.getStringExtra(AgentWorkflowTriggerEngine.EXTRA_TRIGGER_ID).orEmpty()
             )
+            AgentProactiveTaskScheduler.ACTION_RUN -> {
+                val runId = intent.getStringExtra(
+                    AgentProactiveTaskScheduler.EXTRA_RUN_ID
+                ).orEmpty()
+                proactiveTaskExecutor.execute {
+                    AgentProactiveTaskExecutor.execute(this@MessageService, runId)
+                }
+            }
         }
         SignalASIMqttClient.connect(this)
         return START_STICKY
@@ -111,6 +122,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         SignalASIMqttClient.removeListener(this)
         globalAgentExecutor.shutdownNow()
         globalResearchExecutor.shutdownNow()
+        proactiveTaskExecutor.shutdownNow()
         super.onDestroy()
     }
 
@@ -399,6 +411,7 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
     }
 
     private fun processGlobalAgentEvents() {
+        runCatching { AgentProactiveTaskScheduler.reconcile(this) }
         if (AppForegroundTracker.isForeground()) {
             GlobalAgentWakeScheduler.schedule(this, System.currentTimeMillis() + GLOBAL_AGENT_FOREGROUND_DELAY_MILLIS)
             return

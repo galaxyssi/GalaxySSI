@@ -1,5 +1,6 @@
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const net = require("node:net");
 const path = require("node:path");
 const { acquireSignalasiLock } = require("./smoke-lock");
 
@@ -27,36 +28,66 @@ const releaseLock = acquireSignalasiLock("smoke:ui");
 fs.rmSync(screenshotDir, { recursive: true, force: true });
 fs.mkdirSync(screenshotDir, { recursive: true });
 
-const child = spawn(process.execPath, [electronCli, "."], {
-  cwd: root,
-  windowsHide: true,
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    SIGNALASI_UI_SMOKE: "1",
-    SIGNALASI_UI_SMOKE_DIR: screenshotDir,
-    SIGNALASI_STATE_DIR: path.join(screenshotDir, "state")
-  }
-});
+function findFreeLoopbackPort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
 
-child.on("exit", (code) => {
-  releaseLock();
-  if (code !== 0) {
-    process.exit(code || 1);
-    return;
-  }
-  for (const screenshotPath of screenshots) {
-    if (!fs.existsSync(screenshotPath) || fs.statSync(screenshotPath).size < 1000) {
-      console.error(`[ui-smoke] screenshot missing or too small: ${screenshotPath}`);
-      process.exit(1);
+async function main() {
+  const backendPort = await findFreeLoopbackPort();
+  const child = spawn(process.execPath, [electronCli, "."], {
+    cwd: root,
+    windowsHide: true,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      SIGNALASI_UI_SMOKE: "1",
+      SIGNALASI_UI_SMOKE_DIR: screenshotDir,
+      SIGNALASI_STATE_DIR: path.join(screenshotDir, "state"),
+      SIGNALASI_BACKEND_PORT: String(backendPort),
+      SIGNALASI_DISABLE_EXTERNAL_SERVICES: "1"
+    }
+  });
+
+  child.on("exit", (code) => {
+    releaseLock();
+    if (code !== 0) {
+      process.exit(code || 1);
       return;
     }
-  }
-  console.log(`[ui-smoke] OK: ${screenshots.join(", ")}`);
-});
+    for (const screenshotPath of screenshots) {
+      if (!fs.existsSync(screenshotPath) || fs.statSync(screenshotPath).size < 1000) {
+        console.error(`[ui-smoke] screenshot missing or too small: ${screenshotPath}`);
+        process.exit(1);
+        return;
+      }
+    }
+    console.log(`[ui-smoke] OK: ${screenshots.join(", ")}`);
+  });
 
-child.on("error", (error) => {
+  child.on("error", (error) => {
+    releaseLock();
+    console.error(`[ui-smoke] failed to start Electron: ${error.stack || error.message || error}`);
+    process.exit(1);
+  });
+}
+
+main().catch((error) => {
   releaseLock();
-  console.error(`[ui-smoke] failed to start Electron: ${error.stack || error.message || error}`);
+  console.error(`[ui-smoke] setup failed: ${error.stack || error.message || error}`);
   process.exit(1);
 });

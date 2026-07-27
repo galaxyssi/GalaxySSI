@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://signalasi.org/protocol/proactive-task-v1.schema.json",
+  "title": "SignalASI Proactive Task v1",
+  "type": "object",
+  "required": [
+    "protocol",
+    "task_id",
+    "name",
+    "trigger",
+    "action",
+    "policy",
+    "enabled",
+    "revision",
+    "created_at_millis",
+    "updated_at_millis"
+  ],
+  "properties": {
+    "protocol": {
+      "const": "signalasi.proactive-task.v1"
+    },
+    "task_id": {
+      "$ref": "#/$defs/id"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "trigger": {
+      "$ref": "#/$defs/trigger"
+    },
+    "action": {
+      "$ref": "#/$defs/action"
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    },
+    "enabled": {
+      "type": "boolean"
+    },
+    "next_run_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_run_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_status": {
+      "$ref": "#/$defs/runStatus"
+    },
+    "run_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "consecutive_failures": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "created_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "updated_at_millis": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "trigger": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "manual",
+            "cron",
+            "interval",
+            "goal_checkpoint",
+            "webhook"
+          ]
+        },
+        "cron": {
+          "type": "string",
+          "maxLength": 160
+        },
+        "time_zone": {
+          "type": "string",
+          "maxLength": 80
+        },
+        "interval_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 31536000
+        },
+        "goal_id": {
+          "$ref": "#/$defs/id"
+        },
+        "webhook_id": {
+          "$ref": "#/$defs/id"
+        },
+        "event_filter": {
+          "type": "object",
+          "maxProperties": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "agent",
+            "subagent_team",
+            "workflow",
+            "native_tool"
+          ]
+        },
+        "target_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "prompt": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "arguments": {
+          "type": "object"
+        },
+        "team": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": [
+              "agent_id",
+              "role"
+            ],
+            "properties": {
+              "agent_id": {
+                "type": "string",
+                "maxLength": 128
+              },
+              "role": {
+                "enum": [
+                  "lead",
+                  "executor",
+                  "observer",
+                  "verifier"
+                ]
+              },
+              "instructions": {
+                "type": "string",
+                "maxLength": 8192
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "delivery": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "enum": [
+                "store",
+                "notify",
+                "mobile"
+              ]
+            },
+            "contact_id": {
+              "type": "string",
+              "maxLength": 128
+            },
+            "client_route_id": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": [
+        "misfire",
+        "max_attempts",
+        "max_concurrency",
+        "max_consecutive_failures"
+      ],
+      "properties": {
+        "misfire": {
+          "enum": [
+            "skip",
+            "fire_once",
+            "catch_up"
+          ]
+        },
+        "catch_up_limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "jitter_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
+        },
+        "retry_backoff_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "max_concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        },
+        "max_consecutive_failures": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "deadline_at_millis": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "network": {
+          "enum": [
+            "any",
+            "unmetered",
+            "offline"
+          ]
+        },
+        "requires_charging": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "runStatus": {
+      "enum": [
+        "queued",
+        "running",
+        "waiting",
+        "retrying",
+        "completed",
+        "failed",
+        "cancelled",
+        "skipped"
+      ]
+    }
+  }
+}

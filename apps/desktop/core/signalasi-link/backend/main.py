@@ -6,6 +6,7 @@ import os
 import secrets
 import shutil
 import uuid
+from dataclasses import asdict
 from typing import Any
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
@@ -132,6 +133,7 @@ def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     file_server_process = None
+    proactive_runtime = None
     reputation_subscription_id = ""
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
     instance_lock = BackendInstanceLock() if external_services_enabled else None
@@ -176,6 +178,14 @@ async def lifespan(app: FastAPI):
             log.info("MQTT bridge started")
         except Exception as e:
             log.warning(f"MQTT start failed: {e}")
+        try:
+            from proactive_dispatcher import proactive_task_runtime
+
+            proactive_runtime = proactive_task_runtime()
+            proactive_runtime.start()
+            log.info("Proactive task runtime started")
+        except Exception as e:
+            log.warning("Proactive task runtime start failed: %s", e)
         # Start the file service subprocess.
         try:
             import subprocess, sys
@@ -196,6 +206,11 @@ async def lifespan(app: FastAPI):
     finally:
         if reputation_subscription_id:
             agent_task_manager.unsubscribe(reputation_subscription_id)
+        if proactive_runtime is not None:
+            try:
+                proactive_runtime.stop()
+            except Exception as exc:
+                log.warning("Proactive task runtime shutdown failed: %s", exc)
         if external_services_enabled:
             try:
                 from mqtt_bridge import stop
@@ -229,8 +244,14 @@ app = FastAPI(title="SignalASI Link", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8765", "http://localhost:8765", "null"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-SignalASI-Token"],
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=[
+        "Content-Type",
+        "X-SignalASI-Token",
+        "X-SignalASI-Timestamp",
+        "X-SignalASI-Nonce",
+        "X-SignalASI-Signature",
+    ],
 )
 
 # ── API ──
@@ -321,6 +342,17 @@ def require_loopback(request: Request) -> None:
     host = str(request.client.host if request.client else "")
     if not _is_loopback_host(host):
         raise HTTPException(status_code=403, detail="Pairing payload is available only on the local Desktop")
+
+
+def require_desktop_api_token(request: Request) -> None:
+    require_loopback(request)
+    expected = _desktop_task_stream_token()
+    offered = str(request.headers.get("x-signalasi-token") or "").strip()
+    if not expected or not offered or not secrets.compare_digest(offered, expected):
+        raise HTTPException(
+            status_code=401,
+            detail=api_error("desktop_api_unauthorized", "Desktop API token is invalid"),
+        )
 
 
 @app.get("/api/pairing/payload")
@@ -510,6 +542,27 @@ class EvolutionCandidatePublishReq(BaseModel):
     base_branch: str = "main"
 
 
+class ProactiveTaskCreateReq(BaseModel):
+    name: str
+    trigger: dict[str, Any]
+    action: dict[str, Any]
+    policy: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = True
+    task_id: str = ""
+
+
+class ProactiveTaskUpdateReq(BaseModel):
+    name: str | None = None
+    trigger: dict[str, Any] | None = None
+    action: dict[str, Any] | None = None
+    policy: dict[str, Any] | None = None
+    enabled: bool | None = None
+
+
+class ProactiveTaskTriggerReq(BaseModel):
+    cause: dict[str, Any] = Field(default_factory=lambda: {"type": "manual"})
+
+
 def _desktop_evolution_manager():
     from evolution_manager import (
         default_evolution_patch_agent,
@@ -543,6 +596,222 @@ def _evolution_http_error(exc: Exception) -> HTTPException:
         "quality_gate_incomplete",
     } else 400
     return HTTPException(status_code=status, detail=api_error(exc.code, str(exc)))
+
+
+def _proactive_http_error(exc: Exception) -> HTTPException:
+    from proactive_tasks import ProactiveTaskError
+
+    if not isinstance(exc, ProactiveTaskError):
+        return HTTPException(
+            status_code=500,
+            detail=api_error("proactive_task_failed", str(exc)[:500]),
+        )
+    if exc.code in {"task_not_found"}:
+        status = 404
+    elif exc.code in {
+        "duplicate_run",
+        "task_disabled",
+        "webhook_replay",
+        "webhook_filter_mismatch",
+    }:
+        status = 409
+    elif exc.code in {
+        "webhook_signature_invalid",
+        "webhook_expired",
+        "webhook_nonce_invalid",
+        "webhook_timestamp_invalid",
+    }:
+        status = 401
+    elif exc.code == "webhook_too_large":
+        status = 413
+    else:
+        status = 400
+    return HTTPException(status_code=status, detail=api_error(exc.code, str(exc)))
+
+
+@app.get("/api/proactive/tasks")
+def api_list_proactive_tasks(request: Request, limit: int = Query(200)):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    return {
+        "protocol": "signalasi.proactive-task.v1",
+        "tasks": [
+            task.public()
+            for task in proactive_task_runtime().store.tasks(limit=limit)
+        ],
+    }
+
+
+@app.post("/api/proactive/tasks")
+def api_create_proactive_task(req: ProactiveTaskCreateReq, request: Request):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    try:
+        return proactive_task_runtime().create(
+            name=req.name,
+            trigger=req.trigger,
+            action=req.action,
+            policy=req.policy,
+            enabled=req.enabled,
+            task_id=req.task_id,
+        )
+    except Exception as exc:
+        raise _proactive_http_error(exc) from exc
+
+
+@app.get("/api/proactive/tasks/{task_id}")
+def api_get_proactive_task(task_id: str, request: Request):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    try:
+        task = proactive_task_runtime().require_task(task_id)
+        return task.public()
+    except Exception as exc:
+        raise _proactive_http_error(exc) from exc
+
+
+@app.post("/api/proactive/tasks/{task_id}")
+def api_update_proactive_task(
+    task_id: str,
+    req: ProactiveTaskUpdateReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    try:
+        return proactive_task_runtime().update(
+            task_id,
+            name=req.name,
+            trigger=req.trigger,
+            action=req.action,
+            policy=req.policy,
+            enabled=req.enabled,
+        )
+    except Exception as exc:
+        raise _proactive_http_error(exc) from exc
+
+
+@app.delete("/api/proactive/tasks/{task_id}")
+def api_delete_proactive_task(task_id: str, request: Request):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    return {"task_id": task_id, "deleted": proactive_task_runtime().delete(task_id)}
+
+
+@app.post("/api/proactive/tasks/{task_id}/trigger")
+def api_trigger_proactive_task(
+    task_id: str,
+    req: ProactiveTaskTriggerReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    try:
+        return proactive_task_runtime().trigger_now(task_id, cause=req.cause).public()
+    except Exception as exc:
+        raise _proactive_http_error(exc) from exc
+
+
+@app.post("/api/proactive/tasks/{task_id}/rotate-webhook")
+def api_rotate_proactive_webhook(task_id: str, request: Request):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+    from proactive_tasks import ProactiveTaskError
+
+    runtime = proactive_task_runtime()
+    try:
+        task = runtime.require_task(task_id)
+        if task.trigger.kind != "webhook":
+            raise ProactiveTaskError(
+                "webhook_unavailable",
+                "Only webhook tasks have signing credentials",
+            )
+        trigger = asdict(task.trigger)
+        trigger["webhook_id"] = secrets.token_hex(12)
+        updated = runtime.update(task_id, trigger=trigger)
+        updated["webhook_secret"] = runtime.webhook_secret(task_id)
+        return updated
+    except Exception as exc:
+        raise _proactive_http_error(exc) from exc
+
+
+@app.get("/api/proactive/runs")
+def api_list_proactive_runs(
+    request: Request,
+    task_id: str = Query(""),
+    limit: int = Query(100),
+):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    runtime = proactive_task_runtime()
+    return {
+        "runs": [
+            run.public()
+            for run in runtime.store.runs(task_id=task_id, limit=limit)
+        ]
+    }
+
+
+@app.get("/api/proactive/runs/{run_id}")
+def api_get_proactive_run(
+    run_id: str,
+    request: Request,
+    after_cursor: int = Query(0),
+):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    runtime = proactive_task_runtime()
+    run = runtime.store.run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=api_error("proactive_run_not_found"))
+    return {
+        "run": run.public(),
+        "events": runtime.store.events(run_id, after=max(0, after_cursor)),
+    }
+
+
+@app.post("/api/proactive/runs/{run_id}/cancel")
+def api_cancel_proactive_run(run_id: str, request: Request):
+    require_desktop_api_token(request)
+    from proactive_dispatcher import proactive_task_runtime
+
+    return {"run_id": run_id, "cancelled": proactive_task_runtime().cancel_run(run_id)}
+
+
+@app.post("/api/proactive/webhooks/{task_id}")
+async def api_receive_proactive_webhook(
+    task_id: str,
+    request: Request,
+    x_signalasi_timestamp: str = Header(default=""),
+    x_signalasi_nonce: str = Header(default=""),
+    x_signalasi_signature: str = Header(default=""),
+):
+    from proactive_dispatcher import proactive_task_runtime
+
+    body = await request.body()
+    try:
+        run = proactive_task_runtime().handle_webhook(
+            task_id,
+            body,
+            timestamp=x_signalasi_timestamp,
+            nonce=x_signalasi_nonce,
+            signature=x_signalasi_signature,
+        )
+        return {
+            "accepted": True,
+            "run_id": run.run_id,
+            "status": run.status,
+        }
+    except Exception as exc:
+        raise _proactive_http_error(exc) from exc
 
 
 @app.get("/api/evolution/tasks")

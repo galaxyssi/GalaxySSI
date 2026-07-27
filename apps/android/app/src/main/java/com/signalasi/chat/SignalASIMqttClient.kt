@@ -1304,6 +1304,22 @@ object SignalASIMqttClient {
             SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
             return
         }
+        if (payload.optString("type") == "proactive_task_event") {
+            AgentRemoteProactiveEventStore(context).ingest(payload, sourceDesktopId)
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
+        if (payload.optString("type") == "proactive_webhook_event") {
+            AgentProactiveTaskScheduler.acceptRemoteWebhook(
+                context = context,
+                taskId = payload.optString("task_id"),
+                eventId = payload.optString("event_id"),
+                payload = payload.optJSONObject("payload") ?: JSONObject(),
+                sourceDesktopId = sourceDesktopId
+            )
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
         DesktopRemoteControl.handleInbound(context, payload)
         if (AgentDesktopRemoteNativeTools.handleInbound(payload)) {
             SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
