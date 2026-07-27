@@ -18225,6 +18225,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showAutomationFeaturePage() {
+        val proactiveStore = AgentProactiveTaskStore(this)
+        val proactiveTasks = proactiveStore.tasks()
+        val remoteProactiveEvents = AgentRemoteProactiveEventStore(this).recent(30)
         val workflows = SharedPreferencesAgentWorkflowStore(this).list()
         val schedules = AgentWorkflowScheduleStore(this).list()
         val triggers = AgentWorkflowTriggerStore(this).list()
@@ -18234,10 +18237,56 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         featureContent.addView(featureHeroCard(
             getString(R.string.automation_hero_title),
             getString(R.string.automation_hero_subtitle),
-            R.drawable.ic_send_plane,
+            R.drawable.ic_automation_line,
             "#FFB020",
-            getString(R.string.count_items, workflows.size)
+            getString(R.string.count_items, proactiveTasks.size + workflows.size)
         ))
+        addSectionTitle(getString(R.string.automation_proactive_tasks))
+        featureContent.addView(featureRow(
+            getString(R.string.automation_new_proactive_task),
+            getString(R.string.automation_new_proactive_task_subtitle),
+            R.drawable.ic_automation_line,
+            getString(R.string.common_create)
+        ).apply {
+            setOnClickListener { showProactiveTaskEditor(newProactiveTaskDraft()) }
+        })
+        if (proactiveTasks.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.automation_no_proactive_tasks),
+                getString(R.string.automation_no_proactive_tasks_subtitle),
+                R.drawable.ic_automation_line,
+                ""
+            ))
+        } else {
+            proactiveTasks.forEach { task ->
+                featureContent.addView(featureRow(
+                    task.name,
+                    proactiveTaskSubtitle(task),
+                    R.drawable.ic_automation_line,
+                    proactiveRunStatusLabel(task.lastStatus)
+                ).apply {
+                    setOnClickListener { showProactiveTaskDetails(task.taskId) }
+                })
+            }
+        }
+        if (remoteProactiveEvents.isNotEmpty()) {
+            addSectionTitle(getString(R.string.automation_remote_activity))
+            remoteProactiveEvents.forEach { event ->
+                val status = runCatching {
+                    AgentProactiveRunStatus.valueOf(event.status.uppercase(Locale.ROOT))
+                }.getOrDefault(AgentProactiveRunStatus.QUEUED)
+                featureContent.addView(featureRow(
+                    event.desktopName.ifBlank { getString(R.string.automation_remote_desktop) },
+                    listOfNotNull(
+                        event.taskId.takeIf(String::isNotBlank),
+                        event.detail.takeIf(String::isNotBlank),
+                        automationTime(event.timestampMillis)
+                    ).joinToString("\n"),
+                    R.drawable.ic_agent_history,
+                    proactiveRunStatusLabel(status)
+                ))
+            }
+        }
         addSectionTitle(getString(R.string.automation_saved_workflows))
         if (workflows.isEmpty()) {
             featureContent.addView(featureRow(
@@ -18332,6 +18381,674 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun newProactiveTaskDraft(): AgentProactiveTask {
+        val defaultTarget = AppStoreAgentConnectorRegistry(this).availableTargets()
+            .firstOrNull { it.status == AgentConnectorStatus.AVAILABLE }
+            ?.id
+            ?: "codex"
+        return AgentProactiveTask(
+            name = getString(R.string.automation_new_proactive_task),
+            trigger = AgentProactiveTrigger(
+                kind = AgentProactiveTriggerKind.MANUAL,
+                timeZone = java.time.ZoneId.systemDefault().id
+            ),
+            action = AgentProactiveAction(
+                kind = AgentProactiveActionKind.AGENT,
+                targetId = defaultTarget
+            )
+        )
+    }
+
+    private fun showProactiveTaskEditor(task: AgentProactiveTask) {
+        showFeaturePage(getString(R.string.automation_proactive_editor_title))
+        setFeatureBackAction { showAutomationFeaturePage() }
+        featureContent.addView(featureHeroCard(
+            task.name,
+            getString(R.string.automation_proactive_tasks_subtitle),
+            R.drawable.ic_automation_line,
+            "#FFB020",
+            proactiveTriggerLabel(task.trigger.kind)
+        ))
+        addSectionTitle(getString(R.string.section_plan))
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_name),
+            task.name,
+            R.drawable.ic_automation_line,
+            getString(R.string.common_edit)
+        ).apply {
+            setOnClickListener {
+                showTextSettingDialog(getString(R.string.automation_proactive_name), task.name) { value ->
+                    showProactiveTaskEditor(task.copy(name = value.ifBlank { task.name }))
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_trigger),
+            proactiveTriggerDescription(task.trigger),
+            R.drawable.ic_protocol_link,
+            proactiveTriggerLabel(task.trigger.kind)
+        ).apply {
+            setOnClickListener {
+                val options = AgentProactiveTriggerKind.entries.map(::proactiveTriggerLabel)
+                showChoiceDialog(
+                    getString(R.string.automation_proactive_trigger),
+                    options,
+                    proactiveTriggerLabel(task.trigger.kind)
+                ) { selected ->
+                    val kind = AgentProactiveTriggerKind.entries.first {
+                        proactiveTriggerLabel(it) == selected
+                    }
+                    showProactiveTaskEditor(task.copy(trigger = proactiveTriggerForKind(task, kind)))
+                }
+            }
+        })
+        when (task.trigger.kind) {
+            AgentProactiveTriggerKind.CRON -> {
+                featureContent.addView(featureRow(
+                    getString(R.string.automation_proactive_schedule),
+                    getString(R.string.automation_proactive_cron_hint),
+                    R.drawable.ic_protocol_link,
+                    task.trigger.cron
+                ).apply {
+                    setOnClickListener {
+                        showTextSettingDialog(
+                            getString(R.string.automation_proactive_schedule),
+                            task.trigger.cron
+                        ) { value ->
+                            showProactiveTaskEditor(task.copy(trigger = task.trigger.copy(cron = value)))
+                        }
+                    }
+                })
+                featureContent.addView(featureRow(
+                    getString(R.string.automation_proactive_time_zone),
+                    task.trigger.timeZone,
+                    R.drawable.ic_protocol_link,
+                    getString(R.string.common_edit)
+                ).apply {
+                    setOnClickListener {
+                        showTextSettingDialog(
+                            getString(R.string.automation_proactive_time_zone),
+                            task.trigger.timeZone
+                        ) { value ->
+                            showProactiveTaskEditor(task.copy(trigger = task.trigger.copy(timeZone = value)))
+                        }
+                    }
+                })
+            }
+            AgentProactiveTriggerKind.INTERVAL,
+            AgentProactiveTriggerKind.GOAL_CHECKPOINT -> {
+                featureContent.addView(featureRow(
+                    getString(R.string.automation_proactive_schedule),
+                    proactiveTriggerDescription(task.trigger),
+                    R.drawable.ic_protocol_link,
+                    task.trigger.intervalSeconds.toString()
+                ).apply {
+                    setOnClickListener {
+                        showTextSettingDialog(
+                            getString(R.string.automation_proactive_schedule),
+                            task.trigger.intervalSeconds.toString()
+                        ) { value ->
+                            val seconds = value.toLongOrNull()?.coerceAtLeast(
+                                AgentProactiveTrigger.MIN_INTERVAL_SECONDS
+                            ) ?: task.trigger.intervalSeconds
+                            showProactiveTaskEditor(
+                                task.copy(trigger = task.trigger.copy(intervalSeconds = seconds))
+                            )
+                        }
+                    }
+                })
+            }
+            AgentProactiveTriggerKind.WEBHOOK -> featureContent.addView(featureRow(
+                getString(R.string.automation_proactive_schedule),
+                getString(R.string.automation_proactive_webhook_hint),
+                R.drawable.ic_protocol_link,
+                task.trigger.webhookId
+            ))
+            AgentProactiveTriggerKind.MANUAL -> Unit
+        }
+        addSectionTitle(getString(R.string.automation_proactive_action))
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_action),
+            proactiveActionDescription(task.action),
+            R.drawable.ic_agent_node,
+            proactiveActionLabel(task.action.kind)
+        ).apply {
+            setOnClickListener {
+                val options = AgentProactiveActionKind.entries.map(::proactiveActionLabel)
+                showChoiceDialog(
+                    getString(R.string.automation_proactive_action),
+                    options,
+                    proactiveActionLabel(task.action.kind)
+                ) { selected ->
+                    val kind = AgentProactiveActionKind.entries.first {
+                        proactiveActionLabel(it) == selected
+                    }
+                    showProactiveTaskEditor(task.copy(action = proactiveActionForKind(task, kind)))
+                }
+            }
+        })
+        if (task.action.kind == AgentProactiveActionKind.SUBAGENT_TEAM) {
+            featureContent.addView(featureRow(
+                getString(R.string.automation_proactive_team),
+                task.action.team.joinToString("\n") {
+                    "${it.role.name.lowercase(Locale.ROOT)}:${it.agentId}"
+                },
+                R.drawable.ic_agent_node,
+                getString(R.string.common_edit)
+            ).apply {
+                setOnClickListener {
+                    val initial = task.action.team.joinToString("\n") {
+                        "${it.role.name.lowercase(Locale.ROOT)}:${it.agentId}"
+                    }
+                    showTextSettingDialog(
+                        getString(R.string.automation_proactive_team),
+                        initial
+                    ) { value ->
+                        runCatching { parseProactiveTeam(value) }
+                            .onSuccess { team ->
+                                showProactiveTaskEditor(task.copy(action = task.action.copy(team = team)))
+                            }
+                            .onFailure { error ->
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(
+                                        R.string.automation_proactive_invalid,
+                                        error.message.orEmpty()
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                    }
+                }
+            })
+        } else {
+            featureContent.addView(featureRow(
+                getString(R.string.automation_proactive_target),
+                proactiveTargetTitle(task.action),
+                proactiveActionIcon(task.action.kind),
+                getString(R.string.common_edit)
+            ).apply {
+                setOnClickListener { chooseProactiveTarget(task) }
+            })
+        }
+        if (task.action.kind != AgentProactiveActionKind.WORKFLOW) {
+            featureContent.addView(featureRow(
+                getString(R.string.automation_proactive_prompt),
+                task.action.prompt.ifBlank { getString(R.string.common_empty) },
+                R.drawable.ic_send_plane,
+                getString(R.string.common_edit)
+            ).apply {
+                setOnClickListener {
+                    showTextSettingDialog(
+                        getString(R.string.automation_proactive_prompt),
+                        task.action.prompt
+                    ) { value ->
+                        showProactiveTaskEditor(task.copy(action = task.action.copy(prompt = value)))
+                    }
+                }
+            })
+        }
+        if (task.action.kind == AgentProactiveActionKind.NATIVE_TOOL) {
+            featureContent.addView(featureRow(
+                getString(R.string.automation_proactive_arguments),
+                task.action.argumentsJson,
+                R.drawable.ic_agent_control,
+                getString(R.string.common_edit)
+            ).apply {
+                setOnClickListener {
+                    showTextSettingDialog(
+                        getString(R.string.automation_proactive_arguments),
+                        task.action.argumentsJson
+                    ) { value ->
+                        runCatching { JSONObject(value) }
+                            .onSuccess {
+                                showProactiveTaskEditor(
+                                    task.copy(action = task.action.copy(argumentsJson = it.toString()))
+                                )
+                            }
+                            .onFailure {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.automation_proactive_invalid, it.message.orEmpty()),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                    }
+                }
+            })
+        }
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_delivery),
+            proactiveDeliveryLabel(task.action.deliveryMode),
+            R.drawable.ic_send_plane,
+            proactiveDeliveryLabel(task.action.deliveryMode)
+        ).apply {
+            setOnClickListener {
+                val values = listOf("store", "notify", "mobile")
+                val options = values.map(::proactiveDeliveryLabel)
+                showChoiceDialog(
+                    getString(R.string.automation_proactive_delivery),
+                    options,
+                    proactiveDeliveryLabel(task.action.deliveryMode)
+                ) { selected ->
+                    val value = values.first { proactiveDeliveryLabel(it) == selected }
+                    showProactiveTaskEditor(task.copy(action = task.action.copy(deliveryMode = value)))
+                }
+            }
+        })
+        addSectionTitle(getString(R.string.device_custom_section_safety))
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_retry),
+            task.policy.retryBackoffSeconds.toString(),
+            R.drawable.ic_agent_history,
+            task.policy.maxAttempts.toString()
+        ).apply {
+            setOnClickListener {
+                showTextSettingDialog(
+                    getString(R.string.automation_proactive_retry),
+                    task.policy.maxAttempts.toString()
+                ) { value ->
+                    val attempts = value.toIntOrNull()?.coerceIn(1, 12) ?: task.policy.maxAttempts
+                    showProactiveTaskEditor(task.copy(policy = task.policy.copy(maxAttempts = attempts)))
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_concurrency),
+            getString(R.string.automation_proactive_tasks_subtitle),
+            R.drawable.ic_agent_node,
+            task.policy.maxConcurrency.toString()
+        ).apply {
+            setOnClickListener {
+                showTextSettingDialog(
+                    getString(R.string.automation_proactive_concurrency),
+                    task.policy.maxConcurrency.toString()
+                ) { value ->
+                    val count = value.toIntOrNull()?.coerceIn(1, 16) ?: task.policy.maxConcurrency
+                    showProactiveTaskEditor(task.copy(policy = task.policy.copy(maxConcurrency = count)))
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_network),
+            proactiveNetworkLabel(task.policy.network),
+            R.drawable.ic_protocol_link,
+            proactiveNetworkLabel(task.policy.network)
+        ).apply {
+            setOnClickListener {
+                val values = listOf("any", "unmetered", "offline")
+                val options = values.map(::proactiveNetworkLabel)
+                showChoiceDialog(
+                    getString(R.string.automation_proactive_network),
+                    options,
+                    proactiveNetworkLabel(task.policy.network)
+                ) { selected ->
+                    val value = values.first { proactiveNetworkLabel(it) == selected }
+                    showProactiveTaskEditor(task.copy(policy = task.policy.copy(network = value)))
+                }
+            }
+        })
+        featureContent.addView(featureSwitchRow(
+            getString(R.string.automation_proactive_charging),
+            getString(R.string.automation_proactive_tasks_subtitle),
+            R.drawable.ic_protocol_link,
+            task.policy.requiresCharging
+        ).apply {
+            setOnClickListener {
+                showProactiveTaskEditor(
+                    task.copy(policy = task.policy.copy(requiresCharging = !task.policy.requiresCharging))
+                )
+            }
+        })
+        featureContent.addView(featureSwitchRow(
+            getString(R.string.automation_proactive_enabled),
+            getString(R.string.automation_proactive_tasks_subtitle),
+            R.drawable.ic_automation_line,
+            task.enabled
+        ).apply {
+            setOnClickListener { showProactiveTaskEditor(task.copy(enabled = !task.enabled)) }
+        })
+        addSectionTitle(getString(R.string.section_actions))
+        featureContent.addView(featureRow(
+            getString(R.string.common_save),
+            getString(R.string.automation_proactive_save_subtitle),
+            R.drawable.ic_import,
+            getString(R.string.common_save)
+        ).apply {
+            setOnClickListener {
+                runCatching {
+                    AgentProactiveTaskScheduler.save(
+                        this@MainActivity,
+                        task.copy(
+                            revision = task.revision + if (
+                                AgentProactiveTaskStore(this@MainActivity).task(task.taskId) == null
+                            ) 0 else 1,
+                            updatedAtMillis = System.currentTimeMillis()
+                        )
+                    )
+                }.onSuccess {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.automation_proactive_saved),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    showProactiveTaskDetails(task.taskId)
+                }.onFailure { error ->
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.automation_proactive_invalid, error.message.orEmpty()),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        })
+    }
+
+    private fun showProactiveTaskDetails(taskId: String) {
+        val store = AgentProactiveTaskStore(this)
+        val task = store.task(taskId) ?: return showAutomationFeaturePage()
+        val runs = store.runs(taskId, limit = 50)
+        showFeaturePage(getString(R.string.automation_proactive_details_title))
+        setFeatureBackAction { showAutomationFeaturePage() }
+        featureContent.addView(featureHeroCard(
+            task.name,
+            proactiveTaskSubtitle(task),
+            R.drawable.ic_automation_line,
+            if (task.enabled) "#14C66A" else "#8E8E93",
+            proactiveRunStatusLabel(task.lastStatus)
+        ))
+        addSectionTitle(getString(R.string.section_actions))
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_run_now),
+            getString(R.string.automation_proactive_run_now_subtitle),
+            R.drawable.ic_send_plane,
+            getString(R.string.automation_run)
+        ).apply {
+            setOnClickListener {
+                runCatching { AgentProactiveTaskScheduler.triggerNow(this@MainActivity, taskId) }
+                    .onSuccess { showProactiveTaskDetails(taskId) }
+                    .onFailure {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.automation_proactive_invalid, it.message.orEmpty()),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_edit),
+            getString(R.string.automation_proactive_tasks_subtitle),
+            R.drawable.ic_agent_control,
+            getString(R.string.common_edit)
+        ).apply {
+            setOnClickListener { showProactiveTaskEditor(task) }
+        })
+        featureContent.addView(featureSwitchRow(
+            getString(R.string.automation_proactive_enabled),
+            proactiveTriggerDescription(task.trigger),
+            R.drawable.ic_automation_line,
+            task.enabled
+        ).apply {
+            setOnClickListener {
+                AgentProactiveTaskScheduler.save(this@MainActivity, task.copy(enabled = !task.enabled))
+                showProactiveTaskDetails(taskId)
+            }
+        })
+        addSectionTitle(getString(R.string.automation_proactive_runs))
+        if (runs.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.automation_proactive_no_runs),
+                getString(R.string.automation_proactive_run_now_subtitle),
+                R.drawable.ic_agent_history,
+                ""
+            ))
+        } else {
+            runs.forEach { run ->
+                featureContent.addView(featureRow(
+                    proactiveRunStatusLabel(run.status),
+                    proactiveRunSubtitle(run),
+                    R.drawable.ic_agent_history,
+                    if (run.status.terminal) "" else getString(R.string.common_cancel)
+                ).apply {
+                    if (!run.status.terminal) {
+                        setOnClickListener {
+                            AgentProactiveTaskExecutor.cancel(this@MainActivity, run.runId)
+                            showProactiveTaskDetails(taskId)
+                        }
+                    }
+                })
+            }
+        }
+        addSectionTitle(getString(R.string.security_section_danger))
+        featureContent.addView(featureRow(
+            getString(R.string.automation_proactive_delete),
+            getString(R.string.automation_proactive_delete_confirm),
+            R.drawable.ic_delete,
+            getString(R.string.common_delete)
+        ).apply {
+            setOnClickListener {
+                AlertDialog.Builder(this@MainActivity)
+                    .setMessage(getString(R.string.automation_proactive_delete_confirm))
+                    .setPositiveButton(getString(R.string.common_delete)) { _, _ ->
+                        AgentProactiveTaskScheduler.cancel(this@MainActivity, taskId)
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.automation_proactive_deleted),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        showAutomationFeaturePage()
+                    }
+                    .setNegativeButton(getString(R.string.common_cancel), null)
+                    .show()
+            }
+        })
+    }
+
+    private fun proactiveTriggerForKind(
+        task: AgentProactiveTask,
+        kind: AgentProactiveTriggerKind
+    ): AgentProactiveTrigger = when (kind) {
+        AgentProactiveTriggerKind.MANUAL -> AgentProactiveTrigger(kind)
+        AgentProactiveTriggerKind.CRON -> AgentProactiveTrigger(
+            kind = kind,
+            cron = "0 9 * * *",
+            timeZone = java.time.ZoneId.systemDefault().id
+        )
+        AgentProactiveTriggerKind.INTERVAL -> AgentProactiveTrigger(
+            kind = kind,
+            intervalSeconds = 3_600L,
+            timeZone = java.time.ZoneId.systemDefault().id
+        )
+        AgentProactiveTriggerKind.GOAL_CHECKPOINT -> AgentProactiveTrigger(
+            kind = kind,
+            intervalSeconds = 3_600L,
+            goalId = task.taskId,
+            timeZone = java.time.ZoneId.systemDefault().id
+        )
+        AgentProactiveTriggerKind.WEBHOOK -> AgentProactiveTrigger(
+            kind = kind,
+            webhookId = task.taskId,
+            timeZone = java.time.ZoneId.systemDefault().id
+        )
+    }
+
+    private fun proactiveActionForKind(
+        task: AgentProactiveTask,
+        kind: AgentProactiveActionKind
+    ): AgentProactiveAction {
+        val agentId = AppStoreAgentConnectorRegistry(this).availableTargets()
+            .firstOrNull { it.status == AgentConnectorStatus.AVAILABLE }
+            ?.id
+            ?: "codex"
+        return when (kind) {
+            AgentProactiveActionKind.AGENT -> task.action.copy(
+                kind = kind,
+                targetId = agentId,
+                team = emptyList()
+            )
+            AgentProactiveActionKind.SUBAGENT_TEAM -> task.action.copy(
+                kind = kind,
+                targetId = "",
+                team = listOf(
+                    AgentProactiveTeamMember(agentId, AgentProactiveTeamRole.LEAD)
+                )
+            )
+            AgentProactiveActionKind.WORKFLOW -> task.action.copy(
+                kind = kind,
+                targetId = SharedPreferencesAgentWorkflowStore(this).list().firstOrNull()?.id
+                    ?: "missing-workflow",
+                team = emptyList()
+            )
+            AgentProactiveActionKind.NATIVE_TOOL -> task.action.copy(
+                kind = kind,
+                targetId = MobileNativeAgent(this).nativeToolCatalog().firstOrNull()?.id
+                    ?: "signalasi.device.status",
+                argumentsJson = "{}",
+                team = emptyList()
+            )
+        }
+    }
+
+    private fun chooseProactiveTarget(task: AgentProactiveTask) {
+        val targets = when (task.action.kind) {
+            AgentProactiveActionKind.AGENT -> AppStoreAgentConnectorRegistry(this).availableTargets()
+                .map { it.id to "${it.title} · ${it.id}" }
+            AgentProactiveActionKind.WORKFLOW -> SharedPreferencesAgentWorkflowStore(this).list()
+                .map { it.id to "${it.name} · ${it.id}" }
+            AgentProactiveActionKind.NATIVE_TOOL -> MobileNativeAgent(this).nativeToolCatalog()
+                .map { it.id to "${it.title} · ${it.id}" }
+            AgentProactiveActionKind.SUBAGENT_TEAM -> emptyList()
+        }.distinctBy { it.first }
+        if (targets.isEmpty()) {
+            showTextSettingDialog(
+                getString(R.string.automation_proactive_target),
+                task.action.targetId
+            ) { value ->
+                showProactiveTaskEditor(task.copy(action = task.action.copy(targetId = value)))
+            }
+            return
+        }
+        val current = targets.firstOrNull { it.first == task.action.targetId }?.second ?: targets.first().second
+        showChoiceDialog(
+            getString(R.string.automation_proactive_target),
+            targets.map { it.second },
+            current
+        ) { selected ->
+            val id = targets.first { it.second == selected }.first
+            showProactiveTaskEditor(task.copy(action = task.action.copy(targetId = id)))
+        }
+    }
+
+    private fun parseProactiveTeam(value: String): List<AgentProactiveTeamMember> {
+        val members = value.lineSequence().map(String::trim).filter(String::isNotBlank).map { line ->
+            val values = line.split(":", limit = 2)
+            require(values.size == 2) { getString(R.string.automation_proactive_team_hint) }
+            val role = AgentProactiveTeamRole.valueOf(values[0].trim().uppercase(Locale.ROOT))
+            AgentProactiveTeamMember(values[1].trim(), role)
+        }.toList()
+        require(members.count { it.role == AgentProactiveTeamRole.LEAD } == 1) {
+            getString(R.string.automation_proactive_team_hint)
+        }
+        return members
+    }
+
+    private fun proactiveTaskSubtitle(task: AgentProactiveTask): String = listOfNotNull(
+        proactiveTriggerDescription(task.trigger),
+        task.nextRunAtMillis.takeIf { it > 0L }?.let {
+            getString(R.string.automation_proactive_next, automationTime(it))
+        },
+        getString(R.string.automation_proactive_last_status, proactiveRunStatusLabel(task.lastStatus))
+    ).joinToString("\n")
+
+    private fun proactiveRunSubtitle(run: AgentProactiveRun): String = listOfNotNull(
+        automationTime(run.scheduledForMillis),
+        getString(R.string.automation_proactive_attempt, run.attempt),
+        run.resultSummary.trim().takeIf(String::isNotBlank)
+    ).joinToString("\n")
+
+    private fun proactiveTriggerDescription(trigger: AgentProactiveTrigger): String = when (trigger.kind) {
+        AgentProactiveTriggerKind.MANUAL -> proactiveTriggerLabel(trigger.kind)
+        AgentProactiveTriggerKind.CRON -> "${trigger.cron} · ${trigger.timeZone}"
+        AgentProactiveTriggerKind.INTERVAL,
+        AgentProactiveTriggerKind.GOAL_CHECKPOINT ->
+            getString(R.string.automation_proactive_seconds, trigger.intervalSeconds)
+        AgentProactiveTriggerKind.WEBHOOK -> getString(R.string.automation_proactive_webhook_hint)
+    }
+
+    private fun proactiveActionDescription(action: AgentProactiveAction): String = when (action.kind) {
+        AgentProactiveActionKind.SUBAGENT_TEAM ->
+            action.team.joinToString(", ") { "${it.role.name.lowercase(Locale.ROOT)}:${it.agentId}" }
+        else -> proactiveTargetTitle(action)
+    }
+
+    private fun proactiveTargetTitle(action: AgentProactiveAction): String = when (action.kind) {
+        AgentProactiveActionKind.AGENT -> AppStoreAgentConnectorRegistry(this).availableTargets()
+            .firstOrNull { it.id == action.targetId }?.title ?: action.targetId
+        AgentProactiveActionKind.WORKFLOW -> SharedPreferencesAgentWorkflowStore(this)
+            .findById(action.targetId)?.name ?: action.targetId
+        AgentProactiveActionKind.NATIVE_TOOL -> action.targetId
+        AgentProactiveActionKind.SUBAGENT_TEAM -> action.team.joinToString(", ", transform = AgentProactiveTeamMember::agentId)
+    }
+
+    private fun proactiveTriggerLabel(kind: AgentProactiveTriggerKind): String = getString(
+        when (kind) {
+            AgentProactiveTriggerKind.MANUAL -> R.string.automation_proactive_trigger_manual
+            AgentProactiveTriggerKind.CRON -> R.string.automation_proactive_trigger_cron
+            AgentProactiveTriggerKind.INTERVAL -> R.string.automation_proactive_trigger_interval
+            AgentProactiveTriggerKind.GOAL_CHECKPOINT -> R.string.automation_proactive_trigger_goal
+            AgentProactiveTriggerKind.WEBHOOK -> R.string.automation_proactive_trigger_webhook
+        }
+    )
+
+    private fun proactiveActionLabel(kind: AgentProactiveActionKind): String = getString(
+        when (kind) {
+            AgentProactiveActionKind.AGENT -> R.string.automation_proactive_action_agent
+            AgentProactiveActionKind.SUBAGENT_TEAM -> R.string.automation_proactive_action_team
+            AgentProactiveActionKind.WORKFLOW -> R.string.automation_proactive_action_workflow
+            AgentProactiveActionKind.NATIVE_TOOL -> R.string.automation_proactive_action_tool
+        }
+    )
+
+    private fun proactiveActionIcon(kind: AgentProactiveActionKind): Int = when (kind) {
+        AgentProactiveActionKind.AGENT,
+        AgentProactiveActionKind.SUBAGENT_TEAM -> R.drawable.ic_agent_node
+        AgentProactiveActionKind.WORKFLOW -> R.drawable.ic_automation_line
+        AgentProactiveActionKind.NATIVE_TOOL -> R.drawable.ic_agent_control
+    }
+
+    private fun proactiveDeliveryLabel(value: String): String = getString(
+        when (value) {
+            "notify" -> R.string.automation_proactive_delivery_notify
+            "mobile" -> R.string.automation_proactive_delivery_mobile
+            else -> R.string.automation_proactive_delivery_store
+        }
+    )
+
+    private fun proactiveNetworkLabel(value: String): String = getString(
+        when (value) {
+            "unmetered" -> R.string.automation_proactive_network_unmetered
+            "offline" -> R.string.automation_proactive_network_offline
+            else -> R.string.automation_proactive_network_any
+        }
+    )
+
+    private fun proactiveRunStatusLabel(status: AgentProactiveRunStatus): String = getString(
+        when (status) {
+            AgentProactiveRunStatus.QUEUED -> R.string.agent_task_status_queued
+            AgentProactiveRunStatus.RUNNING,
+            AgentProactiveRunStatus.RETRYING -> R.string.automation_run_status_running
+            AgentProactiveRunStatus.WAITING -> R.string.cc_global_status_waiting
+            AgentProactiveRunStatus.COMPLETED -> R.string.automation_run_status_completed
+            AgentProactiveRunStatus.FAILED -> R.string.automation_run_status_failed
+            AgentProactiveRunStatus.CANCELLED -> R.string.automation_run_status_cancelled
+            AgentProactiveRunStatus.SKIPPED -> R.string.automation_run_status_skipped
+        }
+    )
+
+    private fun automationTime(timestampMillis: Long): String =
+        SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()).format(Date(timestampMillis))
+
     private fun openAgentWorkflow(command: String) {
         hideFeaturePage()
         showMainTab(PAGE_AGENT)
@@ -18404,6 +19121,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             AgentWorkflowExecutionSource.MANUAL -> R.string.automation_run_source_manual
             AgentWorkflowExecutionSource.SCHEDULE -> R.string.automation_run_source_schedule
             AgentWorkflowExecutionSource.EVENT -> R.string.automation_run_source_event
+            AgentWorkflowExecutionSource.PROACTIVE -> R.string.automation_run_source_proactive
         }
     )
 

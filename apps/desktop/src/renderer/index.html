@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws://127.0.0.1:8765; img-src 'self' data:; frame-src http://127.0.0.1:8765; style-src 'self'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' ws://127.0.0.1:8765 ws://127.0.0.1:*; img-src 'self' data:; frame-src http://127.0.0.1:8765 http://127.0.0.1:*; style-src 'self'; script-src 'self'">
   <title>SignalASI Desktop</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -135,6 +135,7 @@
         <button class="active" data-capability-tab="memory" data-i18n="Memory">Memory</button>
         <button data-capability-tab="skills" data-i18n="Skills">Skills</button>
         <button data-capability-tab="mcp">MCP</button>
+        <button data-capability-tab="automation" data-i18n="Automation">Automation</button>
       </div>
 
       <div id="memoryCapability" class="capability-pane active">
@@ -178,6 +179,68 @@
             <label><span data-i18n="Triggers">Triggers</span><input id="mcpTriggers" data-i18n-placeholder="Comma-separated phrases" placeholder="Comma-separated phrases"></label>
             <label class="check-row"><input id="mcpAutoInvoke" type="checkbox"><span><strong data-i18n="Allow automatic use">Allow automatic use</strong><small data-i18n="Use this MCP when a trigger matches">Use this MCP when a trigger matches</small></span></label>
             <button id="saveMcpButton" class="primary-button" data-i18n="Add MCP">Add MCP</button>
+          </div>
+        </details>
+      </div>
+
+      <div id="automationCapability" class="capability-pane">
+        <div class="capability-summary">
+          <div>
+            <strong data-i18n="Proactive tasks">Proactive tasks</strong>
+            <p id="proactiveSummary" data-i18n="Durable Cron, goal, webhook, Agent team, workflow, and tool execution">Durable Cron, goal, webhook, Agent team, workflow, and tool execution</p>
+          </div>
+          <button id="refreshProactiveButton" class="secondary-button" data-i18n="Refresh">Refresh</button>
+        </div>
+        <div id="proactiveTaskList" class="capability-list"></div>
+        <div id="proactiveRunList" class="capability-list proactive-run-list"></div>
+        <details id="proactiveCreateDetails" class="drawer-details">
+          <summary data-i18n="New proactive task">New proactive task</summary>
+          <div class="form-stack">
+            <label><span data-i18n="Name">Name</span><input id="proactiveName" maxlength="120" placeholder="Morning brief"></label>
+            <div class="proactive-form-grid">
+              <label><span data-i18n="Trigger">Trigger</span><select id="proactiveTriggerKind">
+                <option value="manual" data-i18n="Manual">Manual</option>
+                <option value="cron" data-i18n="Cron schedule">Cron schedule</option>
+                <option value="interval" data-i18n="Interval">Interval</option>
+                <option value="goal_checkpoint" data-i18n="Goal checkpoint">Goal checkpoint</option>
+                <option value="webhook" data-i18n="Trusted webhook">Trusted webhook</option>
+              </select></label>
+              <label id="proactiveScheduleField"><span data-i18n="Schedule">Schedule</span><input id="proactiveSchedule" maxlength="120" placeholder="0 9 * * *"></label>
+            </div>
+            <label id="proactiveTimeZoneField"><span data-i18n="Time zone">Time zone</span><input id="proactiveTimeZone" maxlength="80" value="UTC" placeholder="Asia/Shanghai"></label>
+            <div class="proactive-form-grid">
+              <label><span data-i18n="Action">Action</span><select id="proactiveActionKind">
+                <option value="agent" data-i18n="Agent">Agent</option>
+                <option value="subagent_team" data-i18n="Sub-agent team">Sub-agent team</option>
+                <option value="workflow" data-i18n="Workflow">Workflow</option>
+                <option value="native_tool" data-i18n="Native tool">Native tool</option>
+              </select></label>
+              <label id="proactiveTargetField"><span data-i18n="Target ID">Target ID</span><input id="proactiveTarget" maxlength="128" placeholder="codex"></label>
+            </div>
+            <label id="proactivePromptField"><span data-i18n="Goal or instructions">Goal or instructions</span><textarea id="proactivePrompt" rows="4" maxlength="65536"></textarea></label>
+            <label id="proactiveTeamField"><span data-i18n="Agent team">Agent team</span><textarea id="proactiveTeam" rows="3" data-i18n-placeholder="One per line: lead:codex, observer:hermes" placeholder="One per line: lead:codex, observer:hermes"></textarea></label>
+            <label id="proactiveArgumentsField"><span data-i18n="Tool arguments (JSON)">Tool arguments (JSON)</span><textarea id="proactiveArguments" rows="3">{}</textarea></label>
+            <div class="proactive-form-grid">
+              <label><span data-i18n="Delivery">Delivery</span><select id="proactiveDelivery">
+                <option value="store" data-i18n="Store result">Store result</option>
+                <option value="notify" data-i18n="Store and notify">Store and notify</option>
+                <option value="mobile" data-i18n="Deliver to paired phone">Deliver to paired phone</option>
+              </select></label>
+              <label><span data-i18n="Network policy">Network policy</span><select id="proactiveNetwork">
+                <option value="any" data-i18n="Any">Any</option>
+                <option value="unmetered" data-i18n="Unmetered">Unmetered</option>
+                <option value="offline" data-i18n="Offline only">Offline only</option>
+              </select></label>
+            </div>
+            <div class="proactive-form-grid">
+              <label><span data-i18n="Maximum attempts">Maximum attempts</span><input id="proactiveAttempts" type="number" min="1" max="12" value="3"></label>
+              <label><span data-i18n="Maximum concurrency">Maximum concurrency</span><input id="proactiveConcurrency" type="number" min="1" max="16" value="1"></label>
+            </div>
+            <label class="check-row"><input id="proactiveCharging" type="checkbox"><span><strong data-i18n="Run only while charging">Run only while charging</strong><small data-i18n="The task waits and resumes automatically">The task waits and resumes automatically</small></span></label>
+            <div class="form-actions">
+              <button id="cancelProactiveEditButton" class="secondary-button" data-i18n="Cancel" hidden>Cancel</button>
+              <button id="createProactiveButton" class="primary-button" data-i18n="Create proactive task">Create proactive task</button>
+            </div>
           </div>
         </details>
       </div>

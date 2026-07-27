@@ -154,6 +154,8 @@ EVOLUTION_TASK_CANCEL_TYPE = "evolution_task_cancel"
 EVOLUTION_CANDIDATE_ROLLBACK_TYPE = "evolution_candidate_rollback"
 EVOLUTION_CANDIDATE_PUBLISH_TYPE = "evolution_candidate_publish"
 EVOLUTION_TASK_LIST_REQUEST_TYPE = "evolution_task_list_request"
+PROACTIVE_TASK_EVENT_TYPE = "proactive_task_event"
+PROACTIVE_WEBHOOK_EVENT_TYPE = "proactive_webhook_event"
 EVOLUTION_COMMAND_TYPES = {
     EVOLUTION_TASK_CREATE_TYPE,
     EVOLUTION_TASK_CANCEL_TYPE,
@@ -1782,6 +1784,8 @@ def _publish_phone_payload(
         DESKTOP_EXECUTOR_EVENT_TYPE, DESKTOP_ACTION_RECEIPT_TYPE,
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
         EVOLUTION_TASK_EVENT_TYPE, EVOLUTION_TASK_SNAPSHOT_TYPE,
+        PROACTIVE_TASK_EVENT_TYPE,
+        PROACTIVE_WEBHOOK_EVENT_TYPE,
     } else "down"
     target_topic = paired_client["topics"][channel]
     reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
@@ -1836,6 +1840,69 @@ def publish_evolution_task_event_all(event: dict) -> dict:
             mqttc,
             {"scheme": "signal", "_client_route_id": route_id},
             dict(value),
+            durable=True,
+        ):
+            published += 1
+    return {"ok": published > 0, "published": published}
+
+
+def publish_proactive_task_event_all(event: dict) -> dict:
+    mqttc = client
+    if mqttc is None:
+        return {"ok": False, "published": 0, "code": "mqtt_unavailable"}
+    value = dict(event or {})
+    requested_route = str(value.pop("_client_route_id", "") or "").strip()
+    value["type"] = PROACTIVE_TASK_EVENT_TYPE
+    value.setdefault("desktop_id", desktop_id())
+    value.setdefault("desktop_name", desktop_name())
+    candidates = [get_client(requested_route)] if requested_route else list_clients()
+    published = 0
+    for paired_client in candidates:
+        if not paired_client or paired_client.get("revoked_at"):
+            continue
+        route_id = str(paired_client.get("client_route_id") or "")
+        if not route_id:
+            continue
+        if _publish_phone_payload(
+            mqttc,
+            {"scheme": "signal", "_client_route_id": route_id},
+            dict(value),
+            durable=True,
+        ):
+            published += 1
+    return {"ok": published > 0, "published": published}
+
+
+def publish_proactive_webhook_event(
+    task_id: str,
+    event_id: str,
+    payload: dict,
+    client_route_id: str = "",
+) -> dict:
+    mqttc = client
+    if mqttc is None:
+        return {"ok": False, "published": 0, "code": "mqtt_unavailable"}
+    candidates = [get_client(client_route_id)] if client_route_id else list_clients()
+    published = 0
+    for paired_client in candidates:
+        if not paired_client or paired_client.get("revoked_at"):
+            continue
+        route_id = str(paired_client.get("client_route_id") or "")
+        if not route_id:
+            continue
+        value = {
+            "type": PROACTIVE_WEBHOOK_EVENT_TYPE,
+            "task_id": str(task_id),
+            "event_id": str(event_id),
+            "payload": dict(payload or {}),
+            "desktop_id": desktop_id(),
+            "desktop_name": desktop_name(),
+            "time": int(time.time() * 1000),
+        }
+        if _publish_phone_payload(
+            mqttc,
+            {"scheme": "signal", "_client_route_id": route_id},
+            value,
             durable=True,
         ):
             published += 1

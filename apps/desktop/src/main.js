@@ -5,7 +5,10 @@ const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
 
-const BACKEND_PORT = 8765;
+const requestedBackendPort = Number.parseInt(process.env.SIGNALASI_BACKEND_PORT || "8765", 10);
+const BACKEND_PORT = requestedBackendPort >= 1024 && requestedBackendPort <= 65535
+  ? requestedBackendPort
+  : 8765;
 const BACKEND_ORIGIN = `http://127.0.0.1:${BACKEND_PORT}`;
 const DESKTOP_TASK_STREAM_URL = `ws://127.0.0.1:${BACKEND_PORT}/ws/desktop/tasks`;
 const PAIRING_URL = `${BACKEND_ORIGIN}/signalasi/verify`;
@@ -162,17 +165,25 @@ async function runUiSmoke() {
           if (document.querySelectorAll("#skillList .capability-item").length >= 4) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
+        document.querySelector('[data-capability-tab="automation"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 250));
         return {
           active: document.querySelector("#capabilitiesPanel")?.classList.contains("active") || false,
           tabs: document.querySelectorAll("[data-capability-tab]").length,
           skills: document.querySelectorAll("#skillList .capability-item").length,
           memory: document.querySelector("#memorySummary")?.textContent || "",
-          mcpForm: Boolean(document.querySelector("#mcpCommand"))
+          mcpForm: Boolean(document.querySelector("#mcpCommand")),
+          automationActive: document.querySelector("#automationCapability")?.classList.contains("active") || false,
+          automationSummary: document.querySelector("#proactiveSummary")?.textContent || "",
+          automationEditor: Boolean(document.querySelector("#proactiveCreateDetails"))
         };
       })()
     `);
-    if (!capabilitiesState.active || capabilitiesState.tabs !== 3 || capabilitiesState.skills < 4 || !capabilitiesState.memory.trim() || !capabilitiesState.mcpForm) {
-      throw new Error(`Capabilities drawer did not expose memory, Skills, and MCP: ${JSON.stringify(capabilitiesState)}`);
+    if (!capabilitiesState.active || capabilitiesState.tabs !== 4 || capabilitiesState.skills < 4
+        || !capabilitiesState.memory.trim() || !capabilitiesState.mcpForm
+        || !capabilitiesState.automationActive || !capabilitiesState.automationSummary.trim()
+        || !capabilitiesState.automationEditor) {
+      throw new Error(`Capabilities drawer did not expose memory, Skills, MCP, and automation: ${JSON.stringify(capabilitiesState)}`);
     }
     await captureSmokeScreenshot(capabilitiesPath);
     const gatewayControlState = await mainWindow.webContents.executeJavaScript(`
@@ -364,7 +375,9 @@ async function backendStatus() {
       origin: BACKEND_ORIGIN,
       pairingUrl: PAIRING_URL,
       backendDir: BACKEND_DIR,
-      error: response.ok && !identityMatches ? "Port 8765 is owned by another service." : undefined
+      error: response.ok && !identityMatches
+        ? `Port ${BACKEND_PORT} is owned by another service.`
+        : undefined
     };
   } catch (error) {
     return {
@@ -656,9 +669,14 @@ async function fetchJson(pathname, options = {}) {
   let lastError;
   for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
+      const { headers: extraHeaders = {}, ...requestOptions } = options;
       const response = await fetch(`${BACKEND_ORIGIN}${pathname}`, {
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-        ...options
+        ...requestOptions,
+        headers: {
+          "Content-Type": "application/json",
+          "X-SignalASI-Token": desktopTaskStreamToken(),
+          ...extraHeaders
+        }
       });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -847,6 +865,58 @@ async function publishEvolutionTask(taskId, approvalHash) {
   });
 }
 
+async function listProactiveTasks(limit = 200) {
+  await startBackend();
+  return fetchJson(`/api/proactive/tasks?limit=${encodeURIComponent(limit)}`);
+}
+
+async function createProactiveTask(payload = {}) {
+  await startBackend();
+  return fetchJson("/api/proactive/tasks", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function updateProactiveTask(taskId, payload = {}) {
+  await startBackend();
+  return fetchJson(`/api/proactive/tasks/${encodeURIComponent(taskId)}`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function deleteProactiveTask(taskId) {
+  await startBackend();
+  return fetchJson(`/api/proactive/tasks/${encodeURIComponent(taskId)}`, {
+    method: "DELETE"
+  });
+}
+
+async function triggerProactiveTask(taskId) {
+  await startBackend();
+  return fetchJson(`/api/proactive/tasks/${encodeURIComponent(taskId)}/trigger`, {
+    method: "POST",
+    body: JSON.stringify({ cause: { type: "manual", source: "desktop_ui" } })
+  });
+}
+
+async function listProactiveRuns(taskId = "", limit = 100) {
+  await startBackend();
+  const query = new URLSearchParams({
+    task_id: String(taskId || ""),
+    limit: String(limit)
+  });
+  return fetchJson(`/api/proactive/runs?${query.toString()}`);
+}
+
+async function cancelProactiveRun(runId) {
+  await startBackend();
+  return fetchJson(`/api/proactive/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: "POST"
+  });
+}
+
 async function getDesktopControl() {
   await startBackend();
   return fetchJson("/api/desktop-control");
@@ -983,6 +1053,13 @@ ipcMain.handle("evolution-tasks:cancel", (_event, taskId) => cancelEvolutionTask
 ipcMain.handle("evolution-tasks:rollback", (_event, taskId) => rollbackEvolutionTask(taskId));
 ipcMain.handle("evolution-tasks:publish", (_event, taskId, approvalHash) =>
   publishEvolutionTask(taskId, approvalHash));
+ipcMain.handle("proactive-tasks:list", (_event, limit) => listProactiveTasks(limit));
+ipcMain.handle("proactive-tasks:create", (_event, payload) => createProactiveTask(payload));
+ipcMain.handle("proactive-tasks:update", (_event, taskId, payload) => updateProactiveTask(taskId, payload));
+ipcMain.handle("proactive-tasks:delete", (_event, taskId) => deleteProactiveTask(taskId));
+ipcMain.handle("proactive-tasks:trigger", (_event, taskId) => triggerProactiveTask(taskId));
+ipcMain.handle("proactive-runs:list", (_event, taskId, limit) => listProactiveRuns(taskId, limit));
+ipcMain.handle("proactive-runs:cancel", (_event, runId) => cancelProactiveRun(runId));
 ipcMain.handle("desktop-control:get", getDesktopControl);
 ipcMain.handle("desktop-memory:list", (_event, query, limit) => getDesktopMemory(query, limit));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));

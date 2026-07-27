@@ -33,6 +33,15 @@ contextBridge.exposeInMainWorld("signalasi", {
   rollbackEvolutionTask: (taskId) => ipcRenderer.invoke("evolution-tasks:rollback", taskId),
   publishEvolutionTask: (taskId, approvalHash) =>
     ipcRenderer.invoke("evolution-tasks:publish", taskId, approvalHash),
+  listProactiveTasks: (limit) => ipcRenderer.invoke("proactive-tasks:list", limit),
+  createProactiveTask: (payload) => ipcRenderer.invoke("proactive-tasks:create", payload),
+  updateProactiveTask: (taskId, payload) =>
+    ipcRenderer.invoke("proactive-tasks:update", taskId, payload),
+  deleteProactiveTask: (taskId) => ipcRenderer.invoke("proactive-tasks:delete", taskId),
+  triggerProactiveTask: (taskId) => ipcRenderer.invoke("proactive-tasks:trigger", taskId),
+  listProactiveRuns: (taskId, limit) =>
+    ipcRenderer.invoke("proactive-runs:list", taskId, limit),
+  cancelProactiveRun: (runId) => ipcRenderer.invoke("proactive-runs:cancel", runId),
   getDesktopControl: () => ipcRenderer.invoke("desktop-control:get"),
   getDesktopMemory: (query, limit) => ipcRenderer.invoke("desktop-memory:list", query, limit),
   rememberDesktopMemory: (payload) => ipcRenderer.invoke("desktop-memory:remember", payload),

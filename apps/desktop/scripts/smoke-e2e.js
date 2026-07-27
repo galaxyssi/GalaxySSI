@@ -256,7 +256,7 @@ function createFakeMcpServer(tmpDir) {
       "        write_frame({'jsonrpc':'2.0','id':msg['id'],'result':{'tools':[{'name':'echo','description':'Echo prompt','inputSchema':{'type':'object','properties':{'prompt':{'type':'string'}}}}]}})",
       "    elif method == 'tools/call':",
       "        prompt = (msg.get('params') or {}).get('arguments', {}).get('prompt', '')",
-      "        write_frame({'jsonrpc':'2.0','id':msg['id'],'result':{'content':[{'type':'text','text':'MCP_E2E_OK:' + prompt[-64:]}]}})",
+      "        write_frame({'jsonrpc':'2.0','id':msg['id'],'result':{'content':[{'type':'text','text':'MCP_E2E_OK:' + prompt[:2048]}]}})",
       "    else:",
       "        write_frame({'jsonrpc':'2.0','id':msg['id'],'error':{'code':-32601,'message':'unknown method'}})"
     ].join("\n"),
