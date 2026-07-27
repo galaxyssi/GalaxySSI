@@ -447,6 +447,7 @@ def _web_intelligence_specs() -> tuple[DesktopToolSpec, ...]:
                 **common,
                 "query": query,
                 "limit": _integer(1, 100),
+                "profile": _string(max_length=16, enum=("fast", "balanced", "deep")),
                 "engine_fanout": _integer(1, 32),
                 "engines": engines,
                 "verticals": verticals,
@@ -512,10 +513,17 @@ def _web_intelligence_specs() -> tuple[DesktopToolSpec, ...]:
             "Queries, reads, reports, or cleans the persistent local keyword and vector evidence cache.",
             _object_schema({
                 **common,
-                "action": _string(max_length=32, enum=("status", "query", "get", "clear", "clear_expired")),
+                "action": _string(
+                    max_length=32,
+                    enum=(
+                        "status", "query", "get", "clear", "clear_expired",
+                        "source_health", "reset_source_health",
+                    ),
+                ),
                 "query": query,
                 "url": url,
                 "limit": _integer(1, 100),
+                "engines": engines,
             }),
             capabilities=("web.cache", "web.offline_search"),
         ),

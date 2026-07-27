@@ -228,6 +228,96 @@ class AgentWebIntelligenceTest {
         assertFalse(store.watches().isNotEmpty())
     }
 
+    @Test
+    fun sourceHealthOpensCircuitButExplicitSourceCanProbe() {
+        var now = 200_000L
+        val store = AgentInMemoryWebIntelligenceStore { now }
+        repeat(3) {
+            store.recordSourceReceipt(
+                AgentWebIntelligenceReceipt(
+                    "bing", "timeout", 5_000L, 0, "engine_timeout", "timeout", true
+                )
+            )
+            now += 1
+        }
+        val coordinator = AgentWebIntelligenceSearchCoordinator(
+            fetcher = FixedFetcher(),
+            clock = { now },
+            healthProvider = { store.sourceHealth() }
+        )
+
+        assertEquals("open", store.sourceHealth().getValue("bing").circuitState(now))
+        assertFalse("bing" in coordinator.selectEngines("latest news", 32, emptyList(), emptySet()))
+        assertEquals(
+            listOf("bing"),
+            coordinator.selectEngines("latest news", 1, listOf("bing"), emptySet())
+        )
+
+        now += 60_000L
+        assertEquals("half_open", store.sourceHealth().getValue("bing").circuitState(now))
+        store.recordSourceReceipt(AgentWebIntelligenceReceipt("bing", "completed", 100L, 4))
+        assertEquals("closed", store.sourceHealth().getValue("bing").circuitState(now))
+        assertEquals(0, store.sourceHealth().getValue("bing").consecutiveFailures)
+    }
+
+    @Test
+    fun sourceHealthCanBeInspectedAndResetThroughCacheTool() {
+        var now = 300_000L
+        val store = AgentInMemoryWebIntelligenceStore { now }
+        store.recordSourceReceipt(AgentWebIntelligenceReceipt("brave", "completed", 100L, 3))
+        val service = AgentWebIntelligenceService(FixedFetcher(), store, clock = { now })
+
+        val inspected = service.cache(mapOf("action" to "source_health", "engines" to listOf("brave")))
+        val rows = (inspected["metadata"] as Map<*, *>)["source_health"] as List<*>
+        assertEquals(1, rows.size)
+        assertEquals("brave", (rows.first() as Map<*, *>)["source_id"])
+
+        val reset = service.cache(mapOf("action" to "reset_source_health"))
+        assertEquals(1, (reset["metadata"] as Map<*, *>)["source_health_removed"])
+        assertTrue(store.sourceHealth().isEmpty())
+    }
+
+    @Test
+    fun cancelledReceiptDoesNotPenalizeSource() {
+        val previous = AgentWebIntelligenceSourceHealth("bing", attempts = 2, successes = 2)
+        val current = previous.evolve(
+            AgentWebIntelligenceReceipt("bing", "cancelled", 5L, 0),
+            500L
+        )
+
+        assertEquals(previous.attempts, current.attempts)
+        assertEquals(previous.failures, current.failures)
+        assertEquals("cancelled", current.lastStatus)
+    }
+
+    @Test
+    fun fastProfileIsVisibleInSearchMetadata() {
+        val service = AgentWebIntelligenceService(
+            FixedFetcher(
+                response(
+                    "https://search.brave.com/search",
+                    "text/html",
+                    """<a href="https://docs.example.test/guide">SignalASI guide</a>"""
+                )
+            ),
+            AgentInMemoryWebIntelligenceStore()
+        )
+
+        val result = service.search(
+            mapOf(
+                "query" to "SignalASI guide",
+                "profile" to "fast",
+                "engines" to listOf("brave"),
+                "use_cache" to false
+            )
+        )
+        val metadata = result["metadata"] as Map<*, *>
+
+        assertEquals("fast", metadata["profile"])
+        assertEquals("explicit_sources", metadata["source_selection"])
+        assertEquals(1, (metadata["source_health"] as List<*>).size)
+    }
+
     private fun raw(engine: String, rank: Int, title: String, url: String) =
         AgentWebIntelligenceRawResult(engine, rank, title, url, "Evidence")
 

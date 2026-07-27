@@ -65,6 +65,9 @@ interface AgentWebIntelligenceStore {
     fun documents(): List<AgentWebIntelligenceDocument>
     fun putSearch(key: String, response: AgentNativeJsonObject, expiresAtMillis: Long)
     fun getSearch(key: String): AgentNativeJsonObject?
+    fun sourceHealth(sourceIds: Set<String> = emptySet()): Map<String, AgentWebIntelligenceSourceHealth>
+    fun recordSourceReceipt(receipt: AgentWebIntelligenceReceipt)
+    fun resetSourceHealth(): Int
     fun stats(): AgentNativeJsonObject
     fun clear(expiredOnly: Boolean = false): AgentNativeJsonObject
     fun putWatch(watch: AgentWebIntelligenceWatch)
@@ -116,13 +119,39 @@ class AgentEncryptedWebIntelligenceStore(
     }.getOrNull()
 
     @Synchronized
+    override fun sourceHealth(sourceIds: Set<String>): Map<String, AgentWebIntelligenceSourceHealth> =
+        database.entries(SOURCE_HEALTH_PREFIX)
+            .mapNotNull { (_, value) -> decodeSourceHealth(value) }
+            .filter { sourceIds.isEmpty() || it.sourceId in sourceIds }
+            .associateBy(AgentWebIntelligenceSourceHealth::sourceId)
+
+    @Synchronized
+    override fun recordSourceReceipt(receipt: AgentWebIntelligenceReceipt) {
+        val key = "$SOURCE_HEALTH_PREFIX${cleanIdentifier(receipt.sourceId)}"
+        val previous = decodeSourceHealth(database.readString(key, ""))
+            ?: AgentWebIntelligenceSourceHealth(receipt.sourceId)
+        database.writeString(key, encodeSourceHealth(previous.evolve(receipt, clock())))
+    }
+
+    @Synchronized
+    override fun resetSourceHealth(): Int {
+        val keys = database.keys(SOURCE_HEALTH_PREFIX)
+        database.removeAll(keys)
+        return keys.size
+    }
+
+    @Synchronized
     override fun stats(): AgentNativeJsonObject {
         val documents = documents()
+        val sourceHealth = sourceHealth()
+        val now = clock()
         return linkedMapOf(
             "entry_count" to documents.size,
             "content_chars" to documents.sumOf { it.content.length.toLong() },
             "search_count" to database.keys(SEARCH_PREFIX).size,
             "watch_count" to database.keys(WATCH_PREFIX).size,
+            "source_health_count" to sourceHealth.size,
+            "source_circuits_open" to sourceHealth.values.count { it.circuitState(now) == "open" },
             "embedding_model" to AgentWebIntelligenceEmbedder().modelId,
             "encryption" to "android_keystore_aes_gcm"
         )
@@ -234,11 +263,45 @@ class AgentEncryptedWebIntelligenceStore(
         )
     }.getOrNull()
 
+    private fun encodeSourceHealth(value: AgentWebIntelligenceSourceHealth): String = JSONObject()
+        .put("source_id", value.sourceId)
+        .put("attempts", value.attempts)
+        .put("successes", value.successes)
+        .put("empty_responses", value.emptyResponses)
+        .put("failures", value.failures)
+        .put("consecutive_failures", value.consecutiveFailures)
+        .put("ewma_latency_millis", value.ewmaLatencyMillis)
+        .put("ewma_result_count", value.ewmaResultCount)
+        .put("last_status", value.lastStatus)
+        .put("last_attempt_at_millis", value.lastAttemptAtMillis)
+        .put("last_success_at_millis", value.lastSuccessAtMillis)
+        .put("circuit_open_until_millis", value.circuitOpenUntilMillis)
+        .toString()
+
+    private fun decodeSourceHealth(value: String): AgentWebIntelligenceSourceHealth? = runCatching {
+        val root = JSONObject(value)
+        AgentWebIntelligenceSourceHealth(
+            sourceId = cleanIdentifier(root.getString("source_id")),
+            attempts = root.optInt("attempts"),
+            successes = root.optInt("successes"),
+            emptyResponses = root.optInt("empty_responses"),
+            failures = root.optInt("failures"),
+            consecutiveFailures = root.optInt("consecutive_failures"),
+            ewmaLatencyMillis = root.optDouble("ewma_latency_millis"),
+            ewmaResultCount = root.optDouble("ewma_result_count"),
+            lastStatus = root.optString("last_status"),
+            lastAttemptAtMillis = root.optLong("last_attempt_at_millis"),
+            lastSuccessAtMillis = root.optLong("last_success_at_millis"),
+            circuitOpenUntilMillis = root.optLong("circuit_open_until_millis")
+        )
+    }.getOrNull()
+
     private companion object {
         const val DATABASE_NAME = "signalasi-web-intelligence-v1"
         const val DOCUMENT_PREFIX = "document:"
         const val SEARCH_PREFIX = "search:"
         const val WATCH_PREFIX = "watch:"
+        const val SOURCE_HEALTH_PREFIX = "source-health:"
         const val MAX_DOCUMENTS = 2_000
     }
 }
@@ -249,6 +312,7 @@ class AgentInMemoryWebIntelligenceStore(
     private val documents = linkedMapOf<String, AgentWebIntelligenceDocument>()
     private val searches = linkedMapOf<String, Pair<Long, AgentNativeJsonObject>>()
     private val watches = linkedMapOf<String, AgentWebIntelligenceWatch>()
+    private val health = linkedMapOf<String, AgentWebIntelligenceSourceHealth>()
 
     @Synchronized
     override fun putDocument(document: AgentWebIntelligenceDocument) {
@@ -273,14 +337,36 @@ class AgentInMemoryWebIntelligenceStore(
         searches[key]?.takeIf { it.first >= clock() }?.second
 
     @Synchronized
-    override fun stats(): AgentNativeJsonObject = linkedMapOf(
-        "entry_count" to documents.size,
-        "content_chars" to documents.values.sumOf { it.content.length.toLong() },
-        "search_count" to searches.size,
-        "watch_count" to watches.size,
-        "embedding_model" to AgentWebIntelligenceEmbedder().modelId,
-        "encryption" to "test_memory"
-    )
+    override fun sourceHealth(sourceIds: Set<String>): Map<String, AgentWebIntelligenceSourceHealth> =
+        health.filterKeys { sourceIds.isEmpty() || it in sourceIds }
+
+    @Synchronized
+    override fun recordSourceReceipt(receipt: AgentWebIntelligenceReceipt) {
+        val previous = health[receipt.sourceId] ?: AgentWebIntelligenceSourceHealth(receipt.sourceId)
+        health[receipt.sourceId] = previous.evolve(receipt, clock())
+    }
+
+    @Synchronized
+    override fun resetSourceHealth(): Int {
+        val removed = health.size
+        health.clear()
+        return removed
+    }
+
+    @Synchronized
+    override fun stats(): AgentNativeJsonObject {
+        val now = clock()
+        return linkedMapOf(
+            "entry_count" to documents.size,
+            "content_chars" to documents.values.sumOf { it.content.length.toLong() },
+            "search_count" to searches.size,
+            "watch_count" to watches.size,
+            "source_health_count" to health.size,
+            "source_circuits_open" to health.values.count { it.circuitState(now) == "open" },
+            "embedding_model" to AgentWebIntelligenceEmbedder().modelId,
+            "encryption" to "test_memory"
+        )
+    }
 
     @Synchronized
     override fun clear(expiredOnly: Boolean): AgentNativeJsonObject {
@@ -354,7 +440,10 @@ class AgentWebIntelligenceService(
 ) {
     private val searchCoordinator = AgentWebIntelligenceSearchCoordinator(
         fetcher,
-        AgentWebIntelligenceFusion(ranker)
+        AgentWebIntelligenceFusion(ranker),
+        clock = clock,
+        healthProvider = { store.sourceHealth() },
+        receiptObserver = store::recordSourceReceipt
     )
 
     fun invoke(
@@ -383,8 +472,13 @@ class AgentWebIntelligenceService(
     ): AgentNativeJsonObject {
         val query = arguments.requiredString("query", 4_096)
         val limit = arguments.integer("limit", 10, 1, 100)
-        val fanout = arguments.integer("engine_fanout", 18, 1, 32)
-        val timeout = arguments.long("timeout_ms", 15_000L, 1_000L, 60_000L)
+        val profile = runCatching {
+            AgentWebIntelligenceSearchProfile.from(arguments.string("profile", "balanced"))
+        }.getOrElse {
+            throw AgentWebMediaException("invalid_search_profile", it.message.orEmpty())
+        }
+        val fanout = arguments.integer("engine_fanout", profile.defaultFanout, 1, 32)
+        val timeout = arguments.long("timeout_ms", profile.defaultTimeoutMillis, 1_000L, 60_000L)
         val engines = arguments.stringList("engines", 32, 64)
         val verticals = arguments.stringList("verticals", 10, 32).mapNotNull { value ->
             AgentWebIntelligenceVertical.entries.firstOrNull { it.wireValue == value }
@@ -396,6 +490,7 @@ class AgentWebIntelligenceService(
                     "query" to query,
                     "limit" to limit,
                     "fanout" to fanout,
+                    "profile" to profile.wireValue,
                     "engines" to engines.sorted(),
                     "verticals" to verticals.map { it.wireValue }.sorted(),
                     "model" to AgentWebIntelligenceRanker.MODEL_ID
@@ -422,7 +517,8 @@ class AgentWebIntelligenceService(
             verticals,
             timeout,
             cancellationToken,
-            checkpoint
+            checkpoint,
+            profile.wireValue
         ).publicValue().toMutableMap()
         response["cache"] = linkedMapOf(
             "hit" to false,
@@ -634,6 +730,26 @@ class AgentWebIntelligenceService(
             }
             "clear", "clear_expired" -> metadata =
                 store.stats() + store.clear(expiredOnly = action == "clear_expired")
+            "source_health" -> {
+                val sourceIds = arguments.stringList("engines", 32, 64).toSet()
+                val knownIds = AgentWebIntelligenceEngineCatalog.entries.map { it.id }.toSet()
+                val unknown = sourceIds - knownIds
+                if (unknown.isNotEmpty()) {
+                    throw AgentWebMediaException(
+                        "unknown_engine",
+                        "Unknown search sources: ${unknown.sorted().joinToString()}"
+                    )
+                }
+                metadata = store.stats() + mapOf(
+                    "source_health" to store.sourceHealth(sourceIds).values
+                        .sortedBy(AgentWebIntelligenceSourceHealth::sourceId)
+                        .map { it.publicValue(clock()) }
+                )
+            }
+            "reset_source_health" -> {
+                val removed = store.resetSourceHealth()
+                metadata = store.stats() + mapOf("source_health_removed" to removed)
+            }
             else -> throw AgentWebMediaException("invalid_cache_action", "Unsupported cache action: $action")
         }
         return base("cache", "completed", started) + linkedMapOf(

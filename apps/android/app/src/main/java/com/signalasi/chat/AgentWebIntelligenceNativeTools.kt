@@ -247,6 +247,9 @@ object AgentWebIntelligenceNativeTools {
         mapOf(
             "query" to string(1, 4_096),
             "limit" to integer(1, 100),
+            "profile" to AgentNativeJsonSchema.string(
+                enumValues = AgentWebIntelligenceSearchProfile.entries.map { it.wireValue }
+            ),
             "engine_fanout" to integer(1, 32),
             "engines" to stringArray(32, 64),
             "verticals" to AgentNativeJsonSchema.array(
@@ -300,11 +303,15 @@ object AgentWebIntelligenceNativeTools {
     private fun cacheSchema(): AgentNativeJsonSchema = objectSchema(
         mapOf(
             "action" to AgentNativeJsonSchema.string(
-                enumValues = listOf("status", "query", "get", "clear", "clear_expired")
+                enumValues = listOf(
+                    "status", "query", "get", "clear", "clear_expired",
+                    "source_health", "reset_source_health"
+                )
             ),
             "query" to string(0, 4_096),
             "url" to string(0, 4_096),
-            "limit" to integer(1, 100)
+            "limit" to integer(1, 100),
+            "engines" to stringArray(32, 64)
         )
     )
 
