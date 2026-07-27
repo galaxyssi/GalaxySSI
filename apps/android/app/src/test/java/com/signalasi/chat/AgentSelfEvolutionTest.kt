@@ -210,6 +210,120 @@ class AgentSelfEvolutionTest {
         }
     }
 
+    @Test
+    fun `health summarizes durable outcomes retries gates and stale executions`() {
+        val now = 1_000_000L
+        val tasks = listOf(
+            AgentSelfEvolutionTask(
+                taskId = "published",
+                problem = "Published candidate",
+                reproductionSteps = emptyList(),
+                scope = listOf("apps/android"),
+                acceptance = listOf("Pass"),
+                risk = AgentSelfEvolutionRisk.MEDIUM,
+                maxAttempts = 3,
+                status = AgentSelfEvolutionStatus.PUBLISHED,
+                attempts = listOf(
+                    AgentSelfEvolutionAttempt(
+                        number = 1,
+                        status = AgentSelfEvolutionStatus.FAILED,
+                        workspaceId = "private-workspace-one",
+                        branch = "evolution/published-a1",
+                        gates = listOf(
+                            AgentSelfEvolutionGate(
+                                id = "unit",
+                                status = AgentSelfEvolutionGateStatus.FAILED
+                            )
+                        ),
+                        failureCode = "quality_gate_failed",
+                        startedAtMillis = 100L,
+                        completedAtMillis = 1_100L
+                    ),
+                    AgentSelfEvolutionAttempt(
+                        number = 2,
+                        status = AgentSelfEvolutionStatus.WAITING_APPROVAL,
+                        workspaceId = "private-workspace-two",
+                        branch = "evolution/published-a2",
+                        gates = listOf(
+                            AgentSelfEvolutionGate(
+                                id = "unit",
+                                status = AgentSelfEvolutionGateStatus.PASSED
+                            )
+                        ),
+                        startedAtMillis = 2_000L,
+                        completedAtMillis = 4_000L
+                    )
+                ),
+                updatedAtMillis = now - 1_000L
+            ),
+            basicTask("stale-running", AgentSelfEvolutionStatus.RUNNING, now - 360_000L),
+            basicTask("old-review", AgentSelfEvolutionStatus.WAITING_APPROVAL, now - 420_000L),
+            basicTask(
+                "blocked",
+                AgentSelfEvolutionStatus.BLOCKED,
+                now - 5_000L,
+                lastErrorCode = "runtime_unavailable"
+            ),
+            basicTask("queued", AgentSelfEvolutionStatus.PROPOSED, now - 800_000L)
+        )
+
+        val health = AgentSelfEvolutionHealthAnalyzer.summarize(
+            tasks,
+            nowMillis = now,
+            staleAfterMillis = 300_000L
+        )
+
+        assertEquals(5, health.totalTasks)
+        assertEquals(1, health.queuedTasks)
+        assertEquals(1, health.activeTasks)
+        assertEquals(1, health.waitingReview)
+        assertEquals(3, health.attentionTasks)
+        assertEquals(listOf("stale-running"), health.staleTaskIds)
+        assertEquals(2, health.totalAttempts)
+        assertEquals(1, health.failedAttempts)
+        assertEquals(1, health.retries)
+        assertEquals(50, health.gatePassPercent)
+        assertEquals(50, health.successPercent)
+        assertEquals(1_500L, health.averageAttemptDurationMillis)
+        assertEquals(420_000L, health.oldestReviewAgeMillis)
+        assertEquals(1, health.failureCounts["quality_gate_failed"])
+        assertEquals(1, health.failureCounts["runtime_unavailable"])
+        assertFalse(health.publicValue().toString().contains("private-workspace"))
+    }
+
+    @Test
+    fun `empty health report is deterministic and safe`() {
+        val health = AgentSelfEvolutionHealthAnalyzer.summarize(
+            emptyList(),
+            nowMillis = 1_000L
+        )
+
+        assertEquals(0, health.totalTasks)
+        assertEquals(0, health.gatePassPercent)
+        assertEquals(0, health.successPercent)
+        assertTrue(health.statusCounts.isEmpty())
+        assertTrue(health.failureCounts.isEmpty())
+        assertTrue(health.staleTaskIds.isEmpty())
+    }
+
+    private fun basicTask(
+        taskId: String,
+        status: AgentSelfEvolutionStatus,
+        updatedAtMillis: Long,
+        lastErrorCode: String = ""
+    ): AgentSelfEvolutionTask = AgentSelfEvolutionTask(
+        taskId = taskId,
+        problem = "Health task",
+        reproductionSteps = emptyList(),
+        scope = listOf("apps/android"),
+        acceptance = listOf("Pass"),
+        risk = AgentSelfEvolutionRisk.MEDIUM,
+        maxAttempts = 2,
+        status = status,
+        lastErrorCode = lastErrorCode,
+        updatedAtMillis = updatedAtMillis
+    )
+
     private fun manager(
         runtime: FakeEvolutionRuntime,
         maxAttempts: Int = 3

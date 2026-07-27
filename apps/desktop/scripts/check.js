@@ -22,6 +22,7 @@ const required = [
   "core/signalasi-link/backend/desktop_mcp.py",
   "core/signalasi-link/backend/desktop_runtime.py",
   "core/signalasi-link/backend/desktop_skills.py",
+  "core/signalasi-link/backend/evolution_manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
@@ -127,6 +128,7 @@ const backendDesktopMcp = fs.readFileSync(path.join(backendDir, "desktop_mcp.py"
 const backendDesktopRuntime = fs.readFileSync(path.join(backendDir, "desktop_runtime.py"), "utf8");
 const backendDesktopSkills = fs.readFileSync(path.join(backendDir, "desktop_skills.py"), "utf8");
 const backendDesktopSuperAgent = fs.readFileSync(path.join(backendDir, "desktop_super_agent.py"), "utf8");
+const backendEvolutionManager = fs.readFileSync(path.join(backendDir, "evolution_manager.py"), "utf8");
 const backendMcpWrapper = fs.readFileSync(path.join(backendDir, "mcp_agent_wrapper.py"), "utf8");
 const backendTaskWorkspace = fs.readFileSync(path.join(backendDir, "task_workspace.py"), "utf8");
 const backendPushAuth = fs.readFileSync(path.join(backendDir, "push_auth.py"), "utf8");
@@ -1067,6 +1069,29 @@ for (const requiredWorkspaceText of [
 
 if (backendMqtt.includes("server.start_task(task.task_id, content, os.getcwd())")) {
   throw new Error("Codex tasks must not run in the backend source directory");
+}
+
+for (const requiredEvolutionText of [
+  "class EvolutionHealth",
+  "def evolution_health(",
+  "\"candidate_changed_after_review\"",
+  "\"candidate_dirty_after_review\"",
+  "\"health\": manager.health(limit=500).public()"
+]) {
+  if (![backendEvolutionManager, backendMain].some((content) => content.includes(requiredEvolutionText))) {
+    throw new Error(`Evolution audit or candidate integrity guard missing: ${requiredEvolutionText}`);
+  }
+}
+
+for (const requiredEvolutionUiText of [
+  "evolutionHealthSummary",
+  "renderEvolutionHealth",
+  "gate_pass_percent",
+  "attention_tasks"
+]) {
+  if (![html, workspaceRenderer].some((content) => content.includes(requiredEvolutionUiText))) {
+    throw new Error(`Evolution health UI missing: ${requiredEvolutionUiText}`);
+  }
 }
 
 if ([androidMainActivity, androidVoiceSettings].some((content) => content.includes("signalasi.onnx"))) {

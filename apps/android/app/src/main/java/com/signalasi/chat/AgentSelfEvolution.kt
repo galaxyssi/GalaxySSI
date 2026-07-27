@@ -126,6 +126,168 @@ data class AgentSelfEvolutionTask(
     )
 }
 
+data class AgentSelfEvolutionHealth(
+    val totalTasks: Int,
+    val queuedTasks: Int,
+    val activeTasks: Int,
+    val waitingReview: Int,
+    val successfulTasks: Int,
+    val attentionTasks: Int,
+    val staleTasks: Int,
+    val totalAttempts: Int,
+    val failedAttempts: Int,
+    val retries: Int,
+    val totalGates: Int,
+    val passedGates: Int,
+    val failedGates: Int,
+    val gatePassPercent: Int,
+    val successPercent: Int,
+    val averageAttemptDurationMillis: Long,
+    val oldestReviewAgeMillis: Long,
+    val lastActivityAtMillis: Long,
+    val statusCounts: Map<String, Int>,
+    val failureCounts: Map<String, Int>,
+    val staleTaskIds: List<String>,
+    val generatedAtMillis: Long,
+    val staleAfterMillis: Long
+) {
+    fun publicValue(): AgentNativeJsonObject = linkedMapOf(
+        "total_tasks" to totalTasks,
+        "queued_tasks" to queuedTasks,
+        "active_tasks" to activeTasks,
+        "waiting_review" to waitingReview,
+        "successful_tasks" to successfulTasks,
+        "attention_tasks" to attentionTasks,
+        "stale_tasks" to staleTasks,
+        "total_attempts" to totalAttempts,
+        "failed_attempts" to failedAttempts,
+        "retries" to retries,
+        "total_gates" to totalGates,
+        "passed_gates" to passedGates,
+        "failed_gates" to failedGates,
+        "gate_pass_percent" to gatePassPercent,
+        "success_percent" to successPercent,
+        "average_attempt_duration_millis" to averageAttemptDurationMillis,
+        "oldest_review_age_millis" to oldestReviewAgeMillis,
+        "last_activity_at_millis" to lastActivityAtMillis,
+        "status_counts" to statusCounts,
+        "failure_counts" to failureCounts,
+        "stale_task_ids" to staleTaskIds,
+        "generated_at_millis" to generatedAtMillis,
+        "stale_after_millis" to staleAfterMillis
+    )
+}
+
+object AgentSelfEvolutionHealthAnalyzer {
+    private val activeStatuses = setOf(
+        AgentSelfEvolutionStatus.PREPARING,
+        AgentSelfEvolutionStatus.RUNNING,
+        AgentSelfEvolutionStatus.VALIDATING,
+        AgentSelfEvolutionStatus.PUBLISHING
+    )
+    private val successfulStatuses = setOf(
+        AgentSelfEvolutionStatus.PUBLISHED,
+        AgentSelfEvolutionStatus.COMPLETED
+    )
+    private val attentionStatuses = setOf(
+        AgentSelfEvolutionStatus.FAILED,
+        AgentSelfEvolutionStatus.BLOCKED
+    )
+
+    fun summarize(
+        tasks: List<AgentSelfEvolutionTask>,
+        nowMillis: Long = System.currentTimeMillis(),
+        staleAfterMillis: Long = 30 * 60_000L
+    ): AgentSelfEvolutionHealth {
+        val now = nowMillis.coerceAtLeast(0L)
+        val staleAfter = staleAfterMillis.coerceAtLeast(60_000L)
+        val attempts = tasks.flatMap(AgentSelfEvolutionTask::attempts)
+        val gates = attempts.flatMap(AgentSelfEvolutionAttempt::gates)
+        val statusCounts = tasks.groupingBy { it.status.wireValue }.eachCount().toSortedMap()
+        val failureCounts = linkedMapOf<String, Int>()
+        attempts.map(AgentSelfEvolutionAttempt::failureCode)
+            .filter(String::isNotBlank)
+            .forEach { code -> failureCounts[code] = (failureCounts[code] ?: 0) + 1 }
+        tasks.filter { task ->
+            task.lastErrorCode.isNotBlank() &&
+                task.lastErrorCode != task.attempts.lastOrNull()?.failureCode.orEmpty()
+        }
+            .forEach { task ->
+                failureCounts[task.lastErrorCode] = (failureCounts[task.lastErrorCode] ?: 0) + 1
+            }
+        val staleIds = tasks.asSequence()
+            .filter { it.status in activeStatuses }
+            .filter { it.updatedAtMillis > 0L && now - it.updatedAtMillis >= staleAfter }
+            .map(AgentSelfEvolutionTask::taskId)
+            .sorted()
+            .toList()
+        val overdueReviewIds = tasks.asSequence()
+            .filter { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL }
+            .filter { it.updatedAtMillis > 0L && now - it.updatedAtMillis >= staleAfter }
+            .map(AgentSelfEvolutionTask::taskId)
+            .toSet()
+        val attentionIds = tasks.asSequence()
+            .filter { it.status in attentionStatuses }
+            .map(AgentSelfEvolutionTask::taskId)
+            .toMutableSet()
+            .apply {
+                addAll(staleIds)
+                addAll(overdueReviewIds)
+            }
+        val durations = attempts.mapNotNull { attempt ->
+            if (
+                attempt.startedAtMillis > 0L &&
+                attempt.completedAtMillis >= attempt.startedAtMillis
+            ) attempt.completedAtMillis - attempt.startedAtMillis else null
+        }
+        val passedGates = gates.count { it.status == AgentSelfEvolutionGateStatus.PASSED }
+        val failedGates = gates.count {
+            it.status in setOf(
+                AgentSelfEvolutionGateStatus.FAILED,
+                AgentSelfEvolutionGateStatus.CANCELLED
+            )
+        }
+        val decidedGates = passedGates + failedGates
+        val successful = tasks.count { it.status in successfulStatuses }
+        val unsuccessful = tasks.count { it.status in attentionStatuses }
+        val decidedTasks = successful + unsuccessful
+        val reviewAges = tasks.mapNotNull { task ->
+            if (
+                task.status == AgentSelfEvolutionStatus.WAITING_APPROVAL &&
+                task.updatedAtMillis > 0L
+            ) now - task.updatedAtMillis else null
+        }
+        return AgentSelfEvolutionHealth(
+            totalTasks = tasks.size,
+            queuedTasks = tasks.count { it.status == AgentSelfEvolutionStatus.PROPOSED },
+            activeTasks = tasks.count { it.status in activeStatuses },
+            waitingReview = tasks.count { it.status == AgentSelfEvolutionStatus.WAITING_APPROVAL },
+            successfulTasks = successful,
+            attentionTasks = attentionIds.size,
+            staleTasks = staleIds.size,
+            totalAttempts = attempts.size,
+            failedAttempts = attempts.count { it.status == AgentSelfEvolutionStatus.FAILED },
+            retries = tasks.sumOf { (it.attempts.size - 1).coerceAtLeast(0) },
+            totalGates = gates.size,
+            passedGates = passedGates,
+            failedGates = failedGates,
+            gatePassPercent = if (decidedGates == 0) 0 else
+                (passedGates * 100 + decidedGates / 2) / decidedGates,
+            successPercent = if (decidedTasks == 0) 0 else
+                (successful * 100 + decidedTasks / 2) / decidedTasks,
+            averageAttemptDurationMillis = if (durations.isEmpty()) 0L else
+                durations.sum() / durations.size,
+            oldestReviewAgeMillis = reviewAges.maxOrNull() ?: 0L,
+            lastActivityAtMillis = tasks.maxOfOrNull(AgentSelfEvolutionTask::updatedAtMillis) ?: 0L,
+            statusCounts = statusCounts,
+            failureCounts = failureCounts.toSortedMap(),
+            staleTaskIds = staleIds,
+            generatedAtMillis = now,
+            staleAfterMillis = staleAfter
+        )
+    }
+}
+
 data class AgentSelfEvolutionPrepareResult(
     val baseCommit: String,
     val branch: String
@@ -480,6 +642,16 @@ class AgentSelfEvolutionManager(
     fun get(taskId: String): AgentSelfEvolutionTask? = store.get(taskId)
 
     fun list(limit: Int = 100): List<AgentSelfEvolutionTask> = store.list(limit)
+
+    fun health(
+        limit: Int = 500,
+        nowMillis: Long = clock(),
+        staleAfterMillis: Long = 30 * 60_000L
+    ): AgentSelfEvolutionHealth = AgentSelfEvolutionHealthAnalyzer.summarize(
+        store.list(limit),
+        nowMillis,
+        staleAfterMillis
+    )
 
     private fun requireTask(taskId: String): AgentSelfEvolutionTask =
         store.get(taskId) ?: throw IllegalArgumentException("Evolution task was not found")

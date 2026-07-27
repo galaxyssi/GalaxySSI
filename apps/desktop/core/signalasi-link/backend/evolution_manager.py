@@ -12,6 +12,7 @@ import sys
 import threading
 import time
 import uuid
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
@@ -27,6 +28,9 @@ TERMINAL_STATUSES = {
     "rolled_back",
 }
 CANDIDATE_STATUSES = {"waiting_approval", "publishing", "published"}
+ACTIVE_EXECUTION_STATUSES = {"preparing", "running", "validating", "publishing"}
+SUCCESS_STATUSES = {"published", "completed"}
+ATTENTION_STATUSES = {"failed", "blocked"}
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 TASK_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
 SAFE_SCOPE_COMPONENT = re.compile(r"^[A-Za-z0-9._+@() -]+$")
@@ -120,6 +124,36 @@ class EvolutionTask:
 
 
 @dataclass(frozen=True)
+class EvolutionHealth:
+    total_tasks: int
+    queued_tasks: int
+    active_tasks: int
+    waiting_review: int
+    successful_tasks: int
+    attention_tasks: int
+    stale_tasks: int
+    total_attempts: int
+    failed_attempts: int
+    retries: int
+    total_gates: int
+    passed_gates: int
+    failed_gates: int
+    gate_pass_percent: int
+    success_percent: int
+    average_attempt_duration_millis: int
+    oldest_review_age_millis: int
+    last_activity_at_millis: int
+    status_counts: dict[str, int]
+    failure_counts: dict[str, int]
+    stale_task_ids: list[str]
+    generated_at_millis: int
+    stale_after_millis: int
+
+    def public(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class GateCommand:
     id: str
     argv: tuple[str, ...]
@@ -133,6 +167,88 @@ EventSink = Callable[[dict[str, Any]], None]
 
 def _now_millis() -> int:
     return int(time.time() * 1_000)
+
+
+def evolution_health(
+    tasks: Iterable[EvolutionTask],
+    *,
+    now_millis: int | None = None,
+    stale_after_millis: int = 30 * 60 * 1_000,
+) -> EvolutionHealth:
+    rows = list(tasks)
+    now = _now_millis() if now_millis is None else max(0, int(now_millis))
+    stale_after = max(60_000, int(stale_after_millis))
+    statuses = Counter(task.status for task in rows)
+    attempts = [attempt for task in rows for attempt in task.attempts]
+    gates = [gate for attempt in attempts for gate in attempt.gates]
+    failure_counts: Counter[str] = Counter(
+        attempt.failure_code for attempt in attempts if attempt.failure_code
+    )
+    for task in rows:
+        last_attempt_code = task.attempts[-1].failure_code if task.attempts else ""
+        if task.last_error_code and task.last_error_code != last_attempt_code:
+            failure_counts[task.last_error_code] += 1
+    stale_ids = sorted(
+        task.task_id
+        for task in rows
+        if task.status in ACTIVE_EXECUTION_STATUSES
+        and task.updated_at_millis > 0
+        and now - task.updated_at_millis >= stale_after
+    )
+    overdue_reviews = [
+        task
+        for task in rows
+        if task.status == "waiting_approval"
+        and task.updated_at_millis > 0
+        and now - task.updated_at_millis >= stale_after
+    ]
+    durations = [
+        attempt.completed_at_millis - attempt.started_at_millis
+        for attempt in attempts
+        if attempt.started_at_millis > 0
+        and attempt.completed_at_millis >= attempt.started_at_millis
+    ]
+    passed_gates = sum(gate.status == "passed" for gate in gates)
+    failed_gates = sum(gate.status in {"failed", "cancelled"} for gate in gates)
+    decided_gates = passed_gates + failed_gates
+    successful = sum(task.status in SUCCESS_STATUSES for task in rows)
+    unsuccessful = sum(task.status in ATTENTION_STATUSES for task in rows)
+    decided_tasks = successful + unsuccessful
+    attention_ids = {
+        task.task_id for task in rows if task.status in ATTENTION_STATUSES
+    } | set(stale_ids) | {task.task_id for task in overdue_reviews}
+    review_ages = [
+        now - task.updated_at_millis
+        for task in rows
+        if task.status == "waiting_approval" and task.updated_at_millis > 0
+    ]
+    return EvolutionHealth(
+        total_tasks=len(rows),
+        queued_tasks=statuses["proposed"],
+        active_tasks=sum(statuses[status] for status in ACTIVE_EXECUTION_STATUSES),
+        waiting_review=statuses["waiting_approval"],
+        successful_tasks=successful,
+        attention_tasks=len(attention_ids),
+        stale_tasks=len(stale_ids),
+        total_attempts=len(attempts),
+        failed_attempts=sum(attempt.status == "failed" for attempt in attempts),
+        retries=sum(max(0, len(task.attempts) - 1) for task in rows),
+        total_gates=len(gates),
+        passed_gates=passed_gates,
+        failed_gates=failed_gates,
+        gate_pass_percent=(passed_gates * 100 + decided_gates // 2) // decided_gates
+        if decided_gates else 0,
+        success_percent=(successful * 100 + decided_tasks // 2) // decided_tasks
+        if decided_tasks else 0,
+        average_attempt_duration_millis=round(sum(durations) / len(durations)) if durations else 0,
+        oldest_review_age_millis=max(review_ages, default=0),
+        last_activity_at_millis=max((task.updated_at_millis for task in rows), default=0),
+        status_counts=dict(sorted(statuses.items())),
+        failure_counts=dict(sorted(failure_counts.items())),
+        stale_task_ids=stale_ids,
+        generated_at_millis=now,
+        stale_after_millis=stale_after,
+    )
 
 
 def _state_root() -> Path:
@@ -429,6 +545,19 @@ class EvolutionManager:
         self._emit(task, "rolled_back")
         return task
 
+    def health(
+        self,
+        *,
+        limit: int = 500,
+        now_millis: int | None = None,
+        stale_after_millis: int = 30 * 60 * 1_000,
+    ) -> EvolutionHealth:
+        return evolution_health(
+            self.store.list(limit=limit),
+            now_millis=now_millis,
+            stale_after_millis=stale_after_millis,
+        )
+
     def publish(self, task_id: str, approval_hash: str, *, base_branch: str = "main") -> EvolutionTask:
         task = self.require(task_id)
         if task.status != "waiting_approval" or not task.candidate_branch or not task.candidate_commit:
@@ -444,7 +573,34 @@ class EvolutionManager:
         clean_base = re.sub(r"[^A-Za-z0-9._/-]", "", str(base_branch or "main"))[:120]
         if not clean_base or clean_base.startswith(("-", "/")) or ".." in clean_base:
             raise EvolutionError("base_branch_invalid", "Pull request base branch is invalid.")
-        worktree = Path(attempt.worktree)
+        worktree = Path(attempt.worktree).resolve()
+        if not worktree.is_dir() or not _inside(worktree, self.store.worktrees_root):
+            self._reject_publish(
+                task,
+                "candidate_workspace_invalid",
+                "Evolution candidate workspace is missing or outside managed storage.",
+            )
+        current_commit = self._git_text(("rev-parse", "HEAD"), cwd=worktree)
+        if not secrets.compare_digest(current_commit.casefold(), task.candidate_commit.casefold()):
+            self._reject_publish(
+                task,
+                "candidate_changed_after_review",
+                "Evolution candidate changed after review. Validate a new candidate before publishing.",
+            )
+        current_branch = self._git_text(("branch", "--show-current"), cwd=worktree)
+        if current_branch != task.candidate_branch or current_branch != attempt.branch:
+            self._reject_publish(
+                task,
+                "candidate_branch_changed_after_review",
+                "Evolution candidate branch changed after review.",
+            )
+        dirty = self._git_text(("status", "--porcelain=v1"), cwd=worktree)
+        if dirty:
+            self._reject_publish(
+                task,
+                "candidate_dirty_after_review",
+                "Evolution candidate has unreviewed changes. Validate a new candidate before publishing.",
+            )
         task.status = "publishing"
         self.store.save(task)
         self._emit(task, "publishing")
@@ -911,6 +1067,13 @@ class EvolutionManager:
         task.last_error = "Evolution task was cancelled."
         self.store.save(task)
         self._emit(task, "cancelled")
+
+    def _reject_publish(self, task: EvolutionTask, code: str, message: str) -> None:
+        task.last_error_code = code
+        task.last_error = message[:4_000]
+        self.store.save(task)
+        self._emit(task, "publish_rejected", reason=code)
+        raise EvolutionError(code, message)
 
     def _emit(self, task: EvolutionTask, event: str, **metadata: Any) -> None:
         self.event_sink({
