@@ -105,6 +105,93 @@ class AgentRuntimeProjectWorkspaceTest {
         }
     }
 
+    @Test
+    fun checkpointsAndAtomicallyRestoresTheDurableProject() {
+        val project = File(projectRoot, "workspace-one").apply { mkdirs() }
+        File(project, "README.md").writeText("stable")
+        val checkpoint = manager.checkpoint(
+            workspaceId = "workspace-one",
+            checkpointId = "before-change",
+            byteLimit = 8L * 1024L * 1024L
+        )
+
+        val prepared = manager.prepare(request("run-change", "print('change')"))
+        File(prepared.directory, "README.md").writeText("changed")
+        File(prepared.directory, "generated.txt").writeText("candidate")
+        manager.syncProject(prepared, 8L * 1024L * 1024L)
+        assertEquals("changed", File(project, "README.md").readText())
+        assertTrue(File(project, "generated.txt").isFile)
+
+        val restored = manager.rollback(
+            workspaceId = "workspace-one",
+            checkpointId = checkpoint.checkpointId,
+            byteLimit = 8L * 1024L * 1024L
+        )
+
+        assertEquals(1, restored.fileCount)
+        assertEquals("stable", File(project, "README.md").readText())
+        assertFalse(File(project, "generated.txt").exists())
+        assertFalse(File(project, "main.py").exists())
+        val status = manager.workspaceStatus("workspace-one")
+        assertEquals(1, status.fileCount)
+        assertEquals(listOf("before-change"), status.checkpoints.map { it.checkpointId })
+        assertFalse(status.publicValue().toString().contains(root.absolutePath))
+    }
+
+    @Test
+    fun commitsCandidateAndPromotesPreviousProjectToARecoveryCheckpoint() {
+        val project = File(projectRoot, "workspace-one").apply { mkdirs() }
+        File(project, "value.txt").writeText("stable")
+        val prepared = manager.prepare(request("run-commit", "print('candidate')"))
+        File(prepared.directory, "value.txt").writeText("candidate")
+        File(prepared.directory, "new.txt").writeText("created")
+
+        val commit = manager.commitProject(
+            prepared = prepared,
+            byteLimit = 8L * 1024L * 1024L,
+            checkpointId = "pre-run-commit"
+        )
+
+        assertEquals("candidate", File(project, "value.txt").readText())
+        assertEquals("created", File(project, "new.txt").readText())
+        assertEquals("pre-run-commit", commit.checkpoint.checkpointId)
+        assertEquals(1, commit.checkpoint.fileCount)
+        assertTrue(commit.project.fileCount >= 3)
+
+        manager.rollback(
+            workspaceId = "workspace-one",
+            checkpointId = commit.checkpoint.checkpointId,
+            byteLimit = 8L * 1024L * 1024L
+        )
+        assertEquals("stable", File(project, "value.txt").readText())
+        assertFalse(File(project, "new.txt").exists())
+        assertFalse(File(project, "main.py").exists())
+    }
+
+    @Test
+    fun checkpointCannotBeRestoredIntoAnotherConversationWorkspace() {
+        File(projectRoot, "workspace-one").apply {
+            mkdirs()
+            File(this, "private.txt").writeText("workspace one")
+        }
+        manager.checkpoint(
+            workspaceId = "workspace-one",
+            checkpointId = "private-checkpoint",
+            byteLimit = 8L * 1024L * 1024L
+        )
+
+        val rejected = runCatching {
+            manager.rollback(
+                workspaceId = "workspace-two",
+                checkpointId = "private-checkpoint",
+                byteLimit = 8L * 1024L * 1024L
+            )
+        }
+
+        assertTrue(rejected.isFailure)
+        assertFalse(File(projectRoot, "workspace-two/private.txt").exists())
+    }
+
     private fun request(
         requestId: String,
         source: String,

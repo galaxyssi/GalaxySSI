@@ -195,12 +195,16 @@ class AgentLearningEngineTest {
                 "sha256" to "d".repeat(64),
                 "host_path" to "C:/private/result.json"
             )),
+            checkpointId = "pre-request-1",
+            workspaceDisposition = AgentRuntimeWorkspaceDisposition.COMMITTED,
             createdAtMillis = 1_000L,
             completedAtMillis = 1_100L
         ).toEvidenceMap()
 
         assertFalse(AgentNativeJsonCodec.stringify(evidence).contains("host_path"))
         assertFalse(AgentNativeJsonCodec.stringify(evidence).contains("C:/private"))
+        assertEquals("pre-request-1", evidence["checkpoint_id"])
+        assertEquals("committed", evidence["workspace_disposition"])
     }
 
     @Test
@@ -216,6 +220,7 @@ class AgentLearningEngineTest {
         assertFalse(failed.isSuccess)
         assertEquals(7, failed.output["exit_code"])
         assertEquals("partial", failed.output["stdout"])
+        assertEquals("unchanged", failed.output["workspace_disposition"])
         assertEquals("on_device_runtime_nonzero_exit", failed.error?.code)
     }
 
