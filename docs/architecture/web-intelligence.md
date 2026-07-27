@@ -109,3 +109,11 @@ Cache inspection, local extraction, cached similarity search, and watch manageme
 Android registers the operations through `AgentWebIntelligenceNativeTools` and exposes them to the native planner. Public web research is low risk and executes without an unnecessary confirmation prompt.
 
 Desktop registers the same operation IDs through `DesktopNativeToolRegistry`. The shared IDs allow task plans, Skills, proactive jobs, and test fixtures to remain platform-neutral while preserving platform-specific transport and encrypted-storage implementations.
+
+Direct cloud-provider conversations on Android and Desktop use the same Web
+Intelligence services through provider-safe function aliases. Time-sensitive
+interpretation uses the device-local date, time, and UTC offset. Every request
+receives the same tool catalog, and the model decides from the user's meaning
+whether evidence is needed. Structured function calls and provider-specific inline DSML calls
+are normalized into the same bounded execution loop; internal tool markup is
+never rendered as an assistant answer.

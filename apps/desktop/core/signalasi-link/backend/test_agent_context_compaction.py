@@ -154,7 +154,12 @@ class AgentContextCompactionTest(unittest.TestCase):
             result = agent_gateway.ask_cloud_model("current request", messages=messages)
 
         self.assertEqual("done", result)
-        self.assertEqual(messages, captured["payload"]["messages"])
+        sent = captured["payload"]["messages"]
+        self.assertIn("Current local date, time, and UTC offset", sent[0]["content"])
+        self.assertNotIn("Asia/Shanghai", sent[0]["content"])
+        self.assertEqual(messages, sent[1:])
+        self.assertEqual(10, len(captured["payload"]["tools"]))
+        self.assertEqual("auto", captured["payload"]["tool_choice"])
 
     def test_cloud_model_recompiles_with_smaller_token_windows_after_overflow(self):
         request = AgentAdapterRequest(
