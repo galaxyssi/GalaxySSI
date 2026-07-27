@@ -14,6 +14,14 @@ import java.util.zip.ZipOutputStream
 
 enum class AgentRuntimeReceiptStatus { RUNNING, COMPLETED, FAILED, CANCELLED, TIMED_OUT }
 
+enum class AgentRuntimeWorkspaceDisposition(val wireValue: String) {
+    UNCHANGED("unchanged"),
+    COMMITTED("committed"),
+    FAILED_CANDIDATE("failed_candidate"),
+    ROLLED_BACK("rolled_back"),
+    ROLLBACK_FAILED("rollback_failed")
+}
+
 data class AgentRuntimeExecutionReceipt(
     val requestId: String,
     val workspaceId: String,
@@ -29,6 +37,8 @@ data class AgentRuntimeExecutionReceipt(
     val stderrSha256: String = "",
     val artifacts: List<Map<String, Any?>> = emptyList(),
     val error: String = "",
+    val checkpointId: String = "",
+    val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val completedAtMillis: Long = 0L
 )
@@ -62,6 +72,8 @@ fun AgentRuntimeExecutionReceipt.toEvidenceMap(): AgentNativeJsonObject = linked
         )
     },
     "error" to error,
+    "checkpoint_id" to checkpointId,
+    "workspace_disposition" to workspaceDisposition.wireValue,
     "created_at_millis" to createdAtMillis,
     "completed_at_millis" to completedAtMillis
 )
@@ -99,12 +111,19 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
             stdoutSha256 = sha256(response.stdout.toByteArray(Charsets.UTF_8)),
             stderrSha256 = sha256(response.stderr.toByteArray(Charsets.UTF_8)),
             artifacts = artifacts.take(MAX_ARTIFACTS),
+            checkpointId = response.checkpointId,
+            workspaceDisposition = response.workspaceDisposition,
             completedAtMillis = System.currentTimeMillis()
         )
     }
 
     @Synchronized
-    fun fail(requestId: String, error: Throwable): AgentRuntimeExecutionReceipt? = update(requestId) { receipt ->
+    fun fail(
+        requestId: String,
+        error: Throwable,
+        checkpointId: String = "",
+        workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED
+    ): AgentRuntimeExecutionReceipt? = update(requestId) { receipt ->
         receipt.copy(
             status = when (error) {
                 is AgentNativeToolCancelledException -> AgentRuntimeReceiptStatus.CANCELLED
@@ -112,6 +131,8 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
                 else -> AgentRuntimeReceiptStatus.FAILED
             },
             error = error.message.orEmpty().take(MAX_ERROR_CHARS),
+            checkpointId = checkpointId.ifBlank { receipt.checkpointId },
+            workspaceDisposition = workspaceDisposition,
             completedAtMillis = System.currentTimeMillis()
         )
     }
@@ -168,6 +189,8 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
         .put("stderr_sha256", stderrSha256)
         .put("artifacts", JSONArray(artifacts.map(::JSONObject)))
         .put("error", error)
+        .put("checkpoint_id", checkpointId)
+        .put("workspace_disposition", workspaceDisposition.wireValue)
         .put("created_at_millis", createdAtMillis)
         .put("completed_at_millis", completedAtMillis)
 
@@ -203,6 +226,10 @@ class AgentRuntimeExecutionReceiptStore(context: Context) {
                 }
             },
             error = optString("error"),
+            checkpointId = optString("checkpoint_id"),
+            workspaceDisposition = AgentRuntimeWorkspaceDisposition.entries.firstOrNull {
+                it.wireValue == optString("workspace_disposition")
+            } ?: AgentRuntimeWorkspaceDisposition.UNCHANGED,
             createdAtMillis = optLong("created_at_millis"),
             completedAtMillis = optLong("completed_at_millis")
         )
@@ -260,17 +287,58 @@ data class AgentRuntimeProjectSync(
     val projectDirectory: File
 )
 
+data class AgentRuntimeProjectCommit(
+    val project: AgentRuntimeProjectSync,
+    val checkpoint: AgentRuntimeWorkspaceCheckpoint
+)
+
+data class AgentRuntimeWorkspaceCheckpoint(
+    val checkpointId: String,
+    val workspaceId: String,
+    val directory: File,
+    val fileCount: Int,
+    val totalBytes: Long,
+    val createdAtMillis: Long
+) {
+    fun publicValue(): AgentNativeJsonObject = linkedMapOf(
+        "checkpoint_id" to checkpointId,
+        "file_count" to fileCount,
+        "total_bytes" to totalBytes,
+        "created_at_millis" to createdAtMillis
+    )
+}
+
+data class AgentRuntimeWorkspaceStatus(
+    val workspaceId: String,
+    val fileCount: Int,
+    val totalBytes: Long,
+    val checkpoints: List<AgentRuntimeWorkspaceCheckpoint>
+) {
+    fun publicValue(): AgentNativeJsonObject = linkedMapOf(
+        "workspace_id" to workspaceId,
+        "file_count" to fileCount,
+        "total_bytes" to totalBytes,
+        "checkpoints" to checkpoints.map(AgentRuntimeWorkspaceCheckpoint::publicValue)
+    )
+}
+
 class AgentRuntimeWorkspaceManager private constructor(
     private val root: File,
-    private val projectRoot: File
+    private val projectRoot: File,
+    private val checkpointRoot: File
 ) {
     constructor(context: Context) : this(
         File(context.applicationContext.filesDir, "agent-runtime/workspaces"),
-        File(context.applicationContext.filesDir, "agent-native-workspaces")
+        File(context.applicationContext.filesDir, "agent-native-workspaces"),
+        File(context.applicationContext.filesDir, "agent-runtime/checkpoints")
     )
 
     internal constructor(runtimeRoot: File, projectRoot: File, forTesting: Boolean = true) :
-        this(runtimeRoot, projectRoot)
+        this(
+            runtimeRoot,
+            projectRoot,
+            File(runtimeRoot.parentFile ?: runtimeRoot, "checkpoints")
+        )
 
     @Synchronized
     fun prepare(request: AgentRuntimeExecutionRequest): AgentRuntimePreparedWorkspace {
@@ -358,6 +426,188 @@ class AgentRuntimeWorkspaceManager private constructor(
         return AgentRuntimeProjectSync(copied.fileCount, copied.totalBytes, current)
     }
 
+    /**
+     * Commits the isolated run and promotes the previous durable project to a checkpoint.
+     * This reuses the atomic backup move instead of copying the project a second time.
+     */
+    @Synchronized
+    fun commitProject(
+        prepared: AgentRuntimePreparedWorkspace,
+        byteLimit: Long,
+        checkpointId: String
+    ): AgentRuntimeProjectCommit {
+        require(checkpointId.matches(ID_PATTERN)) { "Runtime checkpoint id is invalid" }
+        val current = prepared.projectDirectory
+        val parent = current.parentFile ?: error("Agent project storage is invalid")
+        val projectStaging = safeChild(parent, ".${current.name}.${prepared.requestId}.commit-staging")
+            ?: error("Agent project staging path is invalid")
+        val checkpointWorkspace = checkpointWorkspace(prepared.workspaceId)
+        check(checkpointWorkspace.mkdirs() || checkpointWorkspace.isDirectory) {
+            "Runtime checkpoint storage is unavailable"
+        }
+        val checkpointTarget = safeChild(checkpointWorkspace, checkpointId)
+            ?: error("Runtime checkpoint path is invalid")
+        val checkpointStaging = safeChild(checkpointWorkspace, ".$checkpointId.commit-staging")
+            ?: error("Runtime checkpoint staging path is invalid")
+        check(!checkpointTarget.exists()) { "Runtime checkpoint already exists" }
+        projectStaging.deleteRecursively()
+        checkpointStaging.deleteRecursively()
+        check(projectStaging.mkdirs()) { "Agent project staging directory could not be created" }
+        val candidate = try {
+            copyTree(prepared.directory, projectStaging, byteLimit, excludeRuntimeControlFiles = true)
+        } catch (error: Throwable) {
+            projectStaging.deleteRecursively()
+            throw error
+        }
+        val previous = treeStats(current, byteLimit)
+        check(current.renameTo(checkpointStaging)) { "Agent project checkpoint could not be staged" }
+        if (!projectStaging.renameTo(current)) {
+            check(checkpointStaging.renameTo(current)) { "Agent project could not be restored after commit failure" }
+            error("Agent project snapshot could not be committed")
+        }
+        val createdAt = System.currentTimeMillis()
+        try {
+            writeCheckpointManifest(
+                directory = checkpointStaging,
+                checkpointId = checkpointId,
+                workspaceId = prepared.workspaceId,
+                fileCount = previous.fileCount,
+                totalBytes = previous.totalBytes,
+                createdAtMillis = createdAt
+            )
+            check(checkpointStaging.renameTo(checkpointTarget)) {
+                "Runtime checkpoint could not be committed"
+            }
+        } catch (error: Throwable) {
+            File(checkpointStaging, CHECKPOINT_MANIFEST).delete()
+            check(current.deleteRecursively()) { "Failed project candidate could not be removed" }
+            check(checkpointStaging.renameTo(current)) {
+                "Agent project could not be restored after checkpoint failure"
+            }
+            throw error
+        }
+        checkpointTarget.setLastModified(createdAt)
+        pruneCheckpoints(checkpointWorkspace)
+        return AgentRuntimeProjectCommit(
+            project = AgentRuntimeProjectSync(candidate.fileCount, candidate.totalBytes, current),
+            checkpoint = AgentRuntimeWorkspaceCheckpoint(
+                checkpointId = checkpointId,
+                workspaceId = prepared.workspaceId,
+                directory = checkpointTarget,
+                fileCount = previous.fileCount,
+                totalBytes = previous.totalBytes,
+                createdAtMillis = createdAt
+            )
+        )
+    }
+
+    @Synchronized
+    fun checkpoint(
+        workspaceId: String,
+        checkpointId: String,
+        byteLimit: Long
+    ): AgentRuntimeWorkspaceCheckpoint {
+        require(checkpointId.matches(ID_PATTERN)) { "Runtime checkpoint id is invalid" }
+        val project = projectDirectory(workspaceId)
+        val workspace = checkpointWorkspace(workspaceId)
+        check(workspace.mkdirs() || workspace.isDirectory) { "Runtime checkpoint storage is unavailable" }
+        val target = safeChild(workspace, checkpointId) ?: error("Runtime checkpoint path is invalid")
+        val staging = safeChild(workspace, ".$checkpointId.staging")
+            ?: error("Runtime checkpoint staging path is invalid")
+        check(!target.exists()) { "Runtime checkpoint already exists" }
+        staging.deleteRecursively()
+        check(staging.mkdirs()) { "Runtime checkpoint staging directory could not be created" }
+        val copied = try {
+            copyTree(project, staging, byteLimit, excludeRuntimeControlFiles = true)
+        } catch (error: Throwable) {
+            staging.deleteRecursively()
+            throw error
+        }
+        val createdAt = System.currentTimeMillis()
+        writeCheckpointManifest(
+            directory = staging,
+            checkpointId = checkpointId,
+            workspaceId = workspaceId,
+            fileCount = copied.fileCount,
+            totalBytes = copied.totalBytes,
+            createdAtMillis = createdAt
+        )
+        if (!staging.renameTo(target)) {
+            staging.deleteRecursively()
+            error("Runtime checkpoint could not be committed")
+        }
+        target.setLastModified(createdAt)
+        pruneCheckpoints(workspace)
+        return AgentRuntimeWorkspaceCheckpoint(
+            checkpointId,
+            workspaceId,
+            target,
+            copied.fileCount,
+            copied.totalBytes,
+            createdAt
+        )
+    }
+
+    @Synchronized
+    fun checkpoints(workspaceId: String): List<AgentRuntimeWorkspaceCheckpoint> {
+        val workspace = checkpointWorkspace(workspaceId)
+        if (!workspace.isDirectory) return emptyList()
+        return workspace.listFiles().orEmpty()
+            .filter { it.isDirectory && !it.name.startsWith(".") }
+            .mapNotNull { checkpointValue(workspaceId, it) }
+            .sortedByDescending(AgentRuntimeWorkspaceCheckpoint::createdAtMillis)
+    }
+
+    @Synchronized
+    fun workspaceStatus(workspaceId: String): AgentRuntimeWorkspaceStatus {
+        val project = projectDirectory(workspaceId)
+        val stats = treeStats(project, MAX_WORKSPACE_STATUS_BYTES)
+        return AgentRuntimeWorkspaceStatus(
+            workspaceId = workspaceId,
+            fileCount = stats.fileCount,
+            totalBytes = stats.totalBytes,
+            checkpoints = checkpoints(workspaceId)
+        )
+    }
+
+    @Synchronized
+    fun rollback(
+        workspaceId: String,
+        checkpointId: String,
+        byteLimit: Long
+    ): AgentRuntimeProjectSync {
+        require(checkpointId.matches(ID_PATTERN)) { "Runtime checkpoint id is invalid" }
+        val checkpoint = safeChild(checkpointWorkspace(workspaceId), checkpointId)
+            ?.takeIf(File::isDirectory)
+            ?: error("Runtime checkpoint was not found")
+        val manifest = checkpointValue(workspaceId, checkpoint)
+            ?: error("Runtime checkpoint manifest is invalid")
+        check(manifest.checkpointId == checkpointId) { "Runtime checkpoint identity does not match" }
+        val current = projectDirectory(workspaceId)
+        val parent = current.parentFile ?: error("Agent project storage is invalid")
+        val staging = safeChild(parent, ".${current.name}.$checkpointId.rollback-staging")
+            ?: error("Runtime rollback staging path is invalid")
+        val backup = safeChild(parent, ".${current.name}.$checkpointId.rollback-backup")
+            ?: error("Runtime rollback backup path is invalid")
+        staging.deleteRecursively()
+        backup.deleteRecursively()
+        check(staging.mkdirs()) { "Runtime rollback staging directory could not be created" }
+        val copied = try {
+            copyTree(checkpoint, staging, byteLimit, excludeRuntimeControlFiles = true)
+        } catch (error: Throwable) {
+            staging.deleteRecursively()
+            throw error
+        }
+        if (current.exists()) check(current.renameTo(backup)) { "Runtime rollback backup could not be created" }
+        if (!staging.renameTo(current)) {
+            current.deleteRecursively()
+            if (backup.exists()) backup.renameTo(current)
+            error("Runtime checkpoint could not be restored")
+        }
+        backup.deleteRecursively()
+        return AgentRuntimeProjectSync(copied.fileCount, copied.totalBytes, current)
+    }
+
     @Synchronized
     fun installArchiveCompatibilityTools(prepared: AgentRuntimePreparedWorkspace): File {
         val bin = safeChild(prepared.directory, RUNTIME_TOOL_DIRECTORY)
@@ -375,11 +625,10 @@ class AgentRuntimeWorkspaceManager private constructor(
     ): List<Map<String, Any?>> {
         val requested = request.artifactPaths.mapNotNull { relative ->
             val runtimeArtifact = safeChild(prepared.directory, relative) ?: return@mapNotNull null
-            val durableArtifact = safeChild(prepared.projectDirectory, relative)
-                ?.takeIf { it.exists() }
-                ?: runtimeArtifact.takeIf { it.exists() }
+            val artifact = runtimeArtifact.takeIf { it.exists() }
+                ?: safeChild(prepared.projectDirectory, relative)?.takeIf { it.exists() }
                 ?: return@mapNotNull null
-            relative.replace('\\', '/') to durableArtifact
+            relative.replace('\\', '/') to artifact
         }
         if (requested.size > 1 || requested.any { it.second.isDirectory }) {
             return listOf(packageProjectArtifacts(prepared, request, requested))
@@ -502,14 +751,120 @@ class AgentRuntimeWorkspaceManager private constructor(
 
     @Synchronized
     fun cleanupExpired(nowMillis: Long = System.currentTimeMillis()) {
-        if (!root.isDirectory) return
-        root.listFiles().orEmpty().filter(File::isDirectory).forEach { workspace ->
-            workspace.listFiles().orEmpty().filter(File::isDirectory).forEach { run ->
-                val age = nowMillis - run.lastModified().coerceAtLeast(0L)
-                if (age > WORKSPACE_TTL_MILLIS) run.deleteRecursively()
+        if (root.isDirectory) {
+            root.listFiles().orEmpty().filter(File::isDirectory).forEach { workspace ->
+                workspace.listFiles().orEmpty().filter(File::isDirectory).forEach { run ->
+                    val age = nowMillis - run.lastModified().coerceAtLeast(0L)
+                    if (age > WORKSPACE_TTL_MILLIS) run.deleteRecursively()
+                }
+                if (workspace.listFiles().isNullOrEmpty()) workspace.delete()
             }
-            if (workspace.listFiles().isNullOrEmpty()) workspace.delete()
         }
+        if (checkpointRoot.isDirectory) {
+            checkpointRoot.listFiles().orEmpty().filter(File::isDirectory).forEach { workspace ->
+                workspace.listFiles().orEmpty().filter(File::isDirectory).forEach { checkpoint ->
+                    val age = nowMillis - checkpoint.lastModified().coerceAtLeast(0L)
+                    if (age > CHECKPOINT_TTL_MILLIS) checkpoint.deleteRecursively()
+                }
+                if (workspace.listFiles().isNullOrEmpty()) workspace.delete()
+            }
+        }
+    }
+
+    private fun projectDirectory(workspaceId: String): File {
+        require(workspaceId.isNotBlank() && workspaceId.length <= MAX_WORKSPACE_ID_CHARS) {
+            "Runtime workspace id is invalid"
+        }
+        check(projectRoot.mkdirs() || projectRoot.isDirectory) { "Agent project storage is unavailable" }
+        return safeChild(projectRoot, workspaceId)?.apply {
+            check(mkdirs() || isDirectory) { "Agent project could not be opened" }
+        } ?: error("Agent project path is invalid")
+    }
+
+    private fun checkpointWorkspace(workspaceId: String): File {
+        require(workspaceId.isNotBlank() && workspaceId.length <= MAX_WORKSPACE_ID_CHARS) {
+            "Runtime workspace id is invalid"
+        }
+        check(checkpointRoot.mkdirs() || checkpointRoot.isDirectory) {
+            "Runtime checkpoint storage is unavailable"
+        }
+        return safeChild(
+            checkpointRoot,
+            sha256(workspaceId.toByteArray(Charsets.UTF_8)).take(32)
+        ) ?: error("Runtime checkpoint workspace path is invalid")
+    }
+
+    private fun checkpointValue(
+        workspaceId: String,
+        directory: File
+    ): AgentRuntimeWorkspaceCheckpoint? = runCatching {
+        val manifest = JSONObject(File(directory, CHECKPOINT_MANIFEST).readText(Charsets.UTF_8))
+        check(
+            manifest.optString("workspace_id_sha256") ==
+                sha256(workspaceId.toByteArray(Charsets.UTF_8))
+        ) { "Runtime checkpoint belongs to another workspace" }
+        AgentRuntimeWorkspaceCheckpoint(
+            checkpointId = manifest.getString("checkpoint_id"),
+            workspaceId = workspaceId,
+            directory = directory,
+            fileCount = manifest.getInt("file_count"),
+            totalBytes = manifest.getLong("total_bytes"),
+            createdAtMillis = manifest.getLong("created_at_millis")
+        )
+    }.getOrNull()
+
+    private fun writeCheckpointManifest(
+        directory: File,
+        checkpointId: String,
+        workspaceId: String,
+        fileCount: Int,
+        totalBytes: Long,
+        createdAtMillis: Long
+    ) {
+        File(directory, CHECKPOINT_MANIFEST).writeText(
+            JSONObject()
+                .put("checkpoint_id", checkpointId)
+                .put("workspace_id_sha256", sha256(workspaceId.toByteArray(Charsets.UTF_8)))
+                .put("file_count", fileCount)
+                .put("total_bytes", totalBytes)
+                .put("created_at_millis", createdAtMillis)
+                .toString(),
+            Charsets.UTF_8
+        )
+    }
+
+    private fun pruneCheckpoints(workspace: File) {
+        var retainedBytes = 0L
+        workspace.listFiles().orEmpty()
+            .filter { it.isDirectory && !it.name.startsWith(".") }
+            .sortedByDescending(File::lastModified)
+            .forEachIndexed { index, checkpoint ->
+                val storedBytes = runCatching {
+                    JSONObject(File(checkpoint, CHECKPOINT_MANIFEST).readText(Charsets.UTF_8))
+                        .getLong("total_bytes")
+                }.getOrNull()
+                val keep = storedBytes != null &&
+                    index < MAX_CHECKPOINTS_PER_WORKSPACE &&
+                    (index == 0 || retainedBytes + storedBytes <= MAX_CHECKPOINT_BYTES_PER_WORKSPACE)
+                if (keep) retainedBytes += storedBytes else checkpoint.deleteRecursively()
+            }
+    }
+
+    private fun treeStats(directory: File, byteLimit: Long): AgentRuntimeProjectSync {
+        var files = 0
+        var bytes = 0L
+        if (!directory.isDirectory) return AgentRuntimeProjectSync(0, 0L, directory)
+        Files.walk(directory.toPath()).use { paths ->
+            paths.forEach { path ->
+                if (Files.isSymbolicLink(path)) error("Symbolic links are not allowed in Agent projects")
+                if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                    bytes += Files.size(path)
+                    check(bytes <= byteLimit) { "Agent project exceeds the inspection quota" }
+                    files += 1
+                }
+            }
+        }
+        return AgentRuntimeProjectSync(files, bytes, directory)
     }
 
     private fun safeChild(parent: File, relative: String): File? {
@@ -615,13 +970,19 @@ class AgentRuntimeWorkspaceManager private constructor(
         private const val MAX_WORKSPACE_ID_CHARS = 64
         private const val MAX_ARTIFACT_PATH_CHARS = 1_024
         private const val MAX_PROJECT_ARCHIVE_FILES = 1_024
+        private const val MAX_CHECKPOINTS_PER_WORKSPACE = 20
+        private const val MAX_CHECKPOINT_BYTES_PER_WORKSPACE = 1024L * 1024L * 1024L
+        private const val MAX_WORKSPACE_STATUS_BYTES = 2L * 1024L * 1024L * 1024L
         private const val RUNTIME_TOOL_DIRECTORY = ".signalasi-tools/bin"
         private const val WORKSPACE_TTL_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+        private const val CHECKPOINT_TTL_MILLIS = 30L * 24L * 60L * 60L * 1_000L
+        private const val CHECKPOINT_MANIFEST = ".signalasi-checkpoint.json"
         private val ID_PATTERN = Regex("[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
         private val DOMAIN_PATTERN = Regex("(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
         private val RUNTIME_CONTROL_FILES = setOf(
             "request.json",
             "status.json",
+            CHECKPOINT_MANIFEST,
             ".signalasi-stdout",
             ".signalasi-stderr",
             ".signalasi-main"

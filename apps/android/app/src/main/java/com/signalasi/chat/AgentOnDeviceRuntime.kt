@@ -255,7 +255,9 @@ data class AgentRuntimeExecutionResponse(
     val requestId: String = "",
     val executionReceipt: AgentRuntimeExecutionReceipt? = null,
     val projectFileCount: Int = 0,
-    val projectBytes: Long = 0L
+    val projectBytes: Long = 0L,
+    val checkpointId: String = "",
+    val workspaceDisposition: AgentRuntimeWorkspaceDisposition = AgentRuntimeWorkspaceDisposition.UNCHANGED
 )
 
 fun interface AgentOnDeviceRuntimeBridge {
@@ -353,6 +355,16 @@ class AgentOnDeviceRuntimeManager(
         return AgentWorkspaceScope.withLock(request.workspaceId) { executeLocked(request) }
     }
 
+    fun workspaceStatus(workspaceId: String): AgentRuntimeWorkspaceStatus =
+        AgentWorkspaceScope.withLock(workspaceId) {
+            workspaceManager.workspaceStatus(workspaceId)
+        }
+
+    fun rollbackWorkspace(workspaceId: String, checkpointId: String): AgentRuntimeProjectSync =
+        AgentWorkspaceScope.withLock(workspaceId) {
+            workspaceManager.rollback(workspaceId, checkpointId, MAX_MANUAL_ROLLBACK_BYTES)
+        }
+
     private fun executeLocked(request: AgentRuntimeExecutionRequest): AgentRuntimeExecutionResponse {
         require(request.source.toByteArray().size <= MAX_SOURCE_BYTES) { "Runtime source exceeds the limit" }
         require(request.arguments.size <= MAX_ARGUMENTS) { "Runtime argument count exceeds the limit" }
@@ -387,6 +399,7 @@ class AgentOnDeviceRuntimeManager(
             ?: AgentOnDeviceRuntimeSupervisor.discover(appContext)
             ?: error("The on-device guest bridge is not connected")
         val prepared = workspaceManager.prepare(request)
+        val checkpointId = automaticCheckpointId(request.requestId)
         val archiveToolBin = workspaceManager.installArchiveCompatibilityTools(prepared)
         val normalizedRequest = request.copy(
             source = if (request.language == AgentRuntimeLanguage.SHELL) {
@@ -403,37 +416,81 @@ class AgentOnDeviceRuntimeManager(
             pack.manifest?.version?.takeIf(String::isNotBlank)?.let { version -> pack.id to version }
         }.toMap()
         receiptStore.begin(normalizedRequest, packVersions)
+        var committedCheckpoint: AgentRuntimeWorkspaceCheckpoint? = null
         return try {
             val rawResponse = activeBridge.execute(normalizedRequest)
             if (normalizedRequest.source != request.source) prepared.sourceFile.writeText(request.source, Charsets.UTF_8)
-            val project = workspaceManager.syncProject(prepared, normalizedRequest.resourceLimits.diskBytes)
             val artifacts = workspaceManager.collectArtifacts(prepared, normalizedRequest)
+            val commit = workspaceManager.commitProject(
+                prepared = prepared,
+                byteLimit = normalizedRequest.resourceLimits.diskBytes,
+                checkpointId = checkpointId
+            )
+            committedCheckpoint = commit.checkpoint
+            val disposition = if (rawResponse.exitCode == 0) {
+                AgentRuntimeWorkspaceDisposition.COMMITTED
+            } else {
+                AgentRuntimeWorkspaceDisposition.FAILED_CANDIDATE
+            }
             val response = rawResponse.copy(
                 artifacts = artifacts,
                 requestId = normalizedRequest.requestId,
-                projectFileCount = project.fileCount,
-                projectBytes = project.totalBytes
+                projectFileCount = commit.project.fileCount,
+                projectBytes = commit.project.totalBytes,
+                checkpointId = commit.checkpoint.checkpointId,
+                workspaceDisposition = disposition
             ).bounded()
             val receipt = receiptStore.complete(normalizedRequest.requestId, response, artifacts)
-            workspaceManager.markFinished(
-                prepared,
-                if (response.exitCode == 0) AgentRuntimeReceiptStatus.COMPLETED else AgentRuntimeReceiptStatus.FAILED
-            )
+            runCatching {
+                workspaceManager.markFinished(
+                    prepared,
+                    if (response.exitCode == 0) AgentRuntimeReceiptStatus.COMPLETED else AgentRuntimeReceiptStatus.FAILED
+                )
+            }
             response.copy(executionReceipt = receipt)
         } catch (error: Throwable) {
             if (normalizedRequest.source != request.source) {
                 runCatching { prepared.sourceFile.writeText(request.source, Charsets.UTF_8) }
             }
-            runCatching { workspaceManager.syncProject(prepared, normalizedRequest.resourceLimits.diskBytes) }
-            receiptStore.fail(normalizedRequest.requestId, error)
-            workspaceManager.markFinished(
-                prepared,
-                when (error) {
-                    is AgentNativeToolCancelledException -> AgentRuntimeReceiptStatus.CANCELLED
-                    is AgentNativeToolTimeoutException -> AgentRuntimeReceiptStatus.TIMED_OUT
-                    else -> AgentRuntimeReceiptStatus.FAILED
+            val rollback = committedCheckpoint?.let { checkpoint ->
+                runCatching {
+                    workspaceManager.rollback(
+                        normalizedRequest.workspaceId,
+                        checkpoint.checkpointId,
+                        normalizedRequest.resourceLimits.diskBytes
+                    )
                 }
+            }
+            val disposition = when {
+                rollback == null -> AgentRuntimeWorkspaceDisposition.UNCHANGED
+                rollback.isSuccess -> AgentRuntimeWorkspaceDisposition.ROLLED_BACK
+                else -> {
+                    rollback.exceptionOrNull()?.let(error::addSuppressed)
+                    AgentRuntimeWorkspaceDisposition.ROLLBACK_FAILED
+                }
+            }
+            receiptStore.fail(
+                normalizedRequest.requestId,
+                error,
+                committedCheckpoint?.checkpointId.orEmpty(),
+                disposition
             )
+            runCatching {
+                workspaceManager.markFinished(
+                    prepared,
+                    when (error) {
+                        is AgentNativeToolCancelledException -> AgentRuntimeReceiptStatus.CANCELLED
+                        is AgentNativeToolTimeoutException -> AgentRuntimeReceiptStatus.TIMED_OUT
+                        else -> AgentRuntimeReceiptStatus.FAILED
+                    }
+                )
+            }
+            if (disposition == AgentRuntimeWorkspaceDisposition.ROLLBACK_FAILED) {
+                throw IllegalStateException(
+                    "On-device execution failed and its workspace could not be restored",
+                    error
+                )
+            }
             throw error
         }
     }
@@ -654,6 +711,13 @@ class AgentOnDeviceRuntimeManager(
         artifacts = artifacts.take(MAX_ARTIFACTS)
     )
 
+    private fun automaticCheckpointId(requestId: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(requestId.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        return "pre-${digest.take(24)}"
+    }
+
     private fun JSONArray?.strings(limit: Int): List<String> = buildList {
         val source = this@strings ?: return@buildList
         for (index in 0 until minOf(source.length(), limit)) {
@@ -693,6 +757,7 @@ class AgentOnDeviceRuntimeManager(
         private const val MAX_SECRET_ENVIRONMENT_VALUES = 32
         private const val MAX_SECRET_ENVIRONMENT_VALUE_BYTES = 4 * 1024
         private const val MAX_OUTPUT_CHARS = 512 * 1024
+        private const val MAX_MANUAL_ROLLBACK_BYTES = 2L * 1024L * 1024L * 1024L
         private const val MAX_ID_CHARS = 80
         private const val MAX_CAPABILITIES = 128
         private const val MAX_DEPENDENCIES = 32
@@ -715,11 +780,20 @@ class AgentOnDeviceRuntimeManager(
 
 object AgentOnDeviceRuntimeTools {
     const val STATUS = "signalasi.runtime.status"
+    const val WORKSPACE_STATUS = "signalasi.runtime.workspace.status"
+    const val WORKSPACE_ROLLBACK = "signalasi.runtime.workspace.rollback"
     const val LIST_PACKS = "signalasi.runtime.packs.list"
     const val INSTALL_PACK = "signalasi.runtime.packs.install"
     const val EXECUTE = "signalasi.runtime.execute"
 
-    val toolIds = setOf(STATUS, LIST_PACKS, INSTALL_PACK, EXECUTE)
+    val toolIds = setOf(
+        STATUS,
+        WORKSPACE_STATUS,
+        WORKSPACE_ROLLBACK,
+        LIST_PACKS,
+        INSTALL_PACK,
+        EXECUTE
+    )
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> {
         val manager = AgentOnDeviceRuntimeManager(context.applicationContext)
@@ -741,6 +815,24 @@ object AgentOnDeviceRuntimeTools {
             ),
             AgentNativeToolDefinition(
                 descriptor = descriptor(
+                    id = WORKSPACE_STATUS,
+                    title = "Inspect the on-device project workspace",
+                    description = "Reports the current conversation project size and durable recovery checkpoints without exposing host paths.",
+                    input = AgentNativeJsonSchema.objectSchema(additionalProperties = false),
+                    risk = AgentNativeToolRisk.LOW,
+                    availability = AgentNativeToolAvailability.AVAILABLE
+                ),
+                executor = AgentNativeToolExecutor { invocation ->
+                    val status = manager.workspaceStatus(invocationWorkspaceId(invocation))
+                    AgentNativeToolExecutionResult.success(
+                        status.publicValue(),
+                        "On-device project workspace inspected"
+                    )
+                },
+                executorId = "signalasi.android_runtime_workspace"
+            ),
+            AgentNativeToolDefinition(
+                descriptor = descriptor(
                     id = LIST_PACKS,
                     title = "List on-device runtime packs",
                     description = "Lists Android-local Linux, language, FFmpeg, and toolchain pack state.",
@@ -758,6 +850,48 @@ object AgentOnDeviceRuntimeTools {
                 executorId = "signalasi.android_runtime_broker"
             ),
             runtimePackInstallDefinition(context.applicationContext, manager),
+            AgentNativeToolDefinition(
+                descriptor = descriptor(
+                    id = WORKSPACE_ROLLBACK,
+                    title = "Restore an on-device project checkpoint",
+                    description = "Atomically restores this conversation project from a durable checkpoint after an execution failure or unwanted change.",
+                    input = AgentNativeJsonSchema.objectSchema(
+                        properties = mapOf(
+                            "checkpoint_id" to AgentNativeJsonSchema.string(maxLength = 128)
+                        ),
+                        required = setOf("checkpoint_id"),
+                        additionalProperties = false
+                    ),
+                    risk = AgentNativeToolRisk.MEDIUM,
+                    availability = AgentNativeToolAvailability.AVAILABLE
+                ),
+                executor = AgentNativeToolExecutor { invocation ->
+                    val checkpointId = invocation.input["checkpoint_id"]?.toString().orEmpty()
+                    runCatching {
+                        manager.rollbackWorkspace(invocationWorkspaceId(invocation), checkpointId)
+                    }.fold(
+                        onSuccess = { restored ->
+                            AgentNativeToolExecutionResult.success(
+                                mapOf(
+                                    "checkpoint_id" to checkpointId,
+                                    "workspace_file_count" to restored.fileCount,
+                                    "workspace_bytes" to restored.totalBytes,
+                                    "workspace_disposition" to AgentRuntimeWorkspaceDisposition.ROLLED_BACK.wireValue
+                                ),
+                                "On-device project checkpoint restored"
+                            )
+                        },
+                        onFailure = { error ->
+                            AgentNativeToolExecutionResult.failure(
+                                "runtime_workspace_rollback_failed",
+                                error.message ?: "On-device project checkpoint could not be restored"
+                            )
+                        }
+                    )
+                },
+                executorId = "signalasi.android_runtime_workspace",
+                provenanceMetadata = mapOf("operation" to "atomic_checkpoint_restore")
+            ),
             AgentNativeToolDefinition(
                 descriptor = descriptor(
                     id = EXECUTE,
@@ -782,10 +916,7 @@ object AgentOnDeviceRuntimeTools {
                         networkEnabled = invocation.input["network_enabled"] as? Boolean ?: false,
                         allowedNetworkDomains = invocation.input.stringList("allowed_network_domains"),
                         artifactPaths = invocation.input.stringList("artifact_paths"),
-                        workspaceId = invocation.context.attributes["workspace_id"].orEmpty()
-                            .ifBlank { invocation.context.turnId }
-                            .ifBlank { invocation.context.conversationId }
-                            .ifBlank { invocation.context.invocationId },
+                        workspaceId = invocationWorkspaceId(invocation),
                         requestId = invocation.context.invocationId,
                         cancellationToken = invocation.cancellationToken,
                         progressListener = { progress ->
@@ -945,6 +1076,8 @@ object AgentOnDeviceRuntimeTools {
         put("duration_ms", response.durationMillis)
         put("workspace_file_count", response.projectFileCount)
         put("workspace_bytes", response.projectBytes)
+        put("checkpoint_id", response.checkpointId)
+        put("workspace_disposition", response.workspaceDisposition.wireValue)
         put("artifacts", response.artifacts)
         response.executionReceipt?.let { put("execution_receipt", it.toEvidenceMap()) }
     }
@@ -997,6 +1130,12 @@ object AgentOnDeviceRuntimeTools {
             System.currentTimeMillis()
         )
     }
+
+    private fun invocationWorkspaceId(invocation: AgentNativeToolInvocation): String =
+        invocation.context.attributes["workspace_id"].orEmpty()
+            .ifBlank { invocation.context.turnId }
+            .ifBlank { invocation.context.conversationId }
+            .ifBlank { invocation.context.invocationId }
 
     private fun runtimeStatusOutput(status: AgentOnDeviceRuntimeStatus): Map<String, Any?> = mapOf(
         "backend" to status.backend.wireValue,
