@@ -1,7 +1,9 @@
+import hashlib
 import json
 import tempfile
 import time
 import unittest
+from collections import Counter
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,7 +20,9 @@ from web_intelligence import (
     SEARCH,
     WATCH,
     ENGINE_SPECS,
+    WEB_VERTICALS,
     EngineReceipt,
+    FusedSearchResult,
     HttpResponse,
     PublicWebTransport,
     WebIntelligenceError,
@@ -39,6 +43,7 @@ from web_intelligence import (
 class FakeTransport:
     def __init__(self):
         self.calls = []
+        self.requests = []
         self.pages = {
             "https://docs.example.com/root": """
                 <html><head><title>SignalASI documentation</title></head>
@@ -58,8 +63,17 @@ class FakeTransport:
 
     def fetch(self, url, *, timeout_seconds, max_bytes, headers=None):
         self.calls.append(url)
+        self.requests.append({"url": url, "headers": dict(headers or {})})
         started = time.monotonic()
-        if "bing.com/search" in url:
+        if "site%3Atripadvisor.com" in url:
+            body = """
+                <html><body>
+                <a href="https://www.tripadvisor.com/Hotel_Review-test">Trusted result</a>
+                <a href="https://attacker.example/fake">Injected result</a>
+                </body></html>
+            """
+            content_type = "text/html; charset=utf-8"
+        elif "bing.com/search" in url:
             body = """
                 <html><body>
                 <a href="https://docs.example.com/root?utm_source=bing">SignalASI documentation</a>
@@ -75,6 +89,61 @@ class FakeTransport:
                 </body></html>
             """
             content_type = "text/html; charset=utf-8"
+        elif "duckduckgo.com/?" in url and "iax=images" in url:
+            body = """<script>window.__search = {vqd='123-456'};</script>"""
+            content_type = "text/html; charset=utf-8"
+        elif "duckduckgo.com/i.js" in url:
+            body = json.dumps({
+                "results": [{
+                    "title": "SignalASI mobile agent",
+                    "url": "https://images.example.com/article",
+                    "image": "https://cdn.example.com/signalasi.png",
+                    "thumbnail": "https://cdn.example.com/signalasi-thumb.png",
+                    "width": 1200,
+                    "height": 800,
+                }]
+            })
+            content_type = "application/json"
+        elif "api2.marginalia-search.com/search" in url:
+            body = json.dumps({
+                "results": [{
+                    "title": "Independent SignalASI notes",
+                    "url": "https://indie.example.com/signalasi",
+                    "description": "A small-web source about SignalASI.",
+                }]
+            })
+            content_type = "application/json"
+        elif "api.github.com/search/code" in url:
+            body = json.dumps({
+                "items": [{
+                    "name": "AgentLoop.kt",
+                    "path": "apps/android/AgentLoop.kt",
+                    "html_url": "https://github.com/signalasi/SignalASI/blob/main/apps/android/AgentLoop.kt",
+                    "repository": {
+                        "full_name": "signalasi/SignalASI",
+                        "description": "SignalASI mobile super agent",
+                        "updated_at": "2026-07-27T00:00:00Z",
+                    },
+                }]
+            })
+            content_type = "application/json"
+        elif "api.search.brave.com/res/v1/images/search" in url:
+            body = json.dumps({
+                "results": [{
+                    "title": "SignalASI interface",
+                    "url": "https://design.example.com/signalasi",
+                    "source": "design.example.com",
+                    "properties": {
+                        "url": "https://cdn.example.com/signalasi-interface.jpg",
+                        "width": 1600,
+                        "height": 900,
+                    },
+                    "thumbnail": {
+                        "src": "https://cdn.example.com/signalasi-interface-thumb.jpg",
+                    },
+                }]
+            })
+            content_type = "application/json"
         elif url in self.pages:
             body = self.pages[url]
             content_type = "text/html; charset=utf-8"
@@ -110,8 +179,110 @@ class WebIntelligenceServiceTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_catalog_exceeds_eighteen_real_source_adapters_and_exposes_ten_tools(self):
-        self.assertGreaterEqual(len(ENGINE_SPECS), 30)
+        self.assertEqual(287, len(ENGINE_SPECS))
         self.assertEqual(len(ENGINE_SPECS), len(engine_catalog()))
+        self.assertTrue({
+            "bing", "bing_news", "brave", "brave_image", "duckduckgo",
+            "duckduckgo_image", "mojeek", "marginalia", "wikipedia",
+            "stackoverflow", "hacker_news", "lobsters", "github_code",
+            "devdocs", "mdn", "arxiv", "semantic_scholar", "crates_io",
+        }.issubset({spec.engine_id for spec in ENGINE_SPECS}))
+        counts = Counter(
+            spec.vertical
+            for spec in ENGINE_SPECS
+            if spec.default_enabled
+        )
+        for vertical in set(WEB_VERTICALS) - {"local"}:
+            self.assertIn(
+                counts[vertical],
+                range(5, 11),
+                f"{vertical} must expose five to ten sources",
+            )
+        digest = hashlib.sha256(
+            "\n".join(sorted(spec.engine_id for spec in ENGINE_SPECS)).encode()
+        ).hexdigest()
+        self.assertEqual(
+            "ebe2e39787edab5166db322b0322e1440ccc733a150db5375443e6bd721f56a9",
+            digest,
+        )
+
+    def test_repeated_independent_evidence_promotes_restricted_learned_source(self):
+        result = FusedSearchResult(
+            title="Independent travel guide",
+            url="https://independent-travel.example/shanghai",
+            excerpt="A current destination guide",
+            vertical="travel",
+            published_at="",
+        )
+        self.service.store.observe_source_candidates(
+            "Shanghai hotel guide", ("travel",), (result,)
+        )
+        self.service.store.observe_source_candidates(
+            "Shanghai visitor itinerary", ("travel",), (result,)
+        )
+        self.service.store.observe_source_candidates(
+            "Shanghai hotel guide", ("travel",), (result,)
+        )
+
+        learned = self.service.store.learned_sources()
+        self.assertEqual(1, len(learned))
+        self.assertEqual("verified", learned[0].status)
+        self.assertEqual(("independent-travel.example",), learned[0].engine_spec(0).allowed_hosts)
+        self.service._refresh_learned_sources()
+        selection = self.service._select_engines(
+            "Shanghai travel",
+            32,
+            (),
+            ("travel",),
+            (),
+        )
+        self.assertIn(learned[0].source_id, selection.selected)
+
+    def test_indexed_source_rejects_results_outside_declared_domain(self):
+        result = self.service.search({
+            "query": "Shanghai hotel",
+            "engines": ["tripadvisor"],
+            "engine_fanout": 1,
+            "use_cache": False,
+        })
+
+        self.assertEqual(1, len(result["results"]))
+        self.assertEqual(
+            "tripadvisor.com",
+            (urlsplit(result["results"][0]["url"]).hostname or "").removeprefix("www."),
+        )
+
+    def test_learned_category_tags_can_extend_the_builtin_taxonomy(self):
+        result = FusedSearchResult(
+            title="Robotics field notes",
+            url="https://robotics-field-notes.example/latest",
+            excerpt="Independent robotics engineering evidence",
+            published_at="",
+            vertical="technology",
+        )
+        self.service.store.observe_source_candidates(
+            "robot motion planning", ("robotics",), (result,)
+        )
+        self.service.store.observe_source_candidates(
+            "robot actuator guide", ("robotics",), (result,)
+        )
+        self.service.store.observe_source_candidates(
+            "robot motion planning", ("robotics",), (result,)
+        )
+        learned = self.service.store.learned_sources()[0]
+        self.service._refresh_learned_sources()
+
+        selection = self.service._select_engines(
+            "specialized field notes",
+            1,
+            (),
+            (),
+            ("robotics",),
+        )
+
+        self.assertEqual("verified", learned.status)
+        self.assertIn("robotics", learned.category_tags)
+        self.assertEqual((learned.source_id,), selection.selected)
         self.assertEqual(
             {
                 SEARCH, FETCH, CRAWL, EXTRACT, CACHE, FIND_SIMILAR,
@@ -147,6 +318,72 @@ class WebIntelligenceServiceTests(unittest.TestCase):
         self.assertIn(str(time.localtime().tm_year), cloud_current_time_prompt())
         self.assertIn("Decide from the user's meaning", cloud_current_time_prompt())
         self.assertNotIn("Asia/Shanghai", cloud_current_time_prompt())
+        search_schema = cloud_openai_tools()[0]["function"]["parameters"]["properties"]
+        self.assertIn("verticals", search_schema)
+        self.assertIn("image", search_schema["verticals"]["items"]["enum"])
+
+    def test_wigolo_gap_sources_use_native_adapters_and_preserve_images(self):
+        result = self.service.search({
+            "query": "React SignalASI image code",
+            "engines": [
+                "duckduckgo_image", "marginalia", "devdocs", "github_code",
+            ],
+            "engine_fanout": 4,
+            "limit": 10,
+            "use_cache": False,
+        })
+
+        self.assertEqual("completed", result["status"])
+        engines = {
+            engine
+            for row in result["results"]
+            for engine in row["engines"]
+        }
+        self.assertTrue({
+            "duckduckgo_image", "marginalia", "devdocs", "github_code",
+        }.issubset(engines))
+        image = next(row for row in result["results"] if row["vertical"] == "image")
+        self.assertEqual("https://cdn.example.com/signalasi.png", image["image_url"])
+        self.assertEqual("https://cdn.example.com/signalasi-thumb.png", image["thumbnail_url"])
+        self.assertEqual(1200, image["image_width"])
+        self.assertEqual(800, image["image_height"])
+        image_request = next(
+            request
+            for request in self.transport.requests
+            if "duckduckgo.com/i.js" in request["url"]
+        )
+        self.assertIn("Referer", image_request["headers"])
+
+    def test_brave_image_requires_key_and_never_leaks_it_into_results(self):
+        adaptive = self.service._select_engines(
+            "SignalASI image",
+            32,
+            (),
+            ("image",),
+        )
+        self.assertNotIn("brave_image", adaptive.selected)
+
+        service = WebIntelligenceService(
+            self.root / "with-brave",
+            transport=self.transport,
+            credentials={"brave_api_key": "brave-secret"},
+        )
+        result = service.search({
+            "query": "SignalASI image",
+            "engines": ["brave_image"],
+            "engine_fanout": 1,
+            "limit": 4,
+            "use_cache": False,
+        })
+
+        self.assertEqual("completed", result["status"])
+        request = next(
+            item
+            for item in self.transport.requests
+            if "api.search.brave.com/res/v1/images/search" in item["url"]
+        )
+        self.assertEqual("brave-secret", request["headers"]["X-Subscription-Token"])
+        self.assertNotIn("brave-secret", json.dumps(result))
 
     def test_cloud_adapter_parses_and_hides_deepseek_dsml(self):
         content = """

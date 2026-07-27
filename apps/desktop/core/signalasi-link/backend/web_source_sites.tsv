@@ -1,0 +1,248 @@
+id	title	vertical	host	scope	languages	authority
+reuters_news	Reuters	news	reuters.com	reuters.com	*	0.9
+ap_news	AP News	news	apnews.com	apnews.com	*	0.9
+bbc_news	BBC News	news	bbc.com	bbc.com/news	*	0.9
+xinhua_news	Xinhua	news	news.cn	news.cn	zh	0.85
+cna_news	Channel News Asia	news	channelnewsasia.com	channelnewsasia.com	*	0.85
+britannica	Britannica	knowledge	britannica.com	britannica.com	*	0.9
+wikidata	Wikidata	knowledge	wikidata.org	wikidata.org	*	0.9
+stanford_encyclopedia	Stanford Encyclopedia of Philosophy	knowledge	plato.stanford.edu	plato.stanford.edu	*	0.95
+baidu_baike	Baidu Baike	knowledge	baike.baidu.com	baike.baidu.com	zh	0.75
+medium	Medium	publishing	medium.com	medium.com	*	0.7
+substack	Substack	publishing	substack.com	substack.com	*	0.7
+jianshu	Jianshu	publishing	jianshu.com	jianshu.com	zh	0.7
+toutiao	Toutiao	publishing	toutiao.com	toutiao.com	zh	0.7
+wordpress	WordPress.com	publishing	wordpress.com	wordpress.com	*	0.7
+codeberg	Codeberg	code	codeberg.org	codeberg.org	*	0.8
+gitee	Gitee	code	gitee.com	gitee.com	zh	0.8
+sourceforge	SourceForge	code	sourceforge.net	sourceforge.net	*	0.75
+microsoft_learn	Microsoft Learn	docs	learn.microsoft.com	learn.microsoft.com	*	0.95
+android_developers	Android Developers	docs	developer.android.com	developer.android.com	*	0.95
+apple_developer	Apple Developer	docs	developer.apple.com	developer.apple.com	*	0.95
+python_docs	Python Documentation	docs	docs.python.org	docs.python.org	*	0.95
+rust_docs	Rust Documentation	docs	doc.rust-lang.org	doc.rust-lang.org	*	0.95
+maven_central	Maven Central	packages	central.sonatype.com	central.sonatype.com	*	0.9
+nuget	NuGet	packages	nuget.org	nuget.org	*	0.9
+go_packages	Go Packages	packages	pkg.go.dev	pkg.go.dev	*	0.9
+packagist	Packagist	packages	packagist.org	packagist.org	*	0.85
+rubygems	RubyGems	packages	rubygems.org	rubygems.org	*	0.85
+quora	Quora	qa	quora.com	quora.com	*	0.7
+stackexchange	Stack Exchange	qa	stackexchange.com	stackexchange.com	*	0.8
+superuser	Super User	qa	superuser.com	superuser.com	*	0.8
+serverfault	Server Fault	qa	serverfault.com	serverfault.com	*	0.8
+askubuntu	Ask Ubuntu	qa	askubuntu.com	askubuntu.com	*	0.8
+product_hunt	Product Hunt	community	producthunt.com	producthunt.com	*	0.7
+slashdot	Slashdot	community	slashdot.org	slashdot.org	*	0.7
+dev_community	DEV Community	community	dev.to	dev.to	*	0.7
+hashnode	Hashnode	community	hashnode.com	hashnode.com	*	0.7
+bluesky	Bluesky	social	bsky.app	bsky.app	*	0.7
+threads	Threads	social	threads.net	threads.net	*	0.7
+weibo	Weibo	social	weibo.com	weibo.com	zh	0.7
+douban	Douban	social	douban.com	douban.com	zh	0.7
+core_academic	CORE	academic	core.ac.uk	core.ac.uk	*	0.9
+doaj	Directory of Open Access Journals	academic	doaj.org	doaj.org	*	0.9
+ssrn	SSRN	academic	ssrn.com	ssrn.com	*	0.85
+biorxiv	bioRxiv	academic	biorxiv.org	biorxiv.org	*	0.9
+medrxiv	medRxiv	academic	medrxiv.org	medrxiv.org	*	0.85
+openalex	OpenAlex	research_index	openalex.org	openalex.org	*	0.9
+datacite	DataCite	research_index	datacite.org	datacite.org	*	0.9
+orcid	ORCID	research_index	orcid.org	orcid.org	*	0.9
+researchgate	ResearchGate	research_index	researchgate.net	researchgate.net	*	0.75
+base_search	BASE	research_index	base-search.net	base-search.net	*	0.85
+nih	NIH	medical	nih.gov	nih.gov	*	0.95
+cochrane	Cochrane	medical	cochrane.org	cochrane.org	*	0.95
+clinical_trials	ClinicalTrials.gov	medical	clinicaltrials.gov	clinicaltrials.gov	*	0.95
+nejm	New England Journal of Medicine	medical	nejm.org	nejm.org	*	0.95
+bmj	BMJ	medical	bmj.com	bmj.com	*	0.95
+jama	JAMA Network	medical	jamanetwork.com	jamanetwork.com	*	0.95
+who_healthcare	World Health Organization	healthcare	who.int	who.int	*	0.95
+cdc_healthcare	CDC	healthcare	cdc.gov	cdc.gov	*	0.95
+nhs	NHS	healthcare	nhs.uk	nhs.uk	*	0.95
+mayo_clinic	Mayo Clinic	healthcare	mayoclinic.org	mayoclinic.org	*	0.9
+cleveland_clinic	Cleveland Clinic	healthcare	clevelandclinic.org	clevelandclinic.org	*	0.9
+medlineplus	MedlinePlus	healthcare	medlineplus.gov	medlineplus.gov	*	0.95
+ncbi	NCBI	biology	ncbi.nlm.nih.gov	ncbi.nlm.nih.gov	*	0.95
+uniprot	UniProt	biology	uniprot.org	uniprot.org	*	0.95
+ensembl	Ensembl	biology	ensembl.org	ensembl.org	*	0.95
+protein_data_bank	RCSB Protein Data Bank	biology	rcsb.org	rcsb.org	*	0.95
+kegg	KEGG	biology	kegg.jp	kegg.jp	*	0.9
+nature_biology	Nature Biology	biology	nature.com	nature.com/subjects/biological-sciences	*	0.9
+ars_technica	Ars Technica	technology	arstechnica.com	arstechnica.com	*	0.7
+techcrunch	TechCrunch	technology	techcrunch.com	techcrunch.com	*	0.7
+the_verge	The Verge	technology	theverge.com	theverge.com	*	0.7
+wired	WIRED	technology	wired.com	wired.com	*	0.7
+zdnet	ZDNET	technology	zdnet.com	zdnet.com	*	0.7
+thirty_six_kr	36Kr	technology	36kr.com	36kr.com	zh	0.7
+openai_agents_sdk	OpenAI Agents SDK	agents	openai.github.io	openai.github.io/openai-agents-python	*	0.95
+anthropic_agents	Anthropic Agent Guidance	agents	anthropic.com	anthropic.com/research/building-effective-agents	*	0.95
+langchain_agents	LangChain Agents	agents	docs.langchain.com	docs.langchain.com	*	0.9
+autogen_agents	Microsoft AutoGen	agents	microsoft.github.io	microsoft.github.io/autogen	*	0.9
+crewai_agents	CrewAI	agents	docs.crewai.com	docs.crewai.com	*	0.85
+google_adk	Google Agent Development Kit	agents	google.github.io	google.github.io/adk-docs	*	0.9
+intel_ark	Intel ARK	hardware	intel.com	intel.com/content/www/us/en/ark	*	0.95
+amd_products	AMD Products	hardware	amd.com	amd.com/en/products	*	0.95
+nvidia_products	NVIDIA Products	hardware	nvidia.com	nvidia.com/en-us/products	*	0.95
+qualcomm_products	Qualcomm Products	hardware	qualcomm.com	qualcomm.com/products	*	0.95
+arm_developer	Arm Developer	hardware	developer.arm.com	developer.arm.com	*	0.95
+toms_hardware	Tom's Hardware	hardware	tomshardware.com	tomshardware.com	*	0.8
+wikimedia_commons	Wikimedia Commons	image	commons.wikimedia.org	commons.wikimedia.org	*	0.85
+unsplash	Unsplash	image	unsplash.com	unsplash.com	*	0.7
+pexels	Pexels	image	pexels.com	pexels.com	*	0.7
+pixabay	Pixabay	image	pixabay.com	pixabay.com	*	0.7
+openverse	Openverse	image	openverse.org	openverse.org	*	0.8
+youtube	YouTube	video	youtube.com	youtube.com	*	0.7
+vimeo	Vimeo	video	vimeo.com	vimeo.com	*	0.7
+bilibili	Bilibili	video	bilibili.com	bilibili.com	zh	0.7
+dailymotion	Dailymotion	video	dailymotion.com	dailymotion.com	*	0.7
+archive_video	Internet Archive Video	video	archive.org	archive.org/details/movies	*	0.8
+ted_video	TED	video	ted.com	ted.com/talks	*	0.85
+tripadvisor	Tripadvisor	travel	tripadvisor.com	tripadvisor.com	*	0.7
+booking	Booking.com	travel	booking.com	booking.com	*	0.7
+skyscanner	Skyscanner	travel	skyscanner.com	skyscanner.com	*	0.7
+trip_com	Trip.com	travel	trip.com	trip.com	*	0.7
+lonely_planet	Lonely Planet	travel	lonelyplanet.com	lonelyplanet.com	*	0.7
+klook	Klook	travel	klook.com	klook.com	*	0.7
+wikihow	wikiHow	lifestyle	wikihow.com	wikihow.com	*	0.7
+lifehacker	Lifehacker	lifestyle	lifehacker.com	lifehacker.com	*	0.7
+the_spruce	The Spruce	lifestyle	thespruce.com	thespruce.com	*	0.7
+good_housekeeping	Good Housekeeping	lifestyle	goodhousekeeping.com	goodhousekeeping.com	*	0.7
+martha_stewart	Martha Stewart	lifestyle	marthastewart.com	marthastewart.com	*	0.7
+better_homes	Better Homes & Gardens	lifestyle	bhg.com	bhg.com	*	0.7
+steam	Steam	games	store.steampowered.com	store.steampowered.com	*	0.7
+ign	IGN	games	ign.com	ign.com	*	0.7
+gamespot	GameSpot	games	gamespot.com	gamespot.com	*	0.7
+metacritic_games	Metacritic Games	games	metacritic.com	metacritic.com/game	*	0.7
+pcgamingwiki	PCGamingWiki	games	pcgamingwiki.com	pcgamingwiki.com	*	0.7
+taptap	TapTap	games	taptap.cn	taptap.cn	zh	0.7
+amazon	Amazon	shopping	amazon.com	amazon.com	*	0.7
+jd	JD.com	shopping	jd.com	jd.com	zh	0.7
+taobao	Taobao	shopping	taobao.com	taobao.com	zh	0.7
+tmall	Tmall	shopping	tmall.com	tmall.com	zh	0.7
+ebay	eBay	shopping	ebay.com	ebay.com	*	0.7
+aliexpress	AliExpress	shopping	aliexpress.com	aliexpress.com	*	0.7
+yahoo_finance	Yahoo Finance	finance	finance.yahoo.com	finance.yahoo.com	*	0.85
+investing	Investing.com	finance	investing.com	investing.com	*	0.7
+marketwatch	MarketWatch	finance	marketwatch.com	marketwatch.com	*	0.8
+tradingview	TradingView	finance	tradingview.com	tradingview.com	*	0.7
+eastmoney	Eastmoney	finance	eastmoney.com	eastmoney.com	zh	0.7
+sina_finance	Sina Finance	finance	finance.sina.com.cn	finance.sina.com.cn	zh	0.7
+bloomberg	Bloomberg	business	bloomberg.com	bloomberg.com	*	0.85
+financial_times	Financial Times	business	ft.com	ft.com	*	0.85
+forbes	Forbes	business	forbes.com	forbes.com	*	0.7
+fortune	Fortune	business	fortune.com	fortune.com	*	0.7
+cnbc	CNBC	business	cnbc.com	cnbc.com	*	0.7
+caixin	Caixin	business	caixin.com	caixin.com	zh	0.8
+espn	ESPN	sports	espn.com	espn.com	*	0.7
+cbs_sports	CBS Sports	sports	cbssports.com	cbssports.com	*	0.7
+sky_sports	Sky Sports	sports	skysports.com	skysports.com	*	0.7
+the_athletic	The Athletic	sports	nytimes.com	nytimes.com/athletic	*	0.7
+hupu	Hupu	sports	hupu.com	hupu.com	zh	0.7
+sina_sports	Sina Sports	sports	sports.sina.com.cn	sports.sina.com.cn	zh	0.7
+weather_com	The Weather Channel	weather	weather.com	weather.com	*	0.8
+accuweather	AccuWeather	weather	accuweather.com	accuweather.com	*	0.8
+meteoblue	Meteoblue	weather	meteoblue.com	meteoblue.com	*	0.8
+windy	Windy	weather	windy.com	windy.com	*	0.7
+noaa_weather	NOAA Weather	weather	weather.gov	weather.gov	*	0.95
+china_weather	China Weather	weather	weather.com.cn	weather.com.cn	zh	0.85
+openstreetmap	OpenStreetMap	maps_local	openstreetmap.org	openstreetmap.org	*	0.85
+google_maps	Google Maps	maps_local	maps.google.com	maps.google.com	*	0.7
+bing_maps	Bing Maps	maps_local	bing.com	bing.com/maps	*	0.7
+amap	Amap	maps_local	amap.com	amap.com	zh	0.7
+baidu_maps	Baidu Maps	maps_local	map.baidu.com	map.baidu.com	zh	0.7
+mapquest	MapQuest	maps_local	mapquest.com	mapquest.com	*	0.7
+allrecipes	Allrecipes	food	allrecipes.com	allrecipes.com	*	0.7
+serious_eats	Serious Eats	food	seriouseats.com	seriouseats.com	*	0.7
+epicurious	Epicurious	food	epicurious.com	epicurious.com	*	0.7
+food_network	Food Network	food	foodnetwork.com	foodnetwork.com	*	0.7
+dianping	Dianping	food	dianping.com	dianping.com	zh	0.7
+xiachufang	Xiachufang	food	xiachufang.com	xiachufang.com	zh	0.7
+khan_academy	Khan Academy	education	khanacademy.org	khanacademy.org	*	0.85
+coursera	Coursera	education	coursera.org	coursera.org	*	0.7
+edx	edX	education	edx.org	edx.org	*	0.7
+mit_ocw	MIT OpenCourseWare	education	ocw.mit.edu	ocw.mit.edu	*	0.9
+openstax	OpenStax	education	openstax.org	openstax.org	*	0.9
+xuetangx	XuetangX	education	xuetangx.com	xuetangx.com	zh	0.7
+linkedin_jobs	LinkedIn Jobs	jobs	linkedin.com	linkedin.com/jobs	*	0.7
+indeed	Indeed	jobs	indeed.com	indeed.com	*	0.7
+glassdoor	Glassdoor	jobs	glassdoor.com	glassdoor.com	*	0.7
+ziprecruiter	ZipRecruiter	jobs	ziprecruiter.com	ziprecruiter.com	*	0.7
+boss_zhipin	BOSS Zhipin	jobs	zhipin.com	zhipin.com	zh	0.7
+lagou	Lagou	jobs	lagou.com	lagou.com	zh	0.7
+china_government	China Government	government	gov.cn	gov.cn	zh	0.95
+usa_government	USA.gov	government	usa.gov	usa.gov	*	0.95
+uk_government	GOV.UK	government	gov.uk	gov.uk	*	0.95
+europa	European Union	government	europa.eu	europa.eu	*	0.95
+united_nations	United Nations	government	un.org	un.org	*	0.95
+oecd	OECD	government	oecd.org	oecd.org	*	0.9
+cornell_law	Cornell Legal Information Institute	legal	law.cornell.edu	law.cornell.edu	*	0.95
+courtlistener	CourtListener	legal	courtlistener.com	courtlistener.com	*	0.9
+justia	Justia	legal	justia.com	justia.com	*	0.8
+eur_lex	EUR-Lex	legal	eur-lex.europa.eu	eur-lex.europa.eu	*	0.95
+china_laws	China National Laws Database	legal	flk.npc.gov.cn	flk.npc.gov.cn	zh	0.95
+china_judgments	China Judgments Online	legal	wenshu.court.gov.cn	wenshu.court.gov.cn	zh	0.9
+google_patents	Google Patents	patents	patents.google.com	patents.google.com	*	0.9
+wipo_patents	WIPO Patentscope	patents	patentscope.wipo.int	patentscope.wipo.int	*	0.95
+uspto_patents	USPTO Patent Search	patents	ppubs.uspto.gov	ppubs.uspto.gov	*	0.95
+espacenet	Espacenet	patents	worldwide.espacenet.com	worldwide.espacenet.com	*	0.95
+lens_patents	The Lens	patents	lens.org	lens.org	*	0.9
+cnipa_patents	CNIPA	patents	cnipa.gov.cn	cnipa.gov.cn	zh	0.95
+google_books	Google Books	books	books.google.com	books.google.com	*	0.7
+open_library	Open Library	books	openlibrary.org	openlibrary.org	*	0.85
+project_gutenberg	Project Gutenberg	books	gutenberg.org	gutenberg.org	*	0.85
+worldcat	WorldCat	books	worldcat.org	worldcat.org	*	0.9
+archive_books	Internet Archive Books	books	archive.org	archive.org/details/texts	*	0.85
+douban_books	Douban Books	books	book.douban.com	book.douban.com	zh	0.7
+spotify	Spotify	audio	open.spotify.com	open.spotify.com	*	0.7
+apple_music	Apple Music	audio	music.apple.com	music.apple.com	*	0.7
+soundcloud	SoundCloud	audio	soundcloud.com	soundcloud.com	*	0.7
+bandcamp	Bandcamp	audio	bandcamp.com	bandcamp.com	*	0.7
+podcast_index	Podcast Index	audio	podcastindex.org	podcastindex.org	*	0.7
+netease_music	NetEase Cloud Music	audio	music.163.com	music.163.com	zh	0.7
+imdb	IMDb	entertainment	imdb.com	imdb.com	*	0.7
+tmdb	The Movie Database	entertainment	themoviedb.org	themoviedb.org	*	0.7
+rotten_tomatoes	Rotten Tomatoes	entertainment	rottentomatoes.com	rottentomatoes.com	*	0.7
+letterboxd	Letterboxd	entertainment	letterboxd.com	letterboxd.com	*	0.7
+douban_movies	Douban Movies	entertainment	movie.douban.com	movie.douban.com	zh	0.7
+mtime	Mtime	entertainment	mtime.com	mtime.com	zh	0.7
+nvd	NVD	cybersecurity	nvd.nist.gov	nvd.nist.gov	*	0.95
+cve	CVE	cybersecurity	cve.org	cve.org	*	0.95
+mitre_attack	MITRE ATT&CK	cybersecurity	attack.mitre.org	attack.mitre.org	*	0.95
+cisa	CISA	cybersecurity	cisa.gov	cisa.gov	*	0.95
+exploit_db	Exploit Database	cybersecurity	exploit-db.com	exploit-db.com	*	0.8
+snyk_vulnerability	Snyk Vulnerability Database	cybersecurity	security.snyk.io	security.snyk.io	*	0.8
+huggingface_models	Hugging Face Models	ai_models	huggingface.co	huggingface.co/models	*	0.7
+modelscope_models	ModelScope Models	ai_models	modelscope.cn	modelscope.cn/models	zh	0.7
+ollama_library	Ollama Library	ai_models	ollama.com	ollama.com/library	*	0.7
+openai_models	OpenAI Models	ai_models	platform.openai.com	platform.openai.com/docs/models	*	0.9
+anthropic_models	Anthropic Models	ai_models	docs.anthropic.com	docs.anthropic.com	*	0.9
+google_ai_models	Google AI Models	ai_models	ai.google.dev	ai.google.dev	*	0.9
+kaggle_datasets	Kaggle Datasets	datasets	kaggle.com	kaggle.com/datasets	*	0.7
+huggingface_datasets	Hugging Face Datasets	datasets	huggingface.co	huggingface.co/datasets	*	0.7
+google_dataset_search	Google Dataset Search	datasets	datasetsearch.research.google.com	datasetsearch.research.google.com	*	0.7
+data_gov	Data.gov	datasets	data.gov	data.gov	*	0.9
+zenodo	Zenodo	datasets	zenodo.org	zenodo.org	*	0.9
+uci_datasets	UCI Machine Learning Repository	datasets	archive.ics.uci.edu	archive.ics.uci.edu	*	0.9
+edmunds	Edmunds	automotive	edmunds.com	edmunds.com	*	0.7
+kbb	Kelley Blue Book	automotive	kbb.com	kbb.com	*	0.7
+car_and_driver	Car and Driver	automotive	caranddriver.com	caranddriver.com	*	0.7
+motortrend	MotorTrend	automotive	motortrend.com	motortrend.com	*	0.7
+autohome	Autohome	automotive	autohome.com.cn	autohome.com.cn	zh	0.7
+dongchedi	Dongchedi	automotive	dongchedi.com	dongchedi.com	zh	0.7
+zillow	Zillow	real_estate	zillow.com	zillow.com	*	0.7
+realtor	Realtor.com	real_estate	realtor.com	realtor.com	*	0.7
+redfin	Redfin	real_estate	redfin.com	redfin.com	*	0.7
+rightmove	Rightmove	real_estate	rightmove.co.uk	rightmove.co.uk	*	0.7
+fang	Fang.com	real_estate	fang.com	fang.com	zh	0.7
+lianjia	Lianjia	real_estate	lianjia.com	lianjia.com	zh	0.7
+eventbrite	Eventbrite	events	eventbrite.com	eventbrite.com	*	0.7
+meetup	Meetup	events	meetup.com	meetup.com	*	0.7
+ten_times	10times	events	10times.com	10times.com	*	0.7
+ticketmaster	Ticketmaster	events	ticketmaster.com	ticketmaster.com	*	0.7
+damai	Damai	events	damai.cn	damai.cn	zh	0.7
+live_nation	Live Nation	events	livenation.com	livenation.com	*	0.7
+home_assistant	Home Assistant	smart_home	home-assistant.io	home-assistant.io	*	0.9
+matter	Matter	smart_home	csa-iot.org	csa-iot.org	*	0.9
+smartthings	SmartThings	smart_home	smartthings.com	smartthings.com	*	0.7
+apple_home	Apple Home	smart_home	support.apple.com	support.apple.com/home	*	0.7
+google_nest	Google Nest	smart_home	support.google.com	support.google.com/googlenest	*	0.7
+openhab	openHAB	smart_home	openhab.org	openhab.org	*	0.85

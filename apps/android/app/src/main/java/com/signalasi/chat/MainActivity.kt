@@ -6586,6 +6586,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 data = Uri.parse("package:$packageName")
             })
             "advanced.protocol" -> openExistingControlCenterPage { showSignalLinkProtocolPage() }
+            "advanced.web_sources" -> openExistingControlCenterPage { showWebIntelligenceSourcesPage() }
             "advanced.audit" -> openExistingControlCenterPage { showAgentAuditOperationsPage() }
             "advanced.permissions" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.PERMISSIONS_AUDIT))
             "advanced.app_details" -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -10493,6 +10494,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ControlCenterSectionSpec(
                         getString(R.string.advanced_section_diagnostics),
                         listOf(
+                            ControlCenterRowSpec("advanced.web_sources", getString(R.string.web_sources_title), getString(R.string.web_sources_subtitle), R.drawable.ic_process_network, getString(R.string.web_sources_count, AgentWebIntelligenceEngineCatalog.entries.size), ControlCenterTone.GREEN),
                             ControlCenterRowSpec("advanced.protocol", getString(R.string.advanced_protocol_logs), getString(R.string.advanced_protocol_logs_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_view), ControlCenterTone.BLUE),
                             ControlCenterRowSpec("advanced.audit", getString(R.string.advanced_agent_permission_audit), getString(R.string.advanced_agent_permission_audit_subtitle), R.drawable.ic_security_shield, getString(R.string.common_view), ControlCenterTone.VIOLET),
                             ControlCenterRowSpec("advanced.permissions", getString(R.string.cc_permissions_title), getString(R.string.cc_permissions_summary, controlCenterGrantedPermissionCount(), 4), R.drawable.ic_settings_fingerprint, getString(R.string.common_view), ControlCenterTone.AMBER)
@@ -10509,6 +10511,116 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 footer = getString(R.string.cc_advanced_footer)
             )
         )
+    }
+
+    private fun showWebIntelligenceSourcesPage() {
+        showFeaturePage(getString(R.string.web_sources_title))
+        val credentials = AgentEncryptedWebIntelligenceCredentials(this)
+        val sourceStats = AgentEncryptedWebIntelligenceStore(this).stats()
+        val learnedCount = (sourceStats["learned_source_count"] as? Number)?.toInt() ?: 0
+        val verifiedCount =
+            (sourceStats["verified_learned_source_count"] as? Number)?.toInt() ?: 0
+        featureContent.addView(featureHeroCard(
+            getString(R.string.web_sources_hero_title),
+            getString(R.string.web_sources_hero_subtitle),
+            R.drawable.ic_process_network,
+            "#14C66A",
+            getString(
+                R.string.web_sources_count,
+                AgentWebIntelligenceEngineCatalog.entries.size
+            )
+        ))
+        addSectionTitle(getString(R.string.web_sources_title))
+        featureContent.addView(featureValueRow(
+            getString(R.string.web_sources_domain_coverage),
+            getString(R.string.web_sources_domain_coverage_subtitle),
+            R.drawable.ic_resource_network,
+            getString(
+                R.string.web_sources_category_count,
+                AgentWebIntelligenceVertical.entries.count {
+                    it != AgentWebIntelligenceVertical.LOCAL
+                }
+            )
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.web_sources_learning),
+            getString(R.string.web_sources_learning_subtitle),
+            R.drawable.ic_process_network,
+            getString(
+                R.string.web_sources_learning_value,
+                verifiedCount,
+                (learnedCount - verifiedCount).coerceAtLeast(0)
+            )
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.web_sources_compatibility),
+            getString(R.string.web_sources_compatibility_subtitle),
+            R.drawable.ic_process_network,
+            getString(R.string.web_sources_compatibility_value)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.web_sources_brave_key),
+            getString(R.string.web_sources_brave_key_subtitle),
+            R.drawable.ic_avatar_cloud_model,
+            webCredentialStatus(
+                credentials.configured(AgentEncryptedWebIntelligenceCredentials.BRAVE_API_KEY)
+            )
+        ).apply {
+            setOnClickListener {
+                showWebCredentialDialog(
+                    getString(R.string.web_sources_brave_key),
+                    AgentEncryptedWebIntelligenceCredentials.BRAVE_API_KEY
+                )
+            }
+        })
+        featureContent.addView(featureValueRow(
+            getString(R.string.web_sources_github_token),
+            getString(R.string.web_sources_github_token_subtitle),
+            R.drawable.ic_resource_network,
+            webCredentialStatus(
+                credentials.configured(AgentEncryptedWebIntelligenceCredentials.GITHUB_TOKEN)
+            )
+        ).apply {
+            setOnClickListener {
+                showWebCredentialDialog(
+                    getString(R.string.web_sources_github_token),
+                    AgentEncryptedWebIntelligenceCredentials.GITHUB_TOKEN
+                )
+            }
+        })
+    }
+
+    private fun webCredentialStatus(configured: Boolean): String =
+        getString(
+            if (configured) R.string.web_sources_configured
+            else R.string.web_sources_not_configured
+        )
+
+    private fun showWebCredentialDialog(title: String, key: String) {
+        val credentials = AgentEncryptedWebIntelligenceCredentials(this)
+        val input = EditText(this).apply {
+            hint = getString(R.string.web_sources_secret_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton(getString(R.string.common_save)) { _, _ ->
+                val value = input.text?.toString()?.trim().orEmpty()
+                if (value.isNotBlank()) {
+                    credentials.setCredential(key, value)
+                    Toast.makeText(this, R.string.web_sources_saved, Toast.LENGTH_SHORT).show()
+                }
+                showWebIntelligenceSourcesPage()
+            }
+            .setNeutralButton(getString(R.string.web_sources_clear)) { _, _ ->
+                credentials.setCredential(key, "")
+                Toast.makeText(this, R.string.web_sources_cleared, Toast.LENGTH_SHORT).show()
+                showWebIntelligenceSourcesPage()
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
     }
 
     private fun controlCenterGrantedPermissionCount(): Int = listOf(

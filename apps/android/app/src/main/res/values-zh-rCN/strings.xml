@@ -107,6 +107,8 @@
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible 自定义端点</string>
     <string name="cloud_request_failed">云端模型调用失败：%1$s</string>
     <string name="cloud_unknown_error">未知错误</string>
+    <string name="cloud_web_fallback_sources">我找到了以下当前来源：</string>
+    <string name="cloud_web_fallback_empty">联网检索已完成，但暂时没有可可靠汇总的来源，请重试。</string>
     <string name="discover_segment_all">全部</string>
     <string name="discover_segment_local">本地</string>
     <string name="discover_segment_official">官方</string>
@@ -1826,4 +1828,28 @@
     <string name="cc_evolution_remote_candidate_ready">Desktop 进化候选已可审核</string>
     <string name="cc_evolution_remote_failed">Desktop 进化尝试需要处理</string>
     <string name="cc_evolution_remote_command_failed">Desktop 进化指令失败</string>
+    <string name="web_sources_title">联网智能来源</string>
+    <string name="web_sources_subtitle">覆盖生活、科技、研究、媒体与本地证据的 287 个来源</string>
+    <string name="web_sources_hero_title">SignalASI 联网智能</string>
+    <string name="web_sources_hero_subtitle">独立来源适配器、加密凭据与按来源健康度路由</string>
+    <string name="web_sources_count">%1$d 个来源</string>
+    <string name="web_sources_domain_coverage">领域覆盖</string>
+    <string name="web_sources_domain_coverage_subtitle">每个领域包含 5 至 10 个独立路由来源</string>
+    <string name="web_sources_category_count">%1$d 个类别</string>
+    <string name="web_sources_learning">来源学习</string>
+    <string name="web_sources_learning_subtitle">新域名经过多次独立证据验证后才会启用</string>
+    <string name="web_sources_learning_value">%1$d 个已验证 · %2$d 个候选</string>
+    <string name="web_sources_compatibility">Wigolo 来源覆盖</string>
+    <string name="web_sources_compatibility_subtitle">已支持 Wigolo 的全部 18 个公开适配器，并保留 SignalASI 扩展来源</string>
+    <string name="web_sources_compatibility_value">18 / 18</string>
+    <string name="web_sources_brave_key">Brave Search API 密钥</string>
+    <string name="web_sources_brave_key_subtitle">可选；配置后启用 Brave 图片搜索</string>
+    <string name="web_sources_github_token">GitHub 令牌</string>
+    <string name="web_sources_github_token_subtitle">可选；提高仓库与代码搜索的速率限制</string>
+    <string name="web_sources_configured">已配置</string>
+    <string name="web_sources_not_configured">未配置</string>
+    <string name="web_sources_secret_hint">输入新值；如需删除已保存凭据，请点“清除”</string>
+    <string name="web_sources_clear">清除</string>
+    <string name="web_sources_saved">来源凭据已保存</string>
+    <string name="web_sources_cleared">来源凭据已删除</string>
 </resources>

@@ -68,12 +68,107 @@ interface AgentWebIntelligenceStore {
     fun sourceHealth(sourceIds: Set<String> = emptySet()): Map<String, AgentWebIntelligenceSourceHealth>
     fun recordSourceReceipt(receipt: AgentWebIntelligenceReceipt)
     fun resetSourceHealth(): Int
+    fun learnedSources(): List<AgentWebIntelligenceLearnedSource>
+    fun observeSourceCandidates(
+        query: String,
+        categoryTags: Set<String>,
+        results: List<AgentWebIntelligenceResult>
+    ): List<AgentWebIntelligenceLearnedSource>
     fun stats(): AgentNativeJsonObject
     fun clear(expiredOnly: Boolean = false): AgentNativeJsonObject
     fun putWatch(watch: AgentWebIntelligenceWatch)
     fun getWatch(id: String): AgentWebIntelligenceWatch?
     fun watches(): List<AgentWebIntelligenceWatch>
     fun removeWatch(id: String): Boolean
+}
+
+private data class AgentWebIntelligenceSourceObservation(
+    val sourceId: String,
+    val host: String,
+    val vertical: AgentWebIntelligenceVertical,
+    val categoryTags: Set<String>,
+    val queryFingerprint: String
+)
+
+private val BUILT_IN_WEB_SOURCE_HOSTS: Set<String> by lazy {
+    AgentWebIntelligenceEngineCatalog.entries.flatMap { spec ->
+        spec.allowedHosts + runCatching {
+            URI(spec.endpoint).host.orEmpty()
+        }.getOrDefault("")
+    }.map { it.removePrefix("www.").lowercase(Locale.ROOT) }
+        .filter(String::isNotBlank)
+        .toSet()
+}
+
+private fun sourceObservations(
+    query: String,
+    categoryTags: Set<String>,
+    results: List<AgentWebIntelligenceResult>
+): List<AgentWebIntelligenceSourceObservation> {
+    val fingerprint = sha256(query.trim().lowercase(Locale.ROOT)).take(24)
+    return results.take(20).mapNotNull { result ->
+        val host = runCatching {
+            URI(result.url).host.orEmpty().removePrefix("www.").lowercase(Locale.ROOT)
+        }.getOrDefault("")
+        if (
+            !Regex("[a-z0-9.-]{3,253}").matches(host) ||
+            ".." in host ||
+            host.split('.').size < 2 ||
+            host.replace(".", "").all(Char::isDigit) ||
+            BUILT_IN_WEB_SOURCE_HOSTS.any { known -> host == known || host.endsWith(".$known") }
+        ) {
+            return@mapNotNull null
+        }
+        val vertical = result.vertical.takeUnless { it == AgentWebIntelligenceVertical.LOCAL }
+            ?: AgentWebIntelligenceVertical.GENERAL
+        val tags = (categoryTags + vertical.wireValue)
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .filter { Regex("[a-z0-9_\\-]{2,40}").matches(it) }
+            .take(12)
+            .toSet()
+        AgentWebIntelligenceSourceObservation(
+            sourceId = "learned_${sha256("$host|${vertical.wireValue}").take(16)}",
+            host = host,
+            vertical = vertical,
+            categoryTags = tags,
+            queryFingerprint = fingerprint
+        )
+    }.distinctBy(AgentWebIntelligenceSourceObservation::sourceId)
+}
+
+private fun evolveLearnedSource(
+    previous: AgentWebIntelligenceLearnedSource?,
+    observation: AgentWebIntelligenceSourceObservation,
+    nowMillis: Long
+): AgentWebIntelligenceLearnedSource {
+    val queries = ((previous?.queryFingerprints.orEmpty() + observation.queryFingerprint)
+        .sortedDescending()
+        .take(16))
+        .toSet()
+    val observations = (previous?.observations ?: 0) + 1
+    val minimumObservations =
+        if (observation.vertical in setOf(
+                AgentWebIntelligenceVertical.GENERAL,
+                AgentWebIntelligenceVertical.KNOWLEDGE
+            )
+        ) 4 else 3
+    val minimumQueries = if (minimumObservations == 4) 3 else 2
+    val status = when {
+        previous?.status == "disabled" -> "disabled"
+        observations >= minimumObservations && queries.size >= minimumQueries -> "verified"
+        else -> "candidate"
+    }
+    return AgentWebIntelligenceLearnedSource(
+        sourceId = observation.sourceId,
+        host = observation.host,
+        vertical = observation.vertical,
+        categoryTags = previous?.categoryTags.orEmpty() + observation.categoryTags,
+        status = status,
+        observations = observations,
+        queryFingerprints = queries,
+        firstSeenAtMillis = previous?.firstSeenAtMillis?.takeIf { it > 0L } ?: nowMillis,
+        lastSeenAtMillis = nowMillis
+    )
 }
 
 class AgentEncryptedWebIntelligenceStore(
@@ -141,6 +236,36 @@ class AgentEncryptedWebIntelligenceStore(
     }
 
     @Synchronized
+    override fun learnedSources(): List<AgentWebIntelligenceLearnedSource> =
+        database.entries(LEARNED_SOURCE_PREFIX)
+            .mapNotNull { decodeLearnedSource(it.second) }
+            .sortedWith(
+                compareByDescending<AgentWebIntelligenceLearnedSource> { it.status == "verified" }
+                    .thenByDescending(AgentWebIntelligenceLearnedSource::confidence)
+                    .thenByDescending(AgentWebIntelligenceLearnedSource::lastSeenAtMillis)
+            )
+
+    @Synchronized
+    override fun observeSourceCandidates(
+        query: String,
+        categoryTags: Set<String>,
+        results: List<AgentWebIntelligenceResult>
+    ): List<AgentWebIntelligenceLearnedSource> {
+        val changed = sourceObservations(query, categoryTags, results).map { observation ->
+            val key = "$LEARNED_SOURCE_PREFIX${observation.sourceId}"
+            val current = evolveLearnedSource(
+                decodeLearnedSource(database.readString(key, "")),
+                observation,
+                clock()
+            )
+            database.writeString(key, encodeLearnedSource(current))
+            current
+        }
+        pruneLearnedSources()
+        return changed
+    }
+
+    @Synchronized
     override fun stats(): AgentNativeJsonObject {
         val documents = documents()
         val sourceHealth = sourceHealth()
@@ -152,6 +277,8 @@ class AgentEncryptedWebIntelligenceStore(
             "watch_count" to database.keys(WATCH_PREFIX).size,
             "source_health_count" to sourceHealth.size,
             "source_circuits_open" to sourceHealth.values.count { it.circuitState(now) == "open" },
+            "learned_source_count" to learnedSources().size,
+            "verified_learned_source_count" to learnedSources().count { it.status == "verified" },
             "embedding_model" to AgentWebIntelligenceEmbedder().modelId,
             "encryption" to "android_keystore_aes_gcm"
         )
@@ -168,10 +295,12 @@ class AgentEncryptedWebIntelligenceStore(
             val expires = runCatching { JSONObject(value).optLong("expires_at_millis") }.getOrDefault(0L)
             if (!expiredOnly || expires < now) key else null
         }
-        database.removeAll(documentKeys + searchKeys)
+        val learnedKeys = if (expiredOnly) emptyList() else database.keys(LEARNED_SOURCE_PREFIX)
+        database.removeAll(documentKeys + searchKeys + learnedKeys)
         return linkedMapOf(
             "documents_removed" to documentKeys.size,
-            "searches_removed" to searchKeys.size
+            "searches_removed" to searchKeys.size,
+            "learned_sources_removed" to learnedKeys.size
         )
     }
 
@@ -201,6 +330,14 @@ class AgentEncryptedWebIntelligenceStore(
         val values = documents()
         if (values.size <= MAX_DOCUMENTS) return
         values.drop(MAX_DOCUMENTS).forEach { database.remove(documentKey(it.url)) }
+    }
+
+    private fun pruneLearnedSources() {
+        val values = learnedSources()
+        if (values.size <= MAX_LEARNED_SOURCES) return
+        values.sortedByDescending(AgentWebIntelligenceLearnedSource::lastSeenAtMillis)
+            .drop(MAX_LEARNED_SOURCES)
+            .forEach { database.remove("$LEARNED_SOURCE_PREFIX${it.sourceId}") }
     }
 
     private fun documentKey(url: String): String =
@@ -296,13 +433,85 @@ class AgentEncryptedWebIntelligenceStore(
         )
     }.getOrNull()
 
+    private fun encodeLearnedSource(value: AgentWebIntelligenceLearnedSource): String = JSONObject()
+        .put("source_id", value.sourceId)
+        .put("host", value.host)
+        .put("vertical", value.vertical.wireValue)
+        .put("category_tags", JSONArray(value.categoryTags.sorted()))
+        .put("status", value.status)
+        .put("observations", value.observations)
+        .put("query_fingerprints", JSONArray(value.queryFingerprints.sorted()))
+        .put("first_seen_at_millis", value.firstSeenAtMillis)
+        .put("last_seen_at_millis", value.lastSeenAtMillis)
+        .toString()
+
+    private fun decodeLearnedSource(value: String): AgentWebIntelligenceLearnedSource? = runCatching {
+        val root = JSONObject(value)
+        val sourceId = cleanIdentifier(root.getString("source_id"))
+        val host = root.getString("host")
+            .trim()
+            .lowercase(Locale.ROOT)
+            .removePrefix("www.")
+        val vertical = AgentWebIntelligenceVertical.entries.firstOrNull {
+            it.wireValue == root.getString("vertical")
+        } ?: error("Unknown learned-source vertical")
+        val categoryTags = root.optJSONArray("category_tags").toStringList()
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .distinct()
+        val status = root.optString("status", "candidate")
+        val observations = root.optInt("observations")
+        val queryFingerprints = root.optJSONArray("query_fingerprints").toStringList()
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .distinct()
+        require(
+            Regex("[a-z0-9.-]{3,253}").matches(host) &&
+                ".." !in host &&
+                host.split('.').size >= 2 &&
+                !host.replace(".", "").all(Char::isDigit)
+        ) { "Learned-source host is invalid" }
+        require(vertical != AgentWebIntelligenceVertical.LOCAL) {
+            "Local evidence cannot become a learned web source"
+        }
+        require(
+            BUILT_IN_WEB_SOURCE_HOSTS.none { known ->
+                host == known || host.endsWith(".$known")
+            }
+        ) { "Built-in source cannot be persisted as learned" }
+        require(sourceId == "learned_${sha256("$host|${vertical.wireValue}").take(16)}") {
+            "Learned-source identity does not match its host"
+        }
+        require(categoryTags.size <= 12 && categoryTags.all {
+            Regex("[a-z0-9_\\-]{2,40}").matches(it)
+        }) { "Learned-source categories are invalid" }
+        require(status in setOf("candidate", "verified", "disabled")) {
+            "Learned-source status is invalid"
+        }
+        require(observations in 1..1_000_000) { "Learned-source observation count is invalid" }
+        require(queryFingerprints.size <= 16 && queryFingerprints.all {
+            Regex("[a-f0-9]{24}").matches(it)
+        }) { "Learned-source query evidence is invalid" }
+        AgentWebIntelligenceLearnedSource(
+            sourceId = sourceId,
+            host = host,
+            vertical = vertical,
+            categoryTags = categoryTags.toSet(),
+            status = status,
+            observations = observations,
+            queryFingerprints = queryFingerprints.toSet(),
+            firstSeenAtMillis = root.optLong("first_seen_at_millis").coerceAtLeast(0L),
+            lastSeenAtMillis = root.optLong("last_seen_at_millis").coerceAtLeast(0L)
+        )
+    }.getOrNull()
+
     private companion object {
         const val DATABASE_NAME = "signalasi-web-intelligence-v1"
         const val DOCUMENT_PREFIX = "document:"
         const val SEARCH_PREFIX = "search:"
         const val WATCH_PREFIX = "watch:"
         const val SOURCE_HEALTH_PREFIX = "source-health:"
+        const val LEARNED_SOURCE_PREFIX = "learned-source:"
         const val MAX_DOCUMENTS = 2_000
+        const val MAX_LEARNED_SOURCES = 512
     }
 }
 
@@ -313,6 +522,7 @@ class AgentInMemoryWebIntelligenceStore(
     private val searches = linkedMapOf<String, Pair<Long, AgentNativeJsonObject>>()
     private val watches = linkedMapOf<String, AgentWebIntelligenceWatch>()
     private val health = linkedMapOf<String, AgentWebIntelligenceSourceHealth>()
+    private val learned = linkedMapOf<String, AgentWebIntelligenceLearnedSource>()
 
     @Synchronized
     override fun putDocument(document: AgentWebIntelligenceDocument) {
@@ -354,6 +564,21 @@ class AgentInMemoryWebIntelligenceStore(
     }
 
     @Synchronized
+    override fun learnedSources(): List<AgentWebIntelligenceLearnedSource> =
+        learned.values.sortedByDescending(AgentWebIntelligenceLearnedSource::lastSeenAtMillis)
+
+    @Synchronized
+    override fun observeSourceCandidates(
+        query: String,
+        categoryTags: Set<String>,
+        results: List<AgentWebIntelligenceResult>
+    ): List<AgentWebIntelligenceLearnedSource> =
+        sourceObservations(query, categoryTags, results).map { observation ->
+            evolveLearnedSource(learned[observation.sourceId], observation, clock())
+                .also { learned[it.sourceId] = it }
+        }
+
+    @Synchronized
     override fun stats(): AgentNativeJsonObject {
         val now = clock()
         return linkedMapOf(
@@ -363,6 +588,8 @@ class AgentInMemoryWebIntelligenceStore(
             "watch_count" to watches.size,
             "source_health_count" to health.size,
             "source_circuits_open" to health.values.count { it.circuitState(now) == "open" },
+            "learned_source_count" to learned.size,
+            "verified_learned_source_count" to learned.values.count { it.status == "verified" },
             "embedding_model" to AgentWebIntelligenceEmbedder().modelId,
             "encryption" to "test_memory"
         )
@@ -372,16 +599,19 @@ class AgentInMemoryWebIntelligenceStore(
     override fun clear(expiredOnly: Boolean): AgentNativeJsonObject {
         val beforeDocuments = documents.size
         val beforeSearches = searches.size
+        val beforeLearned = learned.size
         if (expiredOnly) {
             documents.entries.removeAll { it.value.expiresAtMillis < clock() }
             searches.entries.removeAll { it.value.first < clock() }
         } else {
             documents.clear()
             searches.clear()
+            learned.clear()
         }
         return mapOf(
             "documents_removed" to beforeDocuments - documents.size,
-            "searches_removed" to beforeSearches - searches.size
+            "searches_removed" to beforeSearches - searches.size,
+            "learned_sources_removed" to beforeLearned - learned.size
         )
     }
 
@@ -431,19 +661,47 @@ private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
     .digest(value.toByteArray(Charsets.UTF_8))
     .joinToString("") { "%02x".format(it) }
 
+class AgentEncryptedWebIntelligenceCredentials(context: Context) :
+    AgentWebIntelligenceCredentialProvider {
+    private val preferences = AgentEncryptedPreferences(
+        context.applicationContext,
+        PREFERENCES
+    )
+
+    override fun credential(key: String): String =
+        preferences.readString(key, "").trim()
+
+    fun setCredential(key: String, value: String) {
+        val clean = value.trim()
+        if (clean.isBlank()) preferences.remove(key) else preferences.writeString(key, clean)
+    }
+
+    fun configured(key: String): Boolean = credential(key).isNotBlank()
+
+    companion object {
+        const val BRAVE_API_KEY = "brave_api_key"
+        const val GITHUB_TOKEN = "github_token"
+        private const val PREFERENCES = "signalasi_web_intelligence_credentials"
+    }
+}
+
 class AgentWebIntelligenceService(
     private val fetcher: AgentWebIntelligenceFetcher,
     private val store: AgentWebIntelligenceStore,
     ranker: AgentWebIntelligenceRanker = AgentWebIntelligenceRanker(),
     private val embedder: AgentWebIntelligenceEmbedder = AgentWebIntelligenceEmbedder(),
+    credentialProvider: AgentWebIntelligenceCredentialProvider =
+        AgentWebIntelligenceCredentialProvider.NONE,
     private val clock: () -> Long = System::currentTimeMillis
 ) {
     private val searchCoordinator = AgentWebIntelligenceSearchCoordinator(
-        fetcher,
-        AgentWebIntelligenceFusion(ranker),
+        fetcher = fetcher,
+        credentialProvider = credentialProvider,
+        fusion = AgentWebIntelligenceFusion(ranker),
         clock = clock,
         healthProvider = { store.sourceHealth() },
-        receiptObserver = store::recordSourceReceipt
+        receiptObserver = store::recordSourceReceipt,
+        learnedSourceProvider = store::learnedSources
     )
 
     fun invoke(
@@ -483,6 +741,10 @@ class AgentWebIntelligenceService(
         val verticals = arguments.stringList("verticals", 10, 32).mapNotNull { value ->
             AgentWebIntelligenceVertical.entries.firstOrNull { it.wireValue == value }
         }.toSet()
+        val categoryTags = arguments.stringList("categories", 10, 40)
+            .map { it.trim().lowercase(Locale.ROOT) }
+            .filter { Regex("[a-z0-9_\\-]{2,40}").matches(it) }
+            .toSet()
         val useCache = arguments.boolean("use_cache", true)
         val cacheKey = sha256(
             AgentNativeJsonCodec.stringify(
@@ -493,6 +755,7 @@ class AgentWebIntelligenceService(
                     "profile" to profile.wireValue,
                     "engines" to engines.sorted(),
                     "verticals" to verticals.map { it.wireValue }.sorted(),
+                    "categories" to categoryTags.sorted(),
                     "model" to AgentWebIntelligenceRanker.MODEL_ID
                 )
             )
@@ -509,17 +772,28 @@ class AgentWebIntelligenceService(
                 }
             }
         }
-        val response = searchCoordinator.search(
+        val searchResponse = searchCoordinator.search(
+            query = query,
+            limit = limit,
+            engineFanout = fanout,
+            requestedEngines = engines,
+            verticals = verticals,
+            categoryTags = categoryTags,
+            timeoutMillis = timeout,
+            cancellationToken = cancellationToken,
+            checkpoint = checkpoint,
+            profile = profile.wireValue
+        )
+        val learned = store.observeSourceCandidates(
             query,
-            limit,
-            fanout,
-            engines,
-            verticals,
-            timeout,
-            cancellationToken,
-            checkpoint,
-            profile.wireValue
-        ).publicValue().toMutableMap()
+            categoryTags + verticals.map(AgentWebIntelligenceVertical::wireValue),
+            searchResponse.results
+        )
+        val response = searchResponse.publicValue().toMutableMap()
+        response["learning"] = linkedMapOf(
+            "observed" to learned.size,
+            "promoted" to learned.count { it.status == "verified" }
+        )
         response["cache"] = linkedMapOf(
             "hit" to false,
             "expires_at_millis" to clock() + DEFAULT_CACHE_TTL_MILLIS
@@ -749,6 +1023,14 @@ class AgentWebIntelligenceService(
             "reset_source_health" -> {
                 val removed = store.resetSourceHealth()
                 metadata = store.stats() + mapOf("source_health_removed" to removed)
+            }
+            "learned_sources" -> {
+                val status = arguments.string("status").trim().lowercase(Locale.ROOT)
+                val values = store.learnedSources()
+                    .filter { status.isBlank() || it.status == status }
+                metadata = store.stats() + mapOf(
+                    "learned_sources" to values.map(AgentWebIntelligenceLearnedSource::publicValue)
+                )
             }
             else -> throw AgentWebMediaException("invalid_cache_action", "Unsupported cache action: $action")
         }
@@ -1157,7 +1439,8 @@ class AgentWebIntelligenceService(
         ): AgentWebIntelligenceService = AgentWebIntelligenceService(
             fetcher = AgentBoundedWebIntelligenceFetcher(web),
             store = AgentEncryptedWebIntelligenceStore(context),
-            ranker = AgentWebIntelligenceRanker.fromAssets(context)
+            ranker = AgentWebIntelligenceRanker.fromAssets(context),
+            credentialProvider = AgentEncryptedWebIntelligenceCredentials(context)
         )
     }
 }

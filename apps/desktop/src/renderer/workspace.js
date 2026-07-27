@@ -612,6 +612,7 @@ function fillAgentSettings() {
   $("#cmdOpenClaw").value = commands.openclaw || "";
   fillLanguagePolicySettings(config);
   fillCloudModelSettings(config.cloud_model || {});
+  fillWebSearchSettings(config.web_search || {});
 }
 
 function fillLanguagePolicySettings(config = state.agentConfig || {}) {
@@ -757,6 +758,23 @@ async function saveCloudModelSettings(testAfterSave = false) {
   } catch (error) {
     setCloudModelStatus("error", error.message || String(error));
   }
+}
+
+function fillWebSearchSettings(config = {}) {
+  $("#webBraveApiKey").value = config.brave_api_key || "";
+  $("#webGithubToken").value = config.github_token || "";
+}
+
+async function saveWebSearchSettings() {
+  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  config.web_search = {
+    ...(config.web_search || {}),
+    brave_api_key: $("#webBraveApiKey").value.trim(),
+    github_token: $("#webGithubToken").value.trim()
+  };
+  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  fillWebSearchSettings(state.agentConfig.web_search || {});
+  showToast(t("Web intelligence source credentials saved."));
 }
 
 async function saveAgentCommands() {
@@ -1742,6 +1760,7 @@ function bindEvents() {
   $("#cloudProvider").addEventListener("change", applyCloudProviderPreset);
   $("#saveCloudModelButton").addEventListener("click", () => saveCloudModelSettings(false));
   $("#testCloudModelButton").addEventListener("click", () => saveCloudModelSettings(true));
+  $("#saveWebSearchButton").addEventListener("click", saveWebSearchSettings);
   $("#refreshGatewayButton").addEventListener("click", async () => {
     $("#pairingFrame").removeAttribute("src");
     await Promise.all([refreshGateway(), refreshDesktopControl()]);

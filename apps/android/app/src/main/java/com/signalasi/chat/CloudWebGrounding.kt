@@ -46,7 +46,14 @@ object CloudWebGrounding {
             objectProperties(
                 "query" to stringProperty(),
                 "max_results" to integerProperty(1, 100),
-                "profile" to enumProperty("fast", "balanced", "deep")
+                "profile" to enumProperty("fast", "balanced", "deep"),
+                "verticals" to enumArrayProperty(
+                    10,
+                    *AgentWebIntelligenceVertical.entries
+                        .map(AgentWebIntelligenceVertical::wireValue)
+                        .toTypedArray()
+                ),
+                "categories" to stringArrayProperty(10)
             ),
             listOf("query")
         ))
@@ -81,9 +88,12 @@ object CloudWebGrounding {
             "web_cache",
             "Inspect or search the encrypted local web evidence cache.",
             objectProperties(
-                "action" to enumProperty("status", "query", "get", "source_health"),
+                "action" to enumProperty(
+                    "status", "query", "get", "source_health", "learned_sources"
+                ),
                 "query" to stringProperty(),
                 "url" to stringProperty(),
+                "status" to enumProperty("candidate", "verified", "disabled"),
                 "limit" to integerProperty(1, 100)
             ),
             listOf("action")
@@ -208,6 +218,57 @@ object CloudWebGrounding {
         results.forEachIndexed { index, (call, result) ->
             append("\n[Tool ").append(index + 1).append(": ").append(call.name).append("]\n")
             append(result.take(MAX_TOOL_RESULT_CHARS / results.size.coerceAtLeast(1)))
+        }
+    }
+
+    fun evidenceFallback(context: Context, results: List<Pair<String, String>>): String {
+        val sources = linkedMapOf<String, String>()
+        results.forEach { (_, encoded) ->
+            runCatching { collectSources(JSONObject(encoded), sources, 0) }
+        }
+        if (sources.isEmpty()) return context.getString(R.string.cloud_web_fallback_empty)
+        return buildString {
+            append(context.getString(R.string.cloud_web_fallback_sources))
+            sources.entries.take(6).forEach { (url, title) ->
+                append("\n- ")
+                append(title.ifBlank { url })
+                if (title.isNotBlank()) append("\n  ").append(url)
+            }
+        }
+    }
+
+    private fun collectSources(
+        value: Any?,
+        sources: LinkedHashMap<String, String>,
+        depth: Int
+    ) {
+        if (depth > 6 || sources.size >= 12) return
+        when (value) {
+            is JSONObject -> {
+                val url = listOf("url", "uri", "source_url", "link")
+                    .asSequence()
+                    .map(value::optString)
+                    .firstOrNull { it.startsWith("https://", ignoreCase = true) }
+                    .orEmpty()
+                if (url.isNotBlank()) {
+                    val title = listOf("title", "name", "source")
+                        .asSequence()
+                        .map(value::optString)
+                        .firstOrNull(String::isNotBlank)
+                        .orEmpty()
+                        .take(160)
+                    sources.putIfAbsent(url.take(2_048), title)
+                }
+                value.keys().forEachRemaining { key ->
+                    collectSources(value.opt(key), sources, depth + 1)
+                }
+            }
+            is JSONArray -> {
+                for (index in 0 until value.length()) {
+                    collectSources(value.opt(index), sources, depth + 1)
+                    if (sources.size >= 12) break
+                }
+            }
         }
     }
 
@@ -349,6 +410,11 @@ object CloudWebGrounding {
     private fun stringArrayProperty(maxItems: Int): JSONObject = JSONObject()
         .put("type", "array")
         .put("items", stringProperty())
+        .put("maxItems", maxItems)
+
+    private fun enumArrayProperty(maxItems: Int, vararg values: String): JSONObject = JSONObject()
+        .put("type", "array")
+        .put("items", enumProperty(*values))
         .put("maxItems", maxItems)
 
     data class InlineToolCall(
