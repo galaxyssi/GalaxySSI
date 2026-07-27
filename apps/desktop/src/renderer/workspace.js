@@ -120,6 +120,11 @@ function t(key, params = {}) {
   return value;
 }
 
+window.signalasiDesktopI18n = Object.freeze({
+  translate: (key, params = {}) => t(key, params),
+  language: () => state.language
+});
+
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -259,6 +264,9 @@ async function setLanguage(language, persist = true) {
   renderConversation(true);
   renderEvolutionTasks();
   updateHeaderStatus();
+  document.dispatchEvent(new CustomEvent("signalasi:locale-changed", {
+    detail: { language: state.language }
+  }));
 }
 
 function conversationTasks(conversationId = state.currentConversationId) {
@@ -1562,24 +1570,36 @@ const PANEL_META = {
   gateway: ["Mobile Gateway", "Trusted phones and SignalASI Link"],
   settings: ["Settings", "Language, cloud API, commands, and diagnostics"]
 };
+let panelOpenSequence = 0;
 
 async function openPanel(name) {
-  const meta = PANEL_META[name] || PANEL_META.settings;
+  const panelName = Object.hasOwn(PANEL_META, name) ? name : "settings";
+  const sequence = ++panelOpenSequence;
+  const meta = PANEL_META[panelName];
   elements.drawerTitle.textContent = t(meta[0]);
   elements.drawerSubtitle.textContent = t(meta[1]);
   $$(".drawer-panel").forEach((panel) => panel.classList.remove("active"));
-  $(`#${name}Panel`)?.classList.add("active");
+  $(`#${panelName}Panel`)?.classList.add("active");
   elements.backdrop.hidden = false;
   elements.drawer.classList.add("open");
   elements.drawer.setAttribute("aria-hidden", "false");
-  if (name === "agents") await refreshAgents();
-  if (name === "gateway") {
-    await Promise.all([refreshGateway(), refreshDesktopControl()]);
-    await loadPairingFrame();
-  }
-  if (name === "capabilities") await refreshCapabilities();
-  if (name === "settings") {
-    await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false), refreshEvolutionTasks(false)]);
+  elements.drawer.dataset.panelLoading = "true";
+  delete elements.drawer.dataset.panelReady;
+  try {
+    if (panelName === "agents") await refreshAgents();
+    if (panelName === "gateway") {
+      await Promise.all([refreshGateway(), refreshDesktopControl()]);
+      await loadPairingFrame();
+    }
+    if (panelName === "capabilities") await refreshCapabilities();
+    if (panelName === "settings") {
+      await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false), refreshEvolutionTasks(false)]);
+    }
+  } finally {
+    if (sequence === panelOpenSequence) {
+      elements.drawer.dataset.panelLoading = "false";
+      elements.drawer.dataset.panelReady = panelName;
+    }
   }
 }
 

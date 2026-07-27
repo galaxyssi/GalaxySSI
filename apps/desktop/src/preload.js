@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld("signalasi", {
   rollbackEvolutionTask: (taskId) => ipcRenderer.invoke("evolution-tasks:rollback", taskId),
   publishEvolutionTask: (taskId, approvalHash) =>
     ipcRenderer.invoke("evolution-tasks:publish", taskId, approvalHash),
+  evolutionV2Request: (method, pathname, body = null) =>
+    ipcRenderer.invoke("evolution-v2:request", method, pathname, body),
   listProactiveTasks: (limit) => ipcRenderer.invoke("proactive-tasks:list", limit),
   createProactiveTask: (payload) => ipcRenderer.invoke("proactive-tasks:create", payload),
   updateProactiveTask: (taskId, payload) =>

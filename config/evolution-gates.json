@@ -1,0 +1,23 @@
+{
+  "schema": "signalasi.evolution-gates.v2",
+  "desktop": {
+    "backend_unit_tests": true,
+    "source_check": true,
+    "package_windows": true,
+    "ui_smoke": true,
+    "isolated_backend_health": true
+  },
+  "android": {
+    "unit_tests": true,
+    "assemble_debug": true,
+    "device_install_launch_restore": false,
+    "package_name": "com.signalasi.chat",
+    "candidate_apk": "apps/android/app/build/outputs/apk/debug/app-debug.apk"
+  },
+  "supply_chain": {
+    "secret_scan": true,
+    "binary_changes_allowed": false,
+    "provenance": true,
+    "cosign_keyless": false
+  }
+}

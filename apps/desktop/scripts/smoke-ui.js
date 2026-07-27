@@ -1,6 +1,7 @@
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
 const net = require("node:net");
+const os = require("node:os");
 const path = require("node:path");
 const { acquireSignalasiLock } = require("./smoke-lock");
 
@@ -16,6 +17,7 @@ const screenshots = [
   path.join(screenshotDir, "desktop-agents.png"),
   path.join(screenshotDir, "desktop-capabilities.png"),
   path.join(screenshotDir, "desktop-settings.png"),
+  path.join(screenshotDir, "desktop-evolution-v2.png"),
   path.join(screenshotDir, "desktop-runtimes.png")
 ];
 
@@ -24,9 +26,19 @@ if (!fs.existsSync(electronCli)) {
 }
 
 const releaseLock = acquireSignalasiLock("smoke:ui");
+const smokeStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-ui-smoke-"));
 
 fs.rmSync(screenshotDir, { recursive: true, force: true });
 fs.mkdirSync(screenshotDir, { recursive: true });
+
+function cleanupSmokeState() {
+  const resolved = path.resolve(smokeStateDir);
+  const tempRoot = `${path.resolve(os.tmpdir())}${path.sep}`;
+  if (!resolved.startsWith(tempRoot) || !path.basename(resolved).startsWith("signalasi-ui-smoke-")) {
+    throw new Error(`Refusing to remove unexpected smoke state directory: ${resolved}`);
+  }
+  fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
 
 function findFreeLoopbackPort() {
   return new Promise((resolve, reject) => {
@@ -57,7 +69,7 @@ async function main() {
       ...process.env,
       SIGNALASI_UI_SMOKE: "1",
       SIGNALASI_UI_SMOKE_DIR: screenshotDir,
-      SIGNALASI_STATE_DIR: path.join(screenshotDir, "state"),
+      SIGNALASI_STATE_DIR: smokeStateDir,
       SIGNALASI_BACKEND_PORT: String(backendPort),
       SIGNALASI_DISABLE_EXTERNAL_SERVICES: "1"
     }
@@ -65,6 +77,7 @@ async function main() {
 
   child.on("exit", (code) => {
     releaseLock();
+    cleanupSmokeState();
     if (code !== 0) {
       process.exit(code || 1);
       return;
@@ -81,6 +94,7 @@ async function main() {
 
   child.on("error", (error) => {
     releaseLock();
+    cleanupSmokeState();
     console.error(`[ui-smoke] failed to start Electron: ${error.stack || error.message || error}`);
     process.exit(1);
   });

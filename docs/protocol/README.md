@@ -7,6 +7,7 @@ Additional protocol contracts:
 - [Desktop Native Tool Execution v1](Desktop-Native-Tool-Execution-v1.md)
 - [Phone-Native Tool Session v1](Phone-Native-Tool-Session-v1.md)
 - [Super Agent Rich Output](Super-Agent-Rich-Output.md)
+- [Self-Evolution V2 API](Self-Evolution-V2-API.md)
 
 ## Agent Conversation Identity
 

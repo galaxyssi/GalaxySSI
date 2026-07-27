@@ -26,14 +26,22 @@ const releaseLock = acquireSignalasiLock(bundlePython ? "package:win:python" : "
 const sidecarDir = path.join(backendSrc, "signal_sidecar");
 const sidecarRuntimeName = "signalasi-link-sidecar";
 const sidecarRuntimeDir = path.join(sidecarDir, "build", "install", sidecarRuntimeName);
+const backendDataEntries = ["web_source_sites.tsv"];
 
 process.on("exit", releaseLock);
 
-const backendFiles = [
+const backendEntries = [
   ...fs.readdirSync(backendSrc, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".py") && !entry.name.startsWith("test_"))
+    .filter((entry) => (
+      entry.isFile() && entry.name.endsWith(".py") && !entry.name.startsWith("test_")
+    ) || (
+      entry.isDirectory()
+      && !entry.name.startsWith("test_")
+      && fs.existsSync(path.join(backendSrc, entry.name, "__init__.py"))
+    ))
     .map((entry) => entry.name)
     .sort(),
+  ...backendDataEntries,
   "requirements.txt"
 ];
 
@@ -254,8 +262,10 @@ writeJson(path.join(appDir, "package.json"), {
   }
 });
 
-for (const file of backendFiles) {
-  copyRecursive(path.join(backendSrc, file), path.join(packagedBackendDir, file));
+for (const entry of backendEntries) {
+  copyRecursive(path.join(backendSrc, entry), path.join(packagedBackendDir, entry), {
+    ignore: (_full, name) => name === "__pycache__" || name.endsWith(".pyc")
+  });
 }
 copyRecursive(
   sidecarRuntimeDir,
