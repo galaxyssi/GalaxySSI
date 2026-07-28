@@ -210,14 +210,17 @@ HIGH_RISK_ACTIONS = {
     "run", "start", "stop", "restart", "send", "sync",
 }
 
-HIGH_RISK_ROOTS = {
-    "shell", "process", "deploy", "release", "rollback", "reset", "device",
-    "android", "ssh", "scp", "smtp", "webhook",
+HIGH_RISK_ROOT_ACTIONS = {
+    ("ssh", "inspect"),
+    ("scp", "receive"),
+    ("node", "inspect"),
+    ("python", "validate"),
+    ("python", "report"),
 }
 
 
 def _risk(root: str, action: str) -> str:
-    if root in HIGH_RISK_ROOTS or action in HIGH_RISK_ACTIONS:
+    if action in HIGH_RISK_ACTIONS or (root, action) in HIGH_RISK_ROOT_ACTIONS:
         return "high"
     if action in {"create", "update", "checkpoint", "pause", "resume", "cancel", "retry"}:
         return "write"

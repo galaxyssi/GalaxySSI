@@ -19,9 +19,11 @@ import urllib.parse
 import urllib.request
 import webbrowser
 import zipfile
+from collections import Counter
 from pathlib import Path
 from uuid import uuid4
 
+from .capabilities import EXTERNAL_HISTORY_ACTIONS, probe_command_capability
 from .protocol import CommandDefinition, CommandRequest, CommandResult, new_run_id, now_iso
 from .registry import CommandRegistry
 from .security import resolve_workspace_path, workspace_root
@@ -77,23 +79,37 @@ def commands_list(registry: CommandRegistry):
 def capabilities_list(registry: CommandRegistry):
     def handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
         commands = registry.list()
-        ready = [command for command in commands if command["implemented"] and command["handler"]]
-        unavailable = [command for command in commands if not command["handler"]]
+        capabilities = [
+            probe_command_capability(
+                registry.definition(command["command_id"]),
+                handler_bound=bool(command["handler"]),
+                workspace=request.workspace,
+            )
+            for command in commands
+        ]
+        counts = Counter(capability.status for capability in capabilities)
+        runnable_count = counts["ready"] + counts["needs_input"]
+        unavailable_count = (
+            counts["needs_configuration"]
+            + counts["missing_runtime"]
+            + counts["unsupported"]
+        )
         return _result(
             definition,
             request,
             "completed",
             {
-                "ready_count": len(ready),
-                "unavailable_count": len(unavailable),
-                "capabilities": [
-                    {
-                        "command_id": command["command_id"],
-                        "status": "available" if command["handler"] else "unavailable",
-                        "risk": command["risk"],
-                    }
-                    for command in commands
-                ],
+                "registered_count": len(commands),
+                "handler_bound_count": sum(1 for command in commands if command["handler"]),
+                "ready_count": counts["ready"],
+                "runnable_count": runnable_count,
+                "needs_input_count": counts["needs_input"],
+                "needs_configuration_count": counts["needs_configuration"],
+                "missing_runtime_count": counts["missing_runtime"],
+                "unsupported_count": counts["unsupported"],
+                "unavailable_count": unavailable_count,
+                "status_counts": dict(sorted(counts.items())),
+                "capabilities": [capability.public() for capability in capabilities],
             },
             display={"type": "capability_matrix"},
         )
@@ -505,6 +521,28 @@ def _deployment_handler(definition: CommandDefinition, request: CommandRequest) 
 
 def _shell_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
     root = workspace_root(request)
+    if definition.action == "list":
+        candidates = (
+            ("PowerShell", "pwsh"),
+            ("Windows PowerShell", "powershell"),
+            ("Command Prompt", "cmd"),
+            ("Bash", "bash"),
+            ("POSIX shell", "sh"),
+            ("Z shell", "zsh"),
+            ("Fish", "fish"),
+        )
+        shells = [
+            {"name": name, "command": command, "executable": executable}
+            for name, command in candidates
+            if (executable := shutil.which(command))
+        ]
+        return _result(
+            definition,
+            request,
+            "completed",
+            {"mode": "argv_only", "cwd": str(root), "shells": shells},
+            display={"type": "shell_list"},
+        )
     if definition.action in {"status", "validate", "report"}:
         return _result(
             definition,
@@ -753,12 +791,6 @@ def _inventory_handler(definition: CommandDefinition, request: CommandRequest) -
 
 
 def _github_item_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
-    root = workspace_root(request)
-    if not (root / ".git").exists():
-        return _result(definition, request, "unavailable", {"path": str(root)}, error_code="git_repository_required")
-    gh = shutil.which("gh")
-    if not gh:
-        return _result(definition, request, "unavailable", {}, error_code="prerequisite_unavailable", message="GitHub CLI is not installed.")
     if definition.action not in {"status", "list", "validate", "report"}:
         return _result(
             definition,
@@ -767,6 +799,12 @@ def _github_item_handler(definition: CommandDefinition, request: CommandRequest)
             {"action": definition.action, "reason": "PR and issue writes require an explicit GitHub workflow adapter."},
             error_code="github_write_adapter_required",
         )
+    root = workspace_root(request)
+    if not (root / ".git").exists():
+        return _result(definition, request, "unavailable", {"path": str(root)}, error_code="git_repository_required")
+    gh = shutil.which("gh")
+    if not gh:
+        return _result(definition, request, "unavailable", {}, error_code="prerequisite_unavailable", message="GitHub CLI is not installed.")
     item = "pr" if definition.root == "pr" else "issue"
     args = [gh, item, "list", "--limit", str(_limit(request, 30)), "--json", "number,title,state,url"]
     completed = subprocess.run(
@@ -1300,14 +1338,17 @@ def _phone_permission_handler(definition: CommandDefinition, request: CommandReq
         "unavailable",
         {
             "capability": root,
-            "required": "Paired Android device with native permission or Phone Tool Broker session.",
+            "action": definition.action,
+            "required": "A deterministic Phone Tool Broker action contract.",
         },
-        error_code="prerequisite_unavailable",
-        message=f"{root}.{definition.action} requires a paired device and explicit Android permission.",
+        error_code="phone_action_unavailable",
+        message=f"{root}.{definition.action} is registered but has no deterministic execution contract.",
     )
 
 
 def _adb_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
+    if definition.action not in {"status", "list", "inspect", "run", "send", "sync"}:
+        return _result(definition, request, "unavailable", {"action": definition.action}, error_code="adb_action_unavailable")
     adb = shutil.which("adb")
     if not adb:
         return _result(definition, request, "unavailable", {"required_executable": "adb"}, error_code="prerequisite_unavailable", message="ADB is not installed or not on PATH.")
@@ -1331,52 +1372,52 @@ def _adb_handler(definition: CommandDefinition, request: CommandRequest) -> Comm
 
 
 def _ssh_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
-    ssh = shutil.which("ssh")
     if definition.action in {"status", "list"}:
         return _external_status(definition, request, "ssh")
+    if definition.action not in {"run", "inspect"}:
+        return _result(definition, request, "unavailable", {"action": definition.action}, error_code="ssh_action_unavailable")
+    ssh = shutil.which("ssh")
     if not ssh:
         return _result(definition, request, "unavailable", {"required_executable": "ssh"}, error_code="prerequisite_unavailable")
     host = str(request.args.get("host") or request.args.get("target") or "").strip()
     if not host:
         return _result(definition, request, "failed", {}, error_code="ssh_host_required")
     argv = _coerce_argv(request.args.get("argv") or request.args.get("command"))
-    if definition.action in {"run", "inspect"}:
-        if not argv:
-            return _result(definition, request, "failed", {}, error_code="ssh_command_required")
-        return _run_argv(definition, request, [ssh, host, *argv], workspace_root(request), timeout=int(request.args.get("timeout") or 60))
-    return _result(definition, request, "unavailable", {"action": definition.action}, error_code="ssh_action_unavailable")
+    if not argv:
+        return _result(definition, request, "failed", {}, error_code="ssh_command_required")
+    return _run_argv(definition, request, [ssh, host, *argv], workspace_root(request), timeout=int(request.args.get("timeout") or 60))
 
 
 def _scp_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
-    scp = shutil.which("scp")
     if definition.action in {"status", "list"}:
         return _external_status(definition, request, "scp")
+    if definition.action not in {"run", "send", "receive", "sync"}:
+        return _result(definition, request, "unavailable", {"action": definition.action}, error_code="scp_action_unavailable")
+    scp = shutil.which("scp")
     if not scp:
         return _result(definition, request, "unavailable", {"required_executable": "scp"}, error_code="prerequisite_unavailable")
     source = str(request.args.get("source") or request.args.get("from") or "").strip()
     destination = str(request.args.get("destination") or request.args.get("to") or "").strip()
     if not source or not destination:
         return _result(definition, request, "failed", {}, error_code="scp_source_destination_required")
-    if definition.action in {"run", "send", "receive", "sync"}:
-        return _run_argv(definition, request, [scp, source, destination], workspace_root(request), timeout=int(request.args.get("timeout") or 120))
-    return _result(definition, request, "unavailable", {"action": definition.action}, error_code="scp_action_unavailable")
+    return _run_argv(definition, request, [scp, source, destination], workspace_root(request), timeout=int(request.args.get("timeout") or 120))
 
 
 def _node_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
-    node = shutil.which("node")
     if definition.action in {"status", "list"}:
         return _external_status(definition, request, "node")
+    if definition.action not in {"run", "inspect"}:
+        return _result(definition, request, "unavailable", {"action": definition.action}, error_code="node_action_unavailable")
+    node = shutil.which("node")
     if not node:
         return _result(definition, request, "unavailable", {"required_executable": "node"}, error_code="prerequisite_unavailable")
-    if definition.action in {"run", "inspect"}:
-        code = str(request.args.get("code") or request.args.get("script") or "").strip()
-        argv = _coerce_argv(request.args.get("argv") or request.args.get("command"))
-        if code:
-            return _run_argv(definition, request, [node, "-e", code], workspace_root(request), timeout=int(request.args.get("timeout") or 30))
-        if argv:
-            return _run_argv(definition, request, [node, *argv], workspace_root(request), timeout=int(request.args.get("timeout") or 30))
-        return _result(definition, request, "failed", {}, error_code="node_code_required")
-    return _result(definition, request, "unavailable", {"action": definition.action}, error_code="node_action_unavailable")
+    code = str(request.args.get("code") or request.args.get("script") or "").strip()
+    argv = _coerce_argv(request.args.get("argv") or request.args.get("command"))
+    if code:
+        return _run_argv(definition, request, [node, "-e", code], workspace_root(request), timeout=int(request.args.get("timeout") or 30))
+    if argv:
+        return _run_argv(definition, request, [node, *argv], workspace_root(request), timeout=int(request.args.get("timeout") or 30))
+    return _result(definition, request, "failed", {}, error_code="node_code_required")
 
 
 def _webhook_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
@@ -1478,7 +1519,66 @@ def external_adapter_handler(store: CommandStore):
     return handler
 
 
+def _adapter_history_handler(
+    store: CommandStore,
+    definition: CommandDefinition,
+    request: CommandRequest,
+) -> CommandResult:
+    query = str(request.args.get("query") or "").strip()
+    run_id = str(request.args.get("run_id") or "").strip()
+    history = store.search_runs(
+        definition.root,
+        query=query,
+        run_id=run_id,
+        limit=min(_limit(request, 20), 200),
+        excluded_actions=("inspect", "receive", "search"),
+    )
+    runtime_name = EXTERNAL_EXECUTABLES.get(definition.root)
+    if runtime_name is None:
+        runtime_name = definition.root
+    runtime_path = shutil.which(runtime_name) if runtime_name else ""
+    common = {
+        "adapter": definition.root,
+        "action": definition.action,
+        "runtime": runtime_name,
+        "runtime_detected": bool(runtime_path),
+        "runtime_path": runtime_path or "",
+        "count": len(history),
+    }
+    if definition.action == "inspect":
+        return _result(
+            definition,
+            request,
+            "completed",
+            {
+                **common,
+                "run_id": run_id,
+                "latest": history[0] if history else None,
+            },
+            display={"type": "adapter_inspection"},
+        )
+    return _result(
+        definition,
+        request,
+        "completed",
+        {
+            **common,
+            "query": query,
+            "items": history,
+        },
+        display={
+            "type": (
+                "adapter_search_results"
+                if definition.action == "search"
+                else "adapter_received_results"
+            )
+        },
+    )
+
+
 def _external_adapter_handler(store: CommandStore, definition: CommandDefinition, request: CommandRequest) -> CommandResult:
+    if definition.action in EXTERNAL_HISTORY_ACTIONS.get(definition.root, ()):
+        return _adapter_history_handler(store, definition, request)
     if definition.root in {"web", "http"}:
         return _web_http_handler(definition, request)
     if definition.root == "url":
