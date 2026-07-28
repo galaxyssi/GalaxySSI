@@ -44,6 +44,21 @@ class FakeGitRunner:
         return type("Result", (), {"returncode": 0, "stdout": output})()
 
 
+class WorktreeDiscoveryRunner:
+    def __init__(self, common_dir: Path, worktrees: list[Path]) -> None:
+        self.common_dir = common_dir
+        self.worktrees = worktrees
+
+    def run(self, argv, _cwd, **_kwargs):
+        if argv[:3] == ("git", "rev-parse", "--git-common-dir"):
+            output = str(self.common_dir)
+        elif argv[:4] == ("git", "worktree", "list", "--porcelain"):
+            output = "\n\n".join(f"worktree {path}\nHEAD {'a' * 40}" for path in self.worktrees)
+        else:
+            output = ""
+        return type("Result", (), {"returncode": 0, "stdout": output})()
+
+
 class FailedFetchRunner:
     def __init__(self) -> None:
         self.calls = []
@@ -234,6 +249,81 @@ class ReliableManagerTests(unittest.TestCase):
                 manager._gate_dependency_source("apps/desktop/.electron-runtime"),
             )
             self.assertTrue(manager._embedded_android_runtime_available())
+
+    def test_dependency_discovery_uses_registered_worktree_with_runtime(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            source = root / "feature"
+            primary = root / "primary"
+            source.mkdir()
+            electron = primary / "apps/desktop/.electron-runtime/node_modules/electron/dist"
+            electron.mkdir(parents=True)
+            manager = object.__new__(EvolutionManager)
+            manager.source_root = source
+            manager.runner = WorktreeDiscoveryRunner(primary / ".git", [source, primary])
+
+            with patch.object(Path, "home", return_value=home):
+                discovered = manager._discover_dependency_root()
+
+            self.assertEqual(primary, discovered)
+            self.assertTrue((home / "SignalASIWorkspace/SignalASI").is_dir())
+
+    def test_dependency_discovery_prefers_standard_user_workspace(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            home = root / "profile"
+            standard = home / "SignalASIWorkspace/SignalASI"
+            source = root / "feature"
+            primary = root / "primary"
+            source.mkdir()
+            (standard / "apps/desktop/.electron-runtime/node_modules/electron/dist").mkdir(
+                parents=True
+            )
+            (primary / "apps/desktop/.electron-runtime/node_modules/electron/dist").mkdir(
+                parents=True
+            )
+            manager = object.__new__(EvolutionManager)
+            manager.source_root = source
+            manager.runner = WorktreeDiscoveryRunner(primary / ".git", [source, primary])
+
+            with patch.object(Path, "home", return_value=home):
+                discovered = manager._discover_dependency_root()
+
+            self.assertEqual(standard, discovered)
+
+    def test_missing_desktop_runtime_blocks_before_agent_attempt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            manager = object.__new__(EvolutionManager)
+            manager.dependency_root = Path(temporary)
+            manager.gate_config = {"desktop": {"package_windows": True}}
+            task = legacy.EvolutionTask(
+                task_id="task",
+                problem="repair",
+                reproduction_steps=[],
+                scope=["apps/desktop/core"],
+                acceptance=["passes"],
+                risk_level="low",
+                max_attempts=3,
+            )
+
+            with self.assertRaises(legacy.EvolutionError) as raised:
+                manager._require_gate_dependencies(task)
+
+            self.assertEqual("gate_dependency_missing", raised.exception.code)
+            self.assertIn("No Agent attempt was consumed", str(raised.exception))
+
+    def test_missing_package_runtime_is_non_retryable_infrastructure_failure(self):
+        gate = legacy.EvolutionGate(
+            id="desktop-package",
+            status="failed",
+            summary="Error: Electron runtime not found: candidate/.electron-runtime",
+        )
+
+        failure = EvolutionManager._gate_failure_error(gate)
+
+        self.assertEqual("gate_dependency_missing", failure.code)
+        self.assertIn("Trusted build dependency", str(failure))
 
     def test_prepare_attempt_override_contract_remains_backward_compatible(self):
         self.assertEqual(
