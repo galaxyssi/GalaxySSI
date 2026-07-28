@@ -111,13 +111,28 @@ Terminal Runs update a separate encrypted Agent self-model. The self-model learn
 
 ## Control Center
 
-The Memory and Personalization page exposes:
+The Android Memory and Personalization page exposes:
 
 - candidate memory inbox with approve and reject actions;
 - encrypted evolution history showing applied, waiting, conflicting, blocked, approved, and rejected transitions;
 - temporal relationship graph with entity and relation counts;
 - memory health findings and a manual on-device audit;
 - existing explicit memory editing, conflict resolution, pinning, and deletion.
+
+The Desktop capability drawer implements the same trust boundary for memories learned
+while Desktop acts as a super agent:
+
+- every learned value first becomes a durable candidate;
+- low-risk facts and task evidence may merge automatically;
+- identity, preference, and security candidates require review;
+- unresolved contradictions remain in the inbox until approved or rejected;
+- private candidate payloads are discarded before persistence;
+- user, project, device, security, and general namespaces cannot supersede each other;
+- current, planned, historical, deprecated, conflicted, and pending state remain
+  distinguishable;
+- approval preserves source evidence and marks replaced facts as superseded instead of
+  deleting their history;
+- Current, Inbox, and History views expose the resulting lifecycle in the Desktop UI.
 
 ## Evaluation Corpus
 

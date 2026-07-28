@@ -487,6 +487,11 @@ button:disabled { cursor: default; opacity: 0.48; }
 .capability-summary strong { display: block; font-size: 10px; }
 .capability-summary p { margin: 3px 12px 0 0; color: var(--muted); font-size: 8px; }
 .capability-summary button { margin-left: auto; }
+.memory-view-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-bottom: 9px; }
+.memory-view-tabs button { height: 31px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: #69737c; font-size: 8px; }
+.memory-view-tabs button.active { border-color: #b9d8cc; background: #edf7f3; color: var(--green-ink); font-weight: 650; }
+.memory-view-tabs em { min-width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; border-radius: 8px; background: #edf0f2; color: #707981; font-size: 7px; font-style: normal; }
+.memory-view-tabs button.active em { background: #d7eee5; color: var(--green-ink); }
 .search-field { height: 34px; display: grid; grid-template-columns: 25px minmax(0, 1fr); align-items: center; margin-bottom: 9px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
 .search-field input { height: 100%; min-width: 0; padding: 0 8px 0 0; border: 0; outline: 0; background: transparent; color: #333b42; font-size: 9px; }
 .search-symbol { width: 10px; height: 10px; position: relative; justify-self: center; border: 1.2px solid #7a838b; border-radius: 50%; }
@@ -500,6 +505,15 @@ button:disabled { cursor: default; opacity: 0.48; }
 .capability-item-actions { display: flex; align-items: center; gap: 4px; }
 .capability-item button { height: 26px; padding: 0 7px; border: 0; border-radius: 5px; background: #eef1f3; color: #56616a; font-size: 8px; }
 .capability-item button.primary { background: var(--green-soft); color: var(--green-ink); }
+.memory-item-heading { display: flex; align-items: center; gap: 5px; }
+.memory-status { display: inline-flex; align-items: center; min-height: 16px; padding: 0 5px; border-radius: 8px; background: #eef1f3; color: #68727b; font-size: 7px; font-weight: 600; }
+.memory-status.pending,
+.memory-status.conflicted { background: #fff2d8; color: #8b641d; }
+.memory-status.current,
+.memory-status.approved { background: #e4f4ed; color: #247255; }
+.memory-status.historical,
+.memory-status.deprecated { background: #eef0f2; color: #717981; }
+.memory-candidate { border-color: #e7d6ad; background: #fffdf8; }
 .proactive-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .proactive-run-list { margin-top: 10px; }
 .proactive-run-list:empty { display: none; }

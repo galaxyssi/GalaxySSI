@@ -883,11 +883,28 @@ class DesktopSuperAgent:
     def _learn(self, task_id: str, conversation_id: str, prompt: str, reply: str) -> None:
         learned = self.memory.evolve(prompt, reply, conversation_id=conversation_id, task_id=task_id)
         if learned:
+            applied = [
+                item for item in learned
+                if item.get("status") in {"auto_merged", "approved"} and item.get("resulting_memory_id")
+            ]
+            pending = [
+                item for item in learned
+                if item.get("status") in {"pending_review", "conflicted"}
+            ]
+            blocked = [item for item in learned if item.get("status") == "private_blocked"]
             self._event(
                 task_id,
                 "memory",
-                "Updated long-term memory",
-                metadata={"memory_ids": [item["id"] for item in learned[:8]], "count": len(learned)},
+                "Reviewed long-term memory candidates",
+                metadata={
+                    "candidate_ids": [
+                        item["id"] for item in learned[:8]
+                        if item.get("status") != "private_blocked"
+                    ],
+                    "applied": len(applied),
+                    "pending_review": len(pending),
+                    "private_blocked": len(blocked),
+                },
             )
 
     def _local_plan(

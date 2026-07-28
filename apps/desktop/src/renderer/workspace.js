@@ -62,7 +62,14 @@ const state = {
   pairing: null,
   pairingGrantDesktopExecutor: false,
   desktopControl: null,
-  memory: { memories: [], stats: {} },
+  memory: {
+    memories: [],
+    history: [],
+    candidates: [],
+    stats: {},
+    view: "current",
+    query: ""
+  },
   skills: [],
   mcp: [],
   proactiveTasks: [],
@@ -1020,15 +1027,118 @@ function parsePhrases(value) {
   return Array.from(new Set(String(value || "").split(/[,;\n]/).map((item) => item.trim()).filter(Boolean))).slice(0, 32);
 }
 
+function memoryStateLabel(value) {
+  const labels = {
+    current: "Current",
+    historical: "Historical",
+    planned: "Planned",
+    deprecated: "Deprecated",
+    pending: "Pending review",
+    pending_review: "Pending review",
+    conflicted: "Conflict",
+    superseded: "Deprecated",
+    retracted: "Retracted",
+    approved: "Approved"
+  };
+  return t(labels[value] || value || "Current");
+}
+
+function memoryKindLabel(value) {
+  const labels = {
+    fact: "Fact",
+    identity: "Identity",
+    preference: "Preference",
+    security: "Security",
+    decision: "Decision",
+    goal: "Goal",
+    project_state: "Project state",
+    device_state: "Device state",
+    episode: "Task evidence",
+    explicit: "Explicit memory",
+    manual: "Manual memory"
+  };
+  return t(labels[value] || value || "Memory");
+}
+
+function memoryNamespaceLabel(value) {
+  const labels = {
+    general: "General",
+    user: "User",
+    project: "Project",
+    device: "Device",
+    security: "Security"
+  };
+  return t(labels[value] || value || "General");
+}
+
+function memoryMatchesQuery(item, query) {
+  if (!query) return true;
+  const searchable = [
+    item.content,
+    item.kind,
+    item.namespace,
+    item.status,
+    item.temporal_state
+  ].join(" ").toLocaleLowerCase();
+  return searchable.includes(query.toLocaleLowerCase());
+}
+
 function renderMemory() {
-  const rows = Array.isArray(state.memory.memories) ? state.memory.memories : [];
   const stats = state.memory.stats || {};
-  $("#memorySummary").textContent = t("{count} active memories", { count: Number(stats.active || rows.length || 0) });
-  $("#memoryList").innerHTML = rows.length ? rows.map((memory) => `
-    <article class="capability-item">
-      <div><strong>${escapeHtml(memory.kind || t("Memory"))}</strong><small title="${escapeHtml(memory.content || "")}">${escapeHtml(String(memory.content || "").slice(0, 180))}</small></div>
-      <div class="capability-item-actions"><button data-forget-memory="${escapeHtml(memory.id)}">${escapeHtml(t("Forget"))}</button></div>
-    </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No matching memory."))}</div>`;
+  const current = Array.isArray(state.memory.memories) ? state.memory.memories : [];
+  const history = Array.isArray(state.memory.history) ? state.memory.history : [];
+  const candidates = Array.isArray(state.memory.candidates) ? state.memory.candidates : [];
+  const query = String(state.memory.query || "").trim();
+  const pendingCount = Number(stats.pending || candidates.length || 0);
+  const historyCount = Number(stats.superseded || 0) + Number(stats.retracted || 0);
+  $("#memorySummary").textContent = t("{active} current · {pending} pending review", {
+    active: Number(stats.active || current.length || 0),
+    pending: pendingCount
+  });
+  $("#memoryCurrentCount").textContent = String(Number(stats.active || current.length || 0));
+  $("#memoryInboxCount").textContent = String(pendingCount);
+  $("#memoryHistoryCount").textContent = String(historyCount);
+  $$("[data-memory-view]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.memoryView === state.memory.view);
+  });
+
+  if (state.memory.view === "inbox") {
+    const rows = candidates.filter((candidate) => memoryMatchesQuery(candidate, query));
+    $("#memoryList").innerHTML = rows.length ? rows.map((candidate) => `
+      <article class="capability-item memory-candidate">
+        <div>
+          <div class="memory-item-heading">
+            <strong>${escapeHtml(memoryKindLabel(candidate.kind))}</strong>
+            <span class="memory-status ${escapeHtml(candidate.status)}">${escapeHtml(memoryStateLabel(candidate.status))}</span>
+          </div>
+          <small title="${escapeHtml(candidate.content || "")}">${escapeHtml(String(candidate.content || "").slice(0, 180))}</small>
+          <small>${escapeHtml(`${memoryNamespaceLabel(candidate.namespace)} · ${memoryStateLabel(candidate.intended_temporal_state)}`)}</small>
+        </div>
+        <div class="capability-item-actions">
+          <button data-reject-memory-candidate="${escapeHtml(candidate.id)}">${escapeHtml(t("Reject"))}</button>
+          <button class="primary" data-approve-memory-candidate="${escapeHtml(candidate.id)}">${escapeHtml(t("Approve"))}</button>
+        </div>
+      </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No memory candidates need review."))}</div>`;
+    return;
+  }
+
+  const sourceRows = state.memory.view === "history" ? history : current;
+  const rows = sourceRows.filter((memory) => memoryMatchesQuery(memory, query));
+  $("#memoryList").innerHTML = rows.length ? rows.map((memory) => {
+    const stateLabel = memory.status === "active" ? memory.temporal_state : memory.status;
+    return `
+      <article class="capability-item">
+        <div>
+          <div class="memory-item-heading">
+            <strong>${escapeHtml(memoryKindLabel(memory.kind))}</strong>
+            <span class="memory-status ${escapeHtml(stateLabel)}">${escapeHtml(memoryStateLabel(stateLabel))}</span>
+          </div>
+          <small title="${escapeHtml(memory.content || "")}">${escapeHtml(String(memory.content || "").slice(0, 180))}</small>
+          <small>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</small>
+        </div>
+        ${state.memory.view === "current" ? `<div class="capability-item-actions"><button data-forget-memory="${escapeHtml(memory.id)}">${escapeHtml(t("Forget"))}</button></div>` : ""}
+      </article>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t("No matching memory."))}</div>`;
 }
 
 function renderSkills() {
@@ -1136,21 +1246,42 @@ function updateCapabilityCount() {
 }
 
 async function refreshMemory(query = "") {
-  state.memory = await window.signalasi.getDesktopMemory(query, 100);
+  const [current, history, inbox] = await Promise.all([
+    window.signalasi.getDesktopMemory(query, 100, "active"),
+    window.signalasi.getDesktopMemory("", 100, "history"),
+    window.signalasi.getDesktopMemoryInbox(100)
+  ]);
+  state.memory = {
+    ...state.memory,
+    memories: Array.isArray(current.memories) ? current.memories : [],
+    history: Array.isArray(history.memories) ? history.memories : [],
+    candidates: Array.isArray(inbox.candidates) ? inbox.candidates : [],
+    stats: current.stats || inbox.stats || {},
+    query
+  };
   renderMemory();
   updateCapabilityCount();
 }
 
 async function refreshCapabilities() {
   try {
-    const [memory, skills, mcp, proactive, proactiveRuns] = await Promise.all([
-      window.signalasi.getDesktopMemory("", 100),
+    const [memory, memoryHistory, memoryInbox, skills, mcp, proactive, proactiveRuns] = await Promise.all([
+      window.signalasi.getDesktopMemory("", 100, "active"),
+      window.signalasi.getDesktopMemory("", 100, "history"),
+      window.signalasi.getDesktopMemoryInbox(100),
       window.signalasi.getDesktopSkills(),
       window.signalasi.getDesktopMcp(),
       window.signalasi.listProactiveTasks(200),
       window.signalasi.listProactiveRuns(state.selectedProactiveTaskId, 100)
     ]);
-    state.memory = memory;
+    state.memory = {
+      ...state.memory,
+      memories: Array.isArray(memory.memories) ? memory.memories : [],
+      history: Array.isArray(memoryHistory.memories) ? memoryHistory.memories : [],
+      candidates: Array.isArray(memoryInbox.candidates) ? memoryInbox.candidates : [],
+      stats: memory.stats || memoryInbox.stats || {},
+      query: ""
+    };
     state.skills = Array.isArray(skills.skills) ? skills.skills : [];
     state.mcp = Array.isArray(mcp.connections) ? mcp.connections : [];
     state.proactiveTasks = Array.isArray(proactive.tasks) ? proactive.tasks : [];
@@ -1539,6 +1670,12 @@ function selectCapabilityTab(name) {
   $$('[data-capability-tab]').forEach((button) => button.classList.toggle("active", button.dataset.capabilityTab === name));
   $$(".capability-pane").forEach((pane) => pane.classList.remove("active"));
   $(`#${name}Capability`)?.classList.add("active");
+}
+
+function selectMemoryView(name) {
+  if (!["current", "inbox", "history"].includes(name)) return;
+  state.memory.view = name;
+  renderMemory();
 }
 
 async function runDiagnostics() {
@@ -2037,6 +2174,9 @@ function bindEvents() {
     await refreshDesktopControl();
   });
   $$('[data-capability-tab]').forEach((button) => button.addEventListener("click", () => selectCapabilityTab(button.dataset.capabilityTab)));
+  $$("[data-memory-view]").forEach((button) => {
+    button.addEventListener("click", () => selectMemoryView(button.dataset.memoryView));
+  });
   $("#refreshMemoryButton").addEventListener("click", () => refreshMemory($("#memorySearch").value.trim()));
   let memorySearchTimer = 0;
   $("#memorySearch").addEventListener("input", () => {
@@ -2045,9 +2185,26 @@ function bindEvents() {
   });
   $("#addMemoryButton").addEventListener("click", () => addMemory().catch((error) => showToast(error.message || String(error))));
   $("#memoryList").addEventListener("click", async (event) => {
-    const button = event.target.closest("[data-forget-memory]");
-    if (!button) return;
-    await window.signalasi.forgetDesktopMemory(button.dataset.forgetMemory);
+    const forget = event.target.closest("[data-forget-memory]");
+    const approve = event.target.closest("[data-approve-memory-candidate]");
+    const reject = event.target.closest("[data-reject-memory-candidate]");
+    if (forget) {
+      await window.signalasi.forgetDesktopMemory(forget.dataset.forgetMemory);
+    } else if (approve) {
+      await window.signalasi.reviewDesktopMemoryCandidate(
+        approve.dataset.approveMemoryCandidate,
+        "approve"
+      );
+      showToast(t("Memory candidate approved."));
+    } else if (reject) {
+      await window.signalasi.reviewDesktopMemoryCandidate(
+        reject.dataset.rejectMemoryCandidate,
+        "reject"
+      );
+      showToast(t("Memory candidate rejected."));
+    } else {
+      return;
+    }
     await refreshMemory($("#memorySearch").value.trim());
   });
   $("#saveSkillButton").addEventListener("click", () => saveSkill().catch((error) => showToast(error.message || String(error))));

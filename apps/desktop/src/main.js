@@ -69,6 +69,7 @@ async function runUiSmoke() {
   const setupPath = path.join(outDir, "desktop-setup-guide.png");
   const matrixPath = path.join(outDir, "desktop-status-matrix.png");
   const agentsPath = path.join(outDir, "desktop-agents.png");
+  const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
   const evolutionV2Path = path.join(outDir, "desktop-evolution-v2.png");
@@ -239,6 +240,68 @@ async function runUiSmoke() {
           if (document.querySelectorAll("#skillList .capability-item").length >= 4) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
+        await window.signalasi.proposeDesktopMemory({
+          content: "Prefer concise verified release summaries",
+          kind: "preference",
+          importance: 0.8,
+          namespace: "user"
+        });
+        await refreshMemory("");
+        document.querySelector('[data-capability-tab="memory"]')?.click();
+        document.querySelector('[data-memory-view="inbox"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const memoryState = {
+          active: document.querySelector("#memoryCapability")?.classList.contains("active") || false,
+          views: document.querySelectorAll("[data-memory-view]").length,
+          inboxActive: document.querySelector('[data-memory-view="inbox"]')?.classList.contains("active") || false,
+          summary: document.querySelector("#memorySummary")?.textContent || "",
+          inboxCount: document.querySelector("#memoryInboxCount")?.textContent || "",
+          candidates: document.querySelectorAll("#memoryList .memory-candidate").length,
+          approveActions: document.querySelectorAll("[data-approve-memory-candidate]").length
+        };
+        window.__signalasiMemorySmokeState = memoryState;
+        return memoryState;
+      })()
+    `);
+    if (
+      !capabilitiesState.active
+      || capabilitiesState.views !== 3
+      || !capabilitiesState.inboxActive
+      || !capabilitiesState.summary.trim()
+      || !capabilitiesState.inboxCount.trim()
+      || capabilitiesState.candidates !== 1
+      || capabilitiesState.approveActions !== 1
+    ) {
+      throw new Error(`Memory Inbox did not render: ${JSON.stringify(capabilitiesState)}`);
+    }
+    await captureSmokeScreenshot(memoryInboxPath);
+    const memoryReviewState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const approve = document.querySelector("[data-approve-memory-candidate]");
+        if (approve?.dataset.approveMemoryCandidate) {
+          await window.signalasi.reviewDesktopMemoryCandidate(
+            approve.dataset.approveMemoryCandidate,
+            "approve"
+          );
+          await refreshMemory("");
+        }
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          const inboxCount = Number(document.querySelector("#memoryInboxCount")?.textContent || "-1");
+          const currentCount = Number(document.querySelector("#memoryCurrentCount")?.textContent || "0");
+          if (inboxCount === 0 && currentCount >= 1) break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        return {
+          inboxCount: Number(document.querySelector("#memoryInboxCount")?.textContent || "-1"),
+          currentCount: Number(document.querySelector("#memoryCurrentCount")?.textContent || "0")
+        };
+      })()
+    `);
+    if (memoryReviewState.inboxCount !== 0 || memoryReviewState.currentCount < 1) {
+      throw new Error(`Memory candidate approval did not persist: ${JSON.stringify(memoryReviewState)}`);
+    }
+    const capabilityCatalogState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
         document.querySelector('[data-capability-tab="automation"]')?.click();
         await new Promise((resolve) => setTimeout(resolve, 250));
         return {
@@ -253,11 +316,11 @@ async function runUiSmoke() {
         };
       })()
     `);
-    if (!capabilitiesState.active || capabilitiesState.tabs !== 4 || capabilitiesState.skills < 4
-        || !capabilitiesState.memory.trim() || !capabilitiesState.mcpForm
-        || !capabilitiesState.automationActive || !capabilitiesState.automationSummary.trim()
-        || !capabilitiesState.automationEditor) {
-      throw new Error(`Capabilities drawer did not expose memory, Skills, MCP, and automation: ${JSON.stringify(capabilitiesState)}`);
+    if (!capabilityCatalogState.active || capabilityCatalogState.tabs !== 4 || capabilityCatalogState.skills < 4
+        || !capabilityCatalogState.memory.trim() || !capabilityCatalogState.mcpForm
+        || !capabilityCatalogState.automationActive || !capabilityCatalogState.automationSummary.trim()
+        || !capabilityCatalogState.automationEditor) {
+      throw new Error(`Capabilities drawer did not expose memory, Skills, MCP, and automation: ${JSON.stringify(capabilityCatalogState)}`);
     }
     await captureSmokeScreenshot(capabilitiesPath);
     const gatewayControlState = await mainWindow.webContents.executeJavaScript(`
@@ -511,6 +574,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${setupPath}`);
     console.log(`[ui-smoke] screenshot: ${matrixPath}`);
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
     console.log(`[ui-smoke] screenshot: ${evolutionV2Path}`);
@@ -1168,9 +1232,26 @@ async function getDesktopControl() {
   return fetchJson("/api/desktop-control");
 }
 
-async function getDesktopMemory(query = "", limit = 100) {
+async function getDesktopMemory(query = "", limit = 100, status = "active") {
   await startBackend();
-  return fetchJson(`/api/desktop-memory?query=${encodeURIComponent(query || "")}&limit=${encodeURIComponent(limit || 100)}`);
+  return fetchJson(
+    `/api/desktop-memory?query=${encodeURIComponent(query || "")}`
+    + `&limit=${encodeURIComponent(limit || 100)}`
+    + `&status=${encodeURIComponent(status || "active")}`
+  );
+}
+
+async function getDesktopMemoryInbox(limit = 100) {
+  await startBackend();
+  return fetchJson(`/api/desktop-memory/inbox?limit=${encodeURIComponent(limit || 100)}`);
+}
+
+async function proposeDesktopMemory(payload = {}) {
+  await startBackend();
+  return fetchJson("/api/desktop-memory/inbox", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
 async function rememberDesktopMemory(payload = {}) {
@@ -1181,6 +1262,15 @@ async function rememberDesktopMemory(payload = {}) {
 async function forgetDesktopMemory(memoryId) {
   await startBackend();
   return fetchJson(`/api/desktop-memory/${encodeURIComponent(memoryId)}`, { method: "DELETE" });
+}
+
+async function reviewDesktopMemoryCandidate(candidateId, action) {
+  await startBackend();
+  const normalizedAction = action === "approve" ? "approve" : "reject";
+  return fetchJson(
+    `/api/desktop-memory/inbox/${encodeURIComponent(candidateId)}/${normalizedAction}`,
+    { method: "POST" }
+  );
 }
 
 async function getDesktopSkills() {
@@ -1312,9 +1402,13 @@ ipcMain.handle("proactive-tasks:trigger", (_event, taskId) => triggerProactiveTa
 ipcMain.handle("proactive-runs:list", (_event, taskId, limit) => listProactiveRuns(taskId, limit));
 ipcMain.handle("proactive-runs:cancel", (_event, runId) => cancelProactiveRun(runId));
 ipcMain.handle("desktop-control:get", getDesktopControl);
-ipcMain.handle("desktop-memory:list", (_event, query, limit) => getDesktopMemory(query, limit));
+ipcMain.handle("desktop-memory:list", (_event, query, limit, status) => getDesktopMemory(query, limit, status));
+ipcMain.handle("desktop-memory:inbox", (_event, limit) => getDesktopMemoryInbox(limit));
+ipcMain.handle("desktop-memory:propose", (_event, payload) => proposeDesktopMemory(payload));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));
+ipcMain.handle("desktop-memory:review", (_event, candidateId, action) =>
+  reviewDesktopMemoryCandidate(candidateId, action));
 ipcMain.handle("desktop-skills:list", getDesktopSkills);
 ipcMain.handle("desktop-skills:save", (_event, payload) => saveDesktopSkill(payload));
 ipcMain.handle("desktop-skills:enabled", (_event, skillId, enabled) => setDesktopSkillEnabled(skillId, enabled));
