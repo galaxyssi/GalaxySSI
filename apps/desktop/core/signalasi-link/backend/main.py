@@ -31,6 +31,7 @@ from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
 from backend_instance_lock import BackendInstanceLock
+from unified_commands import default_command_engine
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("signalasi")
@@ -315,6 +316,45 @@ def api_agent_reputation(agent_id: str = Query("")):
         "agent": ledger.snapshot(agent_id) if agent_id else None,
     }
 
+
+class UnifiedCommandReq(BaseModel):
+    command_id: str = ""
+    args: dict = {}
+    raw: str = ""
+    slash: str = ""
+    source: str = "desktop"
+    requested_by: str = "user"
+    workspace: str = ""
+    approve: bool = False
+
+
+@app.get("/api/commands")
+def api_list_unified_commands(root: str = Query("")):
+    engine = default_command_engine()
+    return {
+        "catalog_size": len(engine.registry.list()),
+        "roots": engine.registry.roots(),
+        "commands": engine.registry.list(root.strip().lower()),
+    }
+
+
+@app.get("/api/commands/capabilities")
+def api_unified_command_capabilities():
+    result = default_command_engine().execute_payload({"command_id": "capabilities.list", "source": "desktop"})
+    return result.public()
+
+
+@app.get("/api/commands/runs")
+def api_unified_command_runs(limit: int = Query(50)):
+    return {"runs": default_command_engine().recent_runs(limit)}
+
+
+@app.post("/api/commands/execute")
+def api_execute_unified_command(req: UnifiedCommandReq, request: Request):
+    require_loopback(request)
+    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    result = default_command_engine().execute_payload(payload)
+    return result.public()
 
 @app.get("/api/pairing/status")
 def api_pairing_status():

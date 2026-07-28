@@ -532,6 +532,85 @@ button:disabled { cursor: default; opacity: 0.48; }
 .control-audit-row small { margin-top: 2px; color: var(--muted); font-size: 7px; line-height: 1.4; }
 .tool-output { max-height: 220px; margin: 9px 0; padding: 10px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: #f1f3f5; color: #34404a; font: 8px/1.55 Consolas, monospace; white-space: pre-wrap; }
 
+.command-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.command-summary span {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: #30373d;
+  font-size: 9px;
+}
+.command-summary strong { color: var(--muted); font-size: 8px; }
+.command-controls { margin-bottom: 10px; }
+.command-approve { align-items: start; }
+.command-catalog {
+  display: grid;
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.command-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) 52px 62px minmax(0, 1.4fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 9px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: #30373d;
+  text-align: left;
+  font-size: 8px;
+}
+.command-row:first-child { border-top: 0; }
+.command-row:hover { background: #f7f9fb; }
+.command-row strong,
+.command-row em {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.command-row em {
+  margin-top: 3px;
+  color: var(--muted);
+  font-style: normal;
+}
+.command-run-header { margin-top: 12px; }
+.audit-log {
+  display: grid;
+  gap: 7px;
+}
+.audit-entry {
+  display: grid;
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.audit-entry div { display: flex; gap: 8px; justify-content: space-between; min-width: 0; }
+.audit-entry strong,
+.audit-entry span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 8px;
+}
+.audit-entry span { color: var(--muted); }
+.audit-entry.ok { border-color: #bce9cd; }
+.audit-entry.warn { border-color: #f2c4c4; }
+
 .settings-group { margin-bottom: 16px; }
 .settings-group h3 { margin: 0 0 7px; padding: 0 2px; color: #424a52; font-size: 9px; }
 .settings-group-heading { display: flex; align-items: center; min-height: 23px; }

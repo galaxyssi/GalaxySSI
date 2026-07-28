@@ -6,7 +6,11 @@ const path = require("node:path");
 const { acquireSignalasiLock } = require("./smoke-lock");
 
 const root = path.resolve(__dirname, "..");
-const electronCli = path.join(root, ".electron-runtime", "node_modules", "electron", "cli.js");
+const electronCliCandidates = [
+  path.join(root, ".electron-runtime", "node_modules", "electron", "cli.js"),
+  path.join(root, "node_modules", "electron", "cli.js")
+];
+const electronCli = electronCliCandidates.find((candidate) => fs.existsSync(candidate)) || electronCliCandidates[0];
 const screenshotDir = path.join(root, "ui-smoke");
 const screenshots = [
   path.join(screenshotDir, "desktop-overview.png"),

@@ -34,7 +34,7 @@ function assertAndroidPersistentSessionConfig() {
     "isAutomaticReconnect = true",
     "private const val MQTT_QOS = 1",
     "stableClientId()",
-    "signalasi-android-$identity",
+    "signalasi-android-$MQTT_TRANSPORT_EPOCH-$identity",
     "SignalASICrypto.localIdentitySha256().take(16)",
     "val generation = subscriptionRecoveryState.begin(links.size)",
     "links.forEach { subscribeLink(mqtt, it, generation) }",

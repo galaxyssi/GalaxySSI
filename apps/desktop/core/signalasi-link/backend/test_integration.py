@@ -48,7 +48,8 @@ class BackendIntegrationContractTest(unittest.TestCase):
                 "models", "agent_config", "api_response", "agent_gateway",
                 "mqtt_bridge", "signalasi_client", "signalasi_notify",
                 "pairing_state", "push_auth", "file_server",
-                "custom_agent_stdio", "desktop_runtime", "stt_bridge", "main",
+                "custom_agent_stdio", "desktop_runtime", "stt_bridge",
+                "unified_commands", "main",
             )
             for module in modules:
                 __import__(module)
@@ -152,6 +153,9 @@ class BackendIntegrationContractTest(unittest.TestCase):
                 "/api/desktop-tools",
                 "/api/desktop-runtime",
                 "/api/agent-adapters",
+                "/api/commands",
+                "/api/commands/execute",
+                "/api/commands/runs",
                 "/signalasi/verify",
                 "/ws/{contact_id}",
             }

@@ -53,11 +53,12 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
         self.published: list[tuple[dict, dict, str]] = []
         self.decrypted: dict = {}
         self.agent_starts: list[tuple] = []
+        self.publish_phone_payload_patch = patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True)
+        self.publish_phone_payload = self.publish_phone_payload_patch.start()
         self.patches = [
             patch.object(mqtt_bridge, "desktop_id", return_value=self.desktop_id),
             patch.object(mqtt_bridge, "claim_message", return_value=True),
             patch.object(mqtt_bridge, "complete_message"),
-            patch.object(mqtt_bridge, "_publish_phone_payload", return_value=True),
             patch.object(
                 mqtt_bridge,
                 "decrypt_signal_envelope",
@@ -110,6 +111,7 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
             mqtt_bridge.phone_tool_sessions.clear()
         for item in reversed(self.patches):
             item.stop()
+        self.publish_phone_payload_patch.stop()
         self.state_patch.stop()
         self.temp.cleanup()
 
@@ -244,6 +246,28 @@ class MqttPhoneToolRoutingTests(unittest.TestCase):
 
         self.assertEqual(1, len(self.agent_starts))
         self.assertEqual({}, mqtt_bridge.phone_tool_sessions)
+
+    def test_unified_command_executes_and_returns_structured_result(self):
+        message_id = str(uuid.uuid4())
+        self._deliver(
+            self.first,
+            {
+                "type": "unified_command",
+                "command_id": "commands.list",
+                "args": {"dry_run": True},
+                "contact_id": "system",
+                "message_id": message_id,
+                "source_message_id": message_id,
+            },
+        )
+
+        self.assertEqual([], self.agent_starts)
+        result_payload = self.publish_phone_payload.call_args_list[-1].args[2]
+        self.assertEqual("unified_command_result", result_payload["type"])
+        self.assertEqual("commands.list", result_payload["command_id"])
+        self.assertEqual("completed", result_payload["command_status"])
+        self.assertEqual("completed", result_payload["result"]["status"])
+        self.assertEqual(message_id, result_payload["source_message_id"])
 
     def test_wrong_link_target_cannot_create_tool_session(self):
         now_ms = int(time.time() * 1000)
