@@ -174,6 +174,13 @@ class TaskLatencyTests(unittest.TestCase):
                 {"stage": "created", "at": 1_000, "detail": "phone"},
                 {"stage": "agent_first_output", "at": 1_500, "detail": "codex"},
             ],
+            "execution_view": {
+                "executor_id": "codex",
+                "location_kind": "desktop",
+                "location_id": "desktop-1",
+                "location_name": "Desktop",
+                "cancellable": True,
+            },
         }
         with patch("mqtt_bridge.time.time", return_value=2.0):
             payload = _agent_task_payload(
@@ -188,6 +195,7 @@ class TaskLatencyTests(unittest.TestCase):
         self.assertEqual("route-a", payload["client_route_id"])
         self.assertEqual("conversation-a", payload["conversation_id"])
         self.assertEqual("turn-a", payload["turn_id"])
+        self.assertEqual(task["execution_view"], payload["execution_view"])
         self.assertEqual(
             ["created", "agent_first_output", "agent_running"],
             [item["stage"] for item in payload["delivery_trace"]],

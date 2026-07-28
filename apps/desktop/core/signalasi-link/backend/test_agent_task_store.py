@@ -131,6 +131,40 @@ class AgentTaskStoreTests(unittest.TestCase):
             restored.update(task.task_id, "running", current_step="Continuing")
             self.assertEqual({}, restored.get(task.task_id).pending_approval)
 
+    def test_public_task_exposes_structured_execution_view(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(
+                state_path=Path(temp_dir) / "tasks.sqlite3"
+            )
+            task = manager.create_external(
+                agent_id="desktop",
+                contact_id="codex-contact",
+                source_message_id="phone-message",
+                prompt="Inspect the project",
+                on_event=lambda _snapshot: None,
+                task_id="execution-view-task",
+            )
+            manager.update(
+                task.task_id,
+                "running",
+                current_step="Reading source files",
+                delegate_agent_id="codex",
+            )
+
+            execution = manager.get(task.task_id).public()["execution_view"]
+
+            self.assertEqual("codex", execution["executor_id"])
+            self.assertEqual("desktop", execution["location_kind"])
+            self.assertTrue(execution["location_id"])
+            self.assertTrue(execution["location_name"])
+            self.assertEqual("Reading source files", execution["current_step"])
+            self.assertTrue(execution["cancellable"])
+
+            manager.update(task.task_id, "completed", result="Done")
+            self.assertFalse(
+                manager.get(task.task_id).public()["execution_view"]["cancellable"]
+            )
+
     def test_external_task_persists_received_attachment_names(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"

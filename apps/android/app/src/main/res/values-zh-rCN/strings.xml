@@ -1871,4 +1871,11 @@
     <string name="web_sources_clear">清除</string>
     <string name="web_sources_saved">来源凭据已保存</string>
     <string name="web_sources_cleared">来源凭据已删除</string>
+    <string name="agent_execution_location_phone">本手机</string>
+    <string name="agent_execution_location_desktop">已配对电脑</string>
+    <string name="agent_execution_location_cloud">云端</string>
+    <string name="agent_execution_location_connected_device">连接设备</string>
+    <string name="agent_execution_location_automatic">自动路由</string>
+    <string name="agent_execution_cancel">取消</string>
+    <string name="agent_execution_cancel_description">取消当前运行任务</string>
 </resources>
