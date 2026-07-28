@@ -616,7 +616,7 @@ class EvolutionManager:
             )
             if pushed.returncode != 0:
                 raise EvolutionError("candidate_push_failed", pushed.stdout[-4_000:])
-            title = f"Prepare self-evolution candidate: {task.problem[:72]}"
+            title = self._pull_request_title(task)
             body = self._pull_request_body(task, attempt)
             created = self.runner.run(
                 (
@@ -645,6 +645,26 @@ class EvolutionManager:
                 ),
                 "",
             )
+            if task.pull_request_url:
+                labeled = self.runner.run(
+                    (
+                        "gh",
+                        "pr",
+                        "edit",
+                        task.pull_request_url,
+                        "--add-label",
+                        "self-evolution",
+                    ),
+                    worktree,
+                    timeout_seconds=120,
+                )
+                if labeled.returncode != 0:
+                    self._emit(
+                        task,
+                        "publish_label_skipped",
+                        label="self-evolution",
+                        reason=labeled.stdout[-1_000:],
+                    )
             task.status = "published"
             task.last_error = ""
             task.last_error_code = ""
@@ -1089,6 +1109,11 @@ class EvolutionManager:
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @staticmethod
+    def _pull_request_title(task: EvolutionTask) -> str:
+        summary = " ".join(task.problem.split())
+        return f"[Self-Evolution] {summary[:96]}"
+
+    @staticmethod
     def _pull_request_body(task: EvolutionTask, attempt: EvolutionAttempt) -> str:
         acceptance = "\n".join(f"- {value}" for value in task.acceptance)
         gates = "\n".join(
@@ -1096,6 +1121,12 @@ class EvolutionManager:
             for gate in attempt.gates
         )
         return (
+            "## Self-Evolution Provenance\n\n"
+            "- Type: `self-evolution`\n"
+            f"- Task ID: `{task.task_id}`\n"
+            f"- Base commit: `{task.base_commit}`\n"
+            f"- Implementer: `{task.agent_id}`\n"
+            f"- Attempt: `{attempt.number}` of `{task.max_attempts}`\n\n"
             "## Evolution Task\n\n"
             f"{task.problem}\n\n"
             "## Acceptance\n\n"
