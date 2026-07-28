@@ -514,7 +514,8 @@ object SignalASIMqttClient {
         clientMessageId: Long? = null,
         deliveryTrace: org.json.JSONArray? = null,
         conversationId: String = "",
-        turnId: String = ""
+        turnId: String = "",
+        taskId: String = ""
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -522,7 +523,8 @@ object SignalASIMqttClient {
         clientMessageId = clientMessageId,
         deliveryTrace = deliveryTrace,
         conversationId = conversationId,
-        turnId = turnId
+        turnId = turnId,
+        taskId = taskId
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -532,13 +534,30 @@ object SignalASIMqttClient {
         clientMessageId: Long? = null,
         deliveryTrace: org.json.JSONArray? = null,
         conversationId: String = "",
-        turnId: String = ""
+        turnId: String = "",
+        taskId: String = ""
     ): MqttPublishResult {
         val context = appContext
+        val resolvedConversationId = AgentTaskIdentityPolicy.conversationId(
+            contactId,
+            conversationId
+        )
+        val resolvedTurnId = AgentTaskIdentityPolicy.turnId(clientMessageId, turnId)
+        val resolvedTaskId = AgentTaskIdentityPolicy.taskId(
+            ownerId = SignalASICrypto.localSignalasiId(),
+            contactId = contactId,
+            sourceMessageId = clientMessageId,
+            conversationId = resolvedConversationId,
+            turnId = resolvedTurnId,
+            requested = taskId
+        )
         val payload = JSONObject()
             .put("type", "text")
             .put("content", content)
             .put("contact_id", contactId)
+            .put("task_id", resolvedTaskId)
+            .put("conversation_id", resolvedConversationId)
+            .put("turn_id", resolvedTurnId)
             .put("time", System.currentTimeMillis())
         if (context != null) {
             val policy = LanguagePolicySettings.get(context)
@@ -547,12 +566,8 @@ object SignalASIMqttClient {
                 .put("response_language_preference", policy.responseLanguage)
         }
         clientMessageId?.let { payload.put("client_message_id", it) }
-        if (conversationId.isNotBlank()) payload.put("conversation_id", conversationId)
-        if (turnId.isNotBlank()) {
-            payload.put("turn_id", turnId)
-            inlineTurnAttachments(context, turnId).takeIf { it.length() > 0 }
-                ?.let { payload.put("attachments", it) }
-        }
+        inlineTurnAttachments(context, resolvedTurnId).takeIf { it.length() > 0 }
+            ?.let { payload.put("attachments", it) }
         deliveryTrace?.let { payload.put("delivery_trace", it) }
         if (context != null) {
             AppStore.contactById(context, contactId)?.let { contact ->
@@ -626,12 +641,16 @@ object SignalASIMqttClient {
         taskId: String,
         contactId: String,
         sourceMessageId: Long,
+        conversationId: String,
+        turnId: String,
         topicOverride: String? = null
     ): Boolean {
-        if (taskId.isBlank()) return false
+        if (taskId.isBlank() || conversationId.isBlank() || turnId.isBlank()) return false
         val payload = JSONObject()
             .put("type", "agent_task_cancel")
             .put("task_id", taskId)
+            .put("conversation_id", conversationId)
+            .put("turn_id", turnId)
             .put("contact_id", contactId)
             .put("source_message_id", sourceMessageId)
             .put("time", System.currentTimeMillis())
@@ -652,6 +671,9 @@ object SignalASIMqttClient {
         val payload = JSONObject()
             .put("type", "agent_task_approval")
             .put("task_id", decision.taskId)
+            .put("client_route_id", decision.clientRouteId)
+            .put("conversation_id", decision.conversationId)
+            .put("turn_id", decision.turnId)
             .put("contact_id", decision.contactId)
             .put("source_message_id", decision.sourceMessageId)
             .put("approval_id", decision.approvalId)
@@ -864,6 +886,38 @@ object SignalASIMqttClient {
         val targetId = if (usesPcConnectorTunnel(contactId)) {
             AppStore.desktopIdForContact(context, contactId)
         } else contactId
+        if (usesPcConnectorTunnel(contactId) && payload.optString("task_id").isNotBlank()) {
+            val link = SignalASILinkProtocol.serverLink(context, targetId)
+                ?: return MqttPublishResult.FAILED
+            val requestedRouteId = payload.optString("client_route_id")
+            if (requestedRouteId.isNotBlank() &&
+                requestedRouteId != link.routes.clientRouteId
+            ) {
+                Log.w(TAG, "Agent task publish rejected: stale client route identity")
+                return MqttPublishResult.FAILED
+            }
+            payload.put("client_route_id", link.routes.clientRouteId)
+            val identity = AgentTaskIdentity(
+                clientRouteId = payload.optString("client_route_id"),
+                conversationId = payload.optString("conversation_id"),
+                taskId = payload.optString("task_id"),
+                turnId = payload.optString("turn_id")
+            )
+            if (!identity.isComplete) {
+                Log.w(TAG, "Agent task publish rejected: incomplete task identity")
+                return MqttPublishResult.FAILED
+            }
+            val sourceMessageId = payload.optString("client_message_id").toLongOrNull()
+                ?: payload.optLong("client_message_id", 0L)
+            if (sourceMessageId > 0L) {
+                AgentTaskIdentityStore.register(
+                    context,
+                    contactId,
+                    sourceMessageId,
+                    identity
+                )
+            }
+        }
         val publishStartedAt = System.currentTimeMillis()
         payload.put("client_sent_at_ms", publishStartedAt)
         val trace = payload.optJSONArray("delivery_trace") ?: JSONArray().also {
@@ -1224,6 +1278,30 @@ object SignalASIMqttClient {
             return
         }
         val payload = SignalASILinkProtocol.unwrapEnvelope(decrypted) ?: return
+        if (
+            payload.optString("task_id").isNotBlank() &&
+            payload.optString("type") in setOf(
+                "agent_task_event",
+                "agent_task_approval_result",
+                "text",
+                "artifact_chunk"
+            )
+        ) {
+            val identity = AgentTaskIdentity(
+                clientRouteId = payload.optString("client_route_id"),
+                conversationId = payload.optString("conversation_id"),
+                taskId = payload.optString("task_id"),
+                turnId = payload.optString("turn_id")
+            )
+            if (!identity.isComplete || identity.clientRouteId != link.routes.clientRouteId) {
+                Log.w(TAG, "Rejected Agent payload with mismatched task identity")
+                return
+            }
+            if (!AgentTaskIdentityStore.matches(context, payload)) {
+                Log.w(TAG, "Rejected Agent payload outside its originating task turn")
+                return
+            }
+        }
         val incomingMessageId = payload.optString("message_id")
         SignalASILinkDeliveryStore.bindCiphertext(
             context,

@@ -66,6 +66,31 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
         self.assertEqual("client:phone-b:conversation-1", phone_b)
         self.assertNotEqual(phone_a, phone_b)
 
+    def test_remote_task_identity_requires_all_four_matching_levels(self):
+        payload = {
+            "client_route_id": "phone-a",
+            "conversation_id": "conversation-1",
+            "task_id": "task-1",
+            "turn_id": "turn-1",
+        }
+
+        self.assertEqual(
+            payload,
+            mqtt_bridge._remote_task_identity(payload, "phone-a"),
+        )
+        self.assertIsNone(
+            mqtt_bridge._remote_task_identity(
+                {**payload, "client_route_id": "phone-b"},
+                "phone-a",
+            )
+        )
+        self.assertIsNone(
+            mqtt_bridge._remote_task_identity(
+                {**payload, "turn_id": ""},
+                "phone-a",
+            )
+        )
+
     def test_repaired_route_reuses_conversation_for_same_signal_identity(self):
         fingerprint = "a" * 64
 
@@ -144,6 +169,8 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             "status": "running",
             "status_seq": 4,
             "updated_at": 100,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
             "client_turn_id": "phone-turn-1",
         }
 
@@ -169,6 +196,8 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             "status": "running",
             "status_seq": 5,
             "updated_at": 200,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
             "client_turn_id": "phone-turn-2",
             "events": [
                 {
@@ -217,6 +246,8 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             "status": "running",
             "status_seq": 5,
             "updated_at": 200,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
             "client_turn_id": "phone-turn-2",
         }
         mqtt_bridge._publish_or_queue_task_event(
@@ -245,6 +276,9 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             "status": "running",
             "status_seq": 6,
             "updated_at": 220,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
+            "client_turn_id": "phone-turn-1",
         }
 
         with patch.object(
@@ -271,16 +305,23 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             "status": "completed",
             "status_seq": 9,
             "updated_at": 300,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
+            "client_turn_id": "phone-turn-1",
         }
         stale = {
             "task_id": "task-order",
             "status": "running",
             "status_seq": 8,
             "updated_at": 250,
+            "client_route_id": "phone-1",
+            "client_conversation_id": "conversation-1",
+            "client_turn_id": "phone-turn-1",
         }
 
-        mqtt_bridge._publish_or_queue_task_event(DisconnectedMqtt(), {}, terminal, [])
-        mqtt_bridge._publish_or_queue_task_event(DisconnectedMqtt(), {}, stale, [])
+        route = {"_client_route_id": "phone-1"}
+        mqtt_bridge._publish_or_queue_task_event(DisconnectedMqtt(), route, terminal, [])
+        mqtt_bridge._publish_or_queue_task_event(DisconnectedMqtt(), route, stale, [])
 
         queued = mqtt_bridge.pending_task_events["task-order"]
         self.assertEqual("completed", queued.task["status"])
@@ -308,7 +349,10 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
 
     def test_task_control_requires_exact_paired_route_and_message(self):
         task = SimpleNamespace(
+            task_id="task-a",
             client_route_id="client-a",
+            client_conversation_id="conversation-a",
+            client_turn_id="turn-a",
             contact_id="codex",
             source_message_id="42",
         )
@@ -317,6 +361,9 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             mqtt_bridge._task_control_matches(
                 task,
                 client_route_id="client-a",
+                conversation_id="conversation-a",
+                task_id="task-a",
+                turn_id="turn-a",
                 contact_id="codex",
                 source_message_id="42",
             )
@@ -325,6 +372,31 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             mqtt_bridge._task_control_matches(
                 task,
                 client_route_id="client-b",
+                conversation_id="conversation-a",
+                task_id="task-a",
+                turn_id="turn-a",
+                contact_id="codex",
+                source_message_id="42",
+            )
+        )
+        self.assertFalse(
+            mqtt_bridge._task_control_matches(
+                task,
+                client_route_id="client-a",
+                conversation_id="conversation-b",
+                task_id="task-a",
+                turn_id="turn-a",
+                contact_id="codex",
+                source_message_id="42",
+            )
+        )
+        self.assertFalse(
+            mqtt_bridge._task_control_matches(
+                task,
+                client_route_id="client-a",
+                conversation_id="conversation-a",
+                task_id="task-a",
+                turn_id="turn-b",
                 contact_id="codex",
                 source_message_id="42",
             )
@@ -332,7 +404,10 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
 
     def test_task_control_rejects_missing_current_route_identity(self):
         task = SimpleNamespace(
+            task_id="task-a",
             client_route_id="",
+            client_conversation_id="conversation-a",
+            client_turn_id="turn-a",
             contact_id="codex",
             source_message_id="42",
         )
@@ -341,6 +416,9 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
             mqtt_bridge._task_control_matches(
                 task,
                 client_route_id="client-a",
+                conversation_id="conversation-a",
+                task_id="task-a",
+                turn_id="turn-a",
                 contact_id="codex",
                 source_message_id="42",
             )
@@ -348,11 +426,17 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
         self.assertFalse(
             mqtt_bridge._task_control_matches(
                 SimpleNamespace(
+                    task_id="task-a",
                     client_route_id="client-a",
+                    client_conversation_id="conversation-a",
+                    client_turn_id="turn-a",
                     contact_id="codex",
                     source_message_id="42",
                 ),
                 client_route_id="client-a",
+                conversation_id="conversation-a",
+                task_id="task-a",
+                turn_id="turn-a",
                 contact_id="codex",
                 source_message_id="",
             )
@@ -360,7 +444,13 @@ class MqttTaskTurnRoutingTests(unittest.TestCase):
 
     def test_completed_result_is_queued_offline_and_flushed_after_reconnect(self):
         wire_payload = {"scheme": "signal", "_client_route_id": "phone-1"}
-        payload = {"task_id": "task-1", "content": "done"}
+        payload = {
+            "task_id": "task-1",
+            "client_route_id": "phone-1",
+            "conversation_id": "conversation-1",
+            "turn_id": "turn-1",
+            "content": "done",
+        }
 
         published = mqtt_bridge._publish_or_queue_task_result(
             DisconnectedMqtt(), wire_payload, payload

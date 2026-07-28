@@ -89,6 +89,13 @@ class _SteeringTaskManager:
         self.current = None
         self.updates = []
 
+    def get(self, task_id):
+        if self.current is not None and self.current.task_id == task_id:
+            return self.current
+        if self.prior.task_id == task_id:
+            return self.prior
+        return None
+
     def create_external(self, **values):
         self.current = _Task(
             values["task_id"] or "task-follow-up",
@@ -202,6 +209,7 @@ class MqttCodexSteeringTests(unittest.TestCase):
                     "contact_id": "codex",
                     "agent_id": "codex",
                     "client_message_id": "message-follow-up",
+                    "client_route_id": "client-1",
                     "task_id": "task-follow-up",
                     "conversation_id": "conversation-1",
                     "turn_id": "phone-turn-follow-up",

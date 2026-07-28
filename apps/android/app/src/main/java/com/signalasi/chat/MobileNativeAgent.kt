@@ -2127,13 +2127,19 @@ class MobileNativeAgent(
         contactId: String,
         content: String,
         success: Boolean = true,
-        richOutputJson: String = ""
+        richOutputJson: String = "",
+        conversationId: String = "",
+        turnId: String = "",
+        taskId: String = ""
     ): AgentUiState? = acceptConnectorResponseInternal(
         sourceMessageId,
         contactId,
         content,
         success,
-        richOutputJson
+        richOutputJson,
+        conversationId,
+        turnId,
+        taskId
     )?.let(::reconcileExecutionLoop)
 
     private fun acceptConnectorResponseInternal(
@@ -2141,7 +2147,10 @@ class MobileNativeAgent(
         contactId: String,
         content: String,
         success: Boolean,
-        richOutputJson: String
+        richOutputJson: String,
+        conversationId: String,
+        turnId: String,
+        taskId: String
     ): AgentUiState? {
         if (sourceMessageId <= 0L || (success && content.isBlank())) return null
         val pendingResult = lastActionResult ?: return null
@@ -2150,6 +2159,13 @@ class MobileNativeAgent(
         if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
         val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
         if (expectedContactId.isNotBlank() && contactId.isNotBlank() && expectedContactId != contactId) return null
+        if (!AgentTaskIdentityPolicy.matchesDesktopResponse(
+                pendingResult.metadata,
+                conversationId,
+                taskId,
+                turnId
+            )
+        ) return null
         val plan = currentPlan ?: return null
         val actionId = pendingResult.actionId
         if (!advanceExecutionLoop(
@@ -2291,7 +2307,10 @@ class MobileNativeAgent(
     fun acceptConnectorSteered(
         sourceMessageId: Long,
         contactId: String,
-        mergedIntoTaskId: String
+        mergedIntoTaskId: String,
+        conversationId: String = "",
+        turnId: String = "",
+        taskId: String = ""
     ): AgentUiState? {
         if (sourceMessageId <= 0L || mergedIntoTaskId.isBlank()) return null
         val pendingResult = lastActionResult ?: return null
@@ -2299,6 +2318,13 @@ class MobileNativeAgent(
         if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return null
         val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
         if (expectedContactId.isNotBlank() && contactId.isNotBlank() && expectedContactId != contactId) return null
+        if (!AgentTaskIdentityPolicy.matchesDesktopResponse(
+                pendingResult.metadata,
+                conversationId,
+                taskId,
+                turnId
+            )
+        ) return null
         val plan = currentPlan ?: return null
         val actionId = pendingResult.actionId
         if (!advanceExecutionLoop(
@@ -2430,15 +2456,34 @@ class MobileNativeAgent(
         return AppStore.desktopIdForContact(appContext, contactId).ifBlank { "peer:$contactId" }
     }
 
-    fun canAcceptConnectorResponse(sourceMessageId: Long, contactId: String): Boolean {
+    fun canAcceptConnectorTransport(sourceMessageId: Long, contactId: String): Boolean {
         if (sourceMessageId <= 0L) return false
         val pendingResult = lastActionResult ?: return false
         if (phase != AgentPhase.WAITING_RESPONSE &&
             !isRecoverableConnectorTimeout(pendingResult, sourceMessageId)
         ) return false
-        if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) return false
+        if (pendingResult.metadata["source_message_id"]?.toLongOrNull() != sourceMessageId) {
+            return false
+        }
         val expectedContactId = pendingResult.metadata["contact_id"].orEmpty()
         return expectedContactId.isBlank() || contactId.isBlank() || expectedContactId == contactId
+    }
+
+    fun canAcceptConnectorResponse(
+        sourceMessageId: Long,
+        contactId: String,
+        conversationId: String = "",
+        turnId: String = "",
+        taskId: String = ""
+    ): Boolean {
+        if (!canAcceptConnectorTransport(sourceMessageId, contactId)) return false
+        val pendingResult = lastActionResult ?: return false
+        return AgentTaskIdentityPolicy.matchesDesktopResponse(
+            pendingResult.metadata,
+            conversationId,
+            taskId,
+            turnId
+        )
     }
 
     private fun isRecoverableConnectorTimeout(
@@ -2454,9 +2499,18 @@ class MobileNativeAgent(
         contactId: String,
         taskId: String,
         taskStatus: String,
-        statusSeq: Long
+        statusSeq: Long,
+        conversationId: String = "",
+        turnId: String = ""
     ): AgentUiState? {
-        if (!canAcceptConnectorResponse(sourceMessageId, contactId) || taskId.isBlank()) return null
+        if (!canAcceptConnectorResponse(
+                sourceMessageId,
+                contactId,
+                conversationId,
+                turnId,
+                taskId
+            ) || taskId.isBlank()
+        ) return null
         val pendingResult = lastActionResult ?: return null
         val previousSeq = pendingResult.metadata["remote_task_status_seq"]?.toLongOrNull() ?: -1L
         if (statusSeq > 0L && statusSeq < previousSeq) return snapshot()
@@ -8934,14 +8988,30 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             )
         }
         val observed = observationContextStore.peek(observationTargetId, conversationId)
+        val clientConversationId = AgentTaskIdentityPolicy.conversationId(
+            contactId,
+            action.parameters[INTERNAL_CONVERSATION_ID].orEmpty()
+        )
+        val clientTurnId = AgentTaskIdentityPolicy.turnId(
+            messageId,
+            action.parameters[INTERNAL_TURN_ID].orEmpty()
+        )
+        val remoteTaskId = AgentTaskIdentityPolicy.taskId(
+            ownerId = SignalASICrypto.localSignalasiId(),
+            contactId = contactId,
+            sourceMessageId = messageId,
+            conversationId = clientConversationId,
+            turnId = clientTurnId
+        )
         val published = SignalASIMqttClient.publishUserMessage(
             content = promptWithConversationContext(action, promptWithObservedContext(prompt, observed)),
             contactId = contactId,
             topicOverride = topic,
             clientMessageId = messageId.takeIf { it > 0L },
             deliveryTrace = trace,
-            conversationId = action.parameters[INTERNAL_CONVERSATION_ID].orEmpty(),
-            turnId = action.parameters[INTERNAL_TURN_ID].orEmpty()
+            conversationId = clientConversationId,
+            turnId = clientTurnId,
+            taskId = remoteTaskId
         )
         if (published) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
         if (!managedTeamAction) {
@@ -8963,19 +9033,22 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     "delivery_mode" to AgentDeliveryMode.RESPOND.name.lowercase(Locale.ROOT),
                     "awaiting_response" to "true",
                     "source_message_id" to messageId.toString(),
+                    "remote_task_id" to remoteTaskId,
+                    "conversation_id" to clientConversationId,
+                    "turn_id" to clientTurnId,
                     "contact_id" to contactId,
-                "target" to action.target,
-                "resource_id" to action.parameters["connector_id"].orEmpty().ifBlank { contactId },
-                "failure_domain" to AppStore.desktopIdForContact(context, contactId).ifBlank { "peer:$contactId" },
-                "resource_location" to if (AppStore.usesPcConnectorTunnel(context, contactId)) "desktop" else "peer",
-                "resource_started_at" to System.currentTimeMillis().toString(),
-                "has_attachments" to (
-                    action.id.startsWith("attachment-") ||
-                        action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
-                    ).toString(),
-                "routing_requires_live_data" to action.parameters["routing_requires_live_data"].orEmpty(),
-                "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
-            )
+                    "target" to action.target,
+                    "resource_id" to action.parameters["connector_id"].orEmpty().ifBlank { contactId },
+                    "failure_domain" to AppStore.desktopIdForContact(context, contactId).ifBlank { "peer:$contactId" },
+                    "resource_location" to if (AppStore.usesPcConnectorTunnel(context, contactId)) "desktop" else "peer",
+                    "resource_started_at" to System.currentTimeMillis().toString(),
+                    "has_attachments" to (
+                        action.id.startsWith("attachment-") ||
+                            action.parameters[INTERNAL_CONVERSATION_HAS_ATTACHMENTS] == "true"
+                        ).toString(),
+                    "routing_requires_live_data" to action.parameters["routing_requires_live_data"].orEmpty(),
+                    "remaining_fallback_ids" to action.parameters["routing_fallback_ids"].orEmpty()
+                )
             } else {
                 emptyMap()
             }

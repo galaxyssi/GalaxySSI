@@ -1325,9 +1325,11 @@ def api_agent_push(req: AgentPushReq, x_signalasi_token: str = Header(default=""
 class AgentTaskStartReq(BaseModel):
     contact_id: str
     prompt: str
-    source_message_id: str = ""
-    task_id: str = ""
-    client_route_id: str = ""
+    source_message_id: str
+    task_id: str
+    client_route_id: str
+    conversation_id: str
+    turn_id: str
 
 @app.post("/api/agent/tasks")
 def api_start_agent_task(req: AgentTaskStartReq, x_signalasi_token: str = Header(default="")):
@@ -1335,7 +1337,15 @@ def api_start_agent_task(req: AgentTaskStartReq, x_signalasi_token: str = Header
     from mqtt_bridge import start_agent_task
     if not verify_agent_push_token(x_signalasi_token):
         raise HTTPException(status_code=401, detail=api_error("agent_push_token_invalid", "Invalid SignalASI Agent push token."))
-    return start_agent_task(req.contact_id, req.prompt, req.source_message_id, req.task_id, req.client_route_id)
+    return start_agent_task(
+        req.contact_id,
+        req.prompt,
+        source_message_id=req.source_message_id,
+        task_id=req.task_id,
+        client_route_id=req.client_route_id,
+        conversation_id=req.conversation_id,
+        turn_id=req.turn_id,
+    )
 
 @app.get("/api/agent/tasks")
 def api_list_agent_tasks(limit: int = Query(100)):
@@ -1359,12 +1369,24 @@ def api_republish_agent_task(task_id: str, request: Request):
     return result
 
 @app.post("/api/agent/tasks/{task_id}/cancel")
-def api_cancel_agent_task(task_id: str, x_signalasi_token: str = Header(default="")):
+def api_cancel_agent_task(
+    task_id: str,
+    client_route_id: str = Query(...),
+    conversation_id: str = Query(...),
+    turn_id: str = Query(...),
+    x_signalasi_token: str = Header(default=""),
+):
     from push_auth import verify_agent_push_token
     from mqtt_bridge import publish_agent_task_event
     if not verify_agent_push_token(x_signalasi_token):
         raise HTTPException(status_code=401, detail=api_error("agent_push_token_invalid", "Invalid SignalASI Agent push token."))
-    task = agent_task_manager.cancel(task_id, publish_agent_task_event)
+    task = agent_task_manager.cancel_scoped(
+        task_id,
+        client_route_id=client_route_id,
+        conversation_id=conversation_id,
+        turn_id=turn_id,
+        on_event=publish_agent_task_event,
+    )
     if task is None:
         raise HTTPException(status_code=404, detail=api_error("agent_task_not_found"))
     return {"task": task.public()}

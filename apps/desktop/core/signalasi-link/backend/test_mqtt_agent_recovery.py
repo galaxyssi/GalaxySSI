@@ -9,6 +9,14 @@ import mqtt_bridge
 
 
 class _RecoveredTask(SimpleNamespace):
+    def matches_client_identity(self, *, client_route_id, conversation_id, task_id, turn_id):
+        return (
+            self.client_route_id == client_route_id
+            and self.conversation_id == conversation_id
+            and self.task_id == task_id
+            and self.client_turn_id == turn_id
+        )
+
     def public(self):
         return {
             "task_id": self.task_id,
@@ -45,7 +53,7 @@ class _RecoveredTaskManager:
             source_message_id="message-1",
             conversation_id="conversation-1",
             client_route_id="client-1",
-            client_turn_id="phone-turn-1",
+            client_turn_id="phone-turn-recovered",
             status="recovering",
             created_at=now - 20_000,
             started_at=now - 18_000,
@@ -57,6 +65,9 @@ class _RecoveredTaskManager:
             error="",
         )
         self.runner_replayed = False
+
+    def get(self, task_id):
+        return self.task if task_id == self.task.task_id else None
 
     def resume_external(self, task_id, _on_event):
         if task_id != self.task.task_id:
@@ -132,8 +143,10 @@ class MqttAgentRecoveryTests(unittest.TestCase):
                     "contact_id": "hermes",
                     "agent_id": "hermes",
                     "client_message_id": "message-1",
+                    "client_route_id": "client-1",
                     "task_id": "task-recovered",
                     "conversation_id": "conversation-1",
+                    "turn_id": "phone-turn-recovered",
                     "attachments": [],
                     "_recovered_task": True,
                 },
