@@ -24,6 +24,19 @@ EventCallback = Callable[[dict], None]
 ExternalRecoveryCallback = Callable[[dict, str], bool]
 
 
+def desktop_execution_location() -> dict:
+    name = str(
+        os.environ.get("COMPUTERNAME")
+        or os.environ.get("HOSTNAME")
+        or "SignalASI Desktop"
+    ).strip()
+    return {
+        "kind": "desktop",
+        "id": name.lower(),
+        "name": name,
+    }
+
+
 def _environment_timeout_seconds(name: str, default: float, minimum: float) -> float:
     try:
         value = float(os.environ.get(name, str(default)))
@@ -146,6 +159,8 @@ class AgentTask:
         return data
 
     def public(self, include_prompt: bool = False) -> dict:
+        executor_id = str(self.delegate_agent_id or self.agent_id or "desktop").strip()
+        location = desktop_execution_location()
         data = {
             "task_id": self.task_id,
             "agent_id": self.agent_id,
@@ -186,6 +201,17 @@ class AgentTask:
             "delivery_trace": self.delivery_trace[-MAX_DELIVERY_TRACE_EVENTS:],
             "latency": delivery_trace_metrics(self.delivery_trace),
             "process_id": self.process.pid if self.process is not None and self.process.poll() is None else 0,
+            "execution_view": {
+                "executor_id": executor_id,
+                "location_kind": location["kind"],
+                "location_id": location["id"],
+                "location_name": location["name"],
+                "status": self.status,
+                "current_step": self.current_step,
+                "cancellable": self.status not in TERMINAL_STATES,
+                "started_at": self.started_at or self.created_at,
+                "completed_at": self.completed_at,
+            },
         }
         if include_prompt:
             data["prompt"] = self.prompt

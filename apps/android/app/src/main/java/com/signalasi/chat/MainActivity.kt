@@ -241,6 +241,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val remoteAgentApprovalsInFlight = ConcurrentHashMap.newKeySet<String>()
     private val remoteAgentApprovalTaskIds = ConcurrentHashMap.newKeySet<String>()
     private val remoteTaskEventFingerprints = ConcurrentHashMap<String, String>()
+    private val agentExecutionPresentations =
+        ConcurrentHashMap<String, AgentExecutionPresentation>()
     private var pendingDirectSystemAction: PendingDirectSystemAction? = null
     private lateinit var agentScreenSearchInput: EditText
     private lateinit var agentScreenDetailList: LinearLayout
@@ -1778,6 +1780,48 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (taskId.isNotBlank()) completedConnectorTaskIds.add(taskId)
         }
         val targetName = contactById(contactId).name
+        val executionView = envelope.optJSONObject("execution_view")
+        val executorId = executionView
+            ?.optString("executor_id")
+            .orEmpty()
+            .ifBlank { envelope.optString("agent_id") }
+        val executorLabel = contactById(executorId).name
+            .substringBefore(" \u00b7 ")
+            .trim()
+            .ifBlank { targetName.substringBefore(" \u00b7 ").trim() }
+            .ifBlank { targetName }
+        rememberAgentExecutionPresentation(
+            taskId,
+            AgentExecutionPresentationPolicy.remote(
+                executorId = executorId,
+                executorLabel = executorLabel,
+                locationKind = executionView
+                    ?.optString("location_kind")
+                    .orEmpty()
+                    .ifBlank { "desktop" },
+                locationName = executionView
+                    ?.optString("location_name")
+                    .orEmpty()
+                    .ifBlank { envelope.optString("desktop_name") },
+                status = status,
+                currentStep = currentStep.ifBlank { statusLabel },
+                startedAtMillis = executionView
+                    ?.optLong("started_at")
+                    ?.takeIf { it > 0L }
+                    ?: envelope.optLong("started_at")
+                        .takeIf { it > 0L }
+                    ?: envelope.optLong("created_at", System.currentTimeMillis()),
+                completedAtMillis = executionView
+                    ?.optLong("completed_at")
+                    ?: envelope.optLong("completed_at"),
+                advertisedCancellable = executionView
+                    ?.optBoolean(
+                        "cancellable",
+                        status !in setOf("completed", "failed", "cancelled", "timed_out")
+                    )
+                    ?: (status !in setOf("completed", "failed", "cancelled", "timed_out"))
+            )
+        )
         val turnId = envelopeTurnId.takeIf { it.isNotBlank() }
             ?: taskRuntime?.let(agentRuntimeTurnIds::get).orEmpty()
         if (isSteeredCompletion) {
@@ -3203,7 +3247,95 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun showAgentTimelineMenu(entry: AgentTranscriptEntry, anchor: View) {
+    private fun rememberAgentExecutionPresentation(
+        taskId: String,
+        presentation: AgentExecutionPresentation
+    ) {
+        if (taskId.isBlank()) return
+        agentExecutionPresentations[taskId] = presentation
+        if (agentExecutionPresentations.size <= 512) return
+        agentExecutionPresentations.entries
+            .asSequence()
+            .filter { !it.value.cancellable }
+            .sortedBy { entry ->
+                entry.value.completedAtMillis.takeIf { it > 0L }
+                    ?: entry.value.startedAtMillis
+            }
+            .take(agentExecutionPresentations.size - 384)
+            .forEach { agentExecutionPresentations.remove(it.key, it.value) }
+    }
+
+    private fun agentExecutionPresentation(
+        entry: AgentTranscriptEntry,
+        processEntries: List<AgentTranscriptEntry>,
+        startedAtMillis: Long,
+        completedAtMillis: Long?
+    ): AgentExecutionPresentation {
+        agentExecutionPresentations[entry.taskId]?.let { remote ->
+            return remote.copy(
+                completedAtMillis = completedAtMillis ?: remote.completedAtMillis,
+                cancellable = remote.cancellable && completedAtMillis == null
+            )
+        }
+        val state = agentTimelineRuntime(entry)?.snapshot()
+        val route = state?.plan?.route
+        val phase = state?.phase ?: if (completedAtMillis == null) {
+            AgentPhase.EXECUTING
+        } else {
+            AgentPhase.COMPLETED
+        }
+        val latestStep = state?.pendingAction?.description
+            .orEmpty()
+            .ifBlank {
+                processEntries.lastOrNull()
+                    ?.text
+                    ?.takeUnless { it.contains(" \u00b7 ") }
+                    .orEmpty()
+            }
+            .ifBlank { agentExecutionPhaseText(phase) }
+        return AgentExecutionPresentationPolicy.local(
+            routeKind = route?.kind ?: AgentRouteKind.UNKNOWN,
+            targetTitle = route?.targetTitle.orEmpty(),
+            selectedAgentOrModel = state?.plan?.selectedAgentOrModel.orEmpty(),
+            phase = phase,
+            currentStep = localizedAgentProcessText(latestStep),
+            startedAtMillis = startedAtMillis,
+            completedAtMillis = completedAtMillis ?: 0L
+        )
+    }
+
+    private fun agentExecutionLocationText(
+        presentation: AgentExecutionPresentation
+    ): String = presentation.locationLabelHint.ifBlank {
+        getString(when (presentation.locationKind) {
+            AgentExecutionLocationKind.PHONE -> R.string.agent_execution_location_phone
+            AgentExecutionLocationKind.DESKTOP -> R.string.agent_execution_location_desktop
+            AgentExecutionLocationKind.CLOUD -> R.string.agent_execution_location_cloud
+            AgentExecutionLocationKind.CONNECTED_DEVICE ->
+                R.string.agent_execution_location_connected_device
+            AgentExecutionLocationKind.UNKNOWN -> R.string.agent_execution_location_automatic
+        })
+    }
+
+    private fun agentExecutionPhaseText(phase: AgentPhase): String = getString(when (phase) {
+        AgentPhase.OBSERVING -> R.string.agent_status_observing
+        AgentPhase.PLANNING -> R.string.agent_status_planning
+        AgentPhase.WAITING_CONFIRMATION -> R.string.agent_status_waiting_confirmation
+        AgentPhase.EXECUTING -> R.string.agent_status_executing
+        AgentPhase.VERIFYING -> R.string.agent_status_verifying
+        AgentPhase.WAITING_RESPONSE -> R.string.agent_status_waiting_response
+        AgentPhase.PAUSED -> R.string.agent_status_paused
+        AgentPhase.CANCELLED -> R.string.agent_status_cancelled
+        AgentPhase.BLOCKED -> R.string.agent_status_blocked
+        AgentPhase.COMPLETED -> R.string.agent_status_completed
+        AgentPhase.FAILED -> R.string.agent_status_failed
+    })
+
+    private fun showAgentTimelineMenu(
+        entry: AgentTranscriptEntry,
+        anchor: View,
+        includeCancel: Boolean = true
+    ) {
         val runtime = agentTimelineRuntime(entry)
         if (runtime == null) {
             Toast.makeText(
@@ -3214,6 +3346,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val actions = AgentExecutionLoopTimelinePolicy.actionsForPhase(runtime.snapshot().phase)
+            .filter { includeCancel || it != AgentExecutionLoopTimelineAction.CANCEL }
         if (actions.isEmpty()) {
             Toast.makeText(
                 this,
@@ -11773,6 +11906,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
                 .orEmpty()
         }
+        val execution = agentExecutionPresentation(
+            entry = entry,
+            processEntries = processEntries,
+            startedAtMillis = startedAt,
+            completedAtMillis = completedAt
+        )
+        val canCancel = execution.cancellable &&
+            AgentExecutionLoopTimelineAction.CANCEL in timelineActions
+        val secondaryTimelineActions = timelineActions.filterNot {
+            it == AgentExecutionLoopTimelineAction.CANCEL
+        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
@@ -11788,43 +11932,101 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 isFocusable = true
                 minimumHeight = dp(34)
                 setPadding(0, dp(5), 0, dp(5))
-                addView(TextView(this@MainActivity).apply {
-                    setTextColor(getColorCompat(R.color.text_secondary))
-                    textSize = 14f
-                    includeFontPadding = false
-                    maxLines = 1
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    val statusView = this
-                    val ticker = object : Runnable {
-                        override fun run() {
-                            val elapsedMillis = (
-                                (completedAt ?: System.currentTimeMillis()) - startedAt
-                            ).coerceAtLeast(0L)
-                            statusView.text = getString(
-                                if (completedAt != null) {
-                                    R.string.agent_trace_processed
-                                } else {
-                                    R.string.agent_trace_processing
-                                },
-                                agentTraceDuration(elapsedMillis),
-                                ""
-                            ).trimEnd()
-                            if (completedAt == null && statusView.isAttachedToWindow) {
-                                statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
+                addView(View(this@MainActivity).apply {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(
+                            Color.parseColor(if (completed) "#22A06B" else "#2F7CF6")
+                        )
+                    }
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                    marginEnd = dp(9)
+                })
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    addView(TextView(this@MainActivity).apply {
+                        text = execution.executorLabel
+                        setTextColor(getColorCompat(R.color.text_primary))
+                        textSize = 14f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        includeFontPadding = false
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                    })
+                    addView(TextView(this@MainActivity).apply {
+                        setTextColor(getColorCompat(R.color.text_secondary))
+                        textSize = 11f
+                        includeFontPadding = false
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        setPadding(0, dp(3), 0, 0)
+                        val statusView = this
+                        val ticker = object : Runnable {
+                            override fun run() {
+                                val elapsedMillis = (
+                                    (completedAt ?: System.currentTimeMillis()) - startedAt
+                                ).coerceAtLeast(0L)
+                                statusView.text = buildString {
+                                    append(agentExecutionLocationText(execution))
+                                    append(" \u00b7 ")
+                                    append(
+                                        execution.currentStep.ifBlank {
+                                            agentExecutionPhaseText(execution.phase)
+                                        }
+                                    )
+                                    append(" \u00b7 ")
+                                    append(agentTraceDuration(elapsedMillis))
+                                }
+                                if (completedAt == null && statusView.isAttachedToWindow) {
+                                    statusView.postDelayed(this, AGENT_PROCESS_TIMER_TICK_MS)
+                                }
                             }
                         }
-                    }
-                    addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
-                        override fun onViewAttachedToWindow(view: View) {
-                            statusView.removeCallbacks(ticker)
-                            ticker.run()
-                        }
+                        addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                            override fun onViewAttachedToWindow(view: View) {
+                                statusView.removeCallbacks(ticker)
+                                ticker.run()
+                            }
 
-                        override fun onViewDetachedFromWindow(view: View) {
-                            statusView.removeCallbacks(ticker)
-                        }
+                            override fun onViewDetachedFromWindow(view: View) {
+                                statusView.removeCallbacks(ticker)
+                            }
+                        })
                     })
-                })
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                if (canCancel) {
+                    addView(TextView(this@MainActivity).apply {
+                        text = getString(R.string.agent_execution_cancel)
+                        setTextColor(Color.parseColor("#59636D"))
+                        textSize = 12f
+                        gravity = Gravity.CENTER
+                        includeFontPadding = false
+                        minHeight = dp(32)
+                        setPadding(dp(9), 0, dp(9), 0)
+                        background = GradientDrawable().apply {
+                            cornerRadius = dp(6).toFloat()
+                            setColor(Color.parseColor("#F4F6F8"))
+                            setStroke(dp(1), Color.parseColor("#DDE2E7"))
+                        }
+                        contentDescription =
+                            getString(R.string.agent_execution_cancel_description)
+                        setOnClickListener {
+                            agentTimelineRuntime(entry)?.let { runtime ->
+                                runAgentTimelineAction(
+                                    entry,
+                                    runtime,
+                                    AgentExecutionLoopTimelineAction.CANCEL
+                                )
+                            }
+                        }
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        dp(32)
+                    ).apply {
+                        marginStart = dp(8)
+                    })
+                }
                 if (hasProcessDetails) {
                     addView(ImageView(this@MainActivity).apply {
                         setImageResource(R.drawable.ic_chevron_down)
@@ -11834,14 +12036,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         rotation = if (expanded) 180f else 0f
                         contentDescription = getString(R.string.agent_trace_processed_details)
                     }, LinearLayout.LayoutParams(dp(17), dp(17)).apply {
-                        marginStart = dp(4)
+                        marginStart = dp(8)
                     })
                 }
-                if (timelineActions.isNotEmpty()) {
-                    addView(
-                        View(this@MainActivity),
-                        LinearLayout.LayoutParams(0, 1, 1f)
-                    )
+                if (secondaryTimelineActions.isNotEmpty()) {
                     addView(ImageView(this@MainActivity).apply {
                         setImageResource(R.drawable.ic_more_horizontal)
                         imageTintList = android.content.res.ColorStateList.valueOf(
@@ -11852,9 +12050,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         contentDescription = getString(R.string.agent_more_actions)
                         isClickable = true
                         isFocusable = true
-                        setOnClickListener { anchor -> showAgentTimelineMenu(entry, anchor) }
+                        setOnClickListener { anchor ->
+                            showAgentTimelineMenu(entry, anchor, includeCancel = false)
+                        }
                     }, LinearLayout.LayoutParams(dp(32), dp(32)).apply {
-                        marginStart = dp(8)
+                        marginStart = dp(4)
                     })
                 }
                 if (hasProcessDetails) {

@@ -173,6 +173,7 @@ const androidWhisperModels = fs.readFileSync(path.join(workspaceRoot, "android",
 const androidCloudModelClient = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "CloudModelClient.kt"), "utf8");
 const androidMcpSecurity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpSecurity.kt"), "utf8");
 const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpRuntime.kt"), "utf8");
+const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentExecutionPresentation.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -569,6 +570,21 @@ for (const mcpGovernanceContract of [
 ]) {
   if (!mcpGovernanceContract[0].includes(mcpGovernanceContract[1])) {
     throw new Error(`MCP permission and audit governance is incomplete: ${mcpGovernanceContract[1]}`);
+  }
+}
+
+for (const executionPresentationContract of [
+  [backendTaskManager, "\"execution_view\""],
+  [backendMqtt, "\"execution_view\""],
+  [workspaceRenderer, "function taskExecutionView"],
+  [workspaceRenderer, "data-cancel-task"],
+  [androidExecutionPresentation, "data class AgentExecutionPresentation"],
+  [androidExecutionPresentation, "fun isCancellable"],
+  [androidMainActivity, "agentExecutionPresentations"],
+  [androidMainActivity, "agent_execution_cancel"]
+]) {
+  if (!executionPresentationContract[0].includes(executionPresentationContract[1])) {
+    throw new Error(`Unified Agent execution presentation is incomplete: ${executionPresentationContract[1]}`);
   }
 }
 

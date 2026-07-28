@@ -155,6 +155,7 @@ async function runUiSmoke() {
           prompt: "Improve automatic recovery for interrupted Desktop tasks",
           status: "running",
           evolution_status: "validating",
+          current_step: "Quality gate started",
           automatic: true,
           created_at: Date.now() - 12_000,
           started_at: Date.now() - 11_000,
@@ -180,7 +181,9 @@ async function runUiSmoke() {
           origin: turn?.querySelector(".task-origin")?.textContent || "",
           events: turn?.querySelectorAll(".event-row").length || 0,
           expanded: turn?.querySelector(".run-detail")?.hidden === false,
-          route: turn?.querySelector(".run-summary > span:nth-last-child(2)")?.textContent || ""
+          executor: turn?.querySelector(".run-summary-copy strong")?.textContent || "",
+          executionDetail: turn?.querySelector(".run-summary-copy small")?.textContent || "",
+          cancelActions: turn?.querySelectorAll("[data-cancel-task]").length || 0
         };
       })()
     `);
@@ -190,7 +193,10 @@ async function runUiSmoke() {
       || !evolutionTimelineState.origin.trim()
       || evolutionTimelineState.events !== 4
       || !evolutionTimelineState.expanded
-      || !evolutionTimelineState.route.includes("Codex")
+      || !evolutionTimelineState.executor.includes("Codex")
+      || !evolutionTimelineState.executionDetail.includes("This desktop")
+      || !evolutionTimelineState.executionDetail.includes("Quality gate started")
+      || evolutionTimelineState.cancelActions !== 1
     ) {
       throw new Error(`Self-evolution timeline did not render in the main output: ${JSON.stringify(evolutionTimelineState)}`);
     }

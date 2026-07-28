@@ -2324,6 +2324,7 @@ def _agent_task_payload(
         "turn_id": _client_task_turn_id(task),
         "agent_turn_id": task.get("turn_id", ""),
         "current_step": task.get("current_step", ""),
+        "execution_view": task.get("execution_view", {}),
         "approval_request": task.get("pending_approval", {}),
         "task_disposition": task.get("task_disposition", ""),
         "merged_into_task_id": task.get("merged_into_task_id", ""),

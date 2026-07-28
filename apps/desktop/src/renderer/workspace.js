@@ -230,6 +230,23 @@ function taskRouteName(task) {
   return task.delegate_agent_id ? `${primary} · ${agentName(task.delegate_agent_id)}` : primary;
 }
 
+function taskExecutionView(task) {
+  const view = task?.execution_view && typeof task.execution_view === "object"
+    ? task.execution_view
+    : {};
+  const executorId = String(
+    view.executor_id || task?.delegate_agent_id || task?.agent_id || "desktop"
+  ).trim();
+  return {
+    executor: agentName(executorId),
+    location: String(view.location_name || t("This desktop")).trim(),
+    step: String(view.current_step || task?.current_step || taskStatusLabel(task)).trim(),
+    cancellable: Boolean(
+      view.cancellable ?? (task && !TERMINAL_STATES.has(task.status))
+    )
+  };
+}
+
 function applyInlineMarkup(value) {
   return value
     .replace(/`([^`]+)`/g, "<code>$1</code>")
@@ -405,14 +422,22 @@ function renderTurn(task) {
     ? `<small class="task-origin">${escapeHtml(t(task.automatic ? "Automatic self-evolution" : "Self-evolution"))}</small>`
     : "";
   const detailHidden = isEvolution && !TERMINAL_STATES.has(task.status) ? "" : "hidden";
+  const execution = taskExecutionView(task);
   return `
     <article class="task-turn ${isEvolution ? "self-evolution-turn" : ""}" data-task-id="${escapeHtml(task.task_id)}">
       <div class="user-message-row"><div class="user-message ${isEvolution ? "self-evolution-message" : ""}">${originLabel}${escapeHtml(task.prompt || t("Attached files"))}</div></div>${attachmentRows}
-      <button class="run-summary ${statusClass}" data-toggle-run="${escapeHtml(task.task_id)}">
-        <span class="status-pulse"></span>
-        <strong>${escapeHtml(taskStatusLabel(task))} <span data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span></strong>
-        <span>${escapeHtml(taskRouteName(task))}</span><span class="chevron" aria-hidden="true"></span>
-      </button>
+      <div class="execution-run-row">
+        <button class="run-summary ${statusClass}" data-toggle-run="${escapeHtml(task.task_id)}">
+          <span class="status-pulse"></span>
+          <span class="run-summary-copy">
+            <strong>${escapeHtml(execution.executor)}</strong>
+            <small>${escapeHtml(taskStatusLabel(task))} · ${escapeHtml(execution.location)} · ${escapeHtml(execution.step)}</small>
+          </span>
+          <span class="run-duration" data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span>
+          <span class="chevron" aria-hidden="true"></span>
+        </button>
+        ${execution.cancellable ? `<button class="run-cancel" data-cancel-task="${escapeHtml(task.task_id)}" title="${escapeHtml(t("Stop running task"))}" aria-label="${escapeHtml(t("Stop running task"))}">${escapeHtml(t("Cancel"))}</button>` : ""}
+      </div>
       <div class="run-detail" data-run-detail="${escapeHtml(task.task_id)}" ${detailHidden}>${latencySummary}${detail}</div>
       ${answer}
     </article>`;
@@ -430,7 +455,11 @@ function renderConversation(force = false) {
     task.delivery_trace?.length,
     task.latency?.first_output_ms,
     task.latency?.total_ms,
-    task.delegate_agent_id
+    task.delegate_agent_id,
+    task.current_step,
+    task.execution_view?.executor_id,
+    task.execution_view?.location_name,
+    task.execution_view?.cancellable
   ]));
   if (!force && signature === state.renderingSignature) return;
   state.renderingSignature = signature;
@@ -2011,8 +2040,8 @@ function latestTask() {
   return conversationTasks().at(-1) || null;
 }
 
-async function cancelRunningTask() {
-  const task = [...conversationTasks()].reverse().find((item) => !TERMINAL_STATES.has(item.status));
+async function cancelTask(taskId) {
+  const task = state.tasks.find((item) => item.task_id === taskId);
   if (!task) {
     showToast(t("No task is currently running."));
     return;
@@ -2020,6 +2049,11 @@ async function cancelRunningTask() {
   await window.signalasi.cancelDesktopTask(task.task_id);
   $("#workspaceMenu").hidden = true;
   await refreshTasks(true);
+}
+
+async function cancelRunningTask() {
+  const task = [...conversationTasks()].reverse().find((item) => !TERMINAL_STATES.has(item.status));
+  await cancelTask(task?.task_id);
 }
 
 async function retryTask(taskId) {
@@ -2130,6 +2164,11 @@ function bindEvents() {
     renderConversation(true);
   });
   elements.messages.addEventListener("click", async (event) => {
+    const cancel = event.target.closest("[data-cancel-task]");
+    if (cancel) {
+      await cancelTask(cancel.dataset.cancelTask);
+      return;
+    }
     const speak = event.target.closest("[data-speak-task]");
     if (speak) {
       speakTaskResult(speak.dataset.speakTask);

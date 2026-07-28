@@ -1964,4 +1964,11 @@
     <string name="web_sources_clear">Clear</string>
     <string name="web_sources_saved">Source credential saved</string>
     <string name="web_sources_cleared">Source credential removed</string>
+    <string name="agent_execution_location_phone">This phone</string>
+    <string name="agent_execution_location_desktop">Paired desktop</string>
+    <string name="agent_execution_location_cloud">Cloud</string>
+    <string name="agent_execution_location_connected_device">Connected device</string>
+    <string name="agent_execution_location_automatic">Automatic route</string>
+    <string name="agent_execution_cancel">Cancel</string>
+    <string name="agent_execution_cancel_description">Cancel this running task</string>
 </resources>
