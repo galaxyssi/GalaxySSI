@@ -990,11 +990,20 @@ function formatControlTime(value) {
 
 function renderDesktopControl() {
   const control = state.desktopControl || { recent_audit: [] };
-  const audit = Array.isArray(control.recent_audit)
-    ? control.recent_audit.filter((row) => row.event_type !== "settings_changed").slice(0, 20)
+  const receipts = Array.isArray(control.recent_receipts)
+    ? control.recent_receipts.slice(0, 20)
     : [];
-  $("#desktopControlAuditList").innerHTML = audit.length
-    ? audit.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.event_type || "")}</strong><small>${escapeHtml(`${formatControlTime(row.created_at)} · ${row.status || ""}`)}</small></article>`).join("")
+  const audit = Array.isArray(control.recent_audit)
+    ? control.recent_audit
+      .filter((row) => !["settings_changed", "desktop_action"].includes(row.event_type))
+      .slice(0, Math.max(0, 20 - receipts.length))
+    : [];
+  const activity = [
+    ...receipts.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.tool_id || "")}</strong><small>${escapeHtml(`${formatControlTime(row.completed_at)} · ${t("Verified receipt")} ${String(row.receipt_id || "").slice(0, 8)} · ${row.status || ""}`)}</small></article>`),
+    ...audit.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.event_type || "")}</strong><small>${escapeHtml(`${formatControlTime(row.created_at)} · ${row.status || ""}`)}</small></article>`)
+  ];
+  $("#desktopControlAuditList").innerHTML = activity.length
+    ? activity.join("")
     : `<div class="history-empty">${escapeHtml(t("No remote-control activity yet."))}</div>`;
 }
 

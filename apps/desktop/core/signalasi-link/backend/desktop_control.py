@@ -21,16 +21,19 @@ from typing import Any, Callable, Mapping
 
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_state import DATA_DIR
+from signalasi_client import get_signal_bundle, sign_signal_identity
 
 
-CONTRACT_VERSION = "signalasi.desktop-control/1.0"
+CONTRACT_VERSION = "signalasi.desktop-control/1.1"
 AUTHORIZATION_VERSION = 1
+RECEIPT_VERSION = 2
 OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
 MAX_CLOCK_SKEW_MILLIS = 30_000
 MAX_SCREENSHOT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
 MAX_AUDIT_EVENTS = 1_000
 MAX_RECENT_ACTIONS = 256
+MAX_VISIBLE_RECEIPTS = 50
 
 SCREENSHOT = "desktop.screenshot"
 CLICK_XY = "desktop.click_xy"
@@ -39,6 +42,31 @@ HOTKEY = "desktop.hotkey"
 SCROLL = "desktop.scroll"
 
 DEFAULT_ALLOWED_TOOLS = (SCREENSHOT, CLICK_XY, TYPE_TEXT, HOTKEY, SCROLL)
+RECEIPT_SIGNED_FIELDS = (
+    "receipt_version",
+    "receipt_id",
+    "task_id",
+    "action_id",
+    "authorization_id",
+    "tool_id",
+    "status",
+    "summary",
+    "error_code",
+    "error_retryable",
+    "request_sha256",
+    "input_sha256",
+    "output_sha256",
+    "evidence_sha256",
+    "controller_fingerprint",
+    "started_at",
+    "completed_at",
+    "duration_ms",
+    "signer_id",
+    "signature_key_id",
+)
+
+IdentityProvider = Callable[[], dict[str, str]]
+ReceiptSigner = Callable[[bytes], dict[str, str]]
 
 
 class DesktopControlError(RuntimeError):
@@ -73,6 +101,25 @@ def _canonical_digest(value: Any) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def _canonical_json(value: Any) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def _default_identity() -> dict[str, str]:
+    bundle = get_signal_bundle()
+    fingerprint = str(bundle.get("identityKeySha256") or "").lower()
+    return {
+        "signer_id": f"desktop_{fingerprint[:16]}",
+        "signature_key_id": fingerprint,
+    }
+
+
 def _uuid(value: Any, field: str) -> str:
     text = str(value or "").strip()
     try:
@@ -97,6 +144,8 @@ class DesktopControlManager:
         now: Callable[[], float] = time.time,
         screenshot_provider: Callable[[], dict[str, Any]] | None = None,
         input_controller: "WindowsInputController | None" = None,
+        identity_provider: IdentityProvider = _default_identity,
+        receipt_signer: ReceiptSigner = sign_signal_identity,
     ) -> None:
         self.state_path = Path(state_path or DATA_DIR / "desktop_control.json")
         self.now = now
@@ -106,6 +155,8 @@ class DesktopControlManager:
         self._state = self._load()
         self._screenshot_provider = screenshot_provider or capture_desktop_screenshot
         self._input = input_controller or WindowsInputController()
+        self._identity_provider = identity_provider
+        self._receipt_signer = receipt_signer
 
     def settings(self) -> dict[str, Any]:
         with self._lock:
@@ -344,6 +395,22 @@ class DesktopControlManager:
                 and (include_revoked or row.get("status") != "revoked")
             ]
             rows.sort(key=lambda row: int(row.get("updated_at") or 0), reverse=True)
+            visible_authorization_ids = {
+                str(row.get("authorization_id") or "")
+                for row in rows
+            }
+            receipts = [
+                dict(action.get("receipt") or {})
+                for action in sorted(
+                    self._state["recent_actions"].values(),
+                    key=lambda item: int(item.get("created_at") or 0),
+                    reverse=True,
+                )
+                if isinstance(action, dict)
+                and isinstance(action.get("receipt"), dict)
+                and int(action["receipt"].get("receipt_version") or 0) == RECEIPT_VERSION
+                and str(action["receipt"].get("authorization_id") or "") in visible_authorization_ids
+            ][:MAX_VISIBLE_RECEIPTS]
             return {
                 "contract_version": CONTRACT_VERSION,
                 "enabled": bool(self._state["settings"].get("enabled")),
@@ -353,6 +420,7 @@ class DesktopControlManager:
                 "pending_count": sum(row.get("status") == "pending" for row in rows),
                 "active_count": sum(row.get("status") == "active" for row in rows),
                 "recent_audit": list(reversed(self._state["audit"][-50:])),
+                "recent_receipts": receipts,
             }
 
     def execute_request(
@@ -401,6 +469,11 @@ class DesktopControlManager:
             with self._input_lock:
                 if not self.settings().get("enabled"):
                     raise DesktopControlError("desktop_executor_disabled", "Desktop Executor is disabled")
+                authorization = self._revalidate_authorization(
+                    str(authorization["authorization_id"]),
+                    paired_client,
+                    tool_id,
+                )
                 if self.settings().get("require_unlocked") and self._input.is_locked():
                     raise DesktopControlError("desktop_locked", "Desktop must be unlocked before remote control")
                 screenshot = None
@@ -470,7 +543,7 @@ class DesktopControlManager:
                     raise DesktopControlError("invalid_tool", "Desktop control tool is not supported")
 
             completed_at = int(self.now() * 1_000)
-            receipt = {
+            receipt = self._seal_receipt({
                 "type": "desktop_action_receipt",
                 "task_id": str(payload.get("task_id") or ""),
                 "action_id": action_id,
@@ -484,7 +557,7 @@ class DesktopControlManager:
                 "duration_ms": max(0, completed_at - started_at),
                 "replayed": False,
                 "post_screenshot": screenshot if tool_id != SCREENSHOT else None,
-            }
+            }, request_digest, arguments, paired_client)
             with self._lock:
                 authorization["last_used_at"] = completed_at
                 authorization["updated_at"] = completed_at
@@ -501,7 +574,16 @@ class DesktopControlManager:
                 self._save_locked()
             return receipt
         except DesktopControlError as exc:
-            receipt = self._failure_receipt(payload, action_id, tool_id, started_at, exc)
+            receipt = self._failure_receipt(
+                payload,
+                action_id,
+                tool_id,
+                started_at,
+                exc,
+                request_digest=request_digest,
+                arguments=arguments,
+                paired_client=paired_client,
+            )
             with self._lock:
                 self._complete_action_locked(action_id, request_digest, receipt)
                 self._append_audit_locked(
@@ -517,7 +599,16 @@ class DesktopControlManager:
             return receipt
         except Exception as exc:
             wrapped = DesktopControlError("input_execution_failed", str(exc) or "Desktop input execution failed")
-            receipt = self._failure_receipt(payload, action_id, tool_id, started_at, wrapped)
+            receipt = self._failure_receipt(
+                payload,
+                action_id,
+                tool_id,
+                started_at,
+                wrapped,
+                request_digest=request_digest,
+                arguments=arguments,
+                paired_client=paired_client,
+            )
             with self._lock:
                 self._complete_action_locked(action_id, request_digest, receipt)
                 self._append_audit_locked(
@@ -541,6 +632,9 @@ class DesktopControlManager:
             raise DesktopControlError("desktop_executor_disabled", "Desktop Executor is disabled")
         action_id = _uuid(payload.get("action_id"), "action_id")
         authorization_id = _uuid(payload.get("authorization_id"), "authorization_id")
+        task_id = _bounded_text(payload.get("task_id"), "task_id", 160).strip()
+        if not task_id:
+            raise DesktopControlError("invalid_input", "task_id must not be empty")
         tool_id = str(payload.get("tool_id") or "")
         if tool_id not in DEFAULT_ALLOWED_TOOLS:
             raise DesktopControlError("invalid_tool", "Desktop control tool is not allowed")
@@ -572,13 +666,43 @@ class DesktopControlManager:
             if tool_id not in set(authorization.get("allowed_tools") or []):
                 raise DesktopControlError("tool_not_allowed", "Tool is outside this authorization")
         digest = _canonical_digest({
+            "contract_version": CONTRACT_VERSION,
+            "type": "desktop_executor_request",
+            "task_id": task_id,
+            "action_id": action_id,
             "authorization_id": authorization_id,
             "tool_id": tool_id,
             "input": arguments,
             "sent_at": sent_at,
             "expires_at": expires_at,
+            "client_route_id": route,
+            "controller_fingerprint": fingerprint,
+            "controller_signal_name": str(paired_client.get("signal_name") or ""),
         })
         return action_id, authorization, tool_id, dict(arguments), digest
+
+    def _revalidate_authorization(
+        self,
+        authorization_id: str,
+        paired_client: Mapping[str, Any],
+        tool_id: str,
+    ) -> dict[str, Any]:
+        with self._lock:
+            authorization = self._authorization_locked(authorization_id)
+            if authorization.get("status") != "active":
+                raise DesktopControlError("authorization_required", "Desktop control authorization is not active")
+            route = str(paired_client.get("client_route_id") or "")
+            fingerprint = str(paired_client.get("identity_fingerprint") or "").lower()
+            if route != str(authorization.get("client_route_id") or ""):
+                raise DesktopControlError("authorization_identity_mismatch", "Phone route does not match authorization")
+            if not secrets.compare_digest(
+                fingerprint,
+                str(authorization.get("phone_identity_fingerprint") or "").lower(),
+            ):
+                raise DesktopControlError("authorization_identity_mismatch", "Phone identity does not match authorization")
+            if tool_id not in set(authorization.get("allowed_tools") or []):
+                raise DesktopControlError("tool_not_allowed", "Tool is outside this authorization")
+            return authorization
 
     def _failure_receipt(
         self,
@@ -587,9 +711,13 @@ class DesktopControlManager:
         tool_id: str,
         started_at: int,
         error: DesktopControlError,
+        *,
+        request_digest: str,
+        arguments: Mapping[str, Any],
+        paired_client: Mapping[str, Any],
     ) -> dict[str, Any]:
         completed_at = int(self.now() * 1_000)
-        return {
+        return self._seal_receipt({
             "type": "desktop_action_receipt",
             "task_id": str(payload.get("task_id") or ""),
             "action_id": action_id,
@@ -603,7 +731,172 @@ class DesktopControlManager:
             "duration_ms": max(0, completed_at - started_at),
             "replayed": False,
             "post_screenshot": None,
+        }, request_digest, arguments, paired_client)
+
+    def failure_receipt(
+        self,
+        payload: Mapping[str, Any],
+        paired_client: Mapping[str, Any],
+        error: DesktopControlError,
+    ) -> dict[str, Any]:
+        started_at = int(self.now() * 1_000)
+        arguments = payload.get("input")
+        safe_arguments = dict(arguments) if isinstance(arguments, dict) else {}
+        request_digest = _canonical_digest({
+            "contract_version": CONTRACT_VERSION,
+            "type": "desktop_executor_request",
+            "task_id": str(payload.get("task_id") or "")[:160],
+            "action_id": str(payload.get("action_id") or "")[:160],
+            "authorization_id": str(payload.get("authorization_id") or "")[:160],
+            "tool_id": str(payload.get("tool_id") or "")[:160],
+            "input": safe_arguments,
+            "sent_at": self._safe_int(payload.get("sent_at")),
+            "expires_at": self._safe_int(payload.get("expires_at")),
+            "client_route_id": str(paired_client.get("client_route_id") or ""),
+            "controller_fingerprint": str(paired_client.get("identity_fingerprint") or "").lower(),
+            "controller_signal_name": str(paired_client.get("signal_name") or ""),
+        })
+        return self._failure_receipt(
+            payload,
+            str(payload.get("action_id") or "")[:160],
+            str(payload.get("tool_id") or "")[:160],
+            started_at,
+            error,
+            request_digest=request_digest,
+            arguments=safe_arguments,
+            paired_client=paired_client,
+        )
+
+    def _seal_receipt(
+        self,
+        receipt: dict[str, Any],
+        request_digest: str,
+        arguments: Mapping[str, Any],
+        paired_client: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        error = receipt.get("error") if isinstance(receipt.get("error"), dict) else {}
+        evidence = receipt.get("post_screenshot")
+        output = receipt.get("output") if isinstance(receipt.get("output"), dict) else {}
+        if not isinstance(evidence, dict):
+            candidate = output.get("screenshot")
+            evidence = candidate if isinstance(candidate, dict) else {}
+        evidence_sha256 = self._screenshot_digest(evidence)
+        input_sha256 = _canonical_digest(dict(arguments))
+        output_sha256 = _canonical_digest(
+            self._receipt_output_contract(receipt, evidence_sha256)
+        )
+        identity = self._identity_provider()
+        signer_id = str(identity.get("signer_id") or "").strip()
+        signature_key_id = str(identity.get("signature_key_id") or "").lower()
+        if not signer_id or len(signature_key_id) != 64:
+            raise DesktopControlError("receipt_signing_failed", "Desktop signing identity is unavailable")
+
+        receipt_id = _canonical_digest({
+            "task_id": str(receipt.get("task_id") or ""),
+            "action_id": str(receipt.get("action_id") or ""),
+            "authorization_id": str(receipt.get("authorization_id") or ""),
+            "request_sha256": request_digest,
+            "output_sha256": output_sha256,
+            "evidence_sha256": evidence_sha256,
+            "completed_at": int(receipt.get("completed_at") or 0),
+        })
+        signed_fields = {
+            "receipt_version": RECEIPT_VERSION,
+            "receipt_id": receipt_id,
+            "task_id": str(receipt.get("task_id") or ""),
+            "action_id": str(receipt.get("action_id") or ""),
+            "authorization_id": str(receipt.get("authorization_id") or ""),
+            "tool_id": str(receipt.get("tool_id") or ""),
+            "status": str(receipt.get("status") or "failed"),
+            "summary": str(receipt.get("summary") or ""),
+            "error_code": str(error.get("code") or ""),
+            "error_retryable": bool(error.get("retryable")),
+            "request_sha256": request_digest,
+            "input_sha256": input_sha256,
+            "output_sha256": output_sha256,
+            "evidence_sha256": evidence_sha256,
+            "controller_fingerprint": str(paired_client.get("identity_fingerprint") or "").lower(),
+            "started_at": int(receipt.get("started_at") or 0),
+            "completed_at": int(receipt.get("completed_at") or 0),
+            "duration_ms": int(receipt.get("duration_ms") or 0),
+            "signer_id": signer_id,
+            "signature_key_id": signature_key_id,
         }
+        signed = self._receipt_signer(_canonical_json(signed_fields))
+        if (
+            str(signed.get("signer_id") or "") != signer_id
+            or str(signed.get("signature_key_id") or "").lower() != signature_key_id
+            or not str(signed.get("signature") or "")
+        ):
+            raise DesktopControlError(
+                "receipt_signing_failed",
+                "Desktop signing identity changed while recording the action",
+            )
+        receipt.update(signed_fields)
+        receipt["signature"] = str(signed["signature"])
+        return receipt
+
+    @staticmethod
+    def _screenshot_digest(screenshot: Mapping[str, Any]) -> str:
+        encoded = str(screenshot.get("image_base64") or "")
+        if not encoded:
+            return ""
+        try:
+            value = base64.b64decode(encoded, validate=True)
+        except (ValueError, TypeError) as exc:
+            raise DesktopControlError("invalid_screenshot", "Desktop screenshot evidence is invalid") from exc
+        return hashlib.sha256(value).hexdigest()
+
+    @classmethod
+    def _receipt_output_contract(
+        cls,
+        receipt: Mapping[str, Any],
+        evidence_sha256: str,
+    ) -> dict[str, Any]:
+        error = receipt.get("error") if isinstance(receipt.get("error"), dict) else {}
+        output = dict(receipt.get("output") or {}) if isinstance(receipt.get("output"), dict) else {}
+        if isinstance(output.get("screenshot"), dict):
+            output["screenshot"] = cls._screenshot_metadata(
+                output["screenshot"],
+                evidence_sha256,
+            )
+        post_screenshot = receipt.get("post_screenshot")
+        return {
+            "status": str(receipt.get("status") or "failed"),
+            "summary": str(receipt.get("summary") or ""),
+            "error": {
+                "code": str(error.get("code") or ""),
+                "message": str(error.get("message") or ""),
+                "retryable": bool(error.get("retryable")),
+            } if error else None,
+            "output": output,
+            "post_screenshot": cls._screenshot_metadata(
+                post_screenshot,
+                evidence_sha256,
+            ) if isinstance(post_screenshot, dict) else None,
+        }
+
+    @staticmethod
+    def _screenshot_metadata(
+        screenshot: Mapping[str, Any],
+        evidence_sha256: str,
+    ) -> dict[str, Any]:
+        metadata = {
+            str(key): value
+            for key, value in screenshot.items()
+            if str(key) != "image_base64"
+        }
+        metadata["image_sha256"] = evidence_sha256
+        return metadata
+
+    @staticmethod
+    def _safe_int(value: Any) -> int:
+        if isinstance(value, bool):
+            return 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
 
     def _authorization_locked(self, authorization_id: str, *, include_revoked: bool = False) -> dict[str, Any]:
         row = self._state["authorizations"].get(str(authorization_id or ""))
@@ -658,10 +951,21 @@ class DesktopControlManager:
             self._state["audit"] = self._state["audit"][-MAX_AUDIT_EVENTS:]
 
     def _complete_action_locked(self, action_id: str, digest: str, receipt: dict[str, Any]) -> None:
-        durable_receipt = {key: value for key, value in receipt.items() if key != "post_screenshot"}
+        durable_receipt = dict(receipt)
+        post_screenshot = durable_receipt.get("post_screenshot")
+        if isinstance(post_screenshot, dict):
+            durable_receipt["post_screenshot"] = self._screenshot_metadata(
+                post_screenshot,
+                str(receipt.get("evidence_sha256") or ""),
+            )
         output = durable_receipt.get("output")
-        if isinstance(output, dict) and "screenshot" in output:
-            durable_receipt["output"] = {"screenshot": None}
+        if isinstance(output, dict) and isinstance(output.get("screenshot"), dict):
+            durable_output = dict(output)
+            durable_output["screenshot"] = self._screenshot_metadata(
+                output["screenshot"],
+                str(receipt.get("evidence_sha256") or ""),
+            )
+            durable_receipt["output"] = durable_output
         self._state["recent_actions"][action_id] = {
             "request_sha256": digest,
             "status": str(receipt.get("status") or "failed"),

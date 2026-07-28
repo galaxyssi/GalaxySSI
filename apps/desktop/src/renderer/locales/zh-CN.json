@@ -615,4 +615,5 @@
 , "Parallel processes": "并发进程数"
 , "Keep ready after Desktop starts": "Desktop 启动后保持就绪"
 , "Persistent mode requires an Agent that implements the SignalASI JSONL protocol.": "常驻模式要求 Agent 实现 SignalASI JSONL 协议。"
+, "Verified receipt": "已验证回执"
 }

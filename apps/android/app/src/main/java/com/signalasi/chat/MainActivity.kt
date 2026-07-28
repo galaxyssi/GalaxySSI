@@ -18116,7 +18116,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (snapshot.lastActionSummary.isNotBlank()) {
             featureContent.addView(featureRow(
                 getString(R.string.desktop_control_latest_action),
-                snapshot.lastActionSummary,
+                if (snapshot.lastActionSummary == "desktop_action_receipt_unverified") {
+                    getString(R.string.desktop_control_receipt_unverified)
+                } else {
+                    snapshot.lastActionSummary
+                },
                 R.drawable.ic_agent_history,
                 desktopControlStatusLabel(snapshot.lastActionStatus)
             ))
@@ -18205,7 +18209,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             })
         }
         addSectionTitle(getString(R.string.desktop_control_recent_activity))
-        if (snapshot.recentAudit.isEmpty()) {
+        if (snapshot.recentReceipts.isEmpty() && snapshot.recentAudit.isEmpty()) {
             featureContent.addView(featureRow(
                 getString(R.string.desktop_control_no_recent_activity),
                 "",
@@ -18213,14 +18217,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ""
             ))
         } else {
-            snapshot.recentAudit.take(12).forEach { event ->
+            snapshot.recentReceipts.take(12).forEach { receipt ->
                 featureContent.addView(featureRow(
-                    event.summary.ifBlank { event.eventType },
-                    securityTime(event.createdAt),
-                    R.drawable.ic_agent_history,
-                    desktopControlStatusLabel(event.status)
+                    receipt.summary.ifBlank { receipt.toolId },
+                    getString(
+                        R.string.desktop_control_verified_receipt,
+                        securityTime(receipt.completedAt),
+                        receipt.receiptId.take(8)
+                    ),
+                    R.drawable.ic_security_shield,
+                    desktopControlStatusLabel(receipt.status)
                 ))
             }
+            snapshot.recentAudit
+                .filter { it.eventType != "desktop_action" }
+                .take((12 - snapshot.recentReceipts.size).coerceAtLeast(0))
+                .forEach { event ->
+                    featureContent.addView(featureRow(
+                        event.summary.ifBlank { event.eventType },
+                        securityTime(event.createdAt),
+                        R.drawable.ic_agent_history,
+                        desktopControlStatusLabel(event.status)
+                    ))
+                }
         }
         featureContent.addView(TextView(this).apply {
             text = getString(R.string.desktop_control_security_footer)
@@ -18276,7 +18295,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "active", "succeeded" -> R.string.status_enabled
             "pending", "sending", "running" -> R.string.desktop_control_pending
             "revoked" -> R.string.desktop_control_revoked
-            "failed" -> R.string.agent_task_status_failed
+            "failed", "unverified" -> R.string.agent_task_status_failed
             else -> R.string.status_unknown
         }
     )
