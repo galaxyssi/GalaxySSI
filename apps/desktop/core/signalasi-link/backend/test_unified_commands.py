@@ -113,7 +113,107 @@ class UnifiedCommandsTest(unittest.TestCase):
         self.assertEqual(missing_handlers, [])
         capabilities = self.engine.execute(CommandRequest("capabilities.list", workspace=str(self.workspace)))
         self.assertEqual(capabilities.status, "completed")
-        self.assertGreaterEqual(capabilities.data["ready_count"], 620)
+        self.assertEqual(capabilities.data["registered_count"], commands.data["catalog_size"])
+        self.assertEqual(capabilities.data["handler_bound_count"], commands.data["catalog_size"])
+        self.assertEqual(
+            sum(capabilities.data["status_counts"].values()),
+            commands.data["catalog_size"],
+        )
+        self.assertEqual(
+            capabilities.data["runnable_count"] + capabilities.data["unavailable_count"],
+            commands.data["catalog_size"],
+        )
+        by_id = {
+            item["command_id"]: item
+            for item in capabilities.data["capabilities"]
+        }
+        self.assertEqual(by_id["commands.list"]["status"], "ready")
+        self.assertEqual(by_id["file.read"]["status"], "needs_input")
+        self.assertEqual(by_id["camera.run"]["status"], "unsupported")
+        self.assertEqual(by_id["codex.run"]["status"], "unsupported")
+        self.assertEqual(by_id["archive.stop"]["status"], "unsupported")
+        self.assertEqual(by_id["memory.create"]["implementation"], "sqlite_state_service")
+        self.assertEqual(by_id["web.inspect"]["implementation"], "external_adapter")
+        self.assertLess(capabilities.data["ready_count"], commands.data["catalog_size"])
+
+    def test_every_command_has_one_truthful_capability_classification(self):
+        result = self.engine.execute(
+            CommandRequest("capabilities.list", workspace=str(self.workspace))
+        )
+        self.assertEqual(result.status, "completed")
+        capabilities = result.data["capabilities"]
+        allowed = {
+            "ready",
+            "needs_input",
+            "needs_configuration",
+            "missing_runtime",
+            "unsupported",
+        }
+        self.assertEqual(len(capabilities), len(self.engine.registry.list()))
+        self.assertEqual(
+            {item["command_id"] for item in capabilities},
+            {item["command_id"] for item in self.engine.registry.list()},
+        )
+        self.assertTrue(all(item["status"] in allowed for item in capabilities))
+        self.assertTrue(all(item["registered"] for item in capabilities))
+        self.assertTrue(all(item["handler_bound"] for item in capabilities))
+        self.assertGreater(result.data["unsupported_count"], 0)
+        self.assertGreater(result.data["needs_input_count"], 0)
+
+    def test_all_write_and_high_risk_commands_are_denied_without_approval(self):
+        failures = []
+        protected = [
+            command for command in self.engine.registry.list()
+            if command["risk"] in {"write", "high"}
+        ]
+        for command in protected:
+            result = self.engine.execute(
+                CommandRequest(
+                    command["command_id"],
+                    {"dry_run": True},
+                    workspace=str(self.workspace),
+                )
+            )
+            if result.status != "denied" or result.error_code != "approval_required":
+                failures.append(
+                    (command["command_id"], result.status, result.error_code)
+                )
+        self.assertGreater(len(protected), 0)
+        self.assertEqual(failures, [])
+
+    def test_registered_only_commands_report_unavailable_when_invoked(self):
+        matrix = self.engine.execute(
+            CommandRequest("capabilities.list", workspace=str(self.workspace))
+        )
+        unsupported = [
+            item["command_id"]
+            for item in matrix.data["capabilities"]
+            if item["status"] == "unsupported"
+        ]
+        failures = []
+        for command_id in unsupported:
+            result = self.engine.execute(
+                CommandRequest(
+                    command_id,
+                    {
+                        "id": "unsupported-check",
+                        "path": "unsupported-check",
+                        "source": "unsupported-source",
+                        "destination": "unsupported-destination",
+                        "url": "http://127.0.0.1/",
+                        "host": "127.0.0.1",
+                        "argv": [sys.executable, "-c", "print('unsupported')"],
+                        "code": "print('unsupported')",
+                        "text": "unsupported",
+                    },
+                    workspace=str(self.workspace),
+                    approve=True,
+                )
+            )
+            if result.status != "unavailable":
+                failures.append((command_id, result.public()))
+        self.assertGreater(len(unsupported), 0)
+        self.assertEqual(failures, [])
 
     def test_native_services_have_required_sqlite_tables(self):
         tables = set(self.engine.store.table_names())
@@ -531,7 +631,7 @@ class UnifiedCommandsTest(unittest.TestCase):
         self.assertEqual(camera.status, "completed")
         self.assertFalse(camera.data["configured"])
         self.assertEqual(microphone.status, "unavailable")
-        self.assertEqual(microphone.error_code, "prerequisite_unavailable")
+        self.assertEqual(microphone.error_code, "phone_action_unavailable")
 
     def test_fastapi_command_endpoints(self):
         os.environ["SIGNALASI_DISABLE_EXTERNAL_SERVICES"] = "1"
