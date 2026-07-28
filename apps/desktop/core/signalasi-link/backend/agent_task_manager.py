@@ -120,6 +120,10 @@ class AgentTask:
     output_files: list[dict] = field(default_factory=list)
     attachments: list[str] = field(default_factory=list)
     retry_of: str = ""
+    task_disposition: str = ""
+    merged_into_task_id: str = ""
+    supersedes_task_id: str = ""
+    intervention_kind: str = ""
     attempt: int = 1
     execution_policy: dict = field(default_factory=dict)
     last_progress_at: int = field(default_factory=lambda: int(time.time() * 1000))
@@ -194,6 +198,10 @@ class AgentTask:
             "output_files": self.output_files,
             "attachments": self.attachments,
             "retry_of": self.retry_of,
+            "task_disposition": self.task_disposition,
+            "merged_into_task_id": self.merged_into_task_id,
+            "supersedes_task_id": self.supersedes_task_id,
+            "intervention_kind": self.intervention_kind,
             "attempt": self.attempt,
             "execution_policy": dict(self.execution_policy),
             "last_progress_at": self.last_progress_at,
@@ -288,6 +296,10 @@ class AgentTaskManager:
         client_turn_id: str = "",
         attachments: list[str] | None = None,
         retry_of: str = "",
+        task_disposition: str = "",
+        merged_into_task_id: str = "",
+        supersedes_task_id: str = "",
+        intervention_kind: str = "",
         attempt: int = 1,
         execution_prompt: str = "",
         execution_policy: dict | None = None,
@@ -316,6 +328,10 @@ class AgentTaskManager:
             client_turn_id=client_turn_id,
             attachments=[str(value) for value in (attachments or [])[:12]],
             retry_of=str(retry_of or ""),
+            task_disposition=str(task_disposition or "")[:32],
+            merged_into_task_id=str(merged_into_task_id or "")[:200],
+            supersedes_task_id=str(supersedes_task_id or "")[:200],
+            intervention_kind=str(intervention_kind or "")[:32],
             attempt=max(1, int(attempt or 1)),
             execution_policy=policy.public(),
             trace_id=str(trace_id or "").strip()[:128] or uuid.uuid4().hex,
@@ -341,6 +357,10 @@ class AgentTaskManager:
         client_conversation_id: str = "",
         client_route_id: str = "", client_turn_id: str = "",
         attachments: list[str] | None = None,
+        task_disposition: str = "",
+        merged_into_task_id: str = "",
+        supersedes_task_id: str = "",
+        intervention_kind: str = "",
         execution_prompt: str = "",
         execution_policy: dict | None = None,
         trace_id: str = "",
@@ -364,6 +384,10 @@ class AgentTaskManager:
             client_route_id=client_route_id,
             client_turn_id=client_turn_id,
             attachments=[str(value) for value in (attachments or [])[:12]],
+            task_disposition=str(task_disposition or "")[:32],
+            merged_into_task_id=str(merged_into_task_id or "")[:200],
+            supersedes_task_id=str(supersedes_task_id or "")[:200],
+            intervention_kind=str(intervention_kind or "")[:32],
             execution_policy=policy.public(),
             trace_id=str(trace_id or "").strip()[:128] or uuid.uuid4().hex,
         )
@@ -437,6 +461,10 @@ class AgentTaskManager:
         self, task_id: str, status: str, on_event: EventCallback | None = None,
         *, thread_id: str | None = None, turn_id: str | None = None,
         delegate_agent_id: str | None = None,
+        task_disposition: str | None = None,
+        merged_into_task_id: str | None = None,
+        supersedes_task_id: str | None = None,
+        intervention_kind: str | None = None,
         current_step: str | None = None, result: str | None = None,
         error: str | None = None,
         approval_request: dict | None = None,
@@ -450,6 +478,22 @@ class AgentTaskManager:
                 status != task.status
                 or (thread_id is not None and thread_id != task.thread_id)
                 or (turn_id is not None and turn_id != task.turn_id)
+                or (
+                    task_disposition is not None
+                    and task_disposition != task.task_disposition
+                )
+                or (
+                    merged_into_task_id is not None
+                    and merged_into_task_id != task.merged_into_task_id
+                )
+                or (
+                    supersedes_task_id is not None
+                    and supersedes_task_id != task.supersedes_task_id
+                )
+                or (
+                    intervention_kind is not None
+                    and intervention_kind != task.intervention_kind
+                )
                 or (current_step is not None and current_step != task.current_step)
                 or (result is not None and result != task.result)
                 or (error is not None and error != task.error)
@@ -468,6 +512,14 @@ class AgentTaskManager:
                 task.turn_id = turn_id
             if delegate_agent_id is not None:
                 task.delegate_agent_id = delegate_agent_id
+            if task_disposition is not None:
+                task.task_disposition = str(task_disposition or "")[:32]
+            if merged_into_task_id is not None:
+                task.merged_into_task_id = str(merged_into_task_id or "")[:200]
+            if supersedes_task_id is not None:
+                task.supersedes_task_id = str(supersedes_task_id or "")[:200]
+            if intervention_kind is not None:
+                task.intervention_kind = str(intervention_kind or "")[:32]
             if current_step is not None:
                 task.current_step = current_step
             if approval_request is not None:
@@ -1440,6 +1492,10 @@ class AgentTaskManager:
             output_files=list(row.get("output_files") or [])[:100],
             attachments=[str(value) for value in list(row.get("attachments") or [])[:12]],
             retry_of=str(row.get("retry_of") or ""),
+            task_disposition=str(row.get("task_disposition") or ""),
+            merged_into_task_id=str(row.get("merged_into_task_id") or ""),
+            supersedes_task_id=str(row.get("supersedes_task_id") or ""),
+            intervention_kind=str(row.get("intervention_kind") or ""),
             attempt=max(1, int(row.get("attempt") or 1)),
             execution_policy=dict(row.get("execution_policy") or {}),
             last_progress_at=int(

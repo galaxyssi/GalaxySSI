@@ -2,8 +2,33 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
+from enum import Enum
 
 from conversation_context import current_request
+
+
+class ActiveTurnDisposition(str, Enum):
+    INDEPENDENT = "independent"
+    STEER = "steer"
+    INTERRUPT = "interrupt"
+
+
+class ActiveTurnInterventionKind(str, Enum):
+    NONE = "none"
+    CONSTRAINT = "constraint"
+    GOAL_CHANGE = "goal_change"
+    INTERRUPT = "interrupt"
+
+
+@dataclass(frozen=True)
+class ActiveTurnDecision:
+    disposition: ActiveTurnDisposition
+    intervention_kind: ActiveTurnInterventionKind = ActiveTurnInterventionKind.NONE
+
+    @property
+    def intervenes(self) -> bool:
+        return self.disposition != ActiveTurnDisposition.INDEPENDENT
 
 
 _INDEPENDENT_PREFIXES = (
@@ -18,6 +43,49 @@ _INDEPENDENT_PREFIXES = (
     "\u53e6\u5916\u4e00\u4e2a\u4efb\u52a1",
     "\u5355\u72ec\u4efb\u52a1",
     "\u72ec\u7acb\u4efb\u52a1",
+)
+
+_INTERRUPT_PATTERNS = (
+    re.compile(
+        r"^(?:stop|cancel|abort|interrupt)"
+        r"(?:\s+(?:this|the|current|active|the\s+current))?"
+        r"(?:\s+(?:task|run|job))?[.!?\s]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:please\s+)?(?:stop|cancel|abort)\s+(?:working|running|now)[.!?\s]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:\u505c\u6b62|\u53d6\u6d88|\u4e2d\u65ad)"
+        r"(?:\u5f53\u524d|\u8fd9\u4e2a|\u8be5)?"
+        r"(?:\u4efb\u52a1|\u6267\u884c|\u8fd0\u884c)?"
+        r"[\uff01\uff1f\u3002!?\s]*$",
+    ),
+    re.compile(
+        r"^(?:\u5148\u505c\u4e0b|\u505c\u4e0b\u6765|\u522b\u505a\u4e86|"
+        r"\u4e0d\u7528\u7ee7\u7eed\u4e86|\u4e0d\u8981\u7ee7\u7eed\u4e86)"
+        r"[\uff01\uff1f\u3002!?\s]*$",
+    ),
+)
+
+_GOAL_CHANGE_PREFIXES = (
+    "change the goal",
+    "change goal",
+    "switch the goal",
+    "replace the task",
+    "do this instead",
+    "instead,",
+    "instead ",
+    "not that",
+    "\u6539\u76ee\u6807",
+    "\u66f4\u6362\u76ee\u6807",
+    "\u6362\u4e2a\u76ee\u6807",
+    "\u6539\u6210",
+    "\u6539\u4e3a",
+    "\u6539\u505a",
+    "\u522b\u505a",
+    "\u4e0d\u662f",
 )
 
 _CONTINUATION_PREFIXES = (
@@ -44,6 +112,7 @@ _CONTINUATION_PREFIXES = (
     "retry",
     "redo",
     "not that",
+    "do not ",
     "no,",
     "wait",
     "stop",
@@ -131,22 +200,53 @@ def should_steer_active_turn(
     corrections and references to the in-progress task remain steerable.
     """
 
+    return classify_active_turn(
+        request,
+        active_request,
+        has_new_attachments=has_new_attachments,
+    ).disposition == ActiveTurnDisposition.STEER
+
+
+def classify_active_turn(
+    request: str,
+    active_request: str = "",
+    *,
+    has_new_attachments: bool = False,
+) -> ActiveTurnDecision:
+    """Classify how a new message relates to the active task.
+
+    Independent work is the default. An interrupt must be an explicit,
+    standalone command so phrases such as "do not stop after the first page"
+    cannot terminate a task accidentally.
+    """
+
     clean = _normalized_request(request)
     if not clean:
-        return False
+        return ActiveTurnDecision(ActiveTurnDisposition.INDEPENDENT)
+    if any(pattern.fullmatch(clean) for pattern in _INTERRUPT_PATTERNS):
+        return ActiveTurnDecision(
+            ActiveTurnDisposition.INTERRUPT,
+            ActiveTurnInterventionKind.INTERRUPT,
+        )
     lowered = clean.casefold()
     if lowered.startswith(_INDEPENDENT_PREFIXES):
-        return False
+        return ActiveTurnDecision(ActiveTurnDisposition.INDEPENDENT)
     if any(pattern.search(clean) for pattern in _STANDALONE_PATTERNS):
-        return False
+        return ActiveTurnDecision(ActiveTurnDisposition.INDEPENDENT)
     if lowered.startswith(_CONTINUATION_PREFIXES):
-        return True
+        return ActiveTurnDecision(
+            ActiveTurnDisposition.STEER,
+            _steer_kind(lowered),
+        )
 
     padded = f" {lowered} "
     if not has_new_attachments and any(
         reference in padded for reference in _CONTINUATION_REFERENCES
     ):
-        return True
+        return ActiveTurnDecision(
+            ActiveTurnDisposition.STEER,
+            _steer_kind(lowered),
+        )
 
     # A terse correction often omits a pronoun but repeats a distinctive part
     # of the current request. Only use this fallback for fragments, never for
@@ -158,8 +258,41 @@ def should_steer_active_turn(
         and _looks_like_fragment(clean)
         and _distinctive_overlap(clean, active)
     ):
-        return True
-    return False
+        return ActiveTurnDecision(
+            ActiveTurnDisposition.STEER,
+            _steer_kind(lowered),
+        )
+    return ActiveTurnDecision(ActiveTurnDisposition.INDEPENDENT)
+
+
+def superseding_prompt(
+    active_request: str,
+    intervention: str,
+    *,
+    kind: ActiveTurnInterventionKind,
+) -> str:
+    """Build a bounded replacement prompt for adapters without live steering."""
+
+    active = _normalized_request(active_request)[:16_000]
+    latest = _normalized_request(intervention)[:8_000]
+    label = (
+        "The user changed the goal of an in-progress task."
+        if kind == ActiveTurnInterventionKind.GOAL_CHANGE
+        else "The user added a constraint to an in-progress task."
+    )
+    return (
+        f"{label}\n"
+        "Continue as one task. The latest instruction has priority wherever it "
+        "conflicts with the original request.\n\n"
+        f"Original request:\n{active}\n\n"
+        f"Latest instruction:\n{latest}"
+    )
+
+
+def _steer_kind(lowered: str) -> ActiveTurnInterventionKind:
+    if lowered.startswith(_GOAL_CHANGE_PREFIXES):
+        return ActiveTurnInterventionKind.GOAL_CHANGE
+    return ActiveTurnInterventionKind.CONSTRAINT
 
 
 def _normalized_request(value: str) -> str:

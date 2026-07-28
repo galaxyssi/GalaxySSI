@@ -123,6 +123,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val payload: String = ""
     )
 
+    private data class ActiveAgentTurn(
+        val runtime: MobileNativeAgent,
+        val turnId: String,
+        val state: AgentUiState
+    ) {
+        val isDesktopTask: Boolean
+            get() = state.plan?.route?.kind == AgentRouteKind.DESKTOP_AGENT ||
+                state.lastActionResult?.metadata?.get("resource_location") == "desktop"
+    }
+
     companion object {
         private const val REQUEST_IMAGE = 2001
         private const val REQUEST_RECORD_AUDIO = 2002
@@ -3463,6 +3473,101 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun activeAgentTurnForConversation(
+        conversationId: String,
+        excludingTurnId: String
+    ): ActiveAgentTurn? {
+        val activePhases = setOf(
+            AgentPhase.PLANNING,
+            AgentPhase.WAITING_CONFIRMATION,
+            AgentPhase.EXECUTING,
+            AgentPhase.VERIFYING,
+            AgentPhase.WAITING_RESPONSE,
+            AgentPhase.PAUSED
+        )
+        return buildList {
+            addAll(activeAgentTasks.values)
+            addAll(provisionalAgentTasks)
+            add(mobileNativeAgent)
+        }
+            .distinct()
+            .mapNotNull { runtime ->
+                val runtimeConversationId = agentRuntimeConversationIds[runtime].orEmpty()
+                val runtimeTurnId = agentRuntimeTurnIds[runtime].orEmpty()
+                val state = runtime.snapshot()
+                if (
+                    runtimeConversationId == conversationId &&
+                    runtimeTurnId.isNotBlank() &&
+                    runtimeTurnId != excludingTurnId &&
+                    state.phase in activePhases
+                ) {
+                    ActiveAgentTurn(runtime, runtimeTurnId, state)
+                } else {
+                    null
+                }
+            }
+            .lastOrNull()
+    }
+
+    private fun cancelActiveAgentTurn(
+        active: ActiveAgentTurn,
+        interventionTurnId: String
+    ) {
+        if (active.isDesktopTask) {
+            publishRemoteAgentTaskCancellation(active.state)
+        }
+        AgentTaskRuntime.supervisor(this).cancellationSource(active.turnId)
+            ?.cancel("Superseded by a newer user instruction")
+        PhoneExecutionAuthority.requestCancellation(active.state.sessionId)
+        val cancelled = active.runtime.cancelCurrentTask()
+        val runId = agentRunIdsByTurn[active.turnId].orEmpty()
+        agentRunRecorder.run(runId)?.let { run ->
+            appendRunControlEvent(
+                run = run,
+                messageId = active.turnId,
+                taskId = active.turnId,
+                agentId = active.state.plan?.selectedAgentOrModel.orEmpty()
+                    .ifBlank { "signalasi-mobile" },
+                type = AgentRunControlEventType.RUN_CANCELLED,
+                payload = mapOf(
+                    "intervention_turn_id" to interventionTurnId,
+                    "reason" to "superseded_by_user"
+                )
+            )
+        }
+        activeAgentTasks.entries
+            .filter { it.value === active.runtime }
+            .forEach { activeAgentTasks.remove(it.key, it.value) }
+        provisionalAgentTasks.remove(active.runtime)
+        if (agentTranscriptStore.activeConversation().id ==
+            agentRuntimeConversationIds[active.runtime]
+        ) {
+            runOnUiThread {
+                renderAgentState(cancelled, agentRuntimeConversationIds[active.runtime].orEmpty(), active.turnId)
+            }
+        }
+    }
+
+    private fun interruptActiveAgentTurn(
+        active: ActiveAgentTurn,
+        conversationId: String,
+        interventionTurnId: String
+    ) {
+        cancelActiveAgentTurn(active, interventionTurnId)
+        agentTranscriptStore.append(
+            AgentTranscriptRole.PROCESS,
+            getString(R.string.agent_task_status_cancelled),
+            dedupeKey = "active-turn-interrupt:$interventionTurnId",
+            conversationId = conversationId,
+            turnId = interventionTurnId,
+            taskId = interventionTurnId
+        )
+        AgentTurnAttachmentRegistry.remove(interventionTurnId)
+        runOnUiThread {
+            refreshAgentTranscriptWindow(conversationId)
+        }
+    }
+
     private fun submitAgentGoal() {
         val goal = agentGoalInput.text?.toString()?.trim().orEmpty()
         val attachments = agentInputAttachments.toList()
@@ -3647,7 +3752,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 runOnUiThread { refreshAgentTranscriptWindow(conversationId) }
                 return@execute
             }
-            val executionGoal = if (clarification.mode == AgentClarificationMode.ASK_WITH_MODEL) {
+            var executionGoal = if (clarification.mode == AgentClarificationMode.ASK_WITH_MODEL) {
                 buildString {
                     append(getString(R.string.agent_attachment_default_goal))
                     if (turnAttachments.isNotEmpty()) {
@@ -3657,6 +3762,53 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             } else {
                 goal
+            }
+            val activeTurn = activeAgentTurnForConversation(conversationId, turnId)
+            val activeTurnDecision = activeTurn?.let { active ->
+                AgentActiveTurnPolicy.decide(
+                    request = originalGoal.ifBlank { executionGoal },
+                    activeGoal = active.state.currentGoal,
+                    hasNewAttachments = turnAttachments.isNotEmpty()
+                )
+            }
+            if (
+                activeTurn != null &&
+                activeTurnDecision?.disposition == AgentActiveTurnDisposition.INTERRUPT
+            ) {
+                interruptActiveAgentTurn(activeTurn, conversationId, turnId)
+                return@execute
+            }
+            var interventionDisposition = ""
+            var activeDesktopSteerAction: AgentAction? = null
+            if (
+                activeTurn != null &&
+                activeTurnDecision?.disposition == AgentActiveTurnDisposition.STEER
+            ) {
+                if (activeTurn.isDesktopTask) {
+                    interventionDisposition = "steer"
+                    activeDesktopSteerAction = activeTurn.state.plan
+                        ?.actions
+                        ?.lastOrNull { it.kind == AgentActionKind.CALL_CONNECTOR }
+                        ?.let { previous ->
+                            previous.copy(
+                                id = "steer-$turnId",
+                                status = AgentActionStatus.PENDING_CONFIRMATION,
+                                description = previous.description,
+                                parameters = previous.parameters + ("prompt" to executionGoal),
+                                requiresConfirmation = false,
+                                result = "",
+                                evidence = ""
+                            )
+                        }
+                } else {
+                    interventionDisposition = "supersede"
+                    cancelActiveAgentTurn(activeTurn, turnId)
+                    executionGoal = AgentActiveTurnPolicy.supersedingGoal(
+                        activeGoal = activeTurn.state.currentGoal,
+                        intervention = executionGoal,
+                        kind = activeTurnDecision.interventionKind
+                    )
+                }
             }
             AgentFastLocalResponse.reply(executionGoal, localConversationContext)?.let { response ->
                 agentTranscriptStore.append(
@@ -3676,7 +3828,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 executionGoal
             )
             val skillMatch = agentSkillMatcher.match(executionGoal)
-            val resolvedForcedAction = forcedAction?.let { action ->
+            val requestedForcedAction = forcedAction ?: activeDesktopSteerAction
+            val resolvedForcedAction = requestedForcedAction?.let { action ->
                 if (clarification.mode == AgentClarificationMode.ASK_WITH_MODEL) {
                     action.copy(parameters = action.parameters + ("prompt" to executionGoal))
                 } else {
@@ -3696,7 +3849,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 request = executionGoal,
                 activeSkillId = if (deterministicAction == null) skillMatch?.installation?.id.orEmpty() else ""
             )
-            val selectedAgentId = (forcedAction ?: deterministicAction)
+            val selectedAgentId = (resolvedForcedAction ?: deterministicAction)
                 ?.parameters?.get("connector_id")
                 .orEmpty()
                 .ifBlank { "signalasi-mobile" }
@@ -3705,7 +3858,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 messageId = turnId,
                 taskId = turnId,
                 agentId = selectedAgentId,
-                type = AgentRunControlEventType.RUN_CREATED
+                type = AgentRunControlEventType.RUN_CREATED,
+                payload = if (activeTurn != null && interventionDisposition.isNotBlank()) {
+                    mapOf(
+                        "task_disposition" to interventionDisposition,
+                        "active_turn_id" to activeTurn.turnId,
+                        "intervention_kind" to activeTurnDecision
+                            ?.interventionKind
+                            ?.name
+                            .orEmpty()
+                            .lowercase(Locale.ROOT)
+                    )
+                } else {
+                    emptyMap()
+                }
             )
             appendRunControlEvent(
                 run = run,

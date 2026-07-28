@@ -92,6 +92,36 @@ class AgentTaskConversationTests(unittest.TestCase):
 
             manager.update(first.task_id, "cancelled")
             self.assertIsNone(manager.active_for_conversation("conversation-1", agent_id="codex"))
+
+    def test_intervention_relationships_persist_and_cancel_clears_approval(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            manager = agent_task_manager.AgentTaskManager()
+            task = manager.create_external(
+                "hermes",
+                "hermes-contact",
+                "source-new",
+                "Use Android instead",
+                lambda _event: None,
+                task_id="task-new",
+                task_disposition="superseded",
+                supersedes_task_id="task-old",
+                intervention_kind="goal_change",
+            )
+            manager.update(
+                task.task_id,
+                "waiting_approval",
+                approval_request={"approval_id": "approval-old"},
+            )
+            manager.cancel(task.task_id)
+
+            restored = agent_task_manager.AgentTaskManager().get(task.task_id)
+            self.assertEqual("superseded", restored.task_disposition)
+            self.assertEqual("task-old", restored.supersedes_task_id)
+            self.assertEqual("goal_change", restored.intervention_kind)
+            self.assertEqual({}, restored.pending_approval)
+
     def test_stable_progress_event_updates_in_place_and_remains_latest(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"

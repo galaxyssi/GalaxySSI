@@ -49,6 +49,10 @@ class _Task:
         self.current_step = ""
         self.result = ""
         self.error = ""
+        self.task_disposition = ""
+        self.merged_into_task_id = ""
+        self.supersedes_task_id = ""
+        self.intervention_kind = ""
 
     def public(self):
         return {
@@ -72,6 +76,10 @@ class _Task:
             "current_step": self.current_step,
             "result": self.result,
             "error": self.error,
+            "task_disposition": self.task_disposition,
+            "merged_into_task_id": self.merged_into_task_id,
+            "supersedes_task_id": self.supersedes_task_id,
+            "intervention_kind": self.intervention_kind,
             "output_files": [],
             "process_id": 0,
         }
