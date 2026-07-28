@@ -2070,10 +2070,29 @@ def _scoped_agent_conversation_id(client_route_id: str, conversation_id: str) ->
     return f"client:{scope}:{conversation}"
 
 
+def _remote_task_identity(payload: dict, client_route_id: str) -> dict[str, str] | None:
+    identity = {
+        "client_route_id": str(payload.get("client_route_id") or "").strip(),
+        "conversation_id": str(payload.get("conversation_id") or "").strip(),
+        "task_id": str(payload.get("task_id") or "").strip(),
+        "turn_id": str(payload.get("turn_id") or "").strip(),
+    }
+    if (
+        not all(identity.values())
+        or identity["client_route_id"] != str(client_route_id or "").strip()
+        or any(len(value) > 200 for value in identity.values())
+    ):
+        return None
+    return identity
+
+
 def _task_control_matches(
     task,
     *,
     client_route_id: str,
+    conversation_id: str,
+    task_id: str,
+    turn_id: str,
     contact_id: str,
     source_message_id: str,
 ) -> bool:
@@ -2081,10 +2100,23 @@ def _task_control_matches(
     expected_contact_id = str(getattr(task, "contact_id", "") or "").strip()
     expected_source_id = str(getattr(task, "source_message_id", "") or "").strip()
     requested_route_id = str(client_route_id or "").strip()
+    requested_conversation_id = str(conversation_id or "").strip()
+    requested_task_id = str(task_id or "").strip()
+    requested_turn_id = str(turn_id or "").strip()
     requested_contact_id = str(contact_id or "").strip()
     requested_source_id = str(source_message_id or "").strip()
+    identity_matches = bool(
+        task is not None
+        and expected_route_id
+        and str(getattr(task, "client_conversation_id", "") or "").strip()
+        == requested_conversation_id
+        and str(getattr(task, "task_id", "") or "").strip() == requested_task_id
+        and str(getattr(task, "client_turn_id", "") or "").strip()
+        == requested_turn_id
+    )
     return bool(
         task is not None
+        and identity_matches
         and expected_route_id
         and expected_contact_id
         and expected_source_id
@@ -2105,11 +2137,18 @@ def _resolve_agent_task_approval(
     action_hash = str(payload.get("action_hash") or "").strip().lower()
     source_message_id = str(payload.get("source_message_id") or "")
     existing_task = agent_task_manager.get(task_id)
-    task_matches = _task_control_matches(
-        existing_task,
-        client_route_id=client_route_id,
-        contact_id=contact_id,
-        source_message_id=source_message_id,
+    task_matches = (
+        str(payload.get("client_route_id") or "").strip()
+        == str(client_route_id or "").strip()
+        and _task_control_matches(
+            existing_task,
+            client_route_id=client_route_id,
+            conversation_id=str(payload.get("conversation_id") or ""),
+            task_id=task_id,
+            turn_id=str(payload.get("turn_id") or ""),
+            contact_id=contact_id,
+            source_message_id=source_message_id,
+        )
     )
     approved = payload.get("approved") is True
     error = ""
@@ -2141,6 +2180,9 @@ def _resolve_agent_task_approval(
         "error": error,
         "contact_id": contact_id,
         "source_message_id": source_message_id,
+        "conversation_id": str(payload.get("conversation_id") or ""),
+        "client_route_id": str(client_route_id or ""),
+        "turn_id": str(payload.get("turn_id") or ""),
         "sender": "system",
         "time": time.time(),
     }
@@ -2329,6 +2371,28 @@ def _try_publish_task_event(mqttc, pending: _PendingTaskEvent) -> bool:
 
 def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: list[dict]) -> bool:
     task_id = str(task.get("task_id") or "")
+    task_route_id = str(task.get("client_route_id") or "").strip()
+    task_conversation_id = str(
+        task.get("client_conversation_id")
+        or task.get("conversation_id")
+        or ""
+    ).strip()
+    task_turn_id = str(task.get("client_turn_id") or "").strip()
+    wire_route_id = str(wire_payload.get("_client_route_id") or "").strip()
+    if (
+        not task_id
+        or not task_route_id
+        or not task_conversation_id
+        or not task_turn_id
+        or wire_route_id != task_route_id
+    ):
+        log.error(
+            "Agent task event identity mismatch task_id=%s task_route_id=%s wire_route_id=%s",
+            task_id,
+            task_route_id,
+            wire_route_id,
+        )
+        return False
     pending = _PendingTaskEvent(
         wire_payload=dict(wire_payload),
         task=dict(task),
@@ -2404,11 +2468,22 @@ def flush_pending_task_events(mqttc) -> None:
 def _publish_or_queue_task_result(mqttc, wire_payload: dict, payload: dict) -> bool:
     task_id = str(payload.get("task_id") or "")
     client_route_id = str(wire_payload.get("_client_route_id") or "")
-    if not task_id or not client_route_id:
+    payload_route_id = str(payload.get("client_route_id") or "").strip()
+    conversation_id = str(payload.get("conversation_id") or "").strip()
+    turn_id = str(payload.get("turn_id") or "").strip()
+    if (
+        not task_id
+        or not client_route_id
+        or not payload_route_id
+        or not conversation_id
+        or not turn_id
+        or payload_route_id != client_route_id
+    ):
         log.error(
-            "Agent task result cannot be routed task_id=%s client_route_id=%s",
+            "Agent task result identity mismatch task_id=%s client_route_id=%s payload_route_id=%s",
             task_id,
             client_route_id,
+            payload_route_id,
         )
         return False
     persisted_payload = dict(payload)
@@ -2469,9 +2544,14 @@ def _publish_task_artifacts(
 ) -> bool:
     from artifact_delivery import artifact_chunk_payloads
 
+    identity_common = dict(common)
+    identity_common.setdefault(
+        "client_route_id",
+        str(wire_payload.get("_client_route_id") or ""),
+    )
     all_published = True
     for artifact in artifacts:
-        for payload in artifact_chunk_payloads(artifact, common=common):
+        for payload in artifact_chunk_payloads(artifact, common=identity_common):
             try:
                 all_published = _publish_phone_payload(mqttc, wire_payload, payload) and all_published
             except Exception as exc:
@@ -2542,6 +2622,7 @@ def _resume_recovered_remote_task(mqttc, task: dict) -> None:
         "agent_id": agent_id,
         "client_message_id": str(task.get("source_message_id") or ""),
         "task_id": task_id,
+        "client_route_id": route_id,
         "conversation_id": str(
             task.get("client_conversation_id")
             or task.get("conversation_id")
@@ -2613,11 +2694,19 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
     source_message_id = str(payload.get("client_message_id") or payload.get("message_id") or "")
     client_route_id = str(wire_payload.get("_client_route_id") or "")
+    task_identity = _remote_task_identity(payload, client_route_id)
+    if task_identity is None or not source_message_id:
+        raise ValueError(
+            "Remote Agent task requires matching client_route_id, conversation_id, "
+            "task_id, turn_id, and source_message_id"
+        )
+    requested_task_id = task_identity["task_id"]
+    client_turn_id = task_identity["turn_id"]
     paired_client = get_client(client_route_id)
     full_desktop_executor = has_full_executor(paired_client)
     codex_approval_policy = "never"
     codex_sandbox = "danger-full-access" if full_desktop_executor else "workspace-write"
-    client_conversation_id = str(payload.get("conversation_id") or "")
+    client_conversation_id = task_identity["conversation_id"]
     preferred_response_language = str(
         payload.get("response_language")
         or payload.get("response_language_preference")
@@ -2626,6 +2715,30 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     backend_conversation_id = str(payload.get("_backend_conversation_id") or "").strip() or (
         _scoped_agent_conversation_id(client_route_id, client_conversation_id)
     )
+    existing_task = agent_task_manager.get(requested_task_id)
+    if existing_task is not None:
+        identity_matches = (
+            existing_task.matches_client_identity(
+                client_route_id=client_route_id,
+                conversation_id=client_conversation_id,
+                task_id=requested_task_id,
+                turn_id=client_turn_id,
+            )
+            and existing_task.contact_id == contact_id
+            and existing_task.source_message_id == source_message_id
+        )
+        if not identity_matches:
+            raise ValueError(f"Remote Agent task identity conflicts with {requested_task_id}")
+        if payload.get("_recovered_task") is not True:
+            _enqueue_task_event(
+                mqttc,
+                wire_payload,
+                existing_task.public(),
+                trace,
+            )
+            return
+    elif payload.get("_recovered_task") is True:
+        raise RuntimeError("Recovered Agent task is no longer available")
     from conversation_context import current_request, embedded_mobile_context
     from conversation_turn_policy import should_steer_active_turn
     mobile_context = embedded_mobile_context(content)
@@ -2979,11 +3092,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         else:
             task = agent_task_manager.create_external(
                 agent_id=agent_id, contact_id=contact_id, source_message_id=source_message_id,
-                prompt=content, on_event=publish_event, task_id=str(payload.get("task_id") or ""),
+                prompt=content, on_event=publish_event, task_id=requested_task_id,
                 conversation_id=codex_conversation_id,
                 client_conversation_id=client_conversation_id,
                 client_route_id=client_route_id,
-                client_turn_id=str(payload.get("turn_id") or ""),
+                client_turn_id=client_turn_id,
                 attachments=[
                     str(item.get("name") or "")
                     for item in attachments
@@ -3669,11 +3782,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             runner=run_task,
             on_event=publish_event,
             on_result=publish_result,
-            task_id=str(payload.get("task_id") or ""),
+            task_id=requested_task_id,
             conversation_id=backend_conversation_id,
             client_conversation_id=client_conversation_id,
             client_route_id=client_route_id,
-            client_turn_id=str(payload.get("turn_id") or ""),
+            client_turn_id=client_turn_id,
             attachments=[
                 str(item.get("name") or "")
                 for item in attachments
@@ -3927,22 +4040,40 @@ def _process_message(mqttc, userdata, msg):
 
         if msg_type == "agent_task_cancel":
             task_id = str(payload.get("task_id") or "").strip()
-            existing_task = agent_task_manager.get(task_id)
-            source_message_id = str(payload.get("source_message_id") or "")
-            task_matches = _task_control_matches(
-                existing_task,
+            conversation_id = str(payload.get("conversation_id") or "").strip()
+            turn_id = str(payload.get("turn_id") or "").strip()
+            existing_task = agent_task_manager.get_scoped(
+                task_id,
                 client_route_id=client_route_id,
-                contact_id=str(contact_id),
-                source_message_id=source_message_id,
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+            )
+            source_message_id = str(payload.get("source_message_id") or "")
+            task_matches = (
+                str(payload.get("client_route_id") or "").strip() == client_route_id
+                and _task_control_matches(
+                    existing_task,
+                    client_route_id=client_route_id,
+                    conversation_id=conversation_id,
+                    task_id=task_id,
+                    turn_id=turn_id,
+                    contact_id=str(contact_id),
+                    source_message_id=source_message_id,
+                )
             )
             if task_matches and existing_task.agent_id == "codex" and codex_app_server is not None:
                 try:
                     codex_app_server.interrupt(task_id)
                 except Exception as exc:
                     log.warning(f"Codex turn interrupt failed task_id={task_id}: {exc}")
-            task = agent_task_manager.cancel(
+            task = agent_task_manager.cancel_scoped(
                 task_id,
-                lambda event: _publish_or_queue_task_event(mqttc, wire_payload, event, trace),
+                client_route_id=client_route_id,
+                conversation_id=conversation_id,
+                turn_id=turn_id,
+                on_event=lambda event: _publish_or_queue_task_event(
+                    mqttc, wire_payload, event, trace
+                ),
             ) if task_matches else None
             if task is None:
                 _publish_phone_payload(mqttc, wire_payload, {
@@ -3952,6 +4083,9 @@ def _process_message(mqttc, userdata, msg):
                     "contact_id": contact_id,
                     "agent_id": agent_id,
                     "source_message_id": payload.get("source_message_id") or "",
+                    "conversation_id": conversation_id,
+                    "client_route_id": client_route_id,
+                    "turn_id": turn_id,
                     "error": "Task was not found",
                     "sender": "system",
                     "time": time.time(),
@@ -3995,6 +4129,8 @@ def _process_message(mqttc, userdata, msg):
                 if (
                     (requested_task := agent_task_manager.get(task_id)) is not None
                     and requested_task.client_route_id == client_route_id
+                    and requested_task.client_conversation_id == client_conversation_id
+                    and requested_task.conversation_id == conversation_id
                 )
             }
             deleted_ids = agent_task_manager.delete_conversation(conversation_id, requested_ids)
@@ -4657,7 +4793,18 @@ def publish_mobile_test_message(contact_id: str, content: str, client_route_id: 
     return api_error("publish_failed", "No target client or publish failed", contact_id=contact_id)
 
 
-def publish_agent_push_message(contact_id: str, content: str, source: str = "agent", client_route_id: str = "", broadcast: bool = False) -> dict:
+def publish_agent_push_message(
+    contact_id: str,
+    content: str,
+    source: str = "agent",
+    client_route_id: str = "",
+    broadcast: bool = False,
+    *,
+    task_id: str = "",
+    conversation_id: str = "",
+    turn_id: str = "",
+    source_message_id: str = "",
+) -> dict:
     """Publish an encrypted message initiated by a local Agent or automation."""
     cleaned_contact_id = str(contact_id or "").strip()
     cleaned_content = str(content or "").strip()
@@ -4689,6 +4836,20 @@ def publish_agent_push_message(contact_id: str, content: str, source: str = "age
         "agent_push": True,
         "delivery_trace": _desktop_trace(_trace_event("desktop_agent_push_queued", cleaned_contact_id)),
     }
+    if str(task_id or "").strip():
+        identity = {
+            "task_id": str(task_id or "").strip(),
+            "conversation_id": str(conversation_id or "").strip(),
+            "turn_id": str(turn_id or "").strip(),
+            "source_message_id": str(source_message_id or "").strip(),
+            "client_route_id": str(client_route_id or "").strip(),
+        }
+        if not all(identity.values()):
+            return api_error(
+                "agent_task_identity_required",
+                "Task pushes require client_route_id, conversation_id, task_id, turn_id, and source_message_id",
+            )
+        payload.update(identity)
     targets = _target_clients(client_route_id, broadcast=broadcast)
     if not targets and len(list_clients()) > 1 and not client_route_id and not broadcast:
         return api_error("client_route_required", "Multiple clients are paired; select a client or explicitly broadcast")
@@ -4737,6 +4898,7 @@ def _build_republished_task_result(task: dict, route_id: str) -> dict:
         "connector_agents": mobile_connector_agents(route_id),
         "conversation_id": task.get("client_conversation_id")
         or task.get("conversation_id", ""),
+        "client_route_id": route_id,
         "turn_id": _client_task_turn_id(task),
         "agent_turn_id": task.get("turn_id", ""),
         "delivery_trace": trace,
@@ -4797,8 +4959,12 @@ def republish_agent_task_result(task_id: str) -> dict:
 def publish_agent_task_event(task: dict, client_route_id: str = "", broadcast: bool = False) -> bool:
     if not is_paired():
         return False
+    task_route_id = str(task.get("client_route_id") or "").strip()
+    requested_route_id = str(client_route_id or "").strip()
+    if not task_route_id or (requested_route_id and requested_route_id != task_route_id):
+        return False
     published = False
-    for paired_client in _target_clients(client_route_id, broadcast=broadcast):
+    for paired_client in _target_clients(task_route_id, broadcast=broadcast):
         published = _publish_or_queue_task_event(client, {
             "scheme": "signal",
             "_client_route_id": paired_client["client_route_id"],
@@ -4812,6 +4978,8 @@ def start_agent_task(
     source_message_id: str = "",
     task_id: str = "",
     client_route_id: str = "",
+    conversation_id: str = "",
+    turn_id: str = "",
 ) -> dict:
     cleaned_contact_id = str(contact_id or "").strip()
     cleaned_prompt = str(prompt or "").strip()
@@ -4819,8 +4987,24 @@ def start_agent_task(
         return api_error("contact_id_required")
     if not cleaned_prompt:
         return api_error("content_required", contact_id=cleaned_contact_id)
-    if not _target_clients(client_route_id) and len(list_clients()) > 1:
-        return api_error("client_route_required", "Multiple clients are paired; select a client")
+    identity = {
+        "client_route_id": str(client_route_id or "").strip(),
+        "conversation_id": str(conversation_id or "").strip(),
+        "task_id": str(task_id or "").strip(),
+        "turn_id": str(turn_id or "").strip(),
+        "source_message_id": str(source_message_id or "").strip(),
+    }
+    if not all(identity.values()):
+        return api_error(
+            "agent_task_identity_required",
+            "Agent tasks require client_route_id, conversation_id, task_id, turn_id, and source_message_id",
+        )
+    targets = _target_clients(client_route_id)
+    if not targets:
+        return api_error(
+            "client_route_unavailable",
+            "The selected paired client route is unavailable",
+        )
     agent_id = _agent_id_from_contact(cleaned_contact_id)
 
     def run_task(task) -> str:
@@ -4829,6 +5013,10 @@ def start_agent_task(
                 agent_id,
                 cleaned_prompt,
                 task_id=task.task_id,
+                conversation_id=_scoped_agent_conversation_id(
+                    identity["client_route_id"],
+                    identity["conversation_id"],
+                ),
                 source_message_id=str(source_message_id or ""),
                 return_path=f"client:{client_route_id}" if client_route_id else "paired-client",
             ).get("reply")
@@ -4841,18 +5029,32 @@ def start_agent_task(
             str(task.get("result") or ""),
             source=f"agent-task:{task.get('task_id', '')}",
             client_route_id=client_route_id,
+            task_id=str(task.get("task_id") or ""),
+            conversation_id=identity["conversation_id"],
+            turn_id=identity["turn_id"],
+            source_message_id=identity["source_message_id"],
         )
 
-    task = agent_task_manager.create(
-        agent_id=agent_id,
-        contact_id=cleaned_contact_id,
-        source_message_id=str(source_message_id or ""),
-        prompt=cleaned_prompt,
-        runner=run_task,
-        on_event=lambda event: publish_agent_task_event(event, client_route_id=client_route_id),
-        on_result=publish_result,
-        task_id=str(task_id or ""),
-    )
+    try:
+        task = agent_task_manager.create(
+            agent_id=agent_id,
+            contact_id=cleaned_contact_id,
+            source_message_id=identity["source_message_id"],
+            prompt=cleaned_prompt,
+            runner=run_task,
+            on_event=publish_agent_task_event,
+            on_result=publish_result,
+            task_id=identity["task_id"],
+            conversation_id=_scoped_agent_conversation_id(
+                identity["client_route_id"],
+                identity["conversation_id"],
+            ),
+            client_conversation_id=identity["conversation_id"],
+            client_route_id=identity["client_route_id"],
+            client_turn_id=identity["turn_id"],
+        )
+    except ValueError as exc:
+        return api_error("agent_task_identity_conflict", str(exc))
     return api_ok("agent_task_accepted", task=task.public())
 
 

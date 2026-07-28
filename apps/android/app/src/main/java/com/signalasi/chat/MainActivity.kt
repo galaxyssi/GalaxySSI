@@ -1047,7 +1047,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             response.sourceMessageId,
             response.contactId,
             response.conversationId,
-            response.turnId
+            response.turnId,
+            response.taskId
         )
         if (runtime == null) {
             val consumed = consumeOrphanedAgentConnectorResponse(response)
@@ -1115,7 +1116,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             contactId = response.contactId,
                             content = response.content,
                             success = response.success,
-                            richOutputJson = response.richOutputJson
+                            richOutputJson = response.richOutputJson,
+                            conversationId = response.conversationId,
+                            turnId = response.turnId,
+                            taskId = response.taskId
                         ) ?: runtime.snapshot()
                     } catch (failure: Throwable) {
                         agentConnectorResponsesInFlight.remove(responseKey)
@@ -1189,7 +1193,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 contactId = response.contactId,
                 content = response.content,
                 success = response.success,
-                richOutputJson = response.richOutputJson
+                richOutputJson = response.richOutputJson,
+                conversationId = response.conversationId,
+                turnId = response.turnId,
+                taskId = response.taskId
             ) ?: runtime.snapshot()
             if (turnId.isNotBlank()) {
                 state = finalizeAgentExecutionLoop(runtime, turnId, state)
@@ -1276,13 +1283,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         sourceMessageId: Long,
         contactId: String,
         conversationId: String = "",
-        turnId: String = ""
+        turnId: String = "",
+        taskId: String = "",
+        allowTransportOnly: Boolean = false
     ): MobileNativeAgent? {
+        fun MobileNativeAgent.accepts(): Boolean =
+            if (allowTransportOnly) {
+                canAcceptConnectorTransport(sourceMessageId, contactId)
+            } else {
+                canAcceptConnectorResponse(
+                    sourceMessageId,
+                    contactId,
+                    conversationId,
+                    turnId,
+                    taskId
+                )
+            }
         activeAgentTasks[sourceMessageId]
-            ?.takeIf { it.canAcceptConnectorResponse(sourceMessageId, contactId) }
+            ?.takeIf { it.accepts() }
             ?.let { return it }
         provisionalAgentTasks.firstOrNull {
-            it.canAcceptConnectorResponse(sourceMessageId, contactId)
+            it.accepts()
         }?.let { runtime ->
             activeAgentTasks[sourceMessageId] = runtime
             provisionalAgentTasks.remove(runtime)
@@ -1295,7 +1316,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 sessionStore = SharedPreferencesAgentSessionStore(this, "task:$cleanTurnId"),
                 nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
             )
-            if (restored.canAcceptConnectorResponse(sourceMessageId, contactId)) {
+            if (restored.accepts()) {
                 activeAgentTasks[sourceMessageId] = restored
                 agentRuntimeTurnIds[restored] = cleanTurnId
                 connectorConversationId(conversationId, restored, cleanTurnId)?.let {
@@ -1316,7 +1337,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 sessionStore = SharedPreferencesAgentSessionStore(this, storageKey),
                 nativeToolEventSink = AgentNativeToolEventSink(::recordNativeToolLifecycleEvent)
             )
-            if (restored.canAcceptConnectorResponse(sourceMessageId, contactId)) {
+            if (restored.accepts()) {
                 activeAgentTasks[sourceMessageId] = restored
                 agentRuntimeTurnIds[restored] = storedTurnId
                 connectorConversationId(conversationId, restored, storedTurnId)?.let {
@@ -1330,7 +1351,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
         return mobileNativeAgent.takeIf {
-            it.canAcceptConnectorResponse(sourceMessageId, contactId)
+            it.accepts()
         }
     }
 
@@ -1481,7 +1502,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     val acknowledgedId = SignalASILinkDeliveryAckPolicy.clientSourceMessageId(envelope)
                         .toLongOrNull()
                     if (acknowledgedId != null) {
-                        runtimeForConnectorResponse(acknowledgedId, "")
+                        runtimeForConnectorResponse(
+                            acknowledgedId,
+                            "",
+                            allowTransportOnly = true
+                        )
                             ?.recordConnectorTransportAccepted(acknowledgedId)
                     }
                 }
@@ -1518,9 +1543,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         sourceMessageId,
                         msg.contact.id,
                         responseConversationId,
-                        responseTurnId
+                        responseTurnId,
+                        responseTaskId
                     )
                 } else null
+                val originatingChatMessage = messages[msg.contact.id]
+                    ?.firstOrNull { it.isMine && it.id == sourceMessageId }
+                if (matchingAgentRuntime == null && originatingChatMessage != null) {
+                    val expectedConversationId = AgentTaskIdentityPolicy.conversationId(
+                        msg.contact.id,
+                        ""
+                    )
+                    val expectedTurnId = AgentTaskIdentityPolicy.turnId(sourceMessageId, "")
+                    val expectedTaskId = AgentTaskIdentityPolicy.taskId(
+                        ownerId = SignalASICrypto.localSignalasiId(),
+                        contactId = msg.contact.id,
+                        sourceMessageId = sourceMessageId,
+                        conversationId = expectedConversationId,
+                        turnId = expectedTurnId
+                    )
+                    if (responseConversationId != expectedConversationId ||
+                        responseTurnId != expectedTurnId ||
+                        responseTaskId != expectedTaskId
+                    ) {
+                        Log.w("SignalASILink", "Rejected Agent response outside its originating chat turn")
+                        return@runOnUiThread
+                    }
+                }
                 val nativeAgentResponse = supersededResponse || matchingAgentRuntime != null
                 if (publishAgentConnectorResponse(envelope, msg)) return@runOnUiThread
                 msg.deliveryTrace.add(newTraceEvent("phone_reply_received", msg.taskId))
@@ -1632,12 +1681,39 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val taskDisposition = envelope.optString("task_disposition")
         val isSteeredCompletion = status == "completed" && taskDisposition == "steered"
         val taskId = envelope.optString("task_id")
+        val envelopeConversationId = envelope.optString("conversation_id")
+        val envelopeTurnId = envelope.optString("turn_id")
+        val taskRuntime = runtimeForConnectorResponse(
+            sourceMessageId,
+            contactId,
+            envelopeConversationId,
+            envelopeTurnId,
+            taskId
+        )
         updateAgentRegistryTaskHeartbeat(contactId, status)
         if (taskId in completedConnectorTaskIds && status !in setOf("completed", "failed", "cancelled", "timed_out")) {
             return true
         }
         val statusSeq = envelope.optLong("status_seq", 0L)
         val existingMessage = messages[contactId]?.firstOrNull { it.id == sourceMessageId }
+        if (taskRuntime == null && existingMessage != null) {
+            val expectedConversationId = AgentTaskIdentityPolicy.conversationId(contactId, "")
+            val expectedTurnId = AgentTaskIdentityPolicy.turnId(sourceMessageId, "")
+            val expectedTaskId = AgentTaskIdentityPolicy.taskId(
+                ownerId = SignalASICrypto.localSignalasiId(),
+                contactId = contactId,
+                sourceMessageId = sourceMessageId,
+                conversationId = expectedConversationId,
+                turnId = expectedTurnId
+            )
+            if (envelopeConversationId != expectedConversationId ||
+                envelopeTurnId != expectedTurnId ||
+                taskId != expectedTaskId
+            ) {
+                Log.w("SignalASILink", "Rejected task event outside its originating chat turn")
+                return true
+            }
+        }
         if (existingMessage != null && statusSeq > 0L && statusSeq < existingMessage.taskStatusSeq) return true
         val baseStatusLabel = when (status) {
             "accepted" -> getString(R.string.agent_task_status_accepted)
@@ -1675,26 +1751,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             reloadChatHistoryIfChanged(force = true)
         }
         traceTaskEvent("chat_history")
-        val envelopeConversationId = envelope.optString("conversation_id")
-        val envelopeTurnId = envelope.optString("turn_id")
-        val taskRuntime = runtimeForConnectorResponse(
-            sourceMessageId,
-            contactId,
-            envelopeConversationId,
-            envelopeTurnId
-        )
         val taskStatusState = taskRuntime?.recordConnectorTaskStatus(
             sourceMessageId = sourceMessageId,
             contactId = contactId,
             taskId = taskId,
             taskStatus = status,
-            statusSeq = statusSeq
+            statusSeq = statusSeq,
+            conversationId = envelopeConversationId,
+            turnId = envelopeTurnId
         )
         val nativeState = if (isSteeredCompletion) {
             taskRuntime?.acceptConnectorSteered(
                 sourceMessageId = sourceMessageId,
                 contactId = contactId,
-                mergedIntoTaskId = envelope.optString("merged_into_task_id")
+                mergedIntoTaskId = envelope.optString("merged_into_task_id"),
+                conversationId = envelopeConversationId,
+                turnId = envelopeTurnId,
+                taskId = taskId
             ) ?: taskStatusState
         } else {
             taskStatusState
@@ -3009,13 +3082,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val taskId = result?.metadata?.get("remote_task_id").orEmpty()
         val contactId = result?.metadata?.get("contact_id").orEmpty()
         val sourceMessageId = result?.metadata?.get("source_message_id")?.toLongOrNull() ?: 0L
-        if (taskId.isBlank() || contactId.isBlank() || sourceMessageId <= 0L) {
+        val conversationId = result?.metadata?.get("conversation_id").orEmpty()
+        val turnId = result?.metadata?.get("turn_id").orEmpty()
+        if (taskId.isBlank() || contactId.isBlank() || sourceMessageId <= 0L ||
+            conversationId.isBlank() || turnId.isBlank()
+        ) {
             return null
         }
         val sent = SignalASIMqttClient.publishAgentTaskCancel(
             taskId = taskId,
             contactId = contactId,
             sourceMessageId = sourceMessageId,
+            conversationId = conversationId,
+            turnId = turnId,
             topicOverride = AppStore.outgoingTopicForContact(this, contactId)
         )
         if (sent) {
@@ -3781,6 +3860,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         taskId = remoteTaskId,
                         contactId = contactId,
                         sourceMessageId = sourceMessageId,
+                        conversationId = conversationId,
+                        turnId = turnId,
                         topicOverride = AppStore.outgoingTopicForContact(this, contactId)
                     )
                 }
@@ -16461,6 +16542,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         taskId = message.taskId,
                         contactId = contact.id,
                         sourceMessageId = message.id,
+                        conversationId = AgentTaskIdentityPolicy.conversationId(
+                            contact.id,
+                            ""
+                        ),
+                        turnId = AgentTaskIdentityPolicy.turnId(message.id, ""),
                         topicOverride = AppStore.outgoingTopicForContact(this@MainActivity, contact.id)
                     )
                     if (sent) {

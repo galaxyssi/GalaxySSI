@@ -7,6 +7,9 @@ private val AGENT_REMOTE_APPROVAL_HASH = Regex("[0-9a-f]{64}")
 
 data class AgentRemoteApprovalRequest(
     val taskId: String,
+    val clientRouteId: String,
+    val conversationId: String,
+    val turnId: String,
     val contactId: String,
     val sourceMessageId: Long,
     val approvalId: String,
@@ -29,6 +32,9 @@ data class AgentRemoteApprovalRequest(
     fun decision(approved: Boolean): AgentRemoteApprovalDecision =
         AgentRemoteApprovalDecision(
             taskId = taskId,
+            clientRouteId = clientRouteId,
+            conversationId = conversationId,
+            turnId = turnId,
             contactId = contactId,
             sourceMessageId = sourceMessageId,
             approvalId = approvalId,
@@ -48,6 +54,9 @@ data class AgentRemoteApprovalRequest(
             }
             val approval = envelope.optJSONObject("approval_request") ?: return null
             val taskId = envelope.optString("task_id").trim().take(160)
+            val clientRouteId = envelope.optString("client_route_id").trim().take(200)
+            val conversationId = envelope.optString("conversation_id").trim().take(200)
+            val turnId = envelope.optString("turn_id").trim().take(200)
             val contactId = envelope.optString("contact_id").trim().take(160)
             val sourceMessageId = envelope.optString("source_message_id").toLongOrNull()
                 ?: envelope.optLong("source_message_id", 0L)
@@ -56,6 +65,9 @@ data class AgentRemoteApprovalRequest(
             val requestedAt = approval.optLong("requested_at_ms", 0L)
             val expiresAt = approval.optLong("expires_at_ms", 0L)
             if (taskId.isBlank() ||
+                clientRouteId.isBlank() ||
+                conversationId.isBlank() ||
+                turnId.isBlank() ||
                 contactId.isBlank() ||
                 sourceMessageId <= 0L ||
                 !AGENT_REMOTE_APPROVAL_ID.matches(approvalId) ||
@@ -69,6 +81,9 @@ data class AgentRemoteApprovalRequest(
             }
             return AgentRemoteApprovalRequest(
                 taskId = taskId,
+                clientRouteId = clientRouteId,
+                conversationId = conversationId,
+                turnId = turnId,
                 contactId = contactId,
                 sourceMessageId = sourceMessageId,
                 approvalId = approvalId,
@@ -89,6 +104,9 @@ data class AgentRemoteApprovalRequest(
 
 data class AgentRemoteApprovalDecision(
     val taskId: String,
+    val clientRouteId: String,
+    val conversationId: String,
+    val turnId: String,
     val contactId: String,
     val sourceMessageId: Long,
     val approvalId: String,
@@ -97,6 +115,9 @@ data class AgentRemoteApprovalDecision(
 ) {
     fun encode(): String = JSONObject()
         .put("task_id", taskId)
+        .put("client_route_id", clientRouteId)
+        .put("conversation_id", conversationId)
+        .put("turn_id", turnId)
         .put("contact_id", contactId)
         .put("source_message_id", sourceMessageId)
         .put("approval_id", approvalId)
@@ -108,11 +129,17 @@ data class AgentRemoteApprovalDecision(
         fun decode(raw: String): AgentRemoteApprovalDecision? {
             val value = runCatching { JSONObject(raw) }.getOrNull() ?: return null
             val taskId = value.optString("task_id").trim().take(160)
+            val clientRouteId = value.optString("client_route_id").trim().take(200)
+            val conversationId = value.optString("conversation_id").trim().take(200)
+            val turnId = value.optString("turn_id").trim().take(200)
             val contactId = value.optString("contact_id").trim().take(160)
             val sourceMessageId = value.optLong("source_message_id", 0L)
             val approvalId = value.optString("approval_id").trim()
             val actionHash = value.optString("action_hash").trim().lowercase()
             if (taskId.isBlank() ||
+                clientRouteId.isBlank() ||
+                conversationId.isBlank() ||
+                turnId.isBlank() ||
                 contactId.isBlank() ||
                 sourceMessageId <= 0L ||
                 !AGENT_REMOTE_APPROVAL_ID.matches(approvalId) ||
@@ -122,6 +149,9 @@ data class AgentRemoteApprovalDecision(
             }
             return AgentRemoteApprovalDecision(
                 taskId = taskId,
+                clientRouteId = clientRouteId,
+                conversationId = conversationId,
+                turnId = turnId,
                 contactId = contactId,
                 sourceMessageId = sourceMessageId,
                 approvalId = approvalId,

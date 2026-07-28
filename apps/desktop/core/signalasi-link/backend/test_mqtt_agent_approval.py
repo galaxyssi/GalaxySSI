@@ -33,11 +33,16 @@ class MqttAgentApprovalTests(unittest.TestCase):
             task_id="task-1",
             agent_id="codex",
             client_route_id="phone-route-1",
+            client_conversation_id="conversation-1",
+            client_turn_id="turn-1",
             contact_id="codex",
             source_message_id="message-1",
         )
         self.payload = {
             "task_id": self.task.task_id,
+            "client_route_id": self.task.client_route_id,
+            "conversation_id": self.task.client_conversation_id,
+            "turn_id": self.task.client_turn_id,
             "approval_id": "approval-12345678",
             "action_hash": self.action_hash,
             "source_message_id": self.task.source_message_id,
@@ -105,6 +110,26 @@ class MqttAgentApprovalTests(unittest.TestCase):
             )
         self.assertFalse(result["resolved"])
         self.assertEqual([], server.calls)
+
+        for field, value in (
+            ("conversation_id", "another-conversation"),
+            ("turn_id", "another-turn"),
+            ("task_id", "another-task"),
+        ):
+            with self.subTest(field=field):
+                server = _ApprovalServer(self.action_hash)
+                changed = dict(self.payload, **{field: value})
+                with (
+                    patch.object(mqtt_bridge, "agent_task_manager", _TaskManager(self.task)),
+                    patch.object(mqtt_bridge, "codex_app_server", server),
+                ):
+                    result = mqtt_bridge._resolve_agent_task_approval(
+                        changed,
+                        client_route_id=self.task.client_route_id,
+                        contact_id=self.task.contact_id,
+                    )
+                self.assertFalse(result["resolved"])
+                self.assertEqual([], server.calls)
 
     def test_changed_action_hash_is_rejected(self) -> None:
         server = _ApprovalServer(self.action_hash)

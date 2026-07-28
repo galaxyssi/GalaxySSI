@@ -30,7 +30,7 @@ class _RecoveredTaskManager:
             prompt="continue",
             conversation_id="conversation-1",
             client_route_id="client-1",
-            client_turn_id="client-turn-1",
+            client_turn_id="phone-turn-recovered",
             thread_id="thread-original",
             turn_id="turn-original",
             created_at=now - 55_000,
@@ -39,6 +39,17 @@ class _RecoveredTaskManager:
             result="",
         )
         self.updates = []
+
+    def get(self, task_id):
+        if task_id != self.task.task_id:
+            return None
+        self.task.matches_client_identity = lambda **identity: (
+            identity["client_route_id"] == self.task.client_route_id
+            and identity["conversation_id"] == self.task.conversation_id
+            and identity["task_id"] == self.task.task_id
+            and identity["turn_id"] == self.task.client_turn_id
+        )
+        return self.task
 
     def resume_external(self, task_id, _on_event):
         if task_id != self.task.task_id:
@@ -104,8 +115,10 @@ class MqttCodexRecoveryTests(unittest.TestCase):
                     "contact_id": "codex",
                     "agent_id": "codex",
                     "client_message_id": "message-1",
+                    "client_route_id": "client-1",
                     "task_id": "task-recovered",
                     "conversation_id": "conversation-1",
+                    "turn_id": "phone-turn-recovered",
                     "attachments": [],
                     "_recovered_task": True,
                 },

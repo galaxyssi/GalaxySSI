@@ -484,6 +484,73 @@ class AgentTaskConversationTests(unittest.TestCase):
             self.assertEqual(task["client_turn_id"], "phone-turn-1")
             self.assertEqual(task["turn_id"], "codex-turn-1")
 
+    def test_scoped_lookup_and_cancel_require_the_complete_client_identity(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            manager = agent_task_manager.AgentTaskManager()
+            manager.create_external(
+                "codex",
+                "codex-contact",
+                "phone-message",
+                "prompt",
+                lambda _: None,
+                task_id="task-identity",
+                conversation_id="client:route-a:conversation-a",
+                client_conversation_id="conversation-a",
+                client_route_id="route-a",
+                client_turn_id="turn-a",
+            )
+
+            self.assertIsNotNone(
+                manager.get_scoped(
+                    "task-identity",
+                    client_route_id="route-a",
+                    conversation_id="conversation-a",
+                    turn_id="turn-a",
+                )
+            )
+            self.assertIsNone(
+                manager.cancel_scoped(
+                    "task-identity",
+                    client_route_id="route-a",
+                    conversation_id="conversation-a",
+                    turn_id="turn-b",
+                )
+            )
+            self.assertEqual("accepted", manager.get("task-identity").status)
+            cancelled = manager.cancel_scoped(
+                "task-identity",
+                client_route_id="route-a",
+                conversation_id="conversation-a",
+                turn_id="turn-a",
+            )
+            self.assertEqual("cancelled", cancelled.status)
+
+    def test_duplicate_task_id_is_rejected_instead_of_silently_reassigned(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            manager = agent_task_manager.AgentTaskManager()
+            manager.create_external(
+                "codex",
+                "codex-contact",
+                "message-a",
+                "first",
+                lambda _: None,
+                task_id="shared-task-id",
+            )
+
+            with self.assertRaisesRegex(ValueError, "already exists"):
+                manager.create_external(
+                    "codex",
+                    "codex-contact",
+                    "message-b",
+                    "second",
+                    lambda _: None,
+                    task_id="shared-task-id",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

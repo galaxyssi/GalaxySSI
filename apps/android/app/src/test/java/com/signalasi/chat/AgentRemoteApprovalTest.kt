@@ -21,6 +21,9 @@ class AgentRemoteApprovalTest {
         requireNotNull(approved)
         assertTrue(approved.approved)
         assertEquals(request.taskId, approved.taskId)
+        assertEquals(request.clientRouteId, approved.clientRouteId)
+        assertEquals(request.conversationId, approved.conversationId)
+        assertEquals(request.turnId, approved.turnId)
         assertEquals(request.actionHash, approved.actionHash)
     }
 
@@ -63,6 +66,9 @@ class AgentRemoteApprovalTest {
         .put("type", "agent_task_event")
         .put("task_status", "waiting_approval")
         .put("task_id", "task-approval")
+        .put("client_route_id", "client-route")
+        .put("conversation_id", "conversation-approval")
+        .put("turn_id", "turn-approval")
         .put("contact_id", "codex-contact")
         .put("source_message_id", sourceMessageId)
         .put("approval_request", JSONObject()

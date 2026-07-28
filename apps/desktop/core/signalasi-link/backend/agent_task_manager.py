@@ -116,6 +116,26 @@ class AgentTask:
     process: subprocess.Popen | None = field(default=None, repr=False, compare=False)
     cancel_requested: bool = field(default=False, repr=False, compare=False)
 
+    def matches_client_identity(
+        self,
+        *,
+        client_route_id: str,
+        conversation_id: str,
+        task_id: str,
+        turn_id: str,
+    ) -> bool:
+        return all((
+            self.client_route_id,
+            self.client_conversation_id,
+            self.task_id,
+            self.client_turn_id,
+        )) and (
+            self.client_route_id == str(client_route_id or "").strip()
+            and self.client_conversation_id == str(conversation_id or "").strip()
+            and self.task_id == str(task_id or "").strip()
+            and self.client_turn_id == str(turn_id or "").strip()
+        )
+
     def record(self) -> dict:
         data = self.public(include_prompt=True)
         data["events"] = list(self.events)
@@ -253,7 +273,7 @@ class AgentTaskManager:
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:
-                task.task_id = str(uuid.uuid4())
+                raise ValueError(f"Agent task ID already exists: {task.task_id}")
             task.delivery_trace = self._merge_delivery_trace(
                 task,
                 [],
@@ -300,7 +320,7 @@ class AgentTaskManager:
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:
-                task.task_id = str(uuid.uuid4())
+                raise ValueError(f"Agent task ID already exists: {task.task_id}")
             task.delivery_trace = self._merge_delivery_trace(
                 task,
                 [],
@@ -773,6 +793,43 @@ class AgentTaskManager:
             task = self._decode_task(record)
             self._tasks[task.task_id] = task
             return task
+
+    def get_scoped(
+        self,
+        task_id: str,
+        *,
+        client_route_id: str,
+        conversation_id: str,
+        turn_id: str,
+    ) -> AgentTask | None:
+        task = self.get(task_id)
+        if task is None or not task.matches_client_identity(
+            client_route_id=client_route_id,
+            conversation_id=conversation_id,
+            task_id=task_id,
+            turn_id=turn_id,
+        ):
+            return None
+        return task
+
+    def cancel_scoped(
+        self,
+        task_id: str,
+        *,
+        client_route_id: str,
+        conversation_id: str,
+        turn_id: str,
+        on_event: EventCallback | None = None,
+    ) -> AgentTask | None:
+        task = self.get_scoped(
+            task_id,
+            client_route_id=client_route_id,
+            conversation_id=conversation_id,
+            turn_id=turn_id,
+        )
+        if task is None:
+            return None
+        return self.cancel(task.task_id, on_event)
 
     def active_for_conversation(
         self,
