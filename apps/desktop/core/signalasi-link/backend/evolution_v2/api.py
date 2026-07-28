@@ -35,7 +35,7 @@ class RoadmapReq(EvolutionRequest):
 
 
 class MaterializeReq(EvolutionRequest):
-    agent_id: str = Field(default="codex", pattern=r"^[A-Za-z0-9._-]{1,64}$")
+    agent_id: str = Field(default="auto", pattern=r"^[A-Za-z0-9._-]{1,64}$")
     max_attempts: int = Field(default=5, ge=1, le=10)
     start: bool = False
 

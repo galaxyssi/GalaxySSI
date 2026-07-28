@@ -45,6 +45,9 @@ PROTECTED_SCOPE_ROOTS = {
 }
 MAX_LOG_BYTES = 2 * 1024 * 1024
 PREPARATION_BLOCKER_CODES = {
+    "agent_unavailable",
+    "source_fetch_failed",
+    "source_pin_invalid",
     "source_root_missing",
     "source_root_invalid",
     "worktree_create_failed",
@@ -73,6 +76,7 @@ class EvolutionAttempt:
     status: str
     branch: str
     worktree: str
+    agent_id: str = ""
     changed_files: list[str] = field(default_factory=list)
     gates: list[EvolutionGate] = field(default_factory=list)
     failure_code: str = ""
@@ -94,7 +98,7 @@ class EvolutionTask:
     execution_target: str = "desktop"
     protocol: str = PROTOCOL
     status: str = "proposed"
-    agent_id: str = "codex"
+    agent_id: str = "auto"
     client_route_id: str = ""
     base_commit: str = ""
     candidate_commit: str = ""
@@ -459,7 +463,7 @@ class EvolutionManager:
         reproduction_steps: Iterable[str] = (),
         risk_level: str = "medium",
         max_attempts: int = 3,
-        agent_id: str = "codex",
+        agent_id: str = "auto",
         client_route_id: str = "",
         task_id: str = "",
     ) -> EvolutionTask:
@@ -483,7 +487,7 @@ class EvolutionManager:
             acceptance=clean_acceptance,
             risk_level=clean_risk,
             max_attempts=attempts,
-            agent_id=re.sub(r"[^a-z0-9._-]", "", str(agent_id).casefold())[:64] or "codex",
+            agent_id=re.sub(r"[^a-z0-9._-]", "", str(agent_id).casefold())[:64] or "auto",
             client_route_id=re.sub(r"[^A-Za-z0-9_-]", "", str(client_route_id or ""))[:64],
             base_commit=self._git_text(("rev-parse", "HEAD")),
             created_at_millis=now,
@@ -671,12 +675,24 @@ class EvolutionManager:
     def _run_task(self, task_id: str, cancellation: threading.Event) -> None:
         task = self.require(task_id)
         failure_context = task.last_error
+        try:
+            self._prepare_task_execution(task)
+        except EvolutionError as exc:
+            task.status = "blocked"
+            task.last_error_code = exc.code
+            task.last_error = str(exc)[:4_000]
+            self.store.save(task)
+            self._emit(task, "blocked")
+            return
         for number in range(len(task.attempts) + 1, task.max_attempts + 1):
             if cancellation.is_set():
                 self._mark_cancelled(task)
                 return
             try:
+                selected_agent = self._select_implementation_agent(task)
                 attempt = self._prepare_attempt(task, number)
+                attempt.agent_id = selected_agent
+                self.store.save(task)
             except EvolutionError as exc:
                 task.status = "blocked" if exc.code in PREPARATION_BLOCKER_CODES else "failed"
                 task.last_error_code = exc.code
@@ -693,10 +709,18 @@ class EvolutionManager:
                         "patch_agent_unavailable",
                         "No evolution patch Agent is configured.",
                     )
-                attempt.agent_summary = str(
-                    self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
-                    or ""
-                )[:8_000]
+                try:
+                    attempt.agent_summary = str(
+                        self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
+                        or ""
+                    )[:8_000]
+                except EvolutionError:
+                    raise
+                except Exception as exc:
+                    raise EvolutionError(
+                        "implementation_channel_failed",
+                        f"Implementation Agent {attempt.agent_id or task.agent_id} failed: {exc}",
+                    ) from exc
                 if cancellation.is_set():
                     raise EvolutionError("cancelled", "Evolution task was cancelled.")
                 attempt.changed_files = self._changed_files(Path(attempt.worktree))
@@ -710,6 +734,7 @@ class EvolutionManager:
                 self._emit(task, "validation_started", attempt=number)
                 gates = self._run_gates(task, attempt, cancellation)
                 attempt.gates = gates
+                self._detach_gate_dependencies(Path(attempt.worktree))
                 failed = next((gate for gate in gates if gate.status != "passed"), None)
                 if failed is not None:
                     raise EvolutionError(
@@ -756,6 +781,12 @@ class EvolutionManager:
         task.status = "failed"
         self.store.save(task)
         self._emit(task, "failed")
+
+    def _prepare_task_execution(self, task: EvolutionTask) -> None:
+        """Hook for readiness checks that must run before a worktree is consumed."""
+
+    def _select_implementation_agent(self, task: EvolutionTask) -> str:
+        return task.agent_id
 
     def _prepare_attempt(self, task: EvolutionTask, number: int) -> EvolutionAttempt:
         task.status = "preparing"
@@ -912,7 +943,7 @@ class EvolutionManager:
     def _attach_gate_dependencies(self, worktree: Path) -> None:
         """Expose ignored build runtimes only after the Agent has finished editing."""
         for relative in ("apps/desktop/.electron-runtime", "apps/desktop/.runtime-python"):
-            source = self.source_root / relative
+            source = self._gate_dependency_source(relative)
             target = worktree / relative
             if not source.is_dir():
                 continue
@@ -935,11 +966,24 @@ class EvolutionManager:
                     f"Could not attach trusted build runtime {relative}: {exc}",
                 ) from exc
 
+    def _gate_dependency_source(self, relative: str) -> Path:
+        return self.source_root / relative
+
+    def _detach_gate_dependencies(self, worktree: Path) -> None:
+        for relative in ("apps/desktop/.electron-runtime", "apps/desktop/.runtime-python"):
+            if self._gate_dependency_source(relative).is_dir():
+                self._remove_gate_dependency_target(worktree / relative)
+
     @staticmethod
     def _remove_gate_dependency_target(target: Path) -> None:
         if not target.exists() and not target.is_symlink():
             return
         is_junction = getattr(os.path, "isjunction", lambda _value: False)(target)
+        if os.name == "nt" and not is_junction:
+            try:
+                is_junction = bool(target.lstat().st_file_attributes & 0x400)
+            except (AttributeError, OSError):
+                is_junction = False
         if target.is_symlink() or is_junction:
             target.unlink() if target.is_symlink() else target.rmdir()
         elif target.is_dir():

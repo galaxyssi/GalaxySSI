@@ -28,6 +28,7 @@ class PreflightInspector:
         self.runner = runner or SafeRunner()
 
     def inspect(self) -> dict[str, Any]:
+        agents = self._implementation_agents()
         checks = [
             self._command("git", ("git", "--version"), required=True),
             self._git_checkout(),
@@ -39,6 +40,7 @@ class PreflightInspector:
             self._command("gh", ("gh", "--version"), required=True),
             self._gh_auth(),
             self._command("cosign", ("cosign", "version"), required=False),
+            agents,
         ]
         blocking = [item.check_id for item in checks if item.required and item.status != "passed"]
         return {
@@ -49,6 +51,29 @@ class PreflightInspector:
             "source_root": str(self.source_root),
             "timestamp_millis": now_millis(),
         }
+
+    def _implementation_agents(self) -> PreflightCheck:
+        try:
+            from agent_gateway import evolution_agent_candidates
+
+            snapshot = evolution_agent_candidates("auto")
+        except Exception as exc:
+            return PreflightCheck(
+                "implementation-agents",
+                "failed",
+                "Implementation Agent readiness could not be inspected.",
+                True,
+                {"agents": [], "selected_agent_id": "", "error": type(exc).__name__},
+            )
+        selected = str(snapshot.get("selected_agent_id") or "")
+        agents = list(snapshot.get("agents") or [])
+        return PreflightCheck(
+            "implementation-agents",
+            "passed" if selected else "missing",
+            f"Selected implementation Agent: {selected}." if selected else "No healthy implementation Agent is available.",
+            True,
+            {"agents": agents, "selected_agent_id": selected},
+        )
 
     def _command(self, check_id: str, argv: tuple[str, ...], *, required: bool) -> PreflightCheck:
         executable = argv[0]

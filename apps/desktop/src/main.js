@@ -941,7 +941,7 @@ async function createEvolutionTask(payload = {}) {
       reproduction_steps: Array.isArray(payload.reproductionSteps) ? payload.reproductionSteps : [],
       risk_level: String(payload.riskLevel || "medium"),
       max_attempts: Number(payload.maxAttempts || 3),
-      agent_id: String(payload.agentId || "codex"),
+      agent_id: String(payload.agentId || "auto"),
       start: payload.start !== false
     })
   });

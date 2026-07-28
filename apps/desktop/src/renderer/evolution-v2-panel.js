@@ -310,7 +310,7 @@
             const result = await request(
               "POST",
               `/proposals/${encodeURIComponent(proposal.proposal_id)}/materialize`,
-              { agent_id: "codex", max_attempts: 5, start: false }
+              { agent_id: "auto", max_attempts: 5, start: false }
             );
             setStatus(translate(
               "Created task {taskId}; start it from the task list above.",

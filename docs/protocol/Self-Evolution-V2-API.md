@@ -37,14 +37,19 @@ Radar collection stores metadata and proposals only. It does not execute discove
 
 ```json
 {
-  "agent_id": "codex",
+  "agent_id": "auto",
   "max_attempts": 5,
   "start": false
 }
 ```
 
 `materialize` creates a V1 task. Keeping `start` false lets the user inspect scope, acceptance
-criteria, and effective risk first.
+criteria, and effective risk first. `agent_id` defaults to `auto`; a configured local/custom CLI
+identifier is a preference with health-based failover, not a hard requirement.
+
+`GET /preflight` includes an `implementation-agents` check with every eligible Agent and the
+selected candidate. It exposes identifiers, kind, health, and required capabilities, but never
+command lines or credentials. Task metadata includes the pinned `source_commit`.
 
 ## Issue signals
 

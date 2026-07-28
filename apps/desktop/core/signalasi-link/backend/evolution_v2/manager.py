@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import threading
 from pathlib import Path
@@ -28,6 +29,14 @@ class EvolutionManager(legacy.EvolutionManager):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        configured_dependencies = str(
+            os.environ.get("SIGNALASI_EVOLUTION_DEPENDENCY_ROOT") or ""
+        ).strip()
+        self.dependency_root = (
+            Path(configured_dependencies).expanduser().resolve()
+            if configured_dependencies
+            else self.source_root
+        )
         self.v2_store = EvolutionV2Store(Path(self.store.root) / "v2")
         self.policy = EvolutionPolicy(self.source_root)
         loaded_gates = read_json(
@@ -58,7 +67,7 @@ class EvolutionManager(legacy.EvolutionManager):
         reproduction_steps: Iterable[str] = (),
         risk_level: str = "medium",
         max_attempts: int = 3,
-        agent_id: str = "codex",
+        agent_id: str = "auto",
         client_route_id: str = "",
         task_id: str = "",
         origin: str = "manual",
@@ -83,6 +92,10 @@ class EvolutionManager(legacy.EvolutionManager):
             client_route_id=client_route_id,
             task_id=task_id,
         )
+        if self.patch_agent is default_evolution_patch_agent:
+            # Desktop V2 pins a freshly fetched remote main only when execution starts.
+            task.base_commit = ""
+            self.store.save(task)
         metadata = TaskMetadata(
             task_id=task.task_id,
             origin=str(origin or "manual")[:120],
@@ -106,7 +119,7 @@ class EvolutionManager(legacy.EvolutionManager):
         proposal: EvolutionProposal,
         *,
         campaign_id: str = "",
-        agent_id: str = "codex",
+        agent_id: str = "auto",
         max_attempts: int = 5,
         start: bool = False,
     ):
@@ -252,7 +265,7 @@ class EvolutionManager(legacy.EvolutionManager):
         super()._attach_gate_dependencies(worktree)
         if not self._embedded_android_runtime_available():
             return
-        source = self.source_root / "build" / "runtime"
+        source = self._gate_dependency_source("build/runtime")
         target = Path(worktree) / "build" / "runtime"
         self._remove_gate_dependency_target(target)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -276,6 +289,15 @@ class EvolutionManager(legacy.EvolutionManager):
                 f"Could not attach the trusted Android runtime bundle: {exc}",
             ) from exc
 
+    def _detach_gate_dependencies(self, worktree: Path) -> None:
+        super()._detach_gate_dependencies(worktree)
+        if self._embedded_android_runtime_available():
+            self._remove_gate_dependency_target(Path(worktree) / "build" / "runtime")
+
+    def _gate_dependency_source(self, relative: str) -> Path:
+        root = getattr(self, "dependency_root", self.source_root)
+        return root / relative
+
     def _gate_setting(self, section: str, key: str, default: bool) -> bool:
         values = self.gate_config.get(section)
         if not isinstance(values, dict):
@@ -283,11 +305,67 @@ class EvolutionManager(legacy.EvolutionManager):
         return bool(values.get(key, default))
 
     def _embedded_android_runtime_available(self) -> bool:
-        runtime = self.source_root / "build" / "runtime"
+        runtime = self._gate_dependency_source("build/runtime")
         return (
             (runtime / "android-jni-libs" / "signalasi-qemu-bundle.json").is_file()
             and (runtime / "android-assets" / "runtime" / "qemu" / "bundle.json").is_file()
         )
+
+    def _prepare_task_execution(self, task) -> None:
+        if self.patch_agent is not default_evolution_patch_agent:
+            return
+        self._pin_source_commit(task)
+        # Availability is checked before attempt one so no disposable worktree is consumed.
+        self._select_implementation_agent(task)
+
+    def _pin_source_commit(self, task) -> str:
+        metadata = self.v2_store.get_task_metadata(task.task_id)
+        pinned = str(metadata.source_commit if metadata is not None else "").strip().casefold()
+        if not pinned and task.attempts:
+            pinned = str(task.base_commit or "").strip().casefold()
+        if pinned:
+            if not re.fullmatch(r"[0-9a-f]{40}", pinned):
+                raise legacy.EvolutionError("source_pin_invalid", "Pinned evolution source commit is invalid.")
+        else:
+            fetched = self.runner.run(
+                ("git", "fetch", "--no-tags", "origin", "main"),
+                self.source_root,
+                timeout_seconds=180,
+            )
+            if fetched.returncode != 0:
+                raise legacy.EvolutionError("source_fetch_failed", fetched.stdout[-2_000:])
+            resolved = self.runner.run(
+                ("git", "rev-parse", "--verify", "origin/main^{commit}"),
+                self.source_root,
+                timeout_seconds=30,
+            )
+            pinned = resolved.stdout.strip().casefold() if resolved.returncode == 0 else ""
+            if not re.fullmatch(r"[0-9a-f]{40}", pinned):
+                raise legacy.EvolutionError(
+                    "source_pin_invalid",
+                    "Freshly fetched origin/main did not resolve to a 40-character commit.",
+                )
+        task.base_commit = pinned
+        self.store.save(task)
+        if metadata is not None and metadata.source_commit != pinned:
+            metadata.source_commit = pinned
+            self.v2_store.save_task_metadata(metadata)
+        return pinned
+
+    def _select_implementation_agent(self, task) -> str:
+        if self.patch_agent is not default_evolution_patch_agent:
+            return task.agent_id
+        from agent_gateway import select_evolution_agent
+
+        excluded = {
+            attempt.agent_id
+            for attempt in task.attempts
+            if attempt.agent_id and attempt.failure_code == "implementation_channel_failed"
+        }
+        try:
+            return select_evolution_agent(task.agent_id, excluded_agent_ids=excluded)
+        except RuntimeError as exc:
+            raise legacy.EvolutionError("agent_unavailable", str(exc)[:2_000]) from exc
 
     def _commit_candidate(self, task, attempt) -> str:
         candidate_commit = super()._commit_candidate(task, attempt)
@@ -310,7 +388,7 @@ class EvolutionManager(legacy.EvolutionManager):
                     base_commit=task.base_commit,
                     candidate_commit=candidate_commit,
                     risk_level=task.risk_level,
-                    agent_id=task.agent_id,
+                    agent_id=attempt.agent_id or task.agent_id,
                     invoke=lambda agent_id, text, review_task_id, worktree: ask_evolution_agent(
                         agent_id,
                         text,

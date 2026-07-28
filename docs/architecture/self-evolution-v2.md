@@ -17,7 +17,7 @@ flowchart LR
   Manager --> Campaigns["Campaign DAG"]
   Manager --> Policy["Risk and path policy"]
   Manager --> V1["V1 worktree loop"]
-  V1 --> Agents["Codex, Claude Code, Hermes, OpenClaw"]
+  V1 --> Agents["Healthy local/custom CLI implementer"]
   V1 --> Gates["Immutable quality gates"]
   Gates --> Review["Independent review"]
   Review --> Provenance["Provenance and hash-chain audit"]
@@ -28,6 +28,13 @@ The control plane stores tasks, research, proposals, roadmaps, campaigns, policy
 reviews, provenance, and audit events. The execution plane uses disposable Git worktrees,
 Agent processes, compilers, test backends, and an optional dedicated Android test device.
 The production plane is never used as a candidate workspace.
+
+Before attempt one, Desktop fetches `origin/main` without switching or resetting the active
+checkout and stores the resolved 40-character commit in V2 task metadata. Every retry branches
+from that same pin. Implementers are selected automatically from configured `local-cli` and
+`custom-cli` resources that expose code, terminal, and file capabilities. Local and cloud chat
+models are never eligible. An explicit Agent preference wins when healthy; an implementation
+channel failure quarantines that Agent for the next attempt when another healthy option exists.
 
 ## State model
 

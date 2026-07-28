@@ -22,6 +22,7 @@ import urllib.request
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterable
 
 from agent_config import cloud_model_config, command_for, custom_agent_config, custom_agent_configs, language_policy_config, local_model_config
 from desktop_agent_adapters import (
@@ -170,7 +171,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         timeout=60,
         note="Hermes CLI",
         output_cleaner="hermes",
-        capabilities=("conversation", "research", "tools", "files"),
+        capabilities=("conversation", "research", "tools", "code", "terminal", "files"),
     ),
     "codex": AgentSpec(
         id="codex",
@@ -204,7 +205,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         env_key="SIGNALASI_OPENCLAW_CMD",
         note="OpenClaw CLI wrapped by SignalASI Desktop",
         output_cleaner="openclaw",
-        capabilities=("conversation", "research", "tools", "files", "automation", "tasks"),
+        capabilities=("conversation", "research", "tools", "code", "terminal", "files", "automation", "tasks"),
     ),
     "local-llm": AgentSpec(
         id="local-llm",
@@ -232,7 +233,7 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         timeout=120,
         env_key="SIGNALASI_CUSTOM_AGENT_CMD",
         note="Any CLI or MCP wrapper command exposed as a SignalASI contact",
-        capabilities=("conversation", "custom_tools"),
+        capabilities=("conversation", "custom_tools", "code", "terminal", "files"),
     ),
 }
 
@@ -446,7 +447,7 @@ def all_agent_specs() -> dict[str, AgentSpec]:
             command=None,
             timeout=120,
             note="User-defined CLI or MCP wrapper exposed as a SignalASI contact",
-            capabilities=("conversation", "custom_tools"),
+            capabilities=("conversation", "custom_tools", "code", "terminal", "files"),
         )
     return specs
 
@@ -997,6 +998,7 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
         "detail_code": detail_code,
         "detail_params": _agent_params(spec, detail=detail, display_name=display_name),
         "note": spec.note,
+        "capabilities": list(spec.capabilities),
         "runtime_status": runtime_status or "unknown",
         "runtime_updated_at": int(float(runtime.get("updated_at") or 0) * 1000),
         "active_tasks": int(runtime.get("active_tasks") or 0),
@@ -1450,7 +1452,7 @@ def ask_evolution_agent(
 ) -> str:
     """Run a configured CLI Agent inside an already-isolated candidate worktree."""
     spec = all_agent_specs().get(str(agent_id or "").strip().casefold())
-    if spec is None or spec.kind != "cli":
+    if spec is None or spec.kind not in {"local-cli", "custom-cli"}:
         raise RuntimeError(f"Evolution requires a configured CLI Agent: {agent_id}")
     candidate = Path(working_directory).expanduser().resolve()
     if not candidate.is_dir() or not (candidate / ".git").exists():
@@ -1464,6 +1466,66 @@ def ask_evolution_agent(
         restricted_workspace=True,
         working_directory=candidate,
     )
+
+
+def evolution_agent_candidates(
+    preferred_agent_id: str = "auto",
+    *,
+    excluded_agent_ids: Iterable[str] = (),
+) -> dict:
+    """Return a credential-free implementation-Agent health and selection snapshot."""
+    required = {"code", "terminal", "files"}
+    preferred = str(preferred_agent_id or "auto").strip().casefold()
+    excluded = {str(value or "").strip().casefold() for value in excluded_agent_ids}
+    rows: list[dict] = []
+    for spec in all_agent_specs().values():
+        capabilities = set(spec.capabilities)
+        if spec.kind not in {"local-cli", "custom-cli"} or not required.issubset(capabilities):
+            continue
+        status = agent_status(spec, quick=True)
+        health = str(status.get("status") or "needs_setup")
+        rows.append({
+            "id": spec.id,
+            "name": str(status.get("name") or spec.name),
+            "kind": spec.kind,
+            "status": health,
+            "capabilities": sorted(required.intersection(capabilities)),
+            "excluded": spec.id in excluded,
+            "selected": False,
+        })
+
+    order = {agent_id: index for index, agent_id in enumerate(("codex", "claude", "hermes", "openclaw"))}
+    rows.sort(key=lambda row: (
+        0 if row["id"] == preferred and preferred != "auto" else 1,
+        order.get(row["id"], len(order)),
+        row["id"],
+    ))
+    healthy = [row for row in rows if row["status"] in {"ready", "busy"}]
+    selectable = [row for row in healthy if not row["excluded"]]
+    # A single healthy implementation Agent remains retryable after its channel failed.
+    selected = (selectable or healthy or [None])[0]
+    if selected is not None:
+        selected["selected"] = True
+    return {
+        "preferred_agent_id": preferred,
+        "selected_agent_id": selected["id"] if selected is not None else "",
+        "agents": rows,
+    }
+
+
+def select_evolution_agent(
+    preferred_agent_id: str = "auto",
+    *,
+    excluded_agent_ids: Iterable[str] = (),
+) -> str:
+    snapshot = evolution_agent_candidates(
+        preferred_agent_id,
+        excluded_agent_ids=excluded_agent_ids,
+    )
+    selected = str(snapshot["selected_agent_id"])
+    if not selected:
+        raise RuntimeError("No healthy configured implementation Agent is available")
+    return selected
 
 
 def _ask_cli_agent_locked(
