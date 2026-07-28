@@ -3088,6 +3088,68 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             )
         _log_task_latency(str(task.get("task_id") or ""), reply_payload["delivery_trace"])
 
+    from agent_execution_harness import AgentClarificationMode, clarification_decision_for
+    from response_policy import clarification_question, response_language_tag
+
+    clarification = clarification_decision_for(
+        current_user_request,
+        has_attachments=has_attachments,
+        has_conversation_context=bool(
+            mobile_context.summary
+            or mobile_context.global_context
+            or mobile_context.messages
+        ),
+    )
+    if (
+        clarification.mode == AgentClarificationMode.ASK_LOCALLY
+        and payload.get("_recovered_task") is not True
+    ):
+        clarification_reply = clarification_question(
+            clarification.question.value,
+            response_language_tag(current_user_request, preferred_response_language),
+        )
+
+        def run_clarification(task) -> str:
+            agent_task_manager.add_event(
+                task.task_id,
+                "clarification",
+                "Waiting for one required detail",
+                event_id=f"clarification:{task.task_id}",
+                metadata={
+                    "question": clarification.question.value,
+                    "mode": clarification.mode.value,
+                },
+                on_event=publish_event,
+            )
+            return clarification_reply
+
+        created = agent_task_manager.create(
+            agent_id=agent_id,
+            contact_id=contact_id,
+            source_message_id=source_message_id,
+            prompt=content,
+            runner=run_clarification,
+            on_event=publish_event,
+            on_result=publish_result,
+            task_id=requested_task_id,
+            conversation_id=backend_conversation_id,
+            client_conversation_id=client_conversation_id,
+            client_route_id=client_route_id,
+            client_turn_id=client_turn_id,
+            attachments=[
+                str(item.get("name") or "")
+                for item in attachments
+                if isinstance(item, dict) and str(item.get("name") or "").strip()
+            ],
+            execution_prompt=current_user_request,
+            execution_policy=execution_policy.public(),
+            trace_id=str(payload.get("trace_id") or ""),
+            delivery_trace=task_trace_snapshot(),
+        )
+        bind_task_trace(created)
+        add_task_trace("desktop_task_created", created.task_id)
+        return
+
     if agent_id == "codex":
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
         codex_conversation_id = backend_conversation_id

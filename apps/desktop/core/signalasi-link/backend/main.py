@@ -1772,9 +1772,39 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
     agent_id = _desktop_agent_for(prompt, req.agent_id)
     attachments = _copy_desktop_attachments(task_id, req.attachments)
     response_language = str(req.response_language or "").strip() or language_policy_config()["response_language"]
+    from agent_execution_harness import AgentClarificationMode, clarification_decision_for
+    from response_policy import clarification_question, response_language_tag
+
+    clarification = clarification_decision_for(
+        prompt,
+        has_attachments=bool(attachments),
+        has_conversation_context=bool(
+            agent_task_manager.conversation_messages(conversation_id, limit=1)
+        ),
+    )
+    clarification_reply = (
+        clarification_question(
+            clarification.question.value,
+            response_language_tag(prompt, response_language),
+        )
+        if clarification.mode == AgentClarificationMode.ASK_LOCALLY
+        else ""
+    )
     compiled_prompt = _desktop_task_prompt(prompt, conversation_id, attachments, response_language)
 
     def runner(task):
+        if clarification_reply:
+            agent_task_manager.add_event(
+                task.task_id,
+                "clarification",
+                "Waiting for one required detail",
+                event_id=f"clarification:{task.task_id}",
+                metadata={
+                    "question": clarification.question.value,
+                    "mode": clarification.mode.value,
+                },
+            )
+            return clarification_reply
         agent_task_manager.update(
             task.task_id,
             "running",

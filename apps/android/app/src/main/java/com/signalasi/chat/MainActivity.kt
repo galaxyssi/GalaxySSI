@@ -3512,7 +3512,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 refreshAgentConversationHeader()
                 refreshAgentTranscriptWindow(conversation.id)
                 if (attachments.isEmpty()) {
-                    continueAgentGoalSubmission(baseGoal, conversation.id, turnId)
+                    continueAgentGoalSubmission(
+                        goal = baseGoal,
+                        conversationId = conversation.id,
+                        turnId = turnId,
+                        originalGoal = goal
+                    )
                 } else {
                     stageAgentGoalAttachments(
                         goal = goal,
@@ -3568,7 +3573,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     executionGoal,
                     conversation.id,
                     turnId,
-                    forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal) else null
+                    forcedAction = if (staged.isEmpty()) attachmentConnectorAction(executionGoal) else null,
+                    originalGoal = goal
                 )
             }
             if (goal.isNotBlank() && !conversation.privateMode && !conversation.trackingPaused) {
@@ -3607,7 +3613,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         goal: String,
         conversationId: String,
         turnId: String,
-        forcedAction: AgentAction? = null
+        forcedAction: AgentAction? = null,
+        originalGoal: String = goal
     ) {
         val routingStartedAt = SystemClock.elapsedRealtime()
         if (handleAgentSkillCommand(goal, conversationId, turnId)) return
@@ -3616,7 +3623,42 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 conversationId = conversationId,
                 excludeTurnId = turnId
             )
-            AgentFastLocalResponse.reply(goal, localConversationContext)?.let { response ->
+            val turnAttachments = AgentTurnAttachmentRegistry.get(turnId)
+            val clarification = AgentClarificationPolicy.decide(
+                goal = originalGoal,
+                hasAttachments = turnAttachments.isNotEmpty(),
+                hasConversationContext = localConversationContext.summary.isNotBlank() ||
+                    localConversationContext.turns.isNotEmpty()
+            )
+            if (clarification.mode == AgentClarificationMode.ASK_LOCALLY) {
+                agentTranscriptStore.append(
+                    AgentTranscriptRole.ASSISTANT,
+                    agentClarificationQuestion(clarification.question),
+                    dedupeKey = "clarification:$turnId",
+                    conversationId = conversationId,
+                    turnId = turnId,
+                    taskId = turnId
+                )
+                AgentTurnAttachmentRegistry.remove(turnId)
+                Log.d(
+                    "SignalASIAgent",
+                    "clarification_completed turn=${turnId.take(8)} question=${clarification.question.name}"
+                )
+                runOnUiThread { refreshAgentTranscriptWindow(conversationId) }
+                return@execute
+            }
+            val executionGoal = if (clarification.mode == AgentClarificationMode.ASK_WITH_MODEL) {
+                buildString {
+                    append(getString(R.string.agent_attachment_default_goal))
+                    if (turnAttachments.isNotEmpty()) {
+                        append("\nAttachment names: ")
+                        append(turnAttachments.joinToString(", ") { it.displayName })
+                    }
+                }
+            } else {
+                goal
+            }
+            AgentFastLocalResponse.reply(executionGoal, localConversationContext)?.let { response ->
                 agentTranscriptStore.append(
                     AgentTranscriptRole.ASSISTANT,
                     response,
@@ -3631,10 +3673,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             val conversationContext = globalSuperAgentRuntime.augmentContext(
                 localConversationContext,
-                goal
+                executionGoal
             )
-            val skillMatch = agentSkillMatcher.match(goal)
-            val deterministicAction = forcedAction ?: deterministicSystemActionFor(goal, conversationContext)
+            val skillMatch = agentSkillMatcher.match(executionGoal)
+            val resolvedForcedAction = forcedAction?.let { action ->
+                if (clarification.mode == AgentClarificationMode.ASK_WITH_MODEL) {
+                    action.copy(parameters = action.parameters + ("prompt" to executionGoal))
+                } else {
+                    action
+                }
+            }
+            val deterministicAction = resolvedForcedAction
+                ?: deterministicSystemActionFor(executionGoal, conversationContext)
             Log.d(
                 "SignalASIAgent",
                 "route_resolved turn=${turnId.take(8)} tool=${deterministicAction?.parameters?.get("tool_id").orEmpty()} " +
@@ -3643,7 +3693,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
             val run = agentRunRecorder.begin(
                 conversationId = conversationId,
-                request = goal,
+                request = executionGoal,
                 activeSkillId = if (deterministicAction == null) skillMatch?.installation?.id.orEmpty() else ""
             )
             val selectedAgentId = (forcedAction ?: deterministicAction)
@@ -3671,17 +3721,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             agentRunIdsByTurn[turnId] = run.runId
             runOnUiThread {
                 when {
-                    forcedAction != null -> {
+                    resolvedForcedAction != null -> {
                         Log.d(
                             "SignalASIAgent",
-                            "route_forced_connector turn=${turnId.take(8)} action=${forcedAction.id}"
+                            "route_forced_connector turn=${turnId.take(8)} action=${resolvedForcedAction.id}"
                         )
                         executeConcurrentAgentGoal(
-                            goal,
+                            executionGoal,
                             conversationContext,
                             conversationId,
                             turnId,
-                            forcedAction
+                            resolvedForcedAction
                         )
                     }
                     deterministicAction != null &&
@@ -3698,7 +3748,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             "route_protected turn=${turnId.take(8)} action=${deterministicAction.id}"
                         )
                         executeConcurrentAgentGoal(
-                            goal,
+                            executionGoal,
                             conversationContext,
                             conversationId,
                             turnId,
@@ -3706,12 +3756,37 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         )
                     }
                     skillMatch != null &&
-                        executeMatchedSkill(skillMatch, conversationId, turnId, goal, conversationContext) -> Unit
-                    else -> executeConcurrentAgentGoal(goal, conversationContext, conversationId, turnId)
+                        executeMatchedSkill(
+                            skillMatch,
+                            conversationId,
+                            turnId,
+                            executionGoal,
+                            conversationContext
+                        ) -> Unit
+                    else -> executeConcurrentAgentGoal(
+                        executionGoal,
+                        conversationContext,
+                        conversationId,
+                        turnId
+                    )
                 }
             }
         }
     }
+
+    private fun agentClarificationQuestion(question: AgentClarificationQuestion): String =
+        getString(
+            when (question) {
+                AgentClarificationQuestion.CODE_OUTCOME -> R.string.agent_clarify_code_outcome
+                AgentClarificationQuestion.CONTROL_ACTION -> R.string.agent_clarify_control_action
+                AgentClarificationQuestion.RESEARCH_TOPIC -> R.string.agent_clarify_research_topic
+                AgentClarificationQuestion.FILE_ACTION -> R.string.agent_clarify_file_action
+                AgentClarificationQuestion.MEMORY_CONTENT -> R.string.agent_clarify_memory_content
+                AgentClarificationQuestion.AUTOMATION_DETAILS -> R.string.agent_clarify_automation_details
+                AgentClarificationQuestion.NONE,
+                AgentClarificationQuestion.TASK_GOAL -> R.string.agent_clarify_task_goal
+            }
+        )
 
     private fun updateAgentSubmitButtonAppearance(hasInput: Boolean) {
         agentSubmitButton.setBackgroundResource(
@@ -5808,6 +5883,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val goal = text.trim()
         if (goal.isBlank()) {
             scheduleVoiceRestart(500L)
+            return
+        }
+        val conversation = agentTranscriptStore.activeConversation()
+        val conversationContext = agentTranscriptStore.context(conversation.id)
+        val clarification = AgentClarificationPolicy.decide(
+            goal,
+            hasConversationContext = conversationContext.summary.isNotBlank() ||
+                conversationContext.turns.isNotEmpty()
+        )
+        if (clarification.mode == AgentClarificationMode.ASK_LOCALLY) {
+            val question = agentClarificationQuestion(clarification.question)
+            wakeReplyPinnedUntilMs = System.currentTimeMillis() + 60_000L
+            updateWakeVoiceUi(getString(R.string.voice_agent_waiting), question)
+            val config = VoiceAssistantSettings.get(this)
+            if (config.speakReplies) {
+                speakWithConfiguredTts(question) {
+                    if (voiceAssistantAwake && activeMainTab == PAGE_VOICE) {
+                        startCommandListening()
+                    }
+                }
+            } else {
+                scheduleVoiceRestart(900L)
+            }
             return
         }
         if (agentOperationInFlight) {

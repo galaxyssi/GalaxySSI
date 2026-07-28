@@ -664,6 +664,13 @@
     <string name="agent_image_preview_close">关闭图片预览</string>
     <string name="agent_attachment_count">%1$d 个附件</string>
     <string name="agent_attachment_default_goal">用户只上传了附件，没有说明任务。请只问一个简短问题，并根据文件类型给出四到六个可直接执行的选项；仅提文件名，不要读取、总结或回传附件。</string>
+    <string name="agent_clarify_task_goal">你想让我完成什么？</string>
+    <string name="agent_clarify_code_outcome">你希望这个程序或代码实现什么功能？</string>
+    <string name="agent_clarify_control_action">你希望我在设备上执行什么操作？</string>
+    <string name="agent_clarify_research_topic">你想让我研究哪个主题或问题？</string>
+    <string name="agent_clarify_file_action">你希望我如何处理这个文件？</string>
+    <string name="agent_clarify_memory_content">你希望我记住什么？</string>
+    <string name="agent_clarify_automation_details">什么情况触发自动化，触发后执行什么操作？</string>
     <string name="agent_attachment_rejected">部分附件未添加。最多可添加 10 个文件，每个不超过 20 MB。</string>
     <string name="agent_attachment_hide_navigation">隐藏导航栏</string>
     <string name="agent_attachment_show_navigation">显示导航栏</string>

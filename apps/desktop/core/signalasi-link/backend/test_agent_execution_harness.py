@@ -8,12 +8,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from agent_execution_harness import (
+    AgentClarificationMode,
+    AgentClarificationQuestion,
     AgentExecutionHarness,
     AgentExecutionPolicy,
     AgentReasoningEffort,
     AgentTaskIntent,
     AgentTaskKind,
     classify_task_intent,
+    clarification_decision_for,
     execution_policy_for,
     finalize_task_artifacts,
 )
@@ -21,6 +24,77 @@ from task_workspace import task_workspace
 
 
 class AgentExecutionHarnessTests(unittest.TestCase):
+    def test_missing_required_details_ask_one_targeted_question(self):
+        cases = {
+            "Help me": AgentClarificationQuestion.TASK_GOAL,
+            "Write a program": AgentClarificationQuestion.CODE_OUTCOME,
+            "Control my computer": AgentClarificationQuestion.CONTROL_ACTION,
+            "Research": AgentClarificationQuestion.RESEARCH_TOPIC,
+            "Process the file": AgentClarificationQuestion.FILE_ACTION,
+            "Remember this": AgentClarificationQuestion.MEMORY_CONTENT,
+            "Create an automation": AgentClarificationQuestion.AUTOMATION_DETAILS,
+            "\u5e2e\u6211\u5f04\u4e00\u4e0b": AgentClarificationQuestion.TASK_GOAL,
+            "\u5199\u4e2a\u7a0b\u5e8f": AgentClarificationQuestion.CODE_OUTCOME,
+            "\u63a7\u5236\u624b\u673a": AgentClarificationQuestion.CONTROL_ACTION,
+            "\u641c\u7d22": AgentClarificationQuestion.RESEARCH_TOPIC,
+            "\u8bb0\u4f4f\u8fd9\u4e2a": AgentClarificationQuestion.MEMORY_CONTENT,
+            "\u521b\u5efa\u81ea\u52a8\u5316": AgentClarificationQuestion.AUTOMATION_DETAILS,
+        }
+
+        for prompt, expected_question in cases.items():
+            with self.subTest(prompt=prompt):
+                decision = clarification_decision_for(prompt)
+                self.assertEqual(AgentClarificationMode.ASK_LOCALLY, decision.mode)
+                self.assertEqual(expected_question, decision.question)
+
+    def test_low_risk_and_contextual_requests_execute_without_clarification(self):
+        direct_requests = (
+            "Hello",
+            "What is the battery level?",
+            "Turn on the flashlight",
+            "Set a one minute timer",
+            "Research today's AI news",
+            "Remember that I prefer concise replies",
+            "Build an Android calculator app",
+            "\u4f60\u597d",
+            "\u6253\u5f00\u624b\u7535\u7b52",
+            "\u67e5\u4e00\u4e0b\u4eca\u5929\u4e0a\u6d77\u7684\u5929\u6c14",
+        )
+        contextual_requests = (
+            "Continue",
+            "Try again",
+            "Handle this",
+            "\u7ee7\u7eed",
+            "\u518d\u8bd5\u8bd5",
+            "\u5e2e\u6211\u5f04\u4e00\u4e0b",
+        )
+
+        for prompt in direct_requests:
+            with self.subTest(prompt=prompt):
+                self.assertEqual(
+                    AgentClarificationMode.EXECUTE,
+                    clarification_decision_for(prompt).mode,
+                )
+        for prompt in contextual_requests:
+            with self.subTest(prompt=prompt):
+                self.assertEqual(
+                    AgentClarificationMode.EXECUTE,
+                    clarification_decision_for(
+                        prompt,
+                        has_conversation_context=True,
+                    ).mode,
+                )
+
+    def test_attachment_only_clarification_stays_model_generated(self):
+        for prompt in ("", "Take a look", "\u5904\u7406\u4e00\u4e0b"):
+            with self.subTest(prompt=prompt):
+                decision = clarification_decision_for(
+                    prompt,
+                    has_attachments=True,
+                )
+                self.assertEqual(AgentClarificationMode.ASK_WITH_MODEL, decision.mode)
+                self.assertEqual(AgentClarificationQuestion.FILE_ACTION, decision.question)
+
     def test_classifier_covers_the_eight_canonical_task_intents(self):
         cases = {
             "Hello, how are you?": AgentTaskIntent.CHAT,

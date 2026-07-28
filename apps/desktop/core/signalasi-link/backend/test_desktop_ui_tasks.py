@@ -100,6 +100,53 @@ def test_desktop_auto_uses_super_agent_and_explicit_agents_remain_direct(monkeyp
     assert main._desktop_agent_for("Fix the project build", "codex") == "codex"
 
 
+def test_desktop_asks_once_then_uses_the_same_conversation_context(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
+    manager = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", manager)
+    monkeypatch.setenv("SIGNALASI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setattr(
+        main,
+        "connector_diagnostics",
+        lambda quick=False: {"agents": [{"id": "codex", "status": "ready"}]},
+    )
+    deliveries: list[str] = []
+
+    def fake_delivery(_agent_id, prompt, **_kwargs):
+        deliveries.append(prompt)
+        return {"reply": "continued", "agent_id": "codex"}
+
+    monkeypatch.setattr(main, "deliver_agent_sync", fake_delivery)
+    first = main.api_start_desktop_task(
+        main.DesktopTaskStartReq(
+            prompt="Control my computer",
+            agent_id="codex",
+            conversation_id="clarification-conversation",
+            response_language="en-US",
+        ),
+        LoopbackRequest(),
+    )
+    clarified = wait_for_terminal(manager, first["task_id"])
+
+    assert clarified.status == "completed"
+    assert clarified.result == "What should I do on the device?"
+    assert deliveries == []
+    assert clarified.events[-1]["kind"] == "clarification"
+
+    second = main.api_start_desktop_task(
+        main.DesktopTaskStartReq(
+            prompt="Continue",
+            agent_id="codex",
+            conversation_id="clarification-conversation",
+        ),
+        LoopbackRequest(),
+    )
+    continued = wait_for_terminal(manager, second["task_id"])
+
+    assert continued.result == "continued"
+    assert len(deliveries) == 1
+
+
 def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monkeypatch):
     monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
     manager = task_module.AgentTaskManager()
