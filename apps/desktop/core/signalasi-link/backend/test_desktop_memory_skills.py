@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from desktop_memory import DesktopMemoryStore
@@ -61,8 +62,187 @@ class DesktopMemoryTest(unittest.TestCase):
                 task_id="task-volatile",
             )
 
-            self.assertTrue(any(item["kind"] == "explicit" for item in explicit))
+            self.assertEqual(explicit[0]["kind"], "preference")
+            self.assertEqual(explicit[0]["status"], "pending_review")
+            self.assertEqual(store.stats()["active"], 0)
+            approved = store.approve_candidate(explicit[0]["id"])
+            self.assertEqual(approved["status"], "approved")
+            self.assertIn("\u7b80\u4f53\u4e2d\u6587", store.compile_context("\u9ed8\u8ba4\u8bed\u8a00"))
             self.assertEqual(volatile, [])
+
+    def test_low_risk_fact_auto_merges_with_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: 200.0)
+            candidate = store.propose(
+                "SignalASI project build is passing",
+                kind="project_state",
+                key="project:signalasi:build",
+                conversation_id="conversation-1",
+                task_id="task-1",
+            )
+
+            self.assertEqual(candidate["status"], "auto_merged")
+            self.assertEqual(candidate["namespace"], "project")
+            self.assertTrue(candidate["resulting_memory_id"])
+            memory = store.get(candidate["resulting_memory_id"])
+            self.assertEqual(memory["temporal_state"], "current")
+            self.assertEqual(memory["evidence"][0]["task_id"], "task-1")
+
+    def test_identity_and_security_candidates_wait_for_review(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            identity = store.propose(
+                "The user display name is Ada",
+                kind="identity",
+                key="user:display-name",
+            )
+            security = store.propose(
+                "Require confirmation before sending external messages",
+                kind="security",
+                key="security:external-message-confirmation",
+            )
+
+            self.assertEqual(identity["status"], "pending_review")
+            self.assertEqual(security["status"], "pending_review")
+            self.assertEqual(store.stats()["pending"], 2)
+            self.assertEqual(store.stats()["active"], 0)
+
+    def test_sensitive_conversation_does_not_leak_into_episode_memory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            learned = store.evolve(
+                "My name is Ada and this should be used in future conversations",
+                "Understood. I will use Ada as your display name in future conversations.",
+                conversation_id="conversation-identity",
+                task_id="task-identity",
+            )
+
+            self.assertEqual(len(learned), 1)
+            self.assertEqual(learned[0]["kind"], "identity")
+            self.assertEqual(learned[0]["status"], "pending_review")
+            self.assertEqual(store.stats()["active"], 0)
+
+    def test_private_candidate_is_redacted_and_never_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            blocked = store.propose(
+                "Do not save this password=top-secret-value",
+                kind="security",
+            )
+
+            self.assertEqual(blocked["status"], "private_blocked")
+            self.assertEqual(blocked["content"], "")
+            self.assertFalse(blocked["persisted"])
+            self.assertEqual(store.list_candidates(), [])
+            self.assertEqual(store.stats()["total"], 0)
+            learned = store.evolve(
+                "Remember that api_key=top-secret-value",
+                "I will keep this credential available for future tasks.",
+                task_id="task-secret",
+            )
+            self.assertEqual(learned[0]["status"], "private_blocked")
+            self.assertEqual(learned[0]["content"], "")
+            self.assertEqual(store.stats()["total"], 0)
+
+    def test_conflict_waits_for_review_then_preserves_superseded_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            clock = iter((300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0))
+            store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: next(clock))
+            previous = store.remember(
+                "The device runtime is stable",
+                kind="device_state",
+                key="device:runtime-state",
+                evidence=[{"source": "health-check-1"}],
+            )
+            candidate = store.propose(
+                "The device runtime is blocked",
+                kind="device_state",
+                key="device:runtime-state",
+                evidence=[{"source": "health-check-2"}],
+            )
+
+            self.assertEqual(candidate["status"], "conflicted")
+            self.assertEqual(store.get(previous["id"])["status"], "active")
+            approved = store.approve_candidate(candidate["id"])
+            self.assertEqual(approved["status"], "approved")
+            old = store.get(previous["id"])
+            current = store.get(approved["resulting_memory_id"])
+            self.assertEqual(old["status"], "superseded")
+            self.assertEqual(old["temporal_state"], "deprecated")
+            self.assertEqual(old["evidence"][0]["source"], "health-check-1")
+            self.assertEqual(current["evidence"][0]["source"], "health-check-2")
+
+    def test_explicit_replacement_auto_supersedes_old_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            previous = store.remember(
+                "SignalASI settings is Control Center",
+                kind="project_state",
+                key="project:settings-name",
+            )
+            replacement = store.propose(
+                "SignalASI settings is now Agent Center",
+                kind="project_state",
+                key="project:settings-name",
+            )
+
+            self.assertEqual(replacement["status"], "auto_merged")
+            self.assertEqual(store.get(previous["id"])["status"], "superseded")
+            self.assertEqual(store.list(status="history")[0]["id"], previous["id"])
+
+    def test_namespaces_isolate_identical_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            user = store.remember(
+                "Use a concise response style",
+                kind="fact",
+                key="response-style",
+                namespace="user",
+            )
+            project = store.remember(
+                "Use a detailed release report",
+                kind="fact",
+                key="response-style",
+                namespace="project",
+            )
+
+            self.assertEqual(store.get(user["id"])["status"], "active")
+            self.assertEqual(store.get(project["id"])["status"], "active")
+            self.assertEqual(store.stats()["active"], 2)
+
+    def test_rejected_candidate_remains_auditable_after_reload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "memory.db"
+            store = DesktopMemoryStore(path)
+            candidate = store.propose(
+                "Prefer compact task summaries",
+                kind="preference",
+                key="user:summary-style",
+            )
+            rejected = store.reject_candidate(candidate["id"])
+
+            self.assertEqual(rejected["status"], "rejected")
+            reloaded = DesktopMemoryStore(path)
+            self.assertEqual(
+                reloaded.list_candidates(statuses=("rejected",))[0]["review_note"],
+                "user_rejected",
+            )
+
+    def test_concurrent_proposals_collapse_to_one_pending_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                candidates = list(executor.map(
+                    lambda _index: store.propose(
+                        "Prefer concise release summaries",
+                        kind="preference",
+                        key="user:release-summary-style",
+                    ),
+                    range(24),
+                ))
+
+            self.assertEqual(len({candidate["id"] for candidate in candidates}), 1)
+            self.assertEqual(len(store.list_candidates()), 1)
 
 
 class DesktopSkillRegistryTest(unittest.TestCase):

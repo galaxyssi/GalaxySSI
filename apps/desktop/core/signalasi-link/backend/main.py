@@ -598,6 +598,7 @@ class DesktopMemoryReq(BaseModel):
     content: str
     kind: str = "fact"
     importance: float = 0.6
+    namespace: str = ""
 
 
 class DesktopSkillReq(BaseModel):
@@ -1305,13 +1306,52 @@ def api_desktop_control_revoke(authorization_id: str, request: Request):
 
 
 @app.get("/api/desktop-memory")
-def api_desktop_memory(request: Request, query: str = Query(""), limit: int = Query(100)):
+def api_desktop_memory(
+    request: Request,
+    query: str = Query(""),
+    limit: int = Query(100),
+    status: str = Query("active"),
+):
     require_loopback(request)
     from desktop_memory import desktop_memory_store
 
     store = desktop_memory_store()
-    rows = store.search(query, limit=limit) if query.strip() else store.list(limit=limit)
+    rows = (
+        store.search(query, limit=limit)
+        if query.strip() and status == "active"
+        else store.list(limit=limit, status=status)
+    )
     return {"memories": rows, "stats": store.stats()}
+
+
+@app.get("/api/desktop-memory/inbox")
+def api_desktop_memory_inbox(request: Request, limit: int = Query(100)):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    store = desktop_memory_store()
+    return {
+        "candidates": store.list_candidates(limit=limit),
+        "stats": store.stats(),
+    }
+
+
+@app.post("/api/desktop-memory/inbox")
+def api_propose_desktop_memory(req: DesktopMemoryReq, request: Request):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    candidate = desktop_memory_store().propose(
+        req.content,
+        kind=req.kind,
+        importance=req.importance,
+        confidence=0.8,
+        namespace=req.namespace,
+        tags=["api_candidate"],
+    )
+    if candidate is None:
+        raise HTTPException(status_code=400, detail=api_error("desktop_memory_rejected"))
+    return candidate
 
 
 @app.post("/api/desktop-memory")
@@ -1325,10 +1365,33 @@ def api_remember_desktop_memory(req: DesktopMemoryReq, request: Request):
         importance=req.importance,
         confidence=1.0,
         tags=["manual"],
+        namespace=req.namespace,
     )
     if memory is None:
         raise HTTPException(status_code=400, detail=api_error("desktop_memory_rejected"))
     return memory
+
+
+@app.post("/api/desktop-memory/inbox/{candidate_id}/approve")
+def api_approve_desktop_memory_candidate(candidate_id: str, request: Request):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    candidate = desktop_memory_store().approve_candidate(candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail=api_error("memory_candidate_not_pending"))
+    return candidate
+
+
+@app.post("/api/desktop-memory/inbox/{candidate_id}/reject")
+def api_reject_desktop_memory_candidate(candidate_id: str, request: Request):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    candidate = desktop_memory_store().reject_candidate(candidate_id)
+    if candidate is None:
+        raise HTTPException(status_code=404, detail=api_error("memory_candidate_not_pending"))
+    return candidate
 
 
 @app.delete("/api/desktop-memory/{memory_id}")

@@ -48,9 +48,14 @@ contextBridge.exposeInMainWorld("signalasi", {
     ipcRenderer.invoke("proactive-runs:list", taskId, limit),
   cancelProactiveRun: (runId) => ipcRenderer.invoke("proactive-runs:cancel", runId),
   getDesktopControl: () => ipcRenderer.invoke("desktop-control:get"),
-  getDesktopMemory: (query, limit) => ipcRenderer.invoke("desktop-memory:list", query, limit),
+  getDesktopMemory: (query, limit, status) =>
+    ipcRenderer.invoke("desktop-memory:list", query, limit, status),
+  getDesktopMemoryInbox: (limit) => ipcRenderer.invoke("desktop-memory:inbox", limit),
+  proposeDesktopMemory: (payload) => ipcRenderer.invoke("desktop-memory:propose", payload),
   rememberDesktopMemory: (payload) => ipcRenderer.invoke("desktop-memory:remember", payload),
   forgetDesktopMemory: (memoryId) => ipcRenderer.invoke("desktop-memory:forget", memoryId),
+  reviewDesktopMemoryCandidate: (candidateId, action) =>
+    ipcRenderer.invoke("desktop-memory:review", candidateId, action),
   getDesktopSkills: () => ipcRenderer.invoke("desktop-skills:list"),
   saveDesktopSkill: (payload) => ipcRenderer.invoke("desktop-skills:save", payload),
   setDesktopSkillEnabled: (skillId, enabled) => ipcRenderer.invoke("desktop-skills:enabled", skillId, enabled),
