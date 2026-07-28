@@ -34,6 +34,69 @@ data class AgentExecutionLoopTimelineProjection(
     val payload: AgentNativeJsonObject
 )
 
+enum class AgentRunTimelineKind {
+    PLAN,
+    TOOL,
+    RESULT,
+    FAILURE,
+    RETRY,
+    ACT,
+    OBSERVE,
+    VERIFY,
+    LEARN,
+    OTHER
+}
+
+data class AgentRunTimelineCoverage(
+    val hasPlan: Boolean,
+    val toolEventCount: Int,
+    val hasResult: Boolean,
+    val hasFailure: Boolean,
+    val retryEventCount: Int
+) {
+    val terminal: Boolean
+        get() = hasResult || hasFailure
+    val complete: Boolean
+        get() = hasPlan && terminal
+}
+
+object AgentRunTimelineContract {
+    const val VERSION = "signalasi.run-timeline/1.0"
+
+    fun kind(event: AgentRunControlEvent): AgentRunTimelineKind {
+        val declared = event.payload["timeline_kind"]
+            ?.toString()
+            ?.trim()
+            ?.uppercase(Locale.ROOT)
+            ?.let { value -> AgentRunTimelineKind.entries.firstOrNull { it.name == value } }
+        if (declared != null) return declared
+        return when (event.type) {
+            AgentRunControlEventType.PLANNING -> AgentRunTimelineKind.PLAN
+            AgentRunControlEventType.TOOL_STARTED,
+            AgentRunControlEventType.TOOL_PROGRESS,
+            AgentRunControlEventType.TOOL_COMPLETED,
+            AgentRunControlEventType.TOOL_PERMISSION_REQUIRED -> AgentRunTimelineKind.TOOL
+            AgentRunControlEventType.RETRYING,
+            AgentRunControlEventType.RUN_RECOVERED -> AgentRunTimelineKind.RETRY
+            AgentRunControlEventType.RUN_COMPLETED -> AgentRunTimelineKind.RESULT
+            AgentRunControlEventType.RUN_FAILED,
+            AgentRunControlEventType.RUN_CANCELLED -> AgentRunTimelineKind.FAILURE
+            else -> AgentRunTimelineKind.OTHER
+        }
+    }
+
+    fun coverage(events: List<AgentRunControlEvent>): AgentRunTimelineCoverage {
+        val kinds = events.map(::kind)
+        return AgentRunTimelineCoverage(
+            hasPlan = AgentRunTimelineKind.PLAN in kinds,
+            toolEventCount = kinds.count { it == AgentRunTimelineKind.TOOL },
+            hasResult = AgentRunTimelineKind.RESULT in kinds,
+            hasFailure = AgentRunTimelineKind.FAILURE in kinds,
+            retryEventCount = kinds.count { it == AgentRunTimelineKind.RETRY }
+        )
+    }
+}
+
 object AgentExecutionLoopTimelinePolicy {
     fun actionsForPhase(phase: AgentPhase): List<AgentExecutionLoopTimelineAction> = when (phase) {
         AgentPhase.PLANNING,
@@ -90,12 +153,34 @@ object AgentExecutionLoopTimelinePolicy {
         val label = event.phase.takeUnless { it == AgentExecutionLoopPhase.COMPLETED }
             ?.let { AgentExecutionLoopTimelineLabel.valueOf(it.name) }
         val actionId = event.snapshot.lastActionId
+        val timelineKind = when (event.phase) {
+            AgentExecutionLoopPhase.PLAN -> AgentRunTimelineKind.PLAN
+            AgentExecutionLoopPhase.ACT -> if (event.toolCall) {
+                AgentRunTimelineKind.TOOL
+            } else {
+                AgentRunTimelineKind.ACT
+            }
+            AgentExecutionLoopPhase.OBSERVE -> AgentRunTimelineKind.OBSERVE
+            AgentExecutionLoopPhase.REPLAN -> AgentRunTimelineKind.RETRY
+            AgentExecutionLoopPhase.VERIFY -> AgentRunTimelineKind.VERIFY
+            AgentExecutionLoopPhase.FINALIZE,
+            AgentExecutionLoopPhase.COMPLETED -> AgentRunTimelineKind.RESULT
+            AgentExecutionLoopPhase.LEARN -> AgentRunTimelineKind.LEARN
+            AgentExecutionLoopPhase.BLOCKED,
+            AgentExecutionLoopPhase.FAILED,
+            AgentExecutionLoopPhase.CANCELLED -> AgentRunTimelineKind.FAILURE
+            AgentExecutionLoopPhase.WAITING_CONFIRMATION,
+            AgentExecutionLoopPhase.WAITING_RESPONSE,
+            AgentExecutionLoopPhase.PAUSED -> AgentRunTimelineKind.OTHER
+        }
         return AgentExecutionLoopTimelineProjection(
             controlEventType = controlType,
             label = label,
             stepId = actionId,
             toolCallId = actionId.takeIf { event.toolCall }.orEmpty(),
             payload = mapOf(
+                "timeline_contract" to AgentRunTimelineContract.VERSION,
+                "timeline_kind" to timelineKind.name.lowercase(Locale.ROOT),
                 "loop_phase" to event.phase.name.lowercase(Locale.ROOT),
                 "previous_loop_phase" to event.previousPhase?.name.orEmpty().lowercase(Locale.ROOT),
                 "loop_revision" to event.snapshot.revision,

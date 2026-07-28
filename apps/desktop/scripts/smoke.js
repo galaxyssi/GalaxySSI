@@ -234,7 +234,7 @@ async function smoke() {
 
   log("checking backend Python syntax");
   const python = findBackendPython();
-  run(python, ["-m", "py_compile", "agent_gateway.py", "agent_task_manager.py", "main.py", "mqtt_bridge.py", "agent_config.py", "desktop_native_tools.py"], { cwd: backendDir });
+  run(python, ["-m", "py_compile", "agent_gateway.py", "agent_task_manager.py", "run_timeline.py", "main.py", "mqtt_bridge.py", "agent_config.py", "desktop_native_tools.py"], { cwd: backendDir });
 
   log("starting or reusing backend");
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-smoke-"));

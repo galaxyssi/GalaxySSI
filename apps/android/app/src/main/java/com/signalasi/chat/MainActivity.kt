@@ -4532,6 +4532,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun observeCompletedAgentRun(run: AgentRecordedRun) {
         val existing = agentRunEventStore.events(run.runId).lastOrNull()
+        ensureRecordedRunTimeline(
+            run = run,
+            messageId = existing?.messageId.orEmpty().ifBlank { run.runId },
+            taskId = existing?.taskId.orEmpty().ifBlank { run.taskThreadId },
+            agentId = existing?.agentId.orEmpty().ifBlank { "signalasi-mobile" }
+        )
         appendRunControlEvent(
             run = run,
             messageId = existing?.messageId.orEmpty().ifBlank { run.runId },
@@ -4541,7 +4547,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 AgentRecordedRunStatus.COMPLETED -> AgentRunControlEventType.RUN_COMPLETED
                 AgentRecordedRunStatus.CANCELLED -> AgentRunControlEventType.RUN_CANCELLED
                 AgentRecordedRunStatus.RUNNING, AgentRecordedRunStatus.FAILED -> AgentRunControlEventType.RUN_FAILED
-            }
+            },
+            payload = mapOf(
+                "timeline_contract" to AgentRunTimelineContract.VERSION,
+                "timeline_kind" to if (run.status == AgentRecordedRunStatus.COMPLETED) "result" else "failure",
+                "run_status" to run.status.name.lowercase(Locale.ROOT),
+                "tool_call_count" to run.toolCalls.size,
+                "artifact_count" to run.artifacts.size,
+                "execution_resource_id" to run.executionResourceId
+            )
         )
         val privateMode = agentTranscriptStore.context(run.conversationId).privateMode
         agentLearningEngine.observeCompletedRun(
@@ -4550,6 +4564,84 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             privateMode = privateMode,
             memoryCaptureEnabled = mobileNativeAgent.safetySettings().memoryCapture
         )
+    }
+
+    private fun ensureRecordedRunTimeline(
+        run: AgentRecordedRun,
+        messageId: String,
+        taskId: String,
+        agentId: String
+    ) {
+        var events = agentRunEventStore.events(run.runId)
+        if (!AgentRunTimelineContract.coverage(events).hasPlan) {
+            val planStepCount = runCatching { JSONArray(run.agentPlanJson).length() }.getOrDefault(0)
+            appendRunControlEvent(
+                run = run,
+                messageId = messageId,
+                taskId = taskId,
+                agentId = agentId,
+                type = AgentRunControlEventType.PLANNING,
+                payload = mapOf(
+                    "timeline_contract" to AgentRunTimelineContract.VERSION,
+                    "timeline_kind" to "plan",
+                    "plan_step_count" to planStepCount,
+                    "synthetic_from_recorded_run" to true
+                ),
+                stepId = "plan",
+                timestampMillis = run.createdAtMillis
+            )
+            events = agentRunEventStore.events(run.runId)
+        }
+        run.toolCalls.forEach { call ->
+            val hasStart = events.any {
+                it.toolCallId == call.id && it.type == AgentRunControlEventType.TOOL_STARTED
+            }
+            if (!hasStart) {
+                appendRunControlEvent(
+                    run = run,
+                    messageId = messageId,
+                    taskId = taskId,
+                    agentId = agentId,
+                    type = AgentRunControlEventType.TOOL_STARTED,
+                    payload = mapOf(
+                        "timeline_contract" to AgentRunTimelineContract.VERSION,
+                        "timeline_kind" to "tool",
+                        "tool_id" to call.toolName,
+                        "status" to "running",
+                        "synthetic_from_recorded_run" to true
+                    ),
+                    stepId = call.id,
+                    toolCallId = call.id,
+                    timestampMillis = call.startedAtMillis.takeIf { it > 0L } ?: run.createdAtMillis
+                )
+                events = agentRunEventStore.events(run.runId)
+            }
+            val hasCompletion = events.any {
+                it.toolCallId == call.id && it.type == AgentRunControlEventType.TOOL_COMPLETED
+            }
+            if (!hasCompletion) {
+                appendRunControlEvent(
+                    run = run,
+                    messageId = messageId,
+                    taskId = taskId,
+                    agentId = agentId,
+                    type = AgentRunControlEventType.TOOL_COMPLETED,
+                    payload = mapOf(
+                        "timeline_contract" to AgentRunTimelineContract.VERSION,
+                        "timeline_kind" to "tool",
+                        "tool_id" to call.toolName,
+                        "status" to call.status.name.lowercase(Locale.ROOT),
+                        "synthetic_from_recorded_run" to true
+                    ),
+                    stepId = call.id,
+                    toolCallId = call.id,
+                    timestampMillis = call.completedAtMillis.takeIf { it > 0L }
+                        ?: run.completedAtMillis.takeIf { it > 0L }
+                        ?: System.currentTimeMillis()
+                )
+                events = agentRunEventStore.events(run.runId)
+            }
+        }
     }
 
     private fun recordNativeToolLifecycleEvent(event: AgentNativeToolLifecycleEvent) {
@@ -4576,6 +4668,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             agentId = "signalasi-mobile",
             type = type,
             payload = buildMap {
+                put("timeline_contract", AgentRunTimelineContract.VERSION)
+                put("timeline_kind", "tool")
                 put("tool_id", event.toolId)
                 event.status?.let { put("status", it.wireValue) }
                 if (event.progressStage.isNotBlank()) put("progress_stage", event.progressStage)

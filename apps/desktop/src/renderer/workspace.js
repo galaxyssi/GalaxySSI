@@ -409,7 +409,9 @@ function renderTurn(task) {
     : (TERMINAL_STATES.has(task.status)
       ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}<button class="retry-task" data-retry-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Retry"))}</button></article>`
       : "");
-  const events = Array.isArray(task.events) ? task.events : [];
+  const events = Array.isArray(task?.run_timeline?.events)
+    ? task.run_timeline.events
+    : (Array.isArray(task.events) ? task.events : []);
   const latencySummary = renderLatencySummary(task);
   const detail = events.length
     ? `<div class="event-list">${events.map((event) => `<div class="event-row ${escapeHtml(event.status || "")}"><span></span><div><strong>${escapeHtml(t(event.title || "Task step"))}</strong>${event.detail ? `<small>${escapeHtml(event.detail)}</small>` : ""}</div></div>`).join("")}</div>`
@@ -451,7 +453,7 @@ function renderConversation(force = false) {
     task.updated_at,
     task.result?.length,
     task.output_files?.length,
-    task.events?.length,
+    task.run_timeline?.events?.length ?? task.events?.length,
     task.delivery_trace?.length,
     task.latency?.first_output_ms,
     task.latency?.total_ms,

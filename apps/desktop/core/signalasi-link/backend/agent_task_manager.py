@@ -155,10 +155,15 @@ class AgentTask:
 
     def record(self) -> dict:
         data = self.public(include_prompt=True)
+        # The timeline is deterministically rebuilt from durable task fields and
+        # raw events, so storing a second copy would only inflate the task DB.
+        data.pop("run_timeline", None)
         data["events"] = list(self.events)
         return data
 
     def public(self, include_prompt: bool = False) -> dict:
+        from run_timeline import project_run_timeline
+
         executor_id = str(self.delegate_agent_id or self.agent_id or "desktop").strip()
         location = desktop_execution_location()
         data = {
@@ -213,6 +218,7 @@ class AgentTask:
                 "completed_at": self.completed_at,
             },
         }
+        data["run_timeline"] = project_run_timeline(self)
         if include_prompt:
             data["prompt"] = self.prompt
         return data
