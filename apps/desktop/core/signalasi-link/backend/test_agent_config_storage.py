@@ -116,6 +116,51 @@ class AgentConfigStorageTest(unittest.TestCase):
             self.assertEqual("brave-secret", persisted["brave_api_key"])
             self.assertEqual("github-secret", persisted["github_token"])
 
+    def test_cli_runtime_settings_and_custom_transport_are_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory) / "state"
+            with patch.dict(
+                os.environ,
+                {"SIGNALASI_STATE_DIR": str(state_dir), "SIGNALASI_CONFIG_PATH": ""},
+                clear=False,
+            ):
+                agent_config.save_config({
+                    "cli_runtime": {
+                        "enabled": True,
+                        "max_processes": 99,
+                        "max_processes_per_agent": 3,
+                        "idle_timeout_seconds": 42,
+                        "max_requests_per_process": 12,
+                    },
+                    "custom_agents": [{
+                        "id": "research-agent",
+                        "name": "Research Agent",
+                        "command": "research-agent --serve-jsonl",
+                        "transport": "jsonl",
+                        "pool_size": 2,
+                        "prewarm": True,
+                    }],
+                })
+                runtime = agent_config.cli_runtime_config()
+                custom = agent_config.custom_agent_configs()
+
+            self.assertEqual(32, runtime["max_processes"])
+            self.assertEqual(3, runtime["max_processes_per_agent"])
+            self.assertEqual(42, runtime["idle_timeout_seconds"])
+            self.assertEqual("signalasi-jsonl-v1", runtime["transports"]["research-agent"]["mode"])
+            self.assertEqual("signalasi-jsonl-v1", custom[0]["transport"])
+            self.assertEqual(2, custom[0]["pool_size"])
+            self.assertTrue(custom[0]["prewarm"])
+
+    def test_jsonl_command_marker_enables_persistent_transport_explicitly(self):
+        runtime = agent_config.cli_agent_runtime_config(
+            "custom-agent",
+            ["python", "agent.py", "--serve-jsonl"],
+        )
+
+        self.assertTrue(runtime["enabled"])
+        self.assertEqual("signalasi-jsonl-v1", runtime["mode"])
+
 
 if __name__ == "__main__":
     unittest.main()

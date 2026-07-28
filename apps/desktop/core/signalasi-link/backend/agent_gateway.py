@@ -19,12 +19,22 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from agent_config import cloud_model_config, command_for, custom_agent_config, custom_agent_configs, language_policy_config, local_model_config
+from agent_config import (
+    cli_agent_runtime_config,
+    cli_runtime_config,
+    cloud_model_config,
+    command_for,
+    custom_agent_config,
+    custom_agent_configs,
+    language_policy_config,
+    local_model_config,
+)
 from desktop_agent_adapters import (
     AgentAdapterDescriptor,
     AgentAdapterExecutionError,
@@ -36,6 +46,10 @@ from desktop_agent_adapters import (
 from desktop_agent_runtime_server import (
     DesktopAgentRuntimeServer,
     DesktopAgentRuntimeStore,
+)
+from external_cli_process_pool import (
+    ExternalCliProcessPool,
+    PersistentCliRequest,
 )
 from web_intelligence import (
     FINALIZE_WEB_RESEARCH_PROMPT,
@@ -78,6 +92,9 @@ _agent_adapter_lock = threading.RLock()
 _agent_adapter_provider: DesktopAgentProvider | None = None
 _agent_runtime_server_lock = threading.RLock()
 _agent_runtime_server: DesktopAgentRuntimeServer | None = None
+_external_cli_pool_lock = threading.RLock()
+_external_cli_pool: ExternalCliProcessPool | None = None
+_external_cli_pool_config_digest = ""
 _cloud_web_lock = threading.RLock()
 _cloud_web_service: WebIntelligenceService | None = None
 
@@ -876,6 +893,10 @@ def _refine_stateless_context_summary(
 
 def _cancel_agent_adapter_run(run_id: str) -> None:
     try:
+        external_cli_process_pool().cancel(run_id)
+    except Exception:
+        pass
+    try:
         from agent_task_manager import agent_task_manager
 
         agent_task_manager.cancel(run_id)
@@ -926,6 +947,89 @@ def shutdown_desktop_agent_runtime_server(wait: bool = False) -> None:
         runtime.shutdown(wait=wait)
 
 
+def external_cli_process_pool() -> ExternalCliProcessPool:
+    global _external_cli_pool, _external_cli_pool_config_digest
+    config = cli_runtime_config()
+    digest = hashlib.sha256(
+        json.dumps(config, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    with _external_cli_pool_lock:
+        if _external_cli_pool is not None and digest != _external_cli_pool_config_digest:
+            _external_cli_pool.shutdown()
+            _external_cli_pool = None
+        if _external_cli_pool is None:
+            _external_cli_pool = ExternalCliProcessPool(
+                max_processes=config["max_processes"],
+                max_processes_per_agent=config["max_processes_per_agent"],
+                idle_timeout_seconds=config["idle_timeout_seconds"],
+                max_requests_per_process=config["max_requests_per_process"],
+            )
+            _external_cli_pool_config_digest = digest
+        return _external_cli_pool
+
+
+def shutdown_external_cli_process_pool() -> None:
+    global _external_cli_pool, _external_cli_pool_config_digest
+    with _external_cli_pool_lock:
+        pool = _external_cli_pool
+        _external_cli_pool = None
+        _external_cli_pool_config_digest = ""
+    if pool is not None:
+        pool.shutdown()
+
+
+def prewarm_external_cli_agents() -> dict:
+    config = cli_runtime_config()
+    warmed: dict[str, int] = {}
+    if not config["enabled"]:
+        return {"enabled": False, "warmed": warmed}
+    root = _state_root() / "cli-runtime"
+    root.mkdir(parents=True, exist_ok=True)
+    pool = external_cli_process_pool()
+    for spec in all_agent_specs().values():
+        command = _command_for(spec)
+        if not command:
+            continue
+        runtime = cli_agent_runtime_config(spec.id, command)
+        if runtime["mode"] != "signalasi-jsonl-v1" or not runtime["prewarm"]:
+            continue
+        warmed[spec.id] = pool.prewarm(
+            spec.id,
+            command=command,
+            env={
+                **_agent_env(spec),
+                "SIGNALASI_PERSISTENT_AGENT": "1",
+            },
+            cwd=root,
+            count=runtime["pool_size"],
+        )
+    return {"enabled": True, "warmed": warmed}
+
+
+def external_cli_runtime_manifest() -> dict:
+    config = cli_runtime_config()
+    agents = []
+    for spec in all_agent_specs().values():
+        command = _command_for(spec)
+        runtime = cli_agent_runtime_config(spec.id, command or ())
+        agents.append({
+            "agent_id": spec.id,
+            "mode": runtime["mode"],
+            "pool_size": runtime["pool_size"],
+            "prewarm": runtime["prewarm"],
+            "configured": bool(command),
+            "persistent": runtime["mode"] in {
+                "signalasi-jsonl-v1",
+                "managed-app-server",
+            },
+        })
+    return {
+        "enabled": config["enabled"],
+        "agents": agents,
+        "pool": external_cli_process_pool().health(),
+    }
+
+
 def list_agents(quick: bool = False) -> list[dict]:
     return [agent_status(spec, quick=quick) for spec in visible_agent_specs().values()]
 
@@ -971,12 +1075,14 @@ def connector_diagnostics(quick: bool = False) -> dict:
             "durable_agent_run_receipts",
             "agent_protocol_negotiation",
             "desktop_agent_runtime_server",
+            "external_cli_keepalive_pool",
         ],
         "adapter_provider": {
             "agents": desktop_agent_provider().enumerate(),
             "recoverable_runs": [item.public() for item in desktop_agent_provider().recover()],
         },
         "agent_runtime_server": desktop_agent_runtime_server().health(),
+        "external_cli_runtime": external_cli_runtime_manifest(),
         "ready": ready,
         "needs_setup": needs_setup,
         "agents": agents,
@@ -1654,8 +1760,27 @@ def _run_cli_agent_process(
     try:
         from task_workspace import task_workspace
 
-        args, stdin_text = _apply_prompt(command, text)
-        if spec.id == "codex":
+        cli_runtime = cli_agent_runtime_config(spec.id, command)
+        if (
+            cli_runtime["enabled"]
+            and cli_runtime["mode"] == "signalasi-jsonl-v1"
+            and restricted_workspace
+        ):
+            return (
+                f"[{spec.name}] invocation failed: persistent CLI transport "
+                "requires desktop executor authorization"
+            )
+        persistent_transport = (
+            cli_runtime["enabled"]
+            and cli_runtime["mode"] == "signalasi-jsonl-v1"
+            and not restricted_workspace
+        )
+        if persistent_transport:
+            args = list(command)
+            stdin_text = None
+        else:
+            args, stdin_text = _apply_prompt(command, text)
+        if spec.id == "codex" and not persistent_transport:
             from agent_execution_harness import execution_policy_for
 
             effort = execution_policy_for(original_text).reasoning_effort.value
@@ -1675,7 +1800,8 @@ def _run_cli_agent_process(
         )
         if not execution_directory.is_dir():
             raise RuntimeError("Agent working directory is unavailable")
-        agent_env = _agent_env(spec, restricted_workspace=restricted_workspace)
+        base_agent_env = _agent_env(spec, restricted_workspace=restricted_workspace)
+        agent_env = dict(base_agent_env)
         agent_env.update(
             {
                 "SIGNALASI_TASK_ID": task_id or execution_directory.name,
@@ -1684,6 +1810,57 @@ def _run_cli_agent_process(
                 "SIGNALASI_TEMP_DIR": str(support_directory / "temp"),
             }
         )
+        if persistent_transport:
+            pool_root = _state_root() / "cli-runtime"
+            pool_root.mkdir(parents=True, exist_ok=True)
+
+            def register_process(active_process: subprocess.Popen) -> None:
+                if task_id:
+                    from agent_task_manager import agent_task_manager
+
+                    agent_task_manager.register_process(task_id, active_process)
+
+            pooled = external_cli_process_pool().execute(
+                PersistentCliRequest(
+                    agent_id=spec.id,
+                    prompt=text,
+                    task_id=task_id or str(uuid.uuid4()),
+                    conversation_id=conversation_id,
+                    working_directory=str(execution_directory),
+                    response_language=response_language,
+                    timeout_seconds=spec.timeout,
+                    metadata={
+                        "desktop_access_profile": "desktop_executor",
+                        "transport": "signalasi-jsonl-v1",
+                        "output_directory": str(support_directory / "outputs"),
+                        "temporary_directory": str(support_directory / "temp"),
+                    },
+                    on_process=register_process,
+                ),
+                command=args,
+                env={
+                    **base_agent_env,
+                    "SIGNALASI_PERSISTENT_AGENT": "1",
+                },
+                cwd=pool_root,
+                process_limit=cli_runtime["pool_size"],
+            )
+            if pooled.session_id and conversation_id:
+                from agent_conversation_sessions import agent_conversation_sessions
+
+                agent_conversation_sessions().put(
+                    spec.id,
+                    conversation_id,
+                    pooled.session_id,
+                )
+            reply = clean_agent_output(spec, pooled.reply, text)
+            _mark_native_session_synced(
+                spec,
+                conversation_id,
+                task_id,
+                original_text,
+            )
+            return reply
         process = subprocess.Popen(
             args,
             stdin=subprocess.PIPE if stdin_text is not None else None,

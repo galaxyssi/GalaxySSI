@@ -1,3 +1,4 @@
+import os
 import sys
 import tempfile
 import unittest
@@ -5,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import agent_gateway
+from external_cli_process_pool import ExternalCliProcessPool
 
 
 class AgentCliExecutionTest(unittest.TestCase):
@@ -94,6 +96,96 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertNotIn("HERMES_YOLO_MODE", restricted)
         self.assertEqual("restricted", restricted["SIGNALASI_DESKTOP_ACCESS_PROFILE"])
         self.assertEqual("workspace_only", restricted["SIGNALASI_AGENT_TOOL_MODE"])
+
+    def test_persistent_jsonl_agent_reuses_keepalive_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            startup_log = root / "starts.log"
+            script = root / "persistent_cli.py"
+            script.write_text(
+                "import json, os, sys\n"
+                "with open(os.environ['STARTUP_LOG'], 'a', encoding='utf-8') as handle:\n"
+                "    handle.write(str(os.getpid()) + '\\n')\n"
+                "for line in sys.stdin:\n"
+                "    request = json.loads(line)\n"
+                "    request_id = request.get('id')\n"
+                "    if request.get('method') == 'agent/shutdown':\n"
+                "        print(json.dumps({'id': request_id, 'result': {'stopped': True}}), flush=True)\n"
+                "        break\n"
+                "    prompt = str((request.get('params') or {}).get('prompt') or '')\n"
+                "    print(json.dumps({'id': request_id, 'result': {'reply': 'KEEPALIVE:' + prompt}}), flush=True)\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(script), "--serve-jsonl"]
+            pool = ExternalCliProcessPool(start_janitor=False)
+            old_startup_log = os.environ.get("STARTUP_LOG")
+            os.environ["STARTUP_LOG"] = str(startup_log)
+            try:
+                with patch.object(agent_gateway, "_command_for", return_value=command), patch.object(
+                    agent_gateway,
+                    "cli_agent_runtime_config",
+                    return_value={
+                        "enabled": True,
+                        "mode": "signalasi-jsonl-v1",
+                        "pool_size": 1,
+                        "prewarm": False,
+                    },
+                ), patch.object(
+                    agent_gateway,
+                    "external_cli_process_pool",
+                    return_value=pool,
+                ), patch.object(
+                    agent_gateway,
+                    "_state_root",
+                    return_value=root,
+                ):
+                    first = agent_gateway.ask_cli_agent(
+                        agent_gateway.BASE_AGENTS["claude"],
+                        "one",
+                        task_id="task-one",
+                    )
+                    second = agent_gateway.ask_cli_agent(
+                        agent_gateway.BASE_AGENTS["claude"],
+                        "two",
+                        task_id="task-two",
+                    )
+            finally:
+                pool.shutdown()
+                if old_startup_log is None:
+                    os.environ.pop("STARTUP_LOG", None)
+                else:
+                    os.environ["STARTUP_LOG"] = old_startup_log
+            starts = startup_log.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual("KEEPALIVE:one", first)
+        self.assertEqual("KEEPALIVE:two", second)
+        self.assertEqual(1, len(starts))
+
+    def test_restricted_access_rejects_persistent_transport_without_starting_process(self):
+        with patch.object(
+            agent_gateway,
+            "cli_agent_runtime_config",
+            return_value={
+                "enabled": True,
+                "mode": "signalasi-jsonl-v1",
+                "pool_size": 1,
+                "prewarm": False,
+            },
+        ), patch.object(agent_gateway, "external_cli_process_pool") as pool:
+            reply = agent_gateway._run_cli_agent_process(
+                agent_gateway.BASE_AGENTS["claude"],
+                ["fake-agent", "--serve-jsonl"],
+                "private request",
+                original_text="private request",
+                task_id="restricted-task",
+                conversation_id="",
+                response_language="en",
+                restricted_workspace=True,
+                retried_stale_session=False,
+            )
+
+        self.assertIn("requires desktop executor authorization", reply)
+        pool.assert_not_called()
 
 
 if __name__ == "__main__":
