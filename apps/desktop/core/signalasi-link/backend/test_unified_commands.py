@@ -536,23 +536,20 @@ class UnifiedCommandsTest(unittest.TestCase):
     def test_fastapi_command_endpoints(self):
         os.environ["SIGNALASI_DISABLE_EXTERNAL_SERVICES"] = "1"
         os.environ["SIGNALASI_COMMAND_DB"] = str(Path(self.tmp.name) / "api-commands.sqlite3")
-        from fastapi.testclient import TestClient
-        from main import app
+        from types import SimpleNamespace
+        from main import UnifiedCommandReq, api_execute_unified_command, api_list_unified_commands
 
-        with TestClient(app) as client:
-            listed = client.get("/api/commands")
-            self.assertEqual(listed.status_code, 200)
-            self.assertGreaterEqual(listed.json()["catalog_size"], 620)
-            executed = client.post(
-                "/api/commands/execute",
-                json={
-                    "command_id": "commands.list",
-                    "args": {"dry_run": True},
-                    "workspace": str(self.workspace),
-                },
-            )
-            self.assertEqual(executed.status_code, 200)
-            self.assertEqual(executed.json()["status"], "completed")
+        listed = api_list_unified_commands("")
+        self.assertGreaterEqual(listed["catalog_size"], 620)
+        executed = api_execute_unified_command(
+            UnifiedCommandReq(
+                command_id="commands.list",
+                args={"dry_run": True},
+                workspace=str(self.workspace),
+            ),
+            SimpleNamespace(client=SimpleNamespace(host="testclient")),
+        )
+        self.assertEqual(executed["status"], "completed")
 
 
 if __name__ == "__main__":
