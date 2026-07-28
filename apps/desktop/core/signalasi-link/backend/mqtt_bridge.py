@@ -1979,7 +1979,7 @@ def _route_evolution_payload(mqttc, paired_client: dict, payload: dict) -> bool:
                 reproduction_steps=payload.get("reproduction_steps") or [],
                 risk_level=str(payload.get("risk_level") or "medium"),
                 max_attempts=int(payload.get("max_attempts") or 3),
-                agent_id=str(payload.get("agent_id") or "codex"),
+                agent_id=str(payload.get("agent_id") or "auto"),
                 client_route_id=route_id,
             )
             if payload.get("start", True):

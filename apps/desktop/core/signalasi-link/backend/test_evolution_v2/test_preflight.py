@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from evolution_v2.preflight import PreflightInspector
 from evolution_v2.runner import CommandResult
@@ -36,6 +37,26 @@ class PreflightInspectorTests(unittest.TestCase):
 
         self.assertEqual("missing", check.status)
         self.assertTrue(check.required)
+
+    def test_implementation_agent_report_omits_commands_and_credentials(self) -> None:
+        snapshot = {
+            "selected_agent_id": "codex",
+            "agents": [{
+                "id": "codex",
+                "name": "Codex",
+                "kind": "local-cli",
+                "status": "ready",
+                "capabilities": ["code", "files", "terminal"],
+                "selected": True,
+            }],
+        }
+        with patch("agent_gateway.evolution_agent_candidates", return_value=snapshot):
+            check = PreflightInspector(Path.cwd(), runner=FakeRunner())._implementation_agents()
+
+        self.assertEqual("passed", check.status)
+        self.assertEqual("codex", check.details["selected_agent_id"])
+        self.assertNotIn("command", str(check.public()).casefold())
+        self.assertNotIn("credential", str(check.public()).casefold())
 
 
 if __name__ == "__main__":

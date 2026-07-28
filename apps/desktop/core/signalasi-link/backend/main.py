@@ -549,7 +549,7 @@ class EvolutionTaskCreateReq(BaseModel):
     reproduction_steps: list[str] = Field(default_factory=list)
     risk_level: str = "medium"
     max_attempts: int = 3
-    agent_id: str = "codex"
+    agent_id: str = "auto"
     start: bool = True
 
 

@@ -88,7 +88,7 @@ Forbidden:
 Finish with a concise summary of files changed, tests added, residual risks and rollback behavior.
 """.strip()
     return ask_evolution_agent(
-        task.agent_id,
+        attempt.agent_id or task.agent_id,
         prompt,
         task_id=f"{task.task_id}-a{attempt.number}",
         working_directory=worktree,

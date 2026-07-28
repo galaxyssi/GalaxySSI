@@ -33,6 +33,7 @@ class TaskMetadata:
     roadmap_item_ids: list[str] = field(default_factory=list)
     issue_signal_ids: list[str] = field(default_factory=list)
     campaign_id: str = ""
+    source_commit: str = ""
     review: dict[str, Any] = field(default_factory=dict)
     provenance_path: str = ""
     ci: dict[str, Any] = field(default_factory=dict)

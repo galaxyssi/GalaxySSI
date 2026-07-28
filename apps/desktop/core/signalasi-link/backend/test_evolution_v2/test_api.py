@@ -33,6 +33,9 @@ def request_from(host: str) -> Request:
 
 
 class ApiBoundaryTests(unittest.TestCase):
+    def test_materialize_defaults_to_automatic_agent_selection(self):
+        self.assertEqual("auto", MaterializeReq().agent_id)
+
     def test_loopback_request_reaches_runtime(self):
         expected = object()
         with patch("evolution_v2.api.evolution_v2_runtime", return_value=expected):

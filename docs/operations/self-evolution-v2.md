@@ -17,6 +17,14 @@ $env:SIGNALASI_SOURCE_ROOT = "C:\src\SignalASI"
 python apps\desktop\scripts\evolution-preflight.py --repo-root $env:SIGNALASI_SOURCE_ROOT
 ```
 
+If ignored build runtimes live in another explicitly trusted checkout, point dependency discovery
+at that checkout. Desktop mounts only the Electron, Python, and embedded Android gate directories,
+then detaches them before staging the candidate:
+
+```powershell
+$env:SIGNALASI_EVOLUTION_DEPENDENCY_ROOT = "C:\trusted\SignalASI"
+```
+
 The equivalent POSIX setup is:
 
 ```bash
@@ -52,6 +60,17 @@ python apps\desktop\scripts\evolution-cli.py audit
 
 `source_root_missing`
 : Set `SIGNALASI_SOURCE_ROOT` to a Git checkout containing `.git` and `apps`.
+
+`source_fetch_failed`
+: Restore access to `origin/main` and retry. No candidate worktree is created before the fetch
+  succeeds.
+
+`agent_unavailable`
+: Configure a local/custom CLI coding Agent and verify its executable and runtime health.
+
+`implementation_channel_failed`
+: The failed Agent is avoided on the next attempt when another healthy implementer is available.
+  A sole healthy Agent remains retryable.
 
 `github_auth_missing`
 : Run `gh auth login` on Desktop. Do not copy a token into Android or evolution state.
