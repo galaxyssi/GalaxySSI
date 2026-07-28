@@ -11,6 +11,7 @@ starting point for shell scripts and local tools.
 from __future__ import annotations
 
 import os
+import json
 import sys
 
 
@@ -21,13 +22,51 @@ def read_prompt() -> str:
     return " ".join(args).strip()
 
 
-def main() -> int:
-    prompt = read_prompt()
+def _reply(prompt: str) -> str:
     name = os.environ.get("SIGNALASI_CUSTOM_AGENT_NAME", "Custom Agent").strip() or "Custom Agent"
     if not prompt:
-        print(f"[{name}] Ready. Send me a message from SignalASI.")
-        return 0
-    print(f"[{name}] Request received. Custom Agent is connected.")
+        return f"[{name}] Ready. Send me a message from SignalASI."
+    return f"[{name}] Request received. Custom Agent is connected."
+
+
+def serve_jsonl() -> int:
+    """Serve SignalASI's persistent CLI protocol without closing stdin."""
+    for line in sys.stdin:
+        value = line.strip()
+        if not value:
+            continue
+        try:
+            request = json.loads(value)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(request, dict):
+            continue
+        request_id = str(request.get("id") or "")
+        method = str(request.get("method") or "")
+        if method == "agent/shutdown":
+            print(json.dumps({"id": request_id, "result": {"stopped": True}}), flush=True)
+            return 0
+        if method != "agent/run":
+            print(json.dumps({
+                "id": request_id,
+                "error": {"code": "method_not_found", "message": f"Unsupported method: {method}"},
+            }), flush=True)
+            continue
+        params = request.get("params") if isinstance(request.get("params"), dict) else {}
+        prompt = str(params.get("prompt") or "")
+        print(json.dumps({
+            "protocol": "signalasi.agent-cli/1.0",
+            "id": request_id,
+            "result": {"reply": _reply(prompt)},
+        }), flush=True)
+    return 0
+
+
+def main() -> int:
+    if "--serve-jsonl" in sys.argv[1:]:
+        return serve_jsonl()
+    prompt = read_prompt()
+    print(_reply(prompt))
     return 0
 
 

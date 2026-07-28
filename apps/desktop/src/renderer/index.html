@@ -108,6 +108,9 @@
           <label><span data-i18n="Contact ID">Contact ID</span><input id="customAgentId" maxlength="48" placeholder="research-agent"></label>
           <label><span data-i18n="Display name">Display name</span><input id="customAgentName" maxlength="48" placeholder="Research Agent"></label>
           <label><span data-i18n="Command">Command</span><input id="customAgentCommand" placeholder="python custom_agent_stdio.py -"></label>
+          <label><span data-i18n="Process mode">Process mode</span><select id="customAgentTransport"><option value="oneshot" data-i18n="One task per process">One task per process</option><option value="signalasi-jsonl-v1" data-i18n="Persistent JSONL">Persistent JSONL</option></select></label>
+          <label><span data-i18n="Parallel processes">Parallel processes</span><input id="customAgentPoolSize" type="number" min="1" max="8" step="1" value="1"></label>
+          <label class="check-row"><input id="customAgentPrewarm" type="checkbox"><span><strong data-i18n="Keep ready after Desktop starts">Keep ready after Desktop starts</strong><small data-i18n="Persistent mode requires an Agent that implements the SignalASI JSONL protocol.">Persistent mode requires an Agent that implements the SignalASI JSONL protocol.</small></span></label>
           <button id="saveCustomAgentButton" class="primary-button" data-i18n="Add agent">Add agent</button>
         </div>
       </details>

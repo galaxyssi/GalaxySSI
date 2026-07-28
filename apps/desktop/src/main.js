@@ -206,16 +206,29 @@ async function runUiSmoke() {
           if (document.querySelectorAll("#agentContactList .agent-contact").length > 0) break;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
+        const customDetails = document.querySelector("#agentsPanel .drawer-details");
+        if (customDetails) customDetails.open = true;
         return {
           open: document.querySelector("#utilityDrawer")?.classList.contains("open") || false,
           active: document.querySelector("#agentsPanel")?.classList.contains("active") || false,
           contacts: document.querySelectorAll("#agentContactList .agent-contact").length,
           customFields: document.querySelectorAll("#agentsPanel .form-stack input").length,
+          customTransport: Boolean(document.querySelector("#customAgentTransport")),
+          customPoolSize: Boolean(document.querySelector("#customAgentPoolSize")),
+          customPrewarm: Boolean(document.querySelector("#customAgentPrewarm")),
           contactText: document.querySelector("#agentContactList")?.textContent || ""
         };
       })()
     `);
-    if (!agentsState.open || !agentsState.active || agentsState.contacts < 1 || agentsState.customFields < 3) {
+    if (
+      !agentsState.open
+      || !agentsState.active
+      || agentsState.contacts < 1
+      || agentsState.customFields < 4
+      || !agentsState.customTransport
+      || !agentsState.customPoolSize
+      || !agentsState.customPrewarm
+    ) {
       throw new Error(`Agent drawer did not expose contacts and custom Agent setup: ${JSON.stringify(agentsState)}`);
     }
     await captureSmokeScreenshot(agentsPath);

@@ -58,6 +58,19 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "name": "Custom Agent",
     },
     "custom_agents": [],
+    "cli_runtime": {
+        "enabled": True,
+        "max_processes": 4,
+        "max_processes_per_agent": 2,
+        "idle_timeout_seconds": 300,
+        "max_requests_per_process": 100,
+        "transports": {
+            "codex": {"mode": "managed-app-server", "prewarm": True},
+            "hermes": {"mode": "native-session", "prewarm": False},
+            "claude": {"mode": "native-session", "prewarm": False},
+            "openclaw": {"mode": "native-session", "prewarm": False},
+        },
+    },
 }
 
 
@@ -179,11 +192,11 @@ def custom_agent_config() -> dict[str, str]:
     return {"name": name[:48]}
 
 
-def custom_agent_configs(config: dict[str, Any] | None = None) -> list[dict[str, str]]:
+def custom_agent_configs(config: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     data = (config or load_config()).get("custom_agents", [])
     if not isinstance(data, list):
         return []
-    agents: list[dict[str, str]] = []
+    agents: list[dict[str, Any]] = []
     seen: set[str] = set()
     reserved = {"hermes", "codex", "claude", "openclaw", "local-llm", "cloud-model", "custom-agent"}
     for item in data[:12]:
@@ -202,9 +215,78 @@ def custom_agent_configs(config: dict[str, Any] | None = None) -> list[dict[str,
             "name": name[:48],
             "kind": kind[:32],
             "command": command,
+            "transport": _normalize_cli_transport(item.get("transport")),
+            "pool_size": _bounded_int(item.get("pool_size"), 1, 1, 8),
+            "prewarm": _as_bool(item.get("prewarm"), False),
         })
         seen.add(agent_id)
     return agents
+
+
+def cli_runtime_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = (config or load_config()).get("cli_runtime", {})
+    if not isinstance(data, dict):
+        data = {}
+    raw_transports = data.get("transports", {})
+    transports: dict[str, dict[str, Any]] = {}
+    if isinstance(raw_transports, dict):
+        for raw_agent_id, value in raw_transports.items():
+            agent_id = _normalize_agent_id(str(raw_agent_id or ""))
+            if not agent_id:
+                continue
+            item = value if isinstance(value, dict) else {"mode": value}
+            transports[agent_id] = {
+                "mode": _normalize_cli_transport(item.get("mode")),
+                "pool_size": _bounded_int(item.get("pool_size"), 1, 1, 8),
+                "prewarm": _as_bool(item.get("prewarm"), False),
+            }
+    for item in custom_agent_configs(config or load_config()):
+        if item["transport"] != "oneshot":
+            transports[item["id"]] = {
+                "mode": item["transport"],
+                "pool_size": item["pool_size"],
+                "prewarm": item["prewarm"],
+            }
+    return {
+        "enabled": _as_bool(data.get("enabled"), True),
+        "max_processes": _bounded_int(data.get("max_processes"), 4, 1, 32),
+        "max_processes_per_agent": _bounded_int(
+            data.get("max_processes_per_agent"),
+            2,
+            1,
+            8,
+        ),
+        "idle_timeout_seconds": _bounded_int(
+            data.get("idle_timeout_seconds"),
+            300,
+            5,
+            86_400,
+        ),
+        "max_requests_per_process": _bounded_int(
+            data.get("max_requests_per_process"),
+            100,
+            1,
+            10_000,
+        ),
+        "transports": transports,
+    }
+
+
+def cli_agent_runtime_config(
+    agent_id: str,
+    command: list[str] | tuple[str, ...] = (),
+) -> dict[str, Any]:
+    config = cli_runtime_config()
+    normalized_id = _normalize_agent_id(agent_id)
+    item = dict(config["transports"].get(normalized_id, {}))
+    if "--serve-jsonl" in command:
+        item["mode"] = "signalasi-jsonl-v1"
+    return {
+        "enabled": bool(config["enabled"]),
+        "mode": _normalize_cli_transport(item.get("mode")),
+        "pool_size": _bounded_int(item.get("pool_size"), 1, 1, 8),
+        "prewarm": _as_bool(item.get("prewarm"), False),
+    }
 
 
 def _merge(target: dict[str, Any], source: dict[str, Any]) -> None:
@@ -229,6 +311,24 @@ def _normalize_agent_id(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9_-]+", "-", value.strip().lower())
     cleaned = re.sub(r"-+", "-", cleaned).strip("-_")
     return cleaned[:48]
+
+
+def _normalize_cli_transport(value: Any) -> str:
+    normalized = str(value or "oneshot").strip().lower().replace("_", "-")
+    aliases = {
+        "jsonl": "signalasi-jsonl-v1",
+        "jsonl-v1": "signalasi-jsonl-v1",
+        "persistent-jsonl": "signalasi-jsonl-v1",
+        "app-server": "managed-app-server",
+        "session": "native-session",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in {
+        "oneshot",
+        "signalasi-jsonl-v1",
+        "managed-app-server",
+        "native-session",
+    } else "oneshot"
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:

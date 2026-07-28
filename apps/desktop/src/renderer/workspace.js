@@ -897,18 +897,36 @@ async function saveCustomAgent() {
   const id = $("#customAgentId").value.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "");
   const name = $("#customAgentName").value.trim();
   const command = $("#customAgentCommand").value.trim();
+  const transport = $("#customAgentTransport").value === "signalasi-jsonl-v1"
+    ? "signalasi-jsonl-v1"
+    : "oneshot";
+  const poolSize = Math.max(1, Math.min(8, Number.parseInt($("#customAgentPoolSize").value, 10) || 1));
+  const prewarm = transport === "signalasi-jsonl-v1" && $("#customAgentPrewarm").checked;
   if (!id || !name || !command) {
     showToast(t("Complete the agent ID, name, and command."));
     return;
   }
   const config = state.agentConfig || await window.signalasi.getAgentConfig();
-  const rows = Array.isArray(config.custom_agents) ? config.custom_agents.filter((item) => item.id !== id) : [];
-  rows.push({ id, name, command });
+  const configured = Array.isArray(config.custom_agents) ? config.custom_agents : [];
+  const existing = configured.find((item) => item.id === id) || {};
+  const rows = configured.filter((item) => item.id !== id);
+  rows.push({
+    ...existing,
+    id,
+    name,
+    command,
+    transport,
+    pool_size: poolSize,
+    prewarm
+  });
   config.custom_agents = rows;
   state.agentConfig = await window.signalasi.saveAgentConfig(config);
   $("#customAgentId").value = "";
   $("#customAgentName").value = "";
   $("#customAgentCommand").value = "";
+  $("#customAgentTransport").value = "oneshot";
+  $("#customAgentPoolSize").value = "1";
+  $("#customAgentPrewarm").checked = false;
   showToast(t("Custom agent added."));
   await refreshAgents();
 }
