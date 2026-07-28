@@ -701,6 +701,9 @@ object AppStore {
         val protocolFeatures = adapter.optJSONArray("features") ?: JSONArray()
         contact.put("adapter", adapter)
         contact.put("capabilities", capabilities)
+        agent.optJSONObject("provider_profile")?.let { profile ->
+            contact.put("provider_profile", JSONObject(profile.toString()))
+        }
         contact.put("protocols", protocols)
         contact.put("protocol_version", protocols.optString(0, "1.0"))
         contact.put("protocol_min_version", protocols.optString(protocols.length() - 1, "1.0"))

@@ -33,6 +33,7 @@ from agent_config import (
     custom_agent_config,
     custom_agent_configs,
     language_policy_config,
+    load_config,
     local_model_config,
 )
 from desktop_agent_adapters import (
@@ -1034,6 +1035,18 @@ def list_agents(quick: bool = False) -> list[dict]:
     return [agent_status(spec, quick=quick) for spec in visible_agent_specs().values()]
 
 
+def provider_profile_catalog(
+    quick: bool = True,
+    agent_rows: list[dict] | None = None,
+) -> dict:
+    from provider_profiles import build_provider_profile_catalog
+
+    return build_provider_profile_catalog(
+        agents=agent_rows if agent_rows is not None else list_agents(quick=quick),
+        config=load_config(mask_secrets=False),
+    )
+
+
 def connector_diagnostics(quick: bool = False) -> dict:
     agents = []
     for spec in visible_agent_specs().values():
@@ -1053,6 +1066,7 @@ def connector_diagnostics(quick: bool = False) -> dict:
         })
     ready = [agent["id"] for agent in agents if agent["status"] == "ready"]
     needs_setup = [agent["id"] for agent in agents if agent["status"] != "ready"]
+    provider_profiles = provider_profile_catalog(quick=quick, agent_rows=agents)
     return {
         "protocol": "SignalASI Link Protocol",
         "connector": "SignalASI Desktop",
@@ -1076,6 +1090,8 @@ def connector_diagnostics(quick: bool = False) -> dict:
             "agent_protocol_negotiation",
             "desktop_agent_runtime_server",
             "external_cli_keepalive_pool",
+            "provider_profile_v1",
+            "provider_performance_observations_v1",
         ],
         "adapter_provider": {
             "agents": desktop_agent_provider().enumerate(),
@@ -1086,6 +1102,7 @@ def connector_diagnostics(quick: bool = False) -> dict:
         "ready": ready,
         "needs_setup": needs_setup,
         "agents": agents,
+        "provider_profiles": provider_profiles,
     }
 
 
@@ -1544,6 +1561,16 @@ def _append_execution_log(
             handle.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
     except Exception:
         pass
+    try:
+        from provider_profiles import provider_metrics_store
+
+        provider_metrics_store().record(
+            contact_id,
+            success=bool(ok and not _agent_reply_failed(reply)),
+            latency_ms=max(0, duration_ms),
+        )
+    except Exception:
+        log.debug("Provider metric persistence failed", exc_info=True)
 
 
 def recent_agent_execution_log(limit: int = 50) -> dict:

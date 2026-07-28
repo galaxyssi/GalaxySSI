@@ -56,7 +56,8 @@ data class AgentResourceDescriptor(
     val supportsBackground: Boolean = false,
     val activeTasks: Int = 0,
     val maxParallelTasks: Int = 1,
-    val failureDomain: String = ""
+    val failureDomain: String = "",
+    val providerProfile: ProviderProfile? = null
 )
 
 data class AgentTaskRequirements(
@@ -594,6 +595,11 @@ object AgentResourceCatalog {
 
     private fun fromTarget(target: AgentCallableTarget): AgentResourceDescriptor {
         val id = target.id.lowercase(Locale.US)
+        val providerProfile = if (target.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL)) {
+            ProviderProfileCatalog.fromTarget(target)
+        } else {
+            null
+        }
         val type = when {
             id == "home-assistant" -> AgentResourceType.HOME_ASSISTANT
             id.startsWith("custom-device:") -> AgentResourceType.CUSTOM_DEVICE
@@ -614,7 +620,7 @@ object AgentResourceCatalog {
             AgentResourceType.HOME_ASSISTANT, AgentResourceType.CUSTOM_DEVICE -> AgentResourceLocation.PRIVATE_NETWORK
             else -> AgentResourceLocation.CLOUD
         }
-        val profile = when (type) {
+        val defaultProfile = when (type) {
             AgentResourceType.CLOUD_MODEL -> Triple(AgentResourceCost.MEDIUM, AgentResourceLatency.NORMAL, AgentResourceQuality.FRONTIER)
             AgentResourceType.REMOTE_AGENT, AgentResourceType.REMOTE_MCP, AgentResourceType.REMOTE_SKILL -> Triple(AgentResourceCost.LOW, AgentResourceLatency.SLOW, AgentResourceQuality.STRONG)
             AgentResourceType.REMOTE_LOCAL_MODEL -> Triple(AgentResourceCost.FREE, AgentResourceLatency.FAST, AgentResourceQuality.STANDARD)
@@ -646,32 +652,40 @@ object AgentResourceCatalog {
             location = location,
             status = target.status,
             capabilities = target.capabilities.toSet(),
-            cost = profile.first,
-            latency = profile.second,
-            quality = profile.third,
-            supportsTools = AgentCapability.TOOL_USE in target.capabilities || AgentCapability.RESEARCH in target.capabilities,
+            cost = providerProfile?.pricing?.tier ?: defaultProfile.first,
+            latency = providerProfile?.latency ?: defaultProfile.second,
+            quality = providerProfile?.quality ?: defaultProfile.third,
+            supportsTools = providerProfile?.supportsTools
+                ?: (AgentCapability.TOOL_USE in target.capabilities || AgentCapability.RESEARCH in target.capabilities),
             targetId = target.id,
-            trust = trust,
+            trust = providerProfile?.trust ?: trust,
             energy = energy,
-            contextWindowTokens = contextWindow,
-            supportsStreaming = type == AgentResourceType.CLOUD_MODEL || type == AgentResourceType.REMOTE_AGENT ||
-                type == AgentResourceType.REMOTE_LOCAL_MODEL,
-            supportsBackground = type == AgentResourceType.REMOTE_AGENT || type == AgentResourceType.REMOTE_LOCAL_MODEL ||
-                type == AgentResourceType.REMOTE_MCP || type == AgentResourceType.REMOTE_SKILL,
-            maxParallelTasks = when (type) {
+            contextWindowTokens = providerProfile?.contextWindowTokens ?: contextWindow,
+            supportsStreaming = providerProfile?.supportsStreaming ?: (
+                type == AgentResourceType.CLOUD_MODEL || type == AgentResourceType.REMOTE_AGENT ||
+                    type == AgentResourceType.REMOTE_LOCAL_MODEL
+                ),
+            supportsBackground = providerProfile?.supportsBackground ?: (
+                type == AgentResourceType.REMOTE_AGENT || type == AgentResourceType.REMOTE_LOCAL_MODEL ||
+                    type == AgentResourceType.REMOTE_MCP || type == AgentResourceType.REMOTE_SKILL
+                ),
+            maxParallelTasks = providerProfile?.maxParallelRuns ?: when (type) {
                 AgentResourceType.REMOTE_AGENT -> 4
                 AgentResourceType.CLOUD_MODEL -> 3
                 AgentResourceType.REMOTE_LOCAL_MODEL -> 2
                 else -> 1
             },
-            failureDomain = target.failureDomain.ifBlank {
+            failureDomain = providerProfile?.failureDomain.orEmpty().ifBlank {
+                target.failureDomain
+            }.ifBlank {
                 when (location) {
                     AgentResourceLocation.PHONE -> "phone"
                     AgentResourceLocation.CLOUD -> "cloud:${target.id}"
                     AgentResourceLocation.TRUSTED_DESKTOP -> "desktop:${target.id.substringBefore(':')}"
                     AgentResourceLocation.PRIVATE_NETWORK -> "private:${target.id}"
                 }
-            }
+            },
+            providerProfile = providerProfile
         )
     }
 }
@@ -767,7 +781,11 @@ class AgentResourceRouter(context: Context) {
             trust = registration.trust,
             activeTasks = registration.activeRuns,
             maxParallelTasks = registration.maxParallelRuns,
-            failureDomain = registration.failureDomain.ifBlank { resource.failureDomain }
+            failureDomain = registration.failureDomain.ifBlank { resource.failureDomain },
+            providerProfile = ProviderProfileCatalog.fromRegistration(
+                registration,
+                resource.providerProfile
+            )
         )
     }
 
@@ -862,6 +880,14 @@ class AgentResourceRouter(context: Context) {
             )
         }
         var score = 500 - (missing.size * 180)
+        val profilePerformance = resource.providerProfile?.performance
+        if (profilePerformance != null && profilePerformance.attempts > 0) {
+            score -= (profilePerformance.failureRate * 220.0).toInt().coerceAtMost(220)
+            if (health.averageLatencyMs <= 0L && profilePerformance.ewmaLatencyMs > 0.0) {
+                val latencyDivisor = if (requirements.mode == AgentRoutingMode.FAST) 40.0 else 120.0
+                score -= (profilePerformance.ewmaLatencyMs / latencyDivisor).toInt().coerceAtMost(180)
+            }
+        }
         score += health.reliabilityPercent
         score += domainHealth.reliabilityPercent / 2
         score += resource.quality.ordinal * if (requirements.complexReasoning || requirements.mode == AgentRoutingMode.QUALITY) 55 else 22
@@ -915,6 +941,10 @@ class AgentResourceRouter(context: Context) {
         reasons += "domain:${resource.failureDomain.ifBlank { "none" }}"
         reasons += "domain_health:${domainHealth.reliabilityPercent}"
         if (health.averageLatencyMs > 0) reasons += "observed_latency_ms:${health.averageLatencyMs}"
+        if (profilePerformance != null && profilePerformance.attempts > 0) {
+            reasons += "provider_failure_rate:${"%.4f".format(Locale.US, profilePerformance.failureRate)}"
+            reasons += "provider_ewma_latency_ms:${profilePerformance.ewmaLatencyMs.toLong()}"
+        }
         if (observedUsage.averageTotalTokens > 0L) {
             reasons += "observed_average_tokens:${observedUsage.averageTotalTokens}"
         }

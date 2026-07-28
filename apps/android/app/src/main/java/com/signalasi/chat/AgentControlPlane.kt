@@ -69,6 +69,7 @@ data class AgentRegistration(
     val runtimeFailureDomain: String = "",
     val adapterType: String = "",
     val independentlyUpgradeable: Boolean = true,
+    val providerProfile: ProviderProfile? = null,
     val lastHeartbeatMillis: Long = 0L,
     val updatedAtMillis: Long = System.currentTimeMillis()
 ) {
@@ -1148,6 +1149,7 @@ private fun AgentRegistration.toJson(): JSONObject = JSONObject()
     .put("runtime_failure_domain", runtimeFailureDomain)
     .put("adapter_type", adapterType)
     .put("independently_upgradeable", independentlyUpgradeable)
+    .put("provider_profile", providerProfile?.let(ProviderProfileCatalog::encode))
     .put("last_heartbeat_millis", lastHeartbeatMillis)
     .put("updated_at_millis", updatedAtMillis)
 
@@ -1182,6 +1184,7 @@ private fun JSONObject.toRegistration(): AgentRegistration? = runCatching {
         runtimeFailureDomain = optString("runtime_failure_domain"),
         adapterType = optString("adapter_type"),
         independentlyUpgradeable = optBoolean("independently_upgradeable", true),
+        providerProfile = ProviderProfileCatalog.decode(optJSONObject("provider_profile")),
         lastHeartbeatMillis = optLong("last_heartbeat_millis"),
         updatedAtMillis = optLong("updated_at_millis", System.currentTimeMillis())
     )

@@ -28,6 +28,7 @@ from agent_gateway import (
     external_cli_runtime_manifest,
     list_agents,
     prewarm_external_cli_agents,
+    provider_profile_catalog,
     recent_agent_execution_log,
     reset_inactive_agent_runtime,
     shutdown_desktop_agent_runtime_server,
@@ -315,6 +316,11 @@ def api_list_agents():
 @app.get("/api/agents/diagnostics")
 def api_agent_diagnostics():
     return connector_diagnostics()
+
+
+@app.get("/api/provider-profiles")
+def api_provider_profiles():
+    return provider_profile_catalog(quick=True)
 
 
 @app.get("/health")
