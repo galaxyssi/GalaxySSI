@@ -1,0 +1,68 @@
+{
+  "schema": "signalasi.evolution-sources.v2",
+  "trusted_organizations": [
+    "modelcontextprotocol",
+    "a2aproject",
+    "openai",
+    "anthropics",
+    "agentskills",
+    "google",
+    "google-gemini",
+    "microsoft",
+    "All-Hands-AI",
+    "SWE-agent",
+    "langchain-ai",
+    "zed-industries",
+    "block"
+  ],
+  "known_repositories": [
+    "modelcontextprotocol/modelcontextprotocol",
+    "modelcontextprotocol/registry",
+    "a2aproject/A2A",
+    "openai/codex",
+    "openai/openai-agents-python",
+    "agentskills/agentskills",
+    "anthropics/claude-code",
+    "zed-industries/agent-client-protocol",
+    "google/adk-python",
+    "google-gemini/gemini-cli",
+    "microsoft/agent-framework",
+    "microsoft/autogen",
+    "All-Hands-AI/OpenHands",
+    "SWE-agent/SWE-agent",
+    "langchain-ai/langgraph",
+    "block/goose"
+  ],
+  "discovery_queries": [
+    "topic:ai-agents stars:>500 archived:false",
+    "topic:model-context-protocol stars:>100 archived:false",
+    "agent skills coding agent stars:>100 archived:false",
+    "multi agent orchestration stars:>500 archived:false"
+  ],
+  "fit_keywords": [
+    "agent",
+    "multi-agent",
+    "orchestration",
+    "mcp",
+    "model context protocol",
+    "skills",
+    "coding agent",
+    "computer use",
+    "android",
+    "desktop",
+    "workflow",
+    "durable",
+    "memory",
+    "evaluation",
+    "sandbox",
+    "a2a",
+    "acp"
+  ],
+  "allowed_licenses": [
+    "apache-2.0",
+    "mit",
+    "bsd-3-clause",
+    "bsd-2-clause",
+    "mpl-2.0"
+  ]
+}

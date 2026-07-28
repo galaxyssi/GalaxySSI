@@ -1,0 +1,68 @@
+# Self-Evolution V2 Validation
+
+Run commands from the repository root unless a command changes directory explicitly.
+
+## Required source gates
+
+```powershell
+node tools/dev/check-no-chinese-outside-i18n.js
+python -m compileall apps\desktop\core\signalasi-link\backend\evolution_v2
+python -m unittest discover -s apps\desktop\core\signalasi-link\backend\test_evolution_v2 -p "test_*.py" -v
+python -m unittest discover -s apps\desktop\core\signalasi-link\backend -p "test_*.py"
+node apps\desktop\scripts\check.js
+```
+
+## Desktop gates
+
+```powershell
+Set-Location apps\desktop
+node scripts\package-win.js
+node scripts\smoke-ui.js
+node scripts\smoke-packaged.js
+```
+
+The packaged backend must contain `evolution_v2/__init__.py`, `api.py`, and `manager.py`; source-only
+success is not sufficient.
+
+## Android gates
+
+```powershell
+Set-Location apps\android
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug `
+  -Psignalasi.requireEmbeddedRuntime=false `
+  --no-daemon
+```
+
+Use this source-only command when the ignored local QEMU/runtime bundle is absent. Release packaging
+must omit the override and prove that the complete signed runtime bundle is embedded.
+
+The destructive install/restore gate is optional and disabled by default:
+
+```powershell
+$env:SIGNALASI_EVOLUTION_ANDROID_DEVICE_TEST = "1"
+python ..\desktop\core\signalasi-link\backend\evolution_v2\gate_cli.py android-device `
+  --candidate app\build\outputs\apk\debug\app-debug.apk `
+  --snapshot-root "$env:TEMP\signalasi-evolution-android" `
+  --package com.signalasi.chat
+```
+
+Run it only on a dedicated device. Acceptance requires candidate install, launch, crash check, and
+unconditional restoration of the previously installed stable APK and supported data snapshot.
+
+## API and security acceptance
+
+- Non-loopback V2 API requests return `403 loopback_required`.
+- Technology radar tests prove trusted filtering and that discovery never clones or executes code.
+- Protected paths are denied and high/critical paths escalate risk.
+- A retry uses a fresh worktree.
+- Candidate changes after review invalidate approval.
+- Audit tampering is detected and credential-shaped values are redacted.
+- Auto-publish and auto-merge remain disabled.
+- GitHub write operations use only the Desktop `gh` session.
+
+## Pull-request workflow
+
+`.github/workflows/evolution-candidate.yml` uses read-only permissions and
+`persist-credentials: false`. It runs V2 tests, repository checks, Desktop packaging, and Android
+source compilation. The existing Windows package workflow performs packaged smoke validation on
+the same pull request. Neither workflow auto-merges or publishes a production release.

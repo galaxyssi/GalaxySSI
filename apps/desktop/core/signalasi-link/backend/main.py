@@ -134,6 +134,7 @@ def signalasi_pairing_qr(grant_desktop_executor: bool = False) -> dict:
 async def lifespan(app: FastAPI):
     file_server_process = None
     proactive_runtime = None
+    evolution_runtime = None
     reputation_subscription_id = ""
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
     instance_lock = BackendInstanceLock() if external_services_enabled else None
@@ -186,6 +187,14 @@ async def lifespan(app: FastAPI):
             log.info("Proactive task runtime started")
         except Exception as e:
             log.warning("Proactive task runtime start failed: %s", e)
+        try:
+            from evolution_v2.runtime import evolution_v2_runtime
+
+            evolution_runtime = evolution_v2_runtime()
+            evolution_runtime.start()
+            log.info("Self-evolution V2 runtime started")
+        except Exception as e:
+            log.warning("Self-evolution V2 runtime start failed: %s", e)
         # Start the file service subprocess.
         try:
             import subprocess, sys
@@ -206,6 +215,11 @@ async def lifespan(app: FastAPI):
     finally:
         if reputation_subscription_id:
             agent_task_manager.unsubscribe(reputation_subscription_id)
+        if evolution_runtime is not None:
+            try:
+                evolution_runtime.stop()
+            except Exception as exc:
+                log.warning("Self-evolution V2 runtime shutdown failed: %s", exc)
         if proactive_runtime is not None:
             try:
                 proactive_runtime.stop()
@@ -241,6 +255,8 @@ async def lifespan(app: FastAPI):
             instance_lock.release()
 
 app = FastAPI(title="SignalASI Link", lifespan=lifespan)
+from evolution_v2.api import router as evolution_v2_router
+app.include_router(evolution_v2_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8765", "http://localhost:8765", "null"],

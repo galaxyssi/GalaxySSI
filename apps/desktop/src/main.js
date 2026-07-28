@@ -46,7 +46,8 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      backgroundThrottling: !UI_SMOKE
     }
   });
 
@@ -69,6 +70,7 @@ async function runUiSmoke() {
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
+  const evolutionV2Path = path.join(outDir, "desktop-evolution-v2.png");
   const runtimePath = path.join(outDir, "desktop-runtimes.png");
   try {
     fs.mkdirSync(outDir, { recursive: true });
@@ -216,13 +218,26 @@ async function runUiSmoke() {
     await captureSmokeScreenshot(setupPath);
     const settingsState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
-        document.querySelector('[data-open-panel="settings"]')?.click();
-        for (let attempt = 0; attempt < 30; attempt += 1) {
-          if (document.querySelector("#cloudModelBadge")?.textContent?.trim()) break;
-          await new Promise((resolve) => setTimeout(resolve, 200));
+        if (typeof openPanel === "function") {
+          await openPanel("settings");
+        } else {
+          document.querySelector('[data-open-panel="settings"]')?.click();
+        }
+        for (let attempt = 0; attempt < 100; attempt += 1) {
+          if (
+            document.querySelector("#settingsPanel")?.classList.contains("active")
+            && document.querySelector("#drawerTitle")?.textContent?.trim()
+            && document.querySelector("#utilityDrawer")?.dataset.panelReady === "settings"
+            && document.querySelector("#utilityDrawer")?.dataset.panelLoading === "false"
+            && document.querySelector("#cloudModelBadge")?.textContent?.trim()
+            && document.querySelector("#evolutionV2Shell")
+          ) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
         }
         return {
           active: document.querySelector("#settingsPanel")?.classList.contains("active") || false,
+          title: document.querySelector("#drawerTitle")?.textContent || "",
+          ready: document.querySelector("#utilityDrawer")?.dataset.panelReady || "",
           provider: document.querySelector("#cloudProvider")?.value || "",
           fields: document.querySelectorAll("#settingsPanel .cloud-settings-surface input, #settingsPanel .cloud-settings-surface select").length,
           save: Boolean(document.querySelector("#saveCloudModelButton")),
@@ -234,6 +249,14 @@ async function runUiSmoke() {
             scope: Boolean(document.querySelector("#evolutionScope")),
             acceptance: Boolean(document.querySelector("#evolutionAcceptance")),
             list: Boolean(document.querySelector("#evolutionTaskList"))
+          },
+          evolutionV2: {
+            shell: Boolean(document.querySelector("#evolutionV2Shell")),
+            toolbar: Boolean(document.querySelector("#evolutionV2Shell .evolution-v2-toolbar")),
+            tabs: document.querySelectorAll("#evolutionV2Shell .evolution-v2-tab").length,
+            stylesheet: Array.from(document.styleSheets).some(
+              (sheet) => String(sheet.href || "").endsWith("/evolution-v2-panel.css")
+            )
           },
           languagePolicy: [
             document.querySelector("#responseLanguageSelect")?.value || "",
@@ -264,14 +287,87 @@ async function runUiSmoke() {
         };
       })()
     `);
-    if (!settingsState.active || settingsState.fields < 7 || !settingsState.save || !settingsState.test
+    if (!settingsState.active || !settingsState.title.trim() || settingsState.ready !== "settings"
+        || settingsState.fields < 7 || !settingsState.save || !settingsState.test
         || !settingsState.badge.trim() || settingsState.secureValidation
         || !settingsState.insecureValidation || !settingsState.budgetValidation
         || Object.values(settingsState.evolution).some((value) => !value)
+        || !settingsState.evolutionV2.shell || !settingsState.evolutionV2.toolbar
+        || settingsState.evolutionV2.tabs !== 6 || !settingsState.evolutionV2.stylesheet
         || settingsState.languagePolicy.some((value) => value !== "auto")) {
       throw new Error(`Settings drawer did not expose cloud API configuration: ${JSON.stringify(settingsState)}`);
     }
     await captureSmokeScreenshot(settingsPath);
+    const evolutionViewportState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const shell = document.querySelector("#evolutionV2Shell");
+        const panel = document.querySelector("#settingsPanel");
+        if (!shell || !panel) return { visible: false, scrollTop: 0 };
+        panel.style.scrollBehavior = "auto";
+        const pinEvolutionPanel = () => {
+          panel.scrollTop = Math.max(
+            0,
+            panel.scrollTop
+              + shell.getBoundingClientRect().top
+              - panel.getBoundingClientRect().top
+              - 12
+          );
+        };
+        clearInterval(window.__signalasiSmokeEvolutionPin);
+        pinEvolutionPanel();
+        window.__signalasiSmokeEvolutionPin = setInterval(pinEvolutionPanel, 50);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const shellRect = shell.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        return {
+          visible: shellRect.top >= panelRect.top && shellRect.top < panelRect.bottom,
+          scrollTop: panel.scrollTop,
+          shellTop: shellRect.top,
+          panelTop: panelRect.top,
+          panelBottom: panelRect.bottom
+        };
+      })()
+    `);
+    if (!evolutionViewportState.visible || evolutionViewportState.scrollTop <= 0) {
+      throw new Error(`Evolution V2 panel was not visible for UI smoke: ${JSON.stringify(evolutionViewportState)}`);
+    }
+    await mainWindow.webContents.executeJavaScript(`
+      (() => {
+        document.querySelector("#evolutionV2SmokePreview")?.remove();
+        const shell = document.querySelector("#evolutionV2Shell");
+        const drawer = document.querySelector("#utilityDrawer");
+        if (!shell || !drawer) return false;
+        const preview = shell.cloneNode(true);
+        preview.id = "evolutionV2SmokePreview";
+        preview.setAttribute("aria-hidden", "true");
+        Object.assign(preview.style, {
+          position: "fixed",
+          zIndex: "32",
+          top: "70px",
+          right: "0",
+          width: drawer.getBoundingClientRect().width + "px",
+          height: "calc(100vh - 70px)",
+          margin: "0",
+          padding: "15px 16px 28px",
+          overflowY: "auto",
+          boxSizing: "border-box",
+          background: "#f7f8f9",
+          transform: "translateZ(0)",
+          willChange: "transform"
+        });
+        document.body.append(preview);
+        return new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+        });
+      })()
+    `);
+    mainWindow.showInactive();
+    await captureSmokeScreenshot(evolutionV2Path, 1_000);
+    await mainWindow.webContents.executeJavaScript(`
+      clearInterval(window.__signalasiSmokeEvolutionPin);
+      delete window.__signalasiSmokeEvolutionPin;
+      document.querySelector("#evolutionV2SmokePreview")?.remove();
+    `);
     const runtimeState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -329,6 +425,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
+    console.log(`[ui-smoke] screenshot: ${evolutionV2Path}`);
     console.log(`[ui-smoke] screenshot: ${runtimePath}`);
     app.exit(0);
   } catch (error) {
@@ -337,9 +434,12 @@ async function runUiSmoke() {
   }
 }
 
-async function captureSmokeScreenshot(target) {
+async function captureSmokeScreenshot(target, initialDelayMs = 200) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 200 : 500));
+    const delayMs = attempt === 0 ? initialDelayMs : 500;
+    if (delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
     const image = await mainWindow.webContents.capturePage();
     const png = image.toPNG();
     if (png.length >= 1000) {
@@ -865,6 +965,44 @@ async function publishEvolutionTask(taskId, approvalHash) {
   });
 }
 
+async function evolutionV2Request(method = "GET", pathname = "/health", body = null) {
+  await startBackend();
+  const safeMethod = String(method || "GET").toUpperCase();
+  if (!["GET", "POST"].includes(safeMethod)) {
+    throw new Error("Invalid evolution V2 API method");
+  }
+  const cleanPath = String(pathname || "/health");
+  if (
+    cleanPath.length > 2_048
+    || !cleanPath.startsWith("/")
+    || cleanPath.includes("..")
+    || cleanPath.includes("#")
+    || /[\u0000-\u001f\u007f]/.test(cleanPath)
+  ) {
+    throw new Error("Invalid evolution V2 API path");
+  }
+  const parsed = new URL(cleanPath, "http://signalasi.local");
+  const identifier = "[A-Za-z0-9._-]{1,128}";
+  const allowedPath = safeMethod === "GET"
+    ? new RegExp(
+      `^/(?:health|preflight|policy|tasks/${identifier}/metadata|`
+      + `research/runs(?:/${identifier})?|roadmaps(?:/${identifier})?|proposals|`
+      + "issues|campaigns|audit(?:/verify)?|scheduler|github/checks)$"
+    )
+    : new RegExp(
+      `^/(?:research/runs|roadmaps|proposals/${identifier}/materialize|`
+      + `issues/(?:scan|ingest)|campaigns(?:/${identifier}/tick)?|scheduler/tick)$`
+    );
+  if (!allowedPath.test(parsed.pathname)) {
+    throw new Error("Evolution V2 API route is not allowed");
+  }
+  const options = { method: safeMethod };
+  if (body !== null && body !== undefined && safeMethod !== "GET") {
+    options.body = JSON.stringify(body);
+  }
+  return fetchJson(`/api/evolution/v2${parsed.pathname}${parsed.search}`, options);
+}
+
 async function listProactiveTasks(limit = 200) {
   await startBackend();
   return fetchJson(`/api/proactive/tasks?limit=${encodeURIComponent(limit)}`);
@@ -1053,6 +1191,8 @@ ipcMain.handle("evolution-tasks:cancel", (_event, taskId) => cancelEvolutionTask
 ipcMain.handle("evolution-tasks:rollback", (_event, taskId) => rollbackEvolutionTask(taskId));
 ipcMain.handle("evolution-tasks:publish", (_event, taskId, approvalHash) =>
   publishEvolutionTask(taskId, approvalHash));
+ipcMain.handle("evolution-v2:request", (_event, method, pathname, body) =>
+  evolutionV2Request(method, pathname, body));
 ipcMain.handle("proactive-tasks:list", (_event, limit) => listProactiveTasks(limit));
 ipcMain.handle("proactive-tasks:create", (_event, payload) => createProactiveTask(payload));
 ipcMain.handle("proactive-tasks:update", (_event, taskId, payload) => updateProactiveTask(taskId, payload));

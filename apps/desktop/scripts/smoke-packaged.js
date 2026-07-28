@@ -17,6 +17,10 @@ const packagedResponsePolicy = path.join(resources, "signalasi-link", "backend",
 const packagedAgentTaskStore = path.join(resources, "signalasi-link", "backend", "agent_task_store.py");
 const packagedConversationContext = path.join(resources, "signalasi-link", "backend", "conversation_context.py");
 const packagedBackendDir = path.dirname(backendMain);
+const packagedEvolutionV2Init = path.join(packagedBackendDir, "evolution_v2", "__init__.py");
+const packagedEvolutionV2Api = path.join(packagedBackendDir, "evolution_v2", "api.py");
+const packagedEvolutionV2Manager = path.join(packagedBackendDir, "evolution_v2", "manager.py");
+const packagedWebSourceCatalog = path.join(packagedBackendDir, "web_source_sites.tsv");
 const packagedCustomAgent = path.join(packagedBackendDir, "custom_agent_stdio.py");
 const packagedDesktopAgentAdapters = path.join(packagedBackendDir, "desktop_agent_adapters.py");
 const packagedDesktopControl = path.join(packagedBackendDir, "desktop_control.py");
@@ -33,7 +37,8 @@ const packagedStatusDoc = path.join(resources, "app", "docs", "CONNECTOR_STATUS.
 const packagedUiSmokeDir = path.join(packageDir, "ui-smoke");
 const packagedUiScreenshots = [
   path.join(packagedUiSmokeDir, "desktop-overview.png"),
-  path.join(packagedUiSmokeDir, "desktop-status-matrix.png")
+  path.join(packagedUiSmokeDir, "desktop-status-matrix.png"),
+  path.join(packagedUiSmokeDir, "desktop-evolution-v2.png")
 ];
 const sidecar = path.join(
   resources,
@@ -147,6 +152,10 @@ async function main() {
   assertExists(packagedResponsePolicy, "Packaged response policy module");
   assertExists(packagedAgentTaskStore, "Packaged Agent task store");
   assertExists(packagedConversationContext, "Packaged conversation context");
+  assertExists(packagedEvolutionV2Init, "Packaged Self-Evolution V2 package");
+  assertExists(packagedEvolutionV2Api, "Packaged Self-Evolution V2 API");
+  assertExists(packagedEvolutionV2Manager, "Packaged Self-Evolution V2 manager");
+  assertExists(packagedWebSourceCatalog, "Packaged adaptive web source catalog");
   assertExists(packagedCustomAgent, "Packaged Custom Agent wrapper");
   assertExists(packagedDesktopAgentAdapters, "Packaged Desktop Agent adapters");
   assertExists(packagedDesktopControl, "Packaged Desktop control module");
@@ -166,7 +175,7 @@ async function main() {
   console.log("[packaged-smoke] checking bundled Python dependencies");
   const pythonCheck = spawn(
     bundledPython,
-    ["-c", "import cryptography, fastapi, multipart, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, websockets, qrcode, agent_task_store, backend_instance_lock, conversation_context, desktop_agent_adapters, desktop_control, desktop_native_tools, mqtt_bridge, phone_tool_broker, rich_output; print('ok')"],
+    ["-c", "import cryptography, fastapi, multipart, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, websockets, qrcode, agent_task_store, backend_instance_lock, conversation_context, desktop_agent_adapters, desktop_control, desktop_native_tools, evolution_v2.api, evolution_v2.manager, mqtt_bridge, phone_tool_broker, rich_output; print('ok')"],
     { cwd: packagedBackendDir, windowsHide: true }
   );
   await new Promise((resolve, reject) => {
@@ -265,6 +274,8 @@ async function main() {
 
   console.log("[packaged-smoke] starting packaged exe UI smoke");
   fs.rmSync(packagedUiSmokeDir, { recursive: true, force: true });
+  const packagedUiStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-packaged-ui-smoke-"));
+  const packagedUiPort = await findFreePort();
   const child = spawn(exe, [], {
     cwd: packageDir,
     detached: false,
@@ -273,7 +284,13 @@ async function main() {
     env: {
       ...process.env,
       SIGNALASI_UI_SMOKE: "1",
-      SIGNALASI_UI_SMOKE_DIR: packagedUiSmokeDir
+      SIGNALASI_UI_SMOKE_DIR: packagedUiSmokeDir,
+      SIGNALASI_STATE_DIR: packagedUiStateDir,
+      SIGNALASI_DATA_DIR: path.join(packagedUiStateDir, "pairing"),
+      SIGNALASI_DATABASE_PATH: path.join(packagedUiStateDir, "signalasi.db"),
+      SIGNALASI_CONFIG_PATH: path.join(packagedUiStateDir, "agents.json"),
+      SIGNALASI_BACKEND_PORT: String(packagedUiPort),
+      SIGNALASI_DISABLE_EXTERNAL_SERVICES: "1"
     }
   });
 
@@ -282,8 +299,7 @@ async function main() {
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
-        await fetchOk("http://127.0.0.1:8765/signalasi/verify");
-        await fetchJson("http://127.0.0.1:18765/files");
+        await fetchOk(`http://127.0.0.1:${packagedUiPort}/signalasi/verify`);
         ok = true;
         break;
       } catch {
@@ -298,6 +314,7 @@ async function main() {
   } finally {
     stopProcessTree(child);
     stopPackagedBackendHelpers();
+    fs.rmSync(packagedUiStateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 
   console.log("[packaged-smoke] packaged smoke OK");

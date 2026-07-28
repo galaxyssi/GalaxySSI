@@ -1,0 +1,13 @@
+{
+  "schema": "signalasi.evolution-scheduler.v2",
+  "enabled": true,
+  "run_on_start": false,
+  "research_interval_hours": 168,
+  "diagnostics_interval_hours": 24,
+  "create_research_proposals": true,
+  "create_diagnostic_proposals": true,
+  "auto_create_tasks": false,
+  "auto_start_tasks": false,
+  "auto_publish": false,
+  "auto_merge": false
+}

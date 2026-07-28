@@ -1,0 +1,81 @@
+{
+  "schema": "signalasi.evolution-policy.v2",
+  "publish": {
+    "require_approval_hash": true,
+    "auto_publish": false,
+    "auto_merge": false,
+    "allow_critical_pr": true
+  },
+  "limits": {
+    "max_changed_files": 96,
+    "max_total_diff_lines": 12000,
+    "max_new_file_bytes": 2097152,
+    "max_binary_files": 0
+  },
+  "quality": {
+    "require_tests_for_code": true,
+    "desktop_runtime_smoke": true,
+    "android_device_smoke": false,
+    "agent_review": false,
+    "agent_review_fail_closed_from": "high"
+  },
+  "protected_paths": [
+    ".git",
+    ".github/workflows",
+    ".openai",
+    "config/evolution-policy.json",
+    "config/evolution-gates.json",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/gate_cli.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/gates.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/policy.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/review.py",
+    "node_modules",
+    "dist",
+    "build",
+    "runtime-data"
+  ],
+  "critical_paths": [
+    "apps/desktop/core/signalasi-link/backend/crypto",
+    "apps/desktop/core/signalasi-link/backend/pairing",
+    "apps/desktop/core/signalasi-link/backend/desktop_control",
+    "apps/desktop/core/signalasi-link/backend/evolution_manager.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/api.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/audit.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/github_client.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/manager.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/provenance.py",
+    "apps/desktop/core/signalasi-link/backend/evolution_v2/snapshots.py",
+    "apps/android/app/src/main/AndroidManifest.xml",
+    "apps/android/app/src/main/java/com/signalasi/chat/security",
+    "apps/android/app/src/main/java/com/signalasi/chat/accessibility"
+  ],
+  "high_risk_paths": [
+    "apps/desktop/core/signalasi-link/backend/mqtt_bridge.py",
+    "apps/desktop/core/signalasi-link/backend/agent_gateway.py",
+    "apps/desktop/src/main.js",
+    "apps/desktop/src/preload.js",
+    "apps/android/app/build.gradle.kts",
+    "apps/desktop/package.json"
+  ],
+  "low_risk_paths": [
+    "docs",
+    "README.md",
+    "apps/desktop/src/renderer/locales"
+  ],
+  "dependency_files": [
+    "apps/desktop/package.json",
+    "apps/desktop/package-lock.json",
+    "apps/android/build.gradle.kts",
+    "apps/android/settings.gradle.kts",
+    "apps/android/app/build.gradle.kts",
+    "apps/desktop/core/signalasi-link/backend/requirements.txt"
+  ],
+  "secret_patterns": [
+    "github_pat_",
+    "ghp_",
+    "gho_",
+    "AKIA",
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN RSA PRIVATE KEY-----"
+  ]
+}

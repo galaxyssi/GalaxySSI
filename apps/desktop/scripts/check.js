@@ -11,6 +11,8 @@ const required = [
   "src/renderer/index.html",
   "src/renderer/renderer.js",
   "src/renderer/workspace.js",
+  "src/renderer/evolution-v2-panel.js",
+  "src/renderer/evolution-v2-panel.css",
   "src/renderer/locales/zh-CN.json",
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
@@ -23,6 +25,9 @@ const required = [
   "core/signalasi-link/backend/desktop_runtime.py",
   "core/signalasi-link/backend/desktop_skills.py",
   "core/signalasi-link/backend/evolution_manager.py",
+  "core/signalasi-link/backend/evolution_v2/__init__.py",
+  "core/signalasi-link/backend/evolution_v2/api.py",
+  "core/signalasi-link/backend/evolution_v2/manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
@@ -129,6 +134,9 @@ const backendDesktopRuntime = fs.readFileSync(path.join(backendDir, "desktop_run
 const backendDesktopSkills = fs.readFileSync(path.join(backendDir, "desktop_skills.py"), "utf8");
 const backendDesktopSuperAgent = fs.readFileSync(path.join(backendDir, "desktop_super_agent.py"), "utf8");
 const backendEvolutionManager = fs.readFileSync(path.join(backendDir, "evolution_manager.py"), "utf8");
+const backendEvolutionLegacy = fs.readFileSync(path.join(backendDir, "evolution_v2", "legacy.py"), "utf8");
+const backendEvolutionV2Manager = fs.readFileSync(path.join(backendDir, "evolution_v2", "manager.py"), "utf8");
+const backendEvolutionV2Api = fs.readFileSync(path.join(backendDir, "evolution_v2", "api.py"), "utf8");
 const backendMcpWrapper = fs.readFileSync(path.join(backendDir, "mcp_agent_wrapper.py"), "utf8");
 const backendTaskWorkspace = fs.readFileSync(path.join(backendDir, "task_workspace.py"), "utf8");
 const backendPushAuth = fs.readFileSync(path.join(backendDir, "push_auth.py"), "utf8");
@@ -488,7 +496,12 @@ for (const requiredBackendCode of [
 for (const packageDiscoveryContract of [
   "fs.readdirSync(backendSrc, { withFileTypes: true })",
   'entry.name.endsWith(".py")',
-  '!entry.name.startsWith("test_")'
+  '!entry.name.startsWith("test_")',
+  "entry.isDirectory()",
+  '"__init__.py"',
+  'const backendDataEntries = ["web_source_sites.tsv"]',
+  "...backendDataEntries",
+  "for (const entry of backendEntries)"
 ]) {
   if (!packager.includes(packageDiscoveryContract)) {
     throw new Error(`Packaged Desktop backend auto-discovery is incomplete: ${packageDiscoveryContract}`);
@@ -1078,8 +1091,27 @@ for (const requiredEvolutionText of [
   "\"candidate_dirty_after_review\"",
   "\"health\": manager.health(limit=500).public()"
 ]) {
-  if (![backendEvolutionManager, backendMain].some((content) => content.includes(requiredEvolutionText))) {
+  if (![backendEvolutionManager, backendEvolutionLegacy, backendEvolutionV2Manager, backendMain]
+    .some((content) => content.includes(requiredEvolutionText))) {
     throw new Error(`Evolution audit or candidate integrity guard missing: ${requiredEvolutionText}`);
+  }
+}
+
+for (const requiredEvolutionV2Text of [
+  "class EvolutionManager(legacy.EvolutionManager)",
+  "class TechnologyRadar",
+  "class RoadmapPlanner",
+  "class AuditLedger",
+  "loopback_required",
+  "auto_merge",
+  "recover_interrupted"
+]) {
+  if (![backendEvolutionV2Manager, backendEvolutionV2Api,
+    ...fs.readdirSync(path.join(backendDir, "evolution_v2"))
+      .filter((name) => name.endsWith(".py"))
+      .map((name) => fs.readFileSync(path.join(backendDir, "evolution_v2", name), "utf8"))]
+    .some((content) => content.includes(requiredEvolutionV2Text))) {
+    throw new Error(`Self-evolution V2 contract missing: ${requiredEvolutionV2Text}`);
   }
 }
 
