@@ -30,6 +30,17 @@ class AgentTaskKind(str, Enum):
     DEVICE = "device"
 
 
+class AgentTaskIntent(str, Enum):
+    CHAT = "chat"
+    CODE = "code"
+    PHONE_CONTROL = "phone_control"
+    DESKTOP_CONTROL = "desktop_control"
+    RESEARCH = "research"
+    FILE = "file"
+    MEMORY = "memory"
+    AUTOMATION = "automation"
+
+
 class AgentReasoningEffort(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
@@ -46,10 +57,16 @@ class AgentExecutionPolicy:
     requires_artifact: bool = False
     target_platform: str = ""
     verify_installation: bool = False
+    task_intent: AgentTaskIntent = AgentTaskIntent.CHAT
+    task_intent_confidence: int = 100
+    task_intent_signals: tuple[str, ...] = ()
 
     def public(self) -> dict:
         return {
             "task_kind": self.task_kind.value,
+            "task_intent": self.task_intent.value,
+            "task_intent_confidence": self.task_intent_confidence,
+            "task_intent_signals": list(self.task_intent_signals),
             "reasoning_effort": self.reasoning_effort.value,
             "no_progress_timeout_seconds": self.no_progress_timeout_seconds,
             "max_replans": self.max_replans,
@@ -71,6 +88,17 @@ class AgentExecutionPolicy:
             effort = AgentReasoningEffort(str(value.get("reasoning_effort") or "low"))
         except ValueError:
             effort = AgentReasoningEffort.LOW
+        try:
+            task_intent = AgentTaskIntent(str(value.get("task_intent") or "chat"))
+        except ValueError:
+            task_intent = AgentTaskIntent.CHAT
+        try:
+            task_intent_confidence = int(value.get("task_intent_confidence", 100))
+        except (TypeError, ValueError):
+            task_intent_confidence = 100
+        raw_intent_signals = value.get("task_intent_signals")
+        if not isinstance(raw_intent_signals, (list, tuple, set)):
+            raw_intent_signals = ()
         return cls(
             task_kind=task_kind,
             reasoning_effort=effort,
@@ -86,7 +114,130 @@ class AgentExecutionPolicy:
             requires_artifact=bool(value.get("requires_artifact")),
             target_platform=str(value.get("target_platform") or ""),
             verify_installation=bool(value.get("verify_installation")),
+            task_intent=task_intent,
+            task_intent_confidence=min(
+                100,
+                max(0, task_intent_confidence),
+            ),
+            task_intent_signals=tuple(
+                dict.fromkeys(
+                    str(item).strip()
+                    for item in raw_intent_signals
+                    if str(item).strip()
+                )
+            )[:6],
         )
+
+
+@dataclass(frozen=True)
+class AgentTaskIntentClassification:
+    intent: AgentTaskIntent
+    confidence: int
+    matched_signals: tuple[str, ...] = ()
+
+
+_INTENT_PRIORITY = (
+    AgentTaskIntent.AUTOMATION,
+    AgentTaskIntent.MEMORY,
+    AgentTaskIntent.DESKTOP_CONTROL,
+    AgentTaskIntent.PHONE_CONTROL,
+    AgentTaskIntent.CODE,
+    AgentTaskIntent.FILE,
+    AgentTaskIntent.RESEARCH,
+    AgentTaskIntent.CHAT,
+)
+_INTENT_RULES = (
+    (AgentTaskIntent.CODE, 3, (
+        "build", "compile", "implement", "develop", "code", "program",
+        "fix bug", "repository", "pull request", "unit test", "apk",
+        "\u7f16\u8bd1", "\u6784\u5efa", "\u5f00\u53d1", "\u5b9e\u73b0",
+        "\u4ee3\u7801", "\u7a0b\u5e8f", "\u4fee\u590d bug", "\u9879\u76ee",
+        "\u4ed3\u5e93", "\u5355\u5143\u6d4b\u8bd5",
+    )),
+    (AgentTaskIntent.PHONE_CONTROL, 3, (
+        "on my phone", "phone setting", "mobile device", "open phone app",
+        "launch the app on my phone",
+        "battery", "flashlight", "camera", "take a photo", "sms",
+        "text message", "make a call", "timer", "alarm", "volume",
+        "\u624b\u673a", "\u624b\u673a\u8bbe\u7f6e",
+        "\u5728\u624b\u673a\u4e0a\u6253\u5f00",
+        "\u6253\u5f00\u624b\u673a app",
+        "\u7535\u91cf", "\u624b\u7535\u7b52", "\u6444\u50cf\u5934",
+        "\u62cd\u7167", "\u77ed\u4fe1", "\u6253\u7535\u8bdd",
+        "\u8ba1\u65f6\u5668", "\u95f9\u949f", "\u97f3\u91cf",
+    )),
+    (AgentTaskIntent.DESKTOP_CONTROL, 3, (
+        "on my computer", "on the computer", "desktop control",
+        "remote desktop", "windows desktop", "open on desktop",
+        "computer screen", "mouse click", "keyboard shortcut",
+        "\u7535\u8111", "\u8fdc\u7a0b\u684c\u9762", "\u63a7\u5236\u7535\u8111",
+        "\u7535\u8111\u5c4f\u5e55", "\u9f20\u6807", "\u952e\u76d8\u5feb\u6377\u952e",
+    )),
+    (AgentTaskIntent.RESEARCH, 2, (
+        "research", "search the web", "look up", "latest", "today's news",
+        "current news", "weather", "find sources", "compare sources",
+        "\u8c03\u67e5", "\u641c\u7d22", "\u67e5\u8d44\u6599", "\u6700\u65b0",
+        "\u4eca\u5929\u7684\u65b0\u95fb", "\u65b0\u95fb", "\u5929\u6c14",
+        "\u67e5\u627e\u6765\u6e90",
+    )),
+    (AgentTaskIntent.FILE, 2, (
+        "file", "pdf", "spreadsheet", "xlsx", "csv", "docx", "image",
+        "screenshot", "audio", "video", "archive", "zip", "extract text",
+        "convert this", "summarize this document",
+        "\u6587\u4ef6", "\u8868\u683c", "\u56fe\u7247", "\u622a\u56fe",
+        "\u97f3\u9891", "\u89c6\u9891", "\u538b\u7f29\u5305",
+        "\u63d0\u53d6\u6587\u5b57", "\u8f6c\u6362\u8fd9\u4e2a",
+        "\u603b\u7ed3\u8fd9\u4efd\u6587\u6863",
+    )),
+    (AgentTaskIntent.MEMORY, 4, (
+        "remember that", "remember my", "forget that", "my preference",
+        "memory", "knowledge base", "what did i say", "what do you know about me",
+        "\u8bb0\u4f4f", "\u5fd8\u8bb0", "\u6211\u7684\u504f\u597d",
+        "\u8bb0\u5fc6", "\u77e5\u8bc6\u5e93", "\u6211\u4e4b\u524d\u8bf4",
+        "\u4f60\u8bb0\u5f97",
+    )),
+    (AgentTaskIntent.AUTOMATION, 7, (
+        "automate", "schedule", "recurring", "every day", "every hour",
+        "workflow", "when this happens", "trigger", "monitor continuously",
+        "cron", "remind me",
+        "\u81ea\u52a8\u5316", "\u5b9a\u65f6", "\u6bcf\u5929",
+        "\u6bcf\u5c0f\u65f6", "\u5de5\u4f5c\u6d41", "\u89e6\u53d1",
+        "\u6301\u7eed\u76d1\u63a7", "\u63d0\u9192\u6211",
+    )),
+)
+
+
+def classify_task_intent(
+    prompt: str,
+    *,
+    has_attachments: bool = False,
+) -> AgentTaskIntentClassification:
+    normalized = " ".join(str(prompt or "").lower().split())
+    scores: dict[AgentTaskIntent, int] = {}
+    signals: dict[AgentTaskIntent, list[str]] = {}
+    for intent, weight, terms in _INTENT_RULES:
+        for term in terms:
+            if term in normalized:
+                scores[intent] = scores.get(intent, 0) + weight
+                signals.setdefault(intent, []).append(term)
+    if has_attachments:
+        scores[AgentTaskIntent.FILE] = scores.get(AgentTaskIntent.FILE, 0) + 3
+        signals.setdefault(AgentTaskIntent.FILE, []).append("attachment")
+    if not scores:
+        return AgentTaskIntentClassification(AgentTaskIntent.CHAT, 100)
+    ranked = sorted(
+        scores.items(),
+        key=lambda item: (-item[1], _INTENT_PRIORITY.index(item[0])),
+    )
+    winner, winning_score = ranked[0]
+    runner_up_score = ranked[1][1] if len(ranked) > 1 else 0
+    margin = winning_score - runner_up_score
+    confidence = min(98, max(55, 55 + winning_score * 4 + margin * 5))
+    return AgentTaskIntentClassification(
+        intent=winner,
+        confidence=confidence,
+        matched_signals=tuple(dict.fromkeys(signals.get(winner, ())))[:6],
+    )
 
 
 _BUILD_TERMS = (
@@ -131,6 +282,10 @@ def execution_policy_for(
 ) -> AgentExecutionPolicy:
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
+    intent = classify_task_intent(
+        normalized,
+        has_attachments=has_attachment_context,
+    )
     has_install = _contains_any(normalized, _INSTALL_TERMS)
     has_build = _contains_any(normalized, _BUILD_TERMS)
     has_artifact_request = _contains_any(normalized, _ARTIFACT_TERMS)
@@ -179,6 +334,9 @@ def execution_policy_for(
         ),
         target_platform=target_platform,
         verify_installation=kind == AgentTaskKind.INSTALL,
+        task_intent=intent.intent,
+        task_intent_confidence=intent.confidence,
+        task_intent_signals=intent.matched_signals,
     )
 
 
@@ -198,7 +356,8 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
     )
     return "\n".join((
         "SignalASI execution contract:",
-        f"- Task class: {policy.task_kind.value}; reasoning effort: {policy.reasoning_effort.value}.",
+        f"- Task class: {policy.task_kind.value}; intent: {policy.task_intent.value}; "
+        f"reasoning effort: {policy.reasoning_effort.value}.",
         "- Work through Plan -> Act -> Observe -> Replan -> Verify -> Finalize.",
         "- Preserve useful work in the task workspace before risky or long-running steps.",
         "- Do not repeat the same failed approach. Diagnose the observed failure and choose a materially different path.",

@@ -184,6 +184,26 @@ class AgentTaskStoreTests(unittest.TestCase):
             self.assertEqual(["homework.png"], restored.attachments)
             self.assertEqual(["homework.png"], restored.public()["attachments"])
 
+    def test_external_task_persists_inferred_intent_diagnostics(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(
+                state_path=Path(temp_dir) / "tasks.sqlite3"
+            )
+
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex-contact",
+                source_message_id="phone-message",
+                prompt="Run this health check every hour",
+                on_event=lambda _snapshot: None,
+                task_id="automation-intent",
+            )
+
+            policy = manager.get(task.task_id).public()["execution_policy"]
+            self.assertEqual("automation", policy["task_intent"])
+            self.assertGreaterEqual(policy["task_intent_confidence"], 55)
+            self.assertIn("every hour", policy["task_intent_signals"])
+
     def test_external_task_uses_current_turn_policy_instead_of_stale_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"
@@ -203,6 +223,9 @@ class AgentTaskStoreTests(unittest.TestCase):
                 execution_prompt="hello",
                 execution_policy={
                     "task_kind": "chat",
+                    "task_intent": "chat",
+                    "task_intent_confidence": 100,
+                    "task_intent_signals": [],
                     "reasoning_effort": "low",
                     "no_progress_timeout_seconds": 180.0,
                     "max_replans": 2,
@@ -217,6 +240,7 @@ class AgentTaskStoreTests(unittest.TestCase):
 
             restored = AgentTaskManager(state_path=path).get(task.task_id)
             self.assertEqual("chat", restored.execution_policy["task_kind"])
+            self.assertEqual("chat", restored.execution_policy["task_intent"])
             self.assertFalse(restored.execution_policy["requires_artifact"])
             self.assertFalse(restored.execution_policy["verify_installation"])
 

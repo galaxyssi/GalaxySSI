@@ -1,5 +1,6 @@
 package com.signalasi.chat
 
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
@@ -77,6 +78,9 @@ data class AgentExecutionLoopSnapshot(
     val lastReason: String = "",
     val budgetFailure: String = "",
     val taskKind: AgentExecutionTaskKind = AgentExecutionTaskKind.CHAT,
+    val taskIntent: AgentTaskIntent = AgentTaskIntent.CHAT,
+    val taskIntentConfidence: Int = 100,
+    val taskIntentSignals: List<String> = emptyList(),
     val reasoningEffort: AgentExecutionReasoningEffort = AgentExecutionReasoningEffort.LOW,
     val lastProgressAtMillis: Long,
     val failureCounts: Map<String, Int> = emptyMap(),
@@ -134,6 +138,9 @@ class AgentExecutionLoop private constructor(
             resumePhase = AgentExecutionLoopPhase.PLAN,
             lastReason = "Task accepted",
             taskKind = profile.taskKind,
+            taskIntent = profile.taskIntent,
+            taskIntentConfidence = profile.taskIntentConfidence,
+            taskIntentSignals = profile.taskIntentSignals,
             reasoningEffort = profile.reasoningEffort,
             lastProgressAtMillis = now,
             startedAtMillis = now,
@@ -430,7 +437,7 @@ class AgentExecutionLoop private constructor(
 
 object AgentExecutionLoopJsonCodec {
     fun encode(snapshot: AgentExecutionLoopSnapshot): String = JSONObject()
-        .put("version", 2)
+        .put("version", 3)
         .put("task_id", snapshot.taskId)
         .put("phase", snapshot.phase.name)
         .put("resume_phase", snapshot.resumePhase.name)
@@ -438,6 +445,9 @@ object AgentExecutionLoopJsonCodec {
         .put("last_reason", snapshot.lastReason)
         .put("budget_failure", snapshot.budgetFailure)
         .put("task_kind", snapshot.taskKind.name)
+        .put("task_intent", snapshot.taskIntent.name)
+        .put("task_intent_confidence", snapshot.taskIntentConfidence)
+        .put("task_intent_signals", JSONArray(snapshot.taskIntentSignals))
         .put("reasoning_effort", snapshot.reasoningEffort.name)
         .put("last_progress_at", snapshot.lastProgressAtMillis)
         .put("failure_counts", JSONObject(snapshot.failureCounts))
@@ -495,6 +505,14 @@ object AgentExecutionLoopJsonCodec {
             lastReason = root.optString("last_reason"),
             budgetFailure = root.optString("budget_failure"),
             taskKind = enumValue(root.optString("task_kind"), AgentExecutionTaskKind.CHAT),
+            taskIntent = enumValue(root.optString("task_intent"), AgentTaskIntent.CHAT),
+            taskIntentConfidence = root.optInt("task_intent_confidence", 100)
+                .coerceIn(0, 100),
+            taskIntentSignals = root.optJSONArray("task_intent_signals")?.let { values ->
+                (0 until values.length()).mapNotNull { index ->
+                    values.optString(index).trim().takeIf(String::isNotBlank)
+                }.distinct().take(6)
+            }.orEmpty(),
             reasoningEffort = enumValue(
                 root.optString("reasoning_effort"),
                 AgentExecutionReasoningEffort.LOW
