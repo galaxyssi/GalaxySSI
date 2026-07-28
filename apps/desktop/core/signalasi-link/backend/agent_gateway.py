@@ -33,6 +33,10 @@ from desktop_agent_adapters import (
     DesktopAgentProvider,
     DesktopAgentStateStore,
 )
+from desktop_agent_runtime_server import (
+    DesktopAgentRuntimeServer,
+    DesktopAgentRuntimeStore,
+)
 from web_intelligence import (
     FINALIZE_WEB_RESEARCH_PROMPT,
     MAX_CLOUD_TOOL_CALLS,
@@ -72,6 +76,8 @@ _agent_runtime: dict[str, dict] = {}
 _agent_runtime_loaded = False
 _agent_adapter_lock = threading.RLock()
 _agent_adapter_provider: DesktopAgentProvider | None = None
+_agent_runtime_server_lock = threading.RLock()
+_agent_runtime_server: DesktopAgentRuntimeServer | None = None
 _cloud_web_lock = threading.RLock()
 _cloud_web_service: WebIntelligenceService | None = None
 
@@ -86,6 +92,10 @@ def _execution_log_path() -> Path:
 
 def _agent_adapter_state_path() -> Path:
     return _state_root() / "agent-adapter-state.json"
+
+
+def _agent_runtime_server_state_path() -> Path:
+    return _state_root() / "agent-runtime-server.json"
 
 
 def _state_root() -> Path:
@@ -889,6 +899,33 @@ def desktop_agent_provider() -> DesktopAgentProvider:
         return _agent_adapter_provider
 
 
+def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
+    global _agent_runtime_server
+    provider = desktop_agent_provider()
+    with _agent_runtime_server_lock:
+        if _agent_runtime_server is None:
+            configured_workers = os.environ.get("SIGNALASI_AGENT_RUNTIME_WORKERS", "4")
+            try:
+                max_workers = int(configured_workers)
+            except ValueError:
+                max_workers = 4
+            _agent_runtime_server = DesktopAgentRuntimeServer(
+                provider=provider,
+                store=DesktopAgentRuntimeStore(_agent_runtime_server_state_path()),
+                max_workers=max_workers,
+            )
+        return _agent_runtime_server
+
+
+def shutdown_desktop_agent_runtime_server(wait: bool = False) -> None:
+    global _agent_runtime_server
+    with _agent_runtime_server_lock:
+        runtime = _agent_runtime_server
+        _agent_runtime_server = None
+    if runtime is not None:
+        runtime.shutdown(wait=wait)
+
+
 def list_agents(quick: bool = False) -> list[dict]:
     return [agent_status(spec, quick=quick) for spec in visible_agent_specs().values()]
 
@@ -933,11 +970,13 @@ def connector_diagnostics(quick: bool = False) -> dict:
             "respond_observe_ignore",
             "durable_agent_run_receipts",
             "agent_protocol_negotiation",
+            "desktop_agent_runtime_server",
         ],
         "adapter_provider": {
             "agents": desktop_agent_provider().enumerate(),
             "recoverable_runs": [item.public() for item in desktop_agent_provider().recover()],
         },
+        "agent_runtime_server": desktop_agent_runtime_server().health(),
         "ready": ready,
         "needs_setup": needs_setup,
         "agents": agents,
@@ -1250,6 +1289,8 @@ def deliver_agent_sync(
     response_language: str = "",
     execution_prompt: str = "",
     execution_policy: dict | None = None,
+    client_route_id: str = "",
+    turn_id: str = "",
 ) -> dict:
     from agent_execution_harness import execution_policy_for
 
@@ -1267,7 +1308,7 @@ def deliver_agent_sync(
     if mode == AgentDeliveryMode.RESPOND:
         _agent_execution_started(contact_id)
     try:
-        result = desktop_agent_provider().deliver(
+        result = desktop_agent_runtime_server().execute(
             AgentAdapterRequest(
                 agent_id=contact_id,
                 prompt=text,
@@ -1281,6 +1322,9 @@ def deliver_agent_sync(
                 return_path=return_path,
                 response_language=response_language,
                 checkpoint={
+                    "task_id": task_id,
+                    "client_route_id": client_route_id,
+                    "turn_id": turn_id,
                     "desktop_access_profile": str(
                         desktop_access_profile or "restricted"
                     ),

@@ -23,10 +23,13 @@ from agent_gateway import (
     connector_self_test,
     deliver_agent_sync,
     desktop_agent_provider,
+    desktop_agent_runtime_server,
     list_agents,
     recent_agent_execution_log,
     reset_inactive_agent_runtime,
+    shutdown_desktop_agent_runtime_server,
 )
+from desktop_agent_adapters import AgentAdapterRequest, AgentDeliveryMode
 from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
@@ -137,11 +140,20 @@ async def lifespan(app: FastAPI):
     proactive_runtime = None
     evolution_runtime = None
     reputation_subscription_id = ""
+    runtime_server = None
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
     instance_lock = BackendInstanceLock() if external_services_enabled else None
     if instance_lock is not None:
         instance_lock.acquire()
     init_db()
+    try:
+        runtime_server = desktop_agent_runtime_server()
+        log.info(
+            "Desktop Agent Runtime started (max concurrency=%s)",
+            runtime_server.max_workers,
+        )
+    except Exception as exc:
+        log.warning("Desktop Agent Runtime start failed: %s", exc)
     if external_services_enabled:
         # Start the local Signal Protocol sidecar.
         signal_sidecar_ready = False
@@ -214,6 +226,8 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if runtime_server is not None:
+            shutdown_desktop_agent_runtime_server(wait=False)
         if reputation_subscription_id:
             agent_task_manager.unsubscribe(reputation_subscription_id)
         if evolution_runtime is not None:
@@ -533,6 +547,26 @@ class AgentDeliveryReq(BaseModel):
     protocol: str = "1.0"
     required_features: list[str] = []
     response_language: str = ""
+    client_route_id: str = ""
+    turn_id: str = ""
+
+
+class AgentRuntimeSubmitReq(BaseModel):
+    agent_id: str
+    prompt: str
+    run_id: str = ""
+    idempotency_key: str = ""
+    delivery_mode: str = "respond"
+    conversation_id: str = ""
+    client_route_id: str = ""
+    task_id: str = ""
+    turn_id: str = ""
+    source_message_id: str = ""
+    return_path: str = ""
+    protocol: str = "1.0"
+    required_features: list[str] = Field(default_factory=list)
+    response_language: str = ""
+    desktop_access_profile: str = "restricted"
 
 
 class DesktopNativeToolInvokeReq(BaseModel):
@@ -1018,6 +1052,103 @@ def api_agent_adapters(request: Request):
     }
 
 
+@app.get("/api/agent-runtime")
+def api_agent_runtime(request: Request):
+    require_loopback(request)
+    return desktop_agent_runtime_server().health()
+
+
+@app.get("/api/agent-runtime/sessions")
+def api_agent_runtime_sessions(
+    request: Request,
+    agent_id: str = Query(""),
+    limit: int = Query(100),
+):
+    require_loopback(request)
+    return {
+        "sessions": desktop_agent_runtime_server().sessions(
+            agent_id=agent_id,
+            limit=limit,
+        ),
+    }
+
+
+@app.get("/api/agent-runtime/runs")
+def api_agent_runtime_runs(
+    request: Request,
+    state: str = Query(""),
+    agent_id: str = Query(""),
+    session_id: str = Query(""),
+    limit: int = Query(100),
+):
+    require_loopback(request)
+    return {
+        "runs": desktop_agent_runtime_server().runs(
+            state=state,
+            agent_id=agent_id,
+            session_id=session_id,
+            limit=limit,
+        ),
+    }
+
+
+@app.post("/api/agent-runtime/runs")
+def api_submit_agent_runtime_run(req: AgentRuntimeSubmitReq, request: Request):
+    require_loopback(request)
+    try:
+        run = desktop_agent_runtime_server().submit(
+            AgentAdapterRequest(
+                agent_id=req.agent_id,
+                prompt=req.prompt,
+                run_id=req.run_id,
+                idempotency_key=req.idempotency_key,
+                delivery_mode=AgentDeliveryMode.parse(req.delivery_mode),
+                protocol=req.protocol,
+                required_features=frozenset(req.required_features),
+                conversation_id=req.conversation_id,
+                source_message_id=req.source_message_id,
+                return_path=req.return_path,
+                response_language=req.response_language,
+                checkpoint={
+                    "client_route_id": req.client_route_id,
+                    "conversation_id": req.conversation_id,
+                    "task_id": req.task_id or req.run_id,
+                    "turn_id": req.turn_id,
+                    "desktop_access_profile": req.desktop_access_profile,
+                },
+            )
+        )
+        return {"run": run}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=409 if "Idempotency key" in str(exc) else 502,
+            detail=api_error("agent_runtime_submit_failed", str(exc)[:240]),
+        ) from exc
+
+
+@app.get("/api/agent-runtime/runs/{run_id}")
+def api_agent_runtime_run(
+    run_id: str,
+    request: Request,
+    after_cursor: int = Query(0),
+):
+    require_loopback(request)
+    runtime = desktop_agent_runtime_server()
+    run = runtime.status(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=api_error("agent_runtime_run_not_found"))
+    return {"run": run, "events": runtime.events(run_id, after_cursor)}
+
+
+@app.post("/api/agent-runtime/runs/{run_id}/cancel")
+def api_cancel_agent_runtime_run(run_id: str, request: Request):
+    require_loopback(request)
+    run = desktop_agent_runtime_server().cancel(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=api_error("agent_runtime_run_not_found"))
+    return {"run": run}
+
+
 @app.get("/api/desktop-tools")
 def api_desktop_native_tools(request: Request):
     require_loopback(request)
@@ -1258,6 +1389,8 @@ def api_deliver_agent(agent_id: str, req: AgentDeliveryReq, request: Request):
             protocol=req.protocol,
             required_features=tuple(req.required_features),
             response_language=req.response_language,
+            client_route_id=req.client_route_id,
+            turn_id=req.turn_id,
         )
     except Exception as exc:
         raise HTTPException(
