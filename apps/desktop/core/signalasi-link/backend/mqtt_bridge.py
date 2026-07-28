@@ -3393,6 +3393,24 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
         result_published = False
 
+        def publish_recovery_result(snapshot: dict) -> None:
+            nonlocal result_published
+            if result_published or not str(snapshot.get("result") or "").strip():
+                return
+            result_published = True
+            publish_result(snapshot)
+
+        def bind_codex_stall_recovery(server: CodexAppServer) -> None:
+            agent_task_manager.register_external_recovery(
+                task.task_id,
+                lambda _snapshot, reason: server.recover_stalled_task(
+                    task.task_id,
+                    reason,
+                ),
+                on_event=publish_event,
+                on_result=publish_recovery_result,
+            )
+
         def start_codex() -> None:
             nonlocal active_conversation_task, codex_run_conversation_id
             nonlocal parallel_codex_task, result_published
@@ -3458,6 +3476,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
                     )
+                    bind_codex_stall_recovery(server)
                     add_task_trace("codex_turn_reconnected", task.turn_id)
                     return
 
@@ -3676,6 +3695,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     )
                     if not parallel_codex_task:
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
+                bind_codex_stall_recovery(server)
                 add_task_trace("codex_turn_submitted", task.task_id)
             except Exception as exc:
                 error = str(exc)[:500]

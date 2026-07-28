@@ -39,6 +39,7 @@ class _RecoveredTaskManager:
             result="",
         )
         self.updates = []
+        self.recovery_registration = None
 
     def get(self, task_id):
         if task_id != self.task.task_id:
@@ -64,6 +65,17 @@ class _RecoveredTaskManager:
                 setattr(self.task, name, value)
         return self.task
 
+    def register_external_recovery(
+        self,
+        task_id,
+        recover,
+        *,
+        on_event=None,
+        on_result=None,
+    ):
+        self.recovery_registration = (task_id, recover, on_event, on_result)
+        return task_id == self.task.task_id
+
 
 class _RecoveredCodexServer:
     def __init__(self):
@@ -77,6 +89,9 @@ class _RecoveredCodexServer:
     def recover_task(self, **values):
         self.recoveries.append(values)
         return SimpleNamespace(finished=False)
+
+    def recover_stalled_task(self, task_id, failure):
+        return task_id == "task-recovered" and bool(failure)
 
     def start_task(self, *_args, **_kwargs):
         self.started = True
@@ -134,6 +149,13 @@ class MqttCodexRecoveryTests(unittest.TestCase):
         self.assertEqual("thread-original", recovery["thread_id"])
         self.assertEqual("turn-original", recovery["turn_id"])
         self.assertGreaterEqual(recovery["elapsed_seconds"], 44)
+        self.assertEqual("task-recovered", manager.recovery_registration[0])
+        self.assertTrue(
+            manager.recovery_registration[1](
+                {"task_id": "task-recovered"},
+                "No progress",
+            )
+        )
         with mqtt_bridge.codex_task_callbacks_lock:
             mqtt_bridge.codex_task_callbacks.pop("task-recovered", None)
 

@@ -240,6 +240,183 @@ class AgentTaskConversationTests(unittest.TestCase):
             self.assertGreater(manager.get("external-waiting").status_seq, resumed_seq)
             manager.update("external-waiting", "cancelled", on_event=events.append)
 
+    def test_external_stall_dispatches_recovery_and_accepts_new_progress(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            recovered = threading.Event()
+            manager = agent_task_manager.AgentTaskManager(
+                heartbeat_interval_seconds=0.01,
+                stall_timeout_seconds=0.05,
+                external_recovery_grace_seconds=0.0,
+            )
+            task = manager.create_external(
+                "codex",
+                "codex-contact",
+                "desktop:recovery",
+                "recover this task",
+                lambda _event: None,
+                task_id="external-recovery",
+                execution_policy={"max_replans": 1},
+            )
+            manager.update(task.task_id, "running", current_step="Running Codex")
+
+            def recover(snapshot, reason):
+                self.assertEqual("recovering", snapshot["recovery_state"])
+                self.assertIn("No meaningful external progress", reason)
+                manager.add_event(
+                    task.task_id,
+                    "recovery",
+                    "Codex turn steered",
+                    event_id="codex-recovery",
+                )
+                recovered.set()
+                return True
+
+            self.assertTrue(
+                manager.register_external_recovery(task.task_id, recover)
+            )
+            self.assertTrue(recovered.wait(1))
+            manager.update(task.task_id, "completed", result="done")
+
+            settled = manager.get(task.task_id)
+            self.assertEqual("completed", settled.status)
+            self.assertEqual(1, settled.stall_count)
+            self.assertEqual(1, settled.replan_count)
+            self.assertEqual("healthy", settled.recovery_state)
+            self.assertEqual("done", settled.result)
+
+    def test_provider_replan_events_share_the_outer_recovery_budget(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            manager = agent_task_manager.AgentTaskManager()
+            task = manager.create_external(
+                "codex",
+                "codex-contact",
+                "desktop:provider-replan",
+                "recover this task",
+                lambda _event: None,
+                task_id="provider-replan",
+            )
+            manager.add_event(
+                task.task_id,
+                "replan",
+                "Codex is replanning",
+                event_id="codex-replan-2",
+                metadata={"source": "stall_watchdog", "replan": 2},
+            )
+
+            updated = manager.get(task.task_id)
+            self.assertEqual(2, updated.replan_count)
+            self.assertEqual(2, updated.stall_count)
+            self.assertEqual("recovering", updated.recovery_state)
+
+    def test_external_stall_exhaustion_times_out_once_and_rejects_late_result(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            terminal = threading.Event()
+            results = []
+            manager = agent_task_manager.AgentTaskManager(
+                heartbeat_interval_seconds=0.01,
+                stall_timeout_seconds=0.05,
+                external_recovery_grace_seconds=0.0,
+            )
+            task = manager.create_external(
+                "codex",
+                "codex-contact",
+                "desktop:recovery-failed",
+                "recover this task",
+                lambda _event: None,
+                task_id="external-recovery-failed",
+                execution_policy={"max_replans": 1},
+            )
+            manager.update(task.task_id, "running", current_step="Running Codex")
+            manager.register_external_recovery(
+                task.task_id,
+                lambda _snapshot, _reason: False,
+                on_event=lambda event: (
+                    terminal.set()
+                    if event["status"] in agent_task_manager.TERMINAL_STATES
+                    else None
+                ),
+                on_result=lambda event: results.append(dict(event)),
+            )
+
+            self.assertTrue(terminal.wait(1))
+            settled = manager.get(task.task_id)
+            self.assertEqual("timed_out", settled.status)
+            self.assertEqual("exhausted", settled.recovery_state)
+            self.assertEqual(1, settled.stall_count)
+            self.assertEqual(1, settled.failure_counts["stall_recovery"])
+            self.assertEqual(1, len(results))
+
+            terminal_seq = settled.status_seq
+            manager.update(task.task_id, "completed", result="late")
+            self.assertEqual("timed_out", manager.get(task.task_id).status)
+            self.assertEqual(terminal_seq, manager.get(task.task_id).status_seq)
+            self.assertNotEqual("late", manager.get(task.task_id).result)
+
+    def test_external_watchdog_pauses_while_user_action_is_required(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            recovery_called = threading.Event()
+            manager = agent_task_manager.AgentTaskManager(
+                heartbeat_interval_seconds=0.01,
+                stall_timeout_seconds=0.05,
+                external_recovery_grace_seconds=0.0,
+            )
+            task = manager.create_external(
+                "codex",
+                "codex-contact",
+                "desktop:approval",
+                "wait for approval",
+                lambda _event: None,
+                task_id="external-approval",
+                execution_policy={"max_replans": 1},
+            )
+            manager.update(task.task_id, "running")
+            manager.register_external_recovery(
+                task.task_id,
+                lambda _snapshot, _reason: recovery_called.set() or True,
+            )
+            manager.update(task.task_id, "waiting_approval")
+
+            time.sleep(0.15)
+
+            self.assertFalse(recovery_called.is_set())
+            self.assertEqual("waiting_approval", manager.get(task.task_id).status)
+            manager.update(task.task_id, "cancelled")
+
+    def test_cancel_replays_terminal_snapshot_when_runner_wins_the_race(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(
+            agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"
+        ):
+            manager = agent_task_manager.AgentTaskManager()
+            task = manager.create_external(
+                "codex",
+                "codex-contact",
+                "desktop:cancel-race",
+                "cancel this task",
+                lambda _event: None,
+                task_id="cancel-race",
+            )
+            manager.update(task.task_id, "running")
+            original_finish = manager._finish
+            events = []
+
+            def runner_wins(running_task, status, _on_event, **values):
+                original_finish(running_task, status, None, **values)
+                return False
+
+            with patch.object(manager, "_finish", side_effect=runner_wins):
+                manager.cancel(task.task_id, events.append)
+
+            self.assertEqual(1, len(events))
+            self.assertEqual("cancelled", events[0]["status"])
+
     def test_hung_runner_times_out_once_and_discards_late_result(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             agent_task_manager, "TASKS_DB_PATH", Path(temporary) / "tasks.sqlite3"

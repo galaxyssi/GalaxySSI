@@ -58,7 +58,7 @@ data class AgentTaskLivenessPolicy(
     val runningTimeoutMillis: Long = 10 * 60_000L,
     val waitingResponseWarningMillis: Long = 30_000L,
     val waitingResponseTimeoutMillis: Long = 6 * 60_000L,
-    val absoluteTimeoutMillis: Long = 2 * 60 * 60_000L,
+    val absoluteTimeoutMillis: Long = 0L,
     val watchdogIntervalMillis: Long = 5_000L,
     val heartbeatWriteThrottleMillis: Long = 2_000L
 ) {
@@ -66,7 +66,7 @@ data class AgentTaskLivenessPolicy(
         require(queuedWarningMillis > 0L && queuedTimeoutMillis > queuedWarningMillis)
         require(runningWarningMillis > 0L && runningTimeoutMillis > runningWarningMillis)
         require(waitingResponseWarningMillis > 0L && waitingResponseTimeoutMillis > waitingResponseWarningMillis)
-        require(absoluteTimeoutMillis > 0L)
+        require(absoluteTimeoutMillis >= 0L)
         require(watchdogIntervalMillis > 0L)
         require(heartbeatWriteThrottleMillis >= 0L)
     }
@@ -91,7 +91,7 @@ data class AgentTaskLivenessPolicy(
             ?: now
         val idleMillis = (now - lastActivity.coerceAtMost(now)).coerceAtLeast(0L)
         val lifetimeMillis = (now - startedAt.coerceAtMost(now)).coerceAtLeast(0L)
-        if (lifetimeMillis >= absoluteTimeoutMillis) {
+        if (absoluteTimeoutMillis > 0L && lifetimeMillis >= absoluteTimeoutMillis) {
             return AgentTaskLivenessDecision(
                 AgentTaskLivenessState.TIMED_OUT,
                 reason = "absolute_deadline_exceeded",

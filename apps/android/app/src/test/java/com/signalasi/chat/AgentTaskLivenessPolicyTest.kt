@@ -89,6 +89,20 @@ class AgentTaskLivenessPolicyTest {
     }
 
     @Test
+    fun defaultPolicyAllowsLongTasksThatKeepMakingProgress() {
+        val now = 12 * 60 * 60_000L
+        val workspace = workspace(
+            status = AgentWorkspaceStatus.RUNNING,
+            events = listOf(event(1L, AgentTaskEventKinds.PROGRESS, now - 1_000L))
+        )
+
+        val decision = AgentTaskLivenessPolicy().evaluate(workspace, now)
+
+        assertEquals(AgentTaskLivenessState.HEALTHY, decision.state)
+        assertTrue(decision.lifetimeMillis > 2 * 60 * 60_000L)
+    }
+
+    @Test
     fun completedReplySuppressesLateWatchdogPresentation() {
         val entries = listOf(
             transcript(AgentTranscriptRole.USER, "", "turn"),
