@@ -19,6 +19,7 @@ TASKS_DB_PATH = Path.home() / ".signalasi" / "agent_tasks.sqlite3"
 TERMINAL_STATES = {"completed", "failed", "cancelled", "timed_out"}
 MAX_AUTOMATIC_RECOVERY_ATTEMPTS = 2
 MAX_TASK_EVENTS = 256
+MAX_DELIVERY_TRACE_EVENTS = 64
 EventCallback = Callable[[dict], None]
 
 
@@ -35,6 +36,45 @@ DEFAULT_STALL_TIMEOUT_SECONDS = _environment_timeout_seconds(
     default=300.0,
     minimum=30.0,
 )
+
+
+def delivery_trace_metrics(trace: list[dict]) -> dict:
+    valid = [
+        item for item in trace
+        if isinstance(item, dict) and int(item.get("at") or 0) > 0
+    ]
+    if not valid:
+        return {
+            "total_ms": 0,
+            "first_output_ms": None,
+            "milestones": {},
+            "stages": [],
+        }
+    origin = int(valid[0]["at"])
+    previous = origin
+    milestones: dict[str, int] = {}
+    stages: list[dict] = []
+    for item in valid:
+        stage = str(item.get("stage") or "")
+        current = int(item["at"])
+        milestones.setdefault(stage, current)
+        stages.append({
+            "stage": stage,
+            "at": current,
+            "from_start_ms": max(0, current - origin),
+            "from_previous_ms": max(0, current - previous),
+        })
+        previous = current
+    first_output_at = milestones.get("agent_first_output")
+    return {
+        "total_ms": max(0, previous - origin),
+        "first_output_ms": (
+            max(0, first_output_at - origin)
+            if first_output_at is not None else None
+        ),
+        "milestones": milestones,
+        "stages": stages[-MAX_DELIVERY_TRACE_EVENTS:],
+    }
 
 
 @dataclass
@@ -71,6 +111,8 @@ class AgentTask:
     last_progress_at: int = field(default_factory=lambda: int(time.time() * 1000))
     replan_count: int = 0
     failure_counts: dict[str, int] = field(default_factory=dict)
+    trace_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    delivery_trace: list[dict] = field(default_factory=list)
     process: subprocess.Popen | None = field(default=None, repr=False, compare=False)
     cancel_requested: bool = field(default=False, repr=False, compare=False)
 
@@ -113,6 +155,9 @@ class AgentTask:
             "last_progress_at": self.last_progress_at,
             "replan_count": self.replan_count,
             "failure_counts": dict(self.failure_counts),
+            "trace_id": self.trace_id,
+            "delivery_trace": self.delivery_trace[-MAX_DELIVERY_TRACE_EVENTS:],
+            "latency": delivery_trace_metrics(self.delivery_trace),
             "process_id": self.process.pid if self.process is not None and self.process.poll() is None else 0,
         }
         if include_prompt:
@@ -177,6 +222,8 @@ class AgentTaskManager:
         attempt: int = 1,
         execution_prompt: str = "",
         execution_policy: dict | None = None,
+        trace_id: str = "",
+        delivery_trace: list[dict] | None = None,
     ) -> AgentTask:
         from agent_execution_harness import AgentExecutionPolicy, execution_policy_for
 
@@ -202,10 +249,16 @@ class AgentTaskManager:
             retry_of=str(retry_of or ""),
             attempt=max(1, int(attempt or 1)),
             execution_policy=policy.public(),
+            trace_id=str(trace_id or "").strip()[:128] or uuid.uuid4().hex,
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:
                 task.task_id = str(uuid.uuid4())
+            task.delivery_trace = self._merge_delivery_trace(
+                task,
+                [],
+                delivery_trace or [],
+            )
             self._tasks[task.task_id] = task
             self._save_locked(task)
         self._emit(task, on_event)
@@ -221,6 +274,8 @@ class AgentTaskManager:
         attachments: list[str] | None = None,
         execution_prompt: str = "",
         execution_policy: dict | None = None,
+        trace_id: str = "",
+        delivery_trace: list[dict] | None = None,
     ) -> AgentTask:
         from agent_execution_harness import AgentExecutionPolicy, execution_policy_for
 
@@ -241,10 +296,16 @@ class AgentTaskManager:
             client_turn_id=client_turn_id,
             attachments=[str(value) for value in (attachments or [])[:12]],
             execution_policy=policy.public(),
+            trace_id=str(trace_id or "").strip()[:128] or uuid.uuid4().hex,
         )
         with self._lock:
             if task.task_id in self._tasks or self._store.get(task.task_id) is not None:
                 task.task_id = str(uuid.uuid4())
+            task.delivery_trace = self._merge_delivery_trace(
+                task,
+                [],
+                delivery_trace or [],
+            )
             self._tasks[task.task_id] = task
             self._external_task_ids.add(task.task_id)
             self._save_locked(task)
@@ -355,6 +416,7 @@ class AgentTaskManager:
                 if str(candidate.get("event_id") or "") == stable_event_id
             ), -1)
             existing = task.events[existing_index] if existing_index >= 0 else None
+            identity = self._task_identity(task)
             event = {
                 "event_id": stable_event_id,
                 "created_at": int((existing or {}).get("created_at") or now),
@@ -364,6 +426,7 @@ class AgentTaskManager:
                 "status": str(status or "completed")[:32],
                 "detail": str(detail or "")[:4_000],
                 "metadata": {
+                    **identity,
                     **dict((existing or {}).get("metadata") or {}),
                     **dict(metadata or {}),
                 },
@@ -389,6 +452,75 @@ class AgentTaskManager:
             self._save_locked(task)
         self._emit(task, on_event)
         return task
+
+    def append_trace(
+        self,
+        task_id: str,
+        stage: str,
+        detail: str = "",
+        *,
+        at: int = 0,
+        once: bool = False,
+        meaningful_progress: bool = False,
+    ) -> AgentTask | None:
+        with self._lock:
+            task = self._tasks.get(str(task_id or ""))
+            if task is None:
+                return None
+            clean_stage = str(stage or "").strip()[:96]
+            if not clean_stage:
+                return task
+            if once and any(
+                str(item.get("stage") or "") == clean_stage
+                for item in task.delivery_trace
+            ):
+                return task
+            event_at = max(0, int(at or time.time() * 1000))
+            entry = self._trace_entry(
+                task,
+                clean_stage,
+                event_at,
+                str(detail or "")[:240],
+            )
+            signature = self._trace_signature(entry)
+            if any(
+                self._trace_signature(item) == signature
+                for item in task.delivery_trace
+            ):
+                return task
+            task.delivery_trace.append(entry)
+            del task.delivery_trace[:-MAX_DELIVERY_TRACE_EVENTS]
+            task.updated_at = max(task.updated_at, event_at)
+            if meaningful_progress:
+                task.last_progress_at = max(task.last_progress_at, event_at)
+                task.status_seq += 1
+            self._save_locked(task)
+            return task
+
+    def merge_trace(self, task_id: str, trace: list[dict]) -> AgentTask | None:
+        with self._lock:
+            task = self._tasks.get(str(task_id or ""))
+            if task is None:
+                return None
+            merged = self._merge_delivery_trace(
+                task,
+                task.delivery_trace,
+                trace,
+            )
+            if merged != task.delivery_trace:
+                task.delivery_trace = merged
+                task.updated_at = max(
+                    task.updated_at,
+                    max(
+                        (
+                            int(item.get("at") or 0)
+                            for item in task.delivery_trace
+                        ),
+                        default=task.updated_at,
+                    ),
+                )
+                self._save_locked(task)
+            return task
 
     def _run(
         self,
@@ -478,6 +610,7 @@ class AgentTaskManager:
                         "status": "running",
                         "detail": f"No meaningful progress for {stall_timeout:g} seconds",
                         "metadata": {
+                            **self._task_identity(task),
                             "replan": task.replan_count,
                             "reason": "no_progress_timeout",
                         },
@@ -646,10 +779,12 @@ class AgentTaskManager:
         conversation_id: str,
         *,
         agent_id: str = "",
+        client_route_id: str = "",
         exclude_task_id: str = "",
     ) -> AgentTask | None:
         clean_conversation_id = str(conversation_id or "").strip()
         clean_agent_id = str(agent_id or "").strip()
+        clean_route_id = str(client_route_id or "").strip()
         if not clean_conversation_id:
             return None
         with self._lock:
@@ -661,6 +796,10 @@ class AgentTaskManager:
                 and task.status != "interrupted"
                 and not task.cancel_requested
                 and (not clean_agent_id or task.agent_id == clean_agent_id)
+                and (
+                    not clean_route_id
+                    or task.client_route_id == clean_route_id
+                )
             ]
             return max(candidates, key=lambda item: (item.created_at, item.task_id), default=None)
 
@@ -762,8 +901,20 @@ class AgentTaskManager:
                 "title": "Resuming after Desktop restart",
                 "status": "running",
                 "detail": f"Automatic recovery attempt {task.attempt}",
-                "metadata": {"attempt": task.attempt},
+                "metadata": {
+                    **self._task_identity(task),
+                    "attempt": task.attempt,
+                },
             })
+            task.delivery_trace = self._merge_delivery_trace(
+                task,
+                task.delivery_trace,
+                [{
+                    "stage": "desktop_task_resumed",
+                    "at": now,
+                    "detail": f"attempt={task.attempt}",
+                }],
+            )
             self._save_locked(task)
         return task
 
@@ -861,6 +1012,15 @@ class AgentTaskManager:
                 task.error = ""
                 task.exit_code = None
                 task.current_step = "Recovering after Desktop restart"
+            task.delivery_trace = self._merge_delivery_trace(
+                task,
+                task.delivery_trace,
+                [{
+                    "stage": "desktop_task_recovering",
+                    "at": recovered_at,
+                    "detail": f"attempt={task.attempt}",
+                }],
+            )
             self._tasks[task.task_id] = task
             self._recovered_task_ids.add(task.task_id)
             self._store.upsert(task.record())
@@ -871,8 +1031,9 @@ class AgentTaskManager:
     @staticmethod
     def _decode_task(row: dict) -> AgentTask:
         status = str(row.get("status") or "failed")
-        return AgentTask(
-            task_id=str(row.get("task_id") or uuid.uuid4()),
+        task_id = str(row.get("task_id") or uuid.uuid4())
+        task = AgentTask(
+            task_id=task_id,
             agent_id=str(row.get("agent_id") or ""),
             contact_id=str(row.get("contact_id") or ""),
             source_message_id=str(row.get("source_message_id") or ""),
@@ -920,7 +1081,90 @@ class AgentTaskManager:
                 str(key): max(0, int(value or 0))
                 for key, value in dict(row.get("failure_counts") or {}).items()
             },
+            trace_id=(
+                str(row.get("trace_id") or "").strip()[:128]
+                or uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"signalasi:agent-task:{task_id}",
+                ).hex
+            ),
         )
+        task.delivery_trace = AgentTaskManager._merge_delivery_trace(
+            task,
+            [],
+            list(row.get("delivery_trace") or []),
+        )
+        return task
+
+    @staticmethod
+    def _task_identity(task: AgentTask) -> dict[str, str]:
+        return {
+            key: value
+            for key, value in {
+                "client_route_id": task.client_route_id,
+                "conversation_id": task.conversation_id,
+                "client_conversation_id": task.client_conversation_id,
+                "task_id": task.task_id,
+                "turn_id": task.turn_id,
+                "client_turn_id": task.client_turn_id,
+            }.items()
+            if value
+        }
+
+    @staticmethod
+    def _trace_entry(
+        task: AgentTask,
+        stage: str,
+        at: int,
+        detail: str,
+    ) -> dict:
+        return {
+            "stage": str(stage or "")[:96],
+            "at": max(0, int(at or 0)),
+            "detail": str(detail or "")[:240],
+            **AgentTaskManager._task_identity(task),
+        }
+
+    @staticmethod
+    def _trace_signature(item: dict) -> tuple[str, int, str]:
+        return (
+            str(item.get("stage") or ""),
+            int(item.get("at") or 0),
+            str(item.get("detail") or ""),
+        )
+
+    @staticmethod
+    def _merge_delivery_trace(
+        task: AgentTask,
+        current: list[dict],
+        incoming: list[dict],
+    ) -> list[dict]:
+        merged: list[dict] = []
+        signatures: set[tuple[str, int, str]] = set()
+        for item in [*current, *incoming]:
+            if not isinstance(item, dict):
+                continue
+            stage = str(item.get("stage") or "").strip()[:96]
+            if not stage:
+                continue
+            try:
+                at = max(0, int(item.get("at") or 0))
+            except (TypeError, ValueError):
+                continue
+            if not at:
+                continue
+            entry = AgentTaskManager._trace_entry(
+                task,
+                stage,
+                at,
+                str(item.get("detail") or "")[:240],
+            )
+            signature = AgentTaskManager._trace_signature(entry)
+            if signature in signatures:
+                continue
+            signatures.add(signature)
+            merged.append(entry)
+        return merged[-MAX_DELIVERY_TRACE_EVENTS:]
 
     @staticmethod
     def _task_artifacts(task_id: str) -> list[dict]:

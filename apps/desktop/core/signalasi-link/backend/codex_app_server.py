@@ -123,6 +123,7 @@ class CodexRun:
     replan_inflight: bool = False
     finished: bool = False
     prefers_chinese: bool = False
+    first_output_emitted: bool = False
 
 
 class CodexAppServer:
@@ -1078,10 +1079,13 @@ class CodexAppServer:
             self.on_event(task_id, {**common, "turn_id": run.turn_id, "status": "running", "current_step": "Codex is working"})
         elif method == "item/agentMessage/delta":
             item_id = str(params.get("itemId") or "")
+            delta = str(params.get("delta") or "")
             if item_id:
                 run.agent_message_deltas[item_id] = (
-                    run.agent_message_deltas.get(item_id, "") + str(params.get("delta") or "")
+                    run.agent_message_deltas.get(item_id, "") + delta
                 )[:MAX_VISIBLE_PROGRESS_TEXT]
+            if delta.strip():
+                self._emit_first_output(task_id, run, common)
         elif method == "item/reasoning/summaryTextDelta":
             item_id = str(params.get("itemId") or "")
             if item_id:
@@ -1108,6 +1112,7 @@ class CodexAppServer:
                 )
                 phase = str(item.get("phase") or "")
                 if text:
+                    self._emit_first_output(task_id, run, common)
                     run.last_agent_text = text
                     if phase == "commentary":
                         self._emit_progress(
@@ -1209,6 +1214,23 @@ class CodexAppServer:
             "status": "running",
             "current_step": str(progress.get("title") or "Codex is working"),
             "progress_event": progress,
+        })
+
+    def _emit_first_output(
+        self,
+        task_id: str,
+        run: CodexRun,
+        common: dict,
+    ) -> None:
+        if run.first_output_emitted:
+            return
+        run.first_output_emitted = True
+        self.on_event(task_id, {
+            **common,
+            "status": "running",
+            "telemetry_only": True,
+            "trace_stage": "agent_first_output",
+            "trace_detail": "codex",
         })
 
     @staticmethod

@@ -91,6 +91,28 @@ class TaskLatencyTests(unittest.TestCase):
             "events": [completed],
         }, now_ms=1_100))
 
+    def test_first_output_trace_publishes_without_changing_visible_step(self):
+        gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)
+        running = {
+            "status": "running",
+            "status_seq": 1,
+            "current_step": "Codex is working",
+            "delivery_trace": [
+                {"stage": "codex_running", "at": 1_000},
+            ],
+        }
+        first_output = {
+            **running,
+            "status_seq": 2,
+            "delivery_trace": [
+                *running["delivery_trace"],
+                {"stage": "agent_first_output", "at": 1_250},
+            ],
+        }
+
+        self.assertTrue(gate.should_publish(running, now_ms=1_000))
+        self.assertTrue(gate.should_publish(first_output, now_ms=1_250))
+
     def test_task_payload_carries_latest_event_and_replays_only_readable_progress(self):
         first = {
             "event_id": "one",
@@ -138,6 +160,40 @@ class TaskLatencyTests(unittest.TestCase):
             }],
             payload["events"],
         )
+
+    def test_task_payload_uses_persisted_trace_and_includes_outbound_stage(self):
+        task = {
+            "task_id": "task-persisted-trace",
+            "trace_id": "trace-1",
+            "status": "running",
+            "agent_id": "codex",
+            "client_route_id": "route-a",
+            "client_conversation_id": "conversation-a",
+            "client_turn_id": "turn-a",
+            "delivery_trace": [
+                {"stage": "created", "at": 1_000, "detail": "phone"},
+                {"stage": "agent_first_output", "at": 1_500, "detail": "codex"},
+            ],
+        }
+        with patch("mqtt_bridge.time.time", return_value=2.0):
+            payload = _agent_task_payload(
+                task,
+                [{"stage": "stale", "at": 500, "detail": ""}],
+                resolved_desktop_id="desktop-1",
+                resolved_desktop_name="Desktop",
+                resolved_connector_agents=[],
+            )
+
+        self.assertEqual("trace-1", payload["trace_id"])
+        self.assertEqual("route-a", payload["client_route_id"])
+        self.assertEqual("conversation-a", payload["conversation_id"])
+        self.assertEqual("turn-a", payload["turn_id"])
+        self.assertEqual(
+            ["created", "agent_first_output", "agent_running"],
+            [item["stage"] for item in payload["delivery_trace"]],
+        )
+        self.assertEqual(1_000, payload["latency"]["total_ms"])
+        self.assertEqual(500, payload["latency"]["first_output_ms"])
 
     def test_readable_progress_replay_is_bounded_and_keeps_latest_narration(self):
         events = [

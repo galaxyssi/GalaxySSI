@@ -190,6 +190,41 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("Checking the visible worksheet fields.", progress[0]["detail"])
         self.assertNotIn("hidden chain", progress[0]["detail"])
 
+    def test_first_agent_output_emits_one_telemetry_milestone(self):
+        server, run, events = self._event_server()
+
+        for delta in ("Hello", " world"):
+            server._handle_event({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": run.thread_id,
+                    "turnId": run.turn_id,
+                    "itemId": "answer-stream",
+                    "delta": delta,
+                },
+            })
+        server._handle_event({
+            "method": "item/completed",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "item": {
+                    "id": "answer-stream",
+                    "type": "agentMessage",
+                    "phase": "final_answer",
+                    "text": "Hello world",
+                },
+            },
+        })
+
+        telemetry = [
+            event for _, event in events
+            if event.get("trace_stage") == "agent_first_output"
+        ]
+        self.assertEqual(1, len(telemetry))
+        self.assertTrue(telemetry[0]["telemetry_only"])
+        self.assertEqual("codex", telemetry[0]["trace_detail"])
+
     def test_command_approval_is_bound_to_exact_parameters_and_resumed(self):
         server, run, events = self._event_server()
         responses = []

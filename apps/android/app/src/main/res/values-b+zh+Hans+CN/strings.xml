@@ -480,6 +480,7 @@
     <string name="delivery_trace_desktop_plain">Desktop 明文调试</string>
     <string name="delivery_trace_desktop_decrypted">Desktop 已解密</string>
     <string name="delivery_trace_agent_started">Agent 已启动</string>
+    <string name="delivery_trace_agent_first_output">收到 Agent 首次输出</string>
     <string name="delivery_trace_agent_replied">Agent 已回复</string>
     <string name="delivery_trace_desktop_reply_queued">Desktop 回复入队</string>
     <string name="delivery_trace_desktop_reply_ack">Desktop 回复 Broker ACK</string>
