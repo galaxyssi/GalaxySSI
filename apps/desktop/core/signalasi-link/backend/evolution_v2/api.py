@@ -57,6 +57,13 @@ class CampaignTickReq(EvolutionRequest):
     start_ready: bool = False
 
 
+class SchedulerConfigReq(EvolutionRequest):
+    enabled: bool
+    evolutions_per_day: int = Field(ge=1, le=96)
+    execution_mode: str = Field(pattern=r"^(serial|parallel)$")
+    max_parallel_evolutions: int = Field(ge=2, le=4)
+
+
 def _is_loopback_host(host: str) -> bool:
     normalized = str(host or "").strip().casefold().strip("[]")
     if normalized in _LOOPBACK_HOSTNAMES:
@@ -246,9 +253,21 @@ def scheduler_status(request: Request):
     return _runtime(request).scheduler.status()
 
 
+@router.post("/scheduler/config")
+def scheduler_config(request: Request, req: SchedulerConfigReq):
+    return _runtime(request).scheduler.update_config(req.model_dump())
+
+
 @router.post("/scheduler/tick")
-def scheduler_tick(request: Request, force: bool = False):
-    return _runtime(request).scheduler.run_due(force=force)
+def scheduler_tick(
+    request: Request,
+    force: bool = False,
+    evolution_only: bool = False,
+):
+    return _runtime(request).scheduler.run_due(
+        force=force,
+        evolution_only=evolution_only,
+    )
 
 
 @router.get("/github/checks")

@@ -98,7 +98,9 @@ tests, are re-exported. V2 overrides only `EvolutionManager`, `evolution_manager
 - `config/evolution-gates.json`: immutable quality gate definitions.
 - `config/evolution-sources.json`: trusted organizations, known repositories, discovery queries,
   fit terms, and allowed licenses.
-- `config/evolution-scheduler.json`: research and diagnostic schedules.
+- `config/evolution-scheduler.json`: shipped scheduler policy and default cadence.
 
-The scheduler creates research evidence, issue signals, and proposals. It does not automatically
-publish or merge source changes.
+User-controlled scheduler settings are stored under the local SignalASI state root, not in the
+source checkout. The scheduler can run 1 to 96 evolutions per day. Serial mode waits for the
+previous isolated task; parallel mode starts on cadence up to four concurrent tasks. Verified
+candidates are submitted as pull requests. The scheduler never merges them.

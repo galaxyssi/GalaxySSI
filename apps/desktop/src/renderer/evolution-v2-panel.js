@@ -5,13 +5,14 @@
   if (typeof api !== "function") return;
 
   const state = {
-    tab: "preflight",
+    tab: "schedule",
     latestResearchId: "",
     busy: false,
     renderToken: 0
   };
 
   const tabs = [
+    ["schedule", "Schedule"],
     ["preflight", "Preflight"],
     ["radar", "Technology radar"],
     ["roadmap", "1-5 year roadmap"],
@@ -129,6 +130,7 @@
     try {
       const renderer = {
         preflight: renderPreflight,
+        schedule: renderSchedule,
         radar: renderRadar,
         roadmap: renderRoadmap,
         proposals: renderProposals,
@@ -142,6 +144,162 @@
         setStatus(String(error?.message || error), true);
       }
     }
+  }
+
+  function schedulerTime(timestamp) {
+    const value = Number(timestamp || 0);
+    if (!Number.isFinite(value) || value <= 0) return translate("Not scheduled");
+    return new Date(value).toLocaleString();
+  }
+
+  function renderScheduleField(labelText, control, description = "") {
+    const label = node("label", "evolution-v2-field");
+    label.append(node("span", "evolution-v2-field-label", labelText), control);
+    if (description) {
+      label.append(node("small", "evolution-v2-field-help", description));
+    }
+    return label;
+  }
+
+  async function renderSchedule(target) {
+    const response = await request("GET", "/scheduler");
+    const config = response?.config || {};
+    const computed = response?.computed || {};
+    const schedulerState = response?.state || {};
+    const enabled = config.enabled !== false;
+    const activeCount = Number(computed.active_count || 0);
+
+    const summary = card(
+      translate(enabled ? "Automatic evolution is on" : "Automatic evolution is paused"),
+      enabled
+        ? translate("Verified candidates are submitted as pull requests and are never merged automatically.")
+        : translate("No new evolution runs will start. Existing isolated runs are not discarded.")
+    );
+    const summaryMeta = node("div", "evolution-v2-meta");
+    summaryMeta.append(
+      chip(
+        translate(response?.running ? "Scheduler running" : "Scheduler stopped"),
+        response?.running ? "pass" : "warn"
+      ),
+      chip(translate("{count} active", { count: activeCount }), activeCount ? "warn" : ""),
+      chip(translate(
+        computed.pending ? "Waiting for capacity" : "No queued interval"
+      ), computed.pending ? "warn" : "")
+    );
+    summary.append(summaryMeta);
+    summary.append(node(
+      "p",
+      "",
+      `${translate("Next run")}: ${schedulerTime(computed.next_evolution_millis)}`
+    ));
+    const history = Array.isArray(schedulerState.history) ? schedulerState.history : [];
+    if (history.length) {
+      const latest = history[0];
+      summary.append(node(
+        "p",
+        "",
+        `${translate("Latest run")}: ${latest.title || latest.task_id || ""} | ${latest.status || ""}`
+      ));
+    }
+    target.append(summary);
+
+    const settings = card(
+      translate("Evolution schedule"),
+      translate("Missed intervals are coalesced after downtime instead of creating a burst backlog.")
+    );
+    settings.classList.add("evolution-v2-scheduler-card");
+
+    const enabledInput = document.createElement("input");
+    enabledInput.type = "checkbox";
+    enabledInput.id = "evolutionSchedulerEnabled";
+    enabledInput.checked = enabled;
+    const enabledRow = node("label", "evolution-v2-toggle");
+    enabledRow.append(
+      enabledInput,
+      node("span", "evolution-v2-toggle-track"),
+      node("span", "evolution-v2-toggle-copy", translate("Enable automatic self-evolution"))
+    );
+    settings.append(enabledRow);
+
+    const frequency = document.createElement("input");
+    frequency.type = "number";
+    frequency.id = "evolutionSchedulerFrequency";
+    frequency.min = "1";
+    frequency.max = "96";
+    frequency.step = "1";
+    frequency.value = String(config.evolutions_per_day || 1);
+
+    const mode = document.createElement("select");
+    mode.id = "evolutionSchedulerMode";
+    const serialOption = document.createElement("option");
+    serialOption.value = "serial";
+    serialOption.textContent = translate("Serial");
+    const parallelOption = document.createElement("option");
+    parallelOption.value = "parallel";
+    parallelOption.textContent = translate("Parallel");
+    mode.append(serialOption, parallelOption);
+    mode.value = config.execution_mode === "parallel" ? "parallel" : "serial";
+
+    const parallelLimit = document.createElement("input");
+    parallelLimit.type = "number";
+    parallelLimit.id = "evolutionSchedulerParallelLimit";
+    parallelLimit.min = "2";
+    parallelLimit.max = "4";
+    parallelLimit.step = "1";
+    parallelLimit.value = String(config.max_parallel_evolutions || 2);
+
+    const parallelField = renderScheduleField(
+      translate("Maximum parallel runs"),
+      parallelLimit,
+      translate("Applies only in parallel mode.")
+    );
+    const refreshParallelState = () => {
+      const isParallel = mode.value === "parallel";
+      parallelLimit.disabled = !isParallel;
+      parallelField.classList.toggle("disabled", !isParallel);
+    };
+    mode.addEventListener("change", refreshParallelState);
+    refreshParallelState();
+
+    const fields = node("div", "evolution-v2-form-grid");
+    fields.append(
+      renderScheduleField(
+        translate("Runs per day"),
+        frequency,
+        translate("Choose 1 to 96 runs per day.")
+      ),
+      renderScheduleField(
+        translate("Execution mode"),
+        mode,
+        translate("Serial waits for the previous run; parallel starts on schedule within the limit.")
+      ),
+      parallelField
+    );
+    settings.append(fields);
+
+    const actions = node("div", "evolution-v2-actions");
+    const saveButton = actionButton(translate("Save schedule"), async () => {
+      await request("POST", "/scheduler/config", {
+        enabled: enabledInput.checked,
+        evolutions_per_day: Number(frequency.value),
+        execution_mode: mode.value,
+        max_parallel_evolutions: Number(parallelLimit.value)
+      });
+      await render();
+    }, true);
+    saveButton.id = "saveEvolutionScheduleButton";
+    const runButton = actionButton(translate("Run one evolution now"), async () => {
+      setStatus(translate("Starting scheduled evolution..."));
+      await request("POST", "/scheduler/tick?evolution_only=true");
+      await render();
+    });
+    runButton.id = "runEvolutionNowButton";
+    actions.append(
+      saveButton,
+      runButton
+    );
+    settings.append(actions);
+    target.append(settings);
   }
 
   async function renderPreflight(target) {

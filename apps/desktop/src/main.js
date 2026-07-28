@@ -231,6 +231,7 @@ async function runUiSmoke() {
             && document.querySelector("#utilityDrawer")?.dataset.panelLoading === "false"
             && document.querySelector("#cloudModelBadge")?.textContent?.trim()
             && document.querySelector("#evolutionV2Shell")
+            && document.querySelector("#saveEvolutionScheduleButton")
           ) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
@@ -254,6 +255,14 @@ async function runUiSmoke() {
             shell: Boolean(document.querySelector("#evolutionV2Shell")),
             toolbar: Boolean(document.querySelector("#evolutionV2Shell .evolution-v2-toolbar")),
             tabs: document.querySelectorAll("#evolutionV2Shell .evolution-v2-tab").length,
+            scheduler: {
+              enabled: document.querySelector("#evolutionSchedulerEnabled")?.checked,
+              frequency: document.querySelector("#evolutionSchedulerFrequency")?.value || "",
+              mode: document.querySelector("#evolutionSchedulerMode")?.value || "",
+              parallelLimit: document.querySelector("#evolutionSchedulerParallelLimit")?.value || "",
+              save: Boolean(document.querySelector("#saveEvolutionScheduleButton")),
+              runNow: Boolean(document.querySelector("#runEvolutionNowButton"))
+            },
             stylesheet: Array.from(document.styleSheets).some(
               (sheet) => String(sheet.href || "").endsWith("/evolution-v2-panel.css")
             )
@@ -293,7 +302,13 @@ async function runUiSmoke() {
         || !settingsState.insecureValidation || !settingsState.budgetValidation
         || Object.values(settingsState.evolution).some((value) => !value)
         || !settingsState.evolutionV2.shell || !settingsState.evolutionV2.toolbar
-        || settingsState.evolutionV2.tabs !== 6 || !settingsState.evolutionV2.stylesheet
+        || settingsState.evolutionV2.tabs !== 7 || !settingsState.evolutionV2.stylesheet
+        || settingsState.evolutionV2.scheduler.enabled !== true
+        || settingsState.evolutionV2.scheduler.frequency !== "1"
+        || settingsState.evolutionV2.scheduler.mode !== "serial"
+        || settingsState.evolutionV2.scheduler.parallelLimit !== "2"
+        || !settingsState.evolutionV2.scheduler.save
+        || !settingsState.evolutionV2.scheduler.runNow
         || settingsState.languagePolicy.some((value) => value !== "auto")) {
       throw new Error(`Settings drawer did not expose cloud API configuration: ${JSON.stringify(settingsState)}`);
     }
@@ -991,7 +1006,8 @@ async function evolutionV2Request(method = "GET", pathname = "/health", body = n
     )
     : new RegExp(
       `^/(?:research/runs|roadmaps|proposals/${identifier}/materialize|`
-      + `issues/(?:scan|ingest)|campaigns(?:/${identifier}/tick)?|scheduler/tick)$`
+      + `issues/(?:scan|ingest)|campaigns(?:/${identifier}/tick)?|`
+      + "scheduler/(?:config|tick))$"
     );
   if (!allowedPath.test(parsed.pathname)) {
     throw new Error("Evolution V2 API route is not allowed");

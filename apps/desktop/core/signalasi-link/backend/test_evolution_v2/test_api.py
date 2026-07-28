@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -13,7 +14,10 @@ from evolution_v2.api import (
     MaterializeReq,
     ResearchReq,
     RoadmapReq,
+    SchedulerConfigReq,
     _runtime,
+    scheduler_config,
+    scheduler_tick,
 )
 
 
@@ -67,11 +71,80 @@ class ApiBoundaryTests(unittest.TestCase):
             lambda: MaterializeReq(max_attempts=11),
             lambda: IssueIngestReq(text=""),
             lambda: CampaignReq(name="test", unexpected=True),
+            lambda: SchedulerConfigReq(
+                enabled=True,
+                evolutions_per_day=0,
+                execution_mode="serial",
+                max_parallel_evolutions=2,
+            ),
+            lambda: SchedulerConfigReq(
+                enabled=True,
+                evolutions_per_day=24,
+                execution_mode="automatic",
+                max_parallel_evolutions=2,
+            ),
+            lambda: SchedulerConfigReq(
+                enabled=True,
+                evolutions_per_day=24,
+                execution_mode="parallel",
+                max_parallel_evolutions=5,
+            ),
         )
         for build in invalid:
             with self.subTest(build=build):
                 with self.assertRaises(ValidationError):
                     build()
+
+    def test_scheduler_config_accepts_bounded_serial_and_parallel_modes(self):
+        serial = SchedulerConfigReq(
+            enabled=False,
+            evolutions_per_day=1,
+            execution_mode="serial",
+            max_parallel_evolutions=2,
+        )
+        parallel = SchedulerConfigReq(
+            enabled=True,
+            evolutions_per_day=96,
+            execution_mode="parallel",
+            max_parallel_evolutions=4,
+        )
+
+        self.assertFalse(serial.enabled)
+        self.assertEqual("parallel", parallel.execution_mode)
+
+    def test_scheduler_config_is_forwarded_to_the_persistent_scheduler(self):
+        scheduler = SimpleNamespace(update_config=Mock(return_value={"running": True}))
+        runtime = SimpleNamespace(scheduler=scheduler)
+        request = request_from("127.0.0.1")
+        payload = SchedulerConfigReq(
+            enabled=True,
+            evolutions_per_day=24,
+            execution_mode="parallel",
+            max_parallel_evolutions=3,
+        )
+
+        with patch("evolution_v2.api._runtime", return_value=runtime):
+            result = scheduler_config(request, payload)
+
+        self.assertTrue(result["running"])
+        scheduler.update_config.assert_called_once_with(payload.model_dump())
+
+    def test_scheduler_tick_forwards_the_evolution_only_mode(self):
+        scheduler = SimpleNamespace(run_due=Mock(return_value={"evolution": {"status": "started"}}))
+        runtime = SimpleNamespace(scheduler=scheduler)
+
+        with patch("evolution_v2.api._runtime", return_value=runtime):
+            result = scheduler_tick(
+                request_from("127.0.0.1"),
+                force=False,
+                evolution_only=True,
+            )
+
+        self.assertEqual("started", result["evolution"]["status"])
+        scheduler.run_due.assert_called_once_with(
+            force=False,
+            evolution_only=True,
+        )
 
 
 if __name__ == "__main__":
