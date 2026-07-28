@@ -262,6 +262,8 @@
     <string name="desktop_control_granted_at">Authorized %1$s</string>
     <string name="desktop_control_granted_and_used">Authorized %1$s · last used %2$s</string>
     <string name="desktop_control_recent_activity">Recent control activity</string>
+    <string name="desktop_control_verified_receipt">%1$s · Verified receipt %2$s</string>
+    <string name="desktop_control_receipt_unverified">The Desktop action receipt could not be verified and was ignored.</string>
     <string name="desktop_control_no_recent_activity">No remote-control activity yet</string>
     <string name="desktop_control_security_footer">The MQTT route is transport only. Every action is end-to-end encrypted, identity-bound, replay-protected, and written to the computer\'s local audit log.</string>
     <string name="automation_title">Automation</string>

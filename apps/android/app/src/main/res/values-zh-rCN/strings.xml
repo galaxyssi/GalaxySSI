@@ -252,6 +252,8 @@
     <string name="desktop_control_granted_at">授权于 %1$s</string>
     <string name="desktop_control_granted_and_used">授权于 %1$s · 最近使用 %2$s</string>
     <string name="desktop_control_recent_activity">最近控制记录</string>
+    <string name="desktop_control_verified_receipt">%1$s · 已验证回执 %2$s</string>
+    <string name="desktop_control_receipt_unverified">无法验证桌面操作回执，已忽略该结果。</string>
     <string name="desktop_control_no_recent_activity">暂无远程控制记录</string>
     <string name="desktop_control_security_footer">MQTT 只负责传输。每个动作都会端到端加密、绑定设备身份、防止重放，并写入电脑本地审计记录。</string>
     <string name="automation_title">自动化</string>

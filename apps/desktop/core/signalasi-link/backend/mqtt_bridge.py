@@ -800,6 +800,7 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
         "items": list(visible.get("authorizations") or []),
         "current_authorization": own_rows[0] if own_rows else None,
         "recent_audit": list(visible.get("recent_audit") or []),
+        "recent_receipts": list(visible.get("recent_receipts") or []),
         "reason": str(reason or "status")[:80],
         "sender": "system",
         "time": time.time(),
@@ -859,27 +860,20 @@ def publish_desktop_control_authorization_changed(
         return False
 
 
-def _desktop_control_failure_receipt(payload: dict, code: str, message: str, retryable: bool = False) -> dict:
-    now_ms = int(time.time() * 1_000)
-    return {
-        "type": DESKTOP_ACTION_RECEIPT_TYPE,
-        "task_id": str(payload.get("task_id") or ""),
-        "action_id": str(payload.get("action_id") or "")[:160],
-        "authorization_id": str(payload.get("authorization_id") or "")[:160],
-        "tool_id": str(payload.get("tool_id") or "")[:160],
-        "status": "failed",
-        "summary": str(message or "Desktop control request failed")[:500],
-        "error": {
-            "code": str(code or "desktop_control_failed")[:120],
-            "message": str(message or "Desktop control request failed")[:500],
-            "retryable": bool(retryable),
-        },
-        "started_at": now_ms,
-        "completed_at": now_ms,
-        "duration_ms": 0,
-        "replayed": False,
-        "post_screenshot": None,
-    }
+def _desktop_control_failure_receipt(
+    payload: dict,
+    paired_client: dict,
+    code: str,
+    message: str,
+    retryable: bool = False,
+) -> dict:
+    from desktop_control import DesktopControlError, desktop_control_manager
+
+    return desktop_control_manager().failure_receipt(
+        payload,
+        paired_client,
+        DesktopControlError(code, message, retryable=retryable),
+    )
 
 
 def _route_desktop_control_payload(
@@ -952,6 +946,7 @@ def _route_desktop_control_payload(
     if not has_scope(paired_client, DESKTOP_CONTROL):
         receipt = _desktop_control_failure_receipt(
             payload,
+            paired_client,
             "desktop_executor_scope_required",
             "This phone was paired without Desktop Executor access. Re-pair and enable Desktop Executor.",
         )
@@ -966,6 +961,7 @@ def _route_desktop_control_payload(
     if not DESKTOP_CONTROL_REQUEST_SLOTS.acquire(blocking=False):
         receipt = _desktop_control_failure_receipt(
             payload,
+            paired_client,
             "desktop_control_busy",
             "Desktop control capacity is busy",
             retryable=True,
@@ -994,7 +990,13 @@ def _route_desktop_control_payload(
                     on_running=publish_running,
                 )
             except DesktopControlError as exc:
-                receipt = _desktop_control_failure_receipt(payload, exc.code, str(exc), exc.retryable)
+                receipt = _desktop_control_failure_receipt(
+                    payload,
+                    paired_client,
+                    exc.code,
+                    str(exc),
+                    exc.retryable,
+                )
             receipt.update({
                 "desktop_id": desktop_id(),
                 "desktop_name": desktop_name(),
@@ -1004,7 +1006,12 @@ def _route_desktop_control_payload(
             _publish_phone_payload(mqttc, wire_payload, receipt)
         except Exception as exc:
             log.warning("Desktop control request failed action=%s: %s", payload.get("action_id"), exc)
-            receipt = _desktop_control_failure_receipt(payload, "desktop_control_failed", str(exc))
+            receipt = _desktop_control_failure_receipt(
+                payload,
+                paired_client,
+                "desktop_control_failed",
+                str(exc),
+            )
             receipt.update({"desktop_id": desktop_id(), "desktop_name": desktop_name(), "sender": "system", "time": time.time()})
             _publish_phone_payload(mqttc, wire_payload, receipt)
         finally:

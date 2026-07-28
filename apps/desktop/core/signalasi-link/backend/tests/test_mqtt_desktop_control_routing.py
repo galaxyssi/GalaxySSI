@@ -4,6 +4,7 @@ import tempfile
 import time
 import unittest
 import uuid
+import hashlib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -52,6 +53,11 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.input = FakeInput()
+        signature_key_id = hashlib.sha256(b"mqtt-test-public-key").hexdigest()
+        identity = {
+            "signer_id": "desktop-test",
+            "signature_key_id": signature_key_id,
+        }
         self.manager = desktop_control.DesktopControlManager(
             Path(self.temporary.name) / "desktop-control.json",
             screenshot_provider=lambda: {
@@ -65,6 +71,11 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
                 "captured_at": int(time.time() * 1000),
             },
             input_controller=self.input,
+            identity_provider=lambda: dict(identity),
+            receipt_signer=lambda payload: {
+                **identity,
+                "signature": hashlib.sha256(b"mqtt-test-key" + payload).hexdigest(),
+            },
         )
         self.client = {
             "client_route_id": "client-route-a",
@@ -139,6 +150,8 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             [item["type"] for item in self.published],
         )
         self.assertEqual("succeeded", self.published[-1]["status"])
+        self.assertEqual(2, self.published[-1]["receipt_version"])
+        self.assertTrue(self.published[-1]["signature"])
 
     def test_unapproved_phone_receives_failure_without_execution(self) -> None:
         self.manager.update_settings(enabled=True)
@@ -153,6 +166,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
         self.assertEqual([], self.input.calls)
         self.assertEqual(1, len(self.published))
         self.assertEqual("authorization_not_found", self.published[0]["error"]["code"])
+        self.assertTrue(self.published[0]["signature"])
 
     def test_restricted_pairing_is_rejected_before_authorization_lookup(self) -> None:
         authorization = self.authorize()
@@ -171,6 +185,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
 
         self.assertEqual([], self.input.calls)
         self.assertEqual("desktop_executor_scope_required", self.published[0]["error"]["code"])
+        self.assertTrue(self.published[0]["signature"])
 
     def test_non_control_channel_and_wrong_target_are_not_executed(self) -> None:
         authorization = self.authorize()
