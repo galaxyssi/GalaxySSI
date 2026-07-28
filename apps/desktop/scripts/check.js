@@ -126,6 +126,7 @@ const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_repu
 const backendProviderProfiles = fs.readFileSync(path.join(backendDir, "provider_profiles.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
 const backendTaskManager = fs.readFileSync(path.join(backendDir, "agent_task_manager.py"), "utf8");
+const backendExecutionHarness = fs.readFileSync(path.join(backendDir, "agent_execution_harness.py"), "utf8");
 const backendAgentConfig = fs.readFileSync(path.join(backendDir, "agent_config.py"), "utf8");
 const backendCustomAgent = fs.readFileSync(path.join(backendDir, "custom_agent_stdio.py"), "utf8");
 const backendDesktopFileTools = fs.readFileSync(path.join(backendDir, "desktop_file_tools.py"), "utf8");
@@ -174,6 +175,7 @@ const androidCloudModelClient = fs.readFileSync(path.join(workspaceRoot, "androi
 const androidMcpSecurity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpSecurity.kt"), "utf8");
 const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpRuntime.kt"), "utf8");
 const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentExecutionPresentation.kt"), "utf8");
+const androidTaskIntent = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskIntent.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -585,6 +587,20 @@ for (const executionPresentationContract of [
 ]) {
   if (!executionPresentationContract[0].includes(executionPresentationContract[1])) {
     throw new Error(`Unified Agent execution presentation is incomplete: ${executionPresentationContract[1]}`);
+  }
+}
+
+for (const taskIntentContract of [
+  [backendExecutionHarness, "class AgentTaskIntent"],
+  [backendExecutionHarness, "def classify_task_intent"],
+  [backendExecutionHarness, "\"task_intent\""],
+  [androidTaskIntent, "enum class AgentTaskIntent"],
+  [androidTaskIntent, "object AgentTaskIntentClassifier"],
+  [androidTaskIntent, "PHONE_CONTROL"],
+  [androidTaskIntent, "DESKTOP_CONTROL"]
+]) {
+  if (!taskIntentContract[0].includes(taskIntentContract[1])) {
+    throw new Error(`Unified task intent classification is incomplete: ${taskIntentContract[1]}`);
   }
 }
 

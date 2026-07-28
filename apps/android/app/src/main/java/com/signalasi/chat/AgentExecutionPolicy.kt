@@ -24,7 +24,10 @@ data class AgentExecutionProfile(
     val maxSameFailureAttempts: Int = 2,
     val requiresArtifact: Boolean = false,
     val targetPlatform: String = "",
-    val verifyInstallation: Boolean = false
+    val verifyInstallation: Boolean = false,
+    val taskIntent: AgentTaskIntent = AgentTaskIntent.CHAT,
+    val taskIntentConfidence: Int = 100,
+    val taskIntentSignals: List<String> = emptyList()
 ) {
     companion object {
         fun forGoal(goal: String, hasAttachments: Boolean = false): AgentExecutionProfile {
@@ -34,6 +37,10 @@ data class AgentExecutionProfile(
             val artifactRequest = normalized.containsAny(ARTIFACT_TERMS)
             val research = normalized.containsAny(RESEARCH_TERMS)
             val device = normalized.containsAny(DEVICE_TERMS)
+            val intent = AgentTaskIntentClassifier.classify(
+                goal = normalized,
+                hasAttachments = hasAttachments
+            )
             val taskKind = when {
                 install -> AgentExecutionTaskKind.INSTALL
                 build -> AgentExecutionTaskKind.BUILD
@@ -69,7 +76,10 @@ data class AgentExecutionProfile(
                     AgentExecutionTaskKind.INSTALL
                 ),
                 targetPlatform = if (normalized.containsAny(ANDROID_TERMS)) "android" else "",
-                verifyInstallation = taskKind == AgentExecutionTaskKind.INSTALL
+                verifyInstallation = taskKind == AgentExecutionTaskKind.INSTALL,
+                taskIntent = intent.intent,
+                taskIntentConfidence = intent.confidence,
+                taskIntentSignals = intent.matchedSignals
             )
         }
 
@@ -115,6 +125,8 @@ internal fun String.containsAny(terms: Iterable<String>): Boolean =
 internal fun AgentExecutionProfile.contract(): String = buildString {
     append("SignalASI execution contract: task=")
         .append(taskKind.name.lowercase(Locale.US))
+        .append(", intent=")
+        .append(taskIntent.name.lowercase(Locale.US))
         .append(", reasoning_effort=")
         .append(reasoningEffort.name.lowercase(Locale.US))
         .append(". Use Plan -> Act -> Observe -> Replan -> Verify -> Finalize. ")

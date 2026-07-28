@@ -1,0 +1,90 @@
+package com.signalasi.chat
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AgentTaskIntentTest {
+    @Test
+    fun classifiesTheEightCanonicalTaskIntents() {
+        val cases = listOf(
+            "Hello, how are you?" to AgentTaskIntent.CHAT,
+            "Build an Android app and run unit tests" to AgentTaskIntent.CODE,
+            "Turn on the flashlight on my phone" to AgentTaskIntent.PHONE_CONTROL,
+            "Open the browser on my computer" to AgentTaskIntent.DESKTOP_CONTROL,
+            "Research today's AI news and cite sources" to AgentTaskIntent.RESEARCH,
+            "Extract text from this PDF" to AgentTaskIntent.FILE,
+            "Remember that I prefer concise replies" to AgentTaskIntent.MEMORY,
+            "Run this health check every hour" to AgentTaskIntent.AUTOMATION
+        )
+
+        cases.forEach { (goal, expected) ->
+            val result = AgentTaskIntentClassifier.classify(goal)
+            assertEquals(goal, expected, result.intent)
+            assertTrue(goal, result.confidence >= 55)
+        }
+    }
+
+    @Test
+    fun anAttachmentIsAFileTaskWithoutExtraText() {
+        val result = AgentTaskIntentClassifier.classify("", hasAttachments = true)
+
+        assertEquals(AgentTaskIntent.FILE, result.intent)
+        assertTrue("attachment" in result.matchedSignals)
+    }
+
+    @Test
+    fun classifiesChineseTaskIntentsWithoutChangingTheProtocolValues() {
+        val cases = listOf(
+            "\u4f60\u597d" to AgentTaskIntent.CHAT,
+            "\u7f16\u8bd1\u8fd9\u4e2a\u9879\u76ee" to AgentTaskIntent.CODE,
+            "\u6253\u5f00\u624b\u673a\u624b\u7535\u7b52" to AgentTaskIntent.PHONE_CONTROL,
+            "\u63a7\u5236\u7535\u8111\u6253\u5f00\u6d4f\u89c8\u5668" to
+                AgentTaskIntent.DESKTOP_CONTROL,
+            "\u641c\u7d22\u4eca\u5929\u7684\u65b0\u95fb" to AgentTaskIntent.RESEARCH,
+            "\u63d0\u53d6\u8fd9\u4e2a PDF \u6587\u4ef6\u7684\u6587\u5b57" to
+                AgentTaskIntent.FILE,
+            "\u8bb0\u4f4f\u6211\u7684\u504f\u597d" to AgentTaskIntent.MEMORY,
+            "\u6bcf\u5929\u76d1\u63a7\u8fd9\u4e2a\u670d\u52a1" to AgentTaskIntent.AUTOMATION
+        )
+
+        cases.forEach { (goal, expected) ->
+            assertEquals(expected, AgentTaskIntentClassifier.classify(goal).intent)
+        }
+    }
+
+    @Test
+    fun automationWinsOverTheIndividualPhoneAction() {
+        val result = AgentTaskIntentClassifier.classify(
+            "Turn on the phone flashlight every day at 8"
+        )
+
+        assertEquals(AgentTaskIntent.AUTOMATION, result.intent)
+    }
+
+    @Test
+    fun genericOpenAppDoesNotInventAPhoneExecutionLocation() {
+        val result = AgentTaskIntentClassifier.classify(
+            "Open the app and show me its status"
+        )
+
+        assertEquals(AgentTaskIntent.CHAT, result.intent)
+    }
+
+    @Test
+    fun executionSnapshotPersistsIntent() {
+        val profile = AgentExecutionProfile.forGoal(
+            "Control the browser on my computer"
+        )
+        val loop = AgentExecutionLoop.create { 1_000L }
+        val started = loop.start("desktop-control", AgentExecutionLoopBudget(), profile)
+
+        val restored = AgentExecutionLoopJsonCodec.decode(
+            AgentExecutionLoopJsonCodec.encode(started.snapshot)
+        )
+
+        assertEquals(AgentTaskIntent.DESKTOP_CONTROL, restored?.taskIntent)
+        assertEquals(started.snapshot.taskIntentConfidence, restored?.taskIntentConfidence)
+        assertEquals(started.snapshot.taskIntentSignals, restored?.taskIntentSignals)
+    }
+}
