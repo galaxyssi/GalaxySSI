@@ -91,7 +91,23 @@ approval and pull-request boundary.
 - `GET /audit?limit=200`
 - `GET /audit/verify`
 - `GET /scheduler`
+- `POST /scheduler/config`
 - `POST /scheduler/tick?force=true`
+- `POST /scheduler/tick?evolution_only=true`
 - `GET /github/checks?target=<pull-request-url-or-number>`
 
-The scheduler performs research and diagnostics by default. It does not publish or merge.
+```json
+{
+  "enabled": true,
+  "evolutions_per_day": 24,
+  "execution_mode": "parallel",
+  "max_parallel_evolutions": 2
+}
+```
+
+The scheduler accepts 1 to 96 runs per day. `serial` waits for the current evolution to finish.
+`parallel` starts on cadence while fewer than two to four configured slots are active. The
+settings persist in the local state directory. Verified candidates may be published as pull
+requests; automatic merge is always disabled. `evolution_only=true` starts the next available
+proposal without refreshing research first. If no proposal exists, diagnostics and research run
+once to discover one.

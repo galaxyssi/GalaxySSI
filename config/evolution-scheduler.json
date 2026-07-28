@@ -2,12 +2,15 @@
   "schema": "signalasi.evolution-scheduler.v2",
   "enabled": true,
   "run_on_start": false,
+  "evolutions_per_day": 1,
+  "execution_mode": "serial",
+  "max_parallel_evolutions": 2,
   "research_interval_hours": 168,
   "diagnostics_interval_hours": 24,
   "create_research_proposals": true,
   "create_diagnostic_proposals": true,
-  "auto_create_tasks": false,
-  "auto_start_tasks": false,
-  "auto_publish": false,
+  "auto_create_tasks": true,
+  "auto_start_tasks": true,
+  "auto_publish": true,
   "auto_merge": false
 }

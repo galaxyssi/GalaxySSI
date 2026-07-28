@@ -81,6 +81,7 @@ const preload = fs.readFileSync(path.join(root, "src/preload.js"), "utf8");
 const html = fs.readFileSync(path.join(root, "src/renderer/index.html"), "utf8");
 const renderer = fs.readFileSync(path.join(root, "src/renderer/renderer.js"), "utf8");
 const workspaceRenderer = fs.readFileSync(path.join(root, "src/renderer/workspace.js"), "utf8");
+const evolutionV2Panel = fs.readFileSync(path.join(root, "src/renderer/evolution-v2-panel.js"), "utf8");
 const styles = fs.readFileSync(path.join(root, "src/renderer/styles.css"), "utf8");
 const localeZh = JSON.parse(fs.readFileSync(path.join(root, "src", "renderer", "locales", "zh-CN.json"), "utf8"));
 const localeEn = JSON.parse(fs.readFileSync(path.join(root, "src", "renderer", "locales", "en.json"), "utf8"));
@@ -137,6 +138,7 @@ const backendEvolutionManager = fs.readFileSync(path.join(backendDir, "evolution
 const backendEvolutionLegacy = fs.readFileSync(path.join(backendDir, "evolution_v2", "legacy.py"), "utf8");
 const backendEvolutionV2Manager = fs.readFileSync(path.join(backendDir, "evolution_v2", "manager.py"), "utf8");
 const backendEvolutionV2Api = fs.readFileSync(path.join(backendDir, "evolution_v2", "api.py"), "utf8");
+const backendEvolutionV2Scheduler = fs.readFileSync(path.join(backendDir, "evolution_v2", "scheduler.py"), "utf8");
 const backendMcpWrapper = fs.readFileSync(path.join(backendDir, "mcp_agent_wrapper.py"), "utf8");
 const backendTaskWorkspace = fs.readFileSync(path.join(backendDir, "task_workspace.py"), "utf8");
 const backendPushAuth = fs.readFileSync(path.join(backendDir, "push_auth.py"), "utf8");
@@ -1123,6 +1125,21 @@ for (const requiredEvolutionUiText of [
 ]) {
   if (![html, workspaceRenderer].some((content) => content.includes(requiredEvolutionUiText))) {
     throw new Error(`Evolution health UI missing: ${requiredEvolutionUiText}`);
+  }
+}
+
+for (const requiredSchedulerText of [
+  "SchedulerConfigReq",
+  "/scheduler/config",
+  "evolutions_per_day",
+  "execution_mode",
+  "max_parallel_evolutions",
+  "saveEvolutionScheduleButton",
+  "runEvolutionNowButton"
+]) {
+  if (![main, backendEvolutionV2Api, backendEvolutionV2Scheduler, evolutionV2Panel]
+    .some((content) => content.includes(requiredSchedulerText))) {
+    throw new Error(`Self-evolution scheduler contract missing: ${requiredSchedulerText}`);
   }
 }
 

@@ -56,6 +56,19 @@ python apps\desktop\scripts\evolution-cli.py health
 python apps\desktop\scripts\evolution-cli.py audit
 ```
 
+## Automatic schedule
+
+Open **Settings > Self-evolution > Schedule** to:
+
+- pause or resume automatic evolution;
+- choose 1 to 96 runs per day;
+- run serially, waiting for the previous task to finish; or
+- run in parallel with a limit of two to four isolated tasks.
+
+Missed intervals are coalesced after Desktop was offline. They do not create a burst backlog.
+Pausing prevents new scheduled runs without deleting an isolated task already in progress.
+Successful candidates create labeled pull requests, but SignalASI never merges them automatically.
+
 ## Failure handling
 
 `source_root_missing`
