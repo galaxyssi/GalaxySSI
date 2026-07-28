@@ -2928,6 +2928,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 response_language=preferred_response_language,
                 execution_prompt=current_user_request,
                 execution_policy=execution_policy.public(),
+                client_route_id=client_route_id,
+                turn_id=client_turn_id,
             )
         except Exception:
             agent_task_manager.add_event(
