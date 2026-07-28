@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from agent_task_manager import AgentTaskManager
+from agent_task_manager import AgentTaskManager, delivery_trace_metrics
 from agent_task_store import AgentTaskStore
 
 
@@ -256,6 +256,137 @@ class AgentTaskStoreTests(unittest.TestCase):
 
             self.assertEqual(len(snapshots), 1)
             self.assertEqual(snapshots[0]["task_id"], "stream-listener-test")
+
+    def test_delivery_trace_and_identity_survive_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            manager = AgentTaskManager(state_path=path)
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex-contact",
+                source_message_id="phone-message",
+                prompt="Inspect the repository",
+                on_event=lambda _snapshot: None,
+                task_id="trace-task",
+                conversation_id="route-scoped-conversation",
+                client_conversation_id="phone-conversation",
+                client_route_id="route-a",
+                client_turn_id="phone-turn",
+                trace_id="trace-stable",
+                delivery_trace=[
+                    {"stage": "created", "at": 1_000, "detail": "phone"},
+                    {"stage": "desktop_mqtt_received", "at": 1_250, "detail": ""},
+                ],
+            )
+            manager.append_trace(
+                task.task_id,
+                "agent_first_output",
+                "codex",
+                at=1_900,
+                once=True,
+                meaningful_progress=True,
+            )
+            manager.append_trace(
+                task.task_id,
+                "agent_first_output",
+                "duplicate",
+                at=2_000,
+                once=True,
+            )
+            manager.add_event(
+                task.task_id,
+                "command",
+                "Run verification",
+                event_id="verify-command",
+                metadata={"command": "python verify.py"},
+            )
+            manager.update(task.task_id, "completed", result="done")
+
+            restored = AgentTaskManager(state_path=path).get(task.task_id)
+            public = restored.public()
+            stages = [item["stage"] for item in restored.delivery_trace]
+            metadata = restored.events[-1]["metadata"]
+
+            self.assertEqual("trace-stable", restored.trace_id)
+            self.assertEqual(1, stages.count("agent_first_output"))
+            self.assertEqual(900, public["latency"]["first_output_ms"])
+            self.assertEqual(public["latency"], delivery_trace_metrics(restored.delivery_trace))
+            self.assertEqual("route-a", metadata["client_route_id"])
+            self.assertEqual("route-scoped-conversation", metadata["conversation_id"])
+            self.assertEqual("trace-task", metadata["task_id"])
+            self.assertEqual("phone-turn", metadata["client_turn_id"])
+
+    def test_active_task_lookup_isolated_by_client_route(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")
+            first = manager.create_external(
+                agent_id="codex",
+                contact_id="codex",
+                source_message_id="message-a",
+                prompt="Task A",
+                on_event=lambda _snapshot: None,
+                task_id="route-task-a",
+                conversation_id="same-conversation",
+                client_route_id="route-a",
+            )
+            second = manager.create_external(
+                agent_id="codex",
+                contact_id="codex",
+                source_message_id="message-b",
+                prompt="Task B",
+                on_event=lambda _snapshot: None,
+                task_id="route-task-b",
+                conversation_id="same-conversation",
+                client_route_id="route-b",
+            )
+
+            self.assertEqual(
+                first.task_id,
+                manager.active_for_conversation(
+                    "same-conversation",
+                    agent_id="codex",
+                    client_route_id="route-a",
+                ).task_id,
+            )
+            self.assertEqual(
+                second.task_id,
+                manager.active_for_conversation(
+                    "same-conversation",
+                    agent_id="codex",
+                    client_route_id="route-b",
+                ).task_id,
+            )
+
+    def test_recovered_task_continues_existing_trace(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            manager = AgentTaskManager(state_path=path)
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex",
+                source_message_id="phone-message",
+                prompt="Long task",
+                on_event=lambda _snapshot: None,
+                task_id="recover-trace",
+                delivery_trace=[
+                    {"stage": "created", "at": 1_000, "detail": "phone"},
+                ],
+            )
+            manager.update(task.task_id, "running", current_step="Working")
+
+            restarted = AgentTaskManager(state_path=path)
+            recovering = restarted.get(task.task_id)
+            recovering_status = recovering.status
+            resumed = restarted.resume_external(
+                task.task_id,
+                lambda _snapshot: None,
+            )
+            stages = [item["stage"] for item in resumed.delivery_trace]
+
+            self.assertEqual("recovering", recovering_status)
+            self.assertIn("created", stages)
+            self.assertIn("desktop_task_recovering", stages)
+            self.assertIn("desktop_task_resumed", stages)
 
 
 if __name__ == "__main__":

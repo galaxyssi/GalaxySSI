@@ -145,13 +145,20 @@ function formatBytes(value) {
 }
 
 function formatDuration(value) {
-  const seconds = Math.max(1, Math.floor(Number(value || 0) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  if (minutes < 60) return `${minutes}m ${remainder}s`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ${minutes % 60}m ${remainder}s`;
+    const seconds = Math.max(1, Math.floor(Number(value || 0) / 1000));
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    if (minutes < 60) return `${minutes}m ${remainder}s`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m ${remainder}s`;
+}
+
+function formatLatency(value) {
+  const milliseconds = Math.max(0, Number(value || 0));
+  if (milliseconds < 1000) return `${Math.round(milliseconds)}ms`;
+  if (milliseconds < 10_000) return `${(milliseconds / 1000).toFixed(1)}s`;
+  return formatDuration(milliseconds);
 }
 
 function relativeTime(timestamp) {
@@ -348,6 +355,21 @@ function renderArtifacts(task) {
   }).join("")}</div>`;
 }
 
+function renderLatencySummary(task) {
+  const latency = task?.latency && typeof task.latency === "object" ? task.latency : null;
+  const stages = Array.isArray(latency?.stages) ? latency.stages : [];
+  if (!latency || !stages.length) return "";
+  const rawFirstOutput = latency.first_output_ms;
+  const firstOutput = Number(rawFirstOutput);
+  const total = Math.max(0, Number(latency.total_ms || 0));
+  return `<div class="latency-summary">
+    ${rawFirstOutput != null && Number.isFinite(firstOutput) && firstOutput >= 0
+      ? `<span>${escapeHtml(t("First output"))}<strong>${escapeHtml(formatLatency(firstOutput))}</strong></span>`
+      : ""}
+    <span>${escapeHtml(t("Traced time"))}<strong>${escapeHtml(formatLatency(total))}</strong></span>
+  </div>`;
+}
+
 function renderTurn(task) {
   const statusClass = task.status === "completed" ? "completed" : (TERMINAL_STATES.has(task.status) ? "failed" : "");
   const isEvolution = task.task_kind === "self_evolution";
@@ -363,6 +385,7 @@ function renderTurn(task) {
       ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}<button class="retry-task" data-retry-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Retry"))}</button></article>`
       : "");
   const events = Array.isArray(task.events) ? task.events : [];
+  const latencySummary = renderLatencySummary(task);
   const detail = events.length
     ? `<div class="event-list">${events.map((event) => `<div class="event-row ${escapeHtml(event.status || "")}"><span></span><div><strong>${escapeHtml(t(event.title || "Task step"))}</strong>${event.detail ? `<small>${escapeHtml(event.detail)}</small>` : ""}</div></div>`).join("")}</div>`
     : escapeHtml(task.current_step ? t(task.current_step) : `${agentName(task.agent_id)} · ${statusLabel(task.status)}`);
@@ -382,14 +405,25 @@ function renderTurn(task) {
         <strong>${escapeHtml(taskStatusLabel(task))} <span data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span></strong>
         <span>${escapeHtml(taskRouteName(task))}</span><span class="chevron" aria-hidden="true"></span>
       </button>
-      <div class="run-detail" data-run-detail="${escapeHtml(task.task_id)}" ${detailHidden}>${detail}</div>
+      <div class="run-detail" data-run-detail="${escapeHtml(task.task_id)}" ${detailHidden}>${latencySummary}${detail}</div>
       ${answer}
     </article>`;
 }
 
 function renderConversation(force = false) {
   const tasks = conversationTasks();
-  const signature = JSON.stringify(tasks.map((task) => [task.task_id, task.status, task.updated_at, task.result?.length, task.output_files?.length, task.events?.length, task.delegate_agent_id]));
+  const signature = JSON.stringify(tasks.map((task) => [
+    task.task_id,
+    task.status,
+    task.updated_at,
+    task.result?.length,
+    task.output_files?.length,
+    task.events?.length,
+    task.delivery_trace?.length,
+    task.latency?.first_output_ms,
+    task.latency?.total_ms,
+    task.delegate_agent_id
+  ]));
   if (!force && signature === state.renderingSignature) return;
   state.renderingSignature = signature;
   const wasNearBottom = elements.stream.scrollHeight - elements.stream.scrollTop - elements.stream.clientHeight < 140;

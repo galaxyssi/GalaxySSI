@@ -346,6 +346,9 @@ button:disabled { cursor: default; opacity: 0.48; }
 .run-summary .chevron { width: 6px; height: 6px; border-right: 1px solid #8a929a; border-bottom: 1px solid #8a929a; transform: rotate(45deg) translateY(-1px); }
 .run-detail { margin: -4px 0 16px 8px; padding-left: 13px; border-left: 1px solid #cfd5da; color: #65707a; font-size: 8px; line-height: 1.6; }
 .run-detail code { color: #34414c; font-family: Consolas, monospace; }
+.latency-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 8px; color: var(--muted); }
+.latency-summary span { display: inline-flex; align-items: baseline; gap: 4px; }
+.latency-summary strong { color: #34414c; font-size: 8px; font-weight: 600; }
 .event-list { display: grid; gap: 7px; }
 .event-row { display: grid; grid-template-columns: 7px minmax(0, 1fr); align-items: start; gap: 7px; }
 .event-row > span { width: 6px; height: 6px; margin-top: 4px; border-radius: 50%; background: #9ca5ad; }

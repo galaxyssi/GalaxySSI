@@ -16025,6 +16025,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         "desktop_plain" -> getString(R.string.delivery_trace_desktop_plain)
         "desktop_decrypted" -> getString(R.string.delivery_trace_desktop_decrypted)
         "agent_started" -> getString(R.string.delivery_trace_agent_started)
+        "agent_first_output" -> getString(R.string.delivery_trace_agent_first_output)
         "agent_replied" -> getString(R.string.delivery_trace_agent_replied)
         "agent_accepted" -> getString(R.string.agent_task_status_accepted)
         "agent_queued" -> getString(R.string.agent_task_status_queued)

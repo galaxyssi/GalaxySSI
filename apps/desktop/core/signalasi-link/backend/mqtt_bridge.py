@@ -22,7 +22,11 @@ import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
 from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync
-from agent_task_manager import TERMINAL_STATES, agent_task_manager
+from agent_task_manager import (
+    MAX_DELIVERY_TRACE_EVENTS,
+    TERMINAL_STATES,
+    agent_task_manager,
+)
 from codex_app_server import CodexAppServer, CodexConversationBusyError
 import phone_tool_broker as phone_tool
 from unified_commands import default_command_engine
@@ -1229,7 +1233,7 @@ def _delivery_trace(payload: dict | None, *events: dict) -> list[dict]:
             "detail": str(item.get("detail") or "")[:240],
         })
     trace.extend(events)
-    return trace[-32:]
+    return trace[-MAX_DELIVERY_TRACE_EVENTS:]
 
 
 def _desktop_trace(*events: dict) -> list[dict]:
@@ -1239,20 +1243,37 @@ def _desktop_trace(*events: dict) -> list[dict]:
 def _trace_metrics(trace: list[dict]) -> dict:
     valid = [item for item in trace if int(item.get("at") or 0) > 0]
     if not valid:
-        return {"total_ms": 0, "stages": []}
+        return {
+            "total_ms": 0,
+            "first_output_ms": None,
+            "milestones": {},
+            "stages": [],
+        }
     origin = int(valid[0]["at"])
     previous = origin
+    milestones: dict[str, int] = {}
     stages = []
     for item in valid:
         current = int(item["at"])
+        stage = str(item.get("stage") or "")
+        milestones.setdefault(stage, current)
         stages.append({
-            "stage": str(item.get("stage") or ""),
+            "stage": stage,
             "at": current,
             "from_start_ms": max(0, current - origin),
             "from_previous_ms": max(0, current - previous),
         })
         previous = current
-    return {"total_ms": max(0, previous - origin), "stages": stages[-32:]}
+    first_output_at = milestones.get("agent_first_output")
+    return {
+        "total_ms": max(0, previous - origin),
+        "first_output_ms": (
+            max(0, first_output_at - origin)
+            if first_output_at is not None else None
+        ),
+        "milestones": milestones,
+        "stages": stages[-MAX_DELIVERY_TRACE_EVENTS:],
+    }
 
 
 def _log_task_latency(task_id: str, trace: list[dict]) -> None:
@@ -1290,10 +1311,18 @@ class _TaskProgressEventGate:
         task_disposition = str(task.get("task_disposition") or "").strip().lower()
         events = task.get("events") if isinstance(task.get("events"), list) else []
         latest_event = events[-1] if events and isinstance(events[-1], dict) else {}
+        trace = (
+            task.get("delivery_trace")
+            if isinstance(task.get("delivery_trace"), list)
+            else []
+        )
+        latest_trace = trace[-1] if trace and isinstance(trace[-1], dict) else {}
         progress_signature = (
             str(latest_event.get("event_id") or ""),
             str(latest_event.get("status") or ""),
             int(latest_event.get("updated_at") or latest_event.get("created_at") or 0),
+            str(latest_trace.get("stage") or ""),
+            int(latest_trace.get("at") or 0),
         )
         status_seq = int(task.get("status_seq") or 0)
         observed_at_ms = int(time.monotonic() * 1000) if now_ms is None else int(now_ms)
@@ -1319,7 +1348,8 @@ class _TaskProgressEventGate:
             first_running_event = self._last_status != "running"
             step_changed = self._last_status == "running" and step != self._last_step
             progress_changed = (
-                bool(progress_signature[0]) and progress_signature != self._last_progress_signature
+                bool(progress_signature[0] or progress_signature[3])
+                and progress_signature != self._last_progress_signature
             )
             heartbeat_due = (
                 self._last_running_publish_at_ms is not None
@@ -2206,6 +2236,16 @@ def _agent_task_payload(
 ) -> dict:
     status = str(task.get("status") or "")
     stage = f"agent_{status}"
+    persisted_trace = (
+        task.get("delivery_trace")
+        if isinstance(task.get("delivery_trace"), list)
+        and task.get("delivery_trace")
+        else trace
+    )
+    outbound_trace = _delivery_trace(
+        {"delivery_trace": persisted_trace},
+        _trace_event(stage, task.get("agent_id", "")),
+    )
     events = task.get("events") if isinstance(task.get("events"), list) else []
     progress_event = events[-1] if events and isinstance(events[-1], dict) else {}
     readable_progress = (
@@ -2216,12 +2256,14 @@ def _agent_task_payload(
     payload = {
         "type": "agent_task_event",
         "task_id": task.get("task_id", ""),
+        "trace_id": task.get("trace_id", ""),
         "task_status": status,
         "contact_id": task.get("contact_id", ""),
         "agent_id": task.get("agent_id", ""),
         "source_message_id": task.get("source_message_id", ""),
         "conversation_id": task.get("client_conversation_id")
         or task.get("conversation_id", ""),
+        "client_route_id": task.get("client_route_id", ""),
         "created_at": task.get("created_at", 0),
         "started_at": task.get("started_at", 0),
         "updated_at": task.get("updated_at", 0),
@@ -2244,8 +2286,8 @@ def _agent_task_payload(
         "connector_agents": resolved_connector_agents,
         "sender": "system",
         "time": time.time(),
-        "delivery_trace": _delivery_trace({"delivery_trace": trace}, _trace_event(stage, task.get("agent_id", ""))),
-        "latency": _trace_metrics(trace),
+        "delivery_trace": outbound_trace,
+        "latency": _trace_metrics(outbound_trace),
     }
     if readable_progress:
         payload["events"] = readable_progress
@@ -2593,6 +2635,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         _trace_event("desktop_task_dispatch_started", agent_id),
     )
     task_trace_lock = threading.Lock()
+    managed_task_id = {"value": ""}
     attachments = payload.get("attachments") or []
     has_image_attachment = any(
         isinstance(item, dict) and (
@@ -2623,14 +2666,44 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         "image_paths": [],
     }
 
-    def add_task_trace(stage: str, detail: object = "") -> None:
+    def add_task_trace(
+        stage: str,
+        detail: object = "",
+        *,
+        once: bool = False,
+        meaningful_progress: bool = False,
+    ) -> None:
+        event = _trace_event(stage, detail)
         with task_trace_lock:
-            task_trace.append(_trace_event(stage, detail))
-            del task_trace[:-32]
+            if once and any(
+                str(item.get("stage") or "") == str(stage)
+                for item in task_trace
+            ):
+                return
+            task_trace.append(event)
+            del task_trace[:-MAX_DELIVERY_TRACE_EVENTS]
+        task_id = managed_task_id["value"]
+        if task_id:
+            append_trace = getattr(agent_task_manager, "append_trace", None)
+            if callable(append_trace):
+                append_trace(
+                    task_id,
+                    str(event.get("stage") or ""),
+                    str(event.get("detail") or ""),
+                    at=int(event.get("at") or 0),
+                    once=once,
+                    meaningful_progress=meaningful_progress,
+                )
 
     def task_trace_snapshot() -> list[dict]:
         with task_trace_lock:
             return list(task_trace)
+
+    def bind_task_trace(task) -> None:
+        managed_task_id["value"] = str(task.task_id)
+        merge_trace = getattr(agent_task_manager, "merge_trace", None)
+        if callable(merge_trace):
+            merge_trace(task.task_id, task_trace_snapshot())
 
     def mark_conversation_synced(
         synced_agent_id: str,
@@ -2754,6 +2827,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 on_event=publish_event,
             )
             raise
+        add_task_trace(
+            "agent_first_output",
+            agent_id,
+            once=True,
+            meaningful_progress=True,
+        )
         agent_task_manager.add_event(
             task.task_id,
             provider_kind,
@@ -2820,10 +2899,21 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             task_id,
             inline_artifacts=False,
         )
+        add_task_trace(
+            "agent_replied",
+            f"{agent_id} chars={len(reply)}",
+            once=True,
+        )
+        add_task_trace(
+            "desktop_reply_publish_queued",
+            _wire_down_topic(wire_payload),
+            once=True,
+        )
         reply_payload = {
             "type": "text",
             "content": reply,
             "task_id": task.get("task_id", ""),
+            "trace_id": task.get("trace_id", ""),
             "task_status": task.get("status", ""),
             "contact_id": contact_id,
             "agent_id": agent_id,
@@ -2833,13 +2923,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             "source_message_id": source_message_id,
             "conversation_id": task.get("client_conversation_id")
             or client_conversation_id,
+            "client_route_id": task.get("client_route_id")
+            or client_route_id,
             "turn_id": _client_task_turn_id(task),
             "agent_turn_id": task.get("turn_id", ""),
-            "delivery_trace": _delivery_trace(
-                {"delivery_trace": task_trace_snapshot()},
-                _trace_event("agent_replied", f"{agent_id} chars={len(reply)}"),
-                _trace_event("desktop_reply_publish_queued", _wire_down_topic(wire_payload)),
-            ),
+            "delivery_trace": task_trace_snapshot(),
             "sender": "other",
             "time": time.time(),
         }
@@ -2887,6 +2975,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
             if task is None:
                 raise RuntimeError("Recovered Codex task is no longer resumable")
+            bind_task_trace(task)
         else:
             task = agent_task_manager.create_external(
                 agent_id=agent_id, contact_id=contact_id, source_message_id=source_message_id,
@@ -2902,10 +2991,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 ],
                 execution_prompt=current_user_request,
                 execution_policy=execution_policy.public(),
+                trace_id=str(payload.get("trace_id") or ""),
+                delivery_trace=task_trace_snapshot(),
             )
+            bind_task_trace(task)
             active_conversation_task = agent_task_manager.active_for_conversation(
                 codex_conversation_id,
                 agent_id="codex",
+                client_route_id=client_route_id,
                 exclude_task_id=task.task_id,
             )
             if active_conversation_task is not None and not should_steer_active_turn(
@@ -3044,6 +3137,19 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         def app_event(task_id: str, event: dict) -> None:
             nonlocal result_published
             event_status = str(event.get("status") or "running")
+            trace_stage = str(event.get("trace_stage") or "").strip()
+            if trace_stage:
+                add_task_trace(
+                    trace_stage,
+                    event.get("trace_detail") or "",
+                    once=trace_stage == "agent_first_output",
+                    meaningful_progress=trace_stage == "agent_first_output",
+                )
+            if event.get("telemetry_only") is True:
+                traced_task = agent_task_manager.get(task_id)
+                if traced_task is not None:
+                    publish_event(traced_task.public())
+                return
             add_task_trace(f"codex_{event_status}", event.get("current_step") or "")
             event_kind = str(event.get("event_kind") or "").strip()
             if event_kind:
@@ -3499,6 +3605,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
         if resumed is None:
             raise RuntimeError("Recovered Agent task is no longer resumable")
+        bind_task_trace(resumed)
         from agent_gateway import desktop_agent_provider
 
         adapter_result = None
@@ -3554,7 +3661,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         if failed is not None:
             publish_result(failed.public())
     else:
-        agent_task_manager.create(
+        created = agent_task_manager.create(
             agent_id=agent_id,
             contact_id=contact_id,
             source_message_id=source_message_id,
@@ -3574,7 +3681,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             ],
             execution_prompt=current_user_request,
             execution_policy=execution_policy.public(),
+            trace_id=str(payload.get("trace_id") or ""),
+            delivery_trace=task_trace_snapshot(),
         )
+        bind_task_trace(created)
+        add_task_trace("desktop_task_created", created.task_id)
 
 
 def _process_message(mqttc, userdata, msg):

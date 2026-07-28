@@ -858,6 +858,9 @@ object SignalASIMqttClient {
             return MqttPublishResult.FAILED
         }
         val context = appContext ?: return MqttPublishResult.FAILED
+        if (payload.optString("trace_id").isBlank()) {
+            payload.put("trace_id", UUID.randomUUID().toString())
+        }
         val targetId = if (usesPcConnectorTunnel(contactId)) {
             AppStore.desktopIdForContact(context, contactId)
         } else contactId
