@@ -570,6 +570,17 @@ class CodexAppServer:
         finally:
             run.replan_inflight = False
 
+    def recover_stalled_task(self, task_id: str, failure: str) -> bool:
+        """Request a guarded replan when the outer task supervisor detects a stall."""
+        run = self._runs.get(str(task_id or "").strip())
+        if run is None or run.finished:
+            return False
+        return self._attempt_replan(
+            run,
+            str(failure or "The external task supervisor detected no progress."),
+            source="task_manager_watchdog",
+        )
+
     def _record_failed_item(self, run: CodexRun, item: dict) -> None:
         raw_status = str(item.get("status") or "").lower()
         if "fail" not in raw_status and raw_status != "declined":

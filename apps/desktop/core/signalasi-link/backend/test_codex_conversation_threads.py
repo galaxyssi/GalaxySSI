@@ -412,6 +412,25 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("tool_failure", started[0][2]["source"])
         self.assertEqual(server._stop_repeated_failure, started[1][0])
 
+    def test_outer_supervisor_can_request_a_guarded_replan(self):
+        server, run, _events = self._event_server()
+        with patch.object(server, "_attempt_replan", return_value=True) as replan:
+            self.assertTrue(
+                server.recover_stalled_task(
+                    run.task_id,
+                    "No meaningful external progress",
+                )
+            )
+
+        replan.assert_called_once_with(
+            run,
+            "No meaningful external progress",
+            source="task_manager_watchdog",
+        )
+        self.assertFalse(
+            server.recover_stalled_task("missing-task", "No progress")
+        )
+
     def test_reused_thread_moves_workspace_to_each_turn(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(
             codex_app_server,

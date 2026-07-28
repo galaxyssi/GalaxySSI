@@ -21,6 +21,7 @@ MAX_AUTOMATIC_RECOVERY_ATTEMPTS = 2
 MAX_TASK_EVENTS = 256
 MAX_DELIVERY_TRACE_EVENTS = 64
 EventCallback = Callable[[dict], None]
+ExternalRecoveryCallback = Callable[[dict, str], bool]
 
 
 def _environment_timeout_seconds(name: str, default: float, minimum: float) -> float:
@@ -110,6 +111,9 @@ class AgentTask:
     execution_policy: dict = field(default_factory=dict)
     last_progress_at: int = field(default_factory=lambda: int(time.time() * 1000))
     replan_count: int = 0
+    stall_count: int = 0
+    last_stall_at: int = 0
+    recovery_state: str = "healthy"
     failure_counts: dict[str, int] = field(default_factory=dict)
     trace_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     delivery_trace: list[dict] = field(default_factory=list)
@@ -174,6 +178,9 @@ class AgentTask:
             "execution_policy": dict(self.execution_policy),
             "last_progress_at": self.last_progress_at,
             "replan_count": self.replan_count,
+            "stall_count": self.stall_count,
+            "last_stall_at": self.last_stall_at,
+            "recovery_state": self.recovery_state,
             "failure_counts": dict(self.failure_counts),
             "trace_id": self.trace_id,
             "delivery_trace": self.delivery_trace[-MAX_DELIVERY_TRACE_EVENTS:],
@@ -191,12 +198,18 @@ class AgentTaskManager:
         heartbeat_interval_seconds: float = 5.0,
         stall_timeout_seconds: float | None = None,
         state_path: Path | None = None,
+        external_recovery_grace_seconds: float = 30.0,
     ) -> None:
         self._lock = threading.RLock()
         self._tasks: dict[str, AgentTask] = {}
         self._recovered_task_ids: set[str] = set()
         self._external_task_ids: set[str] = set()
         self._external_heartbeat_stops: dict[str, threading.Event] = {}
+        self._external_watchdog_stops: dict[str, threading.Event] = {}
+        self._external_recovery_handlers: dict[
+            str,
+            tuple[ExternalRecoveryCallback, EventCallback | None, EventCallback | None],
+        ] = {}
         self._listeners: dict[str, EventCallback] = {}
         self._heartbeat_interval_seconds = max(0.01, float(heartbeat_interval_seconds))
         self._default_stall_timeout_seconds = max(
@@ -208,6 +221,10 @@ class AgentTaskManager:
             ),
         )
         self._stall_timeout_override = stall_timeout_seconds is not None
+        self._external_recovery_grace_seconds = max(
+            0.0,
+            float(external_recovery_grace_seconds),
+        )
         self._store = AgentTaskStore(state_path or TASKS_DB_PATH)
         self._load()
 
@@ -340,6 +357,35 @@ class AgentTaskManager:
             self._emit(task, on_event)
         return task
 
+    def register_external_recovery(
+        self,
+        task_id: str,
+        recover: ExternalRecoveryCallback,
+        *,
+        on_event: EventCallback | None = None,
+        on_result: EventCallback | None = None,
+    ) -> bool:
+        """Install a last-resort recovery hook for an externally managed task."""
+        if not callable(recover):
+            raise TypeError("External recovery callback must be callable")
+        clean_task_id = str(task_id or "").strip()
+        with self._lock:
+            task = self._tasks.get(clean_task_id)
+            if (
+                task is None
+                or clean_task_id not in self._external_task_ids
+                or task.status in TERMINAL_STATES
+            ):
+                return False
+            self._external_recovery_handlers[clean_task_id] = (
+                recover,
+                on_event,
+                on_result,
+            )
+            if task.status == "running":
+                self._ensure_external_watchdog_locked(task)
+        return True
+
     def resume(
         self,
         task_id: str,
@@ -380,6 +426,7 @@ class AgentTaskManager:
             task.updated_at = now
             if meaningful_progress:
                 task.last_progress_at = now
+                task.recovery_state = "healthy"
             task.status_seq += 1
             if not task.started_at and status not in {"accepted", "queued"}:
                 task.started_at = now
@@ -405,10 +452,18 @@ class AgentTaskManager:
             if status in TERMINAL_STATES:
                 task.current_step = ""
                 task.pending_approval = {}
+                task.recovery_state = (
+                    "exhausted"
+                    if status == "timed_out" else
+                    "healthy"
+                    if status == "completed" else
+                    "stopped"
+                )
             if task.task_id in self._external_task_ids and status == "running":
                 self._ensure_external_heartbeat_locked(task, on_event)
+                self._ensure_external_watchdog_locked(task)
             elif status in TERMINAL_STATES or status == "interrupted":
-                self._stop_external_heartbeat_locked(task.task_id, forget_task=True)
+                self._stop_external_runtime_locked(task.task_id, forget_task=True)
             self._save_locked(task)
         self._emit(task, on_event)
         return task
@@ -461,6 +516,20 @@ class AgentTaskManager:
                 task.events.pop(existing_index)
             task.events.append(event)
             del task.events[:-MAX_TASK_EVENTS]
+            if event["kind"] == "replan":
+                try:
+                    reported_replan = max(
+                        0,
+                        int(event["metadata"].get("replan") or 0),
+                    )
+                except (TypeError, ValueError):
+                    reported_replan = 0
+                task.replan_count = max(task.replan_count, reported_replan)
+                if str(event["metadata"].get("source") or "") in {
+                    "stall_watchdog",
+                    "task_manager_watchdog",
+                }:
+                    task.stall_count = max(task.stall_count, reported_replan)
             if task.status in {"accepted", "queued", "starting", "recovering"}:
                 task.status = "running"
                 if not task.started_at:
@@ -468,6 +537,11 @@ class AgentTaskManager:
             task.current_step = event["title"]
             task.updated_at = now
             task.last_progress_at = now
+            task.recovery_state = (
+                "recovering"
+                if event["kind"] in {"replan", "recovery"} else
+                "healthy"
+            )
             task.status_seq += 1
             self._save_locked(task)
         self._emit(task, on_event)
@@ -618,6 +692,9 @@ class AgentTaskManager:
                 task.process = None
                 if task.replan_count < max_replans:
                     task.replan_count += 1
+                    task.stall_count += 1
+                    task.last_stall_at = now
+                    task.recovery_state = "recovering"
                     task.last_progress_at = now
                     task.updated_at = now
                     task.status_seq += 1
@@ -642,6 +719,9 @@ class AgentTaskManager:
                     snapshot = task.public()
                     should_replan = True
                 else:
+                    task.recovery_state = "exhausted"
+                    task.last_stall_at = now
+                    self._save_locked(task)
                     snapshot = {}
                     should_replan = False
             if process is not None:
@@ -694,6 +774,184 @@ class AgentTaskManager:
             name=f"signalasi-task-heartbeat-{task.task_id[:8]}",
         ).start()
 
+    def _ensure_external_watchdog_locked(self, task: AgentTask) -> None:
+        if task.task_id not in self._external_recovery_handlers:
+            return
+        existing = self._external_watchdog_stops.get(task.task_id)
+        if existing is not None and not existing.is_set():
+            return
+        stop = threading.Event()
+        self._external_watchdog_stops[task.task_id] = stop
+        threading.Thread(
+            target=self._external_progress_watchdog,
+            args=(task.task_id, stop),
+            daemon=True,
+            name=f"signalasi-external-watchdog-{task.task_id[:8]}",
+        ).start()
+
+    def _external_progress_watchdog(
+        self,
+        task_id: str,
+        stop: threading.Event,
+    ) -> None:
+        try:
+            while True:
+                with self._lock:
+                    task = self._tasks.get(task_id)
+                    if (
+                        task is None
+                        or task_id not in self._external_task_ids
+                        or task.status in TERMINAL_STATES
+                        or task.status == "interrupted"
+                    ):
+                        return
+                    timeout = (
+                        self._stall_timeout_seconds(task)
+                        + self._external_recovery_grace_seconds
+                    )
+                    binding = self._external_recovery_handlers.get(task_id)
+                if binding is None:
+                    return
+                if stop.wait(min(5.0, max(0.01, timeout / 4))):
+                    return
+                with self._lock:
+                    task = self._tasks.get(task_id)
+                    binding = self._external_recovery_handlers.get(task_id)
+                    if (
+                        task is None
+                        or binding is None
+                        or task.status in TERMINAL_STATES
+                        or task.status == "interrupted"
+                    ):
+                        return
+                    if task.status in {"waiting_approval", "waiting_input", "paused"}:
+                        continue
+                    if task.status != "running":
+                        continue
+                    now = int(time.time() * 1000)
+                    stalled_for = max(0.0, (now - task.last_progress_at) / 1000.0)
+                    timeout = (
+                        self._stall_timeout_seconds(task)
+                        + self._external_recovery_grace_seconds
+                    )
+                    if stalled_for < timeout:
+                        continue
+                    recover, on_event, on_result = binding
+                    max_replans = max(
+                        0,
+                        int(task.execution_policy.get("max_replans") or 0),
+                    )
+                    if task.replan_count >= max_replans:
+                        task.recovery_state = "exhausted"
+                        task.last_stall_at = now
+                        self._save_locked(task)
+                        should_recover = False
+                        snapshot = {}
+                    else:
+                        task.replan_count += 1
+                        task.stall_count += 1
+                        task.last_stall_at = now
+                        task.last_progress_at = now
+                        task.updated_at = now
+                        task.recovery_state = "recovering"
+                        task.status_seq += 1
+                        reason = (
+                            f"No meaningful external progress for {timeout:g} seconds"
+                        )
+                        task.events.append({
+                            "event_id": f"external-stall-recovery:{task.replan_count}",
+                            "created_at": now,
+                            "updated_at": now,
+                            "kind": "replan",
+                            "title": "Recovering stalled external Agent",
+                            "status": "running",
+                            "detail": reason,
+                            "metadata": {
+                                **self._task_identity(task),
+                                "replan": task.replan_count,
+                                "max_replans": max_replans,
+                                "reason": "external_no_progress_timeout",
+                            },
+                        })
+                        del task.events[:-MAX_TASK_EVENTS]
+                        task.current_step = "Recovering stalled external Agent"
+                        self._save_locked(task)
+                        snapshot = task.public()
+                        should_recover = True
+                if not should_recover:
+                    self._finish_external_stall(
+                        task_id,
+                        timeout,
+                        on_event,
+                        on_result,
+                    )
+                    return
+                self._emit_snapshot(snapshot, on_event)
+                reason = (
+                    f"No meaningful external progress for {timeout:g} seconds"
+                )
+                try:
+                    recovered = bool(recover(snapshot, reason))
+                except Exception:
+                    recovered = False
+                if recovered:
+                    continue
+                with self._lock:
+                    current = self._tasks.get(task_id)
+                    if current is None or current.status in TERMINAL_STATES:
+                        return
+                    current.failure_counts["stall_recovery"] = (
+                        int(current.failure_counts.get("stall_recovery") or 0) + 1
+                    )
+                    current.recovery_state = "stalled"
+                    current.updated_at = int(time.time() * 1000)
+                    current.last_progress_at = current.updated_at
+                    self._save_locked(current)
+                    exhausted = current.replan_count >= max_replans
+                if exhausted:
+                    self._finish_external_stall(
+                        task_id,
+                        timeout,
+                        on_event,
+                        on_result,
+                    )
+                    return
+        finally:
+            with self._lock:
+                if self._external_watchdog_stops.get(task_id) is stop:
+                    self._external_watchdog_stops.pop(task_id, None)
+
+    def _finish_external_stall(
+        self,
+        task_id: str,
+        timeout: float,
+        on_event: EventCallback | None,
+        on_result: EventCallback | None,
+    ) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+        if task is None:
+            return
+        prefers_chinese = any(
+            "\u4e00" <= character <= "\u9fff" for character in task.prompt
+        )
+        result = (
+            "\u5916\u90e8 Agent \u957f\u65f6\u95f4\u6ca1\u6709\u5b9e\u8d28\u8fdb\u5c55\uff0c"
+            "\u5df2\u5728\u81ea\u52a8\u6062\u590d\u5c1d\u8bd5\u7528\u5c3d\u540e\u505c\u6b62\u3002"
+            if prefers_chinese else
+            "The external Agent made no meaningful progress and stopped after "
+            "exhausting automatic recovery."
+        )
+        transitioned = self._finish(
+            task,
+            "timed_out",
+            on_event,
+            result=result,
+            error=f"No meaningful external progress for {timeout:g} seconds",
+        )
+        if transitioned and on_result is not None:
+            self._emit(task, on_result)
+
     def _external_heartbeat(
         self,
         task_id: str,
@@ -727,6 +985,15 @@ class AgentTaskManager:
         stop = self._external_heartbeat_stops.pop(task_id, None)
         if stop is not None:
             stop.set()
+        if forget_task:
+            self._external_task_ids.discard(task_id)
+
+    def _stop_external_runtime_locked(self, task_id: str, *, forget_task: bool) -> None:
+        self._stop_external_heartbeat_locked(task_id, forget_task=False)
+        watchdog = self._external_watchdog_stops.pop(task_id, None)
+        if watchdog is not None:
+            watchdog.set()
+        self._external_recovery_handlers.pop(task_id, None)
         if forget_task:
             self._external_task_ids.discard(task_id)
 
@@ -779,7 +1046,12 @@ class AgentTaskManager:
             return terminal_task
         if process is not None:
             self._terminate(process)
-        self._finish(task, "cancelled", on_event)
+        transitioned = self._finish(task, "cancelled", on_event)
+        if not transitioned and on_event is not None:
+            try:
+                on_event(task.public())
+            except Exception:
+                pass
         return task
 
     def get(self, task_id: str) -> AgentTask | None:
@@ -914,7 +1186,7 @@ class AgentTaskManager:
                 if task is not None and task.process is not None:
                     self._terminate(task.process)
                 self._recovered_task_ids.discard(task_id)
-                self._stop_external_heartbeat_locked(task_id, forget_task=True)
+                self._stop_external_runtime_locked(task_id, forget_task=True)
         return deleted
 
     def drain_recovered(self, limit: int = 100) -> list[dict]:
@@ -950,6 +1222,7 @@ class AgentTaskManager:
             task.process = None
             task.cancel_requested = False
             task.last_progress_at = now
+            task.recovery_state = "healthy"
             task.status_seq += 1
             task.events.append({
                 "event_id": str(uuid.uuid4()),
@@ -982,6 +1255,7 @@ class AgentTaskManager:
             task.status = status
             task.updated_at = int(time.time() * 1000)
             task.last_progress_at = task.updated_at
+            task.recovery_state = "healthy"
             task.status_seq += 1
             self._save_locked(task)
         self._emit(task, on_event)
@@ -1007,7 +1281,14 @@ class AgentTaskManager:
             task.current_step = ""
             task.pending_approval = {}
             task.output_files = self._task_artifacts(task.task_id)
-            self._stop_external_heartbeat_locked(task.task_id, forget_task=True)
+            task.recovery_state = (
+                "exhausted"
+                if status == "timed_out" else
+                "healthy"
+                if status == "completed" else
+                "stopped"
+            )
+            self._stop_external_runtime_locked(task.task_id, forget_task=True)
             self._save_locked(task)
         self._emit(task, on_event)
         return True
@@ -1061,6 +1342,7 @@ class AgentTaskManager:
                 task.error = "Task recovery stopped after repeated Desktop restarts"
                 task.completed_at = recovered_at
                 task.current_step = ""
+                task.recovery_state = "exhausted"
             else:
                 task.status = "recovering"
                 task.attempt = previous_attempt + 1
@@ -1069,6 +1351,7 @@ class AgentTaskManager:
                 task.error = ""
                 task.exit_code = None
                 task.current_step = "Recovering after Desktop restart"
+                task.recovery_state = "recovering"
             task.delivery_trace = self._merge_delivery_trace(
                 task,
                 task.delivery_trace,
@@ -1134,6 +1417,9 @@ class AgentTaskManager:
                 or 0
             ),
             replan_count=max(0, int(row.get("replan_count") or 0)),
+            stall_count=max(0, int(row.get("stall_count") or 0)),
+            last_stall_at=max(0, int(row.get("last_stall_at") or 0)),
+            recovery_state=str(row.get("recovery_state") or "healthy"),
             failure_counts={
                 str(key): max(0, int(value or 0))
                 for key, value in dict(row.get("failure_counts") or {}).items()
