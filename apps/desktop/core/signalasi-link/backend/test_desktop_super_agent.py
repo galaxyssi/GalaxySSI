@@ -69,7 +69,10 @@ class MatchingMcp:
     def match(self, prompt):
         return self.Connection()
 
-    def invoke_prompt(self, connection_id, prompt, process_callback=None):
+    def explicitly_named(self, connection, prompt):
+        return connection.name.casefold() in prompt.casefold()
+
+    def invoke_prompt(self, connection_id, prompt, process_callback=None, **kwargs):
         return {"result": "Relay is on.", "duration_ms": 17}
 
 

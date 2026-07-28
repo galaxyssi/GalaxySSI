@@ -691,7 +691,10 @@ class AgentModelToolLoop(
                         put("model_round", state.rounds.toString())
                         put("tool_depth", call.depth.toString())
                         put("retry_attempt", (attempt - 1).toString())
-                        confirmationId?.let { put("confirmation_id", it) }
+                        confirmationId?.let {
+                            put("confirmation_id", it)
+                            put("explicit_user_approval", "true")
+                        }
                     }
                 ),
                 hooks = AgentNativeToolInvocationHooks(

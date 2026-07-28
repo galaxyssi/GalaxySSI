@@ -155,6 +155,7 @@ object AgentPrivateDataInventory {
         localOnly("run_events", "Run event ledger", "database:signalasi_agent_runs", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("connector_responses", "Pending connector responses", "encrypted_prefs:signalasi_agent_connector_responses", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("mcp_credentials", "MCP connections and credentials", "encrypted_prefs:signalasi_mcp_connections", AgentPrivateDataSensitivity.SECRET),
+        localOnly("mcp_tool_audit", "Redacted MCP permission decisions and tool receipts", "encrypted_prefs:signalasi_mcp_tool_audit", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("mcp_packages", "Installed MCP packages", "encrypted_prefs:signalasi_mcp_packages", AgentPrivateDataSensitivity.SECRET),
         localOnly("installed_skills", "Installed executable Skill packages", "encrypted_prefs:signalasi_agent_skills", AgentPrivateDataSensitivity.SECRET),
         localOnly("link_delivery", "Signal Link outbox and inbox receipts", "shared_prefs:signalasi_link_delivery_v1", AgentPrivateDataSensitivity.EPHEMERAL),

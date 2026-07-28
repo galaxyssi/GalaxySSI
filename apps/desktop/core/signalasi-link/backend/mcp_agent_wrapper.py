@@ -198,12 +198,20 @@ def call_mcp(
     prompt: str,
     on_process: Callable[[subprocess.Popen], None] | None = None,
 ) -> str:
+    return str(call_mcp_detailed(args, prompt, on_process=on_process)["text"])
+
+
+def call_mcp_detailed(
+    args: argparse.Namespace,
+    prompt: str,
+    on_process: Callable[[subprocess.Popen], None] | None = None,
+    before_call: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     command, _use_shell = server_command(args)
     if not command:
-        return (
-            "[MCP Agent] No MCP server configured. Set --server, --server-python, "
-            "or SIGNALASI_MCP_SERVER_CMD. Prompt received: "
-            f"{prompt}"
+        raise McpError(
+            "No MCP server configured. Set --server, --server-python, "
+            "or SIGNALASI_MCP_SERVER_CMD."
         )
 
     process, tools, deadline = _open_mcp(args, on_process=on_process)
@@ -212,14 +220,22 @@ def call_mcp(
         if not tool:
             names = ", ".join(str(item.get("name")) for item in tools)
             raise McpError(f"MCP tool not found: {args.tool}. Available: {names}")
+        arguments = tool_arguments(tool, prompt, args.arg_json)
+        if before_call is not None:
+            before_call(tool, arguments)
         called = request(
             process,
             "tools/call",
-            {"name": tool["name"], "arguments": tool_arguments(tool, prompt, args.arg_json)},
+            {"name": tool["name"], "arguments": arguments},
             3,
             deadline,
         )
-        return result_text(called)
+        return {
+            "text": result_text(called),
+            "tool": tool,
+            "arguments": arguments,
+            "raw_result": called,
+        }
     finally:
         _close_mcp(process)
 

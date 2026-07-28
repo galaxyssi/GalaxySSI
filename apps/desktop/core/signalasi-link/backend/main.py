@@ -628,6 +628,7 @@ class DesktopMcpReq(BaseModel):
     triggers: list[str] = Field(default_factory=list)
     enabled: bool = True
     auto_invoke: bool = False
+    permission_mode: str = "ask_for_changes"
     timeout_seconds: int = 20
 
 
@@ -1451,7 +1452,11 @@ def api_desktop_mcp(request: Request):
     require_loopback(request)
     from desktop_mcp import desktop_mcp_registry
 
-    return {"connections": desktop_mcp_registry().list(include_command=True)}
+    registry = desktop_mcp_registry()
+    return {
+        "connections": registry.list(include_command=True),
+        "audit": registry.audit(limit=100),
+    }
 
 
 @app.post("/api/desktop-mcp")
@@ -1474,6 +1479,23 @@ def api_probe_desktop_mcp(connection_id: str, request: Request):
         return desktop_mcp_registry().probe(connection_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=api_error("desktop_mcp_not_found")) from exc
+
+
+@app.get("/api/desktop-mcp-audit")
+def api_desktop_mcp_audit(
+    request: Request,
+    connection_id: str = "",
+    limit: int = 100,
+):
+    require_loopback(request)
+    from desktop_mcp import desktop_mcp_registry
+
+    return {
+        "audit": desktop_mcp_registry().audit(
+            connection_id=connection_id,
+            limit=max(1, min(limit, 500)),
+        )
+    }
 
 
 @app.delete("/api/desktop-mcp/{connection_id}")
@@ -1815,6 +1837,12 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                             task.task_id,
                             process,
                         ),
+                        explicit_user_selection=True,
+                        audit_context={
+                            "caller_id": "signalasi.desktop.explicit_mcp",
+                            "task_id": task.task_id,
+                            "conversation_id": conversation_id,
+                        },
                     )
                     reply = str(result.get("result") or "").strip()
                     if not reply:

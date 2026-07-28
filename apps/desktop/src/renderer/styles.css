@@ -503,8 +503,28 @@ button:disabled { cursor: default; opacity: 0.48; }
 .capability-item strong { color: #30373d; font-size: 9px; }
 .capability-item small { margin-top: 3px; color: var(--muted); font-size: 8px; line-height: 1.4; }
 .capability-item-actions { display: flex; align-items: center; gap: 4px; }
+.mcp-policy-select { width: 112px; height: 26px; padding: 0 6px; border: 1px solid var(--line); border-radius: 5px; outline: 0; background: var(--surface); color: #56616a; font-size: 8px; }
+.mcp-policy-select:focus { border-color: #8cb5ec; box-shadow: 0 0 0 2px var(--blue-soft); }
 .capability-item button { height: 26px; padding: 0 7px; border: 0; border-radius: 5px; background: #eef1f3; color: #56616a; font-size: 8px; }
 .capability-item button.primary { background: var(--green-soft); color: var(--green-ink); }
+.mcp-audit-section { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
+.mcp-audit-heading { margin-bottom: 8px; padding: 0 2px; }
+.mcp-audit-heading strong,
+.mcp-audit-heading small { display: block; }
+.mcp-audit-heading strong { color: #30373d; font-size: 9px; }
+.mcp-audit-heading small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.mcp-audit-list { display: grid; gap: 5px; }
+.mcp-audit-row { display: grid; gap: 4px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.mcp-audit-row.ok { border-left: 3px solid #4ba57e; }
+.mcp-audit-row.denied { border-left: 3px solid #c58b2b; }
+.mcp-audit-row.failed { border-left: 3px solid #c65f5f; }
+.mcp-audit-row-heading { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.mcp-audit-row-heading strong { min-width: 0; overflow: hidden; color: #30373d; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-audit-row small { color: var(--muted); font-size: 7px; line-height: 1.4; overflow-wrap: anywhere; }
+.mcp-audit-row code { max-height: 62px; padding: 5px 6px; overflow: auto; border-radius: 5px; background: #f1f3f5; color: #4d5861; font: 7px/1.45 Consolas, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.mcp-risk { margin-left: auto; padding: 2px 5px; border-radius: 7px; background: #edf0f2; color: #68727a; font-size: 7px; font-weight: 650; }
+.mcp-risk.low { background: var(--green-soft); color: var(--green-ink); }
+.mcp-risk.high { background: var(--red-soft); color: var(--red); }
 .memory-item-heading { display: flex; align-items: center; gap: 5px; }
 .memory-status { display: inline-flex; align-items: center; min-height: 16px; padding: 0 5px; border-radius: 8px; background: #eef1f3; color: #68727b; font-size: 7px; font-weight: 600; }
 .memory-status.pending,

@@ -275,6 +275,7 @@ data class AgentMcpConnection(
     val authStepIndex: Int = 0,
     val state: AgentMcpConnectionState = AgentMcpConnectionState.INSTALLED,
     val enabled: Boolean = true,
+    val permissionMode: AgentMcpPermissionMode = AgentMcpPermissionMode.ASK_FOR_CHANGES,
     val installedAtMillis: Long = 0L,
     val updatedAtMillis: Long = installedAtMillis,
     val expiresAtMillis: Long = 0L,
@@ -453,6 +454,7 @@ object AgentMcpConnectionCodec {
         "auth_step_index" to connection.authStepIndex,
         "state" to connection.state.wireValue,
         "enabled" to connection.enabled,
+        "permission_mode" to connection.permissionMode.wireValue,
         "installed_at" to connection.installedAtMillis,
         "updated_at" to connection.updatedAtMillis,
         "expires_at" to connection.expiresAtMillis,
@@ -485,6 +487,7 @@ object AgentMcpConnectionCodec {
             authStepIndex = value.int("auth_step_index").coerceAtLeast(0),
             state = AgentMcpConnectionState.fromWireValue(value.string("state").orEmpty()),
             enabled = value.boolean("enabled") ?: true,
+            permissionMode = AgentMcpPermissionMode.fromWireValue(value.string("permission_mode")),
             installedAtMillis = value.long("installed_at"),
             updatedAtMillis = value.long("updated_at"),
             expiresAtMillis = value.long("expires_at"),
@@ -787,6 +790,10 @@ class AgentMcpRegistry(
     }
 
     fun setEnabled(id: String, enabled: Boolean) = update(id) { it.copy(enabled = enabled, updatedAtMillis = clock()) }
+
+    fun setPermissionMode(id: String, mode: AgentMcpPermissionMode) = update(id) {
+        it.copy(permissionMode = mode, updatedAtMillis = clock())
+    }
 
     fun delete(id: String): Boolean = store.delete(id)
 

@@ -262,10 +262,15 @@ object AgentModelPlanParser {
         val arguments = input.optJSONObject("arguments") ?: JSONObject()
         val inputJson = arguments.toString()
         if (inputJson.length > MAX_NATIVE_TOOL_ARGUMENT_CHARACTERS) return null
+        val effectiveRisk = if (descriptor.id == AgentMcpNativeTools.CALL_TOOL) {
+            AgentMcpToolSecurityPolicy.provisionalRisk(arguments.optString("tool_name")).wireValue
+        } else {
+            descriptor.risk.wireValue
+        }
         return mapOf(
             "tool_id" to descriptor.id,
             "tool_version" to descriptor.version,
-            "native_tool_risk" to descriptor.risk.wireValue,
+            "native_tool_risk" to effectiveRisk,
             "input_json" to inputJson
         )
     }

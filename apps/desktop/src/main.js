@@ -70,6 +70,7 @@ async function runUiSmoke() {
   const matrixPath = path.join(outDir, "desktop-status-matrix.png");
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
+  const mcpGovernancePath = path.join(outDir, "desktop-mcp-governance.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
   const evolutionV2Path = path.join(outDir, "desktop-evolution-v2.png");
@@ -300,6 +301,60 @@ async function runUiSmoke() {
     if (memoryReviewState.inboxCount !== 0 || memoryReviewState.currentCount < 1) {
       throw new Error(`Memory candidate approval did not persist: ${JSON.stringify(memoryReviewState)}`);
     }
+    const mcpGovernanceState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        state.mcp = [{
+          id: "smoke-vault",
+          name: "Smoke Vault",
+          default_tool: "read_secret_metadata",
+          enabled: true,
+          auto_invoke: false,
+          permission_mode: "read_only"
+        }];
+        state.mcpAudit = [{
+          audit_id: "smoke-mcp-audit",
+          connection_id: "smoke-vault",
+          connection_name: "Smoke Vault",
+          tool_name: "read_secret_metadata",
+          source: "desktop-mcp:smoke-vault",
+          risk: "low",
+          permissions: ["mcp.data.read", "mcp.secrets.use"],
+          decision: "allow",
+          status: "succeeded",
+          parameter_preview: {
+            namespace: "release",
+            api_key: "[REDACTED]"
+          },
+          duration_ms: 18
+        }];
+        renderMcp();
+        document.querySelector('[data-capability-tab="mcp"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const auditText = document.querySelector("#mcpAuditList")?.textContent || "";
+        return {
+          active: document.querySelector("#mcpCapability")?.classList.contains("active") || false,
+          policy: document.querySelector("[data-mcp-permission]")?.value || "",
+          addPolicy: document.querySelector("#mcpPermissionMode")?.value || "",
+          auditRows: document.querySelectorAll("#mcpAuditList .mcp-audit-row").length,
+          auditText,
+          redacted: auditText.includes("[REDACTED]"),
+          leaked: auditText.includes("smoke-secret-value")
+        };
+      })()
+    `);
+    if (
+      !mcpGovernanceState.active
+      || mcpGovernanceState.policy !== "read_only"
+      || mcpGovernanceState.addPolicy !== "ask_for_changes"
+      || mcpGovernanceState.auditRows !== 1
+      || !mcpGovernanceState.redacted
+      || mcpGovernanceState.leaked
+      || !mcpGovernanceState.auditText.includes("desktop-mcp:smoke-vault")
+      || !mcpGovernanceState.auditText.includes("mcp.data.read")
+    ) {
+      throw new Error(`MCP governance did not render safely: ${JSON.stringify(mcpGovernanceState)}`);
+    }
+    await captureSmokeScreenshot(mcpGovernancePath);
     const capabilityCatalogState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         document.querySelector('[data-capability-tab="automation"]')?.click();
@@ -575,6 +630,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${matrixPath}`);
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
+    console.log(`[ui-smoke] screenshot: ${mcpGovernancePath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
     console.log(`[ui-smoke] screenshot: ${evolutionV2Path}`);
