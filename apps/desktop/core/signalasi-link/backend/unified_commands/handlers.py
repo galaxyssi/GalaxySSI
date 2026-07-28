@@ -1346,6 +1346,30 @@ def _phone_permission_handler(definition: CommandDefinition, request: CommandReq
     )
 
 
+def _adb_devices(adb: str) -> tuple[list[str], str]:
+    try:
+        completed = subprocess.run(
+            [adb, "devices"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+            check=False,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [], str(exc)[:300]
+    if completed.returncode != 0:
+        return [], (completed.stderr or completed.stdout or "").strip()[:300]
+    devices = []
+    for line in completed.stdout.splitlines()[1:]:
+        fields = line.strip().split()
+        if len(fields) >= 2 and fields[1] == "device":
+            devices.append(fields[0])
+    return devices, ""
+
+
 def _adb_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
     if definition.action not in {"status", "list", "inspect", "run", "send", "sync"}:
         return _result(definition, request, "unavailable", {"action": definition.action}, error_code="adb_action_unavailable")
@@ -1354,20 +1378,50 @@ def _adb_handler(definition: CommandDefinition, request: CommandRequest) -> Comm
         return _result(definition, request, "unavailable", {"required_executable": "adb"}, error_code="prerequisite_unavailable", message="ADB is not installed or not on PATH.")
     if definition.action in {"status", "list"}:
         return _run_argv(definition, request, [adb, "devices", "-l"], workspace_root(request), timeout=20)
+    devices, probe_error = _adb_devices(adb)
+    requested_serial = str(request.args.get("serial") or "").strip()
+    if not devices:
+        return _result(
+            definition,
+            request,
+            "unavailable",
+            {"devices": [], "probe_error": probe_error},
+            error_code="adb_device_unavailable",
+            message="ADB is available, but no authorized Android device is connected.",
+        )
+    if requested_serial and requested_serial not in devices:
+        return _result(
+            definition,
+            request,
+            "unavailable",
+            {"devices": devices, "requested_serial": requested_serial},
+            error_code="adb_device_unavailable",
+            message="The requested Android device is not connected or authorized.",
+        )
+    if len(devices) > 1 and not requested_serial:
+        return _result(
+            definition,
+            request,
+            "unavailable",
+            {"devices": devices},
+            error_code="adb_device_selection_required",
+            message="Multiple Android devices are connected; select a device serial.",
+        )
+    adb_target = [adb, "-s", requested_serial or devices[0]]
     if definition.action == "inspect":
-        return _run_argv(definition, request, [adb, "shell", "getprop"], workspace_root(request), timeout=30)
+        return _run_argv(definition, request, [*adb_target, "shell", "getprop"], workspace_root(request), timeout=30)
     if definition.action == "run":
         argv = _coerce_argv(request.args.get("argv") or request.args.get("command"))
         if not argv:
             return _result(definition, request, "failed", {}, error_code="adb_command_required")
-        return _run_argv(definition, request, [adb, *argv], workspace_root(request), timeout=int(request.args.get("timeout") or 60))
+        return _run_argv(definition, request, [*adb_target, *argv], workspace_root(request), timeout=int(request.args.get("timeout") or 60))
     if definition.action == "send":
         text = str(request.args.get("text") or request.args.get("content") or "").strip()
         if not text:
             return _result(definition, request, "failed", {}, error_code="adb_text_required")
-        return _run_argv(definition, request, [adb, "shell", "input", "text", text], workspace_root(request), timeout=15)
+        return _run_argv(definition, request, [*adb_target, "shell", "input", "text", text], workspace_root(request), timeout=15)
     if definition.action == "sync":
-        return _run_argv(definition, request, [adb, "sync"], workspace_root(request), timeout=int(request.args.get("timeout") or 120))
+        return _run_argv(definition, request, [*adb_target, "sync"], workspace_root(request), timeout=int(request.args.get("timeout") or 120))
     return _result(definition, request, "unavailable", {"action": definition.action}, error_code="adb_action_unavailable")
 
 

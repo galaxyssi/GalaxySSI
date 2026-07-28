@@ -1,12 +1,16 @@
 import os
 import http.server
 import shutil
+import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
 import time
 import unittest
+from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -15,7 +19,7 @@ from unified_commands.engine import UnifiedCommandEngine
 from unified_commands.capabilities import EXTERNAL_HISTORY_ACTIONS
 from unified_commands.handlers import PROCESS_LOCK, PROCESS_REGISTRY
 from unified_commands.parser import parse_slash_command
-from unified_commands.protocol import CommandRequest
+from unified_commands.protocol import CommandRequest, CommandResult, now_iso
 from unified_commands.store import CommandStore
 
 
@@ -181,6 +185,163 @@ class UnifiedCommandsTest(unittest.TestCase):
                 )
         self.assertGreater(len(protected), 0)
         self.assertEqual(failures, [])
+
+    def test_all_high_risk_commands_simulate_approved_dispatch_without_side_effects(self):
+        high_risk = [
+            command
+            for command in self.engine.registry.list()
+            if command["risk"] == "high"
+        ]
+        before = sorted(
+            path.relative_to(self.workspace).as_posix()
+            for path in self.workspace.rglob("*")
+        )
+        failures = []
+
+        def simulated_handler(definition, request):
+            completed = now_iso()
+            return CommandResult(
+                "completed",
+                definition.command_id,
+                request.run_id,
+                data={
+                    "simulated": True,
+                    "command_id": definition.command_id,
+                },
+                display={"type": "approval_simulation_receipt"},
+                started_at=completed,
+                completed_at=completed,
+            )
+
+        for command in high_risk:
+            command_id = command["command_id"]
+            original_handler = self.engine.registry.handler(command_id)
+            self.assertIsNotNone(original_handler)
+            denied = self.engine.execute(
+                CommandRequest(
+                    command_id,
+                    workspace=str(self.workspace),
+                )
+            )
+            if (
+                denied.status != "denied"
+                or denied.error_code != "approval_required"
+            ):
+                failures.append(
+                    (command_id, "denied", denied.status, denied.error_code)
+                )
+                continue
+            try:
+                self.engine.registry.register(command_id, simulated_handler)
+                approved = self.engine.execute(
+                    CommandRequest(
+                        command_id,
+                        source="approval_simulation",
+                        requested_by="test",
+                        workspace=str(self.workspace),
+                        approve=True,
+                    )
+                )
+            finally:
+                self.engine.registry.register(command_id, original_handler)
+            if (
+                approved.status != "completed"
+                or approved.data.get("simulated") is not True
+                or approved.display.get("type")
+                != "approval_simulation_receipt"
+            ):
+                failures.append(
+                    (command_id, "approved", approved.public())
+                )
+
+        after = sorted(
+            path.relative_to(self.workspace).as_posix()
+            for path in self.workspace.rglob("*")
+        )
+        with closing(sqlite3.connect(self.engine.store.path)) as conn:
+            simulated_runs = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM command_runs
+                WHERE source = 'approval_simulation' AND status = 'completed'
+                """
+            ).fetchone()[0]
+            simulated_receipts = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM command_audit
+                WHERE event_type = 'command_completed'
+                  AND run_id IN (
+                      SELECT run_id
+                      FROM command_runs
+                      WHERE source = 'approval_simulation'
+                  )
+                """
+            ).fetchone()[0]
+
+        self.assertEqual(len(high_risk), 328)
+        self.assertEqual(failures, [])
+        self.assertEqual(before, after)
+        self.assertEqual(simulated_runs, len(high_risk))
+        self.assertEqual(simulated_receipts, len(high_risk))
+
+    def test_adb_inspect_reports_missing_or_ambiguous_device_cleanly(self):
+        no_device = subprocess.CompletedProcess(
+            ["adb", "devices"],
+            0,
+            stdout="List of devices attached\n\n",
+            stderr="",
+        )
+        with (
+            patch(
+                "unified_commands.handlers.shutil.which",
+                return_value="adb",
+            ),
+            patch(
+                "unified_commands.handlers.subprocess.run",
+                return_value=no_device,
+            ),
+        ):
+            result = self.engine.execute(
+                CommandRequest(
+                    "android.inspect",
+                    workspace=str(self.workspace),
+                )
+            )
+        self.assertEqual(result.status, "unavailable")
+        self.assertEqual(result.error_code, "adb_device_unavailable")
+
+        multiple_devices = subprocess.CompletedProcess(
+            ["adb", "devices"],
+            0,
+            stdout=(
+                "List of devices attached\n"
+                "phone-one\tdevice\n"
+                "phone-two\tdevice\n"
+            ),
+            stderr="",
+        )
+        with (
+            patch(
+                "unified_commands.handlers.shutil.which",
+                return_value="adb",
+            ),
+            patch(
+                "unified_commands.handlers.subprocess.run",
+                return_value=multiple_devices,
+            ),
+        ):
+            result = self.engine.execute(
+                CommandRequest(
+                    "device.inspect",
+                    workspace=str(self.workspace),
+                )
+            )
+        self.assertEqual(result.status, "unavailable")
+        self.assertEqual(
+            result.error_code,
+            "adb_device_selection_required",
+        )
 
     def test_registered_only_commands_report_unavailable_when_invoked(self):
         matrix = self.engine.execute(

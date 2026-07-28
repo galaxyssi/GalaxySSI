@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import http.server
 import json
 import os
@@ -25,7 +26,7 @@ sys.path.insert(0, str(BACKEND))
 from unified_commands.engine import UnifiedCommandEngine  # noqa: E402
 from unified_commands.catalog import NATIVE_ROOTS  # noqa: E402
 from unified_commands.handlers import PROCESS_LOCK, PROCESS_REGISTRY  # noqa: E402
-from unified_commands.protocol import CommandRequest  # noqa: E402
+from unified_commands.protocol import CommandRequest, CommandResult, now_iso  # noqa: E402
 from unified_commands.store import CommandStore  # noqa: E402
 
 
@@ -41,6 +42,31 @@ def _unsupported_args() -> dict:
         "code": "print('unsupported')",
         "text": "unsupported",
     }
+
+
+def _simulated_high_risk_handler(definition, request) -> CommandResult:
+    """Exercise approved dispatch and audit paths without invoking side effects."""
+    completed = now_iso()
+    canonical_args = json.dumps(
+        request.args,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+    return CommandResult(
+        "completed",
+        definition.command_id,
+        request.run_id,
+        data={
+            "simulated": True,
+            "command_id": definition.command_id,
+            "risk": definition.risk,
+            "args_sha256": hashlib.sha256(canonical_args).hexdigest(),
+        },
+        display={"type": "approval_simulation_receipt"},
+        started_at=completed,
+        completed_at=completed,
+    )
 
 
 class SafeRuntimeFixture:
@@ -348,9 +374,49 @@ def audit(workspace: Path, execute_safe: bool = False) -> dict:
                 safe_execution = "not_requested"
                 safe_result_status = ""
                 safe_error_code = ""
+                simulated_approval = "not_applicable"
                 if execute_safe:
                     if command["risk"] == "high":
-                        safe_execution = "approval_only"
+                        original_handler = engine.registry.handler(command_id)
+                        if original_handler is None:
+                            simulated_approval = "failed:handler_missing"
+                            safe_execution = "failed:handler_missing"
+                        else:
+                            try:
+                                engine.registry.register(
+                                    command_id,
+                                    _simulated_high_risk_handler,
+                                )
+                                result = engine.execute(
+                                    CommandRequest(
+                                        command_id,
+                                        fixture.args_for(command),
+                                        source="approval_simulation",
+                                        requested_by="command_audit",
+                                        workspace=str(execution_root),
+                                        approve=True,
+                                    )
+                                )
+                            finally:
+                                engine.registry.register(
+                                    command_id,
+                                    original_handler,
+                                )
+                            safe_result_status = result.status
+                            safe_error_code = result.error_code
+                            if (
+                                result.status == "completed"
+                                and result.data.get("simulated") is True
+                                and result.display.get("type")
+                                == "approval_simulation_receipt"
+                            ):
+                                simulated_approval = "passed"
+                                safe_execution = "simulated_approval_passed"
+                            else:
+                                simulated_approval = (
+                                    f"failed:{result.status}:{result.error_code}"
+                                )
+                                safe_execution = simulated_approval
                     elif capability["status"] in {"ready", "needs_input"}:
                         result = engine.execute(
                             CommandRequest(
@@ -362,11 +428,23 @@ def audit(workspace: Path, execute_safe: bool = False) -> dict:
                         )
                         safe_result_status = result.status
                         safe_error_code = result.error_code
-                        safe_execution = (
-                            "passed"
-                            if result.status == "completed"
-                            else f"failed:{result.status}:{result.error_code}"
-                        )
+                        if result.status == "completed":
+                            safe_execution = "passed"
+                        elif (
+                            result.status == "unavailable"
+                            and result.error_code
+                            in {
+                                "adb_device_unavailable",
+                                "adb_device_selection_required",
+                            }
+                        ):
+                            safe_execution = (
+                                f"environment_unavailable:{result.error_code}"
+                            )
+                        else:
+                            safe_execution = (
+                                f"failed:{result.status}:{result.error_code}"
+                            )
                     elif capability["status"] == "unsupported":
                         safe_execution = "unsupported_verified"
                     else:
@@ -385,6 +463,7 @@ def audit(workspace: Path, execute_safe: bool = False) -> dict:
                         "safe_execution": safe_execution,
                         "safe_result_status": safe_result_status,
                         "safe_error_code": safe_error_code,
+                        "simulated_approval": simulated_approval,
                     }
                 )
         finally:
@@ -397,6 +476,7 @@ def audit(workspace: Path, execute_safe: bool = False) -> dict:
         or row["approved_dry_run"].startswith("failed:")
         or row["unsupported_dispatch"].startswith("failed:")
         or row["safe_execution"].startswith("failed:")
+        or row["simulated_approval"].startswith("failed:")
     ]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
