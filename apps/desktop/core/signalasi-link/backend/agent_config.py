@@ -38,6 +38,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "cloud_model": {
         "name": "Cloud Model",
+        "provider": "openai",
         "url": "",
         "model": "",
         "api_key": "",
@@ -158,6 +159,7 @@ def cloud_model_config() -> dict[str, Any]:
     name = str(data.get("name", "")).strip() or "Cloud Model"
     return {
         "name": name[:48],
+        "provider": str(data.get("provider", "openai")).strip().lower() or "openai",
         "url": str(data.get("url", "")).strip(),
         "model": str(data.get("model", "")).strip(),
         "api_key": str(data.get("api_key", "")).strip(),

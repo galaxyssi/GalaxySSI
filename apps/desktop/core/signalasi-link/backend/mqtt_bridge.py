@@ -4426,6 +4426,12 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
     up_topic = _client_topics(client_route_id).up if client_route_id else ""
     paired_client = get_client(client_route_id) if client_route_id else None
     access = client_grant(paired_client)
+    profile_catalog = diagnostics.get("provider_profiles") or {}
+    profiles_by_resource = {
+        str(profile.get("resource_id") or ""): profile
+        for profile in profile_catalog.get("profiles") or []
+        if isinstance(profile, dict)
+    }
     try:
         from agent_reputation_ledger import agent_reputation_ledger
 
@@ -4462,6 +4468,26 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
             "desktop_access_profile": access["profile"],
             "desktop_access_scopes": list(access["scopes"]),
         }
+        provider_profile = profiles_by_resource.get(str(agent.get("id") or ""))
+        if provider_profile is not None:
+            profile_namespace = (
+                "model"
+                if provider_profile.get("kind") in {"local_model", "cloud_model"}
+                else "agent"
+            )
+            entry["provider_profile"] = {
+                **provider_profile,
+                "profile_id": f"{profile_namespace}:{full_agent_id}",
+                "resource_id": full_agent_id,
+                "failure_domain": str(
+                    provider_profile.get("failure_domain") or f"desktop:{did}"
+                ),
+                "metadata": {
+                    **dict(provider_profile.get("metadata") or {}),
+                    "desktop_id": did,
+                    "native_product_identity": str(agent_id),
+                },
+            }
         if reputation_ledger is not None:
             entry["reputation"] = reputation_ledger.snapshot(
                 full_agent_id,
@@ -4474,6 +4500,7 @@ def mobile_connector_agents(client_route_id: str = "") -> list[dict]:
 def capability_manifest(client_route_id: str = "") -> dict:
     from desktop_native_tools import desktop_native_tool_registry
     from desktop_control import desktop_control_manager
+    from provider_profiles import routable_model_profiles
 
     diagnostics = connector_diagnostics()
     paired_client = get_client(client_route_id) if client_route_id else None
@@ -4481,6 +4508,11 @@ def capability_manifest(client_route_id: str = "") -> dict:
     full_executor = has_full_executor(paired_client)
     control_status = desktop_control_manager().status(client_route_id)
     native_manifest = desktop_native_tool_registry().manifest()
+    provider_profiles = diagnostics.get("provider_profiles") or {
+        "schema_version": 1,
+        "profiles": [],
+        "summary": {},
+    }
     if not full_executor:
         native_manifest = {
             **native_manifest,
@@ -4508,7 +4540,8 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "role": "server",
         },
         "agents": mobile_connector_agents(client_route_id),
-        "models": [],
+        "models": routable_model_profiles(provider_profiles),
+        "provider_profiles": provider_profiles,
         "tools": advertised_tools,
         "pairing_access": access,
         "desktop_native_tools": native_manifest,
@@ -4548,6 +4581,8 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "mqtt_fragment_integrity_sha256",
             "signed_agent_execution_receipts_v1",
             "agent_reputation_snapshots_v1",
+            "provider_profile_v1",
+            "provider_performance_observations_v1",
         ],
         "limits": {
             "max_parallel_tasks": int(os.environ.get("SIGNALASI_MAX_PARALLEL_TASKS", "4")),

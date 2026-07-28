@@ -10072,19 +10072,25 @@ interface AgentConnectorRegistry {
     fun availableTargets(): List<AgentCallableTarget>
 
     fun registrations(): List<AgentRegistration> = availableTargets().map { target ->
-        val location = when {
+        val fallbackLocation = when {
             target.id == "local-llm" -> AgentResourceLocation.PHONE
             target.kind == AgentConnectorKind.MODEL -> AgentResourceLocation.CLOUD
             target.kind == AgentConnectorKind.AGENT -> AgentResourceLocation.TRUSTED_DESKTOP
             target.kind == AgentConnectorKind.DEVICE -> AgentResourceLocation.PRIVATE_NETWORK
             else -> AgentResourceLocation.CLOUD
         }
+        val providerProfile = target.providerProfile ?: ProviderProfileCatalog.fromTarget(target)
+        val location = if (target.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL)) {
+            providerProfile.location
+        } else {
+            fallbackLocation
+        }
         val capabilities = target.capabilities.toSet()
         AgentRegistration(
             agentId = target.id,
             installationId = target.failureDomain.ifBlank { "installation:${target.id}" },
             deviceId = target.failureDomain.ifBlank { "device:${target.id}" },
-            providerId = target.id.substringBefore(':'),
+            providerId = providerProfile.providerId,
             displayName = target.title,
             kind = target.kind,
             location = location,
@@ -10106,8 +10112,10 @@ interface AgentConnectorRegistry {
                 AgentResourceLocation.PRIVATE_NETWORK -> AgentConnectionKind.HTTP
                 AgentResourceLocation.CLOUD -> AgentConnectionKind.HTTP
             },
-            cost = if (location == AgentResourceLocation.CLOUD) AgentResourceCost.MEDIUM else AgentResourceCost.FREE,
-            latency = when (location) {
+            cost = providerProfile.pricing.tier,
+            latency = providerProfile.latency.takeIf {
+                target.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL)
+            } ?: when (location) {
                 AgentResourceLocation.PHONE -> AgentResourceLatency.INSTANT
                 AgentResourceLocation.TRUSTED_DESKTOP, AgentResourceLocation.PRIVATE_NETWORK -> AgentResourceLatency.FAST
                 AgentResourceLocation.CLOUD -> AgentResourceLatency.NORMAL
@@ -10127,7 +10135,8 @@ interface AgentConnectorRegistry {
                 "$installation:${target.adapterType.ifBlank { target.id }}"
             },
             adapterType = target.adapterType.ifBlank { defaultAdapterType(target) },
-            independentlyUpgradeable = target.independentlyUpgradeable
+            independentlyUpgradeable = target.independentlyUpgradeable,
+            providerProfile = providerProfile
         )
     }
 
@@ -10301,6 +10310,9 @@ class AppStoreAgentConnectorRegistry(
                     "independently_upgradeable",
                     registration.independentlyUpgradeable
                 ),
+                providerProfile = ProviderProfileCatalog.decode(
+                    contact.optJSONObject("provider_profile")
+                ) ?: registration.providerProfile,
                 lastHeartbeatMillis = contact.optLong("setup_updated_at", registration.lastHeartbeatMillis),
                 updatedAtMillis = contact.optLong("setup_updated_at", registration.updatedAtMillis)
             )
@@ -10331,7 +10343,10 @@ class AppStoreAgentConnectorRegistry(
                 status = statusFor(target),
                 failureDomain = target.failureDomain.ifBlank { desktopDomain },
                 desktopAccessProfile = contact?.optString("desktop_access_profile")
-                    .orEmpty().ifBlank { target.desktopAccessProfile }
+                    .orEmpty().ifBlank { target.desktopAccessProfile },
+                providerProfile = ProviderProfileCatalog.decode(
+                    contact?.optJSONObject("provider_profile")
+                ) ?: target.providerProfile
             )
         }
         val cloudProviders = cloudProviderTargets()
@@ -10368,6 +10383,8 @@ class AppStoreAgentConnectorRegistry(
                     endpoint.contains("192.168.") ||
                     endpoint.contains("10.") ||
                     endpoint.contains("172.16.")
+                val status = if (ready) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.NEEDS_SETUP
+                val profile = ProviderProfileCatalog.fromCloudContact(selected, status)
                 add(
                     AgentCallableTarget(
                         id = id,
@@ -10376,10 +10393,11 @@ class AppStoreAgentConnectorRegistry(
                             .ifBlank { selected.optString("cloud_provider") }
                             .ifBlank { id },
                         kind = AgentConnectorKind.MODEL,
-                        status = if (ready) AgentConnectorStatus.AVAILABLE else AgentConnectorStatus.NEEDS_SETUP,
+                        status = status,
                         failureDomain = "cloud:${selected.optString("cloud_provider").ifBlank { id }}",
                         runtimeFailureDomain = "cloud:${selected.optString("cloud_provider").ifBlank { id }}:$id",
                         adapterType = "cloud-model-api",
+                        providerProfile = profile,
                         capabilities = buildList {
                             add(AgentCapability.CHAT)
                             add(AgentCapability.REASONING)
@@ -10478,6 +10496,9 @@ class AppStoreAgentConnectorRegistry(
                         desktopAccessProfile = contact.optString(
                             "desktop_access_profile",
                             SignalASILinkProtocol.ACCESS_RESTRICTED
+                        ),
+                        providerProfile = ProviderProfileCatalog.decode(
+                            contact.optJSONObject("provider_profile")
                         )
                     )
                 )
@@ -11437,7 +11458,8 @@ data class AgentCallableTarget(
     val runtimeFailureDomain: String = "",
     val adapterType: String = "",
     val independentlyUpgradeable: Boolean = true,
-    val desktopAccessProfile: String = ""
+    val desktopAccessProfile: String = "",
+    val providerProfile: ProviderProfile? = null
 )
 
 data class ScreenContext(

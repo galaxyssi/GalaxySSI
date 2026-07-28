@@ -849,16 +849,26 @@ async function detectAgents() {
   try {
     const status = await startBackend();
     if (status.running) {
-      const response = await fetch(`${BACKEND_ORIGIN}/api/agents`);
-      if (response.ok) {
-        const agents = await response.json();
+      const [response, profileResponse] = await Promise.all([
+        fetch(`${BACKEND_ORIGIN}/api/agents`),
+        fetch(`${BACKEND_ORIGIN}/api/provider-profiles`)
+      ]);
+      if (response.ok && profileResponse.ok) {
+        const [agents, profileCatalog] = await Promise.all([
+          response.json(),
+          profileResponse.json()
+        ]);
+        const profiles = new Map(
+          (profileCatalog.profiles || []).map((profile) => [profile.resource_id, profile])
+        );
         return agents.map((agent) => ({
           id: agent.id,
           name: agent.name,
           kind: agent.kind,
           status: agent.status === "ready" ? "detected" : agent.status === "needs_setup" ? "manual" : agent.status,
           detail: agent.detail || agent.note || "",
-          pairing: agent.id === "hermes" ? "SignalASI Link QR" : "Connector managed"
+          pairing: agent.id === "hermes" ? "SignalASI Link QR" : "Connector managed",
+          provider_profile: profiles.get(agent.id) || null
         }));
       }
     }

@@ -29,6 +29,7 @@ const required = [
   "core/signalasi-link/backend/evolution_v2/api.py",
   "core/signalasi-link/backend/evolution_v2/manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
+  "core/signalasi-link/backend/provider_profiles.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
   "scripts/smoke.js",
@@ -121,6 +122,7 @@ const backendLinkProtocol = fs.readFileSync(path.join(backendDir, "link_protocol
 const backendLinkDelivery = fs.readFileSync(path.join(backendDir, "link_delivery.py"), "utf8");
 const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_client.py"), "utf8");
 const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_reputation_ledger.py"), "utf8");
+const backendProviderProfiles = fs.readFileSync(path.join(backendDir, "provider_profiles.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
 const backendTaskManager = fs.readFileSync(path.join(backendDir, "agent_task_manager.py"), "utf8");
 const backendAgentConfig = fs.readFileSync(path.join(backendDir, "agent_config.py"), "utf8");
@@ -306,6 +308,27 @@ if (
   || !backendAgentReputation.includes("class AgentReputationLedger")
 ) {
   throw new Error("Desktop package must include signed Agent reputation receipts");
+}
+for (const providerId of [
+  "openai",
+  "anthropic",
+  "gemini",
+  "deepseek",
+  "qwen",
+  "ollama",
+  "lm-studio",
+  "openrouter"
+]) {
+  if (!backendProviderProfiles.includes(`"${providerId}"`)) {
+    throw new Error(`Unified Provider Profile catalog missing ${providerId}`);
+  }
+}
+if (
+  !backendMain.includes('@app.get("/api/provider-profiles")')
+  || !backendMqtt.includes('"provider_profile_v1"')
+  || !backendGateway.includes("provider_metrics_store().record")
+) {
+  throw new Error("Provider Profiles must expose durable metrics through Desktop and SignalASI Link");
 }
 
 if (fs.existsSync(path.join(sidecarSourceDir, "com", "hermes", "signal"))) {
