@@ -58,7 +58,7 @@ TOOL_SUPPORTED_ACTIONS: dict[str, frozenset[str]] = {
     "deploy": frozenset({"status", "list", "run", "validate", "report", "start"}),
     "release": frozenset({"status", "list", "run", "validate", "report", "start"}),
     "rollback": frozenset({"status", "list", "run", "validate", "report", "start"}),
-    "shell": frozenset({"status", "run", "validate", "report"}),
+    "shell": frozenset({"status", "list", "run", "validate", "report"}),
     "process": frozenset({"status", "list", "run", "validate", "report", "start", "stop", "restart"}),
     "port": frozenset({"status", "list", "validate", "report"}),
     "service": frozenset({"status", "list", "run", "validate", "report", "start", "stop", "restart"}),
@@ -105,6 +105,42 @@ EXTERNAL_SUPPORTED_ACTIONS: dict[str, frozenset[str]] = {
     "worker": frozenset({"status", "list", "run", "send", "receive", "search", "inspect", "sync"}),
     "automation": frozenset({"status", "list", "run", "send", "receive", "search", "inspect", "sync"}),
 }
+
+EXTERNAL_HISTORY_ACTIONS: dict[str, frozenset[str]] = {
+    "accessibility": frozenset({"receive", "search"}),
+    "android": frozenset({"receive", "search"}),
+    "browser": frozenset({"receive"}),
+    "camera": frozenset({"receive", "search"}),
+    "chromium": frozenset({"receive"}),
+    "claude": frozenset({"inspect", "receive", "search"}),
+    "code": frozenset({"inspect", "receive", "search"}),
+    "codex": frozenset({"inspect", "receive", "search"}),
+    "device": frozenset({"receive", "search"}),
+    "hermes": frozenset({"inspect", "receive", "search"}),
+    "homework": frozenset({"inspect", "receive", "search"}),
+    "image": frozenset({"inspect", "receive", "search"}),
+    "location": frozenset({"receive", "search"}),
+    "microphone": frozenset({"receive", "search"}),
+    "node": frozenset({"receive", "search"}),
+    "notification": frozenset({"receive", "search"}),
+    "openclaw": frozenset({"inspect", "receive", "search"}),
+    "playwright": frozenset({"receive"}),
+    "remote": frozenset({"inspect", "receive", "search"}),
+    "research": frozenset({"inspect", "receive", "search"}),
+    "scp": frozenset({"inspect", "search"}),
+    "screen": frozenset({"inspect", "receive", "search"}),
+    "sensor": frozenset({"receive", "search"}),
+    "smtp": frozenset({"inspect", "receive", "search"}),
+    "ssh": frozenset({"receive", "search"}),
+    "team": frozenset({"inspect", "receive", "search"}),
+    "webhook": frozenset({"inspect", "receive", "search"}),
+}
+
+for _root, _actions in EXTERNAL_HISTORY_ACTIONS.items():
+    EXTERNAL_SUPPORTED_ACTIONS[_root] = (
+        EXTERNAL_SUPPORTED_ACTIONS.get(_root, frozenset({"status", "list"}))
+        | _actions
+    )
 
 CORE_REQUIRED_INPUTS: dict[str, tuple[str, ...]] = {
     "file.read": ("path",),
@@ -170,6 +206,10 @@ EXTERNAL_REQUIRED_INPUTS: dict[tuple[str, str], tuple[str, ...]] = {
     ("node", "inspect"): ("code",),
     ("smtp", "send"): ("host", "from", "to"),
 }
+
+for _root, _actions in EXTERNAL_HISTORY_ACTIONS.items():
+    for _action in _actions:
+        EXTERNAL_REQUIRED_INPUTS.pop((_root, _action), None)
 
 SCRIPT_ROOTS = frozenset({"test", "build", "lint", "format", "deploy", "release", "rollback", "package"})
 SCRIPT_DEFAULTS = {

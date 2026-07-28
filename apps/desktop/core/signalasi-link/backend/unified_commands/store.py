@@ -182,6 +182,54 @@ class CommandStore:
             ).fetchall()
         return [json.loads(row["result_json"]) for row in rows]
 
+    def search_runs(
+        self,
+        root: str,
+        *,
+        query: str = "",
+        run_id: str = "",
+        limit: int = 50,
+        excluded_actions: tuple[str, ...] = (),
+    ) -> list[dict[str, Any]]:
+        clauses = ["command_id LIKE ?"]
+        parameters: list[Any] = [f"{root}.%"]
+        if run_id:
+            clauses.append("run_id = ?")
+            parameters.append(run_id)
+        if query:
+            clauses.append(
+                "instr(lower(command_id || ' ' || status || ' ' || result_json), lower(?)) > 0"
+            )
+            parameters.append(query)
+        if excluded_actions:
+            placeholders = ", ".join("?" for _ in excluded_actions)
+            clauses.append(f"command_id NOT IN ({placeholders})")
+            parameters.extend(f"{root}.{action}" for action in excluded_actions)
+        parameters.append(max(1, min(int(limit), 200)))
+        statement = f"""
+            SELECT run_id, command_id, source, requested_by, status,
+                   started_at, completed_at, result_json
+            FROM command_runs
+            WHERE {' AND '.join(clauses)}
+            ORDER BY started_at DESC
+            LIMIT ?
+        """
+        with self._lock, closing(self._connect()) as conn, conn:
+            rows = conn.execute(statement, parameters).fetchall()
+        return [
+            {
+                "run_id": row["run_id"],
+                "command_id": row["command_id"],
+                "source": row["source"],
+                "requested_by": row["requested_by"],
+                "status": row["status"],
+                "started_at": row["started_at"],
+                "completed_at": row["completed_at"],
+                "result": json.loads(row["result_json"]),
+            }
+            for row in rows
+        ]
+
     def upsert_entity(self, entity_id: str, root: str, name: str, value: dict[str, Any], status: str, timestamp: str) -> dict[str, Any]:
         with self._lock, closing(self._connect()) as conn, conn:
             row = conn.execute(

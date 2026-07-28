@@ -12,6 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from unified_commands.engine import UnifiedCommandEngine
+from unified_commands.capabilities import EXTERNAL_HISTORY_ACTIONS
 from unified_commands.handlers import PROCESS_LOCK, PROCESS_REGISTRY
 from unified_commands.parser import parse_slash_command
 from unified_commands.protocol import CommandRequest
@@ -214,6 +215,99 @@ class UnifiedCommandsTest(unittest.TestCase):
                 failures.append((command_id, result.public()))
         self.assertGreater(len(unsupported), 0)
         self.assertEqual(failures, [])
+
+    def test_non_high_read_only_gaps_have_real_observation_handlers(self):
+        recovered = {
+            f"{root}.{action}"
+            for root, actions in EXTERNAL_HISTORY_ACTIONS.items()
+            for action in actions
+        } | {"shell.list"}
+        self.assertEqual(len(recovered), 65)
+
+        seeded = self.engine.execute(
+            CommandRequest(
+                "codex.status",
+                {"token": "must-not-leak"},
+                workspace=str(self.workspace),
+            )
+        )
+        self.assertEqual(seeded.status, "completed")
+
+        matrix = self.engine.execute(
+            CommandRequest("capabilities.list", workspace=str(self.workspace))
+        )
+        by_id = {
+            item["command_id"]: item
+            for item in matrix.data["capabilities"]
+        }
+        self.assertEqual(
+            [
+                item["command_id"]
+                for item in matrix.data["capabilities"]
+                if item["status"] == "unsupported"
+                and item["risk"] != "high"
+            ],
+            [],
+        )
+        failures = []
+        for command_id in sorted(recovered):
+            capability = by_id[command_id]
+            if capability["status"] != "ready":
+                failures.append(
+                    (command_id, "capability", capability["status"])
+                )
+                continue
+            result = self.engine.execute(
+                CommandRequest(
+                    command_id,
+                    {"query": "codex" if command_id == "codex.search" else ""},
+                    workspace=str(self.workspace),
+                )
+            )
+            if result.status != "completed":
+                failures.append(
+                    (command_id, result.status, result.error_code)
+                )
+        self.assertEqual(failures, [])
+
+        received = self.engine.execute(
+            CommandRequest("codex.receive", workspace=str(self.workspace))
+        )
+        searched = self.engine.execute(
+            CommandRequest(
+                "codex.search",
+                {"query": "codex.status"},
+                workspace=str(self.workspace),
+            )
+        )
+        inspected = self.engine.execute(
+            CommandRequest("codex.inspect", workspace=str(self.workspace))
+        )
+        shells = self.engine.execute(
+            CommandRequest("shell.list", workspace=str(self.workspace))
+        )
+        self.assertTrue(
+            any(
+                item["command_id"] == "codex.status"
+                for item in received.data["items"]
+            )
+        )
+        self.assertNotIn(
+            "must-not-leak",
+            str(received.data),
+        )
+        self.assertTrue(
+            any(
+                item["command_id"] == "codex.status"
+                for item in searched.data["items"]
+            )
+        )
+        self.assertEqual(
+            inspected.data["latest"]["command_id"],
+            "codex.status",
+        )
+        self.assertEqual(shells.status, "completed")
+        self.assertIn("shells", shells.data)
 
     def test_native_services_have_required_sqlite_tables(self):
         tables = set(self.engine.store.table_names())

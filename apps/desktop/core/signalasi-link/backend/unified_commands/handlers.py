@@ -23,7 +23,7 @@ from collections import Counter
 from pathlib import Path
 from uuid import uuid4
 
-from .capabilities import probe_command_capability
+from .capabilities import EXTERNAL_HISTORY_ACTIONS, probe_command_capability
 from .protocol import CommandDefinition, CommandRequest, CommandResult, new_run_id, now_iso
 from .registry import CommandRegistry
 from .security import resolve_workspace_path, workspace_root
@@ -521,6 +521,28 @@ def _deployment_handler(definition: CommandDefinition, request: CommandRequest) 
 
 def _shell_handler(definition: CommandDefinition, request: CommandRequest) -> CommandResult:
     root = workspace_root(request)
+    if definition.action == "list":
+        candidates = (
+            ("PowerShell", "pwsh"),
+            ("Windows PowerShell", "powershell"),
+            ("Command Prompt", "cmd"),
+            ("Bash", "bash"),
+            ("POSIX shell", "sh"),
+            ("Z shell", "zsh"),
+            ("Fish", "fish"),
+        )
+        shells = [
+            {"name": name, "command": command, "executable": executable}
+            for name, command in candidates
+            if (executable := shutil.which(command))
+        ]
+        return _result(
+            definition,
+            request,
+            "completed",
+            {"mode": "argv_only", "cwd": str(root), "shells": shells},
+            display={"type": "shell_list"},
+        )
     if definition.action in {"status", "validate", "report"}:
         return _result(
             definition,
@@ -1497,7 +1519,66 @@ def external_adapter_handler(store: CommandStore):
     return handler
 
 
+def _adapter_history_handler(
+    store: CommandStore,
+    definition: CommandDefinition,
+    request: CommandRequest,
+) -> CommandResult:
+    query = str(request.args.get("query") or "").strip()
+    run_id = str(request.args.get("run_id") or "").strip()
+    history = store.search_runs(
+        definition.root,
+        query=query,
+        run_id=run_id,
+        limit=min(_limit(request, 20), 200),
+        excluded_actions=("inspect", "receive", "search"),
+    )
+    runtime_name = EXTERNAL_EXECUTABLES.get(definition.root)
+    if runtime_name is None:
+        runtime_name = definition.root
+    runtime_path = shutil.which(runtime_name) if runtime_name else ""
+    common = {
+        "adapter": definition.root,
+        "action": definition.action,
+        "runtime": runtime_name,
+        "runtime_detected": bool(runtime_path),
+        "runtime_path": runtime_path or "",
+        "count": len(history),
+    }
+    if definition.action == "inspect":
+        return _result(
+            definition,
+            request,
+            "completed",
+            {
+                **common,
+                "run_id": run_id,
+                "latest": history[0] if history else None,
+            },
+            display={"type": "adapter_inspection"},
+        )
+    return _result(
+        definition,
+        request,
+        "completed",
+        {
+            **common,
+            "query": query,
+            "items": history,
+        },
+        display={
+            "type": (
+                "adapter_search_results"
+                if definition.action == "search"
+                else "adapter_received_results"
+            )
+        },
+    )
+
+
 def _external_adapter_handler(store: CommandStore, definition: CommandDefinition, request: CommandRequest) -> CommandResult:
+    if definition.action in EXTERNAL_HISTORY_ACTIONS.get(definition.root, ()):
+        return _adapter_history_handler(store, definition, request)
     if definition.root in {"web", "http"}:
         return _web_http_handler(definition, request)
     if definition.root == "url":
