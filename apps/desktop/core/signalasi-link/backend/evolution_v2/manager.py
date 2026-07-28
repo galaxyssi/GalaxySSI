@@ -32,11 +32,7 @@ class EvolutionManager(legacy.EvolutionManager):
         configured_dependencies = str(
             os.environ.get("SIGNALASI_EVOLUTION_DEPENDENCY_ROOT") or ""
         ).strip()
-        self.dependency_root = (
-            Path(configured_dependencies).expanduser().resolve()
-            if configured_dependencies
-            else self.source_root
-        )
+        self.dependency_root = self._discover_dependency_root(configured_dependencies)
         self.v2_store = EvolutionV2Store(Path(self.store.root) / "v2")
         self.policy = EvolutionPolicy(self.source_root)
         loaded_gates = read_json(
@@ -295,8 +291,81 @@ class EvolutionManager(legacy.EvolutionManager):
             self._remove_gate_dependency_target(Path(worktree) / "build" / "runtime")
 
     def _gate_dependency_source(self, relative: str) -> Path:
-        root = getattr(self, "dependency_root", self.source_root)
+        root = getattr(self, "dependency_root", None) or self.source_root
         return root / relative
+
+    def _discover_dependency_root(self, configured: str = "") -> Path:
+        if configured:
+            return Path(configured).expanduser().resolve()
+        candidates: list[Path] = [self._standard_dependency_root(), self.source_root]
+        common = self.runner.run(
+            ("git", "rev-parse", "--git-common-dir"),
+            self.source_root,
+            timeout_seconds=30,
+        )
+        if common.returncode == 0 and common.stdout.strip():
+            common_path = Path(common.stdout.strip())
+            if not common_path.is_absolute():
+                common_path = self.source_root / common_path
+            common_path = common_path.resolve()
+            if common_path.name.casefold() == ".git":
+                candidates.append(common_path.parent)
+        worktrees = self.runner.run(
+            ("git", "worktree", "list", "--porcelain"),
+            self.source_root,
+            timeout_seconds=30,
+        )
+        if worktrees.returncode == 0:
+            candidates.extend(
+                Path(line[9:]).resolve()
+                for line in worktrees.stdout.splitlines()
+                if line.startswith("worktree ") and line[9:].strip()
+            )
+        unique: list[Path] = []
+        for candidate in candidates:
+            resolved = candidate.resolve()
+            if resolved not in unique:
+                unique.append(resolved)
+        return max(unique, key=self._dependency_score, default=self.source_root)
+
+    @staticmethod
+    def _standard_dependency_root() -> Path:
+        root = Path.home() / "SignalASIWorkspace" / "SignalASI"
+        root.mkdir(parents=True, exist_ok=True)
+        return root.resolve()
+
+    @staticmethod
+    def _dependency_score(root: Path) -> int:
+        markers = (
+            root / "apps/desktop/.electron-runtime/node_modules/electron/dist",
+            root / "apps/desktop/.runtime-python/venv",
+            root / "build/runtime/android-jni-libs/signalasi-qemu-bundle.json",
+            root / "build/runtime/android-assets/runtime/qemu/bundle.json",
+        )
+        return sum(path.exists() for path in markers)
+
+    def _require_gate_dependencies(self, task) -> None:
+        desktop_changed = any(
+            value == "apps/desktop"
+            or value.startswith("apps/desktop/")
+            or value == "core"
+            or value.startswith("core/")
+            for value in task.scope
+        )
+        if not desktop_changed or not self._gate_setting("desktop", "package_windows", True):
+            return
+        electron_dist = self._gate_dependency_source(
+            "apps/desktop/.electron-runtime/node_modules/electron/dist"
+        )
+        if electron_dist.is_dir():
+            return
+        raise legacy.EvolutionError(
+            "gate_dependency_missing",
+            "Desktop candidate validation needs the trusted Electron runtime, but it was not "
+            f"found under {self.dependency_root}. Install the Desktop runtime in a registered "
+            "SignalASI Git worktree or set SIGNALASI_EVOLUTION_DEPENDENCY_ROOT to that checkout. "
+            "No Agent attempt was consumed.",
+        )
 
     def _gate_setting(self, section: str, key: str, default: bool) -> bool:
         values = self.gate_config.get(section)
@@ -315,8 +384,26 @@ class EvolutionManager(legacy.EvolutionManager):
         if self.patch_agent is not default_evolution_patch_agent:
             return
         self._pin_source_commit(task)
+        self._require_gate_dependencies(task)
         # Availability is checked before attempt one so no disposable worktree is consumed.
         self._select_implementation_agent(task)
+
+    @staticmethod
+    def _gate_failure_error(gate: legacy.EvolutionGate) -> legacy.EvolutionError:
+        summary = str(gate.summary or "")
+        dependency_failure = gate.id == "desktop-package" and any(
+            marker in summary.casefold()
+            for marker in (
+                "electron runtime not found",
+                "signalasi link sidecar runtime not found",
+            )
+        )
+        if dependency_failure:
+            return legacy.EvolutionError(
+                "gate_dependency_missing",
+                f"Trusted build dependency was unavailable during {gate.id}: {summary}",
+            )
+        return legacy.EvolutionManager._gate_failure_error(gate)
 
     def _pin_source_commit(self, task) -> str:
         metadata = self.v2_store.get_task_metadata(task.task_id)

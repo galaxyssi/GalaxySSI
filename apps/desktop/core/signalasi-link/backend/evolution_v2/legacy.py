@@ -46,11 +46,16 @@ PROTECTED_SCOPE_ROOTS = {
 MAX_LOG_BYTES = 2 * 1024 * 1024
 PREPARATION_BLOCKER_CODES = {
     "agent_unavailable",
+    "gate_dependency_missing",
     "source_fetch_failed",
     "source_pin_invalid",
     "source_root_missing",
     "source_root_invalid",
     "worktree_create_failed",
+}
+NON_RETRYABLE_ATTEMPT_CODES = {
+    "gate_dependency_failed",
+    "gate_dependency_missing",
 }
 
 
@@ -757,10 +762,7 @@ class EvolutionManager:
                 self._detach_gate_dependencies(Path(attempt.worktree))
                 failed = next((gate for gate in gates if gate.status != "passed"), None)
                 if failed is not None:
-                    raise EvolutionError(
-                        "quality_gate_failed",
-                        f"Quality gate {failed.id} failed: {failed.summary}",
-                    )
+                    raise self._gate_failure_error(failed)
                 candidate_commit = self._commit_candidate(task, attempt)
                 attempt.status = "passed"
                 attempt.completed_at_millis = _now_millis()
@@ -787,6 +789,11 @@ class EvolutionManager:
                 if exc.code == "cancelled" or cancellation.is_set():
                     self._mark_cancelled(task)
                     return
+                if exc.code in NON_RETRYABLE_ATTEMPT_CODES:
+                    task.status = "blocked"
+                    self.store.save(task)
+                    self._emit(task, "blocked")
+                    return
             except Exception as exc:
                 attempt.status = "failed"
                 attempt.failure_code = "unexpected_failure"
@@ -804,6 +811,13 @@ class EvolutionManager:
 
     def _prepare_task_execution(self, task: EvolutionTask) -> None:
         """Hook for readiness checks that must run before a worktree is consumed."""
+
+    @staticmethod
+    def _gate_failure_error(gate: EvolutionGate) -> EvolutionError:
+        return EvolutionError(
+            "quality_gate_failed",
+            f"Quality gate {gate.id} failed: {gate.summary}",
+        )
 
     def _select_implementation_agent(self, task: EvolutionTask) -> str:
         return task.agent_id
