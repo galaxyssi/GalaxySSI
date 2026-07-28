@@ -91,7 +91,8 @@ class AgentCapabilityCatalogTest {
                     )
                 )
             ),
-            authState = AgentMcpAuthState.CHALLENGE_REQUIRED
+            authState = AgentMcpAuthState.CHALLENGE_REQUIRED,
+            permissionMode = AgentMcpPermissionMode.READ_ONLY
         )
 
         val decoded = AgentMcpConnectionCodec.decode(AgentMcpConnectionCodec.encode(listOf(connection))).single()
@@ -100,6 +101,7 @@ class AgentCapabilityCatalogTest {
         assertEquals("/api/login", decoded.currentAuthStep?.exchange?.pathTemplate)
         assertEquals("$.token", decoded.currentAuthStep?.exchange?.responseMappings?.get("access_token"))
         assertEquals(setOf(200, 201), decoded.currentAuthStep?.exchange?.acceptedStatusCodes)
+        assertEquals(AgentMcpPermissionMode.READ_ONLY, decoded.permissionMode)
         assertFalse(AgentMcpConnectionCodec.encode(listOf(connection)).contains("session-token"))
     }
 

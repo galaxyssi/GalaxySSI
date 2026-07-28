@@ -13105,11 +13105,45 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         })
         featureContent.addView(featureRow(
+            getString(R.string.agent_mcp_permission_policy),
+            getString(R.string.agent_mcp_permission_policy_subtitle),
+            R.drawable.ic_security_shield,
+            mcpPermissionModeLabel(connection.permissionMode)
+        ).apply {
+            setOnClickListener { showMcpPermissionModeDialog(connectionId) }
+        })
+        featureContent.addView(featureRow(
             getString(R.string.agent_mcp_tools),
             connection.toolIds.joinToString(" · ").ifBlank { getString(R.string.agent_mcp_tools_not_discovered) },
             R.drawable.ic_agent_skill,
             connection.toolIds.size.toString()
         ))
+        val audits = EncryptedAgentMcpAuditStore(this).list(connectionId, 20)
+        addCapabilityFormLabel(getString(R.string.agent_mcp_recent_activity))
+        if (audits.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.agent_mcp_no_activity),
+                getString(R.string.agent_mcp_no_activity_subtitle),
+                R.drawable.ic_info_outline,
+                ""
+            ))
+        } else {
+            audits.forEach { audit ->
+                featureContent.addView(featureRow(
+                    audit.toolName,
+                    getString(
+                        R.string.agent_mcp_audit_detail,
+                        mcpRiskLabel(audit.risk),
+                        mcpAuditStatusLabel(audit.status),
+                        audit.source,
+                        audit.permissions.joinToString(" · "),
+                        AgentNativeJsonCodec.stringify(audit.parameterPreview)
+                    ),
+                    R.drawable.ic_protocol_link,
+                    getString(R.string.agent_mcp_audit_duration, audit.durationMillis)
+                ))
+            }
+        }
         featureContent.addView(featureRow(
             getString(R.string.agent_mcp_test_connection),
             connection.lastError.ifBlank { getString(R.string.agent_mcp_test_connection_subtitle) },
@@ -13142,10 +13176,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         AgentMcpClientManager(this@MainActivity, agentMcpRegistry, agentMcpPackageRepository).close(connectionId)
                         agentMcpPackageRepository.delete(connectionId)
                         agentMcpRegistry.delete(connectionId)
+                        EncryptedAgentMcpAuditStore(this@MainActivity).clear(connectionId)
                         showCapabilityLibraryPage(AgentCapabilityCatalogKind.MCP)
                     }.show()
             }
         })
+    }
+
+    private fun showMcpPermissionModeDialog(connectionId: String) {
+        val connection = agentMcpRegistry.get(connectionId) ?: return
+        val modes = arrayOf(
+            AgentMcpPermissionMode.ASK_FOR_CHANGES,
+            AgentMcpPermissionMode.READ_ONLY,
+            AgentMcpPermissionMode.TRUSTED,
+            AgentMcpPermissionMode.DISABLED
+        )
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.agent_mcp_permission_policy))
+            .setSingleChoiceItems(
+                modes.map(::mcpPermissionModeLabel).toTypedArray(),
+                modes.indexOf(connection.permissionMode)
+            ) { dialog, index ->
+                agentMcpRegistry.setPermissionMode(connectionId, modes[index])
+                dialog.dismiss()
+                showMcpConnectionDetailPage(connectionId)
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
     }
 
     private fun testMcpConnection(connectionId: String) {
@@ -13298,6 +13355,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentMcpAuthState.REAUTHENTICATION_REQUIRED -> R.string.agent_mcp_auth_reauth_required
         AgentMcpAuthState.ERROR -> R.string.agent_mcp_status_error
         else -> R.string.agent_capability_requires_setup
+    })
+
+    private fun mcpPermissionModeLabel(mode: AgentMcpPermissionMode): String = getString(when (mode) {
+        AgentMcpPermissionMode.ASK_FOR_CHANGES -> R.string.agent_mcp_permission_ask
+        AgentMcpPermissionMode.READ_ONLY -> R.string.agent_mcp_permission_read_only
+        AgentMcpPermissionMode.TRUSTED -> R.string.agent_mcp_permission_trusted
+        AgentMcpPermissionMode.DISABLED -> R.string.status_disabled
+    })
+
+    private fun mcpRiskLabel(risk: String): String = getString(when (risk) {
+        AgentMcpToolRisk.LOW.wireValue -> R.string.agent_mcp_risk_low
+        AgentMcpToolRisk.HIGH.wireValue -> R.string.agent_mcp_risk_high
+        else -> R.string.agent_mcp_risk_medium
+    })
+
+    private fun mcpAuditStatusLabel(status: String): String = getString(when (status) {
+        "succeeded" -> R.string.agent_mcp_audit_succeeded
+        "denied" -> R.string.agent_mcp_audit_denied
+        else -> R.string.agent_mcp_audit_failed
     })
 
     private fun localizedMcpSummary(entry: AgentMcpCatalogEntry): String = getString(when (entry.id) {

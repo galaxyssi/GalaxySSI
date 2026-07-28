@@ -22,6 +22,7 @@ const required = [
   "core/signalasi-link/backend/desktop_super_agent.py",
   "core/signalasi-link/backend/desktop_memory.py",
   "core/signalasi-link/backend/desktop_mcp.py",
+  "core/signalasi-link/backend/mcp_security.py",
   "core/signalasi-link/backend/desktop_runtime.py",
   "core/signalasi-link/backend/desktop_skills.py",
   "core/signalasi-link/backend/evolution_manager.py",
@@ -133,6 +134,7 @@ const backendDesktopAgentLoop = fs.readFileSync(path.join(backendDir, "desktop_a
 const backendDesktopNativeTools = fs.readFileSync(path.join(backendDir, "desktop_native_tools.py"), "utf8");
 const backendDesktopMemory = fs.readFileSync(path.join(backendDir, "desktop_memory.py"), "utf8");
 const backendDesktopMcp = fs.readFileSync(path.join(backendDir, "desktop_mcp.py"), "utf8");
+const backendMcpSecurity = fs.readFileSync(path.join(backendDir, "mcp_security.py"), "utf8");
 const backendDesktopRuntime = fs.readFileSync(path.join(backendDir, "desktop_runtime.py"), "utf8");
 const backendDesktopSkills = fs.readFileSync(path.join(backendDir, "desktop_skills.py"), "utf8");
 const backendDesktopSuperAgent = fs.readFileSync(path.join(backendDir, "desktop_super_agent.py"), "utf8");
@@ -169,6 +171,8 @@ const androidVoiceSettings = fs.readFileSync(path.join(workspaceRoot, "android",
 const androidLocalWhisper = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "LocalWhisperAsr.kt"), "utf8");
 const androidWhisperModels = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "WhisperModelManager.kt"), "utf8");
 const androidCloudModelClient = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "CloudModelClient.kt"), "utf8");
+const androidMcpSecurity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpSecurity.kt"), "utf8");
+const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpRuntime.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -540,12 +544,31 @@ for (const capabilityContract of [
   [backendDesktopControl, "class DesktopControlManager"],
   [backendDesktopMemory, "class DesktopMemoryStore"],
   [backendDesktopMcp, "class DesktopMcpRegistry"],
+  [backendMcpSecurity, "class McpAuditStore"],
+  [backendMcpSecurity, "sanitize_mcp_parameters"],
+  [backendDesktopMcp, "explicit_user_selection"],
   [backendDesktopRuntime, "class DesktopRuntimeManager"],
   [backendDesktopSkills, "class DesktopSkillRegistry"],
   [backendDesktopSuperAgent, "Using relevant long-term memory"]
 ]) {
   if (!capabilityContract[0].includes(capabilityContract[1])) {
     throw new Error(`Desktop super-agent capability is incomplete: ${capabilityContract[1]}`);
+  }
+}
+
+for (const mcpGovernanceContract of [
+  [backendMcpSecurity, "class McpPermissionMode"],
+  [backendMcpSecurity, "class McpAuditStore"],
+  [backendDesktopMcp, "permission_mode"],
+  [backendDesktopMcp, "parameter_preview"],
+  [androidMcpSecurity, "enum class AgentMcpPermissionMode"],
+  [androidMcpSecurity, "class EncryptedAgentMcpAuditStore"],
+  [androidMcpRuntime, "explicit_user_approval"],
+  [workspaceRenderer, "mcpAudit"],
+  [html, "mcpPermissionMode"]
+]) {
+  if (!mcpGovernanceContract[0].includes(mcpGovernanceContract[1])) {
+    throw new Error(`MCP permission and audit governance is incomplete: ${mcpGovernanceContract[1]}`);
   }
 }
 

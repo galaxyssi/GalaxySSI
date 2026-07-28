@@ -430,6 +430,11 @@ class DesktopSuperAgent:
                 connection.id,
                 prompt,
                 process_callback=self._process_callback(task_id),
+                explicit_user_selection=self.mcp.explicitly_named(connection, prompt),
+                audit_context={
+                    "caller_id": "signalasi.desktop.agent_loop",
+                    "task_id": task_id,
+                },
             )
             reply = str(result.get("result") or "").strip()
             if not reply:
@@ -439,7 +444,11 @@ class DesktopSuperAgent:
                 action_id="mcp.invoke",
                 status="succeeded",
                 message=f"Received result from {connection.name}",
-                output={"reply": reply, "duration_ms": int(result.get("duration_ms") or 0)},
+                output={
+                    "reply": reply,
+                    "duration_ms": int(result.get("duration_ms") or 0),
+                    "mcp_audit": result.get("audit") or {},
+                },
                 verification={"status": "passed", "message": "MCP returned a non-empty result"},
             )
         except Exception as exc:

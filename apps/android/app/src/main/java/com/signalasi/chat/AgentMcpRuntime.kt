@@ -127,12 +127,14 @@ class AgentMcpClientManager(
     context: Context,
     private val registry: AgentMcpRegistry = AgentMcpRegistry(EncryptedAgentMcpStore(context)),
     private val packageRepository: AgentMcpPackageRepository = AgentMcpPackageRepository(context),
-    private val client: OkHttpClient = AgentMcpStreamableHttpTransport.defaultClient()
+    private val client: OkHttpClient = AgentMcpStreamableHttpTransport.defaultClient(),
+    private val auditStore: AgentMcpAuditStore = EncryptedAgentMcpAuditStore(context)
 ) {
     private val appContext = context.applicationContext
     private val sessions = ConcurrentHashMap<String, AgentMcpSession>()
     private val authCoordinator = AgentMcpAuthenticationCoordinator(registry, client)
     private val localRuntimeClient = AgentMcpLocalRuntimeClient(appContext, registry, packageRepository)
+    private val toolCache = ConcurrentHashMap<String, Map<String, AgentMcpTool>>()
 
     suspend fun listTools(connectionId: String): List<AgentMcpTool> {
         val connection = prepareConnection(requireConnection(connectionId))
@@ -148,27 +150,72 @@ class AgentMcpClientManager(
                         annotations = McpJsonObject.of("readOnlyHint" to !tool.mutating),
                         raw = McpJsonObject.of("name" to tool.name)
                     )
-                }.also { registry.markConnected(connectionId, it.map(AgentMcpTool::name)) }
+                }.also { cacheTools(connectionId, it) }
             }
             AgentMcpTransportKind.LOCAL_STDIO -> {
                 return withContext(Dispatchers.IO) { localRuntimeClient.listTools(connection) }
-                    .also { registry.markConnected(connectionId, it.map(AgentMcpTool::name)) }
+                    .also { cacheTools(connectionId, it) }
             }
             AgentMcpTransportKind.STREAMABLE_HTTP -> Unit
         }
         return withRemoteSession(connection) { session ->
-            session.listTools().items.also { registry.markConnected(connectionId, it.map(AgentMcpTool::name)) }
+            session.listTools().items.also { cacheTools(connectionId, it) }
         }
     }
 
     suspend fun callTool(
         connectionId: String,
         toolName: String,
-        arguments: AgentNativeJsonObject
+        arguments: AgentNativeJsonObject,
+        invocationContext: AgentNativeToolInvocationContext = AgentNativeToolInvocationContext()
     ): AgentNativeToolExecutionResult {
         val connection = prepareConnection(requireConnection(connectionId))
+        val startedAt = System.currentTimeMillis()
+        val tool = toolCache[connectionId]?.get(toolName)
+            ?: runCatching { listTools(connectionId).firstOrNull { it.name == toolName } }.getOrNull()
+            ?: AgentMcpTool(
+                name = toolName,
+                title = null,
+                description = null,
+                inputSchema = McpJsonObject.of(),
+                outputSchema = null,
+                annotations = null,
+                raw = McpJsonObject.of("name" to toolName)
+            )
+        val assessment = AgentMcpToolSecurityPolicy.assess(tool, arguments, connection.transport)
+        val decision = AgentMcpToolSecurityPolicy.decide(
+            connection.permissionMode,
+            assessment,
+            explicitlyApproved = invocationContext.attributes["explicit_user_approval"] == "true"
+        )
+        if (!decision.allowed) {
+            appendAudit(
+                connection = connection,
+                toolName = toolName,
+                assessment = assessment,
+                decision = decision,
+                context = invocationContext,
+                status = "denied",
+                durationMillis = System.currentTimeMillis() - startedAt,
+                errorCode = decision.code,
+                errorMessage = decision.message
+            )
+            return AgentNativeToolExecutionResult.failure(
+                code = decision.code,
+                message = decision.message,
+                retryable = false,
+                details = mapOf(
+                    "connection_id" to connectionId,
+                    "tool_name" to toolName,
+                    "risk" to assessment.risk.wireValue,
+                    "permissions" to assessment.permissions.sorted(),
+                    "required_user_action" to decision.requiredUserAction,
+                    "parameter_preview" to assessment.parameterPreview
+                )
+            )
+        }
         return try {
-            when (connection.transport) {
+            val result = when (connection.transport) {
                 AgentMcpTransportKind.DECLARATIVE_HTTP -> callDeclarative(connection, toolName, arguments)
                 AgentMcpTransportKind.LOCAL_STDIO -> withContext(Dispatchers.IO) {
                     localRuntimeClient.callTool(connection, toolName, arguments)
@@ -197,24 +244,63 @@ class AgentMcpClientManager(
                     }
                 }
             }
+            val audit = appendAudit(
+                connection = connection,
+                toolName = toolName,
+                assessment = assessment,
+                decision = decision,
+                context = invocationContext,
+                status = if (result.isSuccess) "succeeded" else "failed",
+                durationMillis = System.currentTimeMillis() - startedAt,
+                outputSha256 = AgentNativeJsonCodec.sha256(result.output),
+                errorCode = result.error?.code.orEmpty(),
+                errorMessage = result.error?.message.orEmpty()
+            )
+            result.copy(metadata = result.metadata + mapOf(
+                "mcp_security" to assessment.publicValue(),
+                "mcp_permission_decision" to decision.code,
+                "mcp_audit_id" to audit.auditId
+            ))
         } catch (error: Throwable) {
             handleFailure(connectionId, error)
+            appendAudit(
+                connection = connection,
+                toolName = toolName,
+                assessment = assessment,
+                decision = decision,
+                context = invocationContext,
+                status = "failed",
+                durationMillis = System.currentTimeMillis() - startedAt,
+                errorCode = if (isAuthenticationFailure(error)) "mcp_authentication_required" else "mcp_call_failed",
+                errorMessage = error.message.orEmpty()
+            )
             AgentNativeToolExecutionResult.failure(
                 code = if (isAuthenticationFailure(error)) "mcp_authentication_required" else "mcp_call_failed",
                 message = error.message ?: "MCP tool call failed",
                 retryable = !isAuthenticationFailure(error),
-                details = mapOf("connection_id" to connectionId, "tool_name" to toolName)
+                details = mapOf(
+                    "connection_id" to connectionId,
+                    "tool_name" to toolName,
+                    "risk" to assessment.risk.wireValue,
+                    "permissions" to assessment.permissions.sorted(),
+                    "parameter_preview" to assessment.parameterPreview
+                )
             )
         }
     }
 
+    fun audit(connectionId: String = "", limit: Int = 100): List<AgentMcpAuditRecord> =
+        auditStore.list(connectionId, limit)
+
     fun close(connectionId: String) {
         sessions.remove(connectionId)?.let { session -> runBlocking { session.close() } }
+        toolCache.remove(connectionId)
     }
 
     fun closeAll() {
         val current = sessions.values.toList()
         sessions.clear()
+        toolCache.clear()
         current.forEach { session -> runBlocking { session.close() } }
     }
 
@@ -325,6 +411,44 @@ class AgentMcpClientManager(
     private fun handleFailure(id: String, error: Throwable) {
         registry.markFailure(id, error.message ?: error.javaClass.simpleName, isAuthenticationFailure(error))
     }
+
+    private fun cacheTools(connectionId: String, tools: List<AgentMcpTool>) {
+        toolCache[connectionId] = tools.associateBy(AgentMcpTool::name)
+        registry.markConnected(connectionId, tools.map(AgentMcpTool::name))
+    }
+
+    private fun appendAudit(
+        connection: AgentMcpConnection,
+        toolName: String,
+        assessment: AgentMcpToolAssessment,
+        decision: AgentMcpPermissionDecision,
+        context: AgentNativeToolInvocationContext,
+        status: String,
+        durationMillis: Long,
+        outputSha256: String = "",
+        errorCode: String = "",
+        errorMessage: String = ""
+    ): AgentMcpAuditRecord = AgentMcpAuditRecord(
+        connectionId = connection.id,
+        connectionName = connection.displayName,
+        toolName = toolName.take(192),
+        transport = connection.transport.wireValue,
+        source = "android-mcp:${connection.id}",
+        callerId = context.callerId,
+        taskId = context.attributes["task_id"].orEmpty(),
+        conversationId = context.conversationId,
+        risk = assessment.risk.wireValue,
+        permissions = assessment.permissions.sorted(),
+        permissionMode = connection.permissionMode.wireValue,
+        permissionDecision = decision.code,
+        parameterPreview = assessment.parameterPreview,
+        inputSha256 = assessment.inputSha256,
+        status = status,
+        durationMillis = durationMillis.coerceAtLeast(0L),
+        outputSha256 = outputSha256,
+        errorCode = errorCode,
+        errorMessage = AgentMcpParameterRedactor.sanitizeText(errorMessage)
+    ).also(auditStore::append)
 
     private fun isAuthenticationFailure(error: Throwable): Boolean =
         (error as? AgentMcpHttpException)?.authenticationFailure == true ||
@@ -599,6 +723,7 @@ object AgentMcpNativeTools {
                                 "state" to connection.state.wireValue,
                                 "auth_state" to connection.effectiveAuthState(System.currentTimeMillis()).wireValue,
                                 "enabled" to connection.enabled,
+                                "permission_mode" to connection.permissionMode.wireValue,
                                 "tools" to connection.toolIds
                             )
                         }),
@@ -626,7 +751,16 @@ object AgentMcpNativeTools {
                         runCatching { manager.listTools(id) }.fold(
                             onSuccess = { tools -> AgentNativeToolExecutionResult.success(
                                 output = mapOf("connection_id" to id, "tools" to tools.map { tool ->
-                                    mapOf("name" to tool.name, "title" to tool.title, "description" to tool.description)
+                                    val connection = registry.get(id)
+                                    val security = connection?.let {
+                                        AgentMcpToolSecurityPolicy.assess(tool, emptyMap(), it.transport).publicValue()
+                                    }.orEmpty()
+                                    mapOf(
+                                        "name" to tool.name,
+                                        "title" to tool.title,
+                                        "description" to tool.description,
+                                        "security" to security
+                                    )
                                 }),
                                 message = "MCP tools discovered"
                             ) },
@@ -660,7 +794,9 @@ object AgentMcpNativeTools {
                     val arguments = (invocation.input["arguments"] as? Map<*, *>)?.entries?.mapNotNull { (key, value) ->
                         (key as? String)?.let { it to value }
                     }?.toMap().orEmpty()
-                    runBlocking(Dispatchers.IO) { manager.callTool(id, name, arguments) }
+                    runBlocking(Dispatchers.IO) {
+                        manager.callTool(id, name, arguments, invocation.context)
+                    }
                 },
                 executorId = "signalasi.mcp.host",
                 provenanceMetadata = mapOf("protocol" to "mcp", "host" to "android"),

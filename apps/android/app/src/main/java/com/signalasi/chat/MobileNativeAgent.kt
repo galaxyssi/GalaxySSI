@@ -637,7 +637,8 @@ class MobileNativeAgent(
                 "execution_authority" to "signalasi-phone",
                 "confirmation_id" to action.id,
                 "step_id" to action.id,
-                "workspace_id" to workspaceId
+                "workspace_id" to workspaceId,
+                "explicit_user_approval" to (userConfirmed || rememberedConsent).toString()
             )
         )
         val result = nativeToolRegistry.invoke(

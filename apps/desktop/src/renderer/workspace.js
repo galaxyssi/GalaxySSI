@@ -72,6 +72,7 @@ const state = {
   },
   skills: [],
   mcp: [],
+  mcpAudit: [],
   proactiveTasks: [],
   proactiveRuns: [],
   selectedProactiveTaskId: "",
@@ -1155,16 +1156,45 @@ function renderSkills() {
 }
 
 function renderMcp() {
+  const permissionLabels = {
+    ask_for_changes: "Ask before changes",
+    read_only: "Read only",
+    trusted: "Trusted",
+    disabled: "Disabled"
+  };
   $("#mcpSummary").textContent = t("{count} configured connections", { count: state.mcp.length });
   $("#mcpList").innerHTML = state.mcp.length ? state.mcp.map((connection) => `
     <article class="capability-item">
-      <div><strong>${escapeHtml(connection.name || connection.id)}</strong><small>${escapeHtml(connection.default_tool || t("Automatic tool selection"))}${connection.auto_invoke ? ` · ${escapeHtml(t("Auto"))}` : ""}</small></div>
+      <div><strong>${escapeHtml(connection.name || connection.id)}</strong><small>${escapeHtml(connection.default_tool || t("Automatic tool selection"))}${connection.auto_invoke ? ` · ${escapeHtml(t("Auto"))}` : ""} · ${escapeHtml(t(permissionLabels[connection.permission_mode] || "Ask before changes"))}</small></div>
       <div class="capability-item-actions">
+        <select class="mcp-policy-select" data-mcp-permission="${escapeHtml(connection.id)}" aria-label="${escapeHtml(t("Permission policy"))}">
+          ${Object.entries(permissionLabels).map(([value, label]) => `<option value="${escapeHtml(value)}" ${connection.permission_mode === value ? "selected" : ""}>${escapeHtml(t(label))}</option>`).join("")}
+        </select>
         <button data-probe-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Test"))}</button>
         <button class="primary" data-chat-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Chat"))}</button>
         <button data-delete-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Delete"))}</button>
       </div>
     </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No MCP connections configured."))}</div>`;
+  const audit = Array.isArray(state.mcpAudit) ? state.mcpAudit : [];
+  $("#mcpAuditList").innerHTML = audit.length ? audit.slice(0, 40).map((entry) => {
+    const parameters = entry.parameter_preview && Object.keys(entry.parameter_preview).length
+      ? JSON.stringify(entry.parameter_preview)
+      : t("No parameters");
+    const permissions = Array.isArray(entry.permissions) && entry.permissions.length
+      ? entry.permissions.join(" · ")
+      : t("No additional permissions");
+    const statusClass = entry.status === "succeeded" ? "ok" : entry.status === "denied" ? "denied" : "failed";
+    return `
+      <article class="mcp-audit-row ${statusClass}">
+        <div class="mcp-audit-row-heading">
+          <strong>${escapeHtml(entry.connection_name || entry.connection_id)} · ${escapeHtml(entry.tool_name || t("Unknown tool"))}</strong>
+          <span class="mcp-risk ${escapeHtml(entry.risk || "medium")}">${escapeHtml(t((entry.risk || "medium").replace(/^./, (value) => value.toUpperCase())))}</span>
+        </div>
+        <small>${escapeHtml(t(entry.status === "succeeded" ? "Succeeded" : entry.status === "denied" ? "Denied" : "Failed"))} · ${escapeHtml(entry.source || "")} · ${escapeHtml(`${Number(entry.duration_ms || 0)} ms`)}</small>
+        <small>${escapeHtml(t("Permissions"))}: ${escapeHtml(permissions)}</small>
+        <code>${escapeHtml(parameters)}</code>
+      </article>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t("No MCP tool activity yet."))}</div>`;
 }
 
 function proactiveTriggerSummary(trigger = {}) {
@@ -1284,6 +1314,7 @@ async function refreshCapabilities() {
     };
     state.skills = Array.isArray(skills.skills) ? skills.skills : [];
     state.mcp = Array.isArray(mcp.connections) ? mcp.connections : [];
+    state.mcpAudit = Array.isArray(mcp.audit) ? mcp.audit : [];
     state.proactiveTasks = Array.isArray(proactive.tasks) ? proactive.tasks : [];
     state.proactiveRuns = Array.isArray(proactiveRuns.runs) ? proactiveRuns.runs : [];
     renderMemory();
@@ -1656,12 +1687,14 @@ async function saveMcp() {
     triggers: parsePhrases($("#mcpTriggers").value),
     enabled: true,
     auto_invoke: $("#mcpAutoInvoke").checked,
+    permission_mode: $("#mcpPermissionMode").value,
     timeout_seconds: 20
   };
   if (!payload.id || !payload.name || !payload.command) return showToast(t("Complete the MCP ID, name, and server command."));
   await window.signalasi.saveDesktopMcp(payload);
   for (const id of ["#mcpId", "#mcpName", "#mcpCommand", "#mcpTool", "#mcpTriggers"]) $(id).value = "";
   $("#mcpAutoInvoke").checked = false;
+  $("#mcpPermissionMode").value = "ask_for_changes";
   showToast(t("MCP connection added."));
   await refreshCapabilities();
 }
@@ -2234,6 +2267,18 @@ function bindEvents() {
       await window.signalasi.deleteDesktopMcp(remove.dataset.deleteMcp);
       await refreshCapabilities();
     }
+  });
+  $("#mcpList").addEventListener("change", async (event) => {
+    const select = event.target.closest("[data-mcp-permission]");
+    if (!select) return;
+    const connection = state.mcp.find((item) => item.id === select.dataset.mcpPermission);
+    if (!connection) return;
+    await window.signalasi.saveDesktopMcp({
+      ...connection,
+      permission_mode: select.value
+    });
+    showToast(t("MCP permission policy updated."));
+    await refreshCapabilities();
   });
   $("#refreshProactiveButton").addEventListener("click", () =>
     refreshCapabilities().catch((error) => showToast(error.message || String(error))));
