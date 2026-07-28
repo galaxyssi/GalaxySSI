@@ -70,6 +70,8 @@ const state = {
   selectedProactiveTaskId: "",
   editingProactiveTaskId: "",
   runtime: { summary: {}, runtimes: [], error: "" },
+  commands: { catalog_size: 0, roots: [], commands: [] },
+  commandRuns: [],
   evolutionTasks: [],
   evolutionHealth: null,
   tasks: [],
@@ -1102,6 +1104,111 @@ async function refreshCapabilities() {
   }
 }
 
+function renderCommandCatalog() {
+  const summary = $("#commandSummary");
+  const catalog = $("#commandCatalog");
+  const commands = Array.isArray(state.commands?.commands) ? state.commands.commands : [];
+  const roots = Array.isArray(state.commands?.roots) ? state.commands.roots : [];
+  if (!summary || !catalog) return;
+  summary.innerHTML = `
+    <span><strong>${t("Catalog")}</strong>${Number(state.commands?.catalog_size || commands.length)} ${t("commands")}</span>
+    <span><strong>${t("Roots")}</strong>${roots.length}</span>
+    <span><strong>${t("Handlers")}</strong>${commands.filter((item) => item.handler).length}/${commands.length}</span>
+    <span><strong>${t("Shown")}</strong>${Math.min(commands.length, 120)}</span>
+  `;
+  catalog.innerHTML = "";
+  if (!commands.length) {
+    catalog.textContent = t("No commands matched the current filter.");
+    return;
+  }
+  for (const command of commands.slice(0, 120)) {
+    const row = document.createElement("button");
+    row.className = "command-row";
+    row.type = "button";
+    row.dataset.commandId = command.command_id || "";
+    row.innerHTML = `
+      <span><strong>${escapeHtml(command.command_id || "")}</strong><em>${escapeHtml((command.aliases || [])[0] || `/${command.root || ""} ${command.action || ""}`)}</em></span>
+      <span>${escapeHtml(command.risk || "read")}</span>
+      <span>${command.handler ? t("handler") : t("missing")}</span>
+      <span>${escapeHtml(command.summary || "")}</span>
+    `;
+    catalog.appendChild(row);
+  }
+}
+
+function renderCommandRuns() {
+  const target = $("#commandRuns");
+  if (!target) return;
+  target.innerHTML = "";
+  if (!state.commandRuns.length) {
+    target.textContent = t("No command runs yet.");
+    return;
+  }
+  for (const run of state.commandRuns.slice(0, 30)) {
+    const row = document.createElement("div");
+    const status = String(run.status || "unknown");
+    row.className = `audit-entry ${status === "completed" ? "ok" : ["failed", "denied", "unavailable", "not_found"].includes(status) ? "warn" : ""}`;
+    row.innerHTML = `
+      <div><strong>${escapeHtml(run.command_id || "command")}</strong><span>${escapeHtml(status)}</span></div>
+      <div><strong>${escapeHtml(run.run_id || "")}</strong><span>${escapeHtml(run.error_code || "ok")}</span></div>
+      <div><strong>${escapeHtml(run.completed_at || "")}</strong><span>${escapeHtml(run.message || JSON.stringify(run.data || {}).slice(0, 160))}</span></div>
+    `;
+    target.appendChild(row);
+  }
+}
+
+async function refreshCommands() {
+  const button = $("#refreshCommandsButton");
+  if (button) button.disabled = true;
+  try {
+    const root = $("#commandRootFilter")?.value.trim() || "";
+    state.commands = await window.signalasi.listCommands(root);
+    renderCommandCatalog();
+  } catch (error) {
+    $("#commandSummary").textContent = `${t("Command catalog unavailable")}: ${error.message || String(error)}`;
+    $("#commandCatalog").textContent = "";
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function refreshCommandRuns() {
+  const button = $("#refreshCommandRunsButton");
+  if (button) button.disabled = true;
+  try {
+    const response = await window.signalasi.getCommandRuns(30);
+    state.commandRuns = Array.isArray(response?.runs) ? response.runs : [];
+    renderCommandRuns();
+  } catch (error) {
+    $("#commandRuns").textContent = `${t("Command runs unavailable")}: ${error.message || String(error)}`;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function executeCommandFromPanel() {
+  const input = $("#commandInput");
+  const approve = $("#commandApprove");
+  const button = $("#executeCommandButton");
+  const output = $("#commandResult");
+  const value = input?.value.trim() || "";
+  if (!value) return;
+  if (button) button.disabled = true;
+  if (output) output.textContent = t("Executing command...");
+  try {
+    const payload = value.startsWith("/")
+      ? { slash: value, approve: Boolean(approve?.checked), source: "desktop" }
+      : { command_id: value, args: {}, approve: Boolean(approve?.checked), source: "desktop" };
+    const result = await window.signalasi.executeCommand(payload);
+    if (output) output.textContent = JSON.stringify(result, null, 2);
+    await refreshCommandRuns();
+  } catch (error) {
+    if (output) output.textContent = error.message || String(error);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function parseProactiveTeam(value) {
   const team = String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
     const separator = line.indexOf(":");
@@ -1625,6 +1732,7 @@ async function handleEvolutionAction(event) {
 const PANEL_META = {
   agents: ["Agents", "Private agents and local execution engines"],
   capabilities: ["Capabilities", "Memory, Skills, MCP, and proactive automation"],
+  commands: ["Commands", "Deterministic local command catalog"],
   gateway: ["Mobile Gateway", "Trusted phones and SignalASI Link"],
   settings: ["Settings", "Language, cloud API, commands, and diagnostics"]
 };
@@ -1650,6 +1758,7 @@ async function openPanel(name) {
       await loadPairingFrame();
     }
     if (panelName === "capabilities") await refreshCapabilities();
+    if (panelName === "commands") await Promise.all([refreshCommands(), refreshCommandRuns()]);
     if (panelName === "settings") {
       await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false), refreshEvolutionTasks(false)]);
     }
@@ -1921,6 +2030,21 @@ function bindEvents() {
   $("#proactiveRunList").addEventListener("click", handleProactiveAction);
   $("#runDiagnosticsButton").addEventListener("click", runDiagnostics);
   $("#refreshRuntimeButton").addEventListener("click", () => refreshRuntimeManager(true));
+  $("#refreshCommandsButton").addEventListener("click", refreshCommands);
+  $("#refreshCommandRunsButton").addEventListener("click", refreshCommandRuns);
+  $("#executeCommandButton").addEventListener("click", executeCommandFromPanel);
+  $("#commandRootFilter").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") refreshCommands();
+  });
+  $("#commandInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") executeCommandFromPanel();
+  });
+  $("#commandCatalog").addEventListener("click", (event) => {
+    const row = event.target.closest("[data-command-id]");
+    if (!row) return;
+    $("#commandInput").value = row.dataset.commandId || "";
+    $("#commandResult").textContent = JSON.stringify({ command_id: row.dataset.commandId || "" }, null, 2);
+  });
   $("#createEvolutionButton").addEventListener("click", createEvolutionCandidate);
   $("#evolutionTaskList").addEventListener("click", handleEvolutionAction);
   $("#languageSelect").addEventListener("change", (event) => setLanguage(event.target.value));

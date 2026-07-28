@@ -24,6 +24,25 @@ function fail(message) {
   throw new Error(message);
 }
 
+function cleanupTempTree(target) {
+  if (!target || !fs.existsSync(target)) return;
+  try {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    return;
+  } catch (error) {
+    const staleTarget = path.join(
+      os.tmpdir(),
+      `signalasi-smoke-stale-${process.pid}-${Date.now()}`
+    );
+    try {
+      fs.renameSync(target, staleTarget);
+      fs.rmSync(staleTarget, { recursive: true, force: true, maxRetries: 20, retryDelay: 150 });
+    } catch (retryError) {
+      console.warn(`[smoke] deferred temp cleanup: ${retryError.message || error.message}`);
+    }
+  }
+}
+
 function run(command, args, options = {}) {
   execFileSync(command, args, {
     stdio: "inherit",
@@ -331,7 +350,7 @@ async function smoke() {
     log("smoke test OK");
   } finally {
     await stopChild(startedBackend);
-    fs.rmSync(tmpDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    cleanupTempTree(tmpDir);
   }
 }
 

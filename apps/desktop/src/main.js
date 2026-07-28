@@ -891,6 +891,25 @@ async function getAgentTasks(limit = 100) {
   return fetchJson(`/api/agent/tasks?limit=${encodeURIComponent(limit)}`);
 }
 
+async function listCommands(root = "") {
+  await startBackend();
+  const query = root ? `?root=${encodeURIComponent(root)}` : "";
+  return fetchJson(`/api/commands${query}`);
+}
+
+async function executeCommand(payload = {}) {
+  await startBackend();
+  return fetchJson("/api/commands/execute", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function getCommandRuns(limit = 50) {
+  await startBackend();
+  return fetchJson(`/api/commands/runs?limit=${encodeURIComponent(limit)}`);
+}
+
 async function getPairingStatus() {
   await startBackend();
   return fetchJson("/api/pairing/status");
@@ -1244,6 +1263,9 @@ ipcMain.handle("agents:detect", detectAgents);
 ipcMain.handle("agents:diagnostics", getAgentDiagnostics);
 ipcMain.handle("agents:execution-log", (_event, limit) => getAgentExecutionLog(limit));
 ipcMain.handle("agents:tasks", (_event, limit) => getAgentTasks(limit));
+ipcMain.handle("commands:list", (_event, root = "") => listCommands(root));
+ipcMain.handle("commands:execute", (_event, payload = {}) => executeCommand(payload));
+ipcMain.handle("commands:runs", (_event, limit) => getCommandRuns(limit));
 ipcMain.handle("agents:self-test", (_event, options) => runAgentSelfTest(options));
 ipcMain.handle("agents:config:get", getAgentConfig);
 ipcMain.handle("agents:config:save", (_event, config) => saveAgentConfig(config));

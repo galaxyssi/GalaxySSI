@@ -86,3 +86,14 @@ def seed_contacts():
 
 def get_session():
     return SessionLocal()
+
+
+def serialize_message(message: Message) -> dict:
+    return {
+        "id": message.id,
+        "contact_id": message.contact_id,
+        "sender": getattr(message.sender, "value", message.sender),
+        "content": message.content,
+        "type": getattr(message.type, "value", message.type),
+        "created_at": message.created_at.isoformat() if message.created_at else "",
+    }

@@ -27,6 +27,9 @@ def api_ok(code: str = "ok", params: dict[str, Any] | None = None, **extra: Any)
     return result
 
 
+api_success = api_ok
+
+
 def api_error(
     code: str,
     message: str | None = None,

@@ -175,7 +175,7 @@ async function main() {
   console.log("[packaged-smoke] checking bundled Python dependencies");
   const pythonCheck = spawn(
     bundledPython,
-    ["-c", "import cryptography, fastapi, multipart, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, websockets, qrcode, agent_task_store, backend_instance_lock, conversation_context, desktop_agent_adapters, desktop_control, desktop_native_tools, evolution_v2.api, evolution_v2.manager, mqtt_bridge, phone_tool_broker, rich_output; print('ok')"],
+    ["-c", "import cryptography, fastapi, multipart, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, websockets, qrcode, agent_task_store, backend_instance_lock, conversation_context, desktop_agent_adapters, desktop_control, desktop_native_tools, evolution_v2.api, evolution_v2.manager, mqtt_bridge, phone_tool_broker, rich_output, unified_commands; print('ok')"],
     { cwd: packagedBackendDir, windowsHide: true }
   );
   await new Promise((resolve, reject) => {

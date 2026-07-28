@@ -25,6 +25,7 @@ from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_s
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
 from codex_app_server import CodexAppServer, CodexConversationBusyError
 import phone_tool_broker as phone_tool
+from unified_commands import default_command_engine
 from link_delivery import (
     acknowledge_outbound,
     bind_ciphertext,
@@ -1786,6 +1787,7 @@ def _publish_phone_payload(
         EVOLUTION_TASK_EVENT_TYPE, EVOLUTION_TASK_SNAPSHOT_TYPE,
         PROACTIVE_TASK_EVENT_TYPE,
         PROACTIVE_WEBHOOK_EVENT_TYPE,
+        "unified_command_result",
     } else "down"
     target_topic = paired_client["topics"][channel]
     reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
@@ -2306,6 +2308,42 @@ def _publish_or_queue_task_event(mqttc, wire_payload: dict, task: dict, trace: l
             if queued is None or _task_event_order(queued.task) <= _task_event_order(task):
                 pending_task_events[task_id] = pending
     return published
+
+
+def _route_unified_command_payload(mqttc, wire_payload: dict, payload: dict, trace: list[dict]) -> bool:
+    if payload.get("type") != "unified_command":
+        return False
+    source_message_id = str(payload.get("source_message_id") or payload.get("message_id") or "")
+    command_payload = {
+        "command_id": str(payload.get("command_id") or ""),
+        "args": dict(payload.get("args") or {}),
+        "raw": str(payload.get("raw") or ""),
+        "slash": str(payload.get("slash") or ""),
+        "source": "android",
+        "requested_by": str(payload.get("requested_by") or "paired_phone"),
+        "workspace": str(payload.get("workspace") or ""),
+        "approve": bool(payload.get("approve") or False),
+    }
+    result = default_command_engine().execute_payload(command_payload).public()
+    reply_payload = {
+        "type": "unified_command_result",
+        "command_id": result.get("command_id", command_payload["command_id"]),
+        "command_status": result.get("status", ""),
+        "result": result,
+        "contact_id": str(payload.get("contact_id") or "system"),
+        "conversation_id": str(payload.get("conversation_id") or ""),
+        "source_message_id": source_message_id,
+        "desktop_id": desktop_id(),
+        "desktop_name": desktop_name(),
+        "sender": "system",
+        "time": time.time(),
+        "delivery_trace": _delivery_trace(
+            {"delivery_trace": trace},
+            _trace_event("unified_command_executed", str(result.get("command_id") or "")),
+        ),
+    }
+    _publish_phone_payload(mqttc, wire_payload, reply_payload)
+    return True
 
 
 def flush_pending_task_events(mqttc) -> None:
@@ -3731,6 +3769,9 @@ def _process_message(mqttc, userdata, msg):
             payload,
             channel,
         ):
+            return
+
+        if _route_unified_command_payload(mqttc, wire_payload, payload, trace):
             return
 
         if _route_evolution_payload(mqttc, paired_client, payload):

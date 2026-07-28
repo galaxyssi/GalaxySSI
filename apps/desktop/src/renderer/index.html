@@ -24,6 +24,15 @@
 
       <div id="taskHistory" class="task-history" aria-label="Task history"></div>
 
+      <button class="sidebar-action" data-open-panel="commands">
+        <svg class="sidebar-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16"></path>
+          <path d="M4 12h16"></path>
+          <path d="M4 18h10"></path>
+        </svg>
+        <b data-i18n="Commands">Commands</b>
+      </button>
+
       <div class="sidebar-footer">
         <button class="sidebar-action sidebar-settings-row" data-open-panel="settings">
           <svg class="sidebar-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -358,6 +367,27 @@
         <button id="runDiagnosticsButton" class="secondary-button full-width" data-i18n="Run diagnostics">Run diagnostics</button>
         <pre id="diagnosticsOutput" class="tool-output" hidden></pre>
       </div>
+    </section>
+
+    <section id="commandsPanel" class="drawer-panel">
+      <div class="panel-action-row">
+        <div><strong data-i18n="Unified commands">Unified commands</strong><p data-i18n="Deterministic command catalog shared by desktop, mobile, and agents.">Deterministic command catalog shared by desktop, mobile, and agents.</p></div>
+        <button id="refreshCommandsButton" class="secondary-button" data-i18n="Refresh">Refresh</button>
+      </div>
+      <div id="commandSummary" class="command-summary" data-i18n="Waiting for command catalog">Waiting for command catalog</div>
+      <div class="command-controls form-stack">
+        <label><span data-i18n="Root filter">Root filter</span><input id="commandRootFilter" placeholder="file, git, device, run" spellcheck="false"></label>
+        <label><span data-i18n="Command or slash">Command or slash</span><input id="commandInput" value="/commands" spellcheck="false"></label>
+        <label class="check-row command-approve"><input id="commandApprove" type="checkbox"><span><strong data-i18n="Approve high-risk command">Approve high-risk command</strong><small data-i18n="Required for commands that can change files, processes, services, or remotes.">Required for commands that can change files, processes, services, or remotes.</small></span></label>
+        <button id="executeCommandButton" class="primary-button" data-i18n="Execute">Execute</button>
+      </div>
+      <div id="commandCatalog" class="command-catalog"></div>
+      <pre id="commandResult" class="tool-output">Waiting for command execution</pre>
+      <div class="panel-action-row command-run-header">
+        <div><strong data-i18n="Command runs">Command runs</strong><p data-i18n="Recent runs persisted by the command engine.">Recent runs persisted by the command engine.</p></div>
+        <button id="refreshCommandRunsButton" class="secondary-button" data-i18n="Refresh runs">Refresh runs</button>
+      </div>
+      <div id="commandRuns" class="audit-log">Waiting for command runs</div>
     </section>
   </aside>
 
