@@ -32,6 +32,9 @@ class AgentExecutionLoopTimelineTest {
         assertEquals("tool-1", act.toolCallId)
         assertEquals(AgentRunControlEventType.TOOL_PROGRESS, observe.controlEventType)
         assertEquals(AgentRunControlEventType.RETRYING, replan.controlEventType)
+        assertEquals("plan", plan.payload["timeline_kind"])
+        assertEquals("tool", act.payload["timeline_kind"])
+        assertEquals("retry", replan.payload["timeline_kind"])
     }
 
     @Test
@@ -184,6 +187,36 @@ class AgentExecutionLoopTimelineTest {
         )
     }
 
+    @Test
+    fun runTimelineCoverageIncludesPlanToolsRetryAndResult() {
+        val events = listOf(
+            controlEvent(AgentRunControlEventType.PLANNING),
+            controlEvent(AgentRunControlEventType.TOOL_STARTED, toolCallId = "tool-1"),
+            controlEvent(AgentRunControlEventType.TOOL_COMPLETED, toolCallId = "tool-1"),
+            controlEvent(AgentRunControlEventType.RETRYING),
+            controlEvent(AgentRunControlEventType.RUN_COMPLETED)
+        )
+
+        val coverage = AgentRunTimelineContract.coverage(events)
+
+        assertTrue(coverage.hasPlan)
+        assertEquals(2, coverage.toolEventCount)
+        assertEquals(1, coverage.retryEventCount)
+        assertTrue(coverage.hasResult)
+        assertTrue(coverage.complete)
+    }
+
+    @Test
+    fun failedRunIsTerminalButIncompleteWithoutAPlan() {
+        val coverage = AgentRunTimelineContract.coverage(
+            listOf(controlEvent(AgentRunControlEventType.RUN_FAILED))
+        )
+
+        assertTrue(coverage.hasFailure)
+        assertTrue(coverage.terminal)
+        assertFalse(coverage.complete)
+    }
+
     private fun transcript(key: String, text: String) = AgentTranscriptEntry(
         id = key,
         role = AgentTranscriptRole.PROCESS,
@@ -207,4 +240,19 @@ class AgentExecutionLoopTimelineTest {
             sequence = 1L,
             payload = projection.payload
         )
+
+    private fun controlEvent(
+        type: AgentRunControlEventType,
+        toolCallId: String = ""
+    ) = AgentRunControlEvent(
+        conversationId = "conversation",
+        messageId = "turn",
+        taskId = "task",
+        runId = "run",
+        toolCallId = toolCallId,
+        agentId = "signalasi-mobile",
+        deviceId = "phone",
+        type = type,
+        sequence = 1L
+    )
 }

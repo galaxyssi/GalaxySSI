@@ -31,6 +31,7 @@ const required = [
   "core/signalasi-link/backend/evolution_v2/manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "core/signalasi-link/backend/provider_profiles.py",
+  "core/signalasi-link/backend/run_timeline.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
   "scripts/smoke.js",

@@ -17,6 +17,25 @@ Every execution surface shows:
 The final response remains separate from the execution timeline. Terminal tasks
 never advertise cancellation.
 
+## Run Timeline contract
+
+Android and Desktop expose `signalasi.run-timeline/1.0`. Its canonical event
+classes are:
+
+- `plan`: the bounded plan or execution policy selected for the task;
+- `tool`: a real tool invocation or update, never a fabricated placeholder;
+- `retry`: an explicit retry, recovery, or replan attempt;
+- `result`: the terminal successful outcome metadata;
+- `failure`: the terminal failed, cancelled, or timed-out outcome metadata.
+
+Provider-specific events remain available through `source_kind`. Every event is
+bound to route, conversation, task, turn, and Agent identity. The projection
+does not copy prompts, final response bodies, credentials, or raw tool output.
+Android reconstructs missing plan and real tool lifecycle entries from its
+encrypted recorded run before appending the terminal event. Desktop reconstructs
+the same bounded timeline from its persistent task record, so process restarts
+do not erase lifecycle history.
+
 ## Protocol object
 
 Desktop task snapshots and phone task events carry an `execution_view` object:
