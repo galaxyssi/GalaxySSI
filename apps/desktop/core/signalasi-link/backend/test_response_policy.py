@@ -8,6 +8,7 @@ from response_policy import (
     CODEX_STYLE_RESPONSE_POLICY,
     apply_response_policy,
     attachment_clarification,
+    clarification_question,
     compact_codex_turn_prompt,
     is_input_artifact,
     remove_unfulfilled_artifact_claims,
@@ -116,6 +117,16 @@ def _evaluate(case: dict) -> dict:
 
 
 class ResponsePolicyTest(unittest.TestCase):
+    def test_clarification_questions_follow_the_configured_language(self):
+        self.assertEqual(
+            "What topic or question should I research?",
+            clarification_question("research_topic", "en-US"),
+        )
+        self.assertEqual(
+            "\u4f60\u60f3\u8ba9\u6211\u7814\u7a76\u54ea\u4e2a\u4e3b\u9898\u6216\u95ee\u9898\uff1f",
+            clarification_question("research_topic", "zh-CN"),
+        )
+
     def test_codex_turn_prompt_does_not_repeat_mobile_history(self):
         prompt = (
             "Conversation context:\nUser: old request\nAssistant: old result\n\n"

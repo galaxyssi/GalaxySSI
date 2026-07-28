@@ -41,6 +41,23 @@ class AgentTaskIntent(str, Enum):
     AUTOMATION = "automation"
 
 
+class AgentClarificationMode(str, Enum):
+    EXECUTE = "execute"
+    ASK_LOCALLY = "ask_locally"
+    ASK_WITH_MODEL = "ask_with_model"
+
+
+class AgentClarificationQuestion(str, Enum):
+    NONE = "none"
+    TASK_GOAL = "task_goal"
+    CODE_OUTCOME = "code_outcome"
+    CONTROL_ACTION = "control_action"
+    RESEARCH_TOPIC = "research_topic"
+    FILE_ACTION = "file_action"
+    MEMORY_CONTENT = "memory_content"
+    AUTOMATION_DETAILS = "automation_details"
+
+
 class AgentReasoningEffort(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
@@ -136,6 +153,16 @@ class AgentTaskIntentClassification:
     matched_signals: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class AgentClarificationDecision:
+    mode: AgentClarificationMode
+    question: AgentClarificationQuestion = AgentClarificationQuestion.NONE
+
+    @property
+    def should_ask(self) -> bool:
+        return self.mode != AgentClarificationMode.EXECUTE
+
+
 _INTENT_PRIORITY = (
     AgentTaskIntent.AUTOMATION,
     AgentTaskIntent.MEMORY,
@@ -205,6 +232,142 @@ _INTENT_RULES = (
         "\u6301\u7eed\u76d1\u63a7", "\u63d0\u9192\u6211",
     )),
 )
+
+
+_CLARIFICATION_GREETINGS = {
+    "hello", "hi", "hey", "good morning", "good afternoon", "good evening",
+    "\u4f60\u597d", "\u55e8", "\u65e9\u4e0a\u597d", "\u4e0b\u5348\u597d", "\u665a\u4e0a\u597d",
+}
+_CLARIFICATION_QUESTION_PREFIXES = (
+    "what ", "why ", "how ", "when ", "where ", "which ", "who ",
+    "can ", "could ", "would ", "is ", "are ", "do ", "does ",
+    "\u4ec0\u4e48", "\u4e3a\u4ec0\u4e48", "\u600e\u4e48", "\u5982\u4f55",
+    "\u54ea\u4e2a", "\u54ea\u4e9b", "\u8c01", "\u80fd\u4e0d\u80fd", "\u53ef\u4ee5",
+)
+_CLARIFICATION_QUESTION_SUFFIXES = (
+    "\u5417", "\u5462", "\u4e48", "\u600e\u4e48\u6837", "\u5982\u4f55",
+)
+_CONTEXTUAL_FOLLOW_UPS = {
+    "continue", "go ahead", "do it", "try again", "retry", "keep going",
+    "use this", "use that", "same as before", "make it better",
+    "\u7ee7\u7eed", "\u6267\u884c", "\u5c31\u8fd9\u6837", "\u6309\u8fd9\u4e2a",
+    "\u518d\u8bd5\u8bd5", "\u91cd\u8bd5", "\u4fdd\u8bc1\u6b63\u786e", "\u7528\u8fd9\u4e2a",
+    "\u548c\u4e4b\u524d\u4e00\u6837", "\u6309\u4e0a\u9762\u7684\u505a",
+}
+_CONTEXTUAL_REFERENCES = (
+    " this", " that", " it", " above", " previous",
+    "\u8fd9\u4e2a", "\u90a3\u4e2a", "\u5b83", "\u4e0a\u9762", "\u4e4b\u524d",
+    "\u521a\u624d", "\u524d\u9762", "\u8be5\u6587\u4ef6", "\u8fd9\u5f20\u56fe",
+)
+_VAGUE_REQUESTS = {
+    "help me", "handle this", "do something", "take a look", "fix it",
+    "improve it", "optimize it", "work on this", "please help",
+    "\u5e2e\u6211", "\u5e2e\u6211\u5f04\u4e00\u4e0b", "\u5904\u7406\u4e00\u4e0b",
+    "\u5f04\u4e00\u4e0b", "\u770b\u770b", "\u5e2e\u6211\u770b\u770b", "\u4fee\u4e00\u4e0b",
+    "\u4f18\u5316\u4e00\u4e0b", "\u6539\u8fdb\u4e00\u4e0b", "\u4f60\u770b\u7740\u529e",
+    "\u7ed9\u6211\u7ed3\u679c", "\u5feb\u70b9", "\u4e0d\u884c",
+}
+_MISSING_CODE_OUTCOME = {
+    "write code", "write a program", "build an app", "create an app", "fix the code",
+    "\u5199\u4ee3\u7801", "\u5199\u4e2a\u7a0b\u5e8f", "\u5f00\u53d1\u4e00\u4e2a app",
+    "\u505a\u4e00\u4e2a app", "\u4fee\u4ee3\u7801",
+}
+_MISSING_CONTROL_ACTION = {
+    "control my phone", "control the phone", "control my computer",
+    "control the computer", "remote desktop",
+    "\u63a7\u5236\u624b\u673a", "\u64cd\u4f5c\u624b\u673a",
+    "\u63a7\u5236\u7535\u8111", "\u64cd\u4f5c\u7535\u8111", "\u8fdc\u7a0b\u684c\u9762",
+}
+_MISSING_RESEARCH_TOPIC = {
+    "research", "research this", "search", "search the web", "look it up",
+    "\u7814\u7a76\u4e00\u4e0b", "\u641c\u7d22", "\u641c\u4e00\u4e0b",
+    "\u67e5\u4e00\u4e0b", "\u67e5\u8d44\u6599",
+}
+_MISSING_FILE_ACTION = {
+    "process the file", "handle the file", "work on the document",
+    "\u5904\u7406\u6587\u4ef6", "\u5904\u7406\u8fd9\u4e2a\u6587\u4ef6", "\u770b\u4e0b\u6587\u4ef6",
+}
+_MISSING_MEMORY_CONTENT = {
+    "remember this", "remember that", "save this to memory",
+    "\u8bb0\u4f4f\u8fd9\u4e2a", "\u8bb0\u4f4f\u8fd9\u4ef6\u4e8b", "\u5b58\u5230\u8bb0\u5fc6",
+}
+_MISSING_AUTOMATION_DETAILS = {
+    "create an automation", "make a workflow", "schedule a task", "remind me",
+    "\u521b\u5efa\u81ea\u52a8\u5316", "\u5efa\u4e00\u4e2a\u5de5\u4f5c\u6d41",
+    "\u8bbe\u7f6e\u5b9a\u65f6\u4efb\u52a1", "\u63d0\u9192\u6211",
+}
+
+
+def clarification_decision_for(
+    prompt: str,
+    *,
+    has_attachments: bool = False,
+    has_conversation_context: bool = False,
+) -> AgentClarificationDecision:
+    normalized = re.sub(
+        r"[^\w\u4e00-\u9fff]+",
+        " ",
+        str(prompt or "").lower(),
+        flags=re.UNICODE,
+    )
+    normalized = " ".join(normalized.split())
+    if not normalized:
+        if has_attachments:
+            return AgentClarificationDecision(
+                AgentClarificationMode.ASK_WITH_MODEL,
+                AgentClarificationQuestion.FILE_ACTION,
+            )
+        return AgentClarificationDecision(
+            AgentClarificationMode.ASK_LOCALLY,
+            AgentClarificationQuestion.TASK_GOAL,
+        )
+    if has_conversation_context and (
+        normalized in _CONTEXTUAL_FOLLOW_UPS
+        or any(reference in normalized for reference in _CONTEXTUAL_REFERENCES)
+    ):
+        return AgentClarificationDecision(AgentClarificationMode.EXECUTE)
+    if has_attachments and normalized in _VAGUE_REQUESTS:
+        return AgentClarificationDecision(
+            AgentClarificationMode.ASK_WITH_MODEL,
+            AgentClarificationQuestion.FILE_ACTION,
+        )
+    if normalized in _VAGUE_REQUESTS:
+        return (
+            AgentClarificationDecision(AgentClarificationMode.EXECUTE)
+            if has_conversation_context
+            else AgentClarificationDecision(
+                AgentClarificationMode.ASK_LOCALLY,
+                AgentClarificationQuestion.TASK_GOAL,
+            )
+        )
+    if (
+        normalized in _CLARIFICATION_GREETINGS
+        or normalized.startswith(_CLARIFICATION_QUESTION_PREFIXES)
+        or normalized.endswith(_CLARIFICATION_QUESTION_SUFFIXES)
+    ):
+        return AgentClarificationDecision(AgentClarificationMode.EXECUTE)
+
+    question = (
+        AgentClarificationQuestion.CODE_OUTCOME
+        if normalized in _MISSING_CODE_OUTCOME else
+        AgentClarificationQuestion.CONTROL_ACTION
+        if normalized in _MISSING_CONTROL_ACTION else
+        AgentClarificationQuestion.RESEARCH_TOPIC
+        if normalized in _MISSING_RESEARCH_TOPIC else
+        AgentClarificationQuestion.FILE_ACTION
+        if normalized in _MISSING_FILE_ACTION else
+        AgentClarificationQuestion.MEMORY_CONTENT
+        if normalized in _MISSING_MEMORY_CONTENT else
+        AgentClarificationQuestion.AUTOMATION_DETAILS
+        if normalized in _MISSING_AUTOMATION_DETAILS else
+        None
+    )
+    if question is not None and not has_conversation_context:
+        return AgentClarificationDecision(
+            AgentClarificationMode.ASK_LOCALLY,
+            question,
+        )
+    return AgentClarificationDecision(AgentClarificationMode.EXECUTE)
 
 
 def classify_task_intent(

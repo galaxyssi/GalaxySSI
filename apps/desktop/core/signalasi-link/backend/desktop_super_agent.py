@@ -295,6 +295,8 @@ class DesktopSuperAgent:
                     source_message_id=f"desktop:{task_id}",
                     return_path="desktop-ui",
                     response_language=response_language,
+                    execution_prompt=prompt,
+                    execution_policy=self._execution_harness.policy.public(),
                 )
                 reply = str(result.get("reply") or "").strip()
                 if not reply or looks_failed_reply(reply):

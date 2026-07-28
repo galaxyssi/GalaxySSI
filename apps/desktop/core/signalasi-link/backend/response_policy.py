@@ -201,6 +201,49 @@ def attachment_clarification(names: list[str], chinese: bool = True) -> str:
     )
 
 
+def clarification_question(question: str, language_tag: str = EN_US) -> str:
+    key = str(question or "task_goal").strip().lower()
+    chinese = resolve_language(language_tag) in {ZH_CN, ZH_HK, ZH_TW}
+    values = {
+        "task_goal": (
+            "\u4f60\u60f3\u8ba9\u6211\u5b8c\u6210\u4ec0\u4e48\uff1f"
+            if chinese else
+            "What would you like me to accomplish?"
+        ),
+        "code_outcome": (
+            "\u4f60\u5e0c\u671b\u8fd9\u4e2a\u7a0b\u5e8f\u6216\u4ee3\u7801\u5b9e\u73b0\u4ec0\u4e48\u529f\u80fd\uff1f"
+            if chinese else
+            "What should the program or code do?"
+        ),
+        "control_action": (
+            "\u4f60\u5e0c\u671b\u6211\u5728\u8bbe\u5907\u4e0a\u6267\u884c\u4ec0\u4e48\u64cd\u4f5c\uff1f"
+            if chinese else
+            "What should I do on the device?"
+        ),
+        "research_topic": (
+            "\u4f60\u60f3\u8ba9\u6211\u7814\u7a76\u54ea\u4e2a\u4e3b\u9898\u6216\u95ee\u9898\uff1f"
+            if chinese else
+            "What topic or question should I research?"
+        ),
+        "file_action": (
+            "\u4f60\u5e0c\u671b\u6211\u5982\u4f55\u5904\u7406\u8fd9\u4e2a\u6587\u4ef6\uff1f"
+            if chinese else
+            "What should I do with the file?"
+        ),
+        "memory_content": (
+            "\u4f60\u5e0c\u671b\u6211\u8bb0\u4f4f\u4ec0\u4e48\uff1f"
+            if chinese else
+            "What should I remember?"
+        ),
+        "automation_details": (
+            "\u4ec0\u4e48\u60c5\u51b5\u89e6\u53d1\u81ea\u52a8\u5316\uff0c\u89e6\u53d1\u540e\u6267\u884c\u4ec0\u4e48\u64cd\u4f5c\uff1f"
+            if chinese else
+            "What should trigger the automation, and what should it do?"
+        ),
+    }
+    return values.get(key, values["task_goal"])
+
+
 def is_input_artifact(item: dict) -> bool:
     relative = str(item.get("relative_path") or "").replace("\\", "/").strip("/").lower()
     return relative.startswith(("downloads/input/", "downloads/context/"))
