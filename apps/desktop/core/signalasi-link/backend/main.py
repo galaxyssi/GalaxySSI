@@ -601,6 +601,60 @@ def _desktop_evolution_manager():
     )
 
 
+def _desktop_evolution_timeline_item(
+    evolution_manager,
+    task,
+    *,
+    live_event: dict[str, Any] | None = None,
+    audit_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    from evolution_task_timeline import evolution_task_timeline_item
+
+    return evolution_task_timeline_item(
+        evolution_manager,
+        task,
+        live_event=live_event,
+        audit_rows=audit_rows,
+    )
+
+
+def _desktop_task_rows(limit: int, evolution_manager=None) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(int(limit), 500))
+    manual_tasks = [
+        item
+        for item in agent_task_manager.list(
+            limit=max(100, bounded_limit),
+            include_prompt=True,
+        )
+        if str(item.get("source_message_id") or "").startswith("desktop:")
+    ]
+    manager = evolution_manager or _desktop_evolution_manager()
+    evolution_source = manager.store.list(limit=min(bounded_limit, 100))
+    try:
+        audit_by_task = manager.audit.list_for_tasks(
+            [str(task.task_id) for task in evolution_source],
+            limit_per_task=100,
+        )
+    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+        audit_by_task = {}
+    evolution_tasks = [
+        item
+        for task in evolution_source
+        if (
+            item := _desktop_evolution_timeline_item(
+                manager,
+                task,
+                audit_rows=audit_by_task.get(str(task.task_id)),
+            )
+        ) is not None
+    ]
+    return sorted(
+        [*manual_tasks, *evolution_tasks],
+        key=lambda item: int(item.get("updated_at") or 0),
+        reverse=True,
+    )[:bounded_limit]
+
+
 def _evolution_http_error(exc: Exception) -> HTTPException:
     from evolution_manager import EvolutionError
 
@@ -1567,20 +1621,22 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
 @app.get("/api/desktop/tasks")
 def api_list_desktop_tasks(request: Request, limit: int = Query(100)):
     require_loopback(request)
-    tasks = [
-        item for item in agent_task_manager.list(limit=max(100, limit), include_prompt=True)
-        if str(item.get("source_message_id") or "").startswith("desktop:")
-    ]
-    return {"tasks": tasks[:max(1, min(limit, 500))]}
+    return {"tasks": _desktop_task_rows(limit)}
 
 
 @app.get("/api/desktop/tasks/{task_id}")
 def api_get_desktop_task(task_id: str, request: Request):
     require_loopback(request)
     task = agent_task_manager.get(task_id)
-    if task is None or not task.source_message_id.startswith("desktop:"):
-        raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
-    return task.public(include_prompt=True)
+    if task is not None and task.source_message_id.startswith("desktop:"):
+        return task.public(include_prompt=True)
+    evolution_manager = _desktop_evolution_manager()
+    evolution_task = evolution_manager.store.get(task_id)
+    if evolution_task is not None:
+        timeline_item = _desktop_evolution_timeline_item(evolution_manager, evolution_task)
+        if timeline_item is not None:
+            return timeline_item
+    raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
 
 
 @app.post("/api/desktop/tasks/{task_id}/cancel")
@@ -1588,7 +1644,17 @@ def api_cancel_desktop_task(task_id: str, request: Request):
     require_loopback(request)
     task = agent_task_manager.get(task_id)
     if task is None or not task.source_message_id.startswith("desktop:"):
-        raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+        evolution_manager = _desktop_evolution_manager()
+        evolution_task = evolution_manager.store.get(task_id)
+        if evolution_task is None:
+            raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+        cancelled = evolution_manager.cancel(task_id)
+        return {
+            "task": _desktop_evolution_timeline_item(
+                evolution_manager,
+                cancelled,
+            ),
+        }
     try:
         from desktop_native_tools import desktop_native_tool_registry
 
@@ -1613,7 +1679,14 @@ def api_retry_desktop_task(task_id: str, request: Request):
     require_loopback(request)
     task = agent_task_manager.get(task_id)
     if task is None or not task.source_message_id.startswith("desktop:"):
-        raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+        evolution_manager = _desktop_evolution_manager()
+        evolution_task = evolution_manager.store.get(task_id)
+        if evolution_task is None:
+            raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+        if evolution_task.status not in {"blocked", "failed", "cancelled"}:
+            raise HTTPException(status_code=409, detail=api_error("desktop_task_not_retryable"))
+        restarted = evolution_manager.start(task_id)
+        return _desktop_evolution_timeline_item(evolution_manager, restarted)
     if task.status not in TERMINAL_STATES or task.status == "completed":
         raise HTTPException(status_code=409, detail=api_error("desktop_task_not_retryable"))
 
@@ -1788,15 +1861,9 @@ async def desktop_task_stream(ws: WebSocket):
     await ws.accept(subprotocol="signalasi-task-stream")
     loop = asyncio.get_running_loop()
     updates: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
+    evolution_manager = _desktop_evolution_manager()
 
-    def enqueue(snapshot: dict) -> None:
-        if not str(snapshot.get("source_message_id") or "").startswith("desktop:"):
-            return
-        task = agent_task_manager.get(str(snapshot.get("task_id") or ""))
-        if task is None or not task.source_message_id.startswith("desktop:"):
-            return
-        payload = task.public(include_prompt=True)
-
+    def offer_update(payload: dict[str, Any]) -> None:
         def offer() -> None:
             if updates.full():
                 try:
@@ -1810,12 +1877,34 @@ async def desktop_task_stream(ws: WebSocket):
         except RuntimeError:
             pass
 
-    subscription_id = agent_task_manager.subscribe(enqueue)
+    def enqueue_agent_task(snapshot: dict) -> None:
+        if not str(snapshot.get("source_message_id") or "").startswith("desktop:"):
+            return
+        task = agent_task_manager.get(str(snapshot.get("task_id") or ""))
+        if task is None or not task.source_message_id.startswith("desktop:"):
+            return
+        offer_update(task.public(include_prompt=True))
+
+    def enqueue_evolution_task(event: dict) -> None:
+        task_id = str((event.get("task") or {}).get("task_id") or "")
+        if not task_id:
+            return
+        try:
+            evolution_task = evolution_manager.require(task_id)
+            payload = _desktop_evolution_timeline_item(
+                evolution_manager,
+                evolution_task,
+                live_event=event,
+            )
+        except Exception:
+            return
+        if payload is not None:
+            offer_update(payload)
+
+    task_subscription_id = agent_task_manager.subscribe(enqueue_agent_task)
+    evolution_subscription_id = evolution_manager.subscribe(enqueue_evolution_task)
     try:
-        tasks = [
-            item for item in agent_task_manager.list(limit=500, include_prompt=True)
-            if str(item.get("source_message_id") or "").startswith("desktop:")
-        ]
+        tasks = _desktop_task_rows(500, evolution_manager)
         await ws.send_json({"type": "desktop_tasks_snapshot", "tasks": tasks})
         while True:
             try:
@@ -1832,7 +1921,8 @@ async def desktop_task_stream(ws: WebSocket):
     except Exception as exc:
         log.info("Desktop task stream closed: %s", exc)
     finally:
-        agent_task_manager.unsubscribe(subscription_id)
+        agent_task_manager.unsubscribe(task_subscription_id)
+        evolution_manager.unsubscribe(evolution_subscription_id)
 
 
 @app.websocket("/ws/{contact_id}")
