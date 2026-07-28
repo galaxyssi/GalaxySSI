@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from conversation_turn_policy import should_steer_active_turn
+from conversation_turn_policy import (
+    ActiveTurnDisposition,
+    ActiveTurnInterventionKind,
+    classify_active_turn,
+    should_steer_active_turn,
+    superseding_prompt,
+)
 
 
 class ConversationTurnPolicyTests(unittest.TestCase):
@@ -65,6 +71,58 @@ class ConversationTurnPolicyTests(unittest.TestCase):
                 "\u4fee\u6539 Android \u9879\u76ee",
             )
         )
+
+    def test_standalone_interrupt_is_not_sent_as_model_guidance(self) -> None:
+        for request in (
+            "stop",
+            "Cancel the current task.",
+            "\u505c\u6b62\u5f53\u524d\u4efb\u52a1",
+            "\u4e0d\u7528\u7ee7\u7eed\u4e86",
+        ):
+            with self.subTest(request=request):
+                decision = classify_active_turn(request, "Build the Android app")
+                self.assertEqual(ActiveTurnDisposition.INTERRUPT, decision.disposition)
+                self.assertEqual(
+                    ActiveTurnInterventionKind.INTERRUPT,
+                    decision.intervention_kind,
+                )
+                self.assertFalse(should_steer_active_turn(request, "Build the Android app"))
+
+    def test_interrupt_words_inside_constraints_do_not_cancel(self) -> None:
+        decision = classify_active_turn(
+            "Do not stop after the first page.",
+            "Export the whole report.",
+        )
+        self.assertEqual(ActiveTurnDisposition.STEER, decision.disposition)
+        self.assertEqual(ActiveTurnInterventionKind.CONSTRAINT, decision.intervention_kind)
+
+    def test_goal_change_and_constraint_are_distinguished(self) -> None:
+        goal_change = classify_active_turn(
+            "\u6539\u6210 Android \u539f\u751f\u5e94\u7528",
+            "\u505a\u4e00\u4e2a\u7f51\u9875\u5e94\u7528",
+        )
+        constraint = classify_active_turn(
+            "\u8981\u4fdd\u8bc1\u79bb\u7ebf\u53ef\u7528",
+            "\u505a\u4e00\u4e2a Android \u5e94\u7528",
+        )
+        self.assertEqual(
+            ActiveTurnInterventionKind.GOAL_CHANGE,
+            goal_change.intervention_kind,
+        )
+        self.assertEqual(
+            ActiveTurnInterventionKind.CONSTRAINT,
+            constraint.intervention_kind,
+        )
+
+    def test_superseding_prompt_preserves_both_requests_with_latest_priority(self) -> None:
+        prompt = superseding_prompt(
+            "Build a web game",
+            "Change the goal to an Android game",
+            kind=ActiveTurnInterventionKind.GOAL_CHANGE,
+        )
+        self.assertIn("Build a web game", prompt)
+        self.assertIn("Change the goal to an Android game", prompt)
+        self.assertIn("latest instruction has priority", prompt)
 
 
 if __name__ == "__main__":

@@ -110,6 +110,25 @@ class RunTimelineTests(unittest.TestCase):
         self.assertIn("run_timeline", managed.public())
         self.assertNotIn("run_timeline", managed.record())
 
+    def test_intervention_relationship_is_part_of_the_durable_identity(self):
+        managed = AgentTask(
+            task_id="task-new",
+            agent_id="hermes",
+            contact_id="hermes",
+            source_message_id="source-new",
+            prompt="Use Android instead",
+            task_disposition="superseded",
+            supersedes_task_id="task-old",
+            intervention_kind="goal_change",
+        )
+
+        public = managed.public()
+        record = managed.record()
+        plan = public["run_timeline"]["events"][0]
+        self.assertEqual("superseded", public["task_disposition"])
+        self.assertEqual("task-old", record["supersedes_task_id"])
+        self.assertEqual("goal_change", plan["metadata"]["intervention_kind"])
+
 
 if __name__ == "__main__":
     unittest.main()

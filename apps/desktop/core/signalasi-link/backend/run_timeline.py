@@ -70,12 +70,17 @@ def project_run_timeline(task: Any) -> dict:
     if status in TERMINAL_STATES and terminal_kind not in kinds:
         result = str(getattr(task, "result", "") or "")
         error = str(getattr(task, "error", "") or "")
+        disposition = str(getattr(task, "task_disposition", "") or "").strip()
         title = {
             "completed": "Result ready",
             "failed": "Task failed",
             "cancelled": "Task cancelled",
             "timed_out": "Task timed out",
         }.get(status, "Task failed")
+        if status == "completed" and disposition == "steered":
+            title = "Instruction added to active task"
+        elif status == "completed" and disposition == "interrupted":
+            title = "Active task interrupted"
         events.append({
             "event_id": f"timeline:{terminal_kind}:{task.task_id}",
             "kind": terminal_kind,
@@ -195,4 +200,8 @@ def _task_identity(task: Any) -> dict:
         "task_id": str(getattr(task, "task_id", "") or ""),
         "turn_id": str(getattr(task, "client_turn_id", "") or ""),
         "agent_id": str(getattr(task, "delegate_agent_id", "") or getattr(task, "agent_id", "") or ""),
+        "task_disposition": str(getattr(task, "task_disposition", "") or ""),
+        "merged_into_task_id": str(getattr(task, "merged_into_task_id", "") or ""),
+        "supersedes_task_id": str(getattr(task, "supersedes_task_id", "") or ""),
+        "intervention_kind": str(getattr(task, "intervention_kind", "") or ""),
     }

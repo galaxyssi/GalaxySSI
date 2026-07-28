@@ -1341,8 +1341,11 @@ class _TaskProgressEventGate:
             ):
                 return False
             self._last_status_seq = max(self._last_status_seq, status_seq)
-            visible_steer_completion = status == "completed" and task_disposition == "steered"
-            if not visible_steer_completion and not _should_publish_task_status(status):
+            visible_intervention_completion = (
+                status == "completed"
+                and task_disposition in {"steered", "interrupted"}
+            )
+            if not visible_intervention_completion and not _should_publish_task_status(status):
                 self._last_status = status
                 self._last_step = step
                 self._last_progress_signature = progress_signature
@@ -2697,6 +2700,35 @@ def _missing_returned_image_message(content: str) -> str:
     )
 
 
+def _interrupt_agent_runtime(task, on_event=None) -> None:
+    """Stop the provider runtime and invalidate the durable task once."""
+
+    if task is None:
+        return
+    task_id = str(getattr(task, "task_id", "") or "").strip()
+    agent_id = str(getattr(task, "agent_id", "") or "").strip()
+    if not task_id:
+        return
+    if agent_id == "codex" and codex_app_server is not None:
+        try:
+            codex_app_server.interrupt(task_id)
+        except Exception as exc:
+            log.warning("Codex turn interrupt failed task_id=%s: %s", task_id, exc)
+    elif agent_id:
+        try:
+            from agent_gateway import desktop_agent_provider
+
+            desktop_agent_provider().cancel(agent_id, task_id)
+        except Exception as exc:
+            log.warning(
+                "Agent runtime interrupt failed task_id=%s agent_id=%s: %s",
+                task_id,
+                agent_id,
+                exc,
+            )
+    agent_task_manager.cancel(task_id, on_event=on_event)
+
+
 def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: list[dict], content: str, msg_type: str) -> None:
     contact_id = str(payload.get("contact_id") or "hermes")
     agent_id = _agent_id_from_contact(contact_id, payload.get("agent_id"))
@@ -2748,7 +2780,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     elif payload.get("_recovered_task") is True:
         raise RuntimeError("Recovered Agent task is no longer available")
     from conversation_context import current_request, embedded_mobile_context
-    from conversation_turn_policy import should_steer_active_turn
+    from conversation_turn_policy import (
+        ActiveTurnDisposition,
+        classify_active_turn,
+        superseding_prompt,
+    )
     mobile_context = embedded_mobile_context(content)
     current_user_request = current_request(content)
     task_trace = _delivery_trace(
@@ -2767,6 +2803,33 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     image_artifact_required = has_image_attachment and _current_request_needs_returned_image(content)
     has_attachments = bool(attachments) if isinstance(attachments, list) else False
+    active_conversation_task = None
+    if payload.get("_recovered_task") is not True:
+        active_conversation_task = agent_task_manager.active_for_conversation(
+            backend_conversation_id,
+            agent_id=agent_id,
+            client_route_id=client_route_id,
+            exclude_task_id=requested_task_id,
+        )
+    active_turn_decision = classify_active_turn(
+        current_user_request,
+        active_conversation_task.prompt if active_conversation_task is not None else "",
+        has_new_attachments=has_attachments,
+    ) if active_conversation_task is not None else None
+    effective_content = content
+    supersedes_active_task_id = ""
+    if (
+        active_conversation_task is not None
+        and active_turn_decision is not None
+        and active_turn_decision.disposition == ActiveTurnDisposition.STEER
+        and agent_id != "codex"
+    ):
+        supersedes_active_task_id = active_conversation_task.task_id
+        effective_content = superseding_prompt(
+            active_conversation_task.prompt,
+            current_user_request,
+            kind=active_turn_decision.intervention_kind,
+        )
     from agent_execution_harness import execution_contract, execution_policy_for
 
     execution_policy = execution_policy_for(
@@ -2854,7 +2917,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         )
 
     def content_with_attachments(task_id: str, base_content: str | None = None) -> str:
-        task_content = content if base_content is None else base_content
+        task_content = effective_content if base_content is None else base_content
         attachments = payload.get("attachments") or []
         from task_workspace import task_workspace
         attachment_root = task_workspace(task_id, agent_id) / "downloads" / "input"
@@ -2909,6 +2972,23 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         log.info(f"Agent task running task_id={task.task_id} contact_id={contact_id} agent_id={agent_id}")
         from agent_gateway import all_agent_specs
 
+        if supersedes_active_task_id:
+            agent_task_manager.add_event(
+                task.task_id,
+                "replan",
+                "Applying the latest user instruction",
+                event_id=f"supersede:{supersedes_active_task_id}",
+                status="completed",
+                metadata={
+                    "supersedes_task_id": supersedes_active_task_id,
+                    "intervention_kind": (
+                        active_turn_decision.intervention_kind.value
+                        if active_turn_decision is not None
+                        else "constraint"
+                    ),
+                },
+                on_event=publish_event,
+            )
         selected_spec = all_agent_specs().get(agent_id)
         provider_name = selected_spec.name if selected_spec is not None else agent_id
         provider_event_id = f"provider:{task.task_id}"
@@ -3091,6 +3171,72 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     from agent_execution_harness import AgentClarificationMode, clarification_decision_for
     from response_policy import clarification_question, response_language_tag
 
+    if (
+        payload.get("_recovered_task") is not True
+        and active_conversation_task is not None
+        and active_turn_decision is not None
+        and active_turn_decision.disposition == ActiveTurnDisposition.INTERRUPT
+    ):
+        interrupted = agent_task_manager.create_external(
+            agent_id=agent_id,
+            contact_id=contact_id,
+            source_message_id=source_message_id,
+            prompt=content,
+            on_event=publish_event,
+            task_id=requested_task_id,
+            conversation_id=backend_conversation_id,
+            client_conversation_id=client_conversation_id,
+            client_route_id=client_route_id,
+            client_turn_id=client_turn_id,
+            attachments=[],
+            task_disposition="interrupted",
+            merged_into_task_id=active_conversation_task.task_id,
+            intervention_kind=active_turn_decision.intervention_kind.value,
+            execution_prompt=current_user_request,
+            execution_policy=execution_policy.public(),
+            trace_id=str(payload.get("trace_id") or ""),
+            delivery_trace=task_trace_snapshot(),
+        )
+        bind_task_trace(interrupted)
+        agent_task_manager.add_event(
+            active_conversation_task.task_id,
+            "interrupt",
+            "Task interrupted by the user",
+            event_id=f"interrupt:{interrupted.task_id}",
+            status="completed",
+            metadata={
+                "intervention_task_id": interrupted.task_id,
+                "intervention_turn_id": client_turn_id,
+            },
+        )
+        _interrupt_agent_runtime(
+            active_conversation_task,
+            on_event=lambda event: _enqueue_task_event(
+                mqttc,
+                wire_payload,
+                event,
+                task_trace_snapshot(),
+            ),
+        )
+        completed = agent_task_manager.update(
+            interrupted.task_id,
+            "completed",
+            on_event=publish_event,
+            current_step="",
+            result="",
+            task_disposition="interrupted",
+            merged_into_task_id=active_conversation_task.task_id,
+            intervention_kind=active_turn_decision.intervention_kind.value,
+        )
+        if completed is not None:
+            add_task_trace(
+                "agent_task_interrupted",
+                active_conversation_task.task_id,
+                once=True,
+                meaningful_progress=True,
+            )
+        return
+
     clarification = clarification_decision_for(
         current_user_request,
         has_attachments=has_attachments,
@@ -3154,9 +3300,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
         codex_conversation_id = backend_conversation_id
         codex_run_conversation_id = codex_conversation_id
-        active_conversation_task = None
         parallel_codex_task = False
         if payload.get("_recovered_task") is True:
+            active_conversation_task = None
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
             if task is None:
                 raise RuntimeError("Recovered Codex task is no longer resumable")
@@ -3169,6 +3315,26 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 client_conversation_id=client_conversation_id,
                 client_route_id=client_route_id,
                 client_turn_id=client_turn_id,
+                task_disposition=(
+                    "steered"
+                    if active_conversation_task is not None
+                    and active_turn_decision is not None
+                    and active_turn_decision.disposition == ActiveTurnDisposition.STEER
+                    else ""
+                ),
+                merged_into_task_id=(
+                    active_conversation_task.task_id
+                    if active_conversation_task is not None
+                    and active_turn_decision is not None
+                    and active_turn_decision.disposition == ActiveTurnDisposition.STEER
+                    else ""
+                ),
+                intervention_kind=(
+                    active_turn_decision.intervention_kind.value
+                    if active_turn_decision is not None
+                    and active_turn_decision.disposition == ActiveTurnDisposition.STEER
+                    else ""
+                ),
                 attachments=[
                     str(item.get("name") or "")
                     for item in attachments
@@ -3180,16 +3346,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 delivery_trace=task_trace_snapshot(),
             )
             bind_task_trace(task)
-            active_conversation_task = agent_task_manager.active_for_conversation(
-                codex_conversation_id,
-                agent_id="codex",
-                client_route_id=client_route_id,
-                exclude_task_id=task.task_id,
-            )
-            if active_conversation_task is not None and not should_steer_active_turn(
-                current_user_request,
-                active_conversation_task.prompt,
-                has_new_attachments=has_attachments,
+            if (
+                active_conversation_task is not None
+                and (
+                    active_turn_decision is None
+                    or active_turn_decision.disposition
+                    != ActiveTurnDisposition.STEER
+                )
             ):
                 add_task_trace(
                     "codex_parallel_turn_selected",
@@ -3500,6 +3663,13 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     turn_id=steered_run.turn_id,
                     current_step="",
                     result="",
+                    task_disposition="steered",
+                    merged_into_task_id=steered_run.task_id,
+                    intervention_kind=(
+                        active_turn_decision.intervention_kind.value
+                        if active_turn_decision is not None
+                        else "constraint"
+                    ),
                 )
                 if completed is not None:
                     from agent_conversation_sessions import agent_conversation_sessions
@@ -3508,8 +3678,6 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     sessions.put("codex", codex_conversation_id, steered_run.thread_id)
                     mark_conversation_synced("codex", task)
                     event = completed.public()
-                    event["task_disposition"] = "steered"
-                    event["merged_into_task_id"] = steered_run.task_id
                     publish_event(event)
                 with codex_task_callbacks_lock:
                     codex_task_callbacks.pop(task.task_id, None)
@@ -3723,13 +3891,18 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         sessions.put("codex", codex_conversation_id, started_run.thread_id)
                 except CodexConversationBusyError as busy:
                     busy_task = agent_task_manager.get(busy.active_task_id)
-                    should_steer = (
-                        busy_task is not None
-                        and should_steer_active_turn(
+                    busy_decision = (
+                        classify_active_turn(
                             current_user_request,
                             busy_task.prompt,
                             has_new_attachments=has_attachments,
                         )
+                        if busy_task is not None
+                        else None
+                    )
+                    should_steer = (
+                        busy_decision is not None
+                        and busy_decision.disposition == ActiveTurnDisposition.STEER
                     )
                     if should_steer:
                         add_task_trace("codex_turn_steer_retry", busy.active_task_id)
@@ -3866,11 +4039,36 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         if failed is not None:
             publish_result(failed.public())
     else:
+        if supersedes_active_task_id and active_conversation_task is not None:
+            agent_task_manager.add_event(
+                active_conversation_task.task_id,
+                "replan",
+                "Task superseded by the latest user instruction",
+                event_id=f"superseded-by:{requested_task_id}",
+                status="completed",
+                metadata={
+                    "superseded_by_task_id": requested_task_id,
+                    "intervention_kind": (
+                        active_turn_decision.intervention_kind.value
+                        if active_turn_decision is not None
+                        else "constraint"
+                    ),
+                },
+            )
+            _interrupt_agent_runtime(
+                active_conversation_task,
+                on_event=lambda event: _enqueue_task_event(
+                    mqttc,
+                    wire_payload,
+                    event,
+                    task_trace_snapshot(),
+                ),
+            )
         created = agent_task_manager.create(
             agent_id=agent_id,
             contact_id=contact_id,
             source_message_id=source_message_id,
-            prompt=content,
+            prompt=effective_content,
             runner=run_task,
             on_event=publish_event,
             on_result=publish_result,
@@ -3884,7 +4082,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 for item in attachments
                 if isinstance(item, dict) and str(item.get("name") or "").strip()
             ],
-            execution_prompt=current_user_request,
+            task_disposition="superseded" if supersedes_active_task_id else "",
+            supersedes_task_id=supersedes_active_task_id,
+            intervention_kind=(
+                active_turn_decision.intervention_kind.value
+                if supersedes_active_task_id and active_turn_decision is not None
+                else ""
+            ),
+            execution_prompt=effective_content,
             execution_policy=execution_policy.public(),
             trace_id=str(payload.get("trace_id") or ""),
             delivery_trace=task_trace_snapshot(),
@@ -4153,20 +4358,18 @@ def _process_message(mqttc, userdata, msg):
                     source_message_id=source_message_id,
                 )
             )
-            if task_matches and existing_task.agent_id == "codex" and codex_app_server is not None:
-                try:
-                    codex_app_server.interrupt(task_id)
-                except Exception as exc:
-                    log.warning(f"Codex turn interrupt failed task_id={task_id}: {exc}")
-            task = agent_task_manager.cancel_scoped(
-                task_id,
-                client_route_id=client_route_id,
-                conversation_id=conversation_id,
-                turn_id=turn_id,
-                on_event=lambda event: _publish_or_queue_task_event(
-                    mqttc, wire_payload, event, trace
-                ),
-            ) if task_matches else None
+            task = None
+            if task_matches:
+                _interrupt_agent_runtime(
+                    existing_task,
+                    on_event=lambda event: _publish_or_queue_task_event(
+                        mqttc,
+                        wire_payload,
+                        event,
+                        trace,
+                    ),
+                )
+                task = existing_task
             if task is None:
                 _publish_phone_payload(mqttc, wire_payload, {
                     "type": "agent_task_event",
