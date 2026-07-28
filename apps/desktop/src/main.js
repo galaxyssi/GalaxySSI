@@ -63,6 +63,7 @@ function createWindow() {
 async function runUiSmoke() {
   const outDir = process.env.SIGNALASI_UI_SMOKE_DIR || path.join(RUNTIME_ROOT, "ui-smoke");
   const overviewPath = path.join(outDir, "desktop-overview.png");
+  const evolutionTimelinePath = path.join(outDir, "desktop-evolution-timeline.png");
   const languageEnPath = path.join(outDir, "desktop-language-en.png");
   const languageZhPath = path.join(outDir, "desktop-language-zh.png");
   const setupPath = path.join(outDir, "desktop-setup-guide.png");
@@ -140,6 +141,64 @@ async function runUiSmoke() {
       throw new Error(`Desktop English language restore failed: ${JSON.stringify(restoredLanguage)}`);
     }
     await captureSmokeScreenshot(overviewPath);
+    const evolutionTimelineState = await mainWindow.webContents.executeJavaScript(`
+      (() => {
+        const task = {
+          task_id: "smoke-self-evolution",
+          task_kind: "self_evolution",
+          agent_id: "self-evolution",
+          delegate_agent_id: "codex",
+          conversation_id: "evolution:smoke-self-evolution",
+          source_message_id: "desktop:evolution:smoke-self-evolution",
+          prompt: "Improve automatic recovery for interrupted Desktop tasks",
+          status: "running",
+          evolution_status: "validating",
+          automatic: true,
+          created_at: Date.now() - 12_000,
+          started_at: Date.now() - 11_000,
+          updated_at: Date.now(),
+          events: [
+            { title: "Self-evolution task started", status: "completed" },
+            { title: "Isolated workspace prepared", detail: "Attempt 1 - evolution/smoke", status: "completed" },
+            { title: "Implementation Agent started", detail: "Attempt 1 of 3 - codex", status: "completed" },
+            { title: "Quality gate started", detail: "desktop-source-smoke", status: "running" }
+          ],
+          output_files: [],
+          attachments: []
+        };
+        mergeTaskUpdate(task);
+        state.currentConversationId = task.conversation_id;
+        state.renderingSignature = "";
+        renderHistory();
+        renderConversation(true);
+        const turn = document.querySelector('[data-task-id="smoke-self-evolution"]');
+        return {
+          history: document.querySelectorAll('[data-conversation-id="evolution:smoke-self-evolution"]').length,
+          turn: Boolean(turn),
+          origin: turn?.querySelector(".task-origin")?.textContent || "",
+          events: turn?.querySelectorAll(".event-row").length || 0,
+          expanded: turn?.querySelector(".run-detail")?.hidden === false,
+          route: turn?.querySelector(".run-summary > span:nth-last-child(2)")?.textContent || ""
+        };
+      })()
+    `);
+    if (
+      evolutionTimelineState.history !== 1
+      || !evolutionTimelineState.turn
+      || !evolutionTimelineState.origin.trim()
+      || evolutionTimelineState.events !== 4
+      || !evolutionTimelineState.expanded
+      || !evolutionTimelineState.route.includes("Codex")
+    ) {
+      throw new Error(`Self-evolution timeline did not render in the main output: ${JSON.stringify(evolutionTimelineState)}`);
+    }
+    await captureSmokeScreenshot(evolutionTimelinePath);
+    await mainWindow.webContents.executeJavaScript(`
+      (() => {
+        state.tasks = state.tasks.filter((task) => task.task_id !== "smoke-self-evolution");
+        newTask();
+      })()
+    `);
     const agentsState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         document.querySelector('[data-open-panel="agents"]')?.click();
@@ -433,6 +492,7 @@ async function runUiSmoke() {
     }
     await captureSmokeScreenshot(matrixPath);
     console.log(`[ui-smoke] screenshot: ${overviewPath}`);
+    console.log(`[ui-smoke] screenshot: ${evolutionTimelinePath}`);
     console.log(`[ui-smoke] screenshot: ${languageEnPath}`);
     console.log(`[ui-smoke] screenshot: ${languageZhPath}`);
     console.log(`[ui-smoke] screenshot: ${setupPath}`);

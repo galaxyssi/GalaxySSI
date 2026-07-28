@@ -456,8 +456,21 @@ class EvolutionManager:
         self.event_sink = event_sink or (lambda _event: None)
         self._cancellations: dict[str, threading.Event] = {}
         self._threads: dict[str, threading.Thread] = {}
+        self._listeners: dict[str, EventSink] = {}
         self._lock = threading.RLock()
         self._validate_repository()
+
+    def subscribe(self, listener: EventSink) -> str:
+        if not callable(listener):
+            raise TypeError("Evolution listener must be callable")
+        subscription_id = str(uuid.uuid4())
+        with self._lock:
+            self._listeners[subscription_id] = listener
+        return subscription_id
+
+    def unsubscribe(self, subscription_id: str) -> bool:
+        with self._lock:
+            return self._listeners.pop(str(subscription_id or ""), None) is not None
 
     def create(
         self,
@@ -519,13 +532,20 @@ class EvolutionManager:
                 name=f"evolution-{task.task_id[-12:]}",
             )
             self._threads[task.task_id] = thread
-            thread.start()
+            task.status = "preparing"
+            self.store.save(task)
+        self._emit(task, "start_requested")
+        thread.start()
         return self.require(task.task_id)
 
     def run_sync(self, task_id: str) -> EvolutionTask:
+        task = self.require(task_id)
         cancellation = threading.Event()
         with self._lock:
             self._cancellations[task_id] = cancellation
+            task.status = "preparing"
+            self.store.save(task)
+        self._emit(task, "start_requested")
         self._run_task(task_id, cancellation)
         return self.require(task_id)
 
@@ -1165,14 +1185,22 @@ class EvolutionManager:
         raise EvolutionError(code, message)
 
     def _emit(self, task: EvolutionTask, event: str, **metadata: Any) -> None:
-        self.event_sink({
+        payload = {
             "type": "evolution_task_event",
             "event": event,
             "task": task.public(),
             "_client_route_id": task.client_route_id,
             "metadata": metadata,
             "timestamp_millis": _now_millis(),
-        })
+        }
+        self.event_sink(payload)
+        with self._lock:
+            listeners = list(self._listeners.values())
+        for listener in listeners:
+            try:
+                listener(dict(payload))
+            except Exception:
+                continue
 
 
 _manager: EvolutionManager | None = None

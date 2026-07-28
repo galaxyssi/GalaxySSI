@@ -82,6 +82,7 @@ const state = {
   taskStream: null,
   taskStreamConnected: false,
   taskStreamReconnectTimer: 0,
+  emptyConversationIntent: false,
   toastTimer: 0,
   speechRecognition: null,
   agentRefreshPromise: null
@@ -177,6 +178,24 @@ function statusLabel(status) {
   return t(labels[status] || status || "Ready");
 }
 
+function taskStatusLabel(task) {
+  if (task?.task_kind !== "self_evolution") return statusLabel(task?.status);
+  const labels = {
+    proposed: "Preparing",
+    preparing: "Preparing",
+    running: "Running",
+    validating: "Validating",
+    waiting_approval: "Candidate ready",
+    publishing: "Publishing",
+    published: "Pull request created",
+    blocked: "Needs attention",
+    failed: "Failed",
+    cancelled: "Cancelled",
+    rolled_back: "Rolled back"
+  };
+  return t(labels[task.evolution_status] || statusLabel(task.status));
+}
+
 function agentName(agentId) {
   if (!agentId || agentId === "auto") return t("Agent");
   if (agentId.startsWith("mcp:")) {
@@ -184,7 +203,7 @@ function agentName(agentId) {
     return connection?.name || agentId.slice(4);
   }
   return state.agents.find((agent) => (agent.mobile_contact_id || agent.id) === agentId)?.name
-    || ({ desktop: "SignalASI Desktop", codex: "Codex", hermes: "Hermes", claude: "Claude Code", openclaw: "OpenClaw", "local-llm": "Local LLM" })[agentId]
+    || ({ desktop: "SignalASI Desktop", "self-evolution": t("Self-evolution"), codex: "Codex", hermes: "Hermes", claude: "Claude Code", openclaw: "OpenClaw", "local-llm": "Local LLM" })[agentId]
     || agentId;
 }
 
@@ -302,10 +321,11 @@ function renderHistory() {
       html.push(`<div class="history-group-label">${escapeHtml(t(section))}</div>`);
     }
     const running = group.tasks.some((task) => !TERMINAL_STATES.has(task.status));
+    const latestLabel = running ? taskStatusLabel(group.latest) : relativeTime(group.latest.updated_at);
     html.push(`
       <button class="history-item ${group.id === state.currentConversationId ? "active" : ""}" data-conversation-id="${escapeHtml(group.id)}">
         <strong>${escapeHtml(titleFromPrompt(group.tasks.sort((a, b) => Number(a.created_at) - Number(b.created_at))[0]?.prompt))}</strong>
-        <span class="${running ? "running" : ""}">${escapeHtml(running ? statusLabel("running") : relativeTime(group.latest.updated_at))}</span>
+        <span class="${running ? "running" : ""}">${escapeHtml(latestLabel)}</span>
       </button>`);
   }
   elements.history.innerHTML = html.join("");
@@ -328,28 +348,39 @@ function renderArtifacts(task) {
 
 function renderTurn(task) {
   const statusClass = task.status === "completed" ? "completed" : (TERMINAL_STATES.has(task.status) ? "failed" : "");
+  const isEvolution = task.task_kind === "self_evolution";
+  const evolutionMetadata = isEvolution && (task.candidate_commit || task.pull_request_url)
+    ? `<div class="evolution-result-meta">${task.candidate_commit ? `<span>${escapeHtml(t("Candidate"))} <code>${escapeHtml(task.candidate_commit.slice(0, 10))}</code></span>` : ""}${task.pull_request_url ? `<a href="${escapeHtml(task.pull_request_url)}" data-external-link="${escapeHtml(task.pull_request_url)}">${escapeHtml(t("Open pull request"))}</a>` : ""}</div>`
+    : "";
+  const answerText = isEvolution
+    ? t(task.result || "The self-evolution run completed.")
+    : (task.result || t("Task completed."));
   const answer = task.status === "completed"
-    ? `<article class="assistant-answer">${renderMarkdown(task.result || t("Task completed."))}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
+    ? `<article class="assistant-answer">${renderMarkdown(answerText)}${evolutionMetadata}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
     : (TERMINAL_STATES.has(task.status)
       ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}<button class="retry-task" data-retry-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Retry"))}</button></article>`
       : "");
   const events = Array.isArray(task.events) ? task.events : [];
   const detail = events.length
-    ? `<div class="event-list">${events.map((event) => `<div class="event-row ${escapeHtml(event.status || "")}"><span></span><div><strong>${escapeHtml(event.title || t("Task step"))}</strong>${event.detail ? `<small>${escapeHtml(event.detail)}</small>` : ""}</div></div>`).join("")}</div>`
-    : escapeHtml(task.current_step || `${agentName(task.agent_id)} · ${statusLabel(task.status)}`);
+    ? `<div class="event-list">${events.map((event) => `<div class="event-row ${escapeHtml(event.status || "")}"><span></span><div><strong>${escapeHtml(t(event.title || "Task step"))}</strong>${event.detail ? `<small>${escapeHtml(event.detail)}</small>` : ""}</div></div>`).join("")}</div>`
+    : escapeHtml(task.current_step ? t(task.current_step) : `${agentName(task.agent_id)} · ${statusLabel(task.status)}`);
   const attachments = Array.isArray(task.attachments) ? task.attachments : [];
   const attachmentRows = attachments.length
     ? `<div class="user-attachments">${attachments.map((path) => `<span title="${escapeHtml(path)}">${escapeHtml(String(path).split(/[\\/]/).pop() || path)}</span>`).join("")}</div>`
     : "";
+  const originLabel = isEvolution
+    ? `<small class="task-origin">${escapeHtml(t(task.automatic ? "Automatic self-evolution" : "Self-evolution"))}</small>`
+    : "";
+  const detailHidden = isEvolution && !TERMINAL_STATES.has(task.status) ? "" : "hidden";
   return `
-    <article class="task-turn" data-task-id="${escapeHtml(task.task_id)}">
-      <div class="user-message-row"><div class="user-message">${escapeHtml(task.prompt || t("Attached files"))}</div></div>${attachmentRows}
+    <article class="task-turn ${isEvolution ? "self-evolution-turn" : ""}" data-task-id="${escapeHtml(task.task_id)}">
+      <div class="user-message-row"><div class="user-message ${isEvolution ? "self-evolution-message" : ""}">${originLabel}${escapeHtml(task.prompt || t("Attached files"))}</div></div>${attachmentRows}
       <button class="run-summary ${statusClass}" data-toggle-run="${escapeHtml(task.task_id)}">
         <span class="status-pulse"></span>
-        <strong>${escapeHtml(statusLabel(task.status))} <span data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span></strong>
+        <strong>${escapeHtml(taskStatusLabel(task))} <span data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span></strong>
         <span>${escapeHtml(taskRouteName(task))}</span><span class="chevron" aria-hidden="true"></span>
       </button>
-      <div class="run-detail" data-run-detail="${escapeHtml(task.task_id)}" hidden>${detail}</div>
+      <div class="run-detail" data-run-detail="${escapeHtml(task.task_id)}" ${detailHidden}>${detail}</div>
       ${answer}
     </article>`;
 }
@@ -380,7 +411,7 @@ function updateHeaderStatus() {
   const active = [...tasks].reverse().find((task) => !TERMINAL_STATES.has(task.status));
   const latest = tasks[tasks.length - 1];
   const status = active?.status || latest?.status || "ready";
-  elements.taskState.textContent = statusLabel(status);
+  elements.taskState.textContent = active || latest ? taskStatusLabel(active || latest) : statusLabel(status);
   elements.taskState.className = active ? "running" : (latest && latest.status !== "completed" ? "failed" : "");
   elements.route.textContent = latest ? taskRouteName(latest) : t("Automatic routing");
 }
@@ -391,6 +422,7 @@ async function refreshTasks(force = false) {
   try {
     const payload = await window.signalasi.listDesktopTasks(200);
     state.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+    selectActiveEvolutionTask();
     renderHistory();
     renderConversation(force);
   } catch (error) {
@@ -400,8 +432,17 @@ async function refreshTasks(force = false) {
   }
 }
 
+function selectActiveEvolutionTask() {
+  if (state.emptyConversationIntent || conversationTasks().length || elements.prompt.value.trim()) return;
+  const active = state.tasks
+    .filter((task) => task.task_kind === "self_evolution" && !TERMINAL_STATES.has(task.status))
+    .sort((a, b) => Number(b.updated_at) - Number(a.updated_at))[0];
+  if (active) state.currentConversationId = active.conversation_id;
+}
+
 function mergeTaskUpdate(task) {
   if (!task?.task_id) return;
+  const currentConversationHadTasks = conversationTasks().length > 0;
   const optimisticIndex = state.tasks.findIndex((item) =>
     String(item.task_id || "").startsWith("pending-")
     && item.conversation_id === task.conversation_id
@@ -409,10 +450,24 @@ function mergeTaskUpdate(task) {
   if (optimisticIndex >= 0) state.tasks.splice(optimisticIndex, 1);
 
   const index = state.tasks.findIndex((item) => item.task_id === task.task_id);
+  const isNewTask = index < 0;
   if (index >= 0) {
     state.tasks[index] = { ...state.tasks[index], ...task };
   } else {
     state.tasks.push(task);
+  }
+  if (
+    isNewTask
+    && task.task_kind === "self_evolution"
+    && !currentConversationHadTasks
+    && !state.emptyConversationIntent
+    && !elements.prompt.value.trim()
+  ) {
+    state.currentConversationId = task.conversation_id;
+    state.renderingSignature = "";
+  }
+  if (isNewTask && task.task_kind === "self_evolution") {
+    showToast(t(task.automatic ? "Automatic self-evolution started" : "Self-evolution started"));
   }
   renderHistory();
   if (task.conversation_id === state.currentConversationId) renderConversation();
@@ -443,6 +498,7 @@ async function connectTaskStream() {
       }
       if (payload.type === "desktop_tasks_snapshot" && Array.isArray(payload.tasks)) {
         state.tasks = payload.tasks;
+        selectActiveEvolutionTask();
         renderHistory();
         renderConversation();
       } else if (payload.type === "desktop_task_update") {
@@ -494,6 +550,7 @@ async function addAttachments() {
 async function sendTask() {
   const prompt = elements.prompt.value.trim();
   if (!prompt && !state.attachments.length) return;
+  state.emptyConversationIntent = false;
   const attachments = [...state.attachments];
   elements.prompt.value = "";
   state.attachments = [];
@@ -543,6 +600,7 @@ async function sendTask() {
 
 function newTask(agentId = "auto", name = "Agent") {
   state.currentConversationId = crypto.randomUUID();
+  state.emptyConversationIntent = true;
   state.selectedAgentId = agentId;
   state.selectedAgentName = name;
   state.attachments = [];
@@ -1627,7 +1685,11 @@ async function cancelRunningTask() {
 async function retryTask(taskId) {
   try {
     const task = await window.signalasi.retryDesktopTask(taskId);
-    state.tasks.push(task);
+    if (state.tasks.some((item) => item.task_id === task.task_id)) {
+      mergeTaskUpdate(task);
+    } else {
+      state.tasks.push(task);
+    }
     state.renderingSignature = "";
     renderHistory();
     renderConversation(true);
@@ -1722,6 +1784,7 @@ function bindEvents() {
     const item = event.target.closest("[data-conversation-id]");
     if (!item) return;
     state.currentConversationId = item.dataset.conversationId;
+    state.emptyConversationIntent = false;
     state.renderingSignature = "";
     renderHistory();
     renderConversation(true);

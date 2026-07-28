@@ -351,6 +351,20 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual("worktree_create_failed", result.last_error_code)
         self.assertEqual([], result.attempts)
 
+    def test_evolution_subscribers_receive_events_until_unsubscribed(self):
+        manager = self.manager(lambda *_args: "")
+        events: list[dict] = []
+        subscription_id = manager.subscribe(lambda event: events.append(dict(event)))
+
+        task = self.task(manager)
+
+        self.assertEqual("created", events[-1]["event"])
+        self.assertEqual(task.task_id, events[-1]["task"]["task_id"])
+        self.assertTrue(manager.unsubscribe(subscription_id))
+        self.assertFalse(manager.unsubscribe(subscription_id))
+        self.task(manager, problem="Create another isolated candidate")
+        self.assertEqual(1, len(events))
+
     def test_standard_windows_android_sdk_is_discovered_without_environment_override(self):
         local_app_data = self.root / "local-app-data"
         sdk = local_app_data / "Android" / "Sdk"

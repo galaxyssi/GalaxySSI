@@ -5,6 +5,7 @@ import json
 import os
 import threading
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,45 @@ class AuditLedger:
         if newest_first:
             records.reverse()
         return records[: max(1, min(int(limit), 1_000_000))]
+
+    def list_for_task(self, task_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        identifier = str(task_id or "")
+        if not identifier:
+            return []
+        return self.list_for_tasks([identifier], limit_per_task=limit).get(identifier, [])
+
+    def list_for_tasks(
+        self,
+        task_ids: list[str] | set[str] | tuple[str, ...],
+        *,
+        limit_per_task: int = 200,
+    ) -> dict[str, list[dict[str, Any]]]:
+        identifiers = {str(value or "") for value in task_ids if str(value or "")}
+        if not identifiers:
+            return {}
+        bounded_limit = max(1, min(int(limit_per_task), 1_000))
+        rows = {
+            identifier: deque(maxlen=bounded_limit)
+            for identifier in identifiers
+        }
+        try:
+            lines = self.path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return {identifier: [] for identifier in identifiers}
+        for line in lines:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(value, dict):
+                continue
+            identifier = str(value.get("task_id") or "")
+            if identifier in rows:
+                rows[identifier].append(value)
+        return {
+            identifier: list(values)
+            for identifier, values in rows.items()
+        }
 
     def _last_record(self) -> dict[str, Any] | None:
         rows = self.list(limit=1)
