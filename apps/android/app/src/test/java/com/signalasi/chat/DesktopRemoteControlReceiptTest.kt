@@ -31,6 +31,14 @@ class DesktopRemoteControlReceiptTest {
             pending.requestSha256
         )
         assertTrue(verify(receipt, pending))
+        val parsed = requireNotNull(parseDesktopControlReceipt(receipt))
+        assertEquals("signalasi:phone", parsed.controllerAppInstanceId)
+        assertEquals("Test Phone", parsed.controllerName)
+        assertEquals("android", parsed.controllerPlatform)
+        assertEquals(controllerFingerprint, parsed.controllerFingerprint)
+        assertEquals(1_800_000_000_500L, parsed.startedAt)
+        assertEquals(500L, parsed.durationMillis)
+        assertEquals(pending.inputSha256, parsed.inputSha256)
         assertFalse(DesktopControlReceiptProtocol.verify(
             payload = receipt,
             expectedSignerId = signerId,
@@ -43,6 +51,18 @@ class DesktopRemoteControlReceiptTest {
             }
         ))
         assertFalse(verify(JSONObject(receipt.toString()).put("summary", "tampered"), pending))
+        assertFalse(verify(
+            JSONObject(receipt.toString()).put("controller_name", "Other phone"),
+            pending
+        ))
+        assertFalse(verify(
+            JSONObject(receipt.toString()).put("started_at", receipt.getLong("completed_at") + 1),
+            pending
+        ))
+        assertFalse(verify(
+            JSONObject(receipt.toString()).put("duration_ms", 499L),
+            pending
+        ))
         val screenshot = receipt.getJSONObject("output").getJSONObject("screenshot")
         screenshot.put("image_base64", Base64.getEncoder().encodeToString("tampered".toByteArray()))
         assertFalse(verify(receipt, pending))
@@ -152,6 +172,9 @@ class DesktopRemoteControlReceiptTest {
             .put("input_sha256", pending.inputSha256)
             .put("output_sha256", outputSha256)
             .put("evidence_sha256", evidenceSha256)
+            .put("controller_app_instance_id", "signalasi:phone")
+            .put("controller_name", "Test Phone")
+            .put("controller_platform", "android")
             .put("controller_fingerprint", controllerFingerprint)
             .put("started_at", 1_800_000_000_500L)
             .put("completed_at", completedAt)
@@ -177,6 +200,9 @@ class DesktopRemoteControlReceiptTest {
             "input_sha256",
             "output_sha256",
             "evidence_sha256",
+            "controller_app_instance_id",
+            "controller_name",
+            "controller_platform",
             "controller_fingerprint",
             "started_at",
             "completed_at",

@@ -8372,6 +8372,454 @@ struct AgentRunRequest: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentRunStartReceiptStatus: String, Codable, CaseIterable, Identifiable {
+  case reserved = "RESERVED"
+  case accepted = "ACCEPTED"
+  case outcomeUnknown = "OUTCOME_UNKNOWN"
+  case cancelled = "CANCELLED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRunStartReceiptStatus? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    guard let status = Self.fromWireValue(try container.decode(String.self)) else {
+      throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown run start receipt status")
+    }
+    self = status
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentRunHandle: Codable, Equatable {
+  var runId: String
+  var taskId: String
+  var agentId: String
+  var remoteRunId: String
+  var acceptedAtMillis: Int64
+
+  init(
+    runId: String,
+    taskId: String,
+    agentId: String,
+    remoteRunId: String,
+    acceptedAtMillis: Int64 = 0
+  ) {
+    self.runId = runId
+    self.taskId = taskId
+    self.agentId = agentId
+    self.remoteRunId = remoteRunId
+    self.acceptedAtMillis = max(acceptedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case runId = "run_id"
+    case taskId = "task_id"
+    case agentId = "agent_id"
+    case remoteRunId = "remote_run_id"
+    case acceptedAtMillis = "accepted_at_millis"
+  }
+}
+
+struct AgentRunStartReceipt: Codable, Equatable, Identifiable {
+  var agentId: String
+  var installationId: String
+  var idempotencyKey: String
+  var requestDigest: String
+  var runId: String
+  var taskId: String
+  var status: AgentRunStartReceiptStatus
+  var handle: AgentRunHandle?
+  var error: String
+  var createdAtMillis: Int64
+  var updatedAtMillis: Int64
+
+  var id: String { "\(agentId)|\(idempotencyKey)" }
+
+  init(
+    agentId: String,
+    installationId: String,
+    idempotencyKey: String,
+    requestDigest: String,
+    runId: String,
+    taskId: String,
+    status: AgentRunStartReceiptStatus,
+    handle: AgentRunHandle? = nil,
+    error: String = "",
+    createdAtMillis: Int64,
+    updatedAtMillis: Int64
+  ) {
+    self.agentId = agentId
+    self.installationId = installationId
+    self.idempotencyKey = idempotencyKey
+    self.requestDigest = requestDigest
+    self.runId = runId
+    self.taskId = taskId
+    self.status = status
+    self.handle = handle
+    self.error = error
+    self.createdAtMillis = max(createdAtMillis, 0)
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case installationId = "installation_id"
+    case idempotencyKey = "idempotency_key"
+    case requestDigest = "request_digest"
+    case runId = "run_id"
+    case taskId = "task_id"
+    case status
+    case handle
+    case error
+    case createdAtMillis = "created_at_millis"
+    case updatedAtMillis = "updated_at_millis"
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(agentId, forKey: .agentId)
+    try container.encode(installationId, forKey: .installationId)
+    try container.encode(idempotencyKey, forKey: .idempotencyKey)
+    try container.encode(requestDigest, forKey: .requestDigest)
+    try container.encode(runId, forKey: .runId)
+    try container.encode(taskId, forKey: .taskId)
+    try container.encode(status, forKey: .status)
+    if let handle {
+      try container.encode(handle, forKey: .handle)
+    } else {
+      try container.encodeNil(forKey: .handle)
+    }
+    try container.encode(error, forKey: .error)
+    try container.encode(createdAtMillis, forKey: .createdAtMillis)
+    try container.encode(updatedAtMillis, forKey: .updatedAtMillis)
+  }
+}
+
+struct AgentRunStartReceiptError: Error, Equatable {
+  var message: String
+}
+
+protocol AgentRunStartReceiptStore: AnyObject {
+  func find(agentId: String, idempotencyKey: String) -> AgentRunStartReceipt?
+  func reserve(registration: AgentRegistration, request: AgentRunRequest) throws -> AgentRunStartReceipt
+  func accept(agentId: String, idempotencyKey: String, handle: AgentRunHandle) throws -> AgentRunStartReceipt
+  func markOutcomeUnknown(agentId: String, idempotencyKey: String, error: String) -> AgentRunStartReceipt?
+  func markCancelledByRun(agentId: String, runId: String) -> Int
+  func list() -> [AgentRunStartReceipt]
+  func clear()
+}
+
+class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
+  private let lock = NSRecursiveLock()
+  private let clock: () -> Int64
+
+  init(clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }) {
+    self.clock = clock
+  }
+
+  func readPersisted() -> [AgentRunStartReceipt] {
+    []
+  }
+
+  func writePersisted(_ receipts: [AgentRunStartReceipt]) {}
+
+  func clearPersisted() {}
+
+  final func find(agentId: String, idempotencyKey: String) -> AgentRunStartReceipt? {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    return readPersisted().first { receipt in
+      receipt.agentId == agentId && receipt.idempotencyKey == idempotencyKey
+    }
+  }
+
+  final func reserve(registration: AgentRegistration, request: AgentRunRequest) throws -> AgentRunStartReceipt {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = try required(registration.agentId, label: "agent id")
+    let installationId = try required(registration.installationId, label: "installation id")
+    let key = try required(request.idempotencyKey, label: "idempotency key")
+    let digest = AgentRunStartIdentity.requestDigest(request)
+    var receipts = readPersisted()
+    if let existing = receipts.first(where: { $0.agentId == agentId && $0.idempotencyKey == key }) {
+      guard existing.installationId == installationId else {
+        throw AgentRunStartReceiptError(message: "Run idempotency key belongs to a different Agent installation")
+      }
+      guard existing.requestDigest == digest else {
+        throw AgentRunStartReceiptError(message: "Run idempotency key was reused with different request content")
+      }
+      return existing
+    }
+    let now = self.now()
+    let receipt = AgentRunStartReceipt(
+      agentId: agentId,
+      installationId: installationId,
+      idempotencyKey: key,
+      requestDigest: digest,
+      runId: try required(request.runId, label: "run id"),
+      taskId: try required(request.taskId, label: "task id"),
+      status: .reserved,
+      createdAtMillis: now,
+      updatedAtMillis: now
+    )
+    receipts.append(receipt)
+    writePersisted(bound(receipts))
+    return receipt
+  }
+
+  final func accept(agentId: String, idempotencyKey: String, handle: AgentRunHandle) throws -> AgentRunStartReceipt {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    var receipts = readPersisted()
+    guard let index = receipts.firstIndex(where: { $0.agentId == agentId && $0.idempotencyKey == idempotencyKey }) else {
+      throw AgentRunStartReceiptError(message: "Run start was not reserved")
+    }
+    let current = receipts[index]
+    guard current.runId == handle.runId && current.taskId == handle.taskId else {
+      throw AgentRunStartReceiptError(message: "Agent returned a handle for a different Run")
+    }
+    guard handle.agentId == current.agentId else {
+      throw AgentRunStartReceiptError(message: "Agent returned a handle for a different identity")
+    }
+    let accepted = AgentRunStartReceipt(
+      agentId: current.agentId,
+      installationId: current.installationId,
+      idempotencyKey: current.idempotencyKey,
+      requestDigest: current.requestDigest,
+      runId: current.runId,
+      taskId: current.taskId,
+      status: .accepted,
+      handle: handle,
+      error: "",
+      createdAtMillis: current.createdAtMillis,
+      updatedAtMillis: now()
+    )
+    receipts[index] = accepted
+    writePersisted(bound(receipts))
+    return accepted
+  }
+
+  final func markOutcomeUnknown(agentId: String, idempotencyKey: String, error: String) -> AgentRunStartReceipt? {
+    update(agentId: agentId, idempotencyKey: idempotencyKey) { current in
+      if current.status == .accepted || current.status == .cancelled {
+        return current
+      }
+      var copy = current
+      copy.status = .outcomeUnknown
+      copy.error = String(error.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxErrorCharacters))
+      copy.updatedAtMillis = now()
+      return copy
+    }
+  }
+
+  final func markCancelledByRun(agentId: String, runId: String) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let runId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let now = self.now()
+    var changed = 0
+    let receipts = readPersisted().map { receipt -> AgentRunStartReceipt in
+      guard receipt.agentId == agentId && receipt.runId == runId && receipt.status != .cancelled else {
+        return receipt
+      }
+      changed += 1
+      var copy = receipt
+      copy.status = .cancelled
+      copy.updatedAtMillis = now
+      return copy
+    }
+    if changed > 0 {
+      writePersisted(bound(receipts))
+    }
+    return changed
+  }
+
+  final func list() -> [AgentRunStartReceipt] {
+    lock.lock()
+    defer { lock.unlock() }
+    return readPersisted().sorted {
+      if $0.updatedAtMillis != $1.updatedAtMillis {
+        return $0.updatedAtMillis > $1.updatedAtMillis
+      }
+      return $0.idempotencyKey < $1.idempotencyKey
+    }
+  }
+
+  final func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    clearPersisted()
+  }
+
+  private func update(
+    agentId: String,
+    idempotencyKey: String,
+    transform: (AgentRunStartReceipt) -> AgentRunStartReceipt
+  ) -> AgentRunStartReceipt? {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    var receipts = readPersisted()
+    guard let index = receipts.firstIndex(where: { $0.agentId == agentId && $0.idempotencyKey == idempotencyKey }) else {
+      return nil
+    }
+    let updated = transform(receipts[index])
+    receipts[index] = updated
+    writePersisted(bound(receipts))
+    return updated
+  }
+
+  private func required(_ value: String, label: String) throws -> String {
+    let clean = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    guard !clean.isEmpty else {
+      throw AgentRunStartReceiptError(message: "Run \(label) must not be blank")
+    }
+    return clean
+  }
+
+  private func bound(_ receipts: [AgentRunStartReceipt]) -> [AgentRunStartReceipt] {
+    Array(receipts.sorted {
+      if $0.updatedAtMillis != $1.updatedAtMillis {
+        return $0.updatedAtMillis < $1.updatedAtMillis
+      }
+      return $0.idempotencyKey < $1.idempotencyKey
+    }.suffix(Self.maxReceipts))
+  }
+
+  private func now() -> Int64 {
+    max(clock(), 0)
+  }
+
+  private static let maxReceipts = 4_000
+  private static let maxIdCharacters = 512
+  private static let maxErrorCharacters = 2_048
+}
+
+final class InMemoryAgentRunStartReceiptStore: BaseAgentRunStartReceiptStore {
+  private var document: String
+
+  init(
+    serialized: String = "[]",
+    clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.document = serialized
+    super.init(clock: clock)
+  }
+
+  override func readPersisted() -> [AgentRunStartReceipt] {
+    AgentRunStartReceiptJsonCodec.decode(document)
+  }
+
+  override func writePersisted(_ receipts: [AgentRunStartReceipt]) {
+    document = AgentRunStartReceiptJsonCodec.encode(receipts)
+  }
+
+  override func clearPersisted() {
+    document = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    document
+  }
+}
+
+enum AgentRunStartIdentity {
+  static func requestDigest(_ request: AgentRunRequest) -> String {
+    AgentMcpJSONCodec.sha256([
+      "conversation_id": .string(request.conversationId),
+      "message_id": .string(request.messageId),
+      "task_id": .string(request.taskId),
+      "parent_run_id": .string(request.parentRunId),
+      "goal": .string(request.goal),
+      "delivery_mode": .string(request.deliveryMode.rawValue),
+      "required_capabilities": .array(request.requiredCapabilities.map { .string($0.rawValue) }.sortedByStringValue()),
+      "context": .object(request.context),
+      "idempotency_key": .string(request.idempotencyKey)
+    ])
+  }
+}
+
+enum AgentRunStartReceiptJsonCodec {
+  static func encode(_ receipts: [AgentRunStartReceipt]) -> String {
+    guard let data = try? JSONEncoder().encode(receipts) else {
+      return "[]"
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func decode(_ raw: String) -> [AgentRunStartReceipt] {
+    guard let data = raw.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      return []
+    }
+    return array.compactMap(decodeReceipt)
+  }
+
+  private static func decodeReceipt(_ object: [String: Any]) -> AgentRunStartReceipt? {
+    guard let status = AgentRunStartReceiptStatus.fromWireValue(string(object["status"])) else {
+      return nil
+    }
+    return AgentRunStartReceipt(
+      agentId: string(object["agent_id"]),
+      installationId: string(object["installation_id"]),
+      idempotencyKey: string(object["idempotency_key"]),
+      requestDigest: string(object["request_digest"]),
+      runId: string(object["run_id"]),
+      taskId: string(object["task_id"]),
+      status: status,
+      handle: decodeHandle(object["handle"] as? [String: Any]),
+      error: string(object["error"]),
+      createdAtMillis: int64(object["created_at_millis"]),
+      updatedAtMillis: int64(object["updated_at_millis"])
+    )
+  }
+
+  private static func decodeHandle(_ object: [String: Any]?) -> AgentRunHandle? {
+    guard let object else {
+      return nil
+    }
+    return AgentRunHandle(
+      runId: string(object["run_id"]),
+      taskId: string(object["task_id"]),
+      agentId: string(object["agent_id"]),
+      remoteRunId: string(object["remote_run_id"]),
+      acceptedAtMillis: int64(object["accepted_at_millis"])
+    )
+  }
+
+  private static func string(_ value: Any?) -> String {
+    (value as? String) ?? ""
+  }
+
+  private static func int64(_ value: Any?) -> Int64 {
+    if let value = value as? NSNumber {
+      return value.int64Value
+    }
+    return Int64(value as? String ?? "") ?? 0
+  }
+}
+
+private extension Array where Element == AgentMcpJSONValue {
+  func sortedByStringValue() -> [AgentMcpJSONValue] {
+    sorted { AgentMcpJSONCodec.stringify($0) < AgentMcpJSONCodec.stringify($1) }
+  }
+}
+
 struct AgentCrossTeamDelegationLaunchSpec: Codable, Equatable {
   var definition: AgentTeamDefinition
   var request: AgentRunRequest
@@ -9535,6 +9983,565 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentNativeVerificationStatus: String, Codable, CaseIterable, Identifiable {
+  case passed
+  case failed
+  case skipped
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeVerificationStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .skipped
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolVerification: Codable, Equatable {
+  var status: AgentNativeVerificationStatus
+  var message: String
+  var evidence: AgentMcpJSONObject
+
+  init(
+    status: AgentNativeVerificationStatus,
+    message: String = "",
+    evidence: AgentMcpJSONObject = [:]
+  ) {
+    self.status = status
+    self.message = message
+    self.evidence = evidence
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case message
+    case evidence
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      status: try container.decodeIfPresent(AgentNativeVerificationStatus.self, forKey: .status) ?? .skipped,
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      evidence: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .evidence) ?? [:]
+    )
+  }
+}
+
+struct AgentNativeToolError: Codable, Equatable {
+  var code: String
+  var message: String
+  var retryable: Bool
+  var details: AgentMcpJSONObject
+
+  init(
+    code: String,
+    message: String,
+    retryable: Bool = false,
+    details: AgentMcpJSONObject = [:]
+  ) {
+    self.code = code
+    self.message = message
+    self.retryable = retryable
+    self.details = details
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case code
+    case message
+    case retryable
+    case details
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      code: try container.decodeIfPresent(String.self, forKey: .code) ?? "",
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      retryable: try container.decodeIfPresent(Bool.self, forKey: .retryable) ?? false,
+      details: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .details) ?? [:]
+    )
+  }
+}
+
+struct AgentNativeToolProvenance: Codable, Equatable {
+  var toolId: String
+  var toolVersion: String
+  var location: AgentNativeToolLocation
+  var executorId: String
+  var contractVersion: String
+  var legacyAgentActionId: String?
+  var metadata: [String: String]
+
+  init(
+    toolId: String,
+    toolVersion: String,
+    location: AgentNativeToolLocation,
+    executorId: String,
+    contractVersion: String,
+    legacyAgentActionId: String? = nil,
+    metadata: [String: String] = [:]
+  ) {
+    self.toolId = toolId
+    self.toolVersion = toolVersion
+    self.location = location
+    self.executorId = executorId
+    self.contractVersion = contractVersion
+    self.legacyAgentActionId = legacyAgentActionId
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case location
+    case executorId = "executor_id"
+    case contractVersion = "contract_version"
+    case legacyAgentActionId = "legacy_agent_action_id"
+    case metadata
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      toolId: container.decode(String.self, forKey: .toolId),
+      toolVersion: container.decode(String.self, forKey: .toolVersion),
+      location: container.decodeIfPresent(AgentNativeToolLocation.self, forKey: .location) ?? .unknown,
+      executorId: container.decodeIfPresent(String.self, forKey: .executorId) ?? "",
+      contractVersion: container.decodeIfPresent(String.self, forKey: .contractVersion) ?? "",
+      legacyAgentActionId: container.decodeIfPresent(String.self, forKey: .legacyAgentActionId),
+      metadata: container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
+    )
+  }
+}
+
+enum AgentNativeToolResultStatus: String, Codable, CaseIterable, Identifiable {
+  case succeeded
+  case failed
+  case verificationFailed = "verification_failed"
+  case rejected
+  case unavailable
+  case cancelled
+  case timedOut = "timed_out"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeToolResultStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .failed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolReceipt: Codable, Equatable {
+  var invocationId: String
+  var idempotencyKey: String?
+  var startedAtEpochMillis: Int64
+  var finishedAtEpochMillis: Int64
+  var durationMillis: Int64
+  var status: AgentNativeToolResultStatus
+  var inputSha256: String
+  var outputSha256: String
+  var replayed: Bool
+  var originalInvocationId: String?
+
+  init(
+    invocationId: String,
+    idempotencyKey: String? = nil,
+    startedAtEpochMillis: Int64,
+    finishedAtEpochMillis: Int64,
+    durationMillis: Int64,
+    status: AgentNativeToolResultStatus,
+    inputSha256: String,
+    outputSha256: String,
+    replayed: Bool = false,
+    originalInvocationId: String? = nil
+  ) {
+    self.invocationId = invocationId
+    self.idempotencyKey = idempotencyKey
+    self.startedAtEpochMillis = startedAtEpochMillis
+    self.finishedAtEpochMillis = finishedAtEpochMillis
+    self.durationMillis = durationMillis
+    self.status = status
+    self.inputSha256 = inputSha256
+    self.outputSha256 = outputSha256
+    self.replayed = replayed
+    self.originalInvocationId = originalInvocationId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case invocationId = "invocation_id"
+    case idempotencyKey = "idempotency_key"
+    case startedAtEpochMillis = "started_at_epoch_ms"
+    case finishedAtEpochMillis = "finished_at_epoch_ms"
+    case durationMillis = "duration_ms"
+    case status
+    case inputSha256 = "input_sha256"
+    case outputSha256 = "output_sha256"
+    case replayed
+    case originalInvocationId = "original_invocation_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      invocationId: container.decode(String.self, forKey: .invocationId),
+      idempotencyKey: container.decodeIfPresent(String.self, forKey: .idempotencyKey),
+      startedAtEpochMillis: container.decodeIfPresent(Int64.self, forKey: .startedAtEpochMillis) ?? 0,
+      finishedAtEpochMillis: container.decodeIfPresent(Int64.self, forKey: .finishedAtEpochMillis) ?? 0,
+      durationMillis: container.decodeIfPresent(Int64.self, forKey: .durationMillis) ?? 0,
+      status: container.decodeIfPresent(AgentNativeToolResultStatus.self, forKey: .status) ?? .failed,
+      inputSha256: container.decodeIfPresent(String.self, forKey: .inputSha256) ?? "",
+      outputSha256: container.decodeIfPresent(String.self, forKey: .outputSha256) ?? "",
+      replayed: container.decodeIfPresent(Bool.self, forKey: .replayed) ?? false,
+      originalInvocationId: container.decodeIfPresent(String.self, forKey: .originalInvocationId)
+    )
+  }
+}
+
+struct AgentNativeToolResult: Codable, Equatable {
+  var status: AgentNativeToolResultStatus
+  var output: AgentMcpJSONObject
+  var message: String
+  var metadata: AgentMcpJSONObject
+  var error: AgentNativeToolError?
+  var verification: AgentNativeToolVerification?
+  var receipt: AgentNativeToolReceipt
+  var provenance: AgentNativeToolProvenance
+
+  var isSuccess: Bool { status == .succeeded }
+
+  init(
+    status: AgentNativeToolResultStatus,
+    output: AgentMcpJSONObject,
+    message: String,
+    metadata: AgentMcpJSONObject = [:],
+    error: AgentNativeToolError? = nil,
+    verification: AgentNativeToolVerification? = nil,
+    receipt: AgentNativeToolReceipt,
+    provenance: AgentNativeToolProvenance
+  ) {
+    self.status = status
+    self.output = output
+    self.message = message
+    self.metadata = metadata
+    self.error = error
+    self.verification = verification
+    self.receipt = receipt
+    self.provenance = provenance
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case output
+    case message
+    case metadata
+    case error
+    case verification
+    case receipt
+    case provenance
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      status: container.decodeIfPresent(AgentNativeToolResultStatus.self, forKey: .status) ?? .failed,
+      output: container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .output) ?? [:],
+      message: container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      metadata: container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .metadata) ?? [:],
+      error: container.decodeIfPresent(AgentNativeToolError.self, forKey: .error),
+      verification: container.decodeIfPresent(AgentNativeToolVerification.self, forKey: .verification),
+      receipt: container.decode(AgentNativeToolReceipt.self, forKey: .receipt),
+      provenance: container.decode(AgentNativeToolProvenance.self, forKey: .provenance)
+    )
+  }
+
+  func toJson() -> String {
+    AgentMcpJSONCodec.stringify(toJSONObject())
+  }
+
+  func toJsonValue() -> AgentMcpJSONValue {
+    .object(toJSONObject())
+  }
+
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "output": .object(output),
+      "message": .string(message),
+      "metadata": .object(metadata),
+      "error": error.map { .object($0.toJSONObject()) } ?? .null,
+      "verification": verification.map { .object($0.toJSONObject()) } ?? .null,
+      "receipt": .object(receipt.toJSONObject()),
+      "provenance": .object(provenance.toJSONObject())
+    ]
+  }
+
+  static func fromJSONObject(_ object: AgentMcpJSONObject) -> AgentNativeToolResult? {
+    let raw = AgentMcpJSONCodec.stringify(object)
+    guard let data = raw.data(using: .utf8) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(AgentNativeToolResult.self, from: data)
+  }
+}
+
+private extension AgentNativeToolError {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "code": .string(code),
+      "message": .string(message),
+      "retryable": .bool(retryable),
+      "details": .object(details)
+    ]
+  }
+}
+
+private extension AgentNativeToolVerification {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "message": .string(message),
+      "evidence": .object(evidence)
+    ]
+  }
+}
+
+private extension AgentNativeToolReceipt {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "invocation_id": .string(invocationId),
+      "idempotency_key": idempotencyKey.map(AgentMcpJSONValue.string) ?? .null,
+      "started_at_epoch_ms": .int(startedAtEpochMillis),
+      "finished_at_epoch_ms": .int(finishedAtEpochMillis),
+      "duration_ms": .int(durationMillis),
+      "status": .string(status.rawValue),
+      "input_sha256": .string(inputSha256),
+      "output_sha256": .string(outputSha256),
+      "replayed": .bool(replayed),
+      "original_invocation_id": originalInvocationId.map(AgentMcpJSONValue.string) ?? .null
+    ]
+  }
+}
+
+private extension AgentNativeToolProvenance {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "tool_id": .string(toolId),
+      "tool_version": .string(toolVersion),
+      "location": .string(location.rawValue),
+      "executor_id": .string(executorId),
+      "contract_version": .string(contractVersion),
+      "legacy_agent_action_id": legacyAgentActionId.map(AgentMcpJSONValue.string) ?? .null,
+      "metadata": .object(metadata.reduce(into: AgentMcpJSONObject()) { result, item in
+        result[item.key] = .string(item.value)
+      })
+    ]
+  }
+}
+
+struct AgentNativeToolReplayKey: Codable, Equatable, Hashable {
+  var toolId: String
+  var toolVersion: String
+  var idempotencyKey: String
+
+  init(toolId: String, toolVersion: String, idempotencyKey: String) {
+    self.toolId = toolId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.toolVersion = toolVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var isComplete: Bool {
+    !toolId.isEmpty && !toolVersion.isEmpty && !idempotencyKey.isEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case idempotencyKey = "idempotency_key"
+  }
+}
+
+protocol AgentNativeToolReplayStore: AnyObject {
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult?
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws
+  func clear()
+}
+
+enum AgentNativeToolReplayError: Error, Equatable {
+  case unsuccessfulResult
+}
+
+final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
+  static let maxEntries = 2_000
+
+  private let lock = NSRecursiveLock()
+  private var entries: [AgentNativeToolReplayKey: AgentNativeToolResult] = [:]
+  private var order: [AgentNativeToolReplayKey] = []
+
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    return entries[key]
+  }
+
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    if entries[key] == nil {
+      order.append(key)
+    }
+    entries[key] = result
+    while entries.count > Self.maxEntries, let oldest = order.first {
+      order.removeFirst()
+      entries.removeValue(forKey: oldest)
+    }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeAll()
+    order.removeAll()
+  }
+}
+
+struct AgentNativeToolReplayEntry: Equatable {
+  var key: AgentNativeToolReplayKey
+  var result: AgentNativeToolResult
+  var savedAtMillis: Int64
+}
+
+enum AgentNativeToolReplayJsonCodec {
+  static func stringify(_ entries: [AgentNativeToolReplayEntry]) -> String {
+    AgentMcpJSONCodec.stringify(.array(entries.map(entryObject)))
+  }
+
+  static func decode(_ raw: String) -> [AgentNativeToolReplayEntry] {
+    guard let data = raw.data(using: .utf8),
+          let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
+      return []
+    }
+    return values.compactMap { value in
+      guard let object = value.objectValue,
+            let resultObject = object.object("result"),
+            let result = AgentNativeToolResult.fromJSONObject(resultObject) else {
+        return nil
+      }
+      let key = AgentNativeToolReplayKey(
+        toolId: object.string("tool_id"),
+        toolVersion: object.string("tool_version"),
+        idempotencyKey: object.string("idempotency_key")
+      )
+      guard key.isComplete else {
+        return nil
+      }
+      return AgentNativeToolReplayEntry(
+        key: key,
+        result: result,
+        savedAtMillis: object.int64("saved_at_millis")
+      )
+    }
+  }
+
+  private static func entryObject(_ entry: AgentNativeToolReplayEntry) -> AgentMcpJSONValue {
+    .object([
+      "tool_id": .string(entry.key.toolId),
+      "tool_version": .string(entry.key.toolVersion),
+      "idempotency_key": .string(entry.key.idempotencyKey),
+      "saved_at_millis": .int(entry.savedAtMillis),
+      "result": entry.result.toJsonValue()
+    ])
+  }
+}
+
+final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
+  static let maxEntries = 2_000
+  static let retentionMillis: Int64 = 30 * 24 * 60 * 60 * 1_000
+
+  private let lock = NSRecursiveLock()
+  private var serializedEntries: String
+  private let nowMillis: () -> Int64
+
+  init(
+    serializedEntries: String = "[]",
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.serializedEntries = serializedEntries
+    self.nowMillis = nowMillis
+  }
+
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    let loaded = load()
+    let retained = retainedEntries(loaded, nowMillis: nowMillis())
+    if retained.count != loaded.count {
+      save(retained)
+    }
+    return retained.last { $0.key == key }?.result
+  }
+
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
+    guard result.isSuccess else {
+      throw AgentNativeToolReplayError.unsuccessfulResult
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    let now = nowMillis()
+    var entries = Array(retainedEntries(load(), nowMillis: now)
+      .filter { $0.key != key }
+      .suffix(Self.maxEntries - 1))
+    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: now))
+    save(entries)
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    serializedEntries = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return serializedEntries
+  }
+
+  private func load() -> [AgentNativeToolReplayEntry] {
+    AgentNativeToolReplayJsonCodec.decode(serializedEntries)
+  }
+
+  private func save(_ entries: [AgentNativeToolReplayEntry]) {
+    serializedEntries = AgentNativeToolReplayJsonCodec.stringify(entries)
+  }
+
+  private func retainedEntries(
+    _ entries: [AgentNativeToolReplayEntry],
+    nowMillis: Int64
+  ) -> [AgentNativeToolReplayEntry] {
+    entries.filter { nowMillis - $0.savedAtMillis <= Self.retentionMillis }
+  }
+}
+
 struct AgentSystemTool: Codable, Equatable, Identifiable {
   var id: String
   var title: String
@@ -9971,6 +10978,7 @@ struct AgentScreenContext: Codable, Equatable {
   var inputFieldCount: Int
   var scrollableRegionCount: Int
   var sensitiveFlagCount: Int
+  var visibleTexts: [String]
   var selectedText: String
   var isAccessibilityEnabled: Bool
   var snapshotAgeMillis: Int64
@@ -9984,6 +10992,7 @@ struct AgentScreenContext: Codable, Equatable {
     inputFieldCount: Int = 0,
     scrollableRegionCount: Int = 0,
     sensitiveFlagCount: Int = 0,
+    visibleTexts: [String] = [],
     selectedText: String = "",
     isAccessibilityEnabled: Bool = false,
     snapshotAgeMillis: Int64 = 0
@@ -9996,6 +11005,11 @@ struct AgentScreenContext: Codable, Equatable {
     self.inputFieldCount = max(inputFieldCount, 0)
     self.scrollableRegionCount = max(scrollableRegionCount, 0)
     self.sensitiveFlagCount = max(sensitiveFlagCount, 0)
+    self.visibleTexts = visibleTexts
+      .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumVisibleTextLength)) }
+      .filter { !$0.isEmpty }
+      .prefix(Self.maximumVisibleTextItems)
+      .map { $0 }
     self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
     self.isAccessibilityEnabled = isAccessibilityEnabled
     self.snapshotAgeMillis = max(snapshotAgeMillis, 0)
@@ -10010,6 +11024,7 @@ struct AgentScreenContext: Codable, Equatable {
     case inputFieldCount = "input_field_count"
     case scrollableRegionCount = "scrollable_region_count"
     case sensitiveFlagCount = "sensitive_flag_count"
+    case visibleTexts = "visible_texts"
     case selectedText = "selected_text"
     case isAccessibilityEnabled = "is_accessibility_enabled"
     case snapshotAgeMillis = "snapshot_age_millis"
@@ -10026,12 +11041,15 @@ struct AgentScreenContext: Codable, Equatable {
       inputFieldCount: try container.decodeIfPresent(Int.self, forKey: .inputFieldCount) ?? 0,
       scrollableRegionCount: try container.decodeIfPresent(Int.self, forKey: .scrollableRegionCount) ?? 0,
       sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
+      visibleTexts: try container.decodeIfPresent([String].self, forKey: .visibleTexts) ?? [],
       selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
       isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,
       snapshotAgeMillis: try container.decodeIfPresent(Int64.self, forKey: .snapshotAgeMillis) ?? 0
     )
   }
 
+  private static let maximumVisibleTextItems = 80
+  private static let maximumVisibleTextLength = 300
   private static let maximumSelectedTextLength = 1_000
 }
 
@@ -10086,6 +11104,212 @@ struct AgentObservationOutcome: Codable, Equatable {
   }
 
   private static let maximumEvidenceLength = 2_000
+}
+
+struct AgentObservedContext: Codable, Equatable, Identifiable {
+  static let defaultTTLMillis: Int64 = 24 * 60 * 60 * 1_000
+
+  var id: String
+  var targetId: String
+  var text: String
+  var conversationId: String
+  var taskId: String
+  var createdAtMillis: Int64
+  var expiresAtMillis: Int64
+
+  init(
+    id: String = UUID().uuidString,
+    targetId: String,
+    text: String,
+    conversationId: String = "",
+    taskId: String = "",
+    createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    expiresAtMillis: Int64? = nil
+  ) {
+    self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
+    self.targetId = String(targetId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTargetCharacters))
+    self.text = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxEntryCharacters))
+    self.conversationId = String(conversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    self.taskId = String(taskId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    self.createdAtMillis = max(createdAtMillis, 0)
+    self.expiresAtMillis = max(expiresAtMillis ?? (self.createdAtMillis + Self.defaultTTLMillis), 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case targetId = "target_id"
+    case text
+    case conversationId = "conversation_id"
+    case taskId = "task_id"
+    case createdAtMillis = "created_at_millis"
+    case expiresAtMillis = "expires_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      targetId: try container.decodeIfPresent(String.self, forKey: .targetId) ?? "",
+      text: try container.decodeIfPresent(String.self, forKey: .text) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      createdAtMillis: createdAtMillis,
+      expiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .expiresAtMillis)
+    )
+  }
+
+  func isExpired(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
+    expiresAtMillis > 0 && nowMillis >= expiresAtMillis
+  }
+
+  fileprivate var isUsable: Bool {
+    !targetId.isEmpty && !text.isEmpty
+  }
+
+  fileprivate static let maxTotalEntries = 128
+  fileprivate static let maxEntriesPerTarget = 16
+  fileprivate static let maxTargetCharacters = 160
+  fileprivate static let maxIdCharacters = 160
+  fileprivate static let maxEntryCharacters = 8_000
+}
+
+enum AgentObservationContextJsonCodec {
+  static func encode(_ items: [AgentObservedContext]) -> String {
+    guard let data = try? JSONEncoder().encode(items) else {
+      return "[]"
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func decode(
+    _ raw: String,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [AgentObservedContext] {
+    guard let data = raw.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
+      return []
+    }
+    let decoded = array.compactMap { value -> AgentObservedContext? in
+      guard let object = value as? [String: Any],
+            JSONSerialization.isValidJSONObject(object),
+            let data = try? JSONSerialization.data(withJSONObject: object),
+            let item = try? JSONDecoder().decode(AgentObservedContext.self, from: data) else {
+        return nil
+      }
+      return item
+    }
+    return decoded.filter { $0.isUsable && !$0.isExpired(nowMillis: nowMillis) }
+  }
+}
+
+final class InMemoryAgentObservationContextStore {
+  private let lock = NSRecursiveLock()
+  private let clock: () -> Int64
+  private let idFactory: () -> String
+  private var document: String
+
+  init(
+    serialized: String = "[]",
+    clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
+    idFactory: @escaping () -> String = { UUID().uuidString }
+  ) {
+    self.document = serialized
+    self.clock = clock
+    self.idFactory = idFactory
+  }
+
+  func observe(
+    targetId: String,
+    text: String,
+    conversationId: String = "",
+    taskId: String = ""
+  ) -> AgentObservedContext? {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = max(clock(), 0)
+    let entry = AgentObservedContext(
+      id: idFactory(),
+      targetId: targetId,
+      text: text,
+      conversationId: conversationId,
+      taskId: taskId,
+      createdAtMillis: now,
+      expiresAtMillis: now + AgentObservedContext.defaultTTLMillis
+    )
+    guard entry.isUsable else {
+      return nil
+    }
+    let current = load(nowMillis: now).filter { existing in
+      !(existing.targetId == entry.targetId &&
+        existing.text == entry.text &&
+        existing.conversationId == entry.conversationId)
+    }
+    let otherTargets = current.filter { $0.targetId != entry.targetId }
+    let targetEntries = Array((current.filter { $0.targetId == entry.targetId } + [entry]).suffix(AgentObservedContext.maxEntriesPerTarget))
+    let bounded = Array((otherTargets + targetEntries)
+      .sorted { $0.createdAtMillis < $1.createdAtMillis }
+      .suffix(AgentObservedContext.maxTotalEntries))
+    save(bounded)
+    return entry
+  }
+
+  func peek(targetId: String, conversationId: String = "") -> [AgentObservedContext] {
+    lock.lock()
+    defer { lock.unlock() }
+    let targetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let conversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return Array(load(nowMillis: max(clock(), 0)).filter { entry in
+      entry.targetId == targetId &&
+        (conversationId.isEmpty || entry.conversationId.isEmpty || entry.conversationId == conversationId)
+    }.suffix(AgentObservedContext.maxEntriesPerTarget))
+  }
+
+  func acknowledge(entryIds: Set<String>) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !entryIds.isEmpty else {
+      return 0
+    }
+    let current = load(nowMillis: max(clock(), 0))
+    let remaining = current.filter { !entryIds.contains($0.id) }
+    if remaining.count != current.count {
+      save(remaining)
+    }
+    return current.count - remaining.count
+  }
+
+  func clearTarget(_ targetId: String) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    let targetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let current = load(nowMillis: max(clock(), 0))
+    let remaining = current.filter { $0.targetId != targetId }
+    if remaining.count != current.count {
+      save(remaining)
+    }
+    return current.count - remaining.count
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    document = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return document
+  }
+
+  private func load(nowMillis: Int64) -> [AgentObservedContext] {
+    AgentObservationContextJsonCodec.decode(document, nowMillis: nowMillis)
+  }
+
+  private func save(_ items: [AgentObservedContext]) {
+    document = AgentObservationContextJsonCodec.encode(items)
+  }
 }
 
 struct AgentContinuousObservationController {
@@ -15350,25 +16574,238 @@ struct AgentVerificationResult: Codable, Equatable {
   }
 }
 
+enum AgentCheckpointStatus: String, Codable, CaseIterable, Identifiable {
+  case active = "ACTIVE"
+  case restored = "RESTORED"
+  case invalidated = "INVALIDATED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentCheckpointStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .active
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
 struct AgentExecutionCheckpoint: Codable, Equatable {
+  var id: String
   var actionId: String
+  var planRevision: Int
+  var foregroundApp: String
+  var activityName: String
+  var pageTitle: String
+  var screenDigest: String
+  var rollbackAction: AgentAction?
+  var status: AgentCheckpointStatus
+  var createdAtMillis: Int64
   var summary: String
   var timestampMillis: Int64
 
   init(
+    id: String = UUID().uuidString,
     actionId: String,
+    planRevision: Int = 0,
+    foregroundApp: String = "",
+    activityName: String = "",
+    pageTitle: String = "",
+    screenDigest: String = "",
+    rollbackAction: AgentAction? = nil,
+    status: AgentCheckpointStatus = .active,
+    createdAtMillis: Int64 = 0,
     summary: String = "",
-    timestampMillis: Int64 = 0
+    timestampMillis: Int64? = nil
   ) {
+    self.id = id
     self.actionId = actionId
+    self.planRevision = planRevision
+    self.foregroundApp = foregroundApp
+    self.activityName = activityName
+    self.pageTitle = pageTitle
+    self.screenDigest = screenDigest
+    self.rollbackAction = rollbackAction
+    self.status = status
+    self.createdAtMillis = max(createdAtMillis, 0)
     self.summary = summary
-    self.timestampMillis = timestampMillis
+    self.timestampMillis = max(timestampMillis ?? createdAtMillis, 0)
   }
 
   enum CodingKeys: String, CodingKey {
+    case id
     case actionId = "action_id"
+    case planRevision = "plan_revision"
+    case foregroundApp = "foreground_app"
+    case activityName = "activity_name"
+    case pageTitle = "page_title"
+    case screenDigest = "screen_digest"
+    case rollbackAction = "rollback_action"
+    case status
+    case createdAtMillis = "created_at_millis"
     case summary
     case timestampMillis = "timestamp_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let actionId = try container.decodeIfPresent(String.self, forKey: .actionId) ?? ""
+    let createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ?? 0)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ??
+        Self.fallbackId(actionId: actionId, createdAtMillis: createdAtMillis),
+      actionId: actionId,
+      planRevision: try container.decodeIfPresent(Int.self, forKey: .planRevision) ?? 0,
+      foregroundApp: try container.decodeIfPresent(String.self, forKey: .foregroundApp) ?? "",
+      activityName: try container.decodeIfPresent(String.self, forKey: .activityName) ?? "",
+      pageTitle: try container.decodeIfPresent(String.self, forKey: .pageTitle) ?? "",
+      screenDigest: try container.decodeIfPresent(String.self, forKey: .screenDigest) ?? "",
+      rollbackAction: try container.decodeIfPresent(AgentAction.self, forKey: .rollbackAction),
+      status: try container.decodeIfPresent(AgentCheckpointStatus.self, forKey: .status) ?? .active,
+      createdAtMillis: createdAtMillis,
+      summary: try container.decodeIfPresent(String.self, forKey: .summary) ?? "",
+      timestampMillis: try container.decodeIfPresent(Int64.self, forKey: .timestampMillis)
+    )
+  }
+
+  private static func fallbackId(actionId: String, createdAtMillis: Int64) -> String {
+    let suffix = actionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "unknown" : actionId
+    return "checkpoint-\(suffix)-\(max(createdAtMillis, 0))"
+  }
+}
+
+enum AgentExecutionContinuity {
+  static func checkpointBefore(
+    action: AgentAction,
+    screen: AgentScreenContext,
+    planRevision: Int,
+    id: String = UUID().uuidString,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> AgentExecutionCheckpoint {
+    AgentExecutionCheckpoint(
+      id: id,
+      actionId: action.id,
+      planRevision: planRevision,
+      foregroundApp: screen.foregroundApp,
+      activityName: screen.activityName,
+      pageTitle: screen.pageTitle,
+      screenDigest: screenDigest(screen),
+      rollbackAction: rollbackAction(for: action),
+      status: .active,
+      createdAtMillis: nowMillis
+    )
+  }
+
+  static func screenDigest(_ screen: AgentScreenContext) -> String {
+    let payload = [
+      screen.foregroundApp,
+      screen.activityName,
+      screen.pageTitle,
+      screen.visibleTexts.prefix(40).joined(separator: "\u{001f}"),
+      String(screen.clickableNodeCount),
+      String(screen.inputFieldCount)
+    ].joined(separator: "\u{001e}")
+    return String(javaStringHash(payload))
+  }
+
+  private static func rollbackAction(for action: AgentAction) -> AgentAction? {
+    switch action.kind {
+    case .openApp, .openURL, .recents:
+      return AgentAction(
+        id: "rollback-\(action.id)",
+        kind: .back,
+        target: action.target,
+        risk: .low,
+        status: .pendingConfirmation,
+        description: "Return to the screen before \(action.description)",
+        requiresConfirmation: true
+      )
+    case .swipe:
+      return reverseSwipe(action)
+    default:
+      return nil
+    }
+  }
+
+  private static func reverseSwipe(_ action: AgentAction) -> AgentAction? {
+    guard let fromX = action.parameters["from_x"],
+          let fromY = action.parameters["from_y"],
+          let toX = action.parameters["to_x"],
+          let toY = action.parameters["to_y"] else {
+      return nil
+    }
+    return AgentAction(
+      id: "rollback-\(action.id)",
+      kind: .swipe,
+      target: action.target,
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Reverse the previous swipe",
+      parameters: [
+        "from_x": toX,
+        "from_y": toY,
+        "to_x": fromX,
+        "to_y": fromY
+      ],
+      requiresConfirmation: true
+    )
+  }
+
+  private static func javaStringHash(_ value: String) -> Int32 {
+    var hash: Int32 = 0
+    for codeUnit in value.utf16 {
+      hash = hash &* 31 &+ Int32(codeUnit)
+    }
+    return hash
+  }
+}
+
+extension AgentPlan {
+  func addCheckpoint(_ checkpoint: AgentExecutionCheckpoint) -> AgentPlan {
+    var copy = self
+    copy.checkpoints = Array((copy.checkpoints + [checkpoint]).suffix(20))
+    return copy
+  }
+
+  func markCheckpoint(_ checkpointId: String, status: AgentCheckpointStatus) -> AgentPlan {
+    var copy = self
+    copy.checkpoints = copy.checkpoints.map { checkpoint in
+      guard checkpoint.id == checkpointId else {
+        return checkpoint
+      }
+      var marked = checkpoint
+      marked.status = status
+      return marked
+    }
+    return copy
+  }
+
+  func recoverInterruptedExecution() -> AgentPlan {
+    var copy = self
+    copy.actions = copy.actions.map { action in
+      guard action.status == .running else {
+        return action
+      }
+      var interrupted = action
+      interrupted.status = .pendingConfirmation
+      interrupted.result = "Execution was interrupted before verification"
+      interrupted.evidence = "interrupted"
+      return interrupted
+    }
+    return copy
+  }
+
+  func historyForReplan() -> [AgentAction] {
+    let terminalStatuses: [AgentActionStatus] = [.completed, .failed, .blocked, .rolledBack]
+    return Array((actionHistory + actions.filter { terminalStatuses.contains($0.status) }).suffix(40))
   }
 }
 
@@ -17661,6 +19098,448 @@ enum AgentProactiveTaskScheduler {
   }
 }
 
+enum GlobalProactiveTarget: String, Codable, CaseIterable, Identifiable {
+  case currentConversation = "CURRENT_CONVERSATION"
+  case newConversation = "NEW_CONVERSATION"
+  case globalDigest = "GLOBAL_DIGEST"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalProactiveTarget {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .currentConversation
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum GlobalProactiveMessageStatus: String, Codable, CaseIterable, Identifiable {
+  case pending = "PENDING"
+  case notified = "NOTIFIED"
+  case delivering = "DELIVERING"
+  case delivered = "DELIVERED"
+  case dismissed = "DISMISSED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalProactiveMessageStatus {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .pending
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum GlobalAgentFeedbackKind: String, Codable, CaseIterable, Identifiable {
+  case helpful = "HELPFUL"
+  case notRelevant = "NOT_RELEVANT"
+  case tooFrequent = "TOO_FREQUENT"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalAgentFeedbackKind {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .helpful
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct GlobalProactiveMessage: Codable, Equatable, Identifiable {
+  var id: String
+  var sourceEventId: String
+  var sourceConversationId: String
+  var target: GlobalProactiveTarget
+  var title: String
+  var content: String
+  var topic: String
+  var urgent: Bool
+  var causalEventIds: Set<String>
+  var status: GlobalProactiveMessageStatus
+  var createdAtMillis: Int64
+  var notifiedAtMillis: Int64
+  var deliveryConversationId: String
+  var deliveryLeaseExpiresAtMillis: Int64
+  var deliveryAttemptCount: Int
+  var deliveryBudgetCounted: Bool
+  var lastDeliveryError: String
+  var deliveredAtMillis: Int64
+  var deliveredConversationId: String
+  var deliveryGroupId: String
+  var viewedAtMillis: Int64
+
+  init(
+    id: String = UUID().uuidString,
+    sourceEventId: String,
+    sourceConversationId: String,
+    target: GlobalProactiveTarget,
+    title: String,
+    content: String,
+    topic: String,
+    urgent: Bool,
+    causalEventIds: Set<String> = [],
+    status: GlobalProactiveMessageStatus = .pending,
+    createdAtMillis: Int64 = 0,
+    notifiedAtMillis: Int64 = 0,
+    deliveryConversationId: String = "",
+    deliveryLeaseExpiresAtMillis: Int64 = 0,
+    deliveryAttemptCount: Int = 0,
+    deliveryBudgetCounted: Bool = false,
+    lastDeliveryError: String = "",
+    deliveredAtMillis: Int64 = 0,
+    deliveredConversationId: String = "",
+    deliveryGroupId: String = "",
+    viewedAtMillis: Int64 = 0
+  ) {
+    self.id = id
+    self.sourceEventId = sourceEventId
+    self.sourceConversationId = sourceConversationId
+    self.target = target
+    self.title = title
+    self.content = content
+    self.topic = topic
+    self.urgent = urgent
+    self.causalEventIds = causalEventIds
+    self.status = status
+    self.createdAtMillis = max(0, createdAtMillis)
+    self.notifiedAtMillis = max(0, notifiedAtMillis)
+    self.deliveryConversationId = deliveryConversationId
+    self.deliveryLeaseExpiresAtMillis = max(0, deliveryLeaseExpiresAtMillis)
+    self.deliveryAttemptCount = max(0, deliveryAttemptCount)
+    self.deliveryBudgetCounted = deliveryBudgetCounted
+    self.lastDeliveryError = lastDeliveryError
+    self.deliveredAtMillis = max(0, deliveredAtMillis)
+    self.deliveredConversationId = deliveredConversationId
+    self.deliveryGroupId = deliveryGroupId
+    self.viewedAtMillis = max(0, viewedAtMillis)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case sourceEventId = "source_event_id"
+    case sourceConversationId = "source_conversation_id"
+    case target
+    case title
+    case content
+    case topic
+    case urgent
+    case causalEventIds = "causal_event_ids"
+    case status
+    case createdAtMillis = "created_at_millis"
+    case notifiedAtMillis = "notified_at_millis"
+    case deliveryConversationId = "delivery_conversation_id"
+    case deliveryLeaseExpiresAtMillis = "delivery_lease_expires_at_millis"
+    case deliveryAttemptCount = "delivery_attempt_count"
+    case deliveryBudgetCounted = "delivery_budget_counted"
+    case lastDeliveryError = "last_delivery_error"
+    case deliveredAtMillis = "delivered_at_millis"
+    case deliveredConversationId = "delivered_conversation_id"
+    case deliveryGroupId = "delivery_group_id"
+    case viewedAtMillis = "viewed_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      sourceEventId: try container.decodeIfPresent(String.self, forKey: .sourceEventId) ?? "",
+      sourceConversationId: try container.decodeIfPresent(String.self, forKey: .sourceConversationId) ?? "",
+      target: try container.decodeIfPresent(GlobalProactiveTarget.self, forKey: .target) ?? .currentConversation,
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      content: try container.decodeIfPresent(String.self, forKey: .content) ?? "",
+      topic: try container.decodeIfPresent(String.self, forKey: .topic) ?? "",
+      urgent: try container.decodeIfPresent(Bool.self, forKey: .urgent) ?? false,
+      causalEventIds: try container.decodeIfPresent(Set<String>.self, forKey: .causalEventIds) ?? [],
+      status: try container.decodeIfPresent(GlobalProactiveMessageStatus.self, forKey: .status) ?? .pending,
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      notifiedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .notifiedAtMillis) ?? 0,
+      deliveryConversationId: try container.decodeIfPresent(String.self, forKey: .deliveryConversationId) ?? "",
+      deliveryLeaseExpiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .deliveryLeaseExpiresAtMillis) ?? 0,
+      deliveryAttemptCount: try container.decodeIfPresent(Int.self, forKey: .deliveryAttemptCount) ?? 0,
+      deliveryBudgetCounted: try container.decodeIfPresent(Bool.self, forKey: .deliveryBudgetCounted) ?? false,
+      lastDeliveryError: try container.decodeIfPresent(String.self, forKey: .lastDeliveryError) ?? "",
+      deliveredAtMillis: try container.decodeIfPresent(Int64.self, forKey: .deliveredAtMillis) ?? 0,
+      deliveredConversationId: try container.decodeIfPresent(String.self, forKey: .deliveredConversationId) ?? "",
+      deliveryGroupId: try container.decodeIfPresent(String.self, forKey: .deliveryGroupId) ?? "",
+      viewedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .viewedAtMillis) ?? 0
+    )
+  }
+}
+
+struct GlobalAgentFeedback: Codable, Equatable, Identifiable {
+  var id: String
+  var proactiveMessageId: String
+  var deliveryGroupId: String
+  var conversationId: String
+  var topic: String
+  var target: GlobalProactiveTarget
+  var kind: GlobalAgentFeedbackKind
+  var createdAtMillis: Int64
+
+  init(
+    id: String = UUID().uuidString,
+    proactiveMessageId: String,
+    deliveryGroupId: String,
+    conversationId: String,
+    topic: String,
+    target: GlobalProactiveTarget,
+    kind: GlobalAgentFeedbackKind,
+    createdAtMillis: Int64 = 0
+  ) {
+    self.id = id
+    self.proactiveMessageId = proactiveMessageId
+    self.deliveryGroupId = deliveryGroupId
+    self.conversationId = conversationId
+    self.topic = topic
+    self.target = target
+    self.kind = kind
+    self.createdAtMillis = max(0, createdAtMillis)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case proactiveMessageId = "proactive_message_id"
+    case deliveryGroupId = "delivery_group_id"
+    case conversationId = "conversation_id"
+    case topic
+    case target
+    case kind
+    case createdAtMillis = "created_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      proactiveMessageId: try container.decodeIfPresent(String.self, forKey: .proactiveMessageId) ?? "",
+      deliveryGroupId: try container.decodeIfPresent(String.self, forKey: .deliveryGroupId) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      topic: try container.decodeIfPresent(String.self, forKey: .topic) ?? "",
+      target: try container.decodeIfPresent(GlobalProactiveTarget.self, forKey: .target) ?? .currentConversation,
+      kind: try container.decodeIfPresent(GlobalAgentFeedbackKind.self, forKey: .kind) ?? .helpful,
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0
+    )
+  }
+}
+
+struct GlobalProactiveInboxItem: Codable, Equatable, Identifiable {
+  var key: String
+  var messageIds: Set<String>
+  var title: String
+  var content: String
+  var topic: String
+  var target: GlobalProactiveTarget
+  var urgent: Bool
+  var sourceConversationId: String
+  var destinationConversationId: String
+  var causalEventIds: Set<String>
+  var createdAtMillis: Int64
+  var deliveredAtMillis: Int64
+  var viewedAtMillis: Int64
+  var feedbackKind: GlobalAgentFeedbackKind?
+
+  var id: String { key }
+  var isNew: Bool { viewedAtMillis <= 0 && feedbackKind == nil }
+
+  enum CodingKeys: String, CodingKey {
+    case key
+    case messageIds = "message_ids"
+    case title
+    case content
+    case topic
+    case target
+    case urgent
+    case sourceConversationId = "source_conversation_id"
+    case destinationConversationId = "destination_conversation_id"
+    case causalEventIds = "causal_event_ids"
+    case createdAtMillis = "created_at_millis"
+    case deliveredAtMillis = "delivered_at_millis"
+    case viewedAtMillis = "viewed_at_millis"
+    case feedbackKind = "feedback_kind"
+  }
+}
+
+enum GlobalAgentText {
+  private static let legacyProductTitles: [String: String] = [
+    "Signal insight": "SignalASI insight",
+    "Signal prepared": "SignalASI prepared",
+    "Signal digest": "SignalASI digest",
+    "Signal \u{5efa}\u{8bae}": "SignalASI \u{5efa}\u{8bae}",
+    "Signal \u{5df2}\u{51c6}\u{5907}": "SignalASI \u{5df2}\u{51c6}\u{5907}",
+    "Signal \u{6458}\u{8981}": "SignalASI \u{6458}\u{8981}"
+  ]
+
+  static func productTitle(_ value: String) -> String {
+    let title = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return legacyProductTitles[title] ?? title
+  }
+}
+
+enum GlobalProactiveInboxPolicy {
+  static func project(
+    messages: [GlobalProactiveMessage],
+    feedback: [GlobalAgentFeedback],
+    limit: Int = 50
+  ) -> [GlobalProactiveInboxItem] {
+    guard limit > 0 else { return [] }
+
+    var feedbackByMessage: [String: GlobalAgentFeedbackKind] = [:]
+    for item in feedback.sorted(by: { $0.createdAtMillis < $1.createdAtMillis }) {
+      feedbackByMessage[item.proactiveMessageId] = item.kind
+    }
+
+    var orderedKeys: [String] = []
+    var groups: [String: [GlobalProactiveMessage]] = [:]
+    for message in messages where message.status == .delivered {
+      let key = inboxKey(message)
+      if groups[key] == nil {
+        orderedKeys.append(key)
+      }
+      groups[key, default: []].append(message)
+    }
+
+    let projected = orderedKeys.compactMap { key -> GlobalProactiveInboxItem? in
+      guard let group = groups[key] else { return nil }
+      return projectGroup(group, feedbackByMessage: feedbackByMessage)
+    }
+
+    let sorted = projected.sorted { left, right in
+      if left.isNew != right.isNew {
+        return left.isNew && !right.isNew
+      }
+      if left.urgent != right.urgent {
+        return left.urgent && !right.urgent
+      }
+      if left.deliveredAtMillis != right.deliveredAtMillis {
+        return left.deliveredAtMillis > right.deliveredAtMillis
+      }
+      if left.createdAtMillis != right.createdAtMillis {
+        return left.createdAtMillis > right.createdAtMillis
+      }
+      return left.key < right.key
+    }
+    return Array(sorted.prefix(min(max(limit, 1), 100)))
+  }
+
+  static func newCount(_ items: [GlobalProactiveInboxItem]) -> Int {
+    items.filter(\.isNew).count
+  }
+
+  static func markViewed(
+    messages: [GlobalProactiveMessage],
+    messageIds: Set<String>,
+    nowMillis: Int64
+  ) -> [GlobalProactiveMessage] {
+    guard !messageIds.isEmpty && nowMillis > 0 else { return messages }
+    return messages.map { message in
+      guard messageIds.contains(message.id),
+        message.status == .delivered,
+        message.viewedAtMillis <= 0
+      else {
+        return message
+      }
+      var updated = message
+      updated.viewedAtMillis = nowMillis
+      return updated
+    }
+  }
+
+  private static func projectGroup(
+    _ group: [GlobalProactiveMessage],
+    feedbackByMessage: [String: GlobalAgentFeedbackKind]
+  ) -> GlobalProactiveInboxItem? {
+    let ordered = group.enumerated().sorted { left, right in
+      if left.element.createdAtMillis != right.element.createdAtMillis {
+        return left.element.createdAtMillis < right.element.createdAtMillis
+      }
+      return left.offset < right.offset
+    }.map(\.element)
+    guard let primary = ordered.last else { return nil }
+
+    var kinds: [GlobalAgentFeedbackKind] = []
+    for message in ordered {
+      guard let kind = feedbackByMessage[message.id], !kinds.contains(kind) else { continue }
+      kinds.append(kind)
+    }
+    if kinds.contains(.notRelevant) || kinds.contains(.tooFrequent) {
+      return nil
+    }
+
+    let content: String
+    if ordered.count == 1 {
+      content = primary.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    } else {
+      content = ordered.map { message in
+        let cleanTopic = message.topic.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanContent = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanTopic.isEmpty {
+          return "\u{2022} \(cleanContent)"
+        }
+        return "\u{2022} \(cleanTopic): \(cleanContent)"
+      }.joined(separator: "\n")
+    }
+
+    let viewedValues = ordered.map(\.viewedAtMillis)
+    let viewedAtMillis = viewedValues.allSatisfy { $0 > 0 } ? (viewedValues.max() ?? 0) : 0
+    return GlobalProactiveInboxItem(
+      key: inboxKey(primary),
+      messageIds: Set(ordered.map(\.id)),
+      title: GlobalAgentText.productTitle(primary.title),
+      content: content,
+      topic: primary.topic.trimmingCharacters(in: .whitespacesAndNewlines),
+      target: primary.target,
+      urgent: ordered.contains { $0.urgent },
+      sourceConversationId: primary.sourceConversationId,
+      destinationConversationId: ordered.last { !$0.deliveredConversationId.isEmpty }?.deliveredConversationId ?? "",
+      causalEventIds: Set(ordered.flatMap(\.causalEventIds)),
+      createdAtMillis: ordered.map(\.createdAtMillis).min() ?? 0,
+      deliveredAtMillis: ordered.map(\.deliveredAtMillis).max() ?? 0,
+      viewedAtMillis: viewedAtMillis,
+      feedbackKind: kinds.count == 1 ? kinds[0] : nil
+    )
+  }
+
+  private static func inboxKey(_ message: GlobalProactiveMessage) -> String {
+    if message.target == .globalDigest && !message.deliveryGroupId.isEmpty {
+      return "global-agent-digest:\(message.deliveryGroupId)"
+    }
+    return "global-agent:\(message.id)"
+  }
+}
+
 enum AgentTranscriptScrollPolicy {
   static func nextAutoFollow(
     current: Bool,
@@ -19642,6 +21521,696 @@ enum AgentExecutionReasoningEffort: String, Codable, CaseIterable, Identifiable 
   case high = "HIGH"
 
   var id: String { rawValue }
+}
+
+enum AgentRuntimeGuestProtocol {
+  static let version = 1
+}
+
+enum AgentRuntimePackState: String, Codable, CaseIterable, Identifiable {
+  case ready = "ready"
+  case notInstalled = "not_installed"
+  case invalid = "invalid"
+  case incompatible = "incompatible"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRuntimePackState {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "-", with: "_")
+    return allCases.first { $0.rawValue == normalized } ?? .notInstalled
+  }
+}
+
+enum AgentRuntimeLanguage: String, Codable, CaseIterable, Identifiable {
+  case shell = "shell"
+  case python = "python"
+  case uv = "uv"
+  case javascript = "javascript"
+  case typescript = "typescript"
+  case go = "go"
+  case rust = "rust"
+  case c = "c"
+  case cpp = "cpp"
+  case java = "java"
+  case browser = "browser"
+  case ffmpeg = "ffmpeg"
+  case ffprobe = "ffprobe"
+
+  var id: String { rawValue }
+
+  var requiredPack: String {
+    switch self {
+    case .shell:
+      return "linux-base"
+    case .python, .uv:
+      return "python-uv"
+    case .javascript, .typescript:
+      return "node-js"
+    case .go:
+      return "go"
+    case .rust:
+      return "rust"
+    case .c, .cpp:
+      return "cpp"
+    case .java:
+      return "java"
+    case .browser:
+      return "browser-automation"
+    case .ffmpeg, .ffprobe:
+      return "ffmpeg"
+    }
+  }
+
+  var requiredCapability: String {
+    switch self {
+    case .shell:
+      return "shell.execute"
+    case .python:
+      return "python.execute"
+    case .uv:
+      return "uv.sync"
+    case .javascript:
+      return "javascript.execute"
+    case .typescript:
+      return "typescript.execute"
+    case .go:
+      return "go.execute"
+    case .rust:
+      return "rust.execute"
+    case .c:
+      return "c.execute"
+    case .cpp:
+      return "cpp.execute"
+    case .java:
+      return "java.execute"
+    case .browser:
+      return "browser.automation.execute"
+    case .ffmpeg:
+      return "ffmpeg.execute"
+    case .ffprobe:
+      return "ffprobe.inspect"
+    }
+  }
+}
+
+struct AgentRuntimePackManifest: Codable, Equatable {
+  var id: String
+  var version: String
+  var architecture: String
+  var imageFile: String
+  var imageSha256: String
+  var capabilities: [String]
+  var dependencies: [String]
+  var installedSizeBytes: Int64
+  var license: String
+  var signatureKeyId: String
+  var signature: String
+  var formatVersion: Int
+  var archiveSizeBytes: Int64
+  var minimumHostVersionCode: Int64
+  var guestApiVersion: Int
+
+  init(
+    id: String,
+    version: String,
+    architecture: String,
+    imageFile: String,
+    imageSha256: String,
+    capabilities: [String],
+    dependencies: [String],
+    installedSizeBytes: Int64,
+    license: String,
+    signatureKeyId: String,
+    signature: String,
+    formatVersion: Int = 1,
+    archiveSizeBytes: Int64 = 0,
+    minimumHostVersionCode: Int64 = 1,
+    guestApiVersion: Int = AgentRuntimeGuestProtocol.version
+  ) {
+    self.id = id
+    self.version = version
+    self.architecture = architecture
+    self.imageFile = imageFile
+    self.imageSha256 = imageSha256
+    self.capabilities = capabilities
+    self.dependencies = dependencies
+    self.installedSizeBytes = installedSizeBytes
+    self.license = license
+    self.signatureKeyId = signatureKeyId
+    self.signature = signature
+    self.formatVersion = formatVersion
+    self.archiveSizeBytes = archiveSizeBytes
+    self.minimumHostVersionCode = minimumHostVersionCode
+    self.guestApiVersion = guestApiVersion
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case version
+    case architecture
+    case imageFile = "image_file"
+    case imageSha256 = "image_sha256"
+    case capabilities
+    case dependencies
+    case installedSizeBytes = "installed_size_bytes"
+    case license
+    case signatureKeyId = "signature_key_id"
+    case signature
+    case formatVersion = "format_version"
+    case archiveSizeBytes = "archive_size_bytes"
+    case minimumHostVersionCode = "minimum_host_version_code"
+    case guestApiVersion = "guest_api_version"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decode(String.self, forKey: .id),
+      version: try container.decode(String.self, forKey: .version),
+      architecture: try container.decode(String.self, forKey: .architecture),
+      imageFile: try container.decode(String.self, forKey: .imageFile),
+      imageSha256: try container.decode(String.self, forKey: .imageSha256),
+      capabilities: try container.decodeIfPresent([String].self, forKey: .capabilities) ?? [],
+      dependencies: try container.decodeIfPresent([String].self, forKey: .dependencies) ?? [],
+      installedSizeBytes: try container.decode(Int64.self, forKey: .installedSizeBytes),
+      license: try container.decode(String.self, forKey: .license),
+      signatureKeyId: try container.decode(String.self, forKey: .signatureKeyId),
+      signature: try container.decode(String.self, forKey: .signature),
+      formatVersion: try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1,
+      archiveSizeBytes: try container.decodeIfPresent(Int64.self, forKey: .archiveSizeBytes) ?? 0,
+      minimumHostVersionCode: try container.decodeIfPresent(Int64.self, forKey: .minimumHostVersionCode) ?? 1,
+      guestApiVersion: try container.decodeIfPresent(Int.self, forKey: .guestApiVersion) ?? 1
+    )
+  }
+
+  func signingPayload() -> Data {
+    let values = [
+      String(formatVersion),
+      id,
+      version,
+      architecture,
+      imageFile,
+      imageSha256.lowercased(),
+      capabilities.sorted().joined(separator: ","),
+      dependencies.sorted().joined(separator: ","),
+      String(installedSizeBytes),
+      String(archiveSizeBytes),
+      String(minimumHostVersionCode),
+      String(guestApiVersion),
+      license,
+      signatureKeyId.lowercased()
+    ]
+    return Data(values.map { "\($0.utf8.count):\($0)" }.joined().utf8)
+  }
+}
+
+struct AgentRuntimePackStatus: Codable, Equatable, Identifiable {
+  var id: String
+  var state: AgentRuntimePackState
+  var reason: String
+  var manifest: AgentRuntimePackManifest?
+
+  init(
+    id: String,
+    state: AgentRuntimePackState,
+    reason: String = "",
+    manifest: AgentRuntimePackManifest? = nil
+  ) {
+    self.id = id
+    self.state = state
+    self.reason = reason
+    self.manifest = manifest
+  }
+}
+
+struct AgentRuntimePackCatalogEntry: Codable, Equatable, Identifiable {
+  var packId: String
+  var version: String
+  var architecture: String
+  var downloadUrl: String
+  var archiveSha256: String
+  var archiveSizeBytes: Int64
+  var installedSizeBytes: Int64
+  var dependencies: [String]
+  var license: String
+  var minimumHostVersionCode: Int64
+  var guestApiVersion: Int
+  var releaseNotes: String
+
+  var id: String { "\(packId)|\(architecture)" }
+
+  init(
+    packId: String,
+    version: String,
+    architecture: String,
+    downloadUrl: String,
+    archiveSha256: String,
+    archiveSizeBytes: Int64,
+    installedSizeBytes: Int64,
+    dependencies: [String],
+    license: String,
+    minimumHostVersionCode: Int64,
+    guestApiVersion: Int,
+    releaseNotes: String = ""
+  ) {
+    self.packId = packId
+    self.version = version
+    self.architecture = architecture
+    self.downloadUrl = downloadUrl
+    self.archiveSha256 = archiveSha256
+    self.archiveSizeBytes = archiveSizeBytes
+    self.installedSizeBytes = installedSizeBytes
+    self.dependencies = dependencies
+    self.license = license
+    self.minimumHostVersionCode = minimumHostVersionCode
+    self.guestApiVersion = guestApiVersion
+    self.releaseNotes = releaseNotes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case packId = "pack_id"
+    case version
+    case architecture
+    case downloadUrl = "download_url"
+    case archiveSha256 = "archive_sha256"
+    case archiveSizeBytes = "archive_size_bytes"
+    case installedSizeBytes = "installed_size_bytes"
+    case dependencies
+    case license
+    case minimumHostVersionCode = "minimum_host_version_code"
+    case guestApiVersion = "guest_api_version"
+    case releaseNotes = "release_notes"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      packId: try container.decode(String.self, forKey: .packId),
+      version: try container.decode(String.self, forKey: .version),
+      architecture: try container.decode(String.self, forKey: .architecture),
+      downloadUrl: try container.decode(String.self, forKey: .downloadUrl),
+      archiveSha256: try container.decode(String.self, forKey: .archiveSha256),
+      archiveSizeBytes: try container.decode(Int64.self, forKey: .archiveSizeBytes),
+      installedSizeBytes: try container.decode(Int64.self, forKey: .installedSizeBytes),
+      dependencies: try container.decodeIfPresent([String].self, forKey: .dependencies) ?? [],
+      license: try container.decode(String.self, forKey: .license),
+      minimumHostVersionCode: try container.decodeIfPresent(Int64.self, forKey: .minimumHostVersionCode) ?? 1,
+      guestApiVersion: try container.decodeIfPresent(Int.self, forKey: .guestApiVersion) ?? 1,
+      releaseNotes: try container.decodeIfPresent(String.self, forKey: .releaseNotes) ?? ""
+    )
+  }
+
+  func canonicalValue() -> String {
+    let values = [
+      packId,
+      version,
+      architecture,
+      downloadUrl,
+      archiveSha256.lowercased(),
+      String(archiveSizeBytes),
+      String(installedSizeBytes),
+      dependencies.sorted().joined(separator: ","),
+      license,
+      String(minimumHostVersionCode),
+      String(guestApiVersion),
+      releaseNotes
+    ]
+    return values.map { "\($0.utf8.count):\($0)" }.joined()
+  }
+}
+
+struct AgentRuntimePackCatalog: Codable, Equatable {
+  var formatVersion: Int
+  var catalogVersion: String
+  var generatedAtMillis: Int64
+  var expiresAtMillis: Int64
+  var entries: [AgentRuntimePackCatalogEntry]
+  var signatureKeyId: String
+  var signature: String
+
+  init(
+    catalogVersion: String,
+    generatedAtMillis: Int64,
+    expiresAtMillis: Int64,
+    entries: [AgentRuntimePackCatalogEntry],
+    signatureKeyId: String,
+    signature: String,
+    formatVersion: Int = 1
+  ) {
+    self.formatVersion = formatVersion
+    self.catalogVersion = catalogVersion
+    self.generatedAtMillis = generatedAtMillis
+    self.expiresAtMillis = expiresAtMillis
+    self.entries = entries
+    self.signatureKeyId = signatureKeyId
+    self.signature = signature
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case formatVersion = "format_version"
+    case catalogVersion = "catalog_version"
+    case generatedAtMillis = "generated_at_millis"
+    case expiresAtMillis = "expires_at_millis"
+    case entries
+    case signatureKeyId = "signature_key_id"
+    case signature
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      catalogVersion: try container.decode(String.self, forKey: .catalogVersion),
+      generatedAtMillis: try container.decode(Int64.self, forKey: .generatedAtMillis),
+      expiresAtMillis: try container.decode(Int64.self, forKey: .expiresAtMillis),
+      entries: try container.decodeIfPresent([AgentRuntimePackCatalogEntry].self, forKey: .entries) ?? [],
+      signatureKeyId: try container.decode(String.self, forKey: .signatureKeyId),
+      signature: try container.decode(String.self, forKey: .signature),
+      formatVersion: try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
+    )
+  }
+
+  func signingPayload() -> Data {
+    let sortedEntries = entries.sorted {
+      if $0.packId != $1.packId {
+        return $0.packId < $1.packId
+      }
+      if $0.architecture != $1.architecture {
+        return $0.architecture < $1.architecture
+      }
+      return $0.version < $1.version
+    }
+    var payload = "\(formatVersion)\n\(catalogVersion)\n\(generatedAtMillis)\n\(expiresAtMillis)\n"
+    for entry in sortedEntries {
+      payload += entry.canonicalValue()
+      payload += "\n"
+    }
+    payload += signatureKeyId.lowercased()
+    return Data(payload.utf8)
+  }
+}
+
+enum AgentRuntimePackInstallStage: String, Codable, CaseIterable, Identifiable {
+  case preparing = "PREPARING"
+  case copying = "COPYING"
+  case extracting = "EXTRACTING"
+  case verifying = "VERIFYING"
+  case activating = "ACTIVATING"
+  case completed = "COMPLETED"
+
+  var id: String { rawValue }
+}
+
+struct AgentRuntimePackInstallProgress: Codable, Equatable {
+  var stage: AgentRuntimePackInstallStage
+  var processedBytes: Int64
+  var totalBytes: Int64
+
+  init(
+    stage: AgentRuntimePackInstallStage,
+    processedBytes: Int64 = 0,
+    totalBytes: Int64 = -1
+  ) {
+    self.stage = stage
+    self.processedBytes = processedBytes
+    self.totalBytes = totalBytes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case stage
+    case processedBytes = "processed_bytes"
+    case totalBytes = "total_bytes"
+  }
+}
+
+struct AgentRuntimePackInstallResult: Codable, Equatable {
+  var packId: String
+  var version: String
+  var state: AgentRuntimePackState
+  var installedBytes: Int64
+  var replacedExisting: Bool
+  var reason: String
+
+  init(
+    packId: String,
+    version: String,
+    state: AgentRuntimePackState,
+    installedBytes: Int64,
+    replacedExisting: Bool,
+    reason: String = ""
+  ) {
+    self.packId = packId
+    self.version = version
+    self.state = state
+    self.installedBytes = installedBytes
+    self.replacedExisting = replacedExisting
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case packId = "pack_id"
+    case version
+    case state
+    case installedBytes = "installed_bytes"
+    case replacedExisting = "replaced_existing"
+    case reason
+  }
+}
+
+enum AgentRuntimeDistributionSources {
+  static let githubCatalogURL =
+    "https://github.com/signalasi/SignalASI/releases/download/android-runtime-v1/android-runtime-catalog-v1.json"
+
+  static func catalogCandidates(languageTag: String) -> [String] {
+    downloadCandidates(url: githubCatalogURL, languageTag: languageTag)
+  }
+
+  static func downloadCandidates(url: String, languageTag: String) -> [String] {
+    guard isChinese(languageTag), isSignalAsiGitHubReleaseURL(url) else {
+      return [url]
+    }
+    var seen = Set<String>()
+    return (chinaAcceleratorPrefixes.map { "\($0)\(url)" } + [url]).filter { seen.insert($0).inserted }
+  }
+
+  private static func isChinese(_ languageTag: String) -> Bool {
+    let normalized = languageTag
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "_", with: "-")
+    return normalized == "zh" || normalized.hasPrefix("zh-")
+  }
+
+  private static func isSignalAsiGitHubReleaseURL(_ value: String) -> Bool {
+    guard let components = URLComponents(string: value) else {
+      return false
+    }
+    return components.scheme?.lowercased() == "https" &&
+      components.host?.lowercased() == "github.com" &&
+      components.path.hasPrefix(signalASIReleasePath)
+  }
+
+  private static let signalASIReleasePath = "/signalasi/SignalASI/releases/download/"
+  private static let chinaAcceleratorPrefixes = [
+    "https://ghfast.top/",
+    "https://ghproxy.net/",
+    "https://gh-proxy.com/"
+  ]
+}
+
+enum AgentRuntimePackCatalogPolicy {
+  static let requiredPacks = [
+    "linux-base",
+    "python-uv",
+    "node-js",
+    "go",
+    "rust",
+    "cpp",
+    "java",
+    "browser-automation",
+    "ffmpeg"
+  ]
+
+  static let requiredPackCapabilities: [String: Set<String>] =
+    Dictionary(grouping: AgentRuntimeLanguage.allCases, by: \.requiredPack)
+      .mapValues { Set($0.map(\.requiredCapability)) }
+
+  static var defaultSupportedArchitectures: [String] {
+    #if arch(arm64)
+      return ["arm64", "arm64-v8a"]
+    #elseif arch(x86_64)
+      return ["x86_64", "x86"]
+    #else
+      return []
+    #endif
+  }
+
+  @discardableResult
+  static func validate(
+    _ catalog: AgentRuntimePackCatalog,
+    nowMillis: Int64,
+    verifier: (AgentRuntimePackCatalog) -> Bool
+  ) throws -> AgentRuntimePackCatalog {
+    try require(catalog.formatVersion == formatVersion, "Runtime catalog format is incompatible")
+    try require(matches(catalog.catalogVersion, versionPattern), "Runtime catalog version is invalid")
+    try require(
+      catalog.generatedAtMillis > 0 && catalog.generatedAtMillis <= nowMillis + clockSkewMillis,
+      "Runtime catalog generation time is invalid"
+    )
+    try require(
+      catalog.expiresAtMillis > catalog.generatedAtMillis && catalog.expiresAtMillis >= nowMillis,
+      "Runtime catalog is expired"
+    )
+    try require((1...maxEntries).contains(catalog.entries.count), "Runtime catalog entry count is invalid")
+    try require(matches(catalog.signatureKeyId, sha256Pattern), "Runtime catalog signing key id is invalid")
+    try require(!catalog.signature.isEmpty, "Runtime catalog signature is missing")
+
+    var identities = Set<String>()
+    for entry in catalog.entries {
+      try validate(entry)
+      try require(
+        identities.insert("\(entry.packId)|\(entry.architecture)").inserted,
+        "Runtime catalog contains duplicate pack entries"
+      )
+    }
+    try validateDependencyGraphs(catalog.entries)
+    try require(verifier(catalog), "Runtime catalog signature is not trusted")
+    return catalog
+  }
+
+  static func compatibleEntries(
+    in catalog: AgentRuntimePackCatalog,
+    supportedArchitectures: [String] = defaultSupportedArchitectures,
+    hostVersionCode: Int64,
+    guestApiVersion: Int = AgentRuntimeGuestProtocol.version
+  ) -> [AgentRuntimePackCatalogEntry] {
+    catalog.entries.filter { entry in
+      supportedArchitectures.contains(entry.architecture) &&
+        entry.minimumHostVersionCode <= hostVersionCode &&
+        entry.guestApiVersion == guestApiVersion
+    }
+  }
+
+  static func validateReplacement(
+    previous: AgentRuntimePackCatalog?,
+    candidate: AgentRuntimePackCatalog
+  ) throws {
+    guard let previous else {
+      return
+    }
+    try require(
+      candidate.generatedAtMillis >= previous.generatedAtMillis,
+      "Runtime catalog rollback was rejected"
+    )
+    if candidate.generatedAtMillis == previous.generatedAtMillis {
+      try require(
+        candidate.signingPayload() == previous.signingPayload(),
+        "Runtime catalog generation was reused with different content"
+      )
+    }
+  }
+
+  private static func validate(_ entry: AgentRuntimePackCatalogEntry) throws {
+    try require(requiredPacks.contains(entry.packId), "Runtime catalog pack id is unsupported")
+    try require(matches(entry.version, versionPattern), "Runtime catalog pack version is invalid")
+    try require(matches(entry.architecture, architecturePattern), "Runtime catalog architecture is invalid")
+    try require(matches(entry.archiveSha256, sha256Pattern), "Runtime catalog archive digest is invalid")
+    try require((1...maxArchiveBytes).contains(entry.archiveSizeBytes), "Runtime catalog archive size is invalid")
+    try require((1...maxInstalledBytes).contains(entry.installedSizeBytes), "Runtime catalog installed size is invalid")
+    try require(
+      Set(entry.dependencies).count == entry.dependencies.count &&
+        entry.dependencies.allSatisfy { requiredPacks.contains($0) && $0 != entry.packId },
+      "Runtime catalog dependencies are invalid"
+    )
+    try require(!entry.license.isEmpty && entry.license.count <= 256, "Runtime catalog license is invalid")
+    try require(
+      entry.minimumHostVersionCode > 0 && entry.guestApiVersion > 0,
+      "Runtime catalog compatibility metadata is invalid"
+    )
+    try require(
+      entry.releaseNotes.count <= maxReleaseNotesCharacters &&
+        !entry.canonicalValue().contains("\n") &&
+        !entry.canonicalValue().contains("\r"),
+      "Runtime catalog text is invalid"
+    )
+    try validateHTTPSURL(entry.downloadUrl)
+  }
+
+  private static func validateDependencyGraphs(_ entries: [AgentRuntimePackCatalogEntry]) throws {
+    let entriesByArchitecture = Dictionary(grouping: entries, by: \.architecture)
+    for (architecture, architectureEntries) in entriesByArchitecture {
+      let entriesById = Dictionary(uniqueKeysWithValues: architectureEntries.map { ($0.packId, $0) })
+      for entry in architectureEntries {
+        try require(
+          entry.dependencies.allSatisfy { entriesById[$0] != nil },
+          "Runtime catalog dependency is missing for \(architecture)"
+        )
+      }
+
+      var visiting = Set<String>()
+      var visited = Set<String>()
+      func visit(_ packId: String) throws {
+        if visited.contains(packId) {
+          return
+        }
+        try require(visiting.insert(packId).inserted, "Runtime catalog contains a dependency cycle")
+        for dependency in entriesById[packId]?.dependencies ?? [] {
+          try visit(dependency)
+        }
+        visiting.remove(packId)
+        visited.insert(packId)
+      }
+      for packId in entriesById.keys {
+        try visit(packId)
+      }
+    }
+  }
+
+  @discardableResult
+  private static func validateHTTPSURL(_ value: String) throws -> URLComponents {
+    try require((1...maxURLCharacters).contains(value.count), "Runtime pack URL is invalid")
+    guard let components = URLComponents(string: value) else {
+      throw AgentRuntimeCapabilityError.invalid("Runtime pack URL is invalid")
+    }
+    let host = components.host?.lowercased() ?? ""
+    try require(
+      components.scheme?.lowercased() == "https" &&
+        !host.isEmpty &&
+        components.user == nil &&
+        components.password == nil &&
+        components.fragment == nil &&
+        (components.port ?? -1) != 0,
+      "Runtime pack URL must be public HTTPS"
+    )
+    try require(
+      host != "localhost" && !host.hasSuffix(".localhost") && !host.hasSuffix(".local"),
+      "Runtime pack URL must not target a local host"
+    )
+    return components
+  }
+
+  private static func matches(_ value: String, _ pattern: String) -> Bool {
+    value.range(of: pattern, options: [.regularExpression]) != nil
+  }
+
+  private static func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+    guard condition() else {
+      throw AgentRuntimeCapabilityError.invalid(message)
+    }
+  }
+
+  private static let formatVersion = 1
+  private static let maxEntries = 128
+  private static let maxURLCharacters = 4_096
+  private static let maxReleaseNotesCharacters = 8_192
+  private static let maxArchiveBytes: Int64 = 6 * 1_024 * 1_024 * 1_024
+  private static let maxInstalledBytes: Int64 = 12 * 1_024 * 1_024 * 1_024
+  private static let clockSkewMillis: Int64 = 24 * 60 * 60 * 1_000
+  private static let versionPattern = #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?$"#
+  private static let architecturePattern = #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#
+  private static let sha256Pattern = #"^[a-fA-F0-9]{64}$"#
 }
 
 struct AgentExecutionProfile: Codable, Equatable {
@@ -22865,10 +25434,16 @@ struct AgentTaskBudgetUsage: Codable, Equatable {
 struct AgentTaskBudgetEnvironment: Equatable {
   var batteryPercent: Int = -1
   var charging: Bool = false
+  var powerSaveMode: Bool = false
   var networkAvailable: Bool = false
+  var networkValidated: Bool = false
   var networkMetered: Bool = false
   var appMemoryBytes: Int64 = 0
   var availableMemoryBytes: Int64 = 0
+
+  var energyConstrained: Bool {
+    powerSaveMode || (!charging && (0...19).contains(batteryPercent))
+  }
 }
 
 enum AgentTaskBudgetLimit: String, Equatable {
@@ -22954,6 +25529,292 @@ enum AgentTaskBudgetPolicy {
 
   private static func denied(_ limit: AgentTaskBudgetLimit, _ reason: String) -> AgentTaskBudgetDecision {
     AgentTaskBudgetDecision(allowed: false, limit: limit, reason: reason)
+  }
+}
+
+struct GlobalAgentSettings: Codable, Equatable {
+  var enabled: Bool
+  var proactiveInsightsEnabled: Bool
+  var proactiveDiscoveryEnabled: Bool
+  var modelUnderstandingEnabled: Bool
+  var autonomousPreparationEnabled: Bool
+  var autonomousToolExecutionEnabled: Bool
+  var dynamicAutonomousReplanningEnabled: Bool
+  var longHorizonPlanningEnabled: Bool
+  var maxAutonomousReplans: Int
+  var allowCloudCognition: Bool
+  var autonomousResearchEnabled: Bool
+  var autoCreateConversationsEnabled: Bool
+  var notificationsEnabled: Bool
+  var adaptiveLearningEnabled: Bool
+  var protectBatteryForBackgroundWork: Bool
+  var allowMeteredBackgroundResearch: Bool
+  var dailyBackgroundModelCallBudget: Int
+  var maxConcurrentBackgroundModelCalls: Int
+  var dailyBackgroundTokenBudget: Int64
+  var dailyBackgroundReportedCostBudgetMicros: Int64
+  var dailyMessageBudget: Int
+  var dailyDiscoveryTaskBudget: Int
+  var topicCooldownMillis: Int64
+  var discoveryIntervalMillis: Int64
+  var monitorIntervalMillis: Int64
+
+  static let `default` = GlobalAgentSettings()
+
+  init(
+    enabled: Bool = true,
+    proactiveInsightsEnabled: Bool = true,
+    proactiveDiscoveryEnabled: Bool = true,
+    modelUnderstandingEnabled: Bool = true,
+    autonomousPreparationEnabled: Bool = true,
+    autonomousToolExecutionEnabled: Bool = true,
+    dynamicAutonomousReplanningEnabled: Bool = true,
+    longHorizonPlanningEnabled: Bool = true,
+    maxAutonomousReplans: Int = 3,
+    allowCloudCognition: Bool = false,
+    autonomousResearchEnabled: Bool = true,
+    autoCreateConversationsEnabled: Bool = true,
+    notificationsEnabled: Bool = true,
+    adaptiveLearningEnabled: Bool = true,
+    protectBatteryForBackgroundWork: Bool = true,
+    allowMeteredBackgroundResearch: Bool = false,
+    dailyBackgroundModelCallBudget: Int = 48,
+    maxConcurrentBackgroundModelCalls: Int = 3,
+    dailyBackgroundTokenBudget: Int64 = 250_000,
+    dailyBackgroundReportedCostBudgetMicros: Int64 = 1_000_000,
+    dailyMessageBudget: Int = 4,
+    dailyDiscoveryTaskBudget: Int = 3,
+    topicCooldownMillis: Int64 = 6 * 60 * 60 * 1_000,
+    discoveryIntervalMillis: Int64 = 6 * 60 * 60 * 1_000,
+    monitorIntervalMillis: Int64 = 24 * 60 * 60 * 1_000
+  ) {
+    self.enabled = enabled
+    self.proactiveInsightsEnabled = proactiveInsightsEnabled
+    self.proactiveDiscoveryEnabled = proactiveDiscoveryEnabled
+    self.modelUnderstandingEnabled = modelUnderstandingEnabled
+    self.autonomousPreparationEnabled = autonomousPreparationEnabled
+    self.autonomousToolExecutionEnabled = autonomousToolExecutionEnabled
+    self.dynamicAutonomousReplanningEnabled = dynamicAutonomousReplanningEnabled
+    self.longHorizonPlanningEnabled = longHorizonPlanningEnabled
+    self.maxAutonomousReplans = max(0, min(maxAutonomousReplans, 24))
+    self.allowCloudCognition = allowCloudCognition
+    self.autonomousResearchEnabled = autonomousResearchEnabled
+    self.autoCreateConversationsEnabled = autoCreateConversationsEnabled
+    self.notificationsEnabled = notificationsEnabled
+    self.adaptiveLearningEnabled = adaptiveLearningEnabled
+    self.protectBatteryForBackgroundWork = protectBatteryForBackgroundWork
+    self.allowMeteredBackgroundResearch = allowMeteredBackgroundResearch
+    self.dailyBackgroundModelCallBudget = max(0, min(dailyBackgroundModelCallBudget, 1_000))
+    self.maxConcurrentBackgroundModelCalls = max(1, min(maxConcurrentBackgroundModelCalls, 24))
+    self.dailyBackgroundTokenBudget = max(0, min(dailyBackgroundTokenBudget, 100_000_000))
+    self.dailyBackgroundReportedCostBudgetMicros = max(0, min(dailyBackgroundReportedCostBudgetMicros, 1_000_000_000))
+    self.dailyMessageBudget = max(0, min(dailyMessageBudget, 200))
+    self.dailyDiscoveryTaskBudget = max(0, min(dailyDiscoveryTaskBudget, 200))
+    self.topicCooldownMillis = max(0, min(topicCooldownMillis, 30 * 24 * 60 * 60 * 1_000))
+    self.discoveryIntervalMillis = max(60_000, min(discoveryIntervalMillis, 30 * 24 * 60 * 60 * 1_000))
+    self.monitorIntervalMillis = max(60_000, min(monitorIntervalMillis, 30 * 24 * 60 * 60 * 1_000))
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case enabled
+    case proactiveInsightsEnabled = "proactive_insights_enabled"
+    case proactiveDiscoveryEnabled = "proactive_discovery_enabled"
+    case modelUnderstandingEnabled = "model_understanding_enabled"
+    case autonomousPreparationEnabled = "autonomous_preparation_enabled"
+    case autonomousToolExecutionEnabled = "autonomous_tool_execution_enabled"
+    case dynamicAutonomousReplanningEnabled = "dynamic_autonomous_replanning_enabled"
+    case longHorizonPlanningEnabled = "long_horizon_planning_enabled"
+    case maxAutonomousReplans = "max_autonomous_replans"
+    case allowCloudCognition = "allow_cloud_cognition"
+    case autonomousResearchEnabled = "autonomous_research_enabled"
+    case autoCreateConversationsEnabled = "auto_create_conversations_enabled"
+    case notificationsEnabled = "notifications_enabled"
+    case adaptiveLearningEnabled = "adaptive_learning_enabled"
+    case protectBatteryForBackgroundWork = "protect_battery_for_background_work"
+    case allowMeteredBackgroundResearch = "allow_metered_background_research"
+    case dailyBackgroundModelCallBudget = "daily_background_model_call_budget"
+    case maxConcurrentBackgroundModelCalls = "max_concurrent_background_model_calls"
+    case dailyBackgroundTokenBudget = "daily_background_token_budget"
+    case dailyBackgroundReportedCostBudgetMicros = "daily_background_reported_cost_budget_micros"
+    case dailyMessageBudget = "daily_message_budget"
+    case dailyDiscoveryTaskBudget = "daily_discovery_task_budget"
+    case topicCooldownMillis = "topic_cooldown_millis"
+    case discoveryIntervalMillis = "discovery_interval_millis"
+    case monitorIntervalMillis = "monitor_interval_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let fallback = Self.default
+    self.init(
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? fallback.enabled,
+      proactiveInsightsEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveInsightsEnabled) ?? fallback.proactiveInsightsEnabled,
+      proactiveDiscoveryEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveDiscoveryEnabled) ?? fallback.proactiveDiscoveryEnabled,
+      modelUnderstandingEnabled: try container.decodeIfPresent(Bool.self, forKey: .modelUnderstandingEnabled) ?? fallback.modelUnderstandingEnabled,
+      autonomousPreparationEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousPreparationEnabled) ?? fallback.autonomousPreparationEnabled,
+      autonomousToolExecutionEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousToolExecutionEnabled) ?? fallback.autonomousToolExecutionEnabled,
+      dynamicAutonomousReplanningEnabled: try container.decodeIfPresent(Bool.self, forKey: .dynamicAutonomousReplanningEnabled) ?? fallback.dynamicAutonomousReplanningEnabled,
+      longHorizonPlanningEnabled: try container.decodeIfPresent(Bool.self, forKey: .longHorizonPlanningEnabled) ?? fallback.longHorizonPlanningEnabled,
+      maxAutonomousReplans: try container.decodeIfPresent(Int.self, forKey: .maxAutonomousReplans) ?? fallback.maxAutonomousReplans,
+      allowCloudCognition: try container.decodeIfPresent(Bool.self, forKey: .allowCloudCognition) ?? fallback.allowCloudCognition,
+      autonomousResearchEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousResearchEnabled) ?? fallback.autonomousResearchEnabled,
+      autoCreateConversationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .autoCreateConversationsEnabled) ?? fallback.autoCreateConversationsEnabled,
+      notificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? fallback.notificationsEnabled,
+      adaptiveLearningEnabled: try container.decodeIfPresent(Bool.self, forKey: .adaptiveLearningEnabled) ?? fallback.adaptiveLearningEnabled,
+      protectBatteryForBackgroundWork: try container.decodeIfPresent(Bool.self, forKey: .protectBatteryForBackgroundWork) ?? fallback.protectBatteryForBackgroundWork,
+      allowMeteredBackgroundResearch: try container.decodeIfPresent(Bool.self, forKey: .allowMeteredBackgroundResearch) ?? fallback.allowMeteredBackgroundResearch,
+      dailyBackgroundModelCallBudget: try container.decodeIfPresent(Int.self, forKey: .dailyBackgroundModelCallBudget) ?? fallback.dailyBackgroundModelCallBudget,
+      maxConcurrentBackgroundModelCalls: try container.decodeIfPresent(Int.self, forKey: .maxConcurrentBackgroundModelCalls) ?? fallback.maxConcurrentBackgroundModelCalls,
+      dailyBackgroundTokenBudget: try container.decodeIfPresent(Int64.self, forKey: .dailyBackgroundTokenBudget) ?? fallback.dailyBackgroundTokenBudget,
+      dailyBackgroundReportedCostBudgetMicros: try container.decodeIfPresent(Int64.self, forKey: .dailyBackgroundReportedCostBudgetMicros) ?? fallback.dailyBackgroundReportedCostBudgetMicros,
+      dailyMessageBudget: try container.decodeIfPresent(Int.self, forKey: .dailyMessageBudget) ?? fallback.dailyMessageBudget,
+      dailyDiscoveryTaskBudget: try container.decodeIfPresent(Int.self, forKey: .dailyDiscoveryTaskBudget) ?? fallback.dailyDiscoveryTaskBudget,
+      topicCooldownMillis: try container.decodeIfPresent(Int64.self, forKey: .topicCooldownMillis) ?? fallback.topicCooldownMillis,
+      discoveryIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .discoveryIntervalMillis) ?? fallback.discoveryIntervalMillis,
+      monitorIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .monitorIntervalMillis) ?? fallback.monitorIntervalMillis
+    )
+  }
+}
+
+enum GlobalBackgroundWorkKind: String, Codable, CaseIterable, Identifiable {
+  case cognition = "COGNITION"
+  case research = "RESEARCH"
+  case autonomousWork = "AUTONOMOUS_WORK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalBackgroundWorkKind {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .cognition
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum GlobalBackgroundDeferralReason: String, Codable, CaseIterable, Identifiable {
+  case none = "NONE"
+  case powerSave = "POWER_SAVE"
+  case criticalBattery = "CRITICAL_BATTERY"
+  case lowBattery = "LOW_BATTERY"
+  case networkUnavailable = "NETWORK_UNAVAILABLE"
+  case networkUnvalidated = "NETWORK_UNVALIDATED"
+  case meteredNetwork = "METERED_NETWORK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalBackgroundDeferralReason {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .none
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct GlobalBackgroundExecutionDecision: Codable, Equatable {
+  var allowed: Bool
+  var nextEligibleAtMillis: Int64
+  var reason: GlobalBackgroundDeferralReason
+
+  init(
+    allowed: Bool,
+    nextEligibleAtMillis: Int64,
+    reason: GlobalBackgroundDeferralReason = .none
+  ) {
+    self.allowed = allowed
+    self.nextEligibleAtMillis = max(0, nextEligibleAtMillis)
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case allowed
+    case nextEligibleAtMillis = "next_eligible_at_millis"
+    case reason
+  }
+}
+
+enum GlobalBackgroundExecutionBudgetPolicy {
+  static let criticalBatteryPercent = 14
+  static let lowBatteryPercent = 24
+  static let powerSaveRetryMillis: Int64 = 30 * 60 * 1_000
+  static let criticalBatteryRetryMillis: Int64 = 60 * 60 * 1_000
+  static let lowBatteryReasoningRetryMillis: Int64 = 20 * 60 * 1_000
+  static let lowBatteryResearchRetryMillis: Int64 = 45 * 60 * 1_000
+  static let networkRecoveryRetryMillis: Int64 = 10 * 60 * 1_000
+  static let meteredNetworkRetryMillis: Int64 = 60 * 60 * 1_000
+
+  static func decide(
+    kind: GlobalBackgroundWorkKind,
+    environment: AgentTaskBudgetEnvironment,
+    settings: GlobalAgentSettings,
+    nowMillis: Int64,
+    explicitUserOverride: Bool = false
+  ) -> GlobalBackgroundExecutionDecision {
+    if explicitUserOverride {
+      return allowed(nowMillis)
+    }
+    if settings.protectBatteryForBackgroundWork {
+      if environment.powerSaveMode {
+        return deferred(nowMillis, powerSaveRetryMillis, .powerSave)
+      }
+      if !environment.charging && (0...criticalBatteryPercent).contains(environment.batteryPercent) {
+        return deferred(nowMillis, criticalBatteryRetryMillis, .criticalBattery)
+      }
+      if !environment.charging &&
+        ((criticalBatteryPercent + 1)...lowBatteryPercent).contains(environment.batteryPercent) {
+        let retry = kind == .research ? lowBatteryResearchRetryMillis : lowBatteryReasoningRetryMillis
+        return deferred(nowMillis, retry, .lowBattery)
+      }
+    }
+    if kind == .research {
+      if !environment.networkAvailable {
+        return deferred(nowMillis, networkRecoveryRetryMillis, .networkUnavailable)
+      }
+      if !environment.networkValidated {
+        return deferred(nowMillis, networkRecoveryRetryMillis, .networkUnvalidated)
+      }
+      if environment.networkMetered && !settings.allowMeteredBackgroundResearch {
+        return deferred(nowMillis, meteredNetworkRetryMillis, .meteredNetwork)
+      }
+    }
+    return allowed(nowMillis)
+  }
+
+  private static func allowed(_ nowMillis: Int64) -> GlobalBackgroundExecutionDecision {
+    GlobalBackgroundExecutionDecision(allowed: true, nextEligibleAtMillis: nowMillis)
+  }
+
+  private static func deferred(
+    _ nowMillis: Int64,
+    _ retryMillis: Int64,
+    _ reason: GlobalBackgroundDeferralReason
+  ) -> GlobalBackgroundExecutionDecision {
+    GlobalBackgroundExecutionDecision(
+      allowed: false,
+      nextEligibleAtMillis: nowMillis + retryMillis,
+      reason: reason
+    )
   }
 }
 
@@ -23990,6 +26851,941 @@ struct HomeAssistantSettings: Codable, Equatable {
     try container.encode(value.accessToken, forKey: .accessToken)
     try container.encode(value.defaultEntityId, forKey: .defaultEntityId)
   }
+}
+
+enum GlobalConversationEventType: String, Codable, CaseIterable, Identifiable {
+  case messageCreated = "MESSAGE_CREATED"
+  case messageUpdated = "MESSAGE_UPDATED"
+  case messageDeleted = "MESSAGE_DELETED"
+  case conversationCreated = "CONVERSATION_CREATED"
+  case conversationUpdated = "CONVERSATION_UPDATED"
+  case conversationMerged = "CONVERSATION_MERGED"
+  case conversationDeleted = "CONVERSATION_DELETED"
+  case attachmentAdded = "ATTACHMENT_ADDED"
+  case artifactCreated = "ARTIFACT_CREATED"
+  case taskUpdated = "TASK_UPDATED"
+  case toolStarted = "TOOL_STARTED"
+  case toolCompleted = "TOOL_COMPLETED"
+  case toolCancelled = "TOOL_CANCELLED"
+  case toolFailed = "TOOL_FAILED"
+  case toolResult = "TOOL_RESULT"
+  case cognitionResult = "COGNITION_RESULT"
+  case userFeedback = "USER_FEEDBACK"
+  case memoryCreated = "MEMORY_CREATED"
+  case memoryUpdated = "MEMORY_UPDATED"
+  case memoryConflicted = "MEMORY_CONFLICTED"
+  case memoryDeleted = "MEMORY_DELETED"
+  case knowledgeImported = "KNOWLEDGE_IMPORTED"
+  case knowledgeUpdated = "KNOWLEDGE_UPDATED"
+  case knowledgeAccessChanged = "KNOWLEDGE_ACCESS_CHANGED"
+  case knowledgeDeleted = "KNOWLEDGE_DELETED"
+  case authorizationGranted = "AUTHORIZATION_GRANTED"
+  case authorizationRevoked = "AUTHORIZATION_REVOKED"
+  case authorizationPolicyChanged = "AUTHORIZATION_POLICY_CHANGED"
+  case resourceRegistered = "RESOURCE_REGISTERED"
+  case resourceUpdated = "RESOURCE_UPDATED"
+  case resourceRemoved = "RESOURCE_REMOVED"
+  case resourceStateChanged = "RESOURCE_STATE_CHANGED"
+  case capabilitySnapshotReset = "CAPABILITY_SNAPSHOT_RESET"
+
+  var id: String { rawValue }
+
+  var isCapabilityLifecycleEvent: Bool {
+    Self.capabilityLifecycleEvents.contains(self)
+  }
+
+  private static let capabilityLifecycleEvents: Set<GlobalConversationEventType> = [
+    .authorizationGranted,
+    .authorizationRevoked,
+    .authorizationPolicyChanged,
+    .resourceRegistered,
+    .resourceUpdated,
+    .resourceRemoved,
+    .resourceStateChanged,
+    .capabilitySnapshotReset
+  ]
+}
+
+enum GlobalConversationActor: String, Codable, CaseIterable, Identifiable {
+  case user = "USER"
+  case assistant = "ASSISTANT"
+  case tool = "TOOL"
+  case system = "SYSTEM"
+  case globalAgent = "GLOBAL_AGENT"
+
+  var id: String { rawValue }
+}
+
+enum GlobalConversationSensitivity: String, Codable, CaseIterable, Identifiable {
+  case personal = "PERSONAL"
+  case sessionPrivate = "SESSION_PRIVATE"
+
+  var id: String { rawValue }
+}
+
+struct GlobalConversationEvent: Codable, Equatable, Identifiable {
+  var id: String
+  var type: GlobalConversationEventType
+  var conversationId: String
+  var messageId: String
+  var actor: GlobalConversationActor
+  var timestampMillis: Int64
+  var content: String
+  var contentRef: String
+  var conversationTitle: String
+  var topicHints: Set<String>
+  var sensitivity: GlobalConversationSensitivity
+  var metadata: [String: String]
+  var causalEventIds: Set<String>
+  var retractedEventIds: Set<String>
+
+  init(
+    id: String = UUID().uuidString,
+    type: GlobalConversationEventType,
+    conversationId: String,
+    messageId: String = "",
+    actor: GlobalConversationActor,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    content: String = "",
+    contentRef: String = "",
+    conversationTitle: String = "",
+    topicHints: Set<String> = [],
+    sensitivity: GlobalConversationSensitivity = .personal,
+    metadata: [String: String] = [:],
+    causalEventIds: Set<String> = [],
+    retractedEventIds: Set<String> = []
+  ) {
+    self.id = id
+    self.type = type
+    self.conversationId = conversationId
+    self.messageId = messageId
+    self.actor = actor
+    self.timestampMillis = timestampMillis
+    self.content = content
+    self.contentRef = contentRef
+    self.conversationTitle = conversationTitle
+    self.topicHints = topicHints
+    self.sensitivity = sensitivity
+    self.metadata = metadata
+    self.causalEventIds = causalEventIds
+    self.retractedEventIds = retractedEventIds
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case type
+    case conversationId = "conversation_id"
+    case messageId = "message_id"
+    case actor
+    case timestampMillis = "timestamp_millis"
+    case content
+    case contentRef = "content_ref"
+    case conversationTitle = "conversation_title"
+    case topicHints = "topic_hints"
+    case sensitivity
+    case metadata
+    case causalEventIds = "causal_event_ids"
+    case retractedEventIds = "retracted_event_ids"
+  }
+}
+
+enum GlobalWorldLayer: String, Codable, CaseIterable, Identifiable {
+  case conversation = "CONVERSATION"
+  case topic = "TOPIC"
+  case user = "USER"
+  case realtime = "REALTIME"
+
+  var id: String { rawValue }
+}
+
+enum GlobalWorldItemKind: String, Codable, CaseIterable, Identifiable {
+  case topic = "TOPIC"
+  case goal = "GOAL"
+  case task = "TASK"
+  case decision = "DECISION"
+  case preference = "PREFERENCE"
+  case fact = "FACT"
+  case risk = "RISK"
+  case opportunity = "OPPORTUNITY"
+  case state = "STATE"
+
+  var id: String { rawValue }
+}
+
+enum GlobalWorldContextVisibility: String, Codable, CaseIterable, Identifiable {
+  case shareable = "SHAREABLE"
+  case localOnly = "LOCAL_ONLY"
+
+  var id: String { rawValue }
+}
+
+struct AgentResourceHealth: Codable, Equatable {
+  var successes: Int
+  var failures: Int
+  var consecutiveFailures: Int
+  var averageLatencyMs: Int64
+  var circuitOpenUntil: Int64
+  var lastUpdatedAt: Int64
+
+  var reliabilityPercent: Int {
+    let samples = successes + failures
+    guard samples > 0 else { return 90 }
+    return max(0, min(100, successes * 100 / samples))
+  }
+
+  init(
+    successes: Int = 0,
+    failures: Int = 0,
+    consecutiveFailures: Int = 0,
+    averageLatencyMs: Int64 = 0,
+    circuitOpenUntil: Int64 = 0,
+    lastUpdatedAt: Int64 = 0
+  ) {
+    self.successes = max(successes, 0)
+    self.failures = max(failures, 0)
+    self.consecutiveFailures = max(consecutiveFailures, 0)
+    self.averageLatencyMs = max(averageLatencyMs, 0)
+    self.circuitOpenUntil = max(circuitOpenUntil, 0)
+    self.lastUpdatedAt = max(lastUpdatedAt, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case successes
+    case failures
+    case consecutiveFailures = "consecutive_failures"
+    case averageLatencyMs = "average_latency_ms"
+    case circuitOpenUntil = "circuit_open_until"
+    case lastUpdatedAt = "last_updated_at"
+  }
+}
+
+enum GlobalAgentText {
+  static func stableKey(_ values: String...) -> String {
+    let normalized = values.map(normalize).joined(separator: "|").prefix(2_000)
+    return privateFingerprint(String(normalized)).prefix(32).description
+  }
+
+  static func normalize(_ value: String) -> String {
+    value.lowercased()
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  static func privateFingerprint(_ value: String) -> String {
+    SHA256.hash(data: Data(value.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
+enum GlobalCapabilityObservationExtractor {
+  static func snapshotReset(
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> GlobalConversationEvent {
+    GlobalConversationEvent(
+      id: "capability-snapshot-reset:\(timestampMillis)",
+      type: .capabilitySnapshotReset,
+      conversationId: capabilityConversationId,
+      actor: .system,
+      timestampMillis: timestampMillis,
+      conversationTitle: capabilityTopic,
+      metadata: [
+        "origin": "capability_reconciliation",
+        "projection": "reset_capabilities",
+        "context_visibility": GlobalWorldContextVisibility.localOnly.rawValue
+      ]
+    )
+  }
+
+  static func authorizationMutations(
+    before: Set<String>,
+    after: Set<String>,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [GlobalConversationEvent] {
+    before.union(after).sorted().compactMap { consentKey in
+      if before.contains(consentKey), after.contains(consentKey) {
+        return nil
+      }
+      return authorizationEvent(
+        consentKey: consentKey,
+        granted: after.contains(consentKey),
+        timestampMillis: timestampMillis
+      )
+    }
+  }
+
+  static func safetyPolicyMutation(
+    before: AgentSafetySettings?,
+    after: AgentSafetySettings,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> GlobalConversationEvent? {
+    if before == after {
+      return nil
+    }
+    let stableKey = "capability:authorization:agent-safety-policy"
+    let executionState = after.executionPaused ? "paused" : "active"
+    let taskMode = after.taskExecutionMode.rawValue.replacingOccurrences(of: "_", with: " ")
+    let permissionMode = after.permissionMode.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
+    let summary = "The local Agent task mode is \(taskMode); the action policy uses \(permissionMode) mode; execution is \(executionState); local actions are \(allowed(after.localActionsAllowed)); connector calls are \(allowed(after.connectorCallsAllowed)); device control is \(allowed(after.deviceControlAllowed))."
+    let fingerprint = GlobalAgentText.stableKey(
+      after.taskExecutionMode.androidName,
+      after.permissionMode.rawValue,
+      String(after.highRiskGuard),
+      String(after.memoryCapture),
+      String(after.screenObservationAllowed),
+      String(after.localActionsAllowed),
+      String(after.connectorCallsAllowed),
+      String(after.deviceControlAllowed),
+      String(after.executionPaused)
+    )
+    return GlobalConversationEvent(
+      id: "capability-safety-policy:\(fingerprint):\(timestampMillis)",
+      type: .authorizationPolicyChanged,
+      conversationId: capabilityConversationId,
+      messageId: "agent-safety-policy",
+      actor: .system,
+      timestampMillis: timestampMillis,
+      content: summary,
+      contentRef: "encrypted://agent-authorization/safety-policy",
+      conversationTitle: authorizationTopic,
+      topicHints: [authorizationTopic],
+      metadata: [
+        "origin": "agent_safety_policy",
+        "task_execution_mode": after.taskExecutionMode.rawValue,
+        "permission_mode": after.permissionMode.rawValue.lowercased(),
+        "high_risk_guard": String(after.highRiskGuard),
+        "memory_capture": String(after.memoryCapture),
+        "screen_observation_allowed": String(after.screenObservationAllowed),
+        "local_actions_allowed": String(after.localActionsAllowed),
+        "connector_calls_allowed": String(after.connectorCallsAllowed),
+        "device_control_allowed": String(after.deviceControlAllowed),
+        "execution_paused": String(after.executionPaused),
+        "identity_stable_key": stableKey,
+        "identity_summary": summary,
+        "identity_kind": GlobalWorldItemKind.decision.rawValue,
+        "identity_layer": GlobalWorldLayer.user.rawValue,
+        "identity_topic": authorizationTopic,
+        "replace_stable_keys": stableKey,
+        "context_visibility": GlobalWorldContextVisibility.localOnly.rawValue,
+        "projection": "replace"
+      ]
+    )
+  }
+
+  static func mcpMutations(
+    before: [AgentMcpConnection],
+    after: [AgentMcpConnection],
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [GlobalConversationEvent] {
+    let previous: [String: CapabilityResourceSnapshot] = before.reduce(into: [:]) { result, connection in
+      result[connection.id] = mcpSnapshot(connection, nowMillis: timestampMillis)
+    }
+    let current: [String: CapabilityResourceSnapshot] = after.reduce(into: [:]) { result, connection in
+      result[connection.id] = mcpSnapshot(connection, nowMillis: timestampMillis)
+    }
+    resourceMutations(
+      before: previous,
+      after: current,
+      timestampMillis: timestampMillis
+    )
+  }
+
+  static func agentMutations(
+    before: [AgentRegistration],
+    after: [AgentRegistration],
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [GlobalConversationEvent] {
+    let previous: [String: CapabilityResourceSnapshot] = before.reduce(into: [:]) { result, registration in
+      result[registration.agentId] = agentSnapshot(registration)
+    }
+    let current: [String: CapabilityResourceSnapshot] = after.reduce(into: [:]) { result, registration in
+      result[registration.agentId] = agentSnapshot(registration)
+    }
+    resourceMutations(
+      before: previous,
+      after: current,
+      timestampMillis: timestampMillis
+    )
+  }
+
+  static func homeAssistantMutations(
+    before: HomeAssistantSettings,
+    after: HomeAssistantSettings,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [GlobalConversationEvent] {
+    let previous: [String: CapabilityResourceSnapshot] = homeAssistantSnapshot(before).map { [homeAssistantId: $0] } ?? [:]
+    let current: [String: CapabilityResourceSnapshot] = homeAssistantSnapshot(after).map { [homeAssistantId: $0] } ?? [:]
+    return resourceMutations(before: previous, after: current, timestampMillis: timestampMillis)
+  }
+
+  static func customDeviceMutations(
+    before: [CustomDeviceConnector],
+    after: [CustomDeviceConnector],
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [GlobalConversationEvent] {
+    let previous: [String: CapabilityResourceSnapshot] = before.reduce(into: [:]) { result, connector in
+      result[connector.id] = customDeviceSnapshot(connector)
+    }
+    let current: [String: CapabilityResourceSnapshot] = after.reduce(into: [:]) { result, connector in
+      result[connector.id] = customDeviceSnapshot(connector)
+    }
+    resourceMutations(
+      before: previous,
+      after: current,
+      timestampMillis: timestampMillis
+    )
+  }
+
+  static func resourceHealthTransition(
+    resourceId: String,
+    before: AgentResourceHealth,
+    after: AgentResourceHealth,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> GlobalConversationEvent? {
+    guard !resourceId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    let previousState = healthState(before, nowMillis: timestampMillis)
+    let currentState = healthState(after, nowMillis: timestampMillis)
+    guard previousState != currentState else {
+      return nil
+    }
+    let idHash = safeId("health", resourceId)
+    let stateKey = stateStableKey(kind: "health", idHash: idHash)
+    let resourceClass: String
+    if resourceId.hasPrefix("domain:") {
+      resourceClass = "failure domain"
+    } else if resourceId.hasPrefix("target:") {
+      resourceClass = "callable target"
+    } else {
+      resourceClass = "runtime resource"
+    }
+    let shortHash = idHash.prefix(8)
+    let stateSummary: String
+    switch currentState {
+    case .unknown:
+      stateSummary = "The \(resourceClass) \(shortHash) has no recent health evidence."
+    case .healthy:
+      stateSummary = "The \(resourceClass) \(shortHash) is available."
+    case .degraded:
+      stateSummary = "The \(resourceClass) \(shortHash) is degraded after \(after.consecutiveFailures) consecutive failures."
+    case .unavailable:
+      stateSummary = "The \(resourceClass) \(shortHash) is temporarily unavailable after \(after.consecutiveFailures) consecutive failures."
+    }
+    let fingerprint = GlobalAgentText.stableKey(currentState.rawValue, String(after.consecutiveFailures))
+    return GlobalConversationEvent(
+      id: "capability-health:\(idHash):\(fingerprint):\(timestampMillis)",
+      type: .resourceStateChanged,
+      conversationId: capabilityConversationId,
+      messageId: idHash,
+      actor: .system,
+      timestampMillis: timestampMillis,
+      content: stateSummary,
+      contentRef: "encrypted://agent-resource-health/\(idHash)",
+      conversationTitle: capabilityTopic,
+      topicHints: [capabilityTopic],
+      metadata: projectionMetadata(
+        resourceKind: "health",
+        resourceIdHash: idHash,
+        identityKey: "",
+        identitySummary: "",
+        stateKey: stateKey,
+        stateSummary: stateSummary,
+        stateCode: currentState.rawValue.lowercased(),
+        replaceKeys: [stateKey]
+      ).merging([
+        "origin": "resource_health",
+        "consecutive_failures": String(after.consecutiveFailures),
+        "reliability_percent": String(after.reliabilityPercent)
+      ]) { _, new in new }
+    )
+  }
+
+  private static func authorizationEvent(
+    consentKey: String,
+    granted: Bool,
+    timestampMillis: Int64
+  ) -> GlobalConversationEvent {
+    let idHash = safeId("authorization", consentKey)
+    let stableKey = "capability:authorization:\(idHash)"
+    let scope = authorizationScope(consentKey)
+    let summary = granted
+      ? "The user granted remembered confirmation consent for \(scope)."
+      : "The user revoked remembered confirmation consent for \(scope)."
+    return GlobalConversationEvent(
+      id: "capability-authorization:\(idHash):\(granted ? "granted" : "revoked"):\(timestampMillis)",
+      type: granted ? .authorizationGranted : .authorizationRevoked,
+      conversationId: capabilityConversationId,
+      messageId: idHash,
+      actor: .system,
+      timestampMillis: timestampMillis,
+      content: summary,
+      contentRef: "encrypted://agent-authorization/\(idHash)",
+      conversationTitle: authorizationTopic,
+      topicHints: [authorizationTopic],
+      metadata: [
+        "origin": "confirmation_consent",
+        "authorization_scope": scope,
+        "authorization_state": granted ? "granted" : "revoked",
+        "identity_stable_key": stableKey,
+        "identity_summary": summary,
+        "identity_kind": GlobalWorldItemKind.decision.rawValue,
+        "identity_layer": GlobalWorldLayer.user.rawValue,
+        "identity_topic": authorizationTopic,
+        "replace_stable_keys": stableKey,
+        "context_visibility": GlobalWorldContextVisibility.localOnly.rawValue,
+        "projection": "replace"
+      ]
+    )
+  }
+
+  private static func resourceMutations(
+    before: [String: CapabilityResourceSnapshot],
+    after: [String: CapabilityResourceSnapshot],
+    timestampMillis: Int64
+  ) -> [GlobalConversationEvent] {
+    before.keys.reduce(into: Set(after.keys)) { result, key in result.insert(key) }
+      .sorted()
+      .compactMap { resourceId in
+        let previous = before[resourceId]
+        let current = after[resourceId]
+        if previous?.materialFingerprint == current?.materialFingerprint {
+          return nil
+        }
+        if let current {
+          return resourceUpserted(previous: previous, current: current, timestampMillis: timestampMillis)
+        }
+        if let previous {
+          return resourceRemoved(previous: previous, timestampMillis: timestampMillis)
+        }
+        return nil
+      }
+  }
+
+  private static func resourceUpserted(
+    previous: CapabilityResourceSnapshot?,
+    current: CapabilityResourceSnapshot,
+    timestampMillis: Int64
+  ) -> GlobalConversationEvent {
+    let type: GlobalConversationEventType = previous == nil ? .resourceRegistered : .resourceUpdated
+    return GlobalConversationEvent(
+      id: "capability-resource:\(current.resourceKind):\(current.idHash):\(current.materialFingerprint):\(timestampMillis)",
+      type: type,
+      conversationId: capabilityConversationId,
+      messageId: current.idHash,
+      actor: .system,
+      timestampMillis: timestampMillis,
+      content: "\(current.identitySummary) \(current.stateSummary)".trimmingCharacters(in: .whitespacesAndNewlines),
+      contentRef: "encrypted://agent-capabilities/\(current.resourceKind)/\(current.idHash)",
+      conversationTitle: capabilityTopic,
+      topicHints: [capabilityTopic],
+      metadata: projectionMetadata(
+        resourceKind: current.resourceKind,
+        resourceIdHash: current.idHash,
+        identityKey: current.identityKey,
+        identitySummary: current.identitySummary,
+        stateKey: current.stateKey,
+        stateSummary: current.stateSummary,
+        stateCode: current.stateCode,
+        replaceKeys: [current.identityKey, current.stateKey]
+      ).merging(current.safeMetadata) { _, new in new }
+        .merging(["origin": "capability_registry"]) { _, new in new }
+    )
+  }
+
+  private static func resourceRemoved(
+    previous: CapabilityResourceSnapshot,
+    timestampMillis: Int64
+  ) -> GlobalConversationEvent {
+    GlobalConversationEvent(
+      id: "capability-resource-removed:\(previous.resourceKind):\(previous.idHash):\(timestampMillis)",
+      type: .resourceRemoved,
+      conversationId: capabilityConversationId,
+      messageId: previous.idHash,
+      actor: .system,
+      timestampMillis: timestampMillis,
+      content: "The \(previous.resourceKind.replacingOccurrences(of: "_", with: " ")) resource \(previous.displayName) was removed.",
+      contentRef: "encrypted://agent-capabilities/\(previous.resourceKind)/\(previous.idHash)",
+      conversationTitle: capabilityTopic,
+      metadata: [
+        "origin": "capability_registry",
+        "resource_kind": previous.resourceKind,
+        "resource_id_hash": previous.idHash,
+        "replace_stable_keys": [previous.identityKey, previous.stateKey].joined(separator: ","),
+        "context_visibility": GlobalWorldContextVisibility.localOnly.rawValue,
+        "projection": "retract_stable_keys"
+      ]
+    )
+  }
+
+  private static func projectionMetadata(
+    resourceKind: String,
+    resourceIdHash: String,
+    identityKey: String,
+    identitySummary: String,
+    stateKey: String,
+    stateSummary: String,
+    stateCode: String,
+    replaceKeys: Set<String>
+  ) -> [String: String] {
+    [
+      "resource_kind": resourceKind,
+      "resource_id_hash": resourceIdHash,
+      "identity_stable_key": identityKey,
+      "identity_summary": identitySummary,
+      "identity_kind": GlobalWorldItemKind.fact.rawValue,
+      "identity_layer": GlobalWorldLayer.user.rawValue,
+      "identity_topic": capabilityTopic,
+      "state_stable_key": stateKey,
+      "state_summary": stateSummary,
+      "state_kind": GlobalWorldItemKind.state.rawValue,
+      "state_layer": GlobalWorldLayer.realtime.rawValue,
+      "state_topic": capabilityTopic,
+      "resource_state": stateCode,
+      "replace_stable_keys": replaceKeys.filter { !$0.isEmpty }.sorted().joined(separator: ","),
+      "context_visibility": GlobalWorldContextVisibility.localOnly.rawValue,
+      "projection": "replace"
+    ]
+  }
+
+  private static func mcpSnapshot(
+    _ connection: AgentMcpConnection,
+    nowMillis: Int64
+  ) -> CapabilityResourceSnapshot {
+    let idHash = safeId("mcp", connection.id)
+    let authState = connection.effectiveAuthState(nowMillis: nowMillis)
+    let callable = connection.isCallable(nowMillis: nowMillis)
+    let stateCode: String
+    if !connection.enabled {
+      stateCode = "disabled"
+    } else if [.notConfigured, .challengeRequired, .authenticating, .reauthenticationRequired, .error].contains(authState) {
+      stateCode = "needs_setup"
+    } else {
+      switch connection.state {
+      case .connecting:
+        stateCode = "connecting"
+      case .connected:
+        stateCode = "available"
+      case .error:
+        stateCode = "error"
+      case .unavailable:
+        stateCode = "unavailable"
+      case .needsSetup:
+        stateCode = "needs_setup"
+      case .installed:
+        stateCode = callable ? "ready" : "unavailable"
+      }
+    }
+    let name = cleanLabel(connection.displayName, fallback: "MCP resource")
+    let identity = "\(name) is an installed \(connection.distribution.rawValue.replacingOccurrences(of: "_", with: " ")) MCP resource with \(connection.toolIds.count) tools."
+    let state: String
+    switch stateCode {
+    case "available":
+      state = "\(name) is connected and callable."
+    case "ready":
+      state = "\(name) is ready when requested."
+    case "connecting":
+      state = "\(name) is connecting."
+    case "needs_setup":
+      state = "\(name) requires authentication or setup."
+    case "disabled":
+      state = "\(name) is disabled."
+    case "error":
+      state = "\(name) is unavailable because its connection failed."
+    default:
+      state = "\(name) is unavailable."
+    }
+    let fingerprint = GlobalAgentText.stableKey(
+      name,
+      connection.catalogId,
+      privateFingerprint(connection.endpoint),
+      connection.distribution.rawValue,
+      connection.transport.rawValue,
+      connection.authProfile.method.rawValue,
+      authState.rawValue,
+      connection.state.rawValue,
+      String(connection.enabled),
+      String(callable),
+      connection.toolIds.sorted().joined(separator: "|"),
+      connection.packageVersion,
+      connection.packageSha256
+    )
+    return CapabilityResourceSnapshot(
+      resourceKind: "mcp",
+      idHash: idHash,
+      displayName: name,
+      identitySummary: identity,
+      stateSummary: state,
+      stateCode: stateCode,
+      materialFingerprint: fingerprint,
+      safeMetadata: [
+        "distribution": connection.distribution.rawValue,
+        "transport": connection.transport.rawValue,
+        "auth_state": authState.rawValue,
+        "connection_state": connection.state.rawValue,
+        "enabled": String(connection.enabled),
+        "callable": String(callable),
+        "tool_count": String(Set(connection.toolIds).count)
+      ]
+    )
+  }
+
+  private static func agentSnapshot(_ registration: AgentRegistration) -> CapabilityResourceSnapshot {
+    let idHash = safeId("agent", registration.agentId)
+    let name = cleanLabel(registration.displayName, fallback: "Agent resource")
+    let atCapacity = !registration.hasCapacity
+    let stateCode: String
+    switch registration.status {
+    case .online, .idle:
+      stateCode = atCapacity ? "busy" : "available"
+    case .busy:
+      stateCode = "busy"
+    case .degraded:
+      stateCode = "degraded"
+    case .updating:
+      stateCode = "updating"
+    case .permissionRequired:
+      stateCode = "permission_required"
+    case .offline:
+      stateCode = "offline"
+    case .unreachable:
+      stateCode = "unreachable"
+    }
+    let location = registration.location.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
+    let identity = "\(name) is a registered \(location) Agent resource with \(registration.capabilities.count) capabilities."
+    let state: String
+    switch stateCode {
+    case "available":
+      state = "\(name) is available."
+    case "busy":
+      state = "\(name) is busy\(atCapacity ? " and at capacity" : "")."
+    case "degraded":
+      state = "\(name) is degraded."
+    case "updating":
+      state = "\(name) is updating."
+    case "permission_required":
+      state = "\(name) requires local permission."
+    case "offline":
+      state = "\(name) is offline."
+    default:
+      state = "\(name) is unreachable."
+    }
+    let fingerprint = GlobalAgentText.stableKey(
+      name,
+      registration.kind.rawValue,
+      registration.location.rawValue,
+      registration.status.rawValue,
+      registration.capabilities.map(\.rawValue).sorted().joined(separator: "|"),
+      registration.toolIds.sorted().joined(separator: "|"),
+      String(registration.permissionScopes.count),
+      registration.`protocol`.preferred,
+      registration.connectionKind.rawValue,
+      registration.cost.rawValue,
+      registration.latency.rawValue,
+      registration.trust.rawValue,
+      String(atCapacity),
+      String(registration.maxParallelRuns),
+      registration.capabilitiesHash
+    )
+    return CapabilityResourceSnapshot(
+      resourceKind: "agent",
+      idHash: idHash,
+      displayName: name,
+      identitySummary: identity,
+      stateSummary: state,
+      stateCode: stateCode,
+      materialFingerprint: fingerprint,
+      safeMetadata: [
+        "agent_kind": registration.kind.rawValue.lowercased(),
+        "location": registration.location.rawValue.lowercased(),
+        "endpoint_state": registration.status.rawValue.lowercased(),
+        "connection_kind": registration.connectionKind.rawValue.lowercased(),
+        "trust": registration.trust.rawValue.lowercased(),
+        "capability_count": String(registration.capabilities.count),
+        "tool_count": String(registration.toolIds.count),
+        "at_capacity": String(atCapacity)
+      ]
+    )
+  }
+
+  private static func homeAssistantSnapshot(_ settings: HomeAssistantSettings) -> CapabilityResourceSnapshot? {
+    let present = settings.enabled ||
+      !settings.baseUrl.isEmpty ||
+      !settings.accessToken.isEmpty ||
+      !settings.defaultEntityId.isEmpty
+    guard present else {
+      return nil
+    }
+    let idHash = safeId("home_assistant", homeAssistantId)
+    let stateCode: String
+    if settings.configured {
+      stateCode = "ready"
+    } else if settings.enabled {
+      stateCode = "needs_setup"
+    } else {
+      stateCode = "disabled"
+    }
+    let identity = "Home Assistant is registered as a smart-device resource."
+    let state: String
+    switch stateCode {
+    case "ready":
+      state = "Home Assistant is enabled and ready."
+    case "needs_setup":
+      state = "Home Assistant is enabled but requires connection setup."
+    default:
+      state = "Home Assistant is disabled."
+    }
+    return CapabilityResourceSnapshot(
+      resourceKind: "home_assistant",
+      idHash: idHash,
+      displayName: "Home Assistant",
+      identitySummary: identity,
+      stateSummary: state,
+      stateCode: stateCode,
+      materialFingerprint: GlobalAgentText.stableKey(
+        String(settings.enabled),
+        String(settings.credentialsConfigured),
+        privateFingerprint(settings.baseUrl),
+        privateFingerprint(settings.defaultEntityId),
+        String(!settings.defaultEntityId.isEmpty)
+      ),
+      safeMetadata: [
+        "enabled": String(settings.enabled),
+        "credentials_configured": String(settings.credentialsConfigured),
+        "default_target_configured": String(!settings.defaultEntityId.isEmpty)
+      ]
+    )
+  }
+
+  private static func customDeviceSnapshot(_ connector: CustomDeviceConnector) -> CapabilityResourceSnapshot {
+    let idHash = safeId("custom_device", connector.id)
+    let name = cleanLabel(connector.name, fallback: "Custom device")
+    let stateCode: String
+    if !connector.enabled {
+      stateCode = "disabled"
+    } else if connector.configured {
+      stateCode = "ready"
+    } else {
+      stateCode = "needs_setup"
+    }
+    let transport = connector.transport.rawValue.lowercased().replacingOccurrences(of: "_", with: " ")
+    let identity = "\(name) is a registered \(transport) device resource."
+    let state: String
+    switch stateCode {
+    case "ready":
+      state = "\(name) is enabled and configured."
+    case "disabled":
+      state = "\(name) is disabled."
+    default:
+      state = "\(name) requires connection setup."
+    }
+    return CapabilityResourceSnapshot(
+      resourceKind: "custom_device",
+      idHash: idHash,
+      displayName: name,
+      identitySummary: identity,
+      stateSummary: state,
+      stateCode: stateCode,
+      materialFingerprint: GlobalAgentText.stableKey(
+        name,
+        connector.transport.rawValue,
+        privateFingerprint(connector.endpoint),
+        privateFingerprint(connector.commandTarget),
+        String(!connector.username.isEmpty),
+        String(!connector.authToken.isEmpty),
+        connector.risk.rawValue,
+        String(connector.enabled),
+        String(connector.configured)
+      ),
+      safeMetadata: [
+        "transport": connector.transport.rawValue.lowercased(),
+        "risk": connector.risk.rawValue.lowercased(),
+        "enabled": String(connector.enabled),
+        "configured": String(connector.configured)
+      ]
+    )
+  }
+
+  private static func healthState(
+    _ health: AgentResourceHealth,
+    nowMillis: Int64
+  ) -> ObservedHealthState {
+    if health.successes + health.failures == 0 {
+      return .unknown
+    }
+    if health.circuitOpenUntil > nowMillis || health.consecutiveFailures >= 3 {
+      return .unavailable
+    }
+    if health.consecutiveFailures > 0 {
+      return .degraded
+    }
+    return .healthy
+  }
+
+  private static func authorizationScope(_ consentKey: String) -> String {
+    if consentKey == "location" { return "location access" }
+    if consentKey == "microphone" { return "microphone use" }
+    if consentKey == "downloads" { return "downloads" }
+    if consentKey == "contacts_write" { return "contact changes" }
+    if consentKey == "calendar_write" { return "calendar changes" }
+    if consentKey == "bluetooth_discovery" { return "Bluetooth discovery" }
+    if consentKey == "wifi_scan" { return "Wi-Fi scanning" }
+    if consentKey == "installed_apps_read" { return "installed-app inspection" }
+    if consentKey.hasPrefix("device_control:") { return "a configured device target" }
+    return "a local action category"
+  }
+
+  private static func cleanLabel(_ value: String, fallback: String) -> String {
+    let clean = value
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return clean.isEmpty ? fallback : String(clean.prefix(maxLabelCharacters))
+  }
+
+  private static func allowed(_ value: Bool) -> String {
+    value ? "allowed" : "blocked"
+  }
+
+  private static func safeId(_ kind: String, _ id: String) -> String {
+    privateFingerprint("\(kind)\u{0000}\(id)").prefix(32).description
+  }
+
+  private static func privateFingerprint(_ value: String) -> String {
+    GlobalAgentText.privateFingerprint(value)
+  }
+
+  private static func identityStableKey(kind: String, idHash: String) -> String {
+    "capability:resource:\(kind):\(idHash):identity"
+  }
+
+  private static func stateStableKey(kind: String, idHash: String) -> String {
+    "capability:resource:\(kind):\(idHash):state"
+  }
+
+  private struct CapabilityResourceSnapshot {
+    var resourceKind: String
+    var idHash: String
+    var displayName: String
+    var identitySummary: String
+    var stateSummary: String
+    var stateCode: String
+    var materialFingerprint: String
+    var safeMetadata: [String: String]
+
+    var identityKey: String { identityStableKey(kind: resourceKind, idHash: idHash) }
+    var stateKey: String { stateStableKey(kind: resourceKind, idHash: idHash) }
+  }
+
+  private enum ObservedHealthState: String {
+    case unknown = "UNKNOWN"
+    case healthy = "HEALTHY"
+    case degraded = "DEGRADED"
+    case unavailable = "UNAVAILABLE"
+  }
+
+  private static let capabilityConversationId = "global-capabilities"
+  private static let capabilityTopic = "Available capabilities"
+  private static let authorizationTopic = "Local authorization"
+  private static let homeAssistantId = "home-assistant"
+  private static let maxLabelCharacters = 120
 }
 
 struct AgentModelPlannerSettings: Codable, Equatable {
