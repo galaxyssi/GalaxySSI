@@ -1537,6 +1537,146 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentConfirmationPolicy.tier(for: connectorAction), .direct)
   }
 
+  func testAgentActionRiskHardenerRaisesConnectorAndVisualOcrRisk() {
+    let plan = riskHardenerPlan([
+      riskHardenerAction(
+        id: "connector-deploy",
+        kind: .callConnector,
+        risk: .low,
+        target: "Codex",
+        description: "Ask Codex to prepare a release",
+        parameters: ["prompt": "Deploy and send email release notes"]
+      ),
+      riskHardenerAction(
+        id: "tap-low-confidence",
+        kind: .tap,
+        risk: .low,
+        parameters: [
+          "element_origin": AgentElementOrigin.visualOcr.rawValue,
+          "element_confidence": "0.42"
+        ]
+      ),
+      riskHardenerAction(
+        id: "type-confident-ocr",
+        kind: .typeText,
+        risk: .low,
+        parameters: [
+          "field_origin": AgentElementOrigin.visualOcr.rawValue,
+          "field_confidence": "0.91"
+        ]
+      )
+    ])
+
+    let hardened = AgentActionRiskHardener.enforce(plan: plan)
+
+    XCTAssertEqual(hardened.actions.first { $0.id == "connector-deploy" }?.risk, .high)
+    XCTAssertEqual(hardened.actions.first { $0.id == "tap-low-confidence" }?.risk, .high)
+    XCTAssertEqual(hardened.actions.first { $0.id == "type-confident-ocr" }?.risk, .medium)
+    XCTAssertTrue(hardened.validation.valid)
+  }
+
+  func testAgentActionRiskHardenerUsesCustomDeviceAndHomeAssistantRisk() {
+    let plan = riskHardenerPlan([
+      riskHardenerAction(
+        id: "known-custom-device",
+        kind: .controlDevice,
+        risk: .low,
+        parameters: ["connector_id": "custom-device:kitchen-light"]
+      ),
+      riskHardenerAction(
+        id: "unknown-custom-device",
+        kind: .controlDevice,
+        risk: .low,
+        parameters: ["connector_id": "custom-device:missing-device"]
+      ),
+      riskHardenerAction(
+        id: "home-assistant-lock",
+        kind: .controlDevice,
+        risk: .low,
+        parameters: [
+          "connector_id": "home-assistant",
+          "prompt": "Unlock the front door"
+        ]
+      ),
+      riskHardenerAction(
+        id: "unknown-device",
+        kind: .controlDevice,
+        risk: .low,
+        parameters: ["connector_id": "zigbee-hub"]
+      )
+    ])
+
+    let hardened = AgentActionRiskHardener.enforce(
+      plan: plan,
+      customDeviceConnectors: [
+        CustomDeviceConnector(
+          id: "kitchen-light",
+          name: "Kitchen Light",
+          endpoint: "http://kitchen-light.local",
+          risk: .medium
+        )
+      ],
+      homeAssistantSettings: HomeAssistantSettings(
+        enabled: true,
+        baseUrl: "http://homeassistant.local:8123",
+        accessToken: "token",
+        defaultEntityId: "lock.front_door"
+      )
+    )
+
+    XCTAssertEqual(hardened.actions.first { $0.id == "known-custom-device" }?.risk, .medium)
+    XCTAssertEqual(hardened.actions.first { $0.id == "unknown-custom-device" }?.risk, .high)
+    XCTAssertEqual(hardened.actions.first { $0.id == "home-assistant-lock" }?.risk, .high)
+    XCTAssertEqual(hardened.actions.first { $0.id == "unknown-device" }?.risk, .high)
+    XCTAssertEqual(AgentHomeAssistantRiskPolicy.riskForPrompt("Turn on switch.kitchen"), .medium)
+    XCTAssertTrue(hardened.validation.valid)
+  }
+
+  func testAgentActionRiskHardenerNeverLowersExistingRiskAndModelsUseAndroidSignals() throws {
+    let decoded = try JSONDecoder.signalASI.decode(AgentElementOrigin.self, from: Data(#""visual-ocr""#.utf8))
+    let encoded = String(decoding: try JSONEncoder.signalASI.encode(AgentElementOrigin.visualOcr), as: UTF8.self)
+    XCTAssertEqual(decoded, .visualOcr)
+    XCTAssertEqual(encoded, #""VISUAL_OCR""#)
+    XCTAssertEqual(AgentElementOrigin.fromWireValue("visual ocr"), .visualOcr)
+    XCTAssertEqual(AgentElementOrigin.fromWireValue(nil), .unknown)
+
+    let plan = riskHardenerPlan([
+      riskHardenerAction(
+        id: "existing-high",
+        kind: .tap,
+        risk: .high,
+        parameters: [
+          "element_origin": AgentElementOrigin.visualOcr.rawValue,
+          "element_confidence": "0.99"
+        ]
+      ),
+      riskHardenerAction(
+        id: "accessibility-long-press",
+        kind: .longPress,
+        risk: .medium,
+        parameters: [
+          "element_origin": AgentElementOrigin.accessibility.rawValue,
+          "element_confidence": "0.20"
+        ]
+      ),
+      riskHardenerAction(
+        id: "connector-transfer",
+        kind: .callConnector,
+        risk: .low,
+        target: "Payments",
+        description: "Ask connector",
+        parameters: ["prompt": "\u{8bf7}\u{8f6c}\u{8d26}\u{7ed9}\u{4f9b}\u{5e94}\u{5546}"]
+      )
+    ])
+
+    let hardened = AgentActionRiskHardener.enforce(plan: plan)
+
+    XCTAssertEqual(hardened.actions.first { $0.id == "existing-high" }?.risk, .high)
+    XCTAssertEqual(hardened.actions.first { $0.id == "accessibility-long-press" }?.risk, .medium)
+    XCTAssertEqual(hardened.actions.first { $0.id == "connector-transfer" }?.risk, .high)
+    XCTAssertTrue(hardened.validation.valid)
+  }
+
   func testAgentRemoteApprovalValidTaskApprovalRoundTripsExactDecision() throws {
     let request = try XCTUnwrap(
       AgentRemoteApprovalRequest.fromTaskEvent(
@@ -7664,6 +7804,37 @@ final class SignalASIStoreTests: XCTestCase {
   private struct CrossTeamFixture {
     var grants: InMemoryAgentPermissionGrantStore
     var coordinator: AgentCrossTeamDelegationCoordinator
+  }
+
+  private func riskHardenerAction(
+    id: String,
+    kind: AgentActionKind,
+    risk: AgentRisk = .low,
+    target: String = "iOS",
+    description: String? = nil,
+    parameters: [String: String] = [:]
+  ) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: kind,
+      target: target,
+      risk: risk,
+      status: .pendingConfirmation,
+      description: description ?? "Harden \(id)",
+      parameters: parameters
+    )
+  }
+
+  private func riskHardenerPlan(_ actions: [AgentAction]) -> AgentPlan {
+    var plan = AgentPlan(
+      goal: "Harden action risks",
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
+      steps: [],
+      actions: actions,
+      route: AgentRoute(kind: .deviceConnector)
+    )
+    plan.validation = AgentPlanValidator.validate(plan)
+    return plan
   }
 
   private var globalBudgetNow: Int64 { 1_000_000 }
