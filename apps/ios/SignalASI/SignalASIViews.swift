@@ -920,6 +920,20 @@ struct SettingsView: View {
             .font(.caption)
             .foregroundColor(.secondary)
         }
+        Section("Agent Safety") {
+          NavigationLink(destination: AgentSafetySettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Execution Policy")
+              Text("\(store.agentSafetySettings.taskExecutionMode.displayTitle) / \(store.agentSafetySettings.permissionMode.displayTitle)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+          if store.agentSafetySettings.executionPaused {
+            Label("Execution Paused", systemImage: "pause.circle")
+              .foregroundColor(.orange)
+          }
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -1097,6 +1111,68 @@ struct SettingsView: View {
   }
 }
 
+struct AgentSafetySettingsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Task Execution") {
+        Picker("Task execution", selection: taskExecutionModeBinding) {
+          ForEach(AgentTaskExecutionMode.allCases) { mode in
+            Text(mode.displayTitle).tag(mode)
+          }
+        }
+        Text(store.agentSafetySettings.taskExecutionMode.detail)
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Section("Action Permissions") {
+        Picker("Execution Mode", selection: permissionModeBinding) {
+          ForEach(AgentPermissionMode.allCases) { mode in
+            Text(mode.displayTitle).tag(mode)
+          }
+        }
+        Text(store.agentSafetySettings.permissionMode.detail)
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Section("Safety Guards") {
+        Toggle("High Risk Guard", isOn: boolBinding(\.highRiskGuard))
+        Toggle("Memory Capture", isOn: boolBinding(\.memoryCapture))
+        Toggle("Pause Execution", isOn: boolBinding(\.executionPaused))
+      }
+      Section("Allowed Action Surfaces") {
+        Toggle("Screen Observation", isOn: boolBinding(\.screenObservationAllowed))
+        Toggle("Local Actions", isOn: boolBinding(\.localActionsAllowed))
+        Toggle("Connector Calls", isOn: boolBinding(\.connectorCallsAllowed))
+        Toggle("Device Control", isOn: boolBinding(\.deviceControlAllowed))
+      }
+    }
+    .navigationTitle("Agent Safety")
+  }
+
+  private var taskExecutionModeBinding: Binding<AgentTaskExecutionMode> {
+    Binding(
+      get: { store.agentSafetySettings.taskExecutionMode },
+      set: { value in store.updateAgentSafetySettings { $0.taskExecutionMode = value } }
+    )
+  }
+
+  private var permissionModeBinding: Binding<AgentPermissionMode> {
+    Binding(
+      get: { store.agentSafetySettings.permissionMode },
+      set: { value in store.updateAgentSafetySettings { $0.permissionMode = value } }
+    )
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<AgentSafetySettings, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { store.agentSafetySettings[keyPath: keyPath] },
+      set: { value in store.updateAgentSafetySettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+}
+
 struct ResetPrivateDataView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var confirmation = ""
@@ -1106,7 +1182,7 @@ struct ResetPrivateDataView: View {
     NavigationView {
       Form {
         Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, and saved model keys on this device.")
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, and saved model keys on this device.")
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)

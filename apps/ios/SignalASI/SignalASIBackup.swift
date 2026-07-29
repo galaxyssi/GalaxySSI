@@ -37,6 +37,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
   var includesServerLinks: Bool
   var includesVoiceSettings: Bool
   var includesDisplaySettings: Bool
+  var includesAgentSafetySettings: Bool
   var includesCloudAPISecrets: Bool
 
   init(
@@ -46,6 +47,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesServerLinks: Bool,
     includesVoiceSettings: Bool,
     includesDisplaySettings: Bool = false,
+    includesAgentSafetySettings: Bool = false,
     includesCloudAPISecrets: Bool
   ) {
     self.includesIdentity = includesIdentity
@@ -54,6 +56,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     self.includesServerLinks = includesServerLinks
     self.includesVoiceSettings = includesVoiceSettings
     self.includesDisplaySettings = includesDisplaySettings
+    self.includesAgentSafetySettings = includesAgentSafetySettings
     self.includesCloudAPISecrets = includesCloudAPISecrets
   }
 
@@ -64,6 +67,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesServerLinks: false,
     includesVoiceSettings: false,
     includesDisplaySettings: false,
+    includesAgentSafetySettings: false,
     includesCloudAPISecrets: false
   )
 
@@ -74,6 +78,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     case includesServerLinks = "includes_server_links"
     case includesVoiceSettings = "includes_voice_settings"
     case includesDisplaySettings = "includes_display_settings"
+    case includesAgentSafetySettings = "includes_agent_safety_settings"
     case includesCloudAPISecrets = "includes_cloud_api_secrets"
   }
 
@@ -85,6 +90,7 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesServerLinks = try container.decodeIfPresent(Bool.self, forKey: .includesServerLinks) ?? false
     includesVoiceSettings = try container.decodeIfPresent(Bool.self, forKey: .includesVoiceSettings) ?? false
     includesDisplaySettings = try container.decodeIfPresent(Bool.self, forKey: .includesDisplaySettings) ?? false
+    includesAgentSafetySettings = try container.decodeIfPresent(Bool.self, forKey: .includesAgentSafetySettings) ?? false
     includesCloudAPISecrets = try container.decodeIfPresent(Bool.self, forKey: .includesCloudAPISecrets) ?? false
   }
 }
@@ -94,6 +100,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var voiceSettings: VoiceSettings
   var languagePolicy: LanguagePolicySettings
   var displaySettings: AppDisplaySettings
+  var agentSafetySettings: AgentSafetySettings
   var cloudAPISecrets: [String: String]
 
   static let empty = SignalASIBackupAgentData(
@@ -101,6 +108,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     voiceSettings: .default,
     languagePolicy: .default,
     displaySettings: .default,
+    agentSafetySettings: .default,
     cloudAPISecrets: [:]
   )
 
@@ -109,12 +117,14 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     voiceSettings: VoiceSettings,
     languagePolicy: LanguagePolicySettings = .default,
     displaySettings: AppDisplaySettings = .default,
+    agentSafetySettings: AgentSafetySettings = .default,
     cloudAPISecrets: [String: String]
   ) {
     self.serverLinks = serverLinks
     self.voiceSettings = voiceSettings
     self.languagePolicy = languagePolicy
     self.displaySettings = displaySettings
+    self.agentSafetySettings = agentSafetySettings
     self.cloudAPISecrets = cloudAPISecrets
   }
 
@@ -123,6 +133,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case voiceSettings = "voice_settings"
     case languagePolicy = "language_policy"
     case displaySettings = "display_settings"
+    case agentSafetySettings = "agent_safety_settings"
     case cloudAPISecrets = "cloud_api_secrets"
   }
 
@@ -132,6 +143,7 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     voiceSettings = try container.decodeIfPresent(VoiceSettings.self, forKey: .voiceSettings) ?? .default
     languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
     displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
+    agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
     cloudAPISecrets = try container.decodeIfPresent([String: String].self, forKey: .cloudAPISecrets) ?? [:]
   }
 }
