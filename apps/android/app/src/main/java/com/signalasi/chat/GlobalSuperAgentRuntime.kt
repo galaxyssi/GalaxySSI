@@ -1848,6 +1848,12 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             newMemoryEvolutionRecords += evolution.records
             entityGraph = GlobalEntityMemoryGraphReducer.reduce(entityGraph, event, understanding, reduction)
             topicGraph = GlobalTopicProjectGraphReducer.reduce(topicGraph, event, understanding, reduction)
+            GlobalMemoryInboxIsolationPolicy.inspect(
+                world,
+                topicGraph,
+                entityGraph,
+                memoryInbox
+            ).requireSafe()
             changedItems += reduction.changedItems.size
             val decision = GlobalInterventionPolicy.decide(
                 event,
@@ -1964,9 +1970,15 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             )
             repository.saveMemoryAudit(auditReport)
         }
+        GlobalMemoryInboxIsolationPolicy.inspect(
+            world,
+            topicGraph,
+            entityGraph,
+            memoryInbox
+        ).requireSafe()
+        repository.saveMemoryInbox(memoryInbox)
         repository.saveWorld(world)
         repository.saveTopicGraph(topicGraph)
-        repository.saveMemoryInbox(memoryInbox)
         repository.saveEntityMemoryGraph(entityGraph)
         repository.appendMemoryEvolutionRecords(newMemoryEvolutionRecords)
         if (researchTasksInvalidated || newTasks.isNotEmpty()) {

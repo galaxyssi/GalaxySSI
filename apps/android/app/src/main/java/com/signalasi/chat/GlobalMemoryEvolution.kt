@@ -118,7 +118,21 @@ object GlobalMemoryEvolutionPolicy {
     ): GlobalMemoryEvolutionResult {
         val retractedInbox = retractCandidates(inbox, event)
         if (event.id in retractedInbox.processedEventIds) {
-            return GlobalMemoryEvolutionResult(reduction, retractedInbox, emptyList())
+            return GlobalMemoryEvolutionResult(
+                reduction = reduction.copy(
+                    world = worldBefore.copy(
+                        processedEventIds = (worldBefore.processedEventIds + event.id)
+                            .filter(String::isNotBlank)
+                            .distinct()
+                            .takeLast(MAX_PROCESSED_EVENT_IDS),
+                        updatedAtMillis = maxOf(worldBefore.updatedAtMillis, event.timestampMillis)
+                    ),
+                    changedItems = emptyList(),
+                    conflicts = emptyList()
+                ),
+                inbox = retractedInbox,
+                candidates = emptyList()
+            )
         }
         val candidates = classifyActions(
             worldBefore,

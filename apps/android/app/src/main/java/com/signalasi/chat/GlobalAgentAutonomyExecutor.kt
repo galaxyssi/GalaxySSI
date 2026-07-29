@@ -206,11 +206,38 @@ class GlobalCognitionExecutor(context: Context) {
             causalEventIds = task.sourceEvent.evidenceRoots(),
             retractedEventIds = emptySet()
         )
-        val reduction = GlobalWorldModelReducer.reduce(repository.loadWorld(), cognitionEvent, merged)
-        repository.saveWorld(reduction.world)
-        repository.saveTopicGraph(
-            GlobalTopicProjectGraphReducer.reduce(repository.topicGraph(), cognitionEvent, merged, reduction)
+        val worldBefore = repository.loadWorld()
+        val evolution = GlobalMemoryEvolutionPolicy.evolve(
+            worldBefore = worldBefore,
+            reduction = GlobalWorldModelReducer.reduce(worldBefore, cognitionEvent, merged),
+            inbox = repository.memoryInbox(),
+            event = cognitionEvent,
+            understanding = merged
         )
+        val reduction = evolution.reduction
+        val entityGraph = GlobalEntityMemoryGraphReducer.reduce(
+            repository.entityMemoryGraph(),
+            cognitionEvent,
+            merged,
+            reduction
+        )
+        val topicGraph = GlobalTopicProjectGraphReducer.reduce(
+            repository.topicGraph(),
+            cognitionEvent,
+            merged,
+            reduction
+        )
+        GlobalMemoryInboxIsolationPolicy.inspect(
+            reduction.world,
+            topicGraph,
+            entityGraph,
+            evolution.inbox
+        ).requireSafe()
+        repository.saveMemoryInbox(evolution.inbox)
+        repository.saveWorld(reduction.world)
+        repository.saveTopicGraph(topicGraph)
+        repository.saveEntityMemoryGraph(entityGraph)
+        repository.appendMemoryEvolutionRecords(evolution.records)
         enqueueResearch(task, merged)
         var plannedRun: GlobalAutonomousRun? = null
         if (settings.autonomousPreparationEnabled) {
