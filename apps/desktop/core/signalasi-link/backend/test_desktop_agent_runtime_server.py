@@ -6,11 +6,14 @@ from pathlib import Path
 
 from desktop_agent_adapters import (
     AgentAdapterDescriptor,
+    AgentAdapterExecutionError,
     AgentAdapterRequest,
     DesktopAgentProvider,
     DesktopAgentStateStore,
 )
 from desktop_agent_runtime_server import (
+    AgentFaultDomainRegistry,
+    DesktopAgentFaultIsolated,
     DesktopAgentRuntimeConflict,
     DesktopAgentRuntimeError,
     DesktopAgentRuntimeServer,
@@ -42,13 +45,19 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             server.shutdown(wait=True)
         self.temporary.cleanup()
 
-    def server(self, execute=None, max_workers: int = 2) -> DesktopAgentRuntimeServer:
+    def server(
+        self,
+        execute=None,
+        max_workers: int = 2,
+        descriptors=None,
+        fault_domains: AgentFaultDomainRegistry | None = None,
+    ) -> DesktopAgentRuntimeServer:
         def default_execute(agent_id, request):
             self.calls.append((agent_id, request.prompt))
             return f"reply:{request.prompt}"
 
         provider = DesktopAgentProvider(
-            descriptors=(descriptor(),),
+            descriptors=descriptors or (descriptor(),),
             store=DesktopAgentStateStore(self.root / "adapter-state.json"),
             executor=execute or default_execute,
         )
@@ -56,6 +65,7 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             provider=provider,
             store=DesktopAgentRuntimeStore(self.root / "runtime-state.json"),
             max_workers=max_workers,
+            fault_domains=fault_domains,
         )
         self.servers.append(server)
         return server
@@ -69,9 +79,10 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         conversation_id: str = "conversation-1",
         route_id: str = "phone-1",
         turn_id: str = "",
+        agent_id: str = "codex",
     ) -> AgentAdapterRequest:
         return AgentAdapterRequest(
-            agent_id="codex",
+            agent_id=agent_id,
             prompt=prompt,
             run_id=run_id,
             idempotency_key=idempotency_key or run_id,
@@ -314,6 +325,70 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         self.assertEqual(1, health["sessions"])
         self.assertEqual(0, health["active_sessions"])
         self.assertIn("durable_run_registry", health["features"])
+
+    def test_failed_agent_is_isolated_without_blocking_other_agents(self):
+        calls: list[str] = []
+
+        def execute(agent_id, request):
+            calls.append(agent_id)
+            if agent_id == "codex":
+                raise RuntimeError("codex worker crashed")
+            return f"{agent_id}:ok"
+
+        fault_domains = AgentFaultDomainRegistry(
+            failure_threshold=1,
+            cooldown_seconds=60,
+        )
+        server = self.server(
+            execute,
+            descriptors=(descriptor("codex"), descriptor("hermes")),
+            fault_domains=fault_domains,
+        )
+
+        with self.assertRaises(AgentAdapterExecutionError):
+            server.execute(self.request("fail", run_id="codex-1"))
+        with self.assertRaises(DesktopAgentFaultIsolated):
+            server.execute(self.request("retry", run_id="codex-2"))
+        hermes = server.execute(self.request(
+            "continue",
+            run_id="hermes-1",
+            agent_id="hermes",
+        ))
+
+        self.assertEqual("completed", hermes.state)
+        self.assertEqual(["codex", "hermes"], calls)
+        domains = {
+            item["agent_id"]: item
+            for item in server.health()["fault_domains"]
+        }
+        self.assertEqual("isolated", domains["codex"]["status"])
+        self.assertEqual(1, domains["codex"]["failed_runs"])
+        self.assertEqual("healthy", domains["hermes"]["status"])
+        self.assertEqual(1, domains["hermes"]["successful_runs"])
+
+    def test_isolated_agent_recovers_with_single_probe_after_cooldown(self):
+        clock = [100.0]
+        domains = AgentFaultDomainRegistry(
+            failure_threshold=1,
+            cooldown_seconds=10,
+            now=lambda: clock[0],
+        )
+
+        domains.acquire("codex")
+        domains.fail("codex", "failed")
+        with self.assertRaises(DesktopAgentFaultIsolated):
+            domains.acquire("codex")
+
+        clock[0] = 111.0
+        domains.acquire("codex")
+        with self.assertRaises(DesktopAgentFaultIsolated):
+            domains.acquire("codex")
+        self.assertEqual("recovering", domains.snapshots()[0]["status"])
+        domains.succeed("codex")
+
+        snapshot = domains.snapshots()[0]
+        self.assertEqual("healthy", snapshot["status"])
+        self.assertEqual(0, snapshot["consecutive_failures"])
 
 
 if __name__ == "__main__":

@@ -29,6 +29,8 @@ from desktop_agent_adapters import (
 RUNTIME_PROTOCOL = "signalasi.agent-runtime/1.0"
 RUNTIME_STATE_VERSION = 2
 DEFAULT_MAX_WORKERS = 4
+DEFAULT_AGENT_FAILURE_THRESHOLD = 3
+DEFAULT_AGENT_FAILURE_COOLDOWN_SECONDS = 30.0
 MAX_RUNTIME_RUNS = 2_000
 MAX_RUNTIME_SESSIONS = 500
 MAX_RUNTIME_EVENTS = 96
@@ -50,6 +52,146 @@ class DesktopAgentRuntimeError(RuntimeError):
 
 class DesktopAgentRuntimeConflict(DesktopAgentRuntimeError):
     pass
+
+
+class DesktopAgentFaultIsolated(DesktopAgentRuntimeError):
+    pass
+
+
+class AgentFaultDomainRegistry:
+    """Independent circuit state for each Agent adapter."""
+
+    def __init__(
+        self,
+        *,
+        failure_threshold: int = DEFAULT_AGENT_FAILURE_THRESHOLD,
+        cooldown_seconds: float = DEFAULT_AGENT_FAILURE_COOLDOWN_SECONDS,
+        now: Callable[[], float] = time.time,
+    ) -> None:
+        self.failure_threshold = max(1, min(int(failure_threshold or 1), 100))
+        self.cooldown_seconds = max(0.1, float(cooldown_seconds or 0.1))
+        self._now = now
+        self._lock = threading.RLock()
+        self._domains: dict[str, dict] = {}
+
+    def acquire(self, agent_id: str) -> None:
+        agent = str(agent_id or "").strip()
+        if not agent:
+            raise DesktopAgentRuntimeError("Agent fault domain requires an Agent id")
+        with self._lock:
+            domain = self._domain_locked(agent)
+            now = self._now()
+            open_until = float(domain.get("open_until") or 0.0)
+            if open_until > now:
+                remaining = max(1, int(round(open_until - now)))
+                raise DesktopAgentFaultIsolated(
+                    f"{agent} is temporarily isolated after repeated failures; retry in {remaining}s"
+                )
+            if open_until and bool(domain.get("probe_active")):
+                raise DesktopAgentFaultIsolated(
+                    f"{agent} recovery probe is already running"
+                )
+            if open_until:
+                domain["probe_active"] = True
+            domain["active_runs"] = int(domain.get("active_runs") or 0) + 1
+            domain["last_started_at"] = self._now_ms()
+
+    def succeed(self, agent_id: str) -> None:
+        with self._lock:
+            domain = self._domain_locked(agent_id)
+            self._release_locked(domain)
+            domain["status"] = "healthy"
+            domain["consecutive_failures"] = 0
+            domain["open_until"] = 0.0
+            domain["probe_active"] = False
+            domain["successful_runs"] = int(domain.get("successful_runs") or 0) + 1
+            domain["last_error"] = ""
+            domain["last_success_at"] = self._now_ms()
+
+    def fail(self, agent_id: str, error: str) -> None:
+        with self._lock:
+            domain = self._domain_locked(agent_id)
+            self._release_locked(domain)
+            failures = int(domain.get("consecutive_failures") or 0) + 1
+            domain["consecutive_failures"] = failures
+            domain["failed_runs"] = int(domain.get("failed_runs") or 0) + 1
+            domain["last_error"] = str(error or "Agent execution failed")[:500]
+            domain["last_failure_at"] = self._now_ms()
+            domain["probe_active"] = False
+            if failures >= self.failure_threshold:
+                domain["status"] = "isolated"
+                domain["open_until"] = self._now() + self.cooldown_seconds
+            else:
+                domain["status"] = "degraded"
+
+    def release(self, agent_id: str) -> None:
+        with self._lock:
+            domain = self._domain_locked(agent_id)
+            self._release_locked(domain)
+            domain["probe_active"] = False
+
+    def snapshots(self, agent_ids: list[str] | tuple[str, ...] = ()) -> list[dict]:
+        with self._lock:
+            for agent_id in agent_ids:
+                self._domain_locked(agent_id)
+            now = self._now()
+            rows = [
+                self._public_locked(agent_id, domain, now)
+                for agent_id, domain in self._domains.items()
+            ]
+        return sorted(rows, key=lambda row: row["agent_id"])
+
+    def _domain_locked(self, agent_id: str) -> dict:
+        agent = str(agent_id or "").strip()
+        return self._domains.setdefault(
+            agent,
+            {
+                "status": "healthy",
+                "active_runs": 0,
+                "successful_runs": 0,
+                "failed_runs": 0,
+                "consecutive_failures": 0,
+                "open_until": 0.0,
+                "probe_active": False,
+                "last_started_at": 0,
+                "last_success_at": 0,
+                "last_failure_at": 0,
+                "last_error": "",
+            },
+        )
+
+    @staticmethod
+    def _release_locked(domain: dict) -> None:
+        domain["active_runs"] = max(0, int(domain.get("active_runs") or 0) - 1)
+
+    def _public_locked(self, agent_id: str, domain: dict, now: float) -> dict:
+        open_until = float(domain.get("open_until") or 0.0)
+        status = str(domain.get("status") or "healthy")
+        if status == "isolated" and open_until <= now:
+            status = "recovering"
+        return {
+            "agent_id": agent_id,
+            "status": status,
+            "active_runs": max(0, int(domain.get("active_runs") or 0)),
+            "successful_runs": max(0, int(domain.get("successful_runs") or 0)),
+            "failed_runs": max(0, int(domain.get("failed_runs") or 0)),
+            "consecutive_failures": max(
+                0,
+                int(domain.get("consecutive_failures") or 0),
+            ),
+            "retry_after_millis": (
+                max(0, int((open_until - now) * 1_000))
+                if open_until > now
+                else 0
+            ),
+            "last_started_at": max(0, int(domain.get("last_started_at") or 0)),
+            "last_success_at": max(0, int(domain.get("last_success_at") or 0)),
+            "last_failure_at": max(0, int(domain.get("last_failure_at") or 0)),
+            "last_error": str(domain.get("last_error") or ""),
+        }
+
+    def _now_ms(self) -> int:
+        return int(self._now() * 1_000)
 
 
 class DesktopAgentRuntimeStore:
@@ -531,6 +673,7 @@ class DesktopAgentRuntimeServer:
         provider: DesktopAgentProvider,
         store: DesktopAgentRuntimeStore,
         max_workers: int = DEFAULT_MAX_WORKERS,
+        fault_domains: AgentFaultDomainRegistry | None = None,
     ) -> None:
         self.provider = provider
         self.store = store
@@ -542,6 +685,7 @@ class DesktopAgentRuntimeServer:
         self._lock = threading.RLock()
         self._futures: dict[str, Future[AgentAdapterResult]] = {}
         self._closed = False
+        self.fault_domains = fault_domains or AgentFaultDomainRegistry()
 
     def submit(self, request: AgentAdapterRequest) -> dict:
         normalized = request.normalized()
@@ -647,6 +791,7 @@ class DesktopAgentRuntimeServer:
         with self._lock:
             pending_futures = sum(1 for future in self._futures.values() if not future.done())
             closed = self._closed
+        agents = self.provider.enumerate()
         return {
             "protocol": RUNTIME_PROTOCOL,
             "state_version": RUNTIME_STATE_VERSION,
@@ -667,8 +812,12 @@ class DesktopAgentRuntimeServer:
                 "event_cursor",
                 "cancellation",
                 "restart_recovery",
+                "per_agent_fault_domains",
             ],
-            "agents": self.provider.enumerate(),
+            "agents": agents,
+            "fault_domains": self.fault_domains.snapshots(
+                tuple(str(agent.get("agent_id") or "") for agent in agents)
+            ),
             **counts,
         }
 
@@ -691,17 +840,30 @@ class DesktopAgentRuntimeServer:
         self._executor.shutdown(wait=wait, cancel_futures=True)
 
     def _execute(self, request: AgentAdapterRequest) -> AgentAdapterResult:
+        try:
+            self.fault_domains.acquire(request.agent_id)
+        except DesktopAgentFaultIsolated as exc:
+            self.store.fail(request.run_id, str(exc))
+            raise
         current = self.store.transition_running(request.run_id)
         if str(current.get("state") or "") != "running":
+            self.fault_domains.release(request.agent_id)
             return self._result_from_runtime(current)
         try:
             result = self.provider.deliver(request)
             snapshot = self.store.finish(request.run_id, result)
+            if result.state in {"failed", "interrupted"}:
+                self.fault_domains.fail(request.agent_id, result.error)
+            elif result.state == "cancelled":
+                self.fault_domains.release(request.agent_id)
+            else:
+                self.fault_domains.succeed(request.agent_id)
             if str(snapshot.get("state") or "") != result.state:
                 return self._result_from_runtime(snapshot)
             return result
         except Exception as exc:
             self.store.fail(request.run_id, str(exc))
+            self.fault_domains.fail(request.agent_id, str(exc))
             raise
 
     def _require_agent(self, agent_id: str) -> None:
