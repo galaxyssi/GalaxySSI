@@ -1693,6 +1693,7 @@ def deliver_agent_sync(
                 reply=result.reply,
                 duration_ms=int((time.perf_counter() - start) * 1000),
                 ok=True,
+                provider_observed=not result.replayed,
             )
             _agent_execution_finished(
                 contact_id,
@@ -1765,9 +1766,11 @@ def _append_execution_log(
     duration_ms: int,
     ok: bool,
     error: str = "",
+    provider_observed: bool = True,
 ) -> None:
     execution_log_path = _execution_log_path()
     prompt_bytes = prompt.encode("utf-8", errors="replace")
+    usage = _provider_usage_estimate(contact_id, prompt, reply)
     entry = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "contact_id": contact_id,
@@ -1777,6 +1780,9 @@ def _append_execution_log(
         "prompt_sha256": hashlib.sha256(prompt_bytes).hexdigest()[:16],
         "prompt_chars": len(prompt),
         "reply_chars": len(reply or ""),
+        "input_tokens_estimated": usage["input_tokens"],
+        "output_tokens_estimated": usage["output_tokens"],
+        "cost_micros_estimated": usage["cost_micros"],
         "duration_ms": duration_ms,
         "ok": ok,
         "error": error,
@@ -1792,16 +1798,91 @@ def _append_execution_log(
             handle.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
     except Exception:
         pass
+    if not provider_observed:
+        return
     try:
         from provider_profiles import provider_metrics_store
 
         provider_metrics_store().record(
-            contact_id,
+            usage["metrics_key"],
             success=bool(ok and not _agent_reply_failed(reply)),
             latency_ms=max(0, duration_ms),
+            input_tokens=usage["input_tokens"],
+            output_tokens=usage["output_tokens"],
+            cost_micros=usage["cost_micros"],
+            cost_currency=usage["cost_currency"],
+            usage_estimated=True,
+            context_window_tokens=usage["context_window_tokens"],
         )
     except Exception:
         log.debug("Provider metric persistence failed", exc_info=True)
+
+
+def _provider_usage_estimate(contact_id: str, prompt: str, reply: str) -> dict:
+    from agent_execution_harness import estimate_text_tokens
+    from provider_profiles import (
+        ProviderPricing,
+        estimate_provider_cost_micros,
+        infer_provider_id,
+    )
+
+    input_tokens = estimate_text_tokens(str(prompt or ""))
+    output_tokens = estimate_text_tokens(str(reply or "")) if reply else 0
+    context_window_tokens = 64_000
+    pricing = ProviderPricing(tier="unknown")
+    metrics_key = f"agent:{contact_id}"
+    if contact_id == "cloud-model":
+        config = cloud_model_config()
+        metrics_key = f"model:{infer_provider_id(config)}"
+        context_window_tokens = max(
+            4_096,
+            int(config.get("context_window_tokens") or 64_000),
+        )
+        pricing = ProviderPricing(
+            tier="configured",
+            input_micros_per_million_tokens=config.get(
+                "input_micros_per_million_tokens"
+            ),
+            output_micros_per_million_tokens=config.get(
+                "output_micros_per_million_tokens"
+            ),
+            currency=str(config.get("pricing_currency") or "USD"),
+            source="configured",
+        )
+    elif contact_id == "local-llm":
+        config = local_model_config()
+        metrics_key = f"model:{infer_provider_id(config, local=True)}"
+        context_window_tokens = max(
+            4_096,
+            int(config.get("context_window_tokens") or 64_000),
+        )
+        configured_input = config.get("input_micros_per_million_tokens")
+        configured_output = config.get("output_micros_per_million_tokens")
+        pricing = ProviderPricing(
+            tier="free",
+            input_micros_per_million_tokens=(
+                0 if configured_input is None else configured_input
+            ),
+            output_micros_per_million_tokens=(
+                0 if configured_output is None else configured_output
+            ),
+            currency=str(config.get("pricing_currency") or "USD"),
+            source="configured" if (
+                configured_input is not None or configured_output is not None
+            ) else "local_runtime",
+        )
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "metrics_key": metrics_key,
+        "context_window_tokens": context_window_tokens,
+        "cost_micros": estimate_provider_cost_micros(
+            input_tokens,
+            output_tokens,
+            pricing,
+        ),
+        "cost_currency": pricing.currency,
+    }
 
 
 def recent_agent_execution_log(limit: int = 50) -> dict:

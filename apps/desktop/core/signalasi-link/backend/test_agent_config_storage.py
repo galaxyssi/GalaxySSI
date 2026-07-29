@@ -53,9 +53,13 @@ class AgentConfigStorageTest(unittest.TestCase):
                         "context_window_tokens": "128000",
                         "max_output_tokens": "8192",
                         "context_model_summary": "true",
+                        "input_micros_per_million_tokens": "2500000",
+                        "output_micros_per_million_tokens": "10000000",
+                        "pricing_currency": "usd",
                     }
                 })
                 persisted = agent_config.load_config(mask_secrets=False)["cloud_model"]
+                effective = agent_config.cloud_model_config()
 
             self.assertEqual(agent_config.MASK, masked["cloud_model"]["api_key"])
             self.assertEqual("secret-key", persisted["api_key"])
@@ -63,6 +67,9 @@ class AgentConfigStorageTest(unittest.TestCase):
             self.assertEqual("128000", persisted["context_window_tokens"])
             self.assertEqual("8192", persisted["max_output_tokens"])
             self.assertEqual("true", persisted["context_model_summary"])
+            self.assertEqual(2_500_000, effective["input_micros_per_million_tokens"])
+            self.assertEqual(10_000_000, effective["output_micros_per_million_tokens"])
+            self.assertEqual("USD", effective["pricing_currency"])
 
     def test_language_policy_defaults_and_round_trip_are_normalized(self):
         with tempfile.TemporaryDirectory() as directory:

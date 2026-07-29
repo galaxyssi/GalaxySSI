@@ -35,6 +35,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "context_window_tokens": 64_000,
         "max_output_tokens": 4_096,
         "context_model_summary": True,
+        "input_micros_per_million_tokens": "",
+        "output_micros_per_million_tokens": "",
+        "pricing_currency": "USD",
     },
     "cloud_model": {
         "name": "Cloud Model",
@@ -45,6 +48,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "context_window_tokens": 64_000,
         "max_output_tokens": 4_096,
         "context_model_summary": True,
+        "input_micros_per_million_tokens": "",
+        "output_micros_per_million_tokens": "",
+        "pricing_currency": "USD",
     },
     "web_search": {
         "brave_api_key": "",
@@ -151,6 +157,17 @@ def local_model_config() -> dict[str, Any]:
         "context_window_tokens": _bounded_int(data.get("context_window_tokens"), 64_000, 4_096, 1_000_000),
         "max_output_tokens": _bounded_int(data.get("max_output_tokens"), 4_096, 512, 128_000),
         "context_model_summary": _as_bool(data.get("context_model_summary"), True),
+        "input_micros_per_million_tokens": _optional_bounded_int(
+            data.get("input_micros_per_million_tokens"),
+            0,
+            1_000_000_000_000,
+        ),
+        "output_micros_per_million_tokens": _optional_bounded_int(
+            data.get("output_micros_per_million_tokens"),
+            0,
+            1_000_000_000_000,
+        ),
+        "pricing_currency": _currency(data.get("pricing_currency")),
     }
 
 
@@ -166,6 +183,17 @@ def cloud_model_config() -> dict[str, Any]:
         "context_window_tokens": _bounded_int(data.get("context_window_tokens"), 64_000, 4_096, 1_000_000),
         "max_output_tokens": _bounded_int(data.get("max_output_tokens"), 4_096, 512, 128_000),
         "context_model_summary": _as_bool(data.get("context_model_summary"), True),
+        "input_micros_per_million_tokens": _optional_bounded_int(
+            data.get("input_micros_per_million_tokens"),
+            0,
+            1_000_000_000_000,
+        ),
+        "output_micros_per_million_tokens": _optional_bounded_int(
+            data.get("output_micros_per_million_tokens"),
+            0,
+            1_000_000_000_000,
+        ),
+        "pricing_currency": _currency(data.get("pricing_currency")),
     }
 
 
@@ -339,6 +367,17 @@ def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError):
         parsed = default
     return max(minimum, min(maximum, parsed))
+
+
+def _optional_bounded_int(value: Any, minimum: int, maximum: int) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return _bounded_int(value, minimum, minimum, maximum)
+
+
+def _currency(value: Any) -> str:
+    normalized = str(value or "USD").strip().upper()
+    return normalized if len(normalized) == 3 and normalized.isalpha() else "USD"
 
 
 def _as_bool(value: Any, default: bool) -> bool:

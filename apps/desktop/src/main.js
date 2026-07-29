@@ -437,6 +437,11 @@ async function runUiSmoke() {
           ready: document.querySelector("#utilityDrawer")?.dataset.panelReady || "",
           provider: document.querySelector("#cloudProvider")?.value || "",
           fields: document.querySelectorAll("#settingsPanel .cloud-settings-surface input, #settingsPanel .cloud-settings-surface select").length,
+          pricing: {
+            input: Boolean(document.querySelector("#cloudInputPrice")),
+            output: Boolean(document.querySelector("#cloudOutputPrice")),
+            conversion: priceMicrosAsUsd(2500000)
+          },
           save: Boolean(document.querySelector("#saveCloudModelButton")),
           test: Boolean(document.querySelector("#testCloudModelButton")),
           badge: document.querySelector("#cloudModelBadge")?.textContent || "",
@@ -493,7 +498,9 @@ async function runUiSmoke() {
       })()
     `);
     if (!settingsState.active || !settingsState.title.trim() || settingsState.ready !== "settings"
-        || settingsState.fields < 7 || !settingsState.save || !settingsState.test
+        || settingsState.fields < 9 || !settingsState.save || !settingsState.test
+        || !settingsState.pricing.input || !settingsState.pricing.output
+        || settingsState.pricing.conversion !== "2.5"
         || !settingsState.badge.trim() || settingsState.secureValidation
         || !settingsState.insecureValidation || !settingsState.budgetValidation
         || Object.values(settingsState.evolution).some((value) => !value)

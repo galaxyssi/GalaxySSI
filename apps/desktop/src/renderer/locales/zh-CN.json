@@ -724,4 +724,7 @@
 , "A team requires exactly one lead or coordinator.": "团队必须且只能有一位负责人或协调者。"
 , "A headless swarm requires one coordinator and at least one specialist.": "后台智能体团队需要一位协调者和至少一位专家。"
 , "A coordinator team requires at least one specialist.": "协调者团队至少需要一位专家。"
+, "Input price / 1M tokens (USD)": "输入价格 / 百万 Token（美元）"
+, "Output price / 1M tokens (USD)": "输出价格 / 百万 Token（美元）"
+, "Optional": "可选"
 }

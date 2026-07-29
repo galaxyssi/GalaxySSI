@@ -1046,6 +1046,8 @@ function fillCloudModelSettings(config = {}) {
   $("#cloudApiKey").value = config.api_key || "";
   $("#cloudContextWindow").value = String(config.context_window_tokens || 64000);
   $("#cloudOutputReserve").value = String(config.max_output_tokens || 4096);
+  $("#cloudInputPrice").value = priceMicrosAsUsd(config.input_micros_per_million_tokens);
+  $("#cloudOutputPrice").value = priceMicrosAsUsd(config.output_micros_per_million_tokens);
   $("#cloudModelSummary").checked = ![false, "", "false", "0"].includes(config.context_model_summary);
   const ready = Boolean($("#cloudEndpoint").value.trim() && $("#cloudModelId").value.trim() && $("#cloudApiKey").value.trim());
   setCloudModelStatus(ready ? "ready" : "missing");
@@ -1073,6 +1075,22 @@ function boundedInteger(selector, fallback, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, parsed));
 }
 
+function priceMicrosAsUsd(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const micros = Number(value);
+  return Number.isFinite(micros) && micros >= 0
+    ? String(micros / 1_000_000)
+    : "";
+}
+
+function readPriceMicros(selector) {
+  const raw = $(selector).value.trim();
+  if (!raw) return "";
+  const dollars = Number(raw);
+  if (!Number.isFinite(dollars) || dollars < 0 || dollars > 1_000_000) return "";
+  return Math.round(dollars * 1_000_000);
+}
+
 function readCloudModelSettings() {
   return {
     provider: $("#cloudProvider").value,
@@ -1082,6 +1100,9 @@ function readCloudModelSettings() {
     api_key: $("#cloudApiKey").value.trim(),
     context_window_tokens: boundedInteger("#cloudContextWindow", 64000, 4096, 1000000),
     max_output_tokens: boundedInteger("#cloudOutputReserve", 4096, 512, 128000),
+    input_micros_per_million_tokens: readPriceMicros("#cloudInputPrice"),
+    output_micros_per_million_tokens: readPriceMicros("#cloudOutputPrice"),
+    pricing_currency: "USD",
     context_model_summary: $("#cloudModelSummary").checked ? "true" : ""
   };
 }
