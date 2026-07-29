@@ -9091,6 +9091,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val evolutionRecords = globalMemory.memoryEvolutionRecordsSnapshot()
         val entityGraph = globalMemory.entityMemoryGraphSnapshot()
         val memoryAudit = globalMemory.memoryAuditSnapshot()
+        val world = globalMemory.worldSnapshot()
+        val currentCount = world.items.count {
+            it.status == GlobalWorldItemStatus.ACTIVE &&
+                it.temporalState == GlobalMemoryTemporalState.CURRENT
+        }
+        val plannedCount = world.items.count {
+            it.status == GlobalWorldItemStatus.ACTIVE &&
+                it.temporalState == GlobalMemoryTemporalState.PLANNED
+        }
+        val historicalCount = world.items.count {
+            it.temporalState in setOf(
+                GlobalMemoryTemporalState.HISTORICAL,
+                GlobalMemoryTemporalState.DEPRECATED
+            ) || it.status == GlobalWorldItemStatus.SUPERSEDED
+        }
+        val conflictedCount = world.items.count {
+            it.status == GlobalWorldItemStatus.CONFLICTED ||
+                it.temporalState == GlobalMemoryTemporalState.CONFLICTED
+        } + pendingCandidates.count { it.status == GlobalMemoryCandidateStatus.CONFLICTED }
         val captureEnabled = mobileNativeAgent.safetySettings().memoryCapture
         val countFor: (Set<AgentMemoryKind>) -> Int = { kinds ->
             snapshot.activeItems.count { it.kind in kinds }
@@ -9108,14 +9127,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             if (captureEnabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL
                         ),
                         ControlCenterBadgeSpec(
-                            getString(R.string.cc_memory_conflict_badge, snapshot.conflicts.size),
-                            if (snapshot.conflicts.isEmpty()) ControlCenterTone.BLUE else ControlCenterTone.AMBER
+                            getString(R.string.cc_memory_conflict_badge, conflictedCount),
+                            if (conflictedCount == 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER
                         )
                     ),
                     metrics = listOf(
-                        ControlCenterMetricSpec(snapshot.activeCount.toString(), getString(R.string.cc_memory_metric_active)),
-                        ControlCenterMetricSpec(snapshot.historyCount.toString(), getString(R.string.cc_memory_metric_history)),
-                        ControlCenterMetricSpec(snapshot.conflicts.size.toString(), getString(R.string.cc_memory_metric_conflicts))
+                        ControlCenterMetricSpec(currentCount.toString(), getString(R.string.cc_memory_metric_current)),
+                        ControlCenterMetricSpec(plannedCount.toString(), getString(R.string.cc_memory_metric_planned)),
+                        ControlCenterMetricSpec(pendingCandidates.size.toString(), getString(R.string.cc_memory_metric_pending))
                     ),
                     actionId = "memory.manage"
                 ),
@@ -9175,6 +9194,43 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 R.drawable.ic_agent_memory,
                                 getString(R.string.common_view),
                                 ControlCenterTone.BLUE
+                            )
+                        )
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_memory_section_lifecycle),
+                        listOf(
+                            ControlCenterRowSpec(
+                                "memory.manage",
+                                getString(R.string.cc_memory_state_current_title),
+                                getString(R.string.cc_memory_state_current_subtitle),
+                                R.drawable.ic_agent_memory,
+                                currentCount.toString(),
+                                ControlCenterTone.GREEN
+                            ),
+                            ControlCenterRowSpec(
+                                "memory.manage",
+                                getString(R.string.cc_memory_state_planned_title),
+                                getString(R.string.cc_memory_state_planned_subtitle),
+                                R.drawable.ic_agent_history,
+                                plannedCount.toString(),
+                                ControlCenterTone.BLUE
+                            ),
+                            ControlCenterRowSpec(
+                                "memory.evolution_history",
+                                getString(R.string.cc_memory_state_history_title),
+                                getString(R.string.cc_memory_state_history_subtitle),
+                                R.drawable.ic_agent_history,
+                                historicalCount.toString(),
+                                ControlCenterTone.NEUTRAL
+                            ),
+                            ControlCenterRowSpec(
+                                "memory.inbox",
+                                getString(R.string.cc_memory_state_review_title),
+                                getString(R.string.cc_memory_state_review_subtitle),
+                                R.drawable.ic_security_shield,
+                                pendingCandidates.size.toString(),
+                                if (pendingCandidates.isEmpty()) ControlCenterTone.GREEN else ControlCenterTone.AMBER
                             )
                         )
                     ),
@@ -9245,10 +9301,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             featureContent.addView(featureRow(
                 candidate.item.value.ifBlank { candidate.item.topic }.replace(Regex("\\s+"), " ").take(90),
                 getString(
-                    R.string.cc_memory_candidate_subtitle,
+                    R.string.cc_memory_candidate_subtitle_detailed,
                     memoryCandidateKindLabel(candidate.kind),
                     memoryTemporalStateLabel(candidate.temporalState),
-                    memoryEvolutionActionLabel(candidate.action)
+                    memoryEvolutionActionLabel(candidate.action),
+                    candidate.item.evidenceCount
                 ),
                 R.drawable.ic_agent_memory,
                 getString(R.string.agent_memory_review)
@@ -9260,10 +9317,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showGlobalMemoryCandidateDialog(candidate: GlobalMemoryCandidate) {
         val detail = getString(
-            R.string.cc_memory_candidate_dialog_message,
+            R.string.cc_memory_candidate_dialog_message_detailed,
             memoryCandidateKindLabel(candidate.kind),
             candidate.item.topic.ifBlank { getString(R.string.agent_memory_key_none) },
+            memoryCandidateRiskLabel(candidate.risk),
+            memoryTemporalStateLabel(candidate.temporalState),
             memoryEvolutionActionLabel(candidate.action),
+            candidate.targetItemIds.size,
+            candidate.item.evidenceCount,
+            candidate.reason.ifBlank { getString(R.string.cc_memory_candidate_reason_default) },
             candidate.item.value.ifBlank { getString(R.string.cc_memory_candidate_private_value) }
         )
         AlertDialog.Builder(this)
@@ -9430,6 +9492,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             GlobalMemoryCandidateKind.DECISION, GlobalMemoryCandidateKind.SKILL_OPPORTUNITY -> R.string.agent_memory_kind_workflow
             GlobalMemoryCandidateKind.RELATION -> R.string.agent_memory_kind_contact
             GlobalMemoryCandidateKind.FACT -> R.string.agent_memory_kind_knowledge
+        }
+    )
+
+    private fun memoryCandidateRiskLabel(risk: GlobalMemoryCandidateRisk): String = getString(
+        when (risk) {
+            GlobalMemoryCandidateRisk.LOW -> R.string.cc_memory_risk_low
+            GlobalMemoryCandidateRisk.REVIEW_REQUIRED -> R.string.cc_memory_risk_review
+            GlobalMemoryCandidateRisk.PRIVATE_BLOCKED -> R.string.cc_memory_risk_private
         }
     )
 

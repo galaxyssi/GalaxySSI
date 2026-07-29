@@ -1865,6 +1865,14 @@ def api_desktop_memory_inbox(request: Request, limit: int = Query(100)):
     }
 
 
+@app.get("/api/desktop-memory/evolution")
+def api_desktop_memory_evolution(request: Request, limit: int = Query(100)):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().evolution_snapshot(limit=limit)
+
+
 @app.post("/api/desktop-memory/inbox")
 def api_propose_desktop_memory(req: DesktopMemoryReq, request: Request):
     require_loopback(request)
@@ -1877,6 +1885,7 @@ def api_propose_desktop_memory(req: DesktopMemoryReq, request: Request):
         confidence=0.8,
         namespace=req.namespace,
         tags=["api_candidate"],
+        evidence=[{"source": "desktop_ui", "kind": "manual_proposal"}],
     )
     if candidate is None:
         raise HTTPException(status_code=400, detail=api_error("desktop_memory_rejected"))
@@ -1895,6 +1904,7 @@ def api_remember_desktop_memory(req: DesktopMemoryReq, request: Request):
         confidence=1.0,
         tags=["manual"],
         namespace=req.namespace,
+        evidence=[{"source": "desktop_ui", "kind": "manual_memory"}],
     )
     if memory is None:
         raise HTTPException(status_code=400, detail=api_error("desktop_memory_rejected"))

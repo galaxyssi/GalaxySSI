@@ -181,8 +181,9 @@ const state = {
     memories: [],
     history: [],
     candidates: [],
+    evolution: {},
     stats: {},
-    view: "current",
+    view: "overview",
     query: ""
   },
   skills: [],
@@ -1497,7 +1498,9 @@ function memoryStateLabel(value) {
     conflicted: "Conflict",
     superseded: "Deprecated",
     retracted: "Retracted",
-    approved: "Approved"
+    approved: "Approved",
+    rejected: "Rejected",
+    auto_merged: "Auto merged"
   };
   return t(labels[value] || value || "Current");
 }
@@ -1530,6 +1533,53 @@ function memoryNamespaceLabel(value) {
   return t(labels[value] || value || "General");
 }
 
+function memoryActionLabel(value) {
+  const labels = {
+    create: "Create",
+    strengthen: "Strengthen",
+    supersede: "Replace current",
+    review_conflict: "Resolve conflict",
+    consolidate: "Consolidate",
+    link: "Create relationship"
+  };
+  return t(labels[value] || value || "Create");
+}
+
+function memoryRiskLabel(value) {
+  const labels = {
+    low: "Low risk",
+    review_required: "Review required",
+    private: "Private content blocked"
+  };
+  return t(labels[value] || value || "Review required");
+}
+
+function memoryFindingLabel(value) {
+  const labels = {
+    unresolved_conflict: "Unresolved memory conflict",
+    stale_candidate: "Candidate waiting too long",
+    low_confidence_reused: "Low-confidence memory reused",
+    missing_evidence: "Memory has no evidence reference"
+  };
+  return t(labels[value] || value || "Memory needs review");
+}
+
+function memoryTime(value) {
+  const timestamp = Number(value || 0);
+  if (!timestamp) return "";
+  return new Intl.DateTimeFormat(state.language === "zh-CN" ? "zh-CN" : "en", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(timestamp));
+}
+
+function memoryEvidenceLabel(item) {
+  const evidence = Array.isArray(item?.evidence) ? item.evidence.length : 0;
+  return t("{count} evidence references", { count: evidence });
+}
+
 function memoryMatchesQuery(item, query) {
   if (!query) return true;
   const searchable = [
@@ -1542,60 +1592,209 @@ function memoryMatchesQuery(item, query) {
   return searchable.includes(query.toLocaleLowerCase());
 }
 
+function renderMemoryCandidate(candidate, conflict = false) {
+  const currentMemories = Array.isArray(candidate.current_memories)
+    ? candidate.current_memories
+    : [];
+  const comparison = conflict && currentMemories.length ? `
+    <div class="memory-comparison" aria-label="${escapeHtml(t("Current and proposed memory"))}">
+      <div>
+        <span>${escapeHtml(t("Current"))}</span>
+        ${currentMemories.map((memory) => `<p>${escapeHtml(memory.content || "")}</p>`).join("")}
+      </div>
+      <b aria-hidden="true">\u2192</b>
+      <div>
+        <span>${escapeHtml(t("Proposed"))}</span>
+        <p>${escapeHtml(candidate.content || "")}</p>
+      </div>
+    </div>` : "";
+  return `
+    <article class="capability-item memory-candidate ${conflict ? "memory-conflict" : ""}">
+      <div class="memory-item-body">
+        <div class="memory-item-heading">
+          <strong>${escapeHtml(memoryKindLabel(candidate.kind))}</strong>
+          <span class="memory-status ${escapeHtml(candidate.status)}">${escapeHtml(memoryStateLabel(candidate.status))}</span>
+        </div>
+        ${comparison || `<p class="memory-content" title="${escapeHtml(candidate.content || "")}">${escapeHtml(String(candidate.content || "").slice(0, 500))}</p>`}
+        <div class="memory-facts">
+          <span>${escapeHtml(memoryActionLabel(candidate.evolution_action))}</span>
+          <span>${escapeHtml(memoryRiskLabel(candidate.risk))}</span>
+          <span>${escapeHtml(memoryNamespaceLabel(candidate.namespace))}</span>
+          <span>${escapeHtml(memoryStateLabel(candidate.intended_temporal_state))}</span>
+          <span>${escapeHtml(memoryEvidenceLabel(candidate))}</span>
+          <span>${escapeHtml(memoryTime(candidate.created_at))}</span>
+        </div>
+      </div>
+      <div class="capability-item-actions">
+        <button data-reject-memory-candidate="${escapeHtml(candidate.id)}">${escapeHtml(t("Reject"))}</button>
+        <button class="primary" data-approve-memory-candidate="${escapeHtml(candidate.id)}">${escapeHtml(t("Approve"))}</button>
+      </div>
+    </article>`;
+}
+
 function renderMemory() {
   const stats = state.memory.stats || {};
   const current = Array.isArray(state.memory.memories) ? state.memory.memories : [];
   const history = Array.isArray(state.memory.history) ? state.memory.history : [];
   const candidates = Array.isArray(state.memory.candidates) ? state.memory.candidates : [];
+  const evolution = state.memory.evolution || {};
+  const evolutionSummary = evolution.summary || {};
+  const conflicts = Array.isArray(evolution.conflicts) ? evolution.conflicts : [];
   const query = String(state.memory.query || "").trim();
-  const pendingCount = Number(stats.pending || candidates.length || 0);
+  const inboxCandidates = candidates.filter((candidate) => candidate.status === "pending_review");
+  const pendingCount = Number(evolutionSummary.pending_review || inboxCandidates.length || 0);
   const historyCount = Number(stats.superseded || 0) + Number(stats.retracted || 0);
-  $("#memorySummary").textContent = t("{active} current · {pending} pending review", {
-    active: Number(stats.active || current.length || 0),
-    pending: pendingCount
+  $("#memorySummary").textContent = t("{current} current · {pending} pending · {conflicts} conflicts", {
+    current: Number(evolutionSummary.current || stats.temporal_counts?.current || current.length || 0),
+    pending: pendingCount,
+    conflicts: Number(evolutionSummary.conflicted || conflicts.length || 0)
   });
   $("#memoryCurrentCount").textContent = String(Number(stats.active || current.length || 0));
   $("#memoryInboxCount").textContent = String(pendingCount);
+  $("#memoryConflictCount").textContent = String(Number(evolutionSummary.conflicted || conflicts.length || 0));
   $("#memoryHistoryCount").textContent = String(historyCount);
   $$("[data-memory-view]").forEach((button) => {
     button.classList.toggle("active", button.dataset.memoryView === state.memory.view);
   });
+  const searchField = $("#memorySearch")?.closest(".search-field");
+  if (searchField) searchField.hidden = state.memory.view === "overview";
 
-  if (state.memory.view === "inbox") {
-    const rows = candidates.filter((candidate) => memoryMatchesQuery(candidate, query));
-    $("#memoryList").innerHTML = rows.length ? rows.map((candidate) => `
-      <article class="capability-item memory-candidate">
+  if (state.memory.view === "overview") {
+    const health = evolution.health || {};
+    const findings = Array.isArray(health.findings) ? health.findings : [];
+    const recent = Array.isArray(evolution.recent_evolution)
+      ? evolution.recent_evolution.slice(0, 6)
+      : [];
+    const stateMetrics = [
+      ["Current", evolutionSummary.current || 0, "current"],
+      ["Planned", evolutionSummary.planned || 0, "planned"],
+      ["Pending review", evolutionSummary.pending_review || 0, "pending"],
+      ["Conflicts", evolutionSummary.conflicted || 0, "conflicted"]
+    ];
+    $("#memoryList").innerHTML = `
+      <section class="memory-dashboard-grid" aria-label="${escapeHtml(t("Memory state"))}">
+        ${stateMetrics.map(([label, value, tone]) => `
+          <button class="memory-metric ${tone}" data-memory-overview-route="${
+            tone === "conflicted" ? "conflicts" : tone === "pending" ? "inbox" : "current"
+          }">
+            <strong>${escapeHtml(String(value))}</strong>
+            <span>${escapeHtml(t(label))}</span>
+          </button>`).join("")}
+      </section>
+      <section class="memory-health ${health.status === "attention" ? "attention" : "healthy"}">
         <div>
-          <div class="memory-item-heading">
-            <strong>${escapeHtml(memoryKindLabel(candidate.kind))}</strong>
-            <span class="memory-status ${escapeHtml(candidate.status)}">${escapeHtml(memoryStateLabel(candidate.status))}</span>
-          </div>
-          <small title="${escapeHtml(candidate.content || "")}">${escapeHtml(String(candidate.content || "").slice(0, 180))}</small>
-          <small>${escapeHtml(`${memoryNamespaceLabel(candidate.namespace)} · ${memoryStateLabel(candidate.intended_temporal_state)}`)}</small>
+          <strong>${escapeHtml(t("Memory health"))}</strong>
+          <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
         </div>
-        <div class="capability-item-actions">
-          <button data-reject-memory-candidate="${escapeHtml(candidate.id)}">${escapeHtml(t("Reject"))}</button>
-          <button class="primary" data-approve-memory-candidate="${escapeHtml(candidate.id)}">${escapeHtml(t("Approve"))}</button>
+        ${findings.length ? findings.map((finding) => `
+          <p><b>${escapeHtml(String(finding.count || 0))}</b> ${escapeHtml(memoryFindingLabel(finding.kind))}</p>
+        `).join("") : `<p>${escapeHtml(t("No stale, conflicting, or unsupported memory was found."))}</p>`}
+      </section>
+      <section class="memory-overview-section">
+        <div class="memory-section-heading">
+          <strong>${escapeHtml(t("Evidence-backed state"))}</strong>
+          <span>${escapeHtml(t("{count} evidence references", { count: Number(evolutionSummary.evidence || 0) }))}</span>
         </div>
-      </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No memory candidates need review."))}</div>`;
+        <div class="memory-namespace-grid">
+          ${Object.entries(evolution.namespace_counts || {}).map(([namespace, count]) => `
+            <div><span>${escapeHtml(memoryNamespaceLabel(namespace))}</span><strong>${escapeHtml(String(count))}</strong></div>
+          `).join("") || `<p>${escapeHtml(t("No durable memory yet."))}</p>`}
+        </div>
+      </section>
+      <section class="memory-overview-section">
+        <div class="memory-section-heading">
+          <strong>${escapeHtml(t("Recent evolution"))}</strong>
+          <span>${escapeHtml(t("Encrypted lifecycle record"))}</span>
+        </div>
+        <div class="memory-evolution-list">
+          ${recent.length ? recent.map((item) => `
+            <div>
+              <span class="memory-action-mark ${escapeHtml(item.evolution_action || "create")}"></span>
+              <p><strong>${escapeHtml(memoryActionLabel(item.evolution_action))}</strong><small>${escapeHtml(String(item.content || "").slice(0, 140))}</small></p>
+              <time>${escapeHtml(memoryTime(item.reviewed_at || item.created_at))}</time>
+            </div>
+          `).join("") : `<p class="history-empty">${escapeHtml(t("No memory evolution has been recorded yet."))}</p>`}
+        </div>
+      </section>`;
     return;
   }
 
-  const sourceRows = state.memory.view === "history" ? history : current;
-  const rows = sourceRows.filter((memory) => memoryMatchesQuery(memory, query));
+  if (state.memory.view === "inbox") {
+    const rows = inboxCandidates.filter((candidate) => memoryMatchesQuery(candidate, query));
+    $("#memoryList").innerHTML = rows.length
+      ? rows.map((candidate) => renderMemoryCandidate(candidate)).join("")
+      : `<div class="history-empty">${escapeHtml(t("No memory candidates need review."))}</div>`;
+    return;
+  }
+
+  if (state.memory.view === "conflicts") {
+    const rows = conflicts.filter((candidate) => memoryMatchesQuery(candidate, query));
+    $("#memoryList").innerHTML = rows.length
+      ? rows.map((candidate) => renderMemoryCandidate(candidate, true)).join("")
+      : `<div class="history-empty">${escapeHtml(t("No unresolved memory conflicts."))}</div>`;
+    return;
+  }
+
+  if (state.memory.view === "history") {
+    const lifecycle = (Array.isArray(evolution.recent_evolution) ? evolution.recent_evolution : [])
+      .filter((item) => !["pending_review", "conflicted"].includes(item.status))
+      .filter((item) => memoryMatchesQuery(item, query));
+    const historical = history.filter((memory) => memoryMatchesQuery(memory, query));
+    $("#memoryList").innerHTML = lifecycle.length || historical.length ? `
+      ${lifecycle.map((item) => `
+        <article class="capability-item memory-history-item">
+          <span class="memory-action-mark ${escapeHtml(item.evolution_action || "create")}"></span>
+          <div class="memory-item-body">
+            <div class="memory-item-heading">
+              <strong>${escapeHtml(memoryActionLabel(item.evolution_action))}</strong>
+              <span class="memory-status ${escapeHtml(item.status)}">${escapeHtml(memoryStateLabel(item.status))}</span>
+            </div>
+            <p class="memory-content">${escapeHtml(String(item.content || "").slice(0, 500))}</p>
+            <div class="memory-facts">
+              <span>${escapeHtml(memoryKindLabel(item.kind))}</span>
+              <span>${escapeHtml(memoryEvidenceLabel(item))}</span>
+              <span>${escapeHtml(memoryTime(item.reviewed_at || item.created_at))}</span>
+            </div>
+          </div>
+        </article>`).join("")}
+      ${historical.map((memory) => `
+        <article class="capability-item">
+          <div class="memory-item-body">
+            <div class="memory-item-heading">
+              <strong>${escapeHtml(memoryKindLabel(memory.kind))}</strong>
+              <span class="memory-status ${escapeHtml(memory.status)}">${escapeHtml(memoryStateLabel(memory.status))}</span>
+            </div>
+            <p class="memory-content">${escapeHtml(String(memory.content || "").slice(0, 500))}</p>
+            <div class="memory-facts">
+              <span>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</span>
+              <span>${escapeHtml(memoryEvidenceLabel(memory))}</span>
+              <span>${escapeHtml(memoryTime(memory.updated_at))}</span>
+            </div>
+          </div>
+        </article>`).join("")}
+    ` : `<div class="history-empty">${escapeHtml(t("No memory evolution has been recorded yet."))}</div>`;
+    return;
+  }
+
+  const rows = current.filter((memory) => memoryMatchesQuery(memory, query));
   $("#memoryList").innerHTML = rows.length ? rows.map((memory) => {
     const stateLabel = memory.status === "active" ? memory.temporal_state : memory.status;
     return `
       <article class="capability-item">
-        <div>
+        <div class="memory-item-body">
           <div class="memory-item-heading">
             <strong>${escapeHtml(memoryKindLabel(memory.kind))}</strong>
             <span class="memory-status ${escapeHtml(stateLabel)}">${escapeHtml(memoryStateLabel(stateLabel))}</span>
           </div>
-          <small title="${escapeHtml(memory.content || "")}">${escapeHtml(String(memory.content || "").slice(0, 180))}</small>
-          <small>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</small>
+          <p class="memory-content" title="${escapeHtml(memory.content || "")}">${escapeHtml(String(memory.content || "").slice(0, 500))}</p>
+          <div class="memory-facts">
+            <span>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</span>
+            <span>${escapeHtml(memoryEvidenceLabel(memory))}</span>
+            <span>${escapeHtml(t("{percent}% confidence", { percent: Math.round(Number(memory.confidence || 0) * 100) }))}</span>
+            <span>${escapeHtml(memoryTime(memory.updated_at))}</span>
+          </div>
         </div>
-        ${state.memory.view === "current" ? `<div class="capability-item-actions"><button data-forget-memory="${escapeHtml(memory.id)}">${escapeHtml(t("Forget"))}</button></div>` : ""}
+        <div class="capability-item-actions"><button data-forget-memory="${escapeHtml(memory.id)}">${escapeHtml(t("Forget"))}</button></div>
       </article>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("No matching memory."))}</div>`;
 }
@@ -1900,16 +2099,18 @@ function updateCapabilityCount() {
 }
 
 async function refreshMemory(query = "") {
-  const [current, history, inbox] = await Promise.all([
+  const [current, history, inbox, evolution] = await Promise.all([
     window.signalasi.getDesktopMemory(query, 100, "active"),
     window.signalasi.getDesktopMemory("", 100, "history"),
-    window.signalasi.getDesktopMemoryInbox(100)
+    window.signalasi.getDesktopMemoryInbox(100),
+    window.signalasi.getDesktopMemoryEvolution(100)
   ]);
   state.memory = {
     ...state.memory,
     memories: Array.isArray(current.memories) ? current.memories : [],
     history: Array.isArray(history.memories) ? history.memories : [],
     candidates: Array.isArray(inbox.candidates) ? inbox.candidates : [],
+    evolution: evolution || {},
     stats: current.stats || inbox.stats || {},
     query
   };
@@ -1919,10 +2120,11 @@ async function refreshMemory(query = "") {
 
 async function refreshCapabilities() {
   try {
-    const [memory, memoryHistory, memoryInbox, marketplace, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
+    const [memory, memoryHistory, memoryInbox, memoryEvolution, marketplace, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
       window.signalasi.getDesktopMemory("", 100, "active"),
       window.signalasi.getDesktopMemory("", 100, "history"),
       window.signalasi.getDesktopMemoryInbox(100),
+      window.signalasi.getDesktopMemoryEvolution(100),
       window.signalasi.getToolMarketplace(),
       window.signalasi.getDesktopSkills(),
       window.signalasi.getDesktopMcp(),
@@ -1935,6 +2137,7 @@ async function refreshCapabilities() {
       memories: Array.isArray(memory.memories) ? memory.memories : [],
       history: Array.isArray(memoryHistory.memories) ? memoryHistory.memories : [],
       candidates: Array.isArray(memoryInbox.candidates) ? memoryInbox.candidates : [],
+      evolution: memoryEvolution || {},
       stats: memory.stats || memoryInbox.stats || {},
       query: ""
     };
@@ -2504,7 +2707,7 @@ function selectCapabilityTab(name) {
 }
 
 function selectMemoryView(name) {
-  if (!["current", "inbox", "history"].includes(name)) return;
+  if (!["overview", "current", "inbox", "conflicts", "history"].includes(name)) return;
   state.memory.view = name;
   renderMemory();
 }
@@ -3152,9 +3355,14 @@ function bindEvents() {
   });
   $("#addMemoryButton").addEventListener("click", () => addMemory().catch((error) => showToast(error.message || String(error))));
   $("#memoryList").addEventListener("click", async (event) => {
+    const overviewRoute = event.target.closest("[data-memory-overview-route]");
     const forget = event.target.closest("[data-forget-memory]");
     const approve = event.target.closest("[data-approve-memory-candidate]");
     const reject = event.target.closest("[data-reject-memory-candidate]");
+    if (overviewRoute) {
+      selectMemoryView(overviewRoute.dataset.memoryOverviewRoute);
+      return;
+    }
     if (forget) {
       await window.signalasi.forgetDesktopMemory(forget.dataset.forgetMemory);
     } else if (approve) {

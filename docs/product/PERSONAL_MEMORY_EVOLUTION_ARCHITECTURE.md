@@ -113,7 +113,11 @@ Terminal Runs update a separate encrypted Agent self-model. The self-model learn
 
 The Android Memory and Personalization page exposes:
 
+- a lifecycle dashboard that separates current, planned, historical, deprecated,
+  pending, and conflicted state;
 - candidate memory inbox with approve and reject actions;
+- candidate review details covering risk, proposed evolution action, affected memory,
+  evidence count, and the gate reason;
 - encrypted evolution history showing applied, waiting, conflicting, blocked, approved, and rejected transitions;
 - temporal relationship graph with entity and relation counts;
 - memory health findings and a manual on-device audit;
@@ -132,7 +136,14 @@ while Desktop acts as a super agent:
   distinguishable;
 - approval preserves source evidence and marks replaced facts as superseded instead of
   deleting their history;
-- Current, Inbox, and History views expose the resulting lifecycle in the Desktop UI.
+- Overview, Current, Inbox, Conflicts, and History views expose the resulting lifecycle
+  in the Desktop UI;
+- the Overview reports temporal and namespace distribution, evidence coverage, recent
+  evolution, and bounded health findings;
+- conflict review compares current evidence-backed memory with the proposed state before
+  approval or rejection;
+- lifecycle records identify create, strengthen, supersede, and conflict-review actions
+  without exposing secrets.
 
 ## Evaluation Corpus
 

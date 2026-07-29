@@ -82,11 +82,34 @@ class DesktopMemoryTest(unittest.TestCase):
             )
 
             self.assertEqual(candidate["status"], "auto_merged")
+            self.assertEqual(candidate["evolution_action"], "create")
             self.assertEqual(candidate["namespace"], "project")
             self.assertTrue(candidate["resulting_memory_id"])
             memory = store.get(candidate["resulting_memory_id"])
             self.assertEqual(memory["temporal_state"], "current")
             self.assertEqual(memory["evidence"][0]["task_id"], "task-1")
+
+    def test_matching_evidence_is_reported_as_strengthening_current_memory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: 250.0)
+            current = store.remember(
+                "SignalASI desktop memory is encrypted",
+                kind="project_state",
+                key="project:desktop-memory-security",
+                evidence=[{"source": "architecture"}],
+            )
+            candidate = store.propose(
+                "SignalASI desktop memory is encrypted",
+                kind="project_state",
+                key="project:desktop-memory-security",
+                evidence=[{"source": "runtime-check"}],
+            )
+
+            self.assertEqual(candidate["status"], "auto_merged")
+            self.assertEqual(candidate["evolution_action"], "strengthen")
+            self.assertEqual(candidate["target_memory_ids"], [current["id"]])
+            strengthened = store.get(candidate["resulting_memory_id"])
+            self.assertEqual(len(strengthened["evidence"]), 2)
 
     def test_identity_and_security_candidates_wait_for_review(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -162,6 +185,8 @@ class DesktopMemoryTest(unittest.TestCase):
             )
 
             self.assertEqual(candidate["status"], "conflicted")
+            self.assertEqual(candidate["evolution_action"], "review_conflict")
+            self.assertEqual(candidate["target_memory_ids"], [previous["id"]])
             self.assertEqual(store.get(previous["id"])["status"], "active")
             approved = store.approve_candidate(candidate["id"])
             self.assertEqual(approved["status"], "approved")
@@ -187,8 +212,47 @@ class DesktopMemoryTest(unittest.TestCase):
             )
 
             self.assertEqual(replacement["status"], "auto_merged")
+            self.assertEqual(replacement["evolution_action"], "supersede")
+            self.assertEqual(replacement["target_memory_ids"], [previous["id"]])
             self.assertEqual(store.get(previous["id"])["status"], "superseded")
             self.assertEqual(store.list(status="history")[0]["id"], previous["id"])
+
+    def test_evolution_snapshot_exposes_state_evidence_conflicts_and_health(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: 500.0)
+            current = store.remember(
+                "SignalASI memory evolution UI is enabled",
+                kind="project_state",
+                key="project:memory-evolution-ui",
+                evidence=[{"source": "verified-test"}],
+            )
+            planned = store.remember(
+                "Plan the next memory audit",
+                kind="goal",
+                key="project:next-memory-audit",
+            )
+            conflict = store.propose(
+                "SignalASI memory evolution UI lacks access",
+                kind="project_state",
+                key="project:memory-evolution-ui",
+                evidence=[{"source": "conflicting-observation"}],
+            )
+
+            snapshot = store.evolution_snapshot()
+
+            self.assertEqual(snapshot["contract_version"], 1)
+            self.assertEqual(snapshot["summary"]["current"], 1)
+            self.assertEqual(snapshot["summary"]["planned"], 1)
+            self.assertEqual(snapshot["summary"]["conflicted"], 1)
+            self.assertEqual(snapshot["summary"]["evidence"], 1)
+            self.assertEqual(snapshot["health"]["status"], "attention")
+            self.assertEqual(snapshot["conflicts"][0]["id"], conflict["id"])
+            self.assertEqual(snapshot["conflicts"][0]["current_memories"][0]["id"], current["id"])
+            self.assertEqual(snapshot["conflicts"][0]["evolution_action"], "review_conflict")
+            self.assertTrue(any(
+                item["id"] == planned["id"]
+                for item in store.list(status="active")
+            ))
 
     def test_namespaces_isolate_identical_keys(self):
         with tempfile.TemporaryDirectory() as directory:

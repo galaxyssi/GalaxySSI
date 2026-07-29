@@ -231,12 +231,22 @@ class DesktopMemoryStore:
                     tags_json TEXT NOT NULL,
                     evidence_json TEXT NOT NULL,
                     conflicting_memory_ids_json TEXT NOT NULL,
+                    evolution_action TEXT NOT NULL DEFAULT 'create',
+                    target_memory_ids_json TEXT NOT NULL DEFAULT '[]',
                     resulting_memory_id TEXT NOT NULL DEFAULT '',
                     created_at INTEGER NOT NULL,
                     reviewed_at INTEGER NOT NULL DEFAULT 0,
                     review_note TEXT NOT NULL DEFAULT ''
                 )
                 """
+            )
+            self._ensure_columns(
+                connection,
+                "memory_candidates",
+                {
+                    "evolution_action": "TEXT NOT NULL DEFAULT 'create'",
+                    "target_memory_ids_json": "TEXT NOT NULL DEFAULT '[]'",
+                },
             )
             connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_status ON memories(status, updated_at DESC)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_key ON memories(namespace, memory_key, status)")
@@ -444,8 +454,25 @@ class DesktopMemoryStore:
             for row in current_rows
             if _clean(row["content"]).casefold() != content.casefold()
         ]
+        matching = [
+            str(row["id"])
+            for row in current_rows
+            if _clean(row["content"]).casefold() == content.casefold()
+        ]
         protected = kind in REVIEW_KINDS
         replacement = bool(conflicts and REPLACEMENT_PATTERN.search(content))
+        if conflicts and not replacement:
+            evolution_action = "review_conflict"
+            target_memory_ids = conflicts
+        elif conflicts:
+            evolution_action = "supersede"
+            target_memory_ids = conflicts
+        elif matching:
+            evolution_action = "strengthen"
+            target_memory_ids = matching
+        else:
+            evolution_action = "create"
+            target_memory_ids = []
         if protected:
             status = "pending_review"
             risk = "review_required"
@@ -469,9 +496,10 @@ class DesktopMemoryStore:
                     id, memory_key, namespace, kind, content, status, risk,
                     temporal_state, intended_temporal_state, confidence, importance,
                     source_conversation_id, source_task_id, tags_json, evidence_json,
-                    conflicting_memory_ids_json, resulting_memory_id, created_at,
+                    conflicting_memory_ids_json, evolution_action,
+                    target_memory_ids_json, resulting_memory_id, created_at,
                     reviewed_at, review_note
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, '')
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, 0, '')
                 """,
                 (
                     candidate_id,
@@ -490,6 +518,8 @@ class DesktopMemoryStore:
                     json.dumps(sorted(set(tags or []))[:24], ensure_ascii=False),
                     json.dumps(evidence_rows[-100:], ensure_ascii=False),
                     json.dumps(conflicts, ensure_ascii=False),
+                    evolution_action,
+                    json.dumps(target_memory_ids, ensure_ascii=False),
                     now_ms,
                 ),
             )
@@ -805,6 +835,126 @@ class DesktopMemoryStore:
             "total": sum(counts.values()),
         }
 
+    def evolution_snapshot(self, limit: int = 100) -> dict[str, Any]:
+        bounded_limit = max(1, min(int(limit or 100), 500))
+        current = self.list(limit=bounded_limit, status="active")
+        history = self.list(limit=bounded_limit, status="history")
+        candidates = self.list_candidates(
+            statuses=(
+                "pending_review",
+                "conflicted",
+                "auto_merged",
+                "approved",
+                "rejected",
+            ),
+            limit=bounded_limit,
+        )
+        now_ms = int(self.now() * 1_000)
+        stats = self.stats()
+        candidate_by_status = dict(stats["candidate_counts"])
+        temporal_counts = {
+            state: int(stats["temporal_counts"].get(state, 0))
+            for state in sorted(TEMPORAL_STATES)
+        }
+        with self._lock, self._connect() as connection:
+            namespace_rows = connection.execute(
+                "SELECT namespace, COUNT(*) AS count FROM memories "
+                "WHERE status = 'active' GROUP BY namespace"
+            ).fetchall()
+            evidence_rows = connection.execute(
+                "SELECT evidence_json FROM memories WHERE status = 'active'"
+            ).fetchall()
+        raw_namespace_counts = {
+            str(row["namespace"]): int(row["count"])
+            for row in namespace_rows
+        }
+        namespace_counts = {
+            namespace: raw_namespace_counts.get(namespace, 0)
+            for namespace in sorted(MEMORY_NAMESPACES)
+        }
+        evidence_count = sum(len(_json_list(row["evidence_json"])) for row in evidence_rows)
+        conflicts: list[dict[str, Any]] = []
+        for candidate in candidates:
+            if candidate["status"] != "conflicted":
+                continue
+            conflict = dict(candidate)
+            conflict["current_memories"] = [
+                memory
+                for memory_id in candidate["conflicting_memory_ids"]
+                if (memory := self.get(str(memory_id))) is not None
+            ]
+            conflicts.append(conflict)
+
+        findings: list[dict[str, Any]] = []
+        if conflicts:
+            findings.append({
+                "kind": "unresolved_conflict",
+                "count": len(conflicts),
+                "severity": "attention",
+            })
+        stale_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate["status"] in {"pending_review", "conflicted"}
+            and now_ms - int(candidate["created_at"]) >= 30 * 86_400_000
+        ]
+        if stale_candidates:
+            findings.append({
+                "kind": "stale_candidate",
+                "count": len(stale_candidates),
+                "severity": "attention",
+            })
+        low_confidence = [
+            memory
+            for memory in current
+            if float(memory["confidence"]) < 0.5 and int(memory["use_count"]) >= 3
+        ]
+        if low_confidence:
+            findings.append({
+                "kind": "low_confidence_reused",
+                "count": len(low_confidence),
+                "severity": "review",
+            })
+        missing_evidence = [
+            memory
+            for memory in current
+            if not memory["evidence"] and "manual" not in memory["tags"]
+        ]
+        if missing_evidence:
+            findings.append({
+                "kind": "missing_evidence",
+                "count": len(missing_evidence),
+                "severity": "review",
+            })
+
+        recent_evolution = sorted(
+            candidates,
+            key=lambda candidate: int(candidate["reviewed_at"] or candidate["created_at"]),
+            reverse=True,
+        )
+        return {
+            "contract_version": 1,
+            "generated_at": now_ms,
+            "summary": {
+                "current": temporal_counts.get("current", 0),
+                "planned": temporal_counts.get("planned", 0),
+                "historical": temporal_counts.get("historical", 0),
+                "deprecated": temporal_counts.get("deprecated", 0),
+                "pending_review": candidate_by_status.get("pending_review", 0),
+                "conflicted": candidate_by_status.get("conflicted", 0),
+                "evidence": evidence_count,
+            },
+            "temporal_counts": temporal_counts,
+            "namespace_counts": namespace_counts,
+            "candidate_counts": candidate_by_status,
+            "health": {
+                "status": "attention" if findings else "healthy",
+                "findings": findings,
+            },
+            "conflicts": conflicts,
+            "recent_evolution": recent_evolution,
+        }
+
     @staticmethod
     def _public(row: sqlite3.Row) -> dict[str, Any]:
         return {
@@ -841,6 +991,8 @@ class DesktopMemoryStore:
             "tags": _json_list(row["tags_json"]),
             "evidence": _json_list(row["evidence_json"]),
             "conflicting_memory_ids": _json_list(row["conflicting_memory_ids_json"]),
+            "evolution_action": str(row["evolution_action"]),
+            "target_memory_ids": _json_list(row["target_memory_ids_json"]),
             "resulting_memory_id": str(row["resulting_memory_id"]),
             "created_at": int(row["created_at"]),
             "reviewed_at": int(row["reviewed_at"]),
