@@ -870,4 +870,10 @@
 , "Setting": "设置"
 , "Concept": "概念"
 , "State": "状态"
+, "Expired memory retired": "已退役过期记忆"
+, "Equivalent memory consolidated": "已合并等效记忆"
+, "Run audit": "运行审计"
+, "Last audit {time} - {actions} safe actions": "上次审计 {time}，执行 {actions} 项安全操作"
+, "Memory audit has not run yet.": "记忆审计尚未运行。"
+, "Memory audit completed with {count} safe actions.": "记忆审计完成，执行了 {count} 项安全操作。"
 }

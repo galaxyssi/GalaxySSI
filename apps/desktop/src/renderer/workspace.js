@@ -1579,6 +1579,8 @@ function memoryFindingLabel(value) {
     unresolved_conflict: "Unresolved memory conflict",
     stale_candidate: "Candidate waiting too long",
     low_confidence_reused: "Low-confidence memory reused",
+    expired: "Expired memory retired",
+    duplicate: "Equivalent memory consolidated",
     missing_evidence: "Memory has no evidence reference",
     broken_supersession_chain: "Supersession evidence chain is incomplete"
   };
@@ -1736,6 +1738,8 @@ function renderMemory() {
 
   if (state.memory.view === "overview") {
     const health = evolution.health || {};
+    const critic = evolution.critic || stats.critic || {};
+    const latestCritic = critic.latest || {};
     const graph = evolution.graph || stats.graph || {};
     const findings = Array.isArray(health.findings) ? health.findings : [];
     const recent = Array.isArray(evolution.recent_evolution)
@@ -1765,9 +1769,22 @@ function renderMemory() {
       </section>
       <section class="memory-health ${health.status === "attention" ? "attention" : "healthy"}">
         <div>
-          <strong>${escapeHtml(t("Memory health"))}</strong>
-          <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
+          <div class="memory-health-heading">
+            <strong>${escapeHtml(t("Memory health"))}</strong>
+            <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
+          </div>
+          <button class="memory-audit-button" data-run-memory-critic>
+            ${escapeHtml(t("Run audit"))}
+          </button>
         </div>
+        <p>${escapeHtml(
+          critic.last_run_at
+            ? t("Last audit {time} - {actions} safe actions", {
+              time: memoryTime(critic.last_run_at),
+              actions: Number(latestCritic.action_count || 0)
+            })
+            : t("Memory audit has not run yet.")
+        )}</p>
         ${findings.length ? findings.map((finding) => `
           <p><b>${escapeHtml(String(finding.count || 0))}</b> ${escapeHtml(memoryFindingLabel(finding.kind))}</p>
         `).join("") : `<p>${escapeHtml(t("No stale, conflicting, or unsupported memory was found."))}</p>`}
@@ -3447,10 +3464,19 @@ function bindEvents() {
   });
   $("#addMemoryButton").addEventListener("click", () => addMemory().catch((error) => showToast(error.message || String(error))));
   $("#memoryList").addEventListener("click", async (event) => {
+    const runCritic = event.target.closest("[data-run-memory-critic]");
     const overviewRoute = event.target.closest("[data-memory-overview-route]");
     const forget = event.target.closest("[data-forget-memory]");
     const approve = event.target.closest("[data-approve-memory-candidate]");
     const reject = event.target.closest("[data-reject-memory-candidate]");
+    if (runCritic) {
+      const result = await window.signalasi.runDesktopMemoryCritic();
+      showToast(t("Memory audit completed with {count} safe actions.", {
+        count: Number(result?.run?.action_count || 0)
+      }));
+      await refreshMemory($("#memorySearch").value.trim());
+      return;
+    }
     if (overviewRoute) {
       selectMemoryView(overviewRoute.dataset.memoryOverviewRoute);
       return;

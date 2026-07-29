@@ -21,6 +21,14 @@ from desktop_memory_graph import (
     retract_memory_graph_evidence,
     search_memory_graph,
 )
+from desktop_memory_critic import (
+    clear_memory_critic,
+    critic_status,
+    initialize_critic_schema,
+    note_memory_mutation,
+    record_failed_memory_critic,
+    run_memory_critic,
+)
 from desktop_memory_prompt_compiler import CompiledMemoryContext, compile_memory_context
 from desktop_memory_query_planner import DesktopMemoryQueryPlan, plan_memory_query
 
@@ -313,6 +321,7 @@ class DesktopMemoryStore:
                 "ON memory_candidates(status, created_at DESC)"
             )
             initialize_graph_schema(connection)
+            initialize_critic_schema(connection)
 
     @staticmethod
     def _ensure_columns(
@@ -344,6 +353,7 @@ class DesktopMemoryStore:
         temporal_state: str,
         evidence_rows: list[dict[str, Any]],
         now_ms: int,
+        valid_until_at: int,
     ) -> sqlite3.Row:
         memory_id = hashlib.sha256(f"{key}:{content}:{now_ms}".encode("utf-8")).hexdigest()[:32]
         supersedes_id = ""
@@ -387,7 +397,7 @@ class DesktopMemoryStore:
                 confidence, importance, source_conversation_id, source_task_id,
                 tags_json, evidence_json, created_at, updated_at, last_accessed_at,
                 use_count, supersedes_id, superseded_by_id, valid_from_at, valid_until_at
-            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?, 0)
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?, ?)
             """,
             (
                 memory_id,
@@ -407,6 +417,7 @@ class DesktopMemoryStore:
                 now_ms,
                 supersedes_id,
                 now_ms,
+                max(0, int(valid_until_at or 0)),
             ),
         )
         row = connection.execute(
@@ -438,6 +449,7 @@ class DesktopMemoryStore:
         namespace: str = "",
         temporal_state: str = "",
         evidence: list[dict[str, Any]] | None = None,
+        valid_until_at: int = 0,
     ) -> dict[str, Any] | None:
         content = _clean(content)
         if (
@@ -483,7 +495,9 @@ class DesktopMemoryStore:
                 temporal_state=temporal_state,
                 evidence_rows=evidence_rows,
                 now_ms=now_ms,
+                valid_until_at=valid_until_at,
             )
+            note_memory_mutation(connection)
             return self._public(row)
 
     @_synchronized
@@ -650,7 +664,9 @@ class DesktopMemoryStore:
                     temporal_state=intended_temporal_state,
                     evidence_rows=evidence_rows,
                     now_ms=now_ms,
+                    valid_until_at=0,
                 )
+                note_memory_mutation(connection)
                 resulting_memory_id = str(memory_row["id"])
                 reviewed_at = now_ms
                 review_note = "low_risk_auto_merge"
@@ -730,6 +746,7 @@ class DesktopMemoryStore:
                 temporal_state=candidate["intended_temporal_state"],
                 evidence_rows=candidate["evidence"],
                 now_ms=now_ms,
+                valid_until_at=0,
             )
             cursor = connection.execute(
                 "UPDATE memory_candidates SET status = 'approved', temporal_state = ?, "
@@ -744,6 +761,7 @@ class DesktopMemoryStore:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("Memory candidate approval lost its transaction")
+            note_memory_mutation(connection)
             updated_row = connection.execute(
                 "SELECT * FROM memory_candidates WHERE id = ?",
                 (str(candidate_id),),
@@ -1146,6 +1164,7 @@ class DesktopMemoryStore:
             )
             if cursor.rowcount > 0:
                 retract_memory_graph_evidence(connection, str(memory_id), now_ms)
+                note_memory_mutation(connection)
             return cursor.rowcount > 0
 
     def clear(self) -> int:
@@ -1154,7 +1173,47 @@ class DesktopMemoryStore:
             connection.execute("DELETE FROM memories")
             connection.execute("DELETE FROM memory_candidates")
             clear_memory_graph(connection)
+            clear_memory_critic(connection)
             return count
+
+    def critic_status(
+        self,
+        history_limit: int = 20,
+        *,
+        now_ms: int | None = None,
+    ) -> dict[str, Any]:
+        effective_now_ms = int(self.now() * 1_000) if now_ms is None else int(now_ms)
+        with self._lock, self._connect() as connection:
+            return critic_status(
+                connection,
+                effective_now_ms,
+                history_limit=history_limit,
+            )
+
+    def run_critic(
+        self,
+        *,
+        force: bool = True,
+        trigger: str = "manual",
+    ) -> dict[str, Any]:
+        now_ms = int(self.now() * 1_000)
+        try:
+            with self._lock, self._connect() as connection:
+                return run_memory_critic(
+                    connection,
+                    now_ms,
+                    trigger=trigger,
+                    force=force,
+                )
+        except Exception as exc:
+            with self._lock, self._connect() as connection:
+                record_failed_memory_critic(
+                    connection,
+                    now_ms,
+                    trigger=trigger,
+                    error=str(exc),
+                )
+            raise
 
     def stats(self) -> dict[str, Any]:
         with self._lock, self._connect() as connection:
@@ -1329,6 +1388,22 @@ class DesktopMemoryStore:
             key=lambda candidate: int(candidate["reviewed_at"] or candidate["created_at"]),
             reverse=True,
         )
+        critic = self.critic_status(history_limit=20, now_ms=now_ms)
+        latest_critic = critic.get("latest") or {}
+        existing_finding_kinds = {str(finding["kind"]) for finding in findings}
+        for finding in latest_critic.get("findings") or []:
+            kind = str(finding.get("kind") or "")
+            if not kind or kind in existing_finding_kinds:
+                continue
+            affected_count = len(finding.get("memory_ids") or []) + len(
+                finding.get("candidate_ids") or []
+            )
+            findings.append({
+                "kind": kind,
+                "count": max(1, affected_count),
+                "severity": str(finding.get("severity") or "review"),
+            })
+            existing_finding_kinds.add(kind)
         return {
             "contract_version": 1,
             "generated_at": now_ms,
@@ -1349,9 +1424,17 @@ class DesktopMemoryStore:
             "graph": graph,
             "candidate_counts": candidate_by_status,
             "health": {
-                "status": "attention" if findings else "healthy",
+                "status": (
+                    "attention"
+                    if any(
+                        str(finding.get("severity") or "") in {"attention", "review"}
+                        for finding in findings
+                    )
+                    else "healthy"
+                ),
                 "findings": findings,
             },
+            "critic": critic,
             "conflicts": conflicts,
             "supersession": {
                 "edges": supersession_edges[-bounded_limit:],

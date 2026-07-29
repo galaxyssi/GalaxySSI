@@ -165,6 +165,7 @@ async def lifespan(app: FastAPI):
     file_server_process = None
     proactive_runtime = None
     evolution_runtime = None
+    memory_critic_runtime = None
     reputation_subscription_id = ""
     runtime_server = None
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
@@ -172,6 +173,14 @@ async def lifespan(app: FastAPI):
     if instance_lock is not None:
         instance_lock.acquire()
     init_db()
+    try:
+        from desktop_memory_critic import desktop_memory_critic_runtime
+
+        memory_critic_runtime = desktop_memory_critic_runtime()
+        memory_critic_runtime.start()
+        log.info("Desktop memory critic runtime started")
+    except Exception as exc:
+        log.warning("Desktop memory critic runtime start failed: %s", exc)
     try:
         runtime_server = desktop_agent_runtime_server()
         log.info(
@@ -262,6 +271,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if memory_critic_runtime is not None:
+            try:
+                memory_critic_runtime.stop()
+            except Exception as exc:
+                log.warning("Desktop memory critic runtime shutdown failed: %s", exc)
         if runtime_server is not None:
             shutdown_desktop_agent_runtime_server(wait=False)
         shutdown_acp_agent_runtime()
@@ -717,6 +731,7 @@ class DesktopMemoryReq(BaseModel):
     kind: str = "fact"
     importance: float = 0.6
     namespace: str = ""
+    valid_until_at: int = 0
 
 
 class DesktopSkillReq(BaseModel):
@@ -1889,6 +1904,22 @@ def api_desktop_memory_evolution(request: Request, limit: int = Query(100)):
     return desktop_memory_store().evolution_snapshot(limit=limit)
 
 
+@app.get("/api/desktop-memory/critic")
+def api_desktop_memory_critic(request: Request, limit: int = Query(20)):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().critic_status(history_limit=limit)
+
+
+@app.post("/api/desktop-memory/critic/run")
+def api_run_desktop_memory_critic(request: Request):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().run_critic(force=True, trigger="manual")
+
+
 @app.post("/api/desktop-memory/inbox")
 def api_propose_desktop_memory(req: DesktopMemoryReq, request: Request):
     require_loopback(request)
@@ -1921,6 +1952,7 @@ def api_remember_desktop_memory(req: DesktopMemoryReq, request: Request):
         tags=["manual"],
         namespace=req.namespace,
         evidence=[{"source": "desktop_ui", "kind": "manual_memory"}],
+        valid_until_at=req.valid_until_at,
     )
     if memory is None:
         raise HTTPException(status_code=400, detail=api_error("desktop_memory_rejected"))
