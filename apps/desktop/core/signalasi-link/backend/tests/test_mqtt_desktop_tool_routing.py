@@ -60,7 +60,7 @@ class MqttDesktopToolRoutingTests(unittest.TestCase):
             "conversation_id": "conversation-1",
             "workspace_id": workspace_id,
             "tool_id": desktop_native_tools.FILE_READ_TEXT,
-            "tool_version": "1.0.0",
+            "tool_version": desktop_native_tools.TOOL_VERSION,
             "arguments": {"workspace_id": workspace_id, "path": "notes.txt"},
         }
 
@@ -117,7 +117,7 @@ class MqttDesktopToolRoutingTests(unittest.TestCase):
         payload["confirmation"] = {
             "decision": "approved",
             "tool_id": desktop_native_tools.FILE_READ_TEXT,
-            "tool_version": "1.0.0",
+            "tool_version": desktop_native_tools.TOOL_VERSION,
             "arguments_sha256": original_digest,
             "expires_at": 9_999_999_999_999,
         }
@@ -142,7 +142,7 @@ class MqttDesktopToolRoutingTests(unittest.TestCase):
         payload["confirmation"] = {
             "decision": "approved",
             "tool_id": desktop_native_tools.FILE_READ_TEXT,
-            "tool_version": "1.0.0",
+            "tool_version": desktop_native_tools.TOOL_VERSION,
             "arguments_sha256": "0" * 64,
             "expires_at": 9_999_999_999_999,
         }
