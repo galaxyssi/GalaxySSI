@@ -3010,6 +3010,122 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(object["task_intent_confidence"] as? Int ?? 0, 55)
   }
 
+  func testAgentMcpToolSecurityPolicyMatchesAndroidRiskAndPermissions() {
+    let read = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("get_weather", readOnly: true),
+      arguments: ["city": .string("Shanghai")],
+      transport: .streamableHTTP
+    )
+    let destructive = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("delete_project", destructive: true),
+      arguments: [
+        "project_path": .string("/work"),
+        "api_token": .string("secret-value")
+      ],
+      transport: .localStdio
+    )
+
+    XCTAssertEqual(read.risk, .low)
+    XCTAssertTrue(read.permissions.contains("mcp.network.connect"))
+    XCTAssertEqual(read.publicValue()["risk"], .string("low"))
+
+    XCTAssertEqual(destructive.risk, .high)
+    XCTAssertTrue(destructive.permissions.contains("mcp.destructive"))
+    XCTAssertTrue(destructive.permissions.contains("mcp.files.access"))
+    XCTAssertTrue(destructive.permissions.contains("mcp.secrets.use"))
+    XCTAssertTrue(destructive.permissions.contains("mcp.process.execute"))
+    XCTAssertEqual(destructive.parameterPreview["api_token"], .string("[REDACTED]"))
+    XCTAssertEqual(destructive.inputSha256.count, 64)
+  }
+
+  func testAgentMcpToolSecurityPolicyPermissionMatrixMatchesAndroid() {
+    let high = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("delete_account", destructive: true),
+      arguments: [:],
+      transport: .streamableHTTP
+    )
+    let medium = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("update_document", readOnly: false),
+      arguments: ["content": .string("updated")],
+      transport: .streamableHTTP
+    )
+
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: high, explicitlyApproved: false).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: high, explicitlyApproved: true).allowed)
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .trusted, assessment: high, explicitlyApproved: false).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .trusted, assessment: high, explicitlyApproved: true).allowed)
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: medium, explicitlyApproved: false).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: medium, explicitlyApproved: true).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .trusted, assessment: medium, explicitlyApproved: false).allowed)
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .readOnly, assessment: medium, explicitlyApproved: true).allowed)
+    XCTAssertEqual(
+      AgentMcpToolSecurityPolicy.decide(mode: .disabled, assessment: medium, explicitlyApproved: true).requiredUserAction,
+      "enable_connection"
+    )
+  }
+
+  func testAgentMcpParameterRedactorDropsNestedInlineAndURLSecrets() {
+    let sanitized = AgentMcpParameterRedactor.sanitize([
+      "password": .string("secret-value"),
+      "nested": .object([
+        "authorization": .string("Bearer abcdefghijklmnop"),
+        "url": .string("https://example.test/action?token=secret#fragment"),
+        "note": .string("token=inline-secret")
+      ])
+    ])
+    let serialized = AgentMcpJSONCodec.stringify(sanitized)
+    let error = AgentMcpParameterRedactor.sanitizeText(
+      "token=inline-secret at https://example.test/mcp?api_key=secret"
+    )
+
+    XCTAssertFalse(serialized.contains("secret-value"))
+    XCTAssertFalse(serialized.contains("abcdefghijklmnop"))
+    XCTAssertFalse(serialized.contains("inline-secret"))
+    XCTAssertFalse(serialized.contains("fragment"))
+    XCTAssertFalse(error.contains("inline-secret"))
+    XCTAssertFalse(error.contains("api_key=secret"))
+  }
+
+  func testAgentMcpSecurityModelsUseAndroidWireNamesAndStableJson() throws {
+    let mode = try JSONDecoder().decode(AgentMcpPermissionMode.self, from: Data(#""trusted""#.utf8))
+    let fallbackMode = try JSONDecoder().decode(AgentMcpPermissionMode.self, from: Data(#""future""#.utf8))
+    let tool = try JSONDecoder().decode(
+      AgentMcpTool.self,
+      from: Data(
+        #"""
+        {
+          "name": "get_status",
+          "input_schema": {},
+          "annotations": {
+            "read_only_hint": true,
+            "open_world_hint": true
+          },
+          "raw": {"name": "get_status"}
+        }
+        """#.utf8
+      )
+    )
+    let assessment = AgentMcpToolSecurityPolicy.assess(
+      tool: tool,
+      arguments: ["path": .string("/tmp/report.txt")],
+      transport: .streamableHTTP
+    )
+    let encodedAssessment = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+    let stableJson = AgentMcpJSONCodec.stringify(["b": .int(2), "a": .string("x")])
+
+    XCTAssertEqual(mode, .trusted)
+    XCTAssertEqual(fallbackMode, .askForChanges)
+    XCTAssertEqual(tool.annotations?["read_only_hint"]?.boolValue, true)
+    XCTAssertEqual(assessment.risk, .low)
+    XCTAssertTrue(assessment.permissions.contains("mcp.files.access"))
+    XCTAssertTrue(assessment.permissions.contains("mcp.network.open_world"))
+    XCTAssertTrue(encodedAssessment.contains(#""parameter_preview":"#))
+    XCTAssertEqual(stableJson, #"{"a":"x","b":2}"#)
+    XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "get_status"), .low)
+    XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "control_relay"), .medium)
+    XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "delete_device"), .high)
+  }
+
   func testAgentFailureRecoveryPayloadRoundTripsAndroidWireNames() throws {
     let payload = AgentFailureRecoveryPayload(
       action: .switchAgent,
@@ -4070,6 +4186,26 @@ final class SignalASIStoreTests: XCTestCase {
       agentId: agentId,
       location: location,
       connectionKind: connectionKind
+    )
+  }
+
+  private func mcpTool(
+    _ name: String,
+    readOnly: Bool? = nil,
+    destructive: Bool? = nil
+  ) -> AgentMcpTool {
+    var annotations: AgentMcpJSONObject = [:]
+    if let readOnly {
+      annotations["readOnlyHint"] = .bool(readOnly)
+    }
+    if let destructive {
+      annotations["destructiveHint"] = .bool(destructive)
+    }
+    return AgentMcpTool(
+      name: name,
+      inputSchema: [:],
+      annotations: annotations,
+      raw: ["name": .string(name)]
     )
   }
 
