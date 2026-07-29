@@ -1428,6 +1428,217 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertThrowsError(try AgentMcpEndpointPolicy.normalize("file:///tmp/server"))
   }
 
+  func testGlobalCapabilityObservationExtractorAuthorizationAndSafetyUseLocalOnlyProjection() {
+    let authorizationEvents = GlobalCapabilityObservationExtractor.authorizationMutations(
+      before: ["location"],
+      after: ["location", "microphone"],
+      timestampMillis: 42
+    )
+    let revokedEvents = GlobalCapabilityObservationExtractor.authorizationMutations(
+      before: ["downloads"],
+      after: [],
+      timestampMillis: 43
+    )
+    let safety = GlobalCapabilityObservationExtractor.safetyPolicyMutation(
+      before: .default,
+      after: AgentSafetySettings(
+        taskExecutionMode: .planOnly,
+        permissionMode: .autoLowRisk,
+        highRiskGuard: true,
+        memoryCapture: false,
+        screenObservationAllowed: false,
+        localActionsAllowed: true,
+        connectorCallsAllowed: false,
+        deviceControlAllowed: false,
+        executionPaused: true
+      ),
+      timestampMillis: 44
+    )
+
+    XCTAssertEqual(authorizationEvents.count, 1)
+    XCTAssertEqual(authorizationEvents[0].type, .authorizationGranted)
+    XCTAssertTrue(authorizationEvents[0].type.isCapabilityLifecycleEvent)
+    XCTAssertEqual(authorizationEvents[0].conversationId, "global-capabilities")
+    XCTAssertEqual(authorizationEvents[0].conversationTitle, "Local authorization")
+    XCTAssertEqual(authorizationEvents[0].metadata["origin"], "confirmation_consent")
+    XCTAssertEqual(authorizationEvents[0].metadata["authorization_scope"], "microphone use")
+    XCTAssertEqual(authorizationEvents[0].metadata["authorization_state"], "granted")
+    XCTAssertEqual(authorizationEvents[0].metadata["context_visibility"], "LOCAL_ONLY")
+    XCTAssertEqual(authorizationEvents[0].metadata["projection"], "replace")
+    XCTAssertEqual(revokedEvents.first?.type, .authorizationRevoked)
+    XCTAssertEqual(revokedEvents.first?.metadata["authorization_state"], "revoked")
+    XCTAssertNotNil(safety)
+    XCTAssertEqual(safety?.type, .authorizationPolicyChanged)
+    XCTAssertEqual(safety?.contentRef, "encrypted://agent-authorization/safety-policy")
+    XCTAssertEqual(safety?.metadata["task_execution_mode"], "plan_only")
+    XCTAssertEqual(safety?.metadata["permission_mode"], "auto_low_risk")
+    XCTAssertEqual(safety?.metadata["screen_observation_allowed"], "false")
+    XCTAssertEqual(safety?.metadata["connector_calls_allowed"], "false")
+    XCTAssertEqual(safety?.metadata["execution_paused"], "true")
+    XCTAssertEqual(safety?.metadata["identity_kind"], "DECISION")
+    XCTAssertEqual(safety?.metadata["identity_layer"], "USER")
+    XCTAssertNil(GlobalCapabilityObservationExtractor.safetyPolicyMutation(before: .default, after: .default))
+  }
+
+  func testGlobalCapabilityObservationExtractorMcpAgentAndHealthAreRedacted() throws {
+    let endpoint = "https://secret.example/mcp"
+    let connection = AgentMcpConnection(
+      id: "github",
+      catalogId: "signalasi.mcp.github",
+      displayName: "  GitHub   MCP  ",
+      endpoint: endpoint,
+      distribution: .remote,
+      transport: .streamableHTTP,
+      authProfile: try AgentMcpAuthProfile(.none),
+      authState: .notRequired,
+      state: .connected,
+      toolIds: ["issues.search", "repo.read", "repo.read"]
+    )
+    let mcp = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.mcpMutations(
+        before: [],
+        after: [connection],
+        timestampMillis: 100
+      ).first
+    )
+    let agent = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.agentMutations(
+        before: [],
+        after: [
+          networkRegistration(
+            agentId: "desktop-agent",
+            displayName: "Desktop Agent",
+            location: .trustedDesktop,
+            status: .online,
+            capabilities: [.chat, .code],
+            activeRuns: 4,
+            maxParallelRuns: 4
+          )
+        ],
+        timestampMillis: 101
+      ).first
+    )
+    let resourceId = "target:https://secret.example/runtime"
+    let health = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.resourceHealthTransition(
+        resourceId: resourceId,
+        before: AgentResourceHealth(),
+        after: AgentResourceHealth(failures: 3, consecutiveFailures: 3, circuitOpenUntil: 2_000),
+        timestampMillis: 102
+      )
+    )
+
+    XCTAssertEqual(mcp.type, .resourceRegistered)
+    XCTAssertEqual(mcp.metadata["resource_kind"], "mcp")
+    XCTAssertEqual(mcp.metadata["resource_state"], "available")
+    XCTAssertEqual(mcp.metadata["auth_state"], "not_required")
+    XCTAssertEqual(mcp.metadata["connection_state"], "connected")
+    XCTAssertEqual(mcp.metadata["tool_count"], "2")
+    assertGlobalCapabilityEventDoesNotExpose(mcp, secrets: [endpoint, "secret.example"])
+    XCTAssertEqual(agent.metadata["resource_kind"], "agent")
+    XCTAssertEqual(agent.metadata["resource_state"], "busy")
+    XCTAssertEqual(agent.metadata["endpoint_state"], "online")
+    XCTAssertEqual(agent.metadata["capability_count"], "2")
+    XCTAssertEqual(agent.metadata["at_capacity"], "true")
+    XCTAssertEqual(health.type, .resourceStateChanged)
+    XCTAssertEqual(health.metadata["origin"], "resource_health")
+    XCTAssertEqual(health.metadata["resource_kind"], "health")
+    XCTAssertEqual(health.metadata["resource_state"], "unavailable")
+    XCTAssertEqual(health.metadata["consecutive_failures"], "3")
+    XCTAssertEqual(health.metadata["reliability_percent"], "0")
+    assertGlobalCapabilityEventDoesNotExpose(health, secrets: [resourceId, "secret.example/runtime"])
+  }
+
+  func testGlobalCapabilityObservationExtractorDeviceResourcesAreRedacted() throws {
+    let home = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.homeAssistantMutations(
+        before: .default,
+        after: HomeAssistantSettings(
+          enabled: true,
+          baseUrl: "https://home.secret.local",
+          accessToken: "ha-token-secret",
+          defaultEntityId: "light.private_room"
+        ),
+        timestampMillis: 200
+      ).first
+    )
+    let device = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.customDeviceMutations(
+        before: [],
+        after: [
+          CustomDeviceConnector(
+            id: "door-lock",
+            name: "Door Lock",
+            transport: .mqtt,
+            endpoint: "mqtt://device.secret.local",
+            commandTarget: "locks/private-door",
+            username: "private-user",
+            authToken: "device-token-secret",
+            risk: .high,
+            enabled: true
+          )
+        ],
+        timestampMillis: 201
+      ).first
+    )
+
+    XCTAssertEqual(home.metadata["resource_kind"], "home_assistant")
+    XCTAssertEqual(home.metadata["resource_state"], "ready")
+    XCTAssertEqual(home.metadata["credentials_configured"], "true")
+    XCTAssertEqual(home.metadata["default_target_configured"], "true")
+    XCTAssertEqual(device.metadata["resource_kind"], "custom_device")
+    XCTAssertEqual(device.metadata["resource_state"], "ready")
+    XCTAssertEqual(device.metadata["transport"], "mqtt")
+    XCTAssertEqual(device.metadata["risk"], "high")
+    XCTAssertEqual(device.metadata["configured"], "true")
+    assertGlobalCapabilityEventDoesNotExpose(
+      home,
+      secrets: ["home.secret.local", "ha-token-secret", "light.private_room"]
+    )
+    assertGlobalCapabilityEventDoesNotExpose(
+      device,
+      secrets: ["device.secret.local", "locks/private-door", "private-user", "device-token-secret"]
+    )
+  }
+
+  func testGlobalCapabilityObservationModelsUseAndroidWireNames() throws {
+    let reset = GlobalCapabilityObservationExtractor.snapshotReset(timestampMillis: 300)
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(reset)) as? [String: Any]
+    )
+    let health = AgentResourceHealth(
+      successes: 3,
+      failures: 1,
+      consecutiveFailures: 0,
+      averageLatencyMs: 250,
+      circuitOpenUntil: 0,
+      lastUpdatedAt: 123
+    )
+    let healthObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(health)) as? [String: Any]
+    )
+
+    XCTAssertEqual(object["type"] as? String, "CAPABILITY_SNAPSHOT_RESET")
+    XCTAssertEqual(object["conversation_id"] as? String, "global-capabilities")
+    XCTAssertEqual(object["timestamp_millis"] as? Int, 300)
+    XCTAssertNotNil(object["message_id"])
+    XCTAssertNotNil(object["content_ref"])
+    XCTAssertNotNil(object["conversation_title"])
+    XCTAssertNotNil(object["topic_hints"])
+    XCTAssertNotNil(object["causal_event_ids"])
+    XCTAssertNotNil(object["retracted_event_ids"])
+    XCTAssertEqual(object["actor"] as? String, "SYSTEM")
+    XCTAssertEqual(object["sensitivity"] as? String, "PERSONAL")
+    XCTAssertEqual((object["metadata"] as? [String: Any])?["context_visibility"] as? String, "LOCAL_ONLY")
+    XCTAssertEqual(healthObject["consecutive_failures"] as? Int, 0)
+    XCTAssertEqual(healthObject["average_latency_ms"] as? Int, 250)
+    XCTAssertEqual(healthObject["circuit_open_until"] as? Int, 0)
+    XCTAssertEqual(healthObject["last_updated_at"] as? Int, 123)
+    XCTAssertEqual(health.reliabilityPercent, 75)
+    XCTAssertTrue(GlobalConversationEventType.resourceRegistered.isCapabilityLifecycleEvent)
+    XCTAssertFalse(GlobalConversationEventType.messageCreated.isCapabilityLifecycleEvent)
+  }
+
   func testAgentConfirmationPolicyMatchesAndroidTiersAndConsentKeys() throws {
     func action(
       id: String,
@@ -7935,6 +8146,36 @@ final class SignalASIStoreTests: XCTestCase {
       adapterType: adapterType,
       lastHeartbeatMillis: lastHeartbeatMillis
     )
+  }
+
+  private func assertGlobalCapabilityEventDoesNotExpose(
+    _ event: GlobalConversationEvent,
+    secrets: [String],
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    let metadata = event.metadata
+      .sorted { $0.key < $1.key }
+      .map { "\($0.key)=\($0.value)" }
+      .joined(separator: "\n")
+    let publicText = [
+      event.id,
+      event.messageId,
+      event.content,
+      event.contentRef,
+      event.conversationTitle,
+      event.topicHints.sorted().joined(separator: "\n"),
+      metadata
+    ].joined(separator: "\n")
+
+    for secret in secrets where !secret.isEmpty {
+      XCTAssertFalse(
+        publicText.contains(secret),
+        "Capability observation exposed secret: \(secret)",
+        file: file,
+        line: line
+      )
+    }
   }
 
   private func teamBridgePlan(_ actions: AgentAction...) -> AgentPlan {

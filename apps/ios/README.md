@@ -75,6 +75,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style model planner settings for model-driven planning, replanning, coordination, privacy sharing, and task-control limits
 - Android-style agent autonomy guard for tool-call budgets and repeated connector, device, URL, or app loop blocking
 - Android-style active turn policy for interrupting, steering, or separating new user requests while an agent task is in progress
+- Android-style global capability observations for local-only authorization, MCP, agent, Home Assistant, custom-device, and resource-health lifecycle events
 - Android-compatible encrypted `.hcbak` backup envelope with iOS local state, Link peers, voice settings, messages, and cloud API secrets restore
 - QR scanning with AVFoundation
 - Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, and voice routing preferences
