@@ -13799,11 +13799,48 @@ enum AgentPhoneNativeToolCatalog {
   }
 
   private static func zipListingSchema() -> AgentMcpJSONObject {
-    objectSchema(additionalProperties: true)
+    objectSchema(properties: [
+      "archive_path": .object(stringSchema(maxLength: 4_096)),
+      "archive_bytes": .object(integerSchema(minimum: 0)),
+      "total_compressed_bytes": .object(integerSchema(minimum: 0)),
+      "total_uncompressed_bytes": .object(integerSchema(minimum: 0)),
+      "entries": .object(arraySchema(items: zipEntrySchema(), maxItems: 2_048))
+    ], required: [
+      "archive_path",
+      "archive_bytes",
+      "total_compressed_bytes",
+      "total_uncompressed_bytes",
+      "entries"
+    ])
   }
 
   private static func zipExtractionSchema() -> AgentMcpJSONObject {
-    objectSchema(additionalProperties: true)
+    objectSchema(properties: [
+      "archive_path": .object(stringSchema(maxLength: 4_096)),
+      "destination_path": .object(stringSchema(maxLength: 4_096)),
+      "extracted_entries": .object(integerSchema(minimum: 0)),
+      "extracted_bytes": .object(integerSchema(minimum: 0))
+    ], required: ["archive_path", "destination_path", "extracted_entries", "extracted_bytes"])
+  }
+
+  private static func zipEntrySchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 512)),
+      "directory": .object(boolSchema()),
+      "compressed_bytes": .object(integerSchema(minimum: 0)),
+      "uncompressed_bytes": .object(integerSchema(minimum: 0)),
+      "compression_ratio": .object(numberSchema(minimum: 0)),
+      "crc32": .object(integerSchema(minimum: 0)),
+      "last_modified_epoch_ms": .object(integerSchema(minimum: 0))
+    ], required: [
+      "path",
+      "directory",
+      "compressed_bytes",
+      "uncompressed_bytes",
+      "compression_ratio",
+      "crc32",
+      "last_modified_epoch_ms"
+    ])
   }
 
   private static func actionInputSchema(_ kind: AgentActionKind) -> AgentMcpJSONObject {
@@ -13858,6 +13895,12 @@ enum AgentPhoneNativeToolCatalog {
 
   private static func integerSchema(minimum: Int64? = nil) -> AgentMcpJSONObject {
     var schema: AgentMcpJSONObject = ["type": .string("integer")]
+    if let minimum { schema["minimum"] = .int(minimum) }
+    return schema
+  }
+
+  private static func numberSchema(minimum: Int64? = nil) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = ["type": .string("number")]
     if let minimum { schema["minimum"] = .int(minimum) }
     return schema
   }
@@ -19526,6 +19569,34 @@ final class AgentWorkspaceNativeToolExecutor {
     var modifiedAtMillis: Int64
   }
 
+  private struct ZipSourceEntry: Equatable {
+    var path: String
+    var directory: Bool
+    var data: Data
+    var modifiedAtMillis: Int64
+  }
+
+  private struct ZipArchiveEntry: Equatable {
+    var path: String
+    var directory: Bool
+    var method: UInt16
+    var compressedBytes: Int64
+    var uncompressedBytes: Int64
+    var compressionRatio: Double
+    var crc32: UInt32
+    var lastModifiedMillis: Int64
+    var dataOffset: Int
+    var dataLength: Int
+  }
+
+  private struct ZipInspection: Equatable {
+    var archivePath: String
+    var archiveBytes: Int64
+    var totalCompressedBytes: Int64
+    var totalUncompressedBytes: Int64
+    var entries: [ZipArchiveEntry]
+  }
+
   private var workspaces: [String: [String: Entry]] = [:]
   private let policy: AgentWorkspaceFilePolicy
   private let nowMillis: () -> Int64
@@ -19665,6 +19736,23 @@ final class AgentWorkspaceNativeToolExecutor {
       return diffSummary(workspaceId, string(input, "path"), proposedText: string(input, "proposed_text"))
     case AgentPhoneNativeToolCatalog.workspaceSha256:
       return sha256(workspaceId, string(input, "path"))
+    case AgentPhoneNativeToolCatalog.workspaceZipCreate:
+      return createZip(
+        workspaceId,
+        archivePath: string(input, "archive_path"),
+        sourcePaths: stringList(input, "source_paths"),
+        overwrite: bool(input, "overwrite", false),
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceZipList:
+      return listZip(workspaceId, archivePath: string(input, "archive_path"))
+    case AgentPhoneNativeToolCatalog.workspaceZipExtract:
+      return extractZip(
+        workspaceId,
+        archivePath: string(input, "archive_path"),
+        destinationPath: string(input, "destination_path"),
+        overwrite: bool(input, "overwrite", false)
+      )
     default:
       return failure(.unsupportedFileType, "execute", toolId, "Workspace tool is not implemented on iOS yet")
     }
@@ -20075,6 +20163,443 @@ final class AgentWorkspaceNativeToolExecutor {
     ])
   }
 
+  private func createZip(
+    _ workspaceId: String,
+    archivePath: String,
+    sourcePaths: [String],
+    overwrite: Bool,
+    createParents: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard !sourcePaths.isEmpty else {
+      return failure(.invalidPath, "zip_create", archivePath, "At least one ZIP source path is required")
+    }
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: "zip_create") else {
+      return failure(.invalidWorkspace, "zip_create", workspaceId, "Workspace ID is invalid")
+    }
+    guard let archive = normalizedPath(archivePath, operation: "zip_create", allowRoot: false) else {
+      return failure(.pathEscape, "zip_create", archivePath, "Workspace archive path escaped the workspace")
+    }
+    if let existing = workspace[archive] {
+      guard existing.type == .file else {
+        return failure(.notAFile, "zip_create", archive, "Archive destination is not a file")
+      }
+      guard overwrite else {
+        return failure(.alreadyExists, "zip_create", archive, "Archive already exists")
+      }
+    }
+    if !ensureParent(&workspace, path: archive, createParents: createParents) {
+      return failure(.notFound, "zip_create", parentPath(archive), "Archive parent directory does not exist")
+    }
+
+    var selected: [String: Entry] = [:]
+    for sourcePath in sourcePaths {
+      guard let source = normalizedPath(sourcePath, operation: "zip_create", allowRoot: false) else {
+        return failure(.pathEscape, "zip_create", sourcePath, "ZIP source path escaped the workspace")
+      }
+      guard workspace[source] != nil else {
+        return failure(.notFound, "zip_create", source, "ZIP source entry was not found")
+      }
+      if archive == source || archive.hasPrefix("\(source)/") {
+        return failure(.invalidPath, "zip_create", archive, "Archive destination cannot be inside a selected source")
+      }
+      for path in subtreePaths(in: workspace, root: source) {
+        guard let entry = workspace[path] else { continue }
+        if selected[path] != nil {
+          return failure(.invalidPath, "zip_create", path, "ZIP sources overlap at \(path)")
+        }
+        selected[path] = entry
+        if selected.count > policy.maxZipEntries {
+          return failure(.limitExceeded, "zip_create", path, "ZIP contains more than \(policy.maxZipEntries) entries")
+        }
+      }
+    }
+
+    var totalUncompressedBytes: Int64 = 0
+    let sources = selected.keys.sorted().compactMap { path -> ZipSourceEntry? in
+      guard let entry = selected[path] else { return nil }
+      return ZipSourceEntry(
+        path: path,
+        directory: entry.type == .directory,
+        data: entry.type == .file ? entry.data : Data(),
+        modifiedAtMillis: entry.modifiedAtMillis
+      )
+    }
+    for source in sources {
+      guard source.path.count <= policy.maxZipEntryNameCharacters else {
+        return failure(.limitExceeded, "zip_create", source.path, "ZIP entry name is too long")
+      }
+      if !source.directory {
+        let size = Int64(source.data.count)
+        guard size <= policy.maxZipEntryBytes else {
+          return failure(.limitExceeded, "zip_create", source.path, "ZIP source entry exceeds the per-entry limit")
+        }
+        guard let nextTotal = checkedAdd(totalUncompressedBytes, size) else {
+          return failure(.limitExceeded, "zip_create", source.path, "ZIP source byte count overflow")
+        }
+        totalUncompressedBytes = nextTotal
+        guard totalUncompressedBytes <= policy.maxZipUncompressedBytes else {
+          return failure(.limitExceeded, "zip_create", source.path, "ZIP sources exceed the total uncompressed size limit")
+        }
+      }
+    }
+
+    let archiveData = buildStoredZip(sources)
+    guard Int64(archiveData.count) <= policy.maxZipArchiveBytes else {
+      return failure(.limitExceeded, "zip_create", archive, "ZIP archive exceeds the compressed size limit")
+    }
+    guard case .success(let inspection) = inspectZipData(archiveData, archivePath: archive, operation: "zip_create") else {
+      return failure(.invalidArchive, "zip_create", archive, "Created ZIP archive failed validation")
+    }
+    workspace[archive] = Entry(type: .file, data: archiveData, modifiedAtMillis: nowMillis())
+    workspaces[cleanWorkspaceId] = workspace
+    return .success(zipListingObject(inspection))
+  }
+
+  private func listZip(
+    _ workspaceId: String,
+    archivePath: String
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let read = readZipArchive(workspaceId, archivePath: archivePath, operation: "zip_list") else {
+      return failure(.notFound, "zip_list", archivePath, "Workspace ZIP archive was not found")
+    }
+    switch inspectZipData(read.data, archivePath: read.path, operation: "zip_list") {
+    case .success(let inspection):
+      return .success(zipListingObject(inspection))
+    case .failure(let error):
+      return .failure(error)
+    }
+  }
+
+  private func extractZip(
+    _ workspaceId: String,
+    archivePath: String,
+    destinationPath: String,
+    overwrite: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: "zip_extract") else {
+      return failure(.invalidWorkspace, "zip_extract", workspaceId, "Workspace ID is invalid")
+    }
+    guard let archive = normalizedPath(archivePath, operation: "zip_extract", allowRoot: false) else {
+      return failure(.pathEscape, "zip_extract", archivePath, "Workspace archive path escaped the workspace")
+    }
+    guard let destination = normalizedPath(destinationPath, operation: "zip_extract", allowRoot: true) else {
+      return failure(.pathEscape, "zip_extract", destinationPath, "Workspace destination path escaped the workspace")
+    }
+    guard let archiveEntry = workspace[archive], archiveEntry.type == .file else {
+      return failure(.notFound, "zip_extract", archive, "Workspace ZIP archive was not found")
+    }
+    guard Int64(archiveEntry.data.count) <= policy.maxZipArchiveBytes else {
+      return failure(.limitExceeded, "zip_extract", archive, "ZIP archive exceeds the compressed size limit")
+    }
+    let inspection: ZipInspection
+    switch inspectZipData(archiveEntry.data, archivePath: archive, operation: "zip_extract") {
+    case .success(let value):
+      inspection = value
+    case .failure(let error):
+      return .failure(error)
+    }
+    if let existingDestination = workspace[destination], existingDestination.type != .directory {
+      return failure(.notADirectory, "zip_extract", destination, "ZIP destination is not a directory")
+    }
+    if !destination.isEmpty && workspace[destination] == nil &&
+      !ensureParent(&workspace, path: destination, createParents: false) {
+      return failure(.notFound, "zip_extract", parentPath(destination), "ZIP destination parent directory does not exist")
+    }
+
+    for entry in inspection.entries {
+      if entry.method != 0 {
+        return failure(.unsupportedFileType, "zip_extract", entry.path, "ZIP compression method is not supported on iOS yet")
+      }
+      let target = joinedPath(destination, entry.path)
+      if target == archive {
+        return failure(.invalidArchive, "zip_extract", target, "ZIP cannot overwrite its own archive")
+      }
+      if !entry.directory && !ensureParent(&workspace, path: target, createParents: true) {
+        return failure(.notFound, "zip_extract", parentPath(target), "ZIP entry parent directory does not exist")
+      }
+      var ancestor = parentPath(target)
+      while !ancestor.isEmpty {
+        if let existing = workspace[ancestor], existing.type != .directory {
+          return failure(.alreadyExists, "zip_extract", ancestor, "ZIP entry parent conflicts with a file")
+        }
+        ancestor = parentPath(ancestor)
+      }
+      if let existing = workspace[target] {
+        if entry.directory {
+          guard existing.type == .directory else {
+            return failure(.alreadyExists, "zip_extract", target, "ZIP directory conflicts with a file")
+          }
+        } else if existing.type != .file || !overwrite {
+          return failure(.alreadyExists, "zip_extract", target, "ZIP file destination already exists")
+        }
+      }
+    }
+
+    if workspace[destination] == nil {
+      workspace[destination] = Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())
+    }
+    var extractedBytes: Int64 = 0
+    for entry in inspection.entries.sorted(by: { $0.path < $1.path }) {
+      let target = joinedPath(destination, entry.path)
+      if entry.directory {
+        if workspace[target] == nil {
+          workspace[target] = Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())
+        }
+        continue
+      }
+      let data = archiveEntry.data.subdata(in: entry.dataOffset..<(entry.dataOffset + entry.dataLength))
+      guard Int64(data.count) == entry.uncompressedBytes else {
+        return failure(.invalidArchive, "zip_extract", entry.path, "ZIP entry size changed during extraction")
+      }
+      guard crc32(data) == entry.crc32 else {
+        return failure(.invalidArchive, "zip_extract", entry.path, "ZIP entry CRC did not match")
+      }
+      guard let nextBytes = checkedAdd(extractedBytes, Int64(data.count)) else {
+        return failure(.limitExceeded, "zip_extract", entry.path, "ZIP extracted byte count overflow")
+      }
+      extractedBytes = nextBytes
+      guard extractedBytes <= policy.maxZipUncompressedBytes else {
+        return failure(.limitExceeded, "zip_extract", entry.path, "ZIP decompressed data exceeds the configured size limit")
+      }
+      _ = ensureParent(&workspace, path: target, createParents: true)
+      workspace[target] = Entry(
+        type: .file,
+        data: data,
+        modifiedAtMillis: entry.lastModifiedMillis > 0 ? entry.lastModifiedMillis : nowMillis()
+      )
+    }
+    workspaces[cleanWorkspaceId] = workspace
+    return .success([
+      "archive_path": .string(archive),
+      "destination_path": .string(destination),
+      "extracted_entries": .int(Int64(inspection.entries.count)),
+      "extracted_bytes": .int(extractedBytes)
+    ])
+  }
+
+  private func readZipArchive(
+    _ workspaceId: String,
+    archivePath: String,
+    operation: String
+  ) -> (path: String, data: Data)? {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          let workspace = workspace(cleanWorkspaceId, operation: operation),
+          let normalized = normalizedPath(archivePath, operation: operation, allowRoot: false),
+          let entry = workspace[normalized],
+          entry.type == .file,
+          Int64(entry.data.count) <= policy.maxZipArchiveBytes else {
+      return nil
+    }
+    return (normalized, entry.data)
+  }
+
+  private func buildStoredZip(_ entries: [ZipSourceEntry]) -> Data {
+    var output = Data()
+    var centralRecords: [(entry: ZipSourceEntry, entryName: String, crc32: UInt32, localOffset: Int)] = []
+    for entry in entries {
+      let entryName = entry.directory ? "\(entry.path)/" : entry.path
+      let nameBytes = Data(entryName.utf8)
+      let localOffset = output.count
+      let crc = entry.directory ? 0 : crc32(entry.data)
+      let size = UInt32(entry.directory ? 0 : entry.data.count)
+      appendUInt32LE(0x04034b50, to: &output)
+      appendUInt16LE(20, to: &output)
+      appendUInt16LE(0x0800, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt32LE(crc, to: &output)
+      appendUInt32LE(size, to: &output)
+      appendUInt32LE(size, to: &output)
+      appendUInt16LE(UInt16(nameBytes.count), to: &output)
+      appendUInt16LE(0, to: &output)
+      output.append(nameBytes)
+      if !entry.directory {
+        output.append(entry.data)
+      }
+      centralRecords.append((entry, entryName, crc, localOffset))
+    }
+    let centralStart = output.count
+    for record in centralRecords {
+      let nameBytes = Data(record.entryName.utf8)
+      let size = UInt32(record.entry.directory ? 0 : record.entry.data.count)
+      appendUInt32LE(0x02014b50, to: &output)
+      appendUInt16LE(20, to: &output)
+      appendUInt16LE(20, to: &output)
+      appendUInt16LE(0x0800, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt32LE(record.crc32, to: &output)
+      appendUInt32LE(size, to: &output)
+      appendUInt32LE(size, to: &output)
+      appendUInt16LE(UInt16(nameBytes.count), to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt16LE(0, to: &output)
+      appendUInt32LE(record.entry.directory ? 0x10 : 0, to: &output)
+      appendUInt32LE(UInt32(record.localOffset), to: &output)
+      output.append(nameBytes)
+    }
+    let centralSize = output.count - centralStart
+    appendUInt32LE(0x06054b50, to: &output)
+    appendUInt16LE(0, to: &output)
+    appendUInt16LE(0, to: &output)
+    appendUInt16LE(UInt16(centralRecords.count), to: &output)
+    appendUInt16LE(UInt16(centralRecords.count), to: &output)
+    appendUInt32LE(UInt32(centralSize), to: &output)
+    appendUInt32LE(UInt32(centralStart), to: &output)
+    appendUInt16LE(0, to: &output)
+    return output
+  }
+
+  private func inspectZipData(
+    _ data: Data,
+    archivePath: String,
+    operation: String
+  ) -> AgentWorkspaceFileResult<ZipInspection> {
+    guard Int64(data.count) <= policy.maxZipArchiveBytes else {
+      return failure(.limitExceeded, operation, archivePath, "ZIP archive exceeds the compressed size limit")
+    }
+    guard let eocdOffset = endOfCentralDirectoryOffset(data),
+          let diskNumber = readUInt16LE(data, eocdOffset + 4),
+          let centralDisk = readUInt16LE(data, eocdOffset + 6),
+          let diskEntryCount = readUInt16LE(data, eocdOffset + 8),
+          let totalEntryCount = readUInt16LE(data, eocdOffset + 10),
+          let centralSizeValue = readUInt32LE(data, eocdOffset + 12),
+          let centralOffsetValue = readUInt32LE(data, eocdOffset + 16) else {
+      return failure(.invalidArchive, operation, archivePath, "ZIP central directory was not found")
+    }
+    guard diskNumber == 0, centralDisk == 0, diskEntryCount == totalEntryCount else {
+      return failure(.invalidArchive, operation, archivePath, "Multi-disk ZIP archives are not supported")
+    }
+    let entryCount = Int(totalEntryCount)
+    guard entryCount <= policy.maxZipEntries else {
+      return failure(.limitExceeded, operation, archivePath, "ZIP contains more than \(policy.maxZipEntries) entries")
+    }
+    let centralOffset = Int(centralOffsetValue)
+    let centralSize = Int(centralSizeValue)
+    guard rangeFits(start: centralOffset, length: centralSize, in: data) else {
+      return failure(.invalidArchive, operation, archivePath, "ZIP central directory is out of bounds")
+    }
+
+    var cursor = centralOffset
+    var entries: [ZipArchiveEntry] = []
+    var seen: [String: Bool] = [:]
+    var totalCompressedBytes: Int64 = 0
+    var totalUncompressedBytes: Int64 = 0
+    for _ in 0..<entryCount {
+      guard readUInt32LE(data, cursor) == 0x02014b50,
+            let flags = readUInt16LE(data, cursor + 8),
+            let method = readUInt16LE(data, cursor + 10),
+            let crc = readUInt32LE(data, cursor + 16),
+            let compressed = readUInt32LE(data, cursor + 20),
+            let uncompressed = readUInt32LE(data, cursor + 24),
+            let nameLength = readUInt16LE(data, cursor + 28),
+            let extraLength = readUInt16LE(data, cursor + 30),
+            let commentLength = readUInt16LE(data, cursor + 32),
+            let localOffsetValue = readUInt32LE(data, cursor + 42) else {
+        return failure(.invalidArchive, operation, archivePath, "ZIP central directory entry is invalid")
+      }
+      guard flags & 0x0001 == 0 else {
+        return failure(.unsupportedFileType, operation, archivePath, "Encrypted ZIP entries are not supported")
+      }
+      guard method == 0 || method == 8 else {
+        return failure(.unsupportedFileType, operation, archivePath, "ZIP compression method is not supported on iOS yet")
+      }
+      let nameStart = cursor + 46
+      let extraStart = nameStart + Int(nameLength)
+      let commentStart = extraStart + Int(extraLength)
+      let nextCursor = commentStart + Int(commentLength)
+      guard rangeFits(start: nameStart, length: Int(nameLength), in: data),
+            rangeFits(start: extraStart, length: Int(extraLength), in: data),
+            rangeFits(start: commentStart, length: Int(commentLength), in: data),
+            nextCursor <= centralOffset + centralSize else {
+        return failure(.invalidArchive, operation, archivePath, "ZIP central directory entry is out of bounds")
+      }
+      guard let rawName = String(data: data.subdata(in: nameStart..<extraStart), encoding: .utf8) else {
+        return failure(.invalidArchive, operation, archivePath, "ZIP entry name is not valid UTF-8")
+      }
+      let normalizedName: String
+      switch AgentWorkspaceFilePathPolicy.normalizeArchiveEntry(rawName, policy: policy) {
+      case .success(let value):
+        normalizedName = value
+      case .failure(let error):
+        return .failure(AgentWorkspaceFileError(code: error.code, operation: operation, path: rawName, message: error.message))
+      }
+      let directory = rawName.hasSuffix("/") || rawName.hasSuffix("\\")
+      if seen[normalizedName] != nil {
+        return failure(.invalidArchive, operation, normalizedName, "ZIP contains duplicate entry \(normalizedName)")
+      }
+      seen[normalizedName] = directory
+      let compressedBytes = Int64(compressed)
+      let uncompressedBytes = Int64(uncompressed)
+      if directory && (compressedBytes > 0 || uncompressedBytes > 0) {
+        return failure(.invalidArchive, operation, normalizedName, "ZIP directory entry unexpectedly contains data")
+      }
+      guard uncompressedBytes <= policy.maxZipEntryBytes else {
+        return failure(.limitExceeded, operation, normalizedName, "ZIP entry exceeds the per-entry size limit")
+      }
+      guard let nextUncompressed = checkedAdd(totalUncompressedBytes, uncompressedBytes),
+            let nextCompressed = checkedAdd(totalCompressedBytes, compressedBytes) else {
+        return failure(.limitExceeded, operation, normalizedName, "ZIP byte count overflow")
+      }
+      totalUncompressedBytes = nextUncompressed
+      totalCompressedBytes = nextCompressed
+      guard totalUncompressedBytes <= policy.maxZipUncompressedBytes else {
+        return failure(.limitExceeded, operation, normalizedName, "ZIP exceeds the total uncompressed size limit")
+      }
+      let ratio = compressionRatio(uncompressedBytes: uncompressedBytes, compressedBytes: compressedBytes)
+      guard ratio <= policy.maxZipCompressionRatio else {
+        return failure(.limitExceeded, operation, normalizedName, "ZIP entry exceeds the compression ratio limit")
+      }
+      let localOffset = Int(localOffsetValue)
+      guard let dataOffset = zipEntryDataOffset(data, localOffset: localOffset),
+            rangeFits(start: dataOffset, length: Int(compressed), in: data) else {
+        return failure(.invalidArchive, operation, normalizedName, "ZIP local entry is out of bounds")
+      }
+      entries.append(ZipArchiveEntry(
+        path: normalizedName,
+        directory: directory,
+        method: method,
+        compressedBytes: compressedBytes,
+        uncompressedBytes: uncompressedBytes,
+        compressionRatio: ratio,
+        crc32: crc,
+        lastModifiedMillis: 0,
+        dataOffset: dataOffset,
+        dataLength: Int(compressed)
+      ))
+      cursor = nextCursor
+    }
+    for (name, _) in seen {
+      let segments = pathSegments(name)
+      guard segments.count > 1 else { continue }
+      for index in 1..<segments.count {
+        let parent = segments.prefix(index).joined(separator: "/")
+        if seen[parent] == false {
+          return failure(.invalidArchive, operation, parent, "ZIP file entry is used as a directory: \(parent)")
+        }
+      }
+    }
+    guard compressionRatio(
+      uncompressedBytes: totalUncompressedBytes,
+      compressedBytes: totalCompressedBytes
+    ) <= policy.maxZipCompressionRatio else {
+      return failure(.limitExceeded, operation, archivePath, "ZIP exceeds the total compression ratio limit")
+    }
+    return .success(ZipInspection(
+      archivePath: archivePath,
+      archiveBytes: Int64(data.count),
+      totalCompressedBytes: totalCompressedBytes,
+      totalUncompressedBytes: totalUncompressedBytes,
+      entries: entries.sorted { $0.path < $1.path }
+    ))
+  }
+
   private func readFile(
     _ workspaceId: String,
     _ path: String,
@@ -20205,9 +20730,35 @@ final class AgentWorkspaceNativeToolExecutor {
     ]
   }
 
+  private func zipListingObject(_ inspection: ZipInspection) -> AgentMcpJSONObject {
+    [
+      "archive_path": .string(inspection.archivePath),
+      "archive_bytes": .int(inspection.archiveBytes),
+      "total_compressed_bytes": .int(inspection.totalCompressedBytes),
+      "total_uncompressed_bytes": .int(inspection.totalUncompressedBytes),
+      "entries": .array(inspection.entries.map { .object(zipEntryObject($0)) })
+    ]
+  }
+
+  private func zipEntryObject(_ entry: ZipArchiveEntry) -> AgentMcpJSONObject {
+    [
+      "path": .string(entry.path),
+      "directory": .bool(entry.directory),
+      "compressed_bytes": .int(entry.compressedBytes),
+      "uncompressed_bytes": .int(entry.uncompressedBytes),
+      "compression_ratio": .double(entry.compressionRatio),
+      "crc32": .int(Int64(entry.crc32)),
+      "last_modified_epoch_ms": .int(entry.lastModifiedMillis)
+    ]
+  }
+
   private func subtreePaths(in workspace: [String: Entry], root: String) -> [String] {
     let prefix = "\(root)/"
     return workspace.keys.filter { $0 == root || $0.hasPrefix(prefix) }.sorted()
+  }
+
+  private func joinedPath(_ base: String, _ child: String) -> String {
+    base.isEmpty ? child : "\(base)/\(child)"
   }
 
   private func parentPath(_ path: String) -> String {
@@ -20220,8 +20771,75 @@ final class AgentWorkspaceNativeToolExecutor {
     path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
   }
 
+  private func checkedAdd(_ left: Int64, _ right: Int64) -> Int64? {
+    guard right >= 0, left <= Int64.max - right else {
+      return nil
+    }
+    return left + right
+  }
+
+  private func compressionRatio(uncompressedBytes: Int64, compressedBytes: Int64) -> Double {
+    guard uncompressedBytes > 0 else { return 0 }
+    guard compressedBytes > 0 else { return Double.greatestFiniteMagnitude }
+    return Double(uncompressedBytes) / Double(compressedBytes)
+  }
+
+  private func appendUInt16LE(_ value: UInt16, to data: inout Data) {
+    data.append(UInt8(value & 0x00ff))
+    data.append(UInt8((value >> 8) & 0x00ff))
+  }
+
+  private func appendUInt32LE(_ value: UInt32, to data: inout Data) {
+    data.append(UInt8(value & 0x000000ff))
+    data.append(UInt8((value >> 8) & 0x000000ff))
+    data.append(UInt8((value >> 16) & 0x000000ff))
+    data.append(UInt8((value >> 24) & 0x000000ff))
+  }
+
+  private func readUInt16LE(_ data: Data, _ offset: Int) -> UInt16? {
+    guard rangeFits(start: offset, length: 2, in: data) else { return nil }
+    return UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+  }
+
+  private func readUInt32LE(_ data: Data, _ offset: Int) -> UInt32? {
+    guard rangeFits(start: offset, length: 4, in: data) else { return nil }
+    return UInt32(data[offset]) |
+      (UInt32(data[offset + 1]) << 8) |
+      (UInt32(data[offset + 2]) << 16) |
+      (UInt32(data[offset + 3]) << 24)
+  }
+
+  private func rangeFits(start: Int, length: Int, in data: Data) -> Bool {
+    start >= 0 && length >= 0 && start <= data.count && length <= data.count - start
+  }
+
+  private func endOfCentralDirectoryOffset(_ data: Data) -> Int? {
+    guard data.count >= 22 else { return nil }
+    let minimumOffset = max(0, data.count - 65_557)
+    for offset in stride(from: data.count - 22, through: minimumOffset, by: -1) {
+      if readUInt32LE(data, offset) == 0x06054b50 {
+        return offset
+      }
+    }
+    return nil
+  }
+
+  private func zipEntryDataOffset(_ data: Data, localOffset: Int) -> Int? {
+    guard readUInt32LE(data, localOffset) == 0x04034b50,
+          let nameLength = readUInt16LE(data, localOffset + 26),
+          let extraLength = readUInt16LE(data, localOffset + 28) else {
+      return nil
+    }
+    let dataOffset = localOffset + 30 + Int(nameLength) + Int(extraLength)
+    return rangeFits(start: dataOffset, length: 0, in: data) ? dataOffset : nil
+  }
+
   private func decodedBase64(_ input: AgentMcpJSONObject) -> Data {
     Data(base64Encoded: string(input, "base64")) ?? Data()
+  }
+
+  private func stringList(_ input: AgentMcpJSONObject, _ key: String) -> [String] {
+    input[key]?.arrayValue?.compactMap(\.strictStringValue) ?? []
   }
 
   private func string(_ input: AgentMcpJSONObject, _ key: String, _ defaultValue: String? = nil) -> String {
@@ -20252,6 +20870,29 @@ final class AgentWorkspaceNativeToolExecutor {
   private func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
+
+  private func crc32(_ data: Data) -> UInt32 {
+    var crc: UInt32 = 0xffffffff
+    for byte in data {
+      let index = Int((crc ^ UInt32(byte)) & 0xff)
+      crc = (crc >> 8) ^ Self.crc32Table[index]
+    }
+    return crc ^ 0xffffffff
+  }
+
+  private static let crc32Table: [UInt32] = {
+    (0..<256).map { value -> UInt32 in
+      var crc = UInt32(value)
+      for _ in 0..<8 {
+        if crc & 1 == 1 {
+          crc = (crc >> 1) ^ 0xedb88320
+        } else {
+          crc >>= 1
+        }
+      }
+      return crc
+    }
+  }()
 }
 
 struct AgentTaskRecord: Codable, Equatable, Identifiable {
