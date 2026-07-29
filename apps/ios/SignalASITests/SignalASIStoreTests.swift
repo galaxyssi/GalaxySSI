@@ -5210,6 +5210,148 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(fallback, .fireOnce)
   }
 
+  func testGlobalProactiveInboxProjectsDeliveredFindingsAndDigests() {
+    let items = GlobalProactiveInboxPolicy.project(
+      messages: [
+        globalProactiveMessage("current"),
+        globalProactiveMessage("topic", target: .newConversation)
+      ],
+      feedback: []
+    )
+    let digest = GlobalProactiveInboxPolicy.project(
+      messages: [
+        globalProactiveMessage("digest-a", target: .globalDigest, deliveryGroupId: "daily"),
+        globalProactiveMessage(
+          "digest-b",
+          target: .globalDigest,
+          content: "A second material change is ready.",
+          topic: "Release risk",
+          deliveryGroupId: "daily"
+        )
+      ],
+      feedback: []
+    )
+
+    XCTAssertEqual(items.count, 2)
+    XCTAssertEqual(GlobalProactiveInboxPolicy.newCount(items), 2)
+    XCTAssertTrue(items.allSatisfy(\.isNew))
+    XCTAssertEqual(Set(items.map(\.destinationConversationId)), Set(["destination"]))
+    XCTAssertEqual(digest.count, 1)
+    XCTAssertEqual(digest.first?.key, "global-agent-digest:daily")
+    XCTAssertEqual(digest.first?.messageIds, Set(["digest-a", "digest-b"]))
+    XCTAssertTrue(digest.first?.content.contains("Release risk") == true)
+  }
+
+  func testGlobalProactiveInboxFiltersStatusesAndFeedback() {
+    let pending = globalProactiveMessage("pending", status: .pending)
+    let dismissed = globalProactiveMessage("dismissed", status: .dismissed)
+    let helpful = globalProactiveMessage("helpful")
+    let irrelevant = globalProactiveMessage("irrelevant")
+    let frequent = globalProactiveMessage("frequent")
+
+    let statusItems = GlobalProactiveInboxPolicy.project(messages: [pending, dismissed], feedback: [])
+    let helpfulItem = GlobalProactiveInboxPolicy.project(
+      messages: [helpful],
+      feedback: [globalAgentFeedback(messageId: helpful.id, kind: .helpful)]
+    ).first
+    let negativeItems = GlobalProactiveInboxPolicy.project(
+      messages: [irrelevant, frequent],
+      feedback: [
+        globalAgentFeedback(messageId: irrelevant.id, kind: .notRelevant),
+        globalAgentFeedback(messageId: frequent.id, kind: .tooFrequent)
+      ]
+    )
+
+    XCTAssertTrue(statusItems.isEmpty)
+    XCTAssertFalse(helpfulItem?.isNew ?? true)
+    XCTAssertEqual(helpfulItem?.feedbackKind, .helpful)
+    XCTAssertTrue(negativeItems.isEmpty)
+  }
+
+  func testGlobalProactiveInboxMarksOnlySelectedDeliveredMessagesViewed() {
+    let delivered = globalProactiveMessage("delivered")
+    let untouched = globalProactiveMessage("untouched")
+    let pending = globalProactiveMessage("pending", status: .pending)
+
+    let updated = Dictionary(
+      uniqueKeysWithValues: GlobalProactiveInboxPolicy.markViewed(
+        messages: [delivered, untouched, pending],
+        messageIds: Set(["delivered", "pending"]),
+        nowMillis: 9_000
+      ).map { ($0.id, $0) }
+    )
+
+    XCTAssertEqual(updated["delivered"]?.viewedAtMillis, 9_000)
+    XCTAssertEqual(updated["untouched"]?.viewedAtMillis, 0)
+    XCTAssertEqual(updated["pending"]?.viewedAtMillis, 0)
+  }
+
+  func testGlobalProactiveInboxModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder().decode(
+      GlobalProactiveMessage.self,
+      from: Data(
+        #"""
+        {
+          "id": "wire",
+          "source_event_id": "event-wire",
+          "source_conversation_id": "source",
+          "target": "global-digest",
+          "title": "Signal digest",
+          "content": "Digest ready",
+          "topic": "Release risk",
+          "urgent": true,
+          "causal_event_ids": ["event-a", "event-b"],
+          "status": "delivered",
+          "delivered_at_millis": 5,
+          "delivered_conversation_id": "destination",
+          "delivery_group_id": "daily"
+        }
+        """#.utf8
+      )
+    )
+    let feedback = try JSONDecoder().decode(
+      GlobalAgentFeedback.self,
+      from: Data(
+        #"""
+        {
+          "proactive_message_id": "wire",
+          "delivery_group_id": "daily",
+          "conversation_id": "destination",
+          "topic": "Release risk",
+          "target": "CURRENT_CONVERSATION",
+          "kind": "too-frequent",
+          "created_at_millis": 6
+        }
+        """#.utf8
+      )
+    )
+    let fallbackTarget = try JSONDecoder().decode(
+      GlobalProactiveTarget.self,
+      from: Data(#""future""#.utf8)
+    )
+    let fallbackStatus = try JSONDecoder().decode(
+      GlobalProactiveMessageStatus.self,
+      from: Data(#""future""#.utf8)
+    )
+    let legacy = GlobalProactiveInboxPolicy.project(
+      messages: [globalProactiveMessage("legacy", title: "Signal \u{5efa}\u{8bae}")],
+      feedback: []
+    ).first
+    let projected = try XCTUnwrap(GlobalProactiveInboxPolicy.project(messages: [decoded], feedback: []).first)
+    let encoded = String(decoding: try JSONEncoder().encode(projected), as: UTF8.self)
+
+    XCTAssertEqual(decoded.target, .globalDigest)
+    XCTAssertEqual(decoded.status, .delivered)
+    XCTAssertEqual(decoded.causalEventIds, Set(["event-a", "event-b"]))
+    XCTAssertEqual(feedback.kind, .tooFrequent)
+    XCTAssertEqual(fallbackTarget, .currentConversation)
+    XCTAssertEqual(fallbackStatus, .pending)
+    XCTAssertEqual(legacy?.title, "SignalASI \u{5efa}\u{8bae}")
+    XCTAssertEqual(GlobalAgentText.productTitle("Signal Protocol"), "Signal Protocol")
+    XCTAssertTrue(encoded.contains(#""message_ids""#))
+    XCTAssertTrue(encoded.contains(#""destination_conversation_id":"destination""#))
+  }
+
   func testAgentTranscriptScrollPolicyMatchesAndroidAutoFollowAndPagination() {
     XCTAssertTrue(
       AgentTranscriptScrollPolicy.nextAutoFollow(
@@ -8708,6 +8850,53 @@ final class SignalASIStoreTests: XCTestCase {
       nextRunAtMillis: nextRunAtMillis,
       runCount: runCount,
       consecutiveFailures: consecutiveFailures
+    )
+  }
+
+  private func globalProactiveMessage(
+    _ id: String,
+    target: GlobalProactiveTarget = .currentConversation,
+    status: GlobalProactiveMessageStatus = .delivered,
+    title: String = "SignalASI insight",
+    content: String = "A material result is ready.",
+    topic: String = "SignalASI autonomy",
+    urgent: Bool = false,
+    deliveredAtMillis: Int64 = 2_000,
+    deliveredConversationId: String = "destination",
+    deliveryGroupId: String? = nil,
+    viewedAtMillis: Int64 = 0
+  ) -> GlobalProactiveMessage {
+    GlobalProactiveMessage(
+      id: id,
+      sourceEventId: "event-\(id)",
+      sourceConversationId: "source",
+      target: target,
+      title: title,
+      content: content,
+      topic: topic,
+      urgent: urgent,
+      status: status,
+      createdAtMillis: 1_000,
+      deliveredAtMillis: deliveredAtMillis,
+      deliveredConversationId: deliveredConversationId,
+      deliveryGroupId: deliveryGroupId ?? id,
+      viewedAtMillis: viewedAtMillis
+    )
+  }
+
+  private func globalAgentFeedback(
+    messageId: String,
+    kind: GlobalAgentFeedbackKind,
+    createdAtMillis: Int64 = 3_000
+  ) -> GlobalAgentFeedback {
+    GlobalAgentFeedback(
+      proactiveMessageId: messageId,
+      deliveryGroupId: messageId,
+      conversationId: "destination",
+      topic: "SignalASI autonomy",
+      target: .currentConversation,
+      kind: kind,
+      createdAtMillis: createdAtMillis
     )
   }
 
