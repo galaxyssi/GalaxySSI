@@ -30,6 +30,7 @@ const required = [
   "core/signalasi-link/backend/evolution_v2/api.py",
   "core/signalasi-link/backend/evolution_v2/manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
+  "core/signalasi-link/backend/agent_collaboration_channels.py",
   "core/signalasi-link/backend/provider_profiles.py",
   "core/signalasi-link/backend/response_self_check.py",
   "core/signalasi-link/backend/run_timeline.py",
@@ -125,6 +126,7 @@ const backendLinkProtocol = fs.readFileSync(path.join(backendDir, "link_protocol
 const backendLinkDelivery = fs.readFileSync(path.join(backendDir, "link_delivery.py"), "utf8");
 const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_client.py"), "utf8");
 const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_reputation_ledger.py"), "utf8");
+const backendAgentCollaboration = fs.readFileSync(path.join(backendDir, "agent_collaboration_channels.py"), "utf8");
 const backendProviderProfiles = fs.readFileSync(path.join(backendDir, "provider_profiles.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
 const backendTaskManager = fs.readFileSync(path.join(backendDir, "agent_task_manager.py"), "utf8");
@@ -735,6 +737,20 @@ for (const responseSelfCheckContract of [
 ]) {
   if (!responseSelfCheckContract[0].includes(responseSelfCheckContract[1])) {
     throw new Error(`Cross-platform latest-request response self-check is incomplete: ${responseSelfCheckContract[1]}`);
+  }
+}
+
+for (const collaborationContract of [
+  [backendAgentCollaboration, "class AgentCollaborationBus"],
+  [backendAgentCollaboration, "direct_messages"],
+  [backendAgentCollaboration, "scoped_broadcasts"],
+  [backendAgentCollaboration, "repository_channels"],
+  [backendGateway, "collaboration_channel_ids"],
+  [backendMain, "/api/agent-runtime/channels"],
+  [backendMain, "agent_collaboration_bus().health()"]
+]) {
+  if (!collaborationContract[0].includes(collaborationContract[1])) {
+    throw new Error(`Desktop Agent collaboration contract is incomplete: ${collaborationContract[1]}`);
   }
 }
 

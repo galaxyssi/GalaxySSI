@@ -62,6 +62,14 @@ A single Agent task uses the same supervised team controller as a multi-Agent ta
 
 A sub-agent team requires exactly one lead. Executors and observers gather bounded evidence in parallel. Verifiers review the proposed result. Only the lead can produce the final response. Member failures are isolated and recorded instead of silently stopping the whole task.
 
+Desktop teams coordinate through durable Agent collaboration channels:
+
+- direct channels connect exactly two participants
+- broadcast channels distribute evidence to a bounded task team
+- repository channels bind the team to a one-way hash of the canonical repository path
+
+Every channel is isolated by paired client route, conversation, task, participant identity, and optional repository identity. Messages are append-only, content-addressed, cursor-readable, and acknowledged only after an Agent successfully processes them. Channel content is always attached as bounded untrusted evidence; it cannot grant permissions or execute tools. The lead remains the only final responder.
+
 Webhook payloads are untrusted evidence. They are bounded, filtered, and clearly separated from trusted task instructions before reaching an Agent.
 
 ## Webhook security
@@ -120,5 +128,10 @@ Desktop local APIs:
 - `GET /api/proactive/runs/{run_id}`
 - `POST /api/proactive/runs/{run_id}/cancel`
 - `POST /api/proactive/webhooks/{task_id}`
+- `GET /api/agent-runtime/channels`
+- `POST /api/agent-runtime/channels`
+- `GET /api/agent-runtime/channels/{channel_id}/messages`
+- `POST /api/agent-runtime/channels/{channel_id}/messages`
+- `POST /api/agent-runtime/channels/{channel_id}/ack`
 
 Local management APIs require both a loopback origin and the random Desktop process token held behind Electron IPC. The webhook endpoint uses its task-specific signature contract.
