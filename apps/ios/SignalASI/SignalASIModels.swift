@@ -16459,6 +16459,30 @@ enum AgentMcpJSONCodec {
   }
 }
 
+enum AgentMcpLocalRuntimeResponseCodec {
+  static let bridgeResultPrefix = "__SIGNALASI_MCP_RESULT__"
+
+  static func decode(_ stdout: String) throws -> AgentMcpJSONObject {
+    guard let line = stdout
+      .components(separatedBy: .newlines)
+      .map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+      .last(where: { $0.hasPrefix(bridgeResultPrefix) }) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP bridge returned no structured result")
+    }
+    let payload = String(line.dropFirst(bridgeResultPrefix.count))
+    guard let data = payload.data(using: .utf8),
+          let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP bridge returned malformed structured result")
+    }
+    guard envelope["ok"]?.boolValue == true else {
+      throw AgentRuntimeCapabilityError.invalid(
+        envelope["error"]?.stringValue?.nilIfEmpty ?? "Local MCP bridge failed"
+      )
+    }
+    return envelope["result"]?.objectValue ?? [:]
+  }
+}
+
 enum UnifiedCommandProtocolError: Error, Equatable {
   case missingCommand
 }

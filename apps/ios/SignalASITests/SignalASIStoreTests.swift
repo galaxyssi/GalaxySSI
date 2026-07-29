@@ -1793,6 +1793,40 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(encoded.contains("session-token"))
   }
 
+  func testAgentMcpLocalRuntimeResponseCodecDecodesLastStructuredBridgeResult() throws {
+    let result = try AgentMcpLocalRuntimeResponseCodec.decode(
+      """
+      __SIGNALASI_MCP_RESULT__{"ok":true,"result":{"tools":[{"name":"stale.tool"}]}}
+      server starting
+      {"unrelated":true}
+      __SIGNALASI_MCP_RESULT__{"ok":true,"result":{"tools":[{"name":"device.read"}]}}
+      """
+    )
+    guard case .array(let tools)? = result["tools"],
+          case .object(let firstTool)? = tools.first else {
+      XCTFail("Expected decoded tool list")
+      return
+    }
+
+    XCTAssertEqual(firstTool["name"], .string("device.read"))
+  }
+
+  func testAgentMcpLocalRuntimeResponseCodecSurfacesBridgeFailure() {
+    XCTAssertThrowsError(
+      try AgentMcpLocalRuntimeResponseCodec.decode(
+        #"__SIGNALASI_MCP_RESULT__{"ok":false,"error":"server authentication failed"}"#
+      )
+    ) { error in
+      XCTAssertEqual(error as? AgentRuntimeCapabilityError, .invalid("server authentication failed"))
+    }
+  }
+
+  func testAgentMcpLocalRuntimeResponseCodecRejectsUnstructuredOutput() {
+    XCTAssertThrowsError(try AgentMcpLocalRuntimeResponseCodec.decode("plain process output")) { error in
+      XCTAssertEqual(error as? AgentRuntimeCapabilityError, .invalid("Local MCP bridge returned no structured result"))
+    }
+  }
+
   func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
     let skill = AgentDefaultCapabilityCatalog.skill("signalasi.catalog.github-triage")!
     let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 1_000 })
