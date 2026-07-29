@@ -196,6 +196,44 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings.textScale, .large)
   }
 
+  func testAgentSafetySettingsDecodeAndroidPolicyAndEncodeStoredNames() throws {
+    let settings = try JSONDecoder.signalASI.decode(
+      AgentSafetySettings.self,
+      from: Data(#"{"task_execution_mode":"plan_only","permission_mode":"AUTO_LOW_RISK","high_risk_guard":false,"memory_capture":false,"screen_observation_allowed":false,"local_actions_allowed":false,"connector_calls_allowed":false,"device_control_allowed":false,"execution_paused":true}"#.utf8)
+    )
+    let fallback = try JSONDecoder.signalASI.decode(
+      AgentSafetySettings.self,
+      from: Data(#"{"task_execution_mode":"unknown","permission_mode":"unknown"}"#.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+    XCTAssertEqual(settings.taskExecutionMode, .planOnly)
+    XCTAssertEqual(settings.permissionMode, .autoLowRisk)
+    XCTAssertFalse(settings.highRiskGuard)
+    XCTAssertFalse(settings.memoryCapture)
+    XCTAssertFalse(settings.screenObservationAllowed)
+    XCTAssertFalse(settings.localActionsAllowed)
+    XCTAssertFalse(settings.connectorCallsAllowed)
+    XCTAssertFalse(settings.deviceControlAllowed)
+    XCTAssertTrue(settings.executionPaused)
+    XCTAssertEqual(fallback.taskExecutionMode, .autoComplete)
+    XCTAssertEqual(fallback.permissionMode, .askBeforeAction)
+    XCTAssertEqual(object["task_execution_mode"] as? String, "PLAN_ONLY")
+    XCTAssertEqual(object["permission_mode"] as? String, "AUTO_LOW_RISK")
+
+    let store = makeStore()
+    store.updateAgentSafetySettings {
+      $0.taskExecutionMode = .planOnly
+      $0.permissionMode = .observeOnly
+      $0.executionPaused = true
+    }
+
+    XCTAssertEqual(store.agentSafetySettings.taskExecutionMode, .planOnly)
+    XCTAssertEqual(store.agentSafetySettings.permissionMode, .observeOnly)
+    XCTAssertTrue(store.agentSafetySettings.executionPaused)
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -265,6 +303,11 @@ final class SignalASIStoreTests: XCTestCase {
     store.updateDisplaySettings {
       $0.textScale = .extraLarge
     }
+    store.updateAgentSafetySettings {
+      $0.taskExecutionMode = .planOnly
+      $0.permissionMode = .observeOnly
+      $0.executionPaused = true
+    }
 
     store.destroyAllPrivateData()
 
@@ -278,6 +321,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.messages(for: "hermes").count, 1)
     XCTAssertEqual(store.voiceSettings, .default)
     XCTAssertEqual(store.displaySettings, .default)
+    XCTAssertEqual(store.agentSafetySettings, .default)
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {
@@ -314,7 +358,7 @@ final class SignalASIStoreTests: XCTestCase {
       displayName: "Model A",
       provider: "OpenAI",
       modelId: "model-a",
-      endpoint: "https://api.openai.com/v1/chat/completions",
+      endpoint: "https://api.example.com/v1/chat/completions",
       apiKey: "key-a",
       apiStyle: .openAICompatible
     )
@@ -322,7 +366,7 @@ final class SignalASIStoreTests: XCTestCase {
       displayName: "Model B",
       provider: "OpenAI",
       modelId: "model-b",
-      endpoint: "https://api.openai.com/v1/chat/completions",
+      endpoint: "https://api.example.com/v1/chat/completions",
       apiKey: "key-b",
       apiStyle: .openAICompatible
     )
@@ -337,7 +381,6 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(contact?.selectedCloudModelId, "model-a")
     XCTAssertEqual(contact?.deleted, false)
   }
-
   func testDeletingLastCloudModelHidesProviderContact() throws {
     let store = makeStore()
     _ = try store.addCloudModelContact(

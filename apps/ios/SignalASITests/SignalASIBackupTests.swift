@@ -64,6 +64,14 @@ final class SignalASIBackupTests: XCTestCase {
     store.updateDisplaySettings {
       $0.textScale = .extraLarge
     }
+    store.updateAgentSafetySettings {
+      $0.taskExecutionMode = .planOnly
+      $0.permissionMode = .autoLowRisk
+      $0.highRiskGuard = false
+      $0.memoryCapture = false
+      $0.connectorCallsAllowed = false
+      $0.executionPaused = true
+    }
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
     store.appendIncoming("desktop hello", from: "hermes")
@@ -79,6 +87,7 @@ final class SignalASIBackupTests: XCTestCase {
     )
     let payload = try SignalASIBackupManager.importBackup(data: encrypted, password: "password123")
     XCTAssertTrue(payload.privacyManifest.includesDisplaySettings)
+    XCTAssertTrue(payload.privacyManifest.includesAgentSafetySettings)
     let restored = makeStore()
     try restored.restoreBackupPayload(payload)
 
@@ -87,6 +96,12 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.languagePolicy.responseLanguage, "zh-CN")
     XCTAssertEqual(restored.languagePolicy.ttsLanguage, "zh-TW")
     XCTAssertEqual(restored.displaySettings.textScale, .extraLarge)
+    XCTAssertEqual(restored.agentSafetySettings.taskExecutionMode, .planOnly)
+    XCTAssertEqual(restored.agentSafetySettings.permissionMode, .autoLowRisk)
+    XCTAssertFalse(restored.agentSafetySettings.highRiskGuard)
+    XCTAssertFalse(restored.agentSafetySettings.memoryCapture)
+    XCTAssertFalse(restored.agentSafetySettings.connectorCallsAllowed)
+    XCTAssertTrue(restored.agentSafetySettings.executionPaused)
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
     XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)
