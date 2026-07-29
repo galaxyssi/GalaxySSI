@@ -88,6 +88,10 @@ from signalasi_client import (
     replace_peer_signal_bundle,
     remove_peer_signal_session,
 )
+from response_self_check import (
+    evaluate_response,
+    response_repair_prompt,
+)
 from stt_bridge import transcribe_audio
 
 log = logging.getLogger("signalasi.mqtt")
@@ -2866,6 +2870,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     image_artifact_repair_lock = threading.Lock()
     artifact_repair_attempts = 0
     artifact_repair_lock = threading.Lock()
+    response_repair_attempts = 0
+    response_repair_lock = threading.Lock()
     codex_runtime: dict[str, object] = {
         "server": None,
         "workspace": None,
@@ -3514,6 +3520,76 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             ).start()
             return True
 
+        def schedule_response_repair(previous_response: str, review) -> bool:
+            nonlocal response_repair_attempts
+            with response_repair_lock:
+                server = codex_runtime.get("server")
+                workspace = codex_runtime.get("workspace")
+                image_paths = [
+                    Path(str(value))
+                    for value in codex_runtime.get("image_paths", [])
+                    if Path(str(value)).is_file()
+                ]
+                if (
+                    response_repair_attempts >= 1
+                    or not isinstance(server, CodexAppServer)
+                    or not isinstance(workspace, Path)
+                ):
+                    return False
+                response_repair_attempts += 1
+                attempt = response_repair_attempts
+            repair_prompt = response_repair_prompt(
+                current_user_request,
+                previous_response,
+                review,
+                (
+                    str(item.get("name") or item.get("relative_path") or "")
+                    for item in attachments
+                    if isinstance(item, dict)
+                ),
+            )
+
+            def repair() -> None:
+                time.sleep(0.05)
+                try:
+                    add_task_trace(
+                        "response_self_check_repair_started",
+                        f"attempt={attempt}; reasons={','.join(review.reasons)}",
+                    )
+                    server.start_task(
+                        task.task_id,
+                        repair_prompt,
+                        str(workspace),
+                        conversation_id=codex_run_conversation_id,
+                        image_paths=[str(path.resolve()) for path in image_paths],
+                        approval_policy=codex_approval_policy,
+                        sandbox=codex_sandbox,
+                        execution_policy=execution_policy,
+                    )
+                except Exception as exc:
+                    add_task_trace("response_self_check_repair_failed", str(exc)[:240])
+                    app_event(task.task_id, {
+                        "status": "failed",
+                        "current_step": "",
+                        "result": (
+                            "\u8fd9\u6b21\u5904\u7406\u6ca1\u6709\u751f\u6210\u80fd\u56de\u7b54"
+                            "\u4f60\u6700\u65b0\u8981\u6c42\u7684\u6709\u6548\u7ed3\u679c\u3002"
+                            if any("\u4e00" <= character <= "\u9fff" for character in content)
+                            else
+                            "This run did not produce a valid answer to your latest request."
+                        ),
+                        "error": f"Final response repair failed: {exc}",
+                    })
+                    with codex_task_callbacks_lock:
+                        codex_task_callbacks.pop(task.task_id, None)
+
+            threading.Thread(
+                target=repair,
+                daemon=True,
+                name=f"codex-response-repair-{task.task_id[:8]}",
+            ).start()
+            return True
+
         def app_event(task_id: str, event: dict) -> None:
             nonlocal result_published
             event_status = str(event.get("status") or "running")
@@ -3625,6 +3701,52 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         event_status = "failed"
                         event_result = _missing_returned_image_message(content)
                         event["error"] = "Requested image artifact was not generated"
+            if event_status == "completed":
+                from task_workspace import task_artifacts
+
+                generated_artifacts = task_artifacts(task_id)
+                response_review = evaluate_response(
+                    current_user_request,
+                    str(event_result or ""),
+                    attachment_names=(
+                        str(item.get("name") or item.get("relative_path") or "")
+                        for item in attachments
+                        if isinstance(item, dict)
+                    ),
+                    output_artifacts=(
+                        str(
+                            item.get("name")
+                            or item.get("path")
+                            or item.get("relative_path")
+                            or ""
+                        )
+                        for item in generated_artifacts
+                        if isinstance(item, dict)
+                    ),
+                )
+                if response_review.accepted:
+                    add_task_trace(
+                        "response_self_check_passed",
+                        response_review.request_digest,
+                        once=True,
+                    )
+                elif schedule_response_repair(str(event_result or ""), response_review):
+                    event_status = "running"
+                    event_result = ""
+                    event["status"] = "running"
+                    event["result"] = ""
+                    event["current_step"] = "Repairing final response"
+                    event.pop("error", None)
+                else:
+                    event_status = "failed"
+                    event_result = (
+                        "\u8fd9\u6b21\u5904\u7406\u6ca1\u6709\u751f\u6210\u80fd\u56de\u7b54"
+                        "\u4f60\u6700\u65b0\u8981\u6c42\u7684\u6709\u6548\u7ed3\u679c\u3002"
+                        if any("\u4e00" <= character <= "\u9fff" for character in content)
+                        else
+                        "This run did not produce a valid answer to your latest request."
+                    )
+                    event["error"] = response_review.diagnostic
             if event_status == "completed" and not parallel_codex_task:
                 completed_task = agent_task_manager.get(task_id)
                 mark_conversation_synced("codex", completed_task)

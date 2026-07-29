@@ -31,6 +31,7 @@ const required = [
   "core/signalasi-link/backend/evolution_v2/manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "core/signalasi-link/backend/provider_profiles.py",
+  "core/signalasi-link/backend/response_self_check.py",
   "core/signalasi-link/backend/run_timeline.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
@@ -134,6 +135,7 @@ const backendDesktopFileTools = fs.readFileSync(path.join(backendDir, "desktop_f
 const backendDesktopControl = fs.readFileSync(path.join(backendDir, "desktop_control.py"), "utf8");
 const backendDesktopAgentLoop = fs.readFileSync(path.join(backendDir, "desktop_agent_loop.py"), "utf8");
 const backendAgentFailureRecovery = fs.readFileSync(path.join(backendDir, "agent_failure_recovery.py"), "utf8");
+const backendResponseSelfCheck = fs.readFileSync(path.join(backendDir, "response_self_check.py"), "utf8");
 const backendDesktopNativeTools = fs.readFileSync(path.join(backendDir, "desktop_native_tools.py"), "utf8");
 const backendDesktopMemory = fs.readFileSync(path.join(backendDir, "desktop_memory.py"), "utf8");
 const backendDesktopMcp = fs.readFileSync(path.join(backendDir, "desktop_mcp.py"), "utf8");
@@ -180,6 +182,7 @@ const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "a
 const androidTaskIntent = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskIntent.kt"), "utf8");
 const androidTaskBudget = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskBudget.kt"), "utf8");
 const androidAgentFailureRecovery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentFailureRecovery.kt"), "utf8");
+const androidResponseSelfCheck = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentResponseSelfCheck.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -718,6 +721,20 @@ for (const recoveryContract of [
 ]) {
   if (!recoveryContract[0].includes(recoveryContract[1])) {
     throw new Error(`Cross-platform failure recovery is incomplete: ${recoveryContract[1]}`);
+  }
+}
+
+for (const responseSelfCheckContract of [
+  [backendResponseSelfCheck, "def evaluate_response("],
+  [backendResponseSelfCheck, "def response_repair_prompt("],
+  [backendGateway, "response_self_check_contract("],
+  [backendMqtt, "schedule_response_repair("],
+  [backendDesktopSuperAgent, "\"response_self_check\""],
+  [androidResponseSelfCheck, "object AgentResponseSelfCheck"],
+  [androidMainActivity, "AgentResponseSelfCheck.evaluate("]
+]) {
+  if (!responseSelfCheckContract[0].includes(responseSelfCheckContract[1])) {
+    throw new Error(`Cross-platform latest-request response self-check is incomplete: ${responseSelfCheckContract[1]}`);
   }
 }
 

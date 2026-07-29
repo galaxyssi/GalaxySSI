@@ -1990,4 +1990,5 @@
     <string name="agent_recovery_diagnostics">Diagnostics only</string>
     <string name="agent_recovery_unavailable">This recovery action is no longer available.</string>
     <string name="agent_recovery_already_started">This recovery action has already started.</string>
+    <string name="agent_response_self_check_failed">The selected resource did not answer your latest request. You can retry or use another available resource.</string>
 </resources>

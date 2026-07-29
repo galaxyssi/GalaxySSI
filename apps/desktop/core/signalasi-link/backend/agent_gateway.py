@@ -527,32 +527,36 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     from agent_conversation_sessions import agent_conversation_sessions
     from agent_task_manager import agent_task_manager
     from response_policy import apply_response_policy, sanitize_assistant_response
+    from response_self_check import (
+        evaluate_response,
+        response_repair_prompt,
+        response_self_check_contract,
+    )
 
     spec = all_agent_specs().get(agent_id)
     preferred_language = request.response_language or language_policy_config()["response_language"]
     execution_prompt = str(
         request.checkpoint.get("execution_prompt") or request.prompt
     ).strip()
+    attachment_names = tuple(
+        str(item.get("name") or item.get("relative_path") or "")
+        for item in request.artifacts
+        if isinstance(item, dict)
+    )
     serialized_policy = request.checkpoint.get("execution_policy")
     execution_policy = (
         AgentExecutionPolicy.from_public(serialized_policy)
         if isinstance(serialized_policy, dict) and serialized_policy
         else execution_policy_for(
             execution_prompt,
-            attachments=(
-                str(item.get("name") or item.get("relative_path") or "")
-                for item in request.artifacts
-            ),
+            attachments=attachment_names,
         )
     )
     harness = AgentExecutionHarness(
         request.run_id,
         agent_id,
         execution_prompt,
-        attachments=(
-            str(item.get("name") or item.get("relative_path") or "")
-            for item in request.artifacts
-        ),
+        attachments=attachment_names,
         policy=execution_policy,
     )
     plan_only = harness.policy.execution_mode == AgentExecutionMode.PLAN_ONLY
@@ -560,7 +564,14 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     current_prompt = request.prompt.rstrip()
     if "SignalASI execution contract:" not in current_prompt:
         current_prompt = f"{current_prompt}\n\n{contract}"
+    self_check_contract = response_self_check_contract(
+        execution_prompt,
+        attachment_names,
+    )
+    if "SignalASI final response self-check:" not in current_prompt:
+        current_prompt = f"{current_prompt}\n\n{self_check_contract}"
     failure = ""
+    failed_self_check = None
 
     def add_phase(phase: str, title: str, *, status: str = "completed", detail: str = "") -> None:
         if not request.run_id:
@@ -667,7 +678,25 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 artifact_finalization is None
                 or artifact_finalization.verification.get("status") == "passed"
             )
-            if verification_passed:
+            output_artifacts = ()
+            if artifact_finalization is not None:
+                output_artifacts = tuple(
+                    str(
+                        item.get("name")
+                        or item.get("path")
+                        or item.get("relative_path")
+                        or ""
+                    )
+                    for item in artifact_finalization.verification.get("outputs", [])
+                    if isinstance(item, dict)
+                )
+            failed_self_check = evaluate_response(
+                execution_prompt,
+                reply,
+                attachment_names=attachment_names,
+                output_artifacts=output_artifacts,
+            )
+            if verification_passed and failed_self_check.accepted:
                 harness.progress(
                     "verify",
                     response_nonempty=True,
@@ -679,16 +708,26 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 add_phase("verify", "Agent result verified")
                 harness.progress("finalize")
                 return reply
-            failure = (
-                "Required artifact verification failed: "
-                + json.dumps(
-                    artifact_finalization.verification,
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )[:1_000]
-            )
+            if not failed_self_check.accepted:
+                failure = failed_self_check.diagnostic
+                add_phase(
+                    "verify",
+                    "Agent response requires repair",
+                    status="failed",
+                    detail=failure,
+                )
+            else:
+                failure = (
+                    "Required artifact verification failed: "
+                    + json.dumps(
+                        artifact_finalization.verification,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )[:1_000]
+                )
         else:
             failure = reply or f"{agent_id} returned no response"
+            failed_self_check = None
 
         can_replan, same_failure_attempt = harness.record_failure("agent_execution", failure)
         add_phase(
@@ -704,10 +743,20 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             "Replanning from the latest checkpoint",
             detail=f"same_failure_attempt={same_failure_attempt}",
         )
-        current_prompt = (
-            f"{request.prompt.rstrip()}\n\n"
-            f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
-        )
+        if failed_self_check is not None and not failed_self_check.accepted:
+            current_prompt = (
+                f"{response_repair_prompt(
+                    execution_prompt,
+                    reply,
+                    failed_self_check,
+                    attachment_names,
+                )}\n\n{contract}"
+            )
+        else:
+            current_prompt = (
+                f"{request.prompt.rstrip()}\n\n"
+                f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
+            )
 
 
 def _stateless_model_messages(

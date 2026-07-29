@@ -43,6 +43,7 @@ from desktop_native_tools import (
 from desktop_memory import DesktopMemoryStore, desktop_memory_store
 from desktop_mcp import DesktopMcpRegistry, desktop_mcp_registry
 from desktop_skills import DesktopSkillRegistry, desktop_skill_registry
+from response_self_check import evaluate_response
 
 
 TEXT_EXTENSIONS = {
@@ -484,6 +485,9 @@ class DesktopSuperAgent:
             )
             if not reply:
                 raise RuntimeError(f"{connection.name} returned no result")
+            self_check = evaluate_response(prompt, reply)
+            if not self_check.accepted:
+                raise RuntimeError(self_check.diagnostic)
             observation = AgentLoopObservation(
                 actor_id=actor_id,
                 action_id="mcp.invoke",
@@ -869,6 +873,24 @@ class DesktopSuperAgent:
             ):
                 learn = False
                 reply = self._artifact_failure_reply(prompt)
+        output_artifacts = tuple(
+            str(
+                item.get("name")
+                or item.get("path")
+                or item.get("relative_path")
+                or ""
+            )
+            for item in artifact_verification.get("outputs", [])
+            if isinstance(item, dict)
+        )
+        response_self_check = evaluate_response(
+            prompt,
+            reply,
+            output_artifacts=output_artifacts,
+        )
+        if not response_self_check.accepted:
+            learn = False
+            reply = self._response_self_check_failure_reply(prompt)
         self._phase(
             task_id,
             AgentLoopPhase.FINALIZE,
@@ -900,6 +922,7 @@ class DesktopSuperAgent:
                 "delegate_agent_id": delegate_agent_id,
                 "learned": learn,
                 "artifact_verification": artifact_verification,
+                "response_self_check": response_self_check.public(),
             },
         )
         return DesktopAgentOutcome(reply, delegate_agent_id)
@@ -915,6 +938,20 @@ class DesktopSuperAgent:
         return (
             "The task ran, but the requested deliverable was not produced or did not pass "
             "integrity verification. The current workspace is preserved for recovery."
+        )
+
+    @staticmethod
+    def _response_self_check_failure_reply(prompt: str) -> str:
+        if re.search(r"[\u4e00-\u9fff]", str(prompt or "")):
+            return (
+                "\u8fd9\u6b21\u5904\u7406\u6ca1\u6709\u751f\u6210\u80fd\u56de\u7b54"
+                "\u4f60\u6700\u65b0\u8981\u6c42\u7684\u6709\u6548\u7ed3\u679c\u3002"
+                "\u53ef\u4ee5\u4ece\u6700\u65b0\u68c0\u67e5\u70b9\u91cd\u8bd5\u6216"
+                "\u66f4\u6362\u53ef\u7528\u8d44\u6e90\u3002"
+            )
+        return (
+            "This run did not produce a valid answer to your latest request. "
+            "Retry from the latest checkpoint or choose another available resource."
         )
 
     @staticmethod

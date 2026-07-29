@@ -3948,17 +3948,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             if (taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
                 AgentFastLocalResponse.reply(executionGoal, localConversationContext)?.let { response ->
-                agentTranscriptStore.append(
-                    AgentTranscriptRole.ASSISTANT,
-                    response,
-                    dedupeKey = "fast-local:$turnId",
-                    conversationId = conversationId,
-                    turnId = turnId,
-                    taskId = turnId
-                )
-                Log.d("SignalASIAgent", "fast_local_completed turn=${turnId.take(8)}")
-                runOnUiThread { refreshAgentTranscriptWindow(conversationId) }
-                return@execute
+                    if (AgentResponseSelfCheck.evaluate(executionGoal, response).accepted) {
+                        agentTranscriptStore.append(
+                            AgentTranscriptRole.ASSISTANT,
+                            response,
+                            dedupeKey = "fast-local:$turnId",
+                            conversationId = conversationId,
+                            turnId = turnId,
+                            taskId = turnId
+                        )
+                        Log.d("SignalASIAgent", "fast_local_completed turn=${turnId.take(8)}")
+                        runOnUiThread { refreshAgentTranscriptWindow(conversationId) }
+                        return@execute
+                    }
+                    Log.w("SignalASIAgent", "fast_local_response_self_check_failed turn=${turnId.take(8)}")
                 }
             }
             val conversationContext = globalSuperAgentRuntime.augmentContext(
@@ -11972,7 +11975,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             AgentAuditEvent.TOOL_GRAPH_BLOCKED,
             AgentAuditEvent.AUTONOMY_GUARD_BLOCKED,
             AgentAuditEvent.INVOCATION_AUDIT,
-            AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED -> R.string.cc_audit_resource
+            AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
+            AgentAuditEvent.RESPONSE_SELF_CHECK_PASSED,
+            AgentAuditEvent.RESPONSE_SELF_CHECK_FAILED -> R.string.cc_audit_resource
             AgentAuditEvent.GOAL_RECEIVED -> R.string.cc_audit_goal
             AgentAuditEvent.MEMORY_SKIPPED,
             AgentAuditEvent.MEMORY_FORGOTTEN,

@@ -1897,4 +1897,5 @@
     <string name="agent_recovery_diagnostics">仅返回诊断</string>
     <string name="agent_recovery_unavailable">该恢复操作已不可用。</string>
     <string name="agent_recovery_already_started">该恢复操作已经启动。</string>
+    <string name="agent_response_self_check_failed">所选资源没有回答你的最新请求。你可以重试或改用其他可用资源。</string>
 </resources>
