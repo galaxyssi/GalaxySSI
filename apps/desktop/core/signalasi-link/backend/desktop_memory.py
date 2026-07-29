@@ -21,6 +21,7 @@ from desktop_memory_graph import (
     retract_memory_graph_evidence,
     search_memory_graph,
 )
+from desktop_memory_prompt_compiler import CompiledMemoryContext, compile_memory_context
 from desktop_memory_query_planner import DesktopMemoryQueryPlan, plan_memory_query
 
 
@@ -884,6 +885,7 @@ class DesktopMemoryStore:
         *,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
         query_plan: DesktopMemoryQueryPlan | None = None,
+        record_access: bool = True,
     ) -> list[dict[str, Any]]:
         query_tokens = _tokens(query)
         if not query_tokens:
@@ -943,7 +945,7 @@ class DesktopMemoryStore:
                     :bounded_limit
                 ]
             ]
-            if selected:
+            if selected and record_access:
                 connection.executemany(
                     "UPDATE memories SET last_accessed_at = ?, use_count = use_count + 1 WHERE id = ?",
                     [(now_ms, row["id"]) for row in selected],
@@ -954,52 +956,56 @@ class DesktopMemoryStore:
         self,
         query: str,
         *,
-        limit: int = 6,
-        max_chars: int = 5_000,
+        limit: int | None = None,
+        max_chars: int | None = None,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
     ) -> str:
+        return self.compile_context_result(
+            query,
+            limit=limit,
+            max_chars=max_chars,
+            namespaces=namespaces,
+        ).text
+
+    def compile_context_result(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        max_chars: int | None = None,
+        namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> CompiledMemoryContext:
         plan = plan_memory_query(query)
+        effective_limit = min(limit or plan.maximum_memories, plan.maximum_memories)
         rows = self.search(
             query,
-            limit=min(limit, plan.maximum_memories),
+            limit=effective_limit,
             namespaces=namespaces,
             query_plan=plan,
+            record_access=False,
         )
-        memory_lines = [
-            f"- [{row['namespace']}/{row['kind']}] {row['content']}"
-            for row in rows
-        ]
         graph = self.search_graph(
             query,
             namespaces=namespaces,
-            limit=max(8, min(limit * 3, 36)),
+            limit=plan.maximum_graph_nodes,
             query_plan=plan,
         )
-        nodes = {
-            node["id"]: node
-            for node in graph["nodes"]
-        }
-        relation_lines = []
-        for relation in graph["relations"]:
-            source = nodes.get(relation["from_node_id"])
-            target = nodes.get(relation["to_node_id"])
-            if not source or not target:
-                continue
-            relation_lines.append(
-                f"- [relationship/{relation['namespace']}] "
-                f"{source['label']} {relation['kind']} {target['label']} "
-                f"[{relation['temporal_state']}]"
-            )
-        if not memory_lines and not relation_lines:
-            return ""
-        lines = [
-            "Memory query plan: "
-            f"types={','.join(plan.types)}; temporal={plan.temporal_scope}",
-            *memory_lines,
-        ]
-        if relation_lines:
-            lines.extend(["Relationship graph (untrusted evidence):", *relation_lines])
-        return "\n".join(lines)[: min(max_chars, plan.maximum_characters)]
+        result = compile_memory_context(
+            query,
+            plan,
+            rows,
+            graph,
+            maximum_characters=max_chars or plan.maximum_characters,
+        )
+        if result.memory_ids:
+            now_ms = int(self.now() * 1_000)
+            with self._lock, self._connect() as connection:
+                connection.executemany(
+                    "UPDATE memories SET last_accessed_at = ?, use_count = use_count + 1 "
+                    "WHERE id = ?",
+                    [(now_ms, memory_id) for memory_id in result.memory_ids],
+                )
+        return result
 
     def search_graph(
         self,
