@@ -140,6 +140,14 @@ Every node and relation carries temporal state, confidence, bounded evidence ref
 
 The graph projects ownership, use, support, components, state, naming, dependencies, connections, preferences, removal, and general relatedness. A removal event deprecates the affected entity and closes every current inbound and outbound relation, including support and dependency edges, instead of leaving stale capabilities reachable from current-state queries. Historical queries can still traverse those closed relations and their validity interval.
 
+Desktop persists the same domain graph in transactional SQLite tables. Only accepted memory
+can project nodes or relations; pending and rejected candidates cannot mutate it. Accepted
+updates close exclusive state, naming, and preference edges while preserving their evidence
+and validity intervals. Query-time traversal expands from matching scoped entities for up to
+three bounded hops, and compiled context labels every returned relationship as untrusted
+evidence. Memory deletion deprecates graph elements that lose their final evidence source,
+while reset removes both accepted memory and its graph projection atomically.
+
 ## Query Planner And Prompt Compiler
 
 Before retrieval, the query planner classifies the request into one or more facets: project state, device capability, historical decision, personal identity, personal preference, security state, long-term goal, tool evidence, relationship, or general memory. A request can therefore combine device, project, relationship, security, and historical intent instead of losing all but the first match.

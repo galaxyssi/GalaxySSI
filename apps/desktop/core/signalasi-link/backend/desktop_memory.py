@@ -13,6 +13,15 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from desktop_memory_graph import (
+    clear_memory_graph,
+    initialize_graph_schema,
+    memory_graph_snapshot,
+    project_memory_graph,
+    retract_memory_graph_evidence,
+    search_memory_graph,
+)
+
 
 MAX_CONTENT_CHARS = 2_000
 REVIEW_KINDS = {"identity", "preference", "security"}
@@ -299,6 +308,7 @@ class DesktopMemoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_memory_candidate_status "
                 "ON memory_candidates(status, created_at DESC)"
             )
+            initialize_graph_schema(connection)
 
     @staticmethod
     def _ensure_columns(
@@ -353,10 +363,12 @@ class DesktopMemoryStore:
                     previous["id"],
                 ),
             )
-            return connection.execute(
+            row = connection.execute(
                 "SELECT * FROM memories WHERE id = ?",
                 (previous["id"],),
             ).fetchone()
+            project_memory_graph(connection, row)
+            return row
         if previous:
             supersedes_id = str(previous["id"])
             connection.execute(
@@ -393,10 +405,12 @@ class DesktopMemoryStore:
                 now_ms,
             ),
         )
-        return connection.execute(
+        row = connection.execute(
             "SELECT * FROM memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
+        project_memory_graph(connection, row)
+        return row
 
     def _before_candidate_promotion(
         self,
@@ -914,7 +928,53 @@ class DesktopMemoryStore:
             f"- [{row['namespace']}/{row['kind']}] {row['content']}"
             for row in rows
         ]
+        graph = self.search_graph(
+            query,
+            namespaces=namespaces,
+            hops=2,
+            limit=max(8, min(limit * 3, 36)),
+        )
+        nodes = {
+            node["id"]: node
+            for node in graph["nodes"]
+        }
+        relation_lines = []
+        for relation in graph["relations"]:
+            source = nodes.get(relation["from_node_id"])
+            target = nodes.get(relation["to_node_id"])
+            if not source or not target:
+                continue
+            relation_lines.append(
+                f"- [relationship/{relation['namespace']}] "
+                f"{source['label']} {relation['kind']} {target['label']} "
+                f"[{relation['temporal_state']}]"
+            )
+        if relation_lines:
+            lines.extend(["Relationship graph (untrusted evidence):", *relation_lines])
         return "\n".join(lines)[:max_chars]
+
+    def search_graph(
+        self,
+        query: str,
+        *,
+        namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+        hops: int = 2,
+        limit: int = 24,
+        include_historical: bool = False,
+    ) -> dict[str, list[dict[str, Any]]]:
+        with self._lock, self._connect() as connection:
+            return search_memory_graph(
+                connection,
+                query,
+                namespaces=namespaces,
+                hops=hops,
+                limit=limit,
+                include_historical=include_historical,
+            )
+
+    def graph_snapshot(self) -> dict[str, Any]:
+        with self._lock, self._connect() as connection:
+            return memory_graph_snapshot(connection)
 
     def list(self, limit: int = 100, status: str = "active") -> list[dict[str, Any]]:
         statuses = {
@@ -1018,6 +1078,8 @@ class DesktopMemoryStore:
                 "valid_until_at = ?, updated_at = ? WHERE id = ?",
                 (now_ms, now_ms, str(memory_id)),
             )
+            if cursor.rowcount > 0:
+                retract_memory_graph_evidence(connection, str(memory_id), now_ms)
             return cursor.rowcount > 0
 
     def clear(self) -> int:
@@ -1025,6 +1087,7 @@ class DesktopMemoryStore:
             count = int(connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
             connection.execute("DELETE FROM memories")
             connection.execute("DELETE FROM memory_candidates")
+            clear_memory_graph(connection)
             return count
 
     def stats(self) -> dict[str, Any]:
@@ -1036,6 +1099,7 @@ class DesktopMemoryStore:
             temporal_rows = connection.execute(
                 "SELECT temporal_state, COUNT(*) AS count FROM memories GROUP BY temporal_state"
             ).fetchall()
+            graph = memory_graph_snapshot(connection)
         counts = {str(row["status"]): int(row["count"]) for row in rows}
         candidate_counts = {str(row["status"]): int(row["count"]) for row in candidate_rows}
         temporal_counts = {str(row["temporal_state"]): int(row["count"]) for row in temporal_rows}
@@ -1048,6 +1112,7 @@ class DesktopMemoryStore:
             "conflicted": candidate_counts.get("conflicted", 0),
             "candidate_counts": candidate_counts,
             "temporal_counts": temporal_counts,
+            "graph": graph,
             "total": sum(counts.values()),
         }
 
@@ -1067,6 +1132,7 @@ class DesktopMemoryStore:
         )
         now_ms = int(self.now() * 1_000)
         stats = self.stats()
+        graph = stats["graph"]
         candidate_by_status = dict(stats["candidate_counts"])
         temporal_counts = {
             state: int(stats["temporal_counts"].get(state, 0))
@@ -1209,9 +1275,12 @@ class DesktopMemoryStore:
                 "conflicted": candidate_by_status.get("conflicted", 0),
                 "evidence": evidence_count,
                 "supersession_edges": len(supersession_edges),
+                "graph_nodes": int(graph["node_count"]),
+                "graph_relations": int(graph["relation_count"]),
             },
             "temporal_counts": temporal_counts,
             "namespace_counts": namespace_counts,
+            "graph": graph,
             "candidate_counts": candidate_by_status,
             "health": {
                 "status": "attention" if findings else "healthy",

@@ -1850,7 +1850,12 @@ def api_desktop_memory(
         if query.strip() and status == "active"
         else store.list(limit=limit, status=status)
     )
-    return {"memories": rows, "stats": store.stats()}
+    graph = (
+        store.search_graph(query, limit=min(max(limit, 8), 60))
+        if query.strip()
+        else store.graph_snapshot()
+    )
+    return {"memories": rows, "stats": store.stats(), "graph": graph}
 
 
 @app.get("/api/desktop-memory/inbox")
