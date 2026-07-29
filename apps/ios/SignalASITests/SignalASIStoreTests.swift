@@ -2576,6 +2576,193 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertThrowsError(try AgentCronExpression.parseZone("Not/AZone"))
   }
 
+  func testAgentProactiveTaskSchedulerIntervalCatchUpIsBounded() throws {
+    let now: Int64 = 1_800_000_000_000
+    let task = try proactiveIntervalTask(
+      policy: try AgentProactivePolicy(
+        misfire: .catchUp,
+        catchUpLimit: 3
+      ),
+      nextRunAtMillis: now - 20 * 60 * 1_000
+    )
+
+    let result = try AgentProactiveTaskScheduler.dueOccurrences(task: task, nowMillis: now)
+
+    XCTAssertEqual(result.occurrences.count, 3)
+    XCTAssertTrue(result.occurrences.allSatisfy { $0.status == .queued })
+    XCTAssertTrue(result.nextRunAtMillis > now)
+  }
+
+  func testAgentProactiveTaskSchedulerFireOnceAndSkipCollapseMissedIntervals() throws {
+    let now: Int64 = 1_800_000_000_000
+    let fireOnceTask = try proactiveIntervalTask(
+      policy: try AgentProactivePolicy(misfire: .fireOnce),
+      nextRunAtMillis: now - 10 * 60 * 1_000
+    )
+    let skipTask = try proactiveIntervalTask(
+      policy: try AgentProactivePolicy(
+        misfire: .skip,
+        catchUpLimit: 2
+      ),
+      nextRunAtMillis: now - 10 * 60 * 1_000
+    )
+
+    let fireOnce = try AgentProactiveTaskScheduler.dueOccurrences(task: fireOnceTask, nowMillis: now)
+    let skipped = try AgentProactiveTaskScheduler.dueOccurrences(task: skipTask, nowMillis: now)
+
+    XCTAssertEqual(fireOnce.occurrences.map(\.status), [.queued])
+    XCTAssertTrue(fireOnce.nextRunAtMillis > now)
+    XCTAssertEqual(skipped.occurrences.count, 2)
+    XCTAssertTrue(skipped.occurrences.allSatisfy { $0.status == .skipped })
+    XCTAssertTrue(skipped.nextRunAtMillis > now)
+  }
+
+  func testAgentProactiveTaskPolicyValidatesTeamLeadAndGoalCheckpoint() throws {
+    XCTAssertThrowsError(
+      try AgentProactiveAction(
+        kind: .subagentTeam,
+        team: [
+          try AgentProactiveTeamMember(agentId: "codex", role: .observer),
+          try AgentProactiveTeamMember(agentId: "hermes", role: .verifier)
+        ]
+      )
+    )
+    XCTAssertThrowsError(
+      try AgentProactiveTrigger(
+        kind: .goalCheckpoint,
+        intervalSeconds: 300,
+        goalId: ""
+      )
+    )
+  }
+
+  func testAgentProactiveTaskSchedulerInitialRunJitterAndOutcomeDisableRules() throws {
+    let now: Int64 = 1_800_000_000_000
+    let jitterTask = try proactiveIntervalTask(
+      taskId: "jitter-task",
+      policy: try AgentProactivePolicy(jitterSeconds: 30),
+      nextRunAtMillis: 0
+    )
+
+    let next = try AgentProactiveTaskScheduler.initialNextRun(task: jitterTask, nowMillis: now)
+
+    XCTAssertGreaterThanOrEqual(next, now + 60_000)
+    XCTAssertLessThanOrEqual(next, now + 90_000)
+    XCTAssertEqual(next, try AgentProactiveTaskScheduler.initialNextRun(task: jitterTask, nowMillis: now))
+
+    let limited = try proactiveIntervalTask(
+      policy: try AgentProactivePolicy(maxRuns: 1),
+      nextRunAtMillis: now + 60_000
+    )
+    let completed = try AgentProactiveTaskScheduler.recordOutcome(
+      task: limited,
+      status: .completed,
+      completedAtMillis: now
+    )
+
+    XCTAssertFalse(completed.enabled)
+    XCTAssertEqual(completed.nextRunAtMillis, 0)
+    XCTAssertEqual(completed.lastStatus, .completed)
+    XCTAssertEqual(completed.runCount, 1)
+    XCTAssertEqual(completed.consecutiveFailures, 0)
+
+    let failing = try proactiveIntervalTask(
+      policy: try AgentProactivePolicy(maxConsecutiveFailures: 2),
+      nextRunAtMillis: now + 60_000,
+      consecutiveFailures: 1
+    )
+    let failed = try AgentProactiveTaskScheduler.recordOutcome(
+      task: failing,
+      status: .failed,
+      completedAtMillis: now
+    )
+
+    XCTAssertFalse(failed.enabled)
+    XCTAssertEqual(failed.consecutiveFailures, 2)
+    XCTAssertTrue(
+      AgentProactiveTaskScheduler.shouldDisable(
+        task: try proactiveIntervalTask(
+          policy: try AgentProactivePolicy(deadlineAtMillis: now - 1),
+          nextRunAtMillis: now + 60_000
+        ),
+        nowMillis: now
+      )
+    )
+  }
+
+  func testAgentProactiveTaskModelsUseAndroidWireNames() throws {
+    let task = try AgentProactiveTask(
+      taskId: "wire-task",
+      name: "Wire task",
+      trigger: try AgentProactiveTrigger(
+        kind: .interval,
+        intervalSeconds: 300,
+        eventFilter: ["source.type": "desktop"]
+      ),
+      action: try AgentProactiveAction(
+        kind: .nativeTool,
+        targetId: "open_url",
+        prompt: "Open the latest report",
+        argumentsJson: #"{"path":"/tmp/report.txt","limit":2}"#,
+        deliveryMode: "mobile",
+        clientRouteId: "route-1",
+        grantedPermissions: ["native.open_url"],
+        grantedConsents: ["user-approved"]
+      ),
+      policy: try AgentProactivePolicy(
+        misfire: .catchUp,
+        catchUpLimit: 4,
+        maxConcurrency: 2,
+        network: "unmetered",
+        requiresCharging: true
+      ),
+      nextRunAtMillis: 1_800_000_060_000
+    )
+    let run = try AgentProactiveRun(
+      runId: "run-1",
+      taskId: task.taskId,
+      scheduledForMillis: 1_800_000_060_000,
+      status: .waiting,
+      attempt: 2,
+      causeJson: #"{"type":"manual"}"#,
+      linkedExecutionId: "execution-1",
+      teamRunId: "team-1"
+    )
+
+    let taskObject = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(task)) as? [String: Any])
+    let triggerObject = try XCTUnwrap(taskObject["trigger"] as? [String: Any])
+    let actionObject = try XCTUnwrap(taskObject["action"] as? [String: Any])
+    let policyObject = try XCTUnwrap(taskObject["policy"] as? [String: Any])
+    let runObject = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(run)) as? [String: Any])
+
+    XCTAssertEqual(taskObject["protocol"] as? String, AgentProactiveTaskScheduler.protocolVersion)
+    XCTAssertEqual(taskObject["task_id"] as? String, "wire-task")
+    XCTAssertNotNil(taskObject["next_run_at_millis"])
+    XCTAssertEqual(triggerObject["interval_seconds"] as? Int, 300)
+    XCTAssertEqual(triggerObject["event_filter"] as? [String: String], ["source.type": "desktop"])
+    XCTAssertEqual(actionObject["target_id"] as? String, "open_url")
+    XCTAssertNotNil(actionObject["arguments"] as? [String: Any])
+    XCTAssertNil(actionObject["arguments_json"])
+    XCTAssertEqual(actionObject["delivery_mode"] as? String, "mobile")
+    XCTAssertEqual(actionObject["client_route_id"] as? String, "route-1")
+    XCTAssertEqual(policyObject["catch_up_limit"] as? Int, 4)
+    XCTAssertEqual(policyObject["max_concurrency"] as? Int, 2)
+    XCTAssertEqual(policyObject["requires_charging"] as? Bool, true)
+    XCTAssertNotNil(runObject["cause"] as? [String: Any])
+    XCTAssertNil(runObject["cause_json"])
+    XCTAssertEqual(runObject["linked_execution_id"] as? String, "execution-1")
+
+    let decoded = try JSONDecoder().decode(AgentProactiveTask.self, from: JSONEncoder().encode(task))
+    let fallback = try JSONDecoder().decode(
+      AgentProactiveMisfirePolicy.self,
+      from: Data(#""future""#.utf8)
+    )
+
+    XCTAssertEqual(decoded.action.argumentsJson, #"{"limit":2,"path":"/tmp/report.txt"}"#)
+    XCTAssertEqual(decoded.policy.misfire, .catchUp)
+    XCTAssertEqual(fallback, .fireOnce)
+  }
+
   func testAgentTranscriptScrollPolicyMatchesAndroidAutoFollowAndPagination() {
     XCTAssertTrue(
       AgentTranscriptScrollPolicy.nextAutoFollow(
@@ -5384,6 +5571,32 @@ final class SignalASIStoreTests: XCTestCase {
       agentId: agentId,
       location: location,
       connectionKind: connectionKind
+    )
+  }
+
+  private func proactiveIntervalTask(
+    taskId: String = "test-task",
+    policy: AgentProactivePolicy,
+    nextRunAtMillis: Int64,
+    runCount: Int = 0,
+    consecutiveFailures: Int = 0
+  ) throws -> AgentProactiveTask {
+    try AgentProactiveTask(
+      taskId: taskId,
+      name: "Test task",
+      trigger: try AgentProactiveTrigger(
+        kind: .interval,
+        intervalSeconds: 60
+      ),
+      action: try AgentProactiveAction(
+        kind: .agent,
+        targetId: "codex",
+        prompt: "Check status"
+      ),
+      policy: policy,
+      nextRunAtMillis: nextRunAtMillis,
+      runCount: runCount,
+      consecutiveFailures: consecutiveFailures
     )
   }
 
