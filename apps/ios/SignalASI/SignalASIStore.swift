@@ -356,7 +356,7 @@ final class SignalASIStore: ObservableObject {
   func updateVoiceSettings(_ mutate: (inout VoiceSettings) -> Void) {
     var next = voiceSettings
     mutate(&next)
-    voiceSettings = next
+    voiceSettings = next.normalized
   }
 
   func updateLanguagePolicy(_ mutate: (inout LanguagePolicySettings) -> Void) {

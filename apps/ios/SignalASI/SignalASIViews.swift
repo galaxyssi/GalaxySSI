@@ -734,10 +734,54 @@ struct VoiceSettingsView: View {
           Toggle("Speech recognition", isOn: binding(\.speechRecognitionEnabled))
           Toggle("Text to speech", isOn: binding(\.textToSpeechEnabled))
           Toggle("Auto-send transcripts", isOn: binding(\.autoSendTranscripts))
+          Toggle("Speak Replies", isOn: binding(\.speakReplies))
           TextField("Locale", text: Binding(
             get: { store.voiceSettings.preferredLocaleIdentifier },
             set: { value in store.updateVoiceSettings { $0.preferredLocaleIdentifier = value } }
           ))
+        }
+        Section("Wake") {
+          TextField("Wake Words", text: Binding(
+            get: { store.voiceSettings.wakeWordsText },
+            set: { value in store.updateVoiceSettings { $0.wakeWords = VoiceSettings.wakeWords(from: value) } }
+          ))
+          VStack(alignment: .leading, spacing: 6) {
+            HStack {
+              Text("Wake Threshold")
+              Spacer()
+              Text(store.voiceSettings.wakeThreshold.formatted(.number.precision(.fractionLength(2))))
+                .foregroundColor(.secondary)
+            }
+            Slider(
+              value: Binding(
+                get: { store.voiceSettings.wakeThreshold },
+                set: { value in store.updateVoiceSettings { $0.wakeThreshold = value } }
+              ),
+              in: 0.01...0.99
+            )
+          }
+          TextField("Welcome Text", text: Binding(
+            get: { store.voiceSettings.welcomeText },
+            set: { value in store.updateVoiceSettings { $0.welcomeText = value } }
+          ))
+        }
+        Section("Routing") {
+          Picker("Voice Routing", selection: Binding(
+            get: { store.voiceSettings.routingMode },
+            set: { value in store.updateVoiceSettings { $0.routingMode = value } }
+          )) {
+            ForEach(VoiceRoutingMode.allCases) { mode in
+              Text(mode.displayTitle).tag(mode)
+            }
+          }
+          Picker("Default Target", selection: Binding(
+            get: { store.voiceSettings.targetContactId },
+            set: { value in store.updateVoiceSettings { $0.targetContactId = value } }
+          )) {
+            ForEach(store.visibleContacts) { contact in
+              Text(contact.displayName).tag(contact.id)
+            }
+          }
         }
         Section("Recorder") {
           if speech.isRecording {

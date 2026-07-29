@@ -16,7 +16,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style language policy settings for interface preference, model response language, ASR locale, and TTS language
 - Android-compatible encrypted `.hcbak` backup envelope with iOS local state, Link peers, voice settings, messages, and cloud API secrets restore
 - QR scanning with AVFoundation
-- Speech recognition and microphone capture settings with iOS permission prompts
+- Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, and voice routing preferences
 - UserNotifications integration for incoming background messages
 
 ## Compatibility Note

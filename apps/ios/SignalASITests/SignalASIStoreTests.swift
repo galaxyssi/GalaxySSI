@@ -154,6 +154,26 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(prompt.contains("Reply in Simplified Chinese"))
   }
 
+  func testVoiceSettingsNormalizeAdvancedAndroidParityFields() {
+    let store = makeStore()
+
+    store.updateVoiceSettings {
+      $0.wakeWords = VoiceSettings.wakeWords(from: " SignalASI, , hello, custom wake ")
+      $0.wakeThreshold = 2
+      $0.welcomeText = "  "
+      $0.targetContactId = ""
+      $0.speakReplies = false
+      $0.routingMode = .contact
+    }
+
+    XCTAssertEqual(store.voiceSettings.wakeWords, ["SignalASI", "hello", "custom wake"])
+    XCTAssertEqual(store.voiceSettings.wakeThreshold, 0.99)
+    XCTAssertEqual(store.voiceSettings.welcomeText, VoiceSettings.defaultWelcomeText)
+    XCTAssertEqual(store.voiceSettings.targetContactId, "hermes")
+    XCTAssertFalse(store.voiceSettings.speakReplies)
+    XCTAssertEqual(store.voiceSettings.routingMode, .contact)
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
