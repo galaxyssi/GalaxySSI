@@ -1827,6 +1827,57 @@ final class SignalASIStoreTests: XCTestCase {
     }
   }
 
+  func testAgentMcpPackageManifestCodecDecodesDeclarativeHttpAndDynamicAuthExchange() throws {
+    let manifest = try AgentMcpPackageManifestCodec.decode(mcpDeclarativePackageManifest())
+    let exchange = manifest.authProfiles.first?.steps.first?.exchange
+    let tool = try XCTUnwrap(manifest.tools.first)
+
+    XCTAssertEqual(manifest.id, "example.relay")
+    XCTAssertEqual(manifest.endpoint, "https://relay.example/api/")
+    XCTAssertEqual(manifest.transport, .declarativeHTTP)
+    XCTAssertEqual(manifest.authProfiles.first?.method, .dynamic)
+    XCTAssertEqual(exchange?.pathTemplate, "/api/login")
+    XCTAssertEqual(exchange?.responseMappings["access_token"], "$.session.access_token")
+    XCTAssertEqual(exchange?.acceptedStatusCodes, Set([200, 201]))
+    XCTAssertEqual(tool.name, "relay.switch")
+    XCTAssertEqual(tool.method, "POST")
+    XCTAssertEqual(tool.pathTemplate, "/api/relay/{{args.device_id}}")
+    XCTAssertEqual(tool.inputSchema["type"], .string("object"))
+    XCTAssertTrue(tool.mutating)
+    XCTAssertTrue(try AgentMcpPackageManifestCodec.encode(manifest).contains(#""declarative_http""#))
+  }
+
+  func testAgentMcpPackageManifestCodecAcceptsSandboxedLocalStdioRuntime() throws {
+    let manifest = try AgentMcpPackageManifestCodec.decode(mcpLocalStdioPackageManifest())
+    let runtime = try XCTUnwrap(manifest.localRuntime)
+
+    XCTAssertEqual(manifest.transport, .localStdio)
+    XCTAssertEqual(manifest.endpoint, "local-mcp:example.local_mcp")
+    XCTAssertEqual(runtime.language, .python)
+    XCTAssertEqual(runtime.entrypoint, "runtime/server.py")
+    XCTAssertEqual(runtime.arguments, ["--stdio"])
+    XCTAssertEqual(runtime.environment["ACCESS_TOKEN"], "{{auth.access_token}}")
+    XCTAssertTrue(runtime.allowedNetworkDomains.isEmpty)
+    XCTAssertEqual(runtime.timeoutMillis, 45_000)
+    let encoded = try AgentMcpPackageManifestCodec.encode(manifest)
+    XCTAssertTrue(encoded.contains(#""local_stdio""#))
+    XCTAssertTrue(encoded.contains(#""timeout_ms":45000"#))
+  }
+
+  func testAgentMcpPackageManifestCodecRejectsUnsafeLocalRuntimeAndHttpAuthExchange() {
+    XCTAssertThrowsError(try AgentMcpPackageManifestCodec.decode(
+      mcpLocalStdioPackageManifest(entrypoint: "../server.py")
+    ))
+    XCTAssertThrowsError(try AgentMcpPackageManifestCodec.decode(
+      mcpLocalStdioPackageManifest(authentication: """
+      [{"method":"username_password","steps":[{"id":"login","title":"Sign in","fields":[],"exchange":{"method":"POST","path":"/login"}}]}]
+      """)
+    ))
+    XCTAssertThrowsError(try AgentMcpPackageManifestCodec.decode(
+      mcpLocalStdioPackageManifest(allowedNetworkDomains: #""example.com""#)
+    ))
+  }
+
   func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
     let skill = AgentDefaultCapabilityCatalog.skill("signalasi.catalog.github-triage")!
     let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 1_000 })
@@ -12619,6 +12670,105 @@ final class SignalASIStoreTests: XCTestCase {
       annotations: annotations,
       raw: ["name": .string(name)]
     )
+  }
+
+  private func mcpDeclarativePackageManifest() -> String {
+    #"""
+    {
+      "format_version": 1,
+      "id": "example.relay",
+      "version": "1.0.0",
+      "name": "Relay Controller",
+      "description": "Authenticated relay control",
+      "catalog_id": "signalasi.mcp.relay",
+      "author": "SignalASI",
+      "website": "https://relay.example",
+      "transport": {
+        "type": "declarative_http",
+        "endpoint": "https://relay.example/api/"
+      },
+      "authentication": [
+        {
+          "method": "dynamic",
+          "access_token_ttl_seconds": 86400,
+          "steps": [
+            {
+              "id": "login",
+              "title": "Sign in",
+              "fields": [
+                {"id": "username", "label": "Username", "type": "text"},
+                {"id": "password", "label": "Password", "type": "password"}
+              ],
+              "exchange": {
+                "method": "POST",
+                "path": "/api/login",
+                "body_template": "{\"username\":{{field.username}},\"password\":{{field.password}}}",
+                "response_mappings": {
+                  "access_token": "$.session.access_token"
+                },
+                "accepted_status_codes": [200, 201]
+              }
+            }
+          ]
+        }
+      ],
+      "tools": [
+        {
+          "name": "relay.switch",
+          "title": "Switch relay",
+          "description": "Turns a relay on or off",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "device_id": {"type": "string"},
+              "enabled": {"type": "boolean"}
+            },
+            "required": ["device_id", "enabled"]
+          },
+          "request": {
+            "method": "POST",
+            "path": "/api/relay/{{args.device_id}}",
+            "headers": {
+              "Authorization": "Bearer {{auth.access_token}}"
+            },
+            "body_template": "{\"enabled\":{{args.enabled}}}"
+          },
+          "result_json_path": "$.relay",
+          "mutating": true
+        }
+      ]
+    }
+    """#
+  }
+
+  private func mcpLocalStdioPackageManifest(
+    entrypoint: String = "runtime/server.py",
+    authentication: String = #"[{"method":"bearer_token"}]"#,
+    allowedNetworkDomains: String = ""
+  ) -> String {
+    let domains = allowedNetworkDomains.isEmpty ? "[]" : "[\(allowedNetworkDomains)]"
+    return #"""
+    {
+      "format_version": 1,
+      "id": "example.local_mcp",
+      "version": "1.0.0",
+      "name": "Local MCP",
+      "description": "Runs inside the on-device Linux sandbox",
+      "transport": {
+        "type": "local_stdio",
+        "runtime": "python",
+        "entrypoint": "\#(entrypoint)",
+        "arguments": ["--stdio"],
+        "environment": {
+          "ACCESS_TOKEN": "{{auth.access_token}}"
+        },
+        "allowed_network_domains": \#(domains),
+        "timeout_ms": 45000
+      },
+      "authentication": \#(authentication),
+      "tools": []
+    }
+    """#
   }
 
   private func transcriptEntry(
