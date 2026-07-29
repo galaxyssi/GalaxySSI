@@ -5,7 +5,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 ## Current Scope
 
 - SwiftUI app target and XCTest target in `SignalASI.xcodeproj`
-- Chats and contacts backed by a local Codable store, including searchable chat/contact lists, local message deletion, chat history clearing, message details, and delivery trace inspection
+- Chats and contacts backed by a local Codable store, including searchable chat/contact lists, unread conversation summaries, local message deletion, chat history clearing, message details, and delivery trace inspection
 - Android-compatible SignalASI Link v1 QR validation, route generation, pairing claim encryption, envelope creation, and envelope validation
 - Native MQTT 3.1.1 transport over TLS for pairing topics, Link topics, and background message delivery handoff
 - Durable Link outbox, exponential retry, delivery acknowledgements, Android-style delivery trace stages, inbound dedupe, and Android-compatible `signal-chunk` MQTT payload chunking

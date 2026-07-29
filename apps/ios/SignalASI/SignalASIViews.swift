@@ -60,7 +60,7 @@ struct ChatListView: View {
         } else {
           ForEach(filteredContacts) { contact in
             NavigationLink(destination: ConversationView(contactId: contact.id)) {
-              ContactRow(contact: contact, latestMessage: store.messages(for: contact.id).last)
+              ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
             }
           }
         }
@@ -73,7 +73,7 @@ struct ChatListView: View {
 
 struct ContactRow: View {
   var contact: SignalASIContact
-  var latestMessage: ChatMessage?
+  var summary: ContactConversationSummary
 
   var body: some View {
     HStack(spacing: 12) {
@@ -82,17 +82,29 @@ struct ContactRow: View {
         HStack {
           Text(contact.displayName)
             .font(.headline)
+            .fontWeight(summary.hasUnreadMessages ? .semibold : .regular)
           Spacer()
-          if let latestMessage {
+          if let latestMessage = summary.lastMessage {
             Text(latestMessage.createdAt, style: .time)
               .font(.caption)
               .foregroundColor(.secondary)
           }
         }
-        Text(latestMessage?.content ?? contact.setupDetail)
+        Text(summary.lastMessage?.content ?? contact.setupDetail)
           .lineLimit(1)
           .font(.subheadline)
-          .foregroundColor(.secondary)
+          .foregroundColor(summary.hasUnreadMessages ? .primary : .secondary)
+      }
+      if summary.hasUnreadMessages {
+        Text(summary.unreadCount > 99 ? "99+" : "\(summary.unreadCount)")
+          .font(.caption2.weight(.semibold))
+          .monospacedDigit()
+          .foregroundColor(.white)
+          .frame(minWidth: 22)
+          .padding(.horizontal, 5)
+          .padding(.vertical, 3)
+          .background(Capsule().fill(Color.accentColor))
+          .accessibilityLabel(Text("\(summary.unreadCount) unread messages"))
       }
     }
     .padding(.vertical, 4)
@@ -148,6 +160,7 @@ struct ConversationView: View {
           if let last = store.messages(for: contact.id).last {
             withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
           }
+          store.markContactRead(contact.id)
         }
       }
       Divider()
@@ -196,6 +209,9 @@ struct ConversationView: View {
     }
     .navigationTitle(contact.displayName)
     .navigationBarTitleDisplayMode(.inline)
+    .onAppear {
+      store.markContactRead(contact.id)
+    }
     .toolbar {
       ToolbarItem(placement: .navigationBarTrailing) {
         Button(role: .destructive) {
@@ -420,7 +436,7 @@ struct ContactsView: View {
           } else {
             ForEach(filteredContacts) { contact in
               NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
-                ContactRow(contact: contact, latestMessage: store.messages(for: contact.id).last)
+                ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
               }
             }
           }
