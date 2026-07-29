@@ -1677,6 +1677,148 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(hardened.validation.valid)
   }
 
+  func testAgentVisualGroundingAnalyzesRolesAndAndroidWireNames() throws {
+    let scene = AgentVisualGrounding.analyze(
+      rawElements: [
+        AgentVisualElement(text: "  Continue\nnow ", bounds: "20,1500,320,1580", confidence: 1.4),
+        AgentVisualElement(text: "Continue now", bounds: "20,1500,320,1580", confidence: 0.9),
+        AgentVisualElement(text: "Account Settings", bounds: "20,20,600,110", confidence: 0.8),
+        AgentVisualElement(text: "Email address", bounds: "30,620,860,690", confidence: 0.7),
+        AgentVisualElement(text: "Home", bounds: "20,1650,200,1740", confidence: 0.6),
+        AgentVisualElement(text: " ", bounds: "10,10,20,20"),
+        AgentVisualElement(text: "Broken", bounds: "10,10,8,20")
+      ],
+      width: 1_080,
+      height: 1_800,
+      timestampMillis: 12_345
+    )
+    let encoded = try JSONEncoder.signalASI.encode(scene)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let firstElement = try XCTUnwrap((object["elements"] as? [[String: Any]])?.first)
+
+    XCTAssertTrue(scene.available)
+    XCTAssertEqual(scene.width, 1_080)
+    XCTAssertEqual(scene.height, 1_800)
+    XCTAssertEqual(scene.modelProfile, "mlkit-ocr-layout-v1")
+    XCTAssertEqual(scene.timestampMillis, 12_345)
+    XCTAssertEqual(scene.elements.count, 4)
+    XCTAssertEqual(scene.elements.first?.text, "Continue now")
+    XCTAssertEqual(scene.elements.first?.confidence, 1)
+    XCTAssertEqual(scene.elements.first?.role, .button)
+    XCTAssertEqual(scene.elements.first { $0.text == "Account Settings" }?.role, .title)
+    XCTAssertEqual(scene.elements.first { $0.text == "Email address" }?.role, .input)
+    XCTAssertEqual(scene.elements.first { $0.text == "Home" }?.role, .navigation)
+    XCTAssertEqual(scene.actionCandidateCount, 2)
+    XCTAssertEqual(scene.inputCandidateCount, 1)
+    XCTAssertEqual(object["model_profile"] as? String, "mlkit-ocr-layout-v1")
+    XCTAssertEqual(object["action_candidate_count"] as? Int, 2)
+    XCTAssertEqual(object["input_candidate_count"] as? Int, 1)
+    XCTAssertEqual(firstElement["input_candidate"] as? Bool, false)
+    XCTAssertEqual(AgentVisualRole.fromWireValue("list item"), .listItem)
+    XCTAssertEqual(AgentElementOrigin.fromWireValue("fused"), .fused)
+  }
+
+  func testAgentVisualGroundingFusesAccessibilityAndVisualElements() {
+    let accessibility = [
+      agentScreenElement(
+        label: "",
+        viewId: "android:id/button1",
+        className: "Button",
+        bounds: "100,100,300,180",
+        confidence: 0.6,
+        actionable: true
+      )
+    ]
+    let scene = AgentVisualScene(
+      width: 1_080,
+      height: 1_800,
+      elements: [
+        AgentVisualElement(
+          text: "Continue",
+          bounds: "104,104,296,176",
+          confidence: 0.8,
+          role: .button,
+          actionable: true
+        ),
+        AgentVisualElement(
+          text: "Save",
+          bounds: "400,100,620,180",
+          confidence: 0.7,
+          role: .button,
+          actionable: true
+        ),
+        AgentVisualElement(
+          text: "Maybe",
+          bounds: "700,100,820,180",
+          confidence: 0.3,
+          role: .button,
+          actionable: true
+        ),
+        AgentVisualElement(
+          text: "Email",
+          bounds: "80,500,900,580",
+          confidence: 0.9,
+          role: .input,
+          actionable: false,
+          inputCandidate: true
+        )
+      ]
+    )
+
+    let fusedActions = AgentVisualGrounding.fuseClickableElements(accessibilityElements: accessibility, scene: scene)
+    let fusedFields = AgentVisualGrounding.fuseInputFields(accessibilityElements: [], scene: scene)
+
+    XCTAssertEqual(fusedActions.count, 2)
+    XCTAssertEqual(fusedActions[0].label, "Continue")
+    XCTAssertEqual(fusedActions[0].origin, .fused)
+    XCTAssertEqual(fusedActions[0].confidence, 0.8)
+    XCTAssertEqual(fusedActions[0].visualRole, .button)
+    XCTAssertEqual(fusedActions[1].label, "Save")
+    XCTAssertEqual(fusedActions[1].viewId, "visual:button:0")
+    XCTAssertEqual(fusedActions[1].className, "AgentVisualButton")
+    XCTAssertEqual(fusedActions[1].origin, .visualOcr)
+    XCTAssertEqual(fusedFields.count, 1)
+    XCTAssertEqual(fusedFields.first?.label, "Email")
+    XCTAssertEqual(fusedFields.first?.viewId, "visual:input:0")
+    XCTAssertEqual(fusedFields.first?.origin, .visualOcr)
+  }
+
+  func testAgentScreenElementMatcherResolvesAndroidStyleQueries() {
+    let accessibility = agentScreenElement(
+      label: "Continue",
+      viewId: "primary_action",
+      className: "Button",
+      bounds: "10,10,210,80",
+      origin: .accessibility,
+      confidence: 0.8,
+      visualRole: .button
+    )
+    let visual = agentScreenElement(
+      label: "Continue",
+      viewId: "visual:button:0",
+      className: "AgentVisualButton",
+      bounds: "10,10,210,80",
+      origin: .visualOcr,
+      confidence: 0.8,
+      visualRole: .button
+    )
+    let input = agentScreenElement(
+      label: "Email address",
+      viewId: "field_email",
+      className: "EditText",
+      bounds: "10,200,600,280",
+      confidence: 0.7,
+      visualRole: .input
+    )
+    let elements = [visual, input, accessibility]
+
+    XCTAssertEqual(AgentScreenElementMatcher.resolve(query: "Continue", elements: elements), accessibility)
+    XCTAssertEqual(AgentScreenElementMatcher.resolve(query: "primary action", elements: elements), accessibility)
+    XCTAssertEqual(AgentScreenElementMatcher.resolve(query: "email", elements: elements), input)
+    XCTAssertEqual(AgentScreenElementMatcher.resolve(query: "input", elements: elements), input)
+    XCTAssertNil(AgentScreenElementMatcher.resolve(query: "   ", elements: elements))
+  }
+
   func testAgentRemoteApprovalValidTaskApprovalRoundTripsExactDecision() throws {
     let request = try XCTUnwrap(
       AgentRemoteApprovalRequest.fromTaskEvent(
@@ -7945,6 +8087,28 @@ final class SignalASIStoreTests: XCTestCase {
     )
     plan.validation = AgentPlanValidator.validate(plan)
     return plan
+  }
+
+  private func agentScreenElement(
+    label: String,
+    viewId: String,
+    className: String,
+    bounds: String,
+    origin: AgentElementOrigin = .accessibility,
+    confidence: Double = 1,
+    visualRole: AgentVisualRole = .unknown,
+    actionable: Bool = true
+  ) -> AgentScreenElement {
+    AgentScreenElement(
+      label: label,
+      viewId: viewId,
+      className: className,
+      bounds: bounds,
+      origin: origin,
+      confidence: confidence,
+      visualRole: visualRole,
+      actionable: actionable
+    )
   }
 
   private var globalBudgetNow: Int64 { 1_000_000 }
