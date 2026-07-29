@@ -32,6 +32,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style agent team plan bridge for supervised team dispatch specs, synthetic team actions, dependency remapping, retry rekeying, and dynamic team expansion
 - Android-style managed team response delivery for exactly-once connector replies, late response correlation, durable response codecs, and completion dedupe ledgers
 - Android-style cross-team delegation for minimal disclosure envelopes, policy firewall admission, immutable destination review, isolated run requests, and Android wire-compatible receipts
+- Android-style connector response bus for managed response interception, late ledger completion, rich-output fallback text, listener fanout, and bounded pending response storage
 - Android-style execution presentation policy for phone, desktop, cloud, and connected-device task locations
 - Android-style connector failover and timing policy for desktop fallback, transport queues, read-only stale execution, and attachment deadlines
 - Android-style cron expression parser for workflow schedules with time-zone aware next/previous matching

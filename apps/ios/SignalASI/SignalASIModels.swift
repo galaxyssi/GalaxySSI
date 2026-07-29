@@ -4042,6 +4042,373 @@ final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
   }
 }
 
+protocol AgentConnectorResponseListener: AnyObject {
+  func onConnectorResponse(_ response: AgentConnectorResponse)
+}
+
+final class AgentManagedConnectorResponseRegistry {
+  static let shared = AgentManagedConnectorResponseRegistry()
+
+  private struct Interceptor {
+    var ownerId: String
+    var consume: (AgentConnectorResponse) -> Bool
+  }
+
+  private let lock = NSRecursiveLock()
+  private var interceptors: [String: Interceptor] = [:]
+
+  func register(
+    sourceMessageId: Int64,
+    contactId: String = "",
+    ownerId: String,
+    consume: @escaping (AgentConnectorResponse) -> Bool
+  ) throws {
+    guard sourceMessageId > 0 else {
+      throw AgentRuntimeCapabilityError.invalid("Managed response source id must be positive")
+    }
+    let cleanOwner = ownerId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanOwner.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("Managed response owner id must not be blank")
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    interceptors[key(sourceMessageId: sourceMessageId, contactId: contactId)] = Interceptor(
+      ownerId: cleanOwner,
+      consume: consume
+    )
+  }
+
+  func consume(_ response: AgentConnectorResponse) -> Bool {
+    lock.lock()
+    let exactKey = key(sourceMessageId: response.sourceMessageId, contactId: response.contactId)
+    let wildcardKey = key(sourceMessageId: response.sourceMessageId, contactId: "")
+    let interceptor = interceptors.removeValue(forKey: exactKey) ??
+      interceptors.removeValue(forKey: wildcardKey)
+    lock.unlock()
+    guard let interceptor else {
+      return false
+    }
+    return interceptor.consume(response)
+  }
+
+  func unregisterOwner(_ ownerId: String) {
+    let cleanOwner = ownerId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanOwner.isEmpty else {
+      return
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    interceptors = interceptors.filter { $0.value.ownerId != cleanOwner }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    interceptors.removeAll()
+  }
+
+  private func key(sourceMessageId: Int64, contactId: String) -> String {
+    "\(sourceMessageId):\(contactId.trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+}
+
+final class AgentConnectorResponseStore: AgentConnectorResponseSink {
+  static let maxResponses = 30
+  static let maxResponseAgeMillis: Int64 = 24 * 60 * 60 * 1_000
+
+  private let lock = NSRecursiveLock()
+  private let nowMillis: () -> Int64
+  private var responses: [AgentConnectorResponse]
+
+  init(
+    serialized: String = "[]",
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.nowMillis = nowMillis
+    self.responses = AgentConnectorResponseStoreCodec.decode(serialized, nowMillis: nowMillis())
+  }
+
+  @discardableResult
+  func publish(_ response: AgentConnectorResponse) -> Bool {
+    append(response)
+  }
+
+  @discardableResult
+  func append(_ response: AgentConnectorResponse) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = max(nowMillis(), 0)
+    guard let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: now) else {
+      responses = pendingLocked(nowMillis: now)
+      return false
+    }
+    responses = (pendingLocked(nowMillis: now).filter {
+      !($0.sourceMessageId == normalized.sourceMessageId && $0.contactId == normalized.contactId)
+    } + [normalized])
+      .sorted { $0.receivedAtMillis < $1.receivedAtMillis }
+      .suffix(Self.maxResponses)
+      .map { $0 }
+    return true
+  }
+
+  func pending() -> [AgentConnectorResponse] {
+    pending(nowMillis: nowMillis())
+  }
+
+  func pending(nowMillis: Int64) -> [AgentConnectorResponse] {
+    lock.lock()
+    defer { lock.unlock() }
+    responses = pendingLocked(nowMillis: max(nowMillis, 0))
+    return responses
+  }
+
+  func remove(_ response: AgentConnectorResponse) {
+    lock.lock()
+    defer { lock.unlock() }
+    responses = pendingLocked(nowMillis: nowMillis()).filter {
+      !($0.sourceMessageId == response.sourceMessageId && $0.contactId == response.contactId)
+    }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    responses.removeAll()
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    responses = pendingLocked(nowMillis: nowMillis())
+    return AgentConnectorResponseStoreCodec.encode(responses)
+  }
+
+  private func pendingLocked(nowMillis: Int64) -> [AgentConnectorResponse] {
+    let cutoff = nowMillis - Self.maxResponseAgeMillis
+    return responses.compactMap { response in
+      guard response.receivedAtMillis >= cutoff else {
+        return nil
+      }
+      return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
+    }
+  }
+}
+
+final class AgentConnectorResponseBus {
+  private let lock = NSRecursiveLock()
+  private var listeners: [UUID: (AgentConnectorResponse) -> Void] = [:]
+  private let registry: AgentManagedConnectorResponseRegistry
+  private let managedLedger: AgentManagedResponseLedger?
+  private let store: AgentConnectorResponseStore
+  private let nowMillis: () -> Int64
+
+  init(
+    registry: AgentManagedConnectorResponseRegistry = .shared,
+    managedLedger: AgentManagedResponseLedger? = nil,
+    store: AgentConnectorResponseStore = AgentConnectorResponseStore(),
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.registry = registry
+    self.managedLedger = managedLedger
+    self.store = store
+    self.nowMillis = nowMillis
+  }
+
+  @discardableResult
+  func addListener(_ listener: @escaping (AgentConnectorResponse) -> Void) -> UUID {
+    lock.lock()
+    defer { lock.unlock() }
+    let token = UUID()
+    listeners[token] = listener
+    return token
+  }
+
+  func removeListener(_ token: UUID) {
+    lock.lock()
+    defer { lock.unlock() }
+    listeners.removeValue(forKey: token)
+  }
+
+  @discardableResult
+  func publish(_ response: AgentConnectorResponse) -> Bool {
+    guard let normalized = AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis()) else {
+      return false
+    }
+    if registry.consume(normalized) {
+      return true
+    }
+    if managedLedger?.complete(normalized) != nil {
+      return true
+    }
+    store.append(normalized)
+    let callbacks: [(AgentConnectorResponse) -> Void]
+    lock.lock()
+    callbacks = Array(listeners.values)
+    lock.unlock()
+    callbacks.forEach { $0(normalized) }
+    return false
+  }
+
+  func pending() -> [AgentConnectorResponse] {
+    store.pending()
+  }
+
+  func remove(_ response: AgentConnectorResponse) {
+    store.remove(response)
+  }
+
+  func clear() {
+    store.clear()
+    registry.clear()
+    lock.lock()
+    defer { lock.unlock() }
+    listeners.removeAll()
+  }
+}
+
+enum AgentConnectorResponseStoreCodec {
+  static func encode(_ responses: [AgentConnectorResponse]) -> String {
+    AgentMcpJSONCodec.stringify(.array(responses.map(responseObject)))
+  }
+
+  static func decode(
+    _ raw: String,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [AgentConnectorResponse] {
+    guard let data = raw.data(using: .utf8),
+          let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
+      return []
+    }
+    let cutoff = max(nowMillis, 0) - AgentConnectorResponseStore.maxResponseAgeMillis
+    return values.compactMap { value in
+      guard case .object(let object) = value else {
+        return nil
+      }
+      let receivedAt = object.int64("received_at") > 0
+        ? object.int64("received_at")
+        : object.int64("received_at_millis")
+      let response = AgentConnectorResponse(
+        sourceMessageId: object.int64("source_message_id"),
+        contactId: object.string("contact_id"),
+        content: object.string("content"),
+        conversationId: object.string("conversation_id"),
+        turnId: object.string("turn_id"),
+        taskId: object.string("task_id"),
+        success: object["success"] == nil ? true : object.bool("success"),
+        inputTokens: object.int64("input_tokens"),
+        outputTokens: object.int64("output_tokens"),
+        costMicros: object.int64("cost_micros"),
+        richOutputJson: object.string("rich_output"),
+        receivedAtMillis: receivedAt
+      )
+      guard receivedAt >= cutoff else {
+        return nil
+      }
+      return AgentConnectorResponseNormalizer.normalized(response, nowMillis: nowMillis)
+    }
+  }
+
+  private static func responseObject(_ response: AgentConnectorResponse) -> AgentMcpJSONValue {
+    .object([
+      "source_message_id": .int(response.sourceMessageId),
+      "contact_id": .string(response.contactId),
+      "content": .string(String(response.content.prefix(AgentConnectorResponse.maxContentCharacters))),
+      "conversation_id": .string(response.conversationId),
+      "turn_id": .string(response.turnId),
+      "task_id": .string(response.taskId),
+      "success": .bool(response.success),
+      "input_tokens": .int(response.inputTokens),
+      "output_tokens": .int(response.outputTokens),
+      "cost_micros": .int(response.costMicros),
+      "rich_output": .string(AgentConnectorRichOutput.normalize(response.richOutputJson)),
+      "received_at": .int(response.receivedAtMillis)
+    ])
+  }
+}
+
+enum AgentConnectorResponseNormalizer {
+  static func normalized(
+    _ response: AgentConnectorResponse,
+    nowMillis: Int64
+  ) -> AgentConnectorResponse? {
+    guard response.sourceMessageId > 0 else {
+      return nil
+    }
+    let richOutput = AgentConnectorRichOutput.normalize(response.richOutputJson)
+    let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? AgentConnectorRichOutput.fallbackText(richOutput)
+      : response.content
+    guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+      !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    return AgentConnectorResponse(
+      sourceMessageId: response.sourceMessageId,
+      contactId: response.contactId,
+      content: String(content.prefix(AgentConnectorResponse.maxContentCharacters)),
+      conversationId: response.conversationId,
+      turnId: response.turnId,
+      taskId: response.taskId,
+      success: response.success,
+      inputTokens: response.inputTokens,
+      outputTokens: response.outputTokens,
+      costMicros: response.costMicros,
+      richOutputJson: richOutput,
+      receivedAtMillis: response.receivedAtMillis > 0 ? response.receivedAtMillis : max(nowMillis, 0)
+    )
+  }
+}
+
+enum AgentConnectorRichOutput {
+  static func normalize(_ raw: String) -> String {
+    let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty,
+          clean.count <= maxSerializedCharacters,
+          let data = clean.data(using: .utf8),
+          let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+          (object["version"] as? Int ?? 1) <= 1,
+          renderableBlocks(in: object).isEmpty == false else {
+      return ""
+    }
+    return clean
+  }
+
+  static func fallbackText(_ raw: String) -> String {
+    guard let data = raw.data(using: .utf8),
+          let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+      return ""
+    }
+    for block in renderableBlocks(in: object) {
+      for key in ["text", "title", "fallback_text", "uri"] {
+        if let value = block[key] as? String {
+          let clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !clean.isEmpty {
+            return String(clean.prefix(AgentConnectorResponse.maxContentCharacters))
+          }
+        }
+      }
+    }
+    return ""
+  }
+
+  private static func renderableBlocks(in object: [String: Any]) -> [[String: Any]] {
+    guard let blocks = object["blocks"] as? [[String: Any]] else {
+      return []
+    }
+    return blocks.prefix(maxBlocks).filter { block in
+      ["text", "title", "fallback_text", "uri", "data_b64"].contains { key in
+        guard let value = block[key] as? String else {
+          return false
+        }
+        return !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      }
+    }
+  }
+
+  private static let maxBlocks = 100
+  private static let maxSerializedCharacters = 640 * 1_024
+}
+
 enum AgentManagedResponseState: String, Codable, CaseIterable, Identifiable {
   case pending = "PENDING"
   case completed = "COMPLETED"
