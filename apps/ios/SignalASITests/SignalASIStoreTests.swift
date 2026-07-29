@@ -731,6 +731,113 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentConfirmationPolicy.tier(for: connectorAction), .direct)
   }
 
+  func testAgentActionRecoveryModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder.signalASI.decode(
+      AgentActionResult.self,
+      from: Data(#"{"action_id":"home-1","success":false,"message":"Timed out","metadata":{"code":"timeout"}}"#.utf8)
+    )
+    XCTAssertEqual(decoded.actionId, "home-1")
+    XCTAssertFalse(decoded.success)
+    XCTAssertEqual(decoded.metadata["code"], "timeout")
+
+    let observation = agentObservation(.changedAndStable, sampleCount: 2, durationMillis: 500, changed: true, stable: true)
+    let encoded = try JSONEncoder.signalASI.encode(observation)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let screen = try XCTUnwrap(object["screen"] as? [String: Any])
+
+    XCTAssertEqual(object["decision"] as? String, "CHANGED_AND_STABLE")
+    XCTAssertEqual(object["sample_count"] as? Int, 2)
+    XCTAssertEqual(object["duration_millis"] as? Int, 500)
+    XCTAssertEqual(object["screen_changed"] as? Bool, true)
+    XCTAssertEqual(object["screen_stable"] as? Bool, true)
+    XCTAssertEqual(screen["foreground_app"] as? String, "SpringBoard")
+    XCTAssertEqual(screen["visible_text_count"] as? Int, 3)
+  }
+
+  func testAgentActionRecoveryRetriesLowRiskNavigationTimeoutOnce() {
+    var retryCount = 0
+    let failed = AgentActionResult(actionId: "home-1", success: false, message: "Timed out")
+    let outcome = AgentActionRecoveryController().recover(
+      action: agentRecoveryAction(id: "home-1", kind: .home, risk: .low),
+      failedResult: failed,
+      failedObservation: agentObservation(.timedOut, changed: false, stable: false)
+    ) {
+      retryCount += 1
+      return AgentRecoveryAttempt(
+        result: AgentActionResult(actionId: "home-1", success: true, message: "Home opened"),
+        observation: agentObservation(.changedAndStable, sampleCount: 2, durationMillis: 250, changed: true, stable: true)
+      )
+    }
+
+    XCTAssertEqual(retryCount, 1)
+    XCTAssertEqual(outcome.decision, .retrySucceeded)
+    XCTAssertEqual(outcome.attemptCount, 1)
+    XCTAssertEqual(outcome.result?.success, true)
+    XCTAssertEqual(outcome.observation.decision, .changedAndStable)
+  }
+
+  func testAgentActionRecoveryRequiresManualForUnsafeOrNonTimeoutFailures() {
+    let failed = AgentActionResult(actionId: "tap-1", success: false, message: "Timed out")
+    var retryCount = 0
+
+    let unsafeTap = AgentActionRecoveryController().recover(
+      action: agentRecoveryAction(id: "tap-1", kind: .tap, risk: .low),
+      failedResult: failed,
+      failedObservation: agentObservation(.timedOut, changed: false, stable: false)
+    ) {
+      retryCount += 1
+      return AgentRecoveryAttempt(result: nil, observation: agentObservation(.timedOut))
+    }
+    let highRiskHome = AgentActionRecoveryController().recover(
+      action: agentRecoveryAction(id: "home-1", kind: .home, risk: .high),
+      failedResult: failed,
+      failedObservation: agentObservation(.timedOut, changed: false, stable: false)
+    ) {
+      retryCount += 1
+      return AgentRecoveryAttempt(result: nil, observation: agentObservation(.timedOut))
+    }
+    let nonTimeoutHome = AgentActionRecoveryController().recover(
+      action: agentRecoveryAction(id: "home-2", kind: .home, risk: .low),
+      failedResult: failed,
+      failedObservation: agentObservation(.actionFailed, changed: false, stable: false)
+    ) {
+      retryCount += 1
+      return AgentRecoveryAttempt(result: nil, observation: agentObservation(.timedOut))
+    }
+
+    XCTAssertEqual(unsafeTap.decision, .manualRequired)
+    XCTAssertEqual(highRiskHome.decision, .manualRequired)
+    XCTAssertEqual(nonTimeoutHome.decision, .manualRequired)
+    XCTAssertEqual(retryCount, 0)
+  }
+
+  func testAgentActionRecoverySkipsRetryWhenFailureIsAbsent() {
+    var retryCount = 0
+    let successful = AgentActionResult(actionId: "open-1", success: true, message: "Opened")
+    let controller = AgentActionRecoveryController()
+
+    let nilResult = controller.recover(
+      action: agentRecoveryAction(id: "open-1", kind: .openApp, risk: .low),
+      failedResult: nil,
+      failedObservation: agentObservation(.timedOut, changed: false, stable: false)
+    ) {
+      retryCount += 1
+      return AgentRecoveryAttempt(result: nil, observation: agentObservation(.timedOut))
+    }
+    let successResult = controller.recover(
+      action: agentRecoveryAction(id: "open-1", kind: .openApp, risk: .low),
+      failedResult: successful,
+      failedObservation: agentObservation(.timedOut, changed: false, stable: false)
+    ) {
+      retryCount += 1
+      return AgentRecoveryAttempt(result: nil, observation: agentObservation(.timedOut))
+    }
+
+    XCTAssertEqual(nilResult.decision, .notNeeded)
+    XCTAssertEqual(successResult.decision, .notNeeded)
+    XCTAssertEqual(retryCount, 0)
+  }
+
   func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
     let desktop = AgentExecutionPresentationPolicy.local(
       routeKind: .desktopAgent,
@@ -2221,6 +2328,45 @@ final class SignalASIStoreTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suite)!
     defaults.removePersistentDomain(forName: suite)
     return SignalASIStore(defaults: defaults, secrets: secrets)
+  }
+
+  private func agentRecoveryAction(
+    id: String,
+    kind: AgentActionKind,
+    risk: AgentRisk
+  ) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: kind,
+      target: "iOS",
+      risk: risk,
+      status: .failed,
+      description: "Recover \(kind.rawValue)"
+    )
+  }
+
+  private func agentObservation(
+    _ decision: AgentObservationDecision,
+    sampleCount: Int = 1,
+    durationMillis: Int64 = 0,
+    changed: Bool = false,
+    stable: Bool = false
+  ) -> AgentObservationOutcome {
+    AgentObservationOutcome(
+      screen: AgentScreenContext(
+        foregroundApp: "SpringBoard",
+        pageTitle: "Home",
+        visibleTextCount: 3,
+        clickableNodeCount: 2,
+        isAccessibilityEnabled: true
+      ),
+      decision: decision,
+      sampleCount: sampleCount,
+      durationMillis: durationMillis,
+      screenChanged: changed,
+      screenStable: stable,
+      evidence: "decision=\(decision.rawValue); samples=\(sampleCount)"
+    )
   }
 
   private func finalTranscriptEntry(
