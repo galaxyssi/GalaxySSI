@@ -218,10 +218,12 @@ object AgentDesktopRemoteNativeTools {
 
     fun updateManifest(context: Context, payload: JSONObject) {
         DesktopToolCapabilityStore.update(context, payload)
+        AgentDesktopMarketplaceStore.update(context, payload)
     }
 
     fun removeDesktop(context: Context, desktopId: String) {
         DesktopToolCapabilityStore.remove(context, desktopId)
+        AgentDesktopMarketplaceStore.remove(context, desktopId)
     }
 
     fun handleInbound(payload: JSONObject): Boolean = DesktopToolTransport.handleInbound(payload)

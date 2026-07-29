@@ -1552,8 +1552,13 @@
     <string name="agent_attachment_clarify_check">- Check a specific problem</string>
     <string name="agent_attachment_clarify_close">Give me one goal and I will handle it directly.</string>
     <string name="agent_attachment_name_separator">, </string>
-    <string name="agent_capability_library_title">MCP &amp; Skills</string>
-    <string name="agent_capability_library_subtitle">Connect trusted tools and install reusable Agent workflows</string>
+    <string name="agent_capability_library_title">Tool Marketplace</string>
+    <string name="agent_capability_library_subtitle">Install trusted local tools, MCP connections, and reusable automations</string>
+    <string name="agent_marketplace_tools">Tools</string>
+    <string name="agent_marketplace_automations">Automations</string>
+    <string name="agent_marketplace_built_in">Built in</string>
+    <string name="agent_marketplace_needs_attention">Needs attention</string>
+    <string name="agent_marketplace_paired_desktops">Paired Desktops</string>
     <string name="agent_capability_installed">Installed</string>
     <string name="agent_capability_recommended">Recommended</string>
     <string name="agent_capability_add">Add</string>

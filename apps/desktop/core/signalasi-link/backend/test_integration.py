@@ -151,6 +151,8 @@ class BackendIntegrationContractTest(unittest.TestCase):
                 "/api/pairing/status",
                 "/api/pairing/qr",
                 "/api/desktop-tools",
+                "/api/tool-marketplace",
+                "/api/tool-marketplace/{item_id}/install",
                 "/api/desktop-runtime",
                 "/api/agent-adapters",
                 "/api/commands",

@@ -9,6 +9,15 @@ enum MqttPublishResult: Equatable {
   case published
   case queued
   case failed
+
+  var accepted: Bool {
+    switch self {
+    case .published, .queued:
+      return true
+    case .failed:
+      return false
+    }
+  }
 }
 
 protocol SignalASILinkTransport: AnyObject {

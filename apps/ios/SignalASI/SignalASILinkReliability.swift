@@ -348,6 +348,92 @@ enum SignalASILinkRetryPolicy {
   }
 }
 
+enum MqttPublishGuard {
+  static func attempt<T>(_ operation: () throws -> T) -> Result<T, Error> {
+    Result { try operation() }
+  }
+}
+
+enum MqttOutboxDispatchPolicy {
+  static func result(connected: Bool, published: Bool) -> MqttPublishResult {
+    connected && published ? .published : .queued
+  }
+}
+
+final class MqttConnectionRetryPolicy {
+  private let delaysMillis: [Int64]
+  private var attempt = 0
+  private let lock = NSLock()
+
+  init(delaysMillis: [Int64] = [2_000, 5_000, 10_000, 20_000, 30_000]) {
+    precondition(!delaysMillis.isEmpty)
+    precondition(delaysMillis.allSatisfy { $0 >= 0 })
+    self.delaysMillis = delaysMillis
+  }
+
+  func nextDelayMillis() -> Int64 {
+    lock.lock()
+    defer { lock.unlock() }
+    let delay = delaysMillis[min(attempt, delaysMillis.count - 1)]
+    attempt += 1
+    return delay
+  }
+
+  func reset() {
+    lock.lock()
+    attempt = 0
+    lock.unlock()
+  }
+}
+
+enum MqttSubscriptionAttemptOutcome: String, Codable, Equatable {
+  case stale = "STALE"
+  case pending = "PENDING"
+  case ready = "READY"
+  case retry = "RETRY"
+}
+
+final class MqttSubscriptionRecoveryState {
+  private var generation = 0
+  private var remaining = 0
+  private var failed = false
+  private let lock = NSLock()
+
+  func begin(subscriptionCount: Int) -> Int {
+    precondition(subscriptionCount > 0)
+    lock.lock()
+    defer { lock.unlock() }
+    generation += 1
+    remaining = subscriptionCount
+    failed = false
+    return generation
+  }
+
+  func complete(generation attemptGeneration: Int, succeeded: Bool) -> MqttSubscriptionAttemptOutcome {
+    lock.lock()
+    defer { lock.unlock() }
+    guard attemptGeneration == generation, remaining > 0 else {
+      return .stale
+    }
+    if !succeeded {
+      failed = true
+    }
+    remaining -= 1
+    if remaining > 0 {
+      return .pending
+    }
+    return failed ? .retry : .ready
+  }
+
+  func invalidate() {
+    lock.lock()
+    generation += 1
+    remaining = 0
+    failed = false
+    lock.unlock()
+  }
+}
+
 enum SignalASIMqttWireChunking {
   static let scheme = "signal-chunk"
   static let defaultDirectLimitBytes = 48 * 1024

@@ -1459,8 +1459,13 @@
     <string name="agent_attachment_clarify_check">- 检查某个问题</string>
     <string name="agent_attachment_clarify_close">你给我一句目标，我就直接处理。</string>
     <string name="agent_attachment_name_separator">、</string>
-    <string name="agent_capability_library_title">MCP 与技能</string>
-    <string name="agent_capability_library_subtitle">连接可信工具，并安装可复用的智能体工作流</string>
+    <string name="agent_capability_library_title">工具市场</string>
+    <string name="agent_capability_library_subtitle">安装可信本地工具、MCP 连接与可复用自动化</string>
+    <string name="agent_marketplace_tools">工具</string>
+    <string name="agent_marketplace_automations">自动化</string>
+    <string name="agent_marketplace_built_in">内置</string>
+    <string name="agent_marketplace_needs_attention">需要处理</string>
+    <string name="agent_marketplace_paired_desktops">已配对电脑</string>
     <string name="agent_capability_installed">已安装</string>
     <string name="agent_capability_recommended">推荐</string>
     <string name="agent_capability_add">添加</string>

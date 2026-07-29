@@ -166,8 +166,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val AGENT_BRAND_LOGO_MAX_DP = 56
         private const val EXTRA_REOPEN_CONTROL_CENTER_CHILD = "signalasi_reopen_control_center_child"
         private const val CONTROL_CENTER_CHILD_TEXT_SIZE = "text_size"
+        private const val CAPABILITY_KIND_NATIVE_TOOL = "native_tool"
         private const val CAPABILITY_KIND_MCP = "mcp"
-        private const val CAPABILITY_KIND_SKILL = "skill"
+        private const val CAPABILITY_KIND_AUTOMATION = "automation"
         private const val MAX_AGENT_ATTACHMENTS = 10
         private const val MAX_AGENT_ATTACHMENT_BYTES = 20L * 1024L * 1024L
         private const val MAX_CONNECTOR_PROGRESS_TEXT_CHARACTERS = 2_000
@@ -7050,7 +7051,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 R.string.agent_capability_library_title,
                                 R.string.agent_capability_library_subtitle,
                                 R.drawable.ic_agent_skill,
-                                (agentMcpRegistry.list().size + agentSkillRuntime.list(enabledOnly = true).map { it.id }.distinct().size).toString(),
+                                AgentDefaultCapabilityCatalog.marketplaceItems(
+                                    mobileNativeAgent.nativeToolCatalog(),
+                                    agentMcpRegistry.list(),
+                                    agentSkillRuntime.list()
+                                ).count {
+                                    it.installState in setOf(
+                                        AgentMarketplaceInstallState.BUILT_IN,
+                                        AgentMarketplaceInstallState.INSTALLED
+                                    )
+                                }.toString(),
                                 ControlCenterTone.VIOLET
                             )
                         )
@@ -7496,8 +7506,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ControlCenterRoute.LEARNING -> renderControlCenterLearningPage()
                 ControlCenterRoute.KNOWLEDGE -> showAgentKnowledgePage()
                 ControlCenterRoute.MCP -> showCapabilityLibraryPage(
-                    if (destination.payload == CAPABILITY_KIND_SKILL) AgentCapabilityCatalogKind.SKILL
-                    else AgentCapabilityCatalogKind.MCP
+                    when (destination.payload) {
+                        CAPABILITY_KIND_MCP -> AgentCapabilityCatalogKind.MCP
+                        CAPABILITY_KIND_AUTOMATION -> AgentCapabilityCatalogKind.AUTOMATION
+                        else -> AgentCapabilityCatalogKind.NATIVE_TOOL
+                    }
                 )
                 ControlCenterRoute.TASKS -> showAgentRecentTasksPage()
                 ControlCenterRoute.PHONE_CAPABILITIES -> renderControlCenterPhoneCapabilitiesPage()
@@ -13950,20 +13963,43 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun showCapabilityLibraryPage(selectedKind: AgentCapabilityCatalogKind) {
         showFeaturePage(getString(R.string.agent_capability_library_title))
         setFeatureBackAction()
-        val installedCount = agentMcpRegistry.list().size + agentSkillRuntime.list().map { it.id }.distinct().size
+        val items = marketplaceItems()
+        val installedCount = items.count {
+            it.installState in setOf(
+                AgentMarketplaceInstallState.BUILT_IN,
+                AgentMarketplaceInstallState.INSTALLED
+            )
+        } + AgentDesktopMarketplaceStore.list(this).count {
+            it.installState in setOf(
+                AgentMarketplaceInstallState.BUILT_IN,
+                AgentMarketplaceInstallState.INSTALLED
+            )
+        }
         featureContent.addView(featureHeroCard(
             getString(R.string.agent_capability_library_title),
             getString(R.string.agent_capability_library_subtitle),
             R.drawable.ic_agent_skill,
-            if (selectedKind == AgentCapabilityCatalogKind.MCP) "#2979FF" else "#7C4DFF",
+            when (selectedKind) {
+                AgentCapabilityCatalogKind.NATIVE_TOOL -> "#14C66A"
+                AgentCapabilityCatalogKind.MCP -> "#2979FF"
+                AgentCapabilityCatalogKind.AUTOMATION -> "#7C4DFF"
+            },
             installedCount.toString()
         ))
         addCapabilityLibraryTabs(selectedKind)
         when (selectedKind) {
+            AgentCapabilityCatalogKind.NATIVE_TOOL -> renderNativeToolMarketplace()
             AgentCapabilityCatalogKind.MCP -> renderMcpCapabilityLibrary()
-            AgentCapabilityCatalogKind.SKILL -> renderSkillCapabilityLibrary()
+            AgentCapabilityCatalogKind.AUTOMATION -> renderAutomationMarketplace()
         }
     }
+
+    private fun marketplaceItems(): List<AgentMarketplaceItem> =
+        AgentDefaultCapabilityCatalog.marketplaceItems(
+            nativeTools = mobileNativeAgent.nativeToolCatalog(),
+            installedMcp = agentMcpRegistry.list(),
+            installedAutomations = agentSkillRuntime.list()
+        )
 
     private fun returnToCapabilityLibrary(kind: AgentCapabilityCatalogKind) {
         if (controlCenterBackStack.lastOrNull()?.route == ControlCenterRoute.MCP) controlCenterBackStack.removeLast()
@@ -13985,8 +14021,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
         listOf(
+            AgentCapabilityCatalogKind.NATIVE_TOOL to getString(R.string.agent_marketplace_tools),
             AgentCapabilityCatalogKind.MCP to getString(R.string.agent_mcp_title),
-            AgentCapabilityCatalogKind.SKILL to getString(R.string.agent_skills_title)
+            AgentCapabilityCatalogKind.AUTOMATION to getString(R.string.agent_marketplace_automations)
         ).forEach { (kind, label) ->
             val selected = kind == selectedKind
             row.addView(TextView(this).apply {
@@ -14015,6 +14052,51 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             LinearLayout.LayoutParams.MATCH_PARENT,
             dp(46)
         ).apply { bottomMargin = dp(14) })
+    }
+
+    private fun renderNativeToolMarketplace() {
+        val items = marketplaceItems().filter { it.kind == AgentCapabilityCatalogKind.NATIVE_TOOL }
+        val ready = items.filter {
+            it.installState == AgentMarketplaceInstallState.BUILT_IN
+        }
+        val attention = items.filterNot {
+            it.installState == AgentMarketplaceInstallState.BUILT_IN
+        }
+        addSectionTitle(getString(R.string.agent_capability_installed))
+        ready.forEach { item ->
+            featureContent.addView(featureRow(
+                item.name,
+                item.summary,
+                R.drawable.ic_agent_control,
+                getString(R.string.agent_marketplace_built_in)
+            ).apply {
+                setOnClickListener {
+                    showNativeToolDetailPage(item.id)
+                    setFeatureBackAction {
+                        returnToCapabilityLibrary(AgentCapabilityCatalogKind.NATIVE_TOOL)
+                    }
+                }
+            })
+        }
+        if (attention.isNotEmpty()) {
+            addSectionTitle(getString(R.string.agent_marketplace_needs_attention))
+            attention.forEach { item ->
+                featureContent.addView(featureRow(
+                    item.name,
+                    item.summary,
+                    R.drawable.ic_agent_control,
+                    marketplaceStateLabel(item.installState)
+                ).apply {
+                    setOnClickListener {
+                        showNativeToolDetailPage(item.id)
+                        setFeatureBackAction {
+                            returnToCapabilityLibrary(AgentCapabilityCatalogKind.NATIVE_TOOL)
+                        }
+                    }
+                })
+            }
+        }
+        renderPairedDesktopMarketplace(AgentCapabilityCatalogKind.NATIVE_TOOL)
     }
 
     private fun renderMcpCapabilityLibrary() {
@@ -14073,9 +14155,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             })
         }
+        renderPairedDesktopMarketplace(AgentCapabilityCatalogKind.MCP)
     }
 
-    private fun renderSkillCapabilityLibrary() {
+    private fun renderAutomationMarketplace() {
         featureContent.addView(featureRow(
             getString(R.string.agent_skill_install_local),
             getString(R.string.agent_skill_install_local_subtitle),
@@ -14138,7 +14221,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             ?.let { showAgentSkillDetailPage(it.id, it.version) }
                         !dependency.available -> {
                             Toast.makeText(this@MainActivity, getString(R.string.agent_skill_dependency_missing), Toast.LENGTH_LONG).show()
-                            openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.MCP), pushCurrent = false)
+                            openControlCenterDestination(
+                                ControlCenterDestination(ControlCenterRoute.MCP, CAPABILITY_KIND_MCP),
+                                pushCurrent = false
+                            )
                         }
                         else -> runCatching { agentSkillRuntime.install(entry.manifest) }
                             .onSuccess { showAgentSkillDetailPage(it.id, it.version) }
@@ -14146,6 +14232,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                 }
             })
+        }
+        renderPairedDesktopMarketplace(AgentCapabilityCatalogKind.AUTOMATION)
+    }
+
+    private fun renderPairedDesktopMarketplace(kind: AgentCapabilityCatalogKind) {
+        val remoteItems = AgentDesktopMarketplaceStore.list(this, kind)
+        if (remoteItems.isEmpty()) return
+        addSectionTitle(getString(R.string.agent_marketplace_paired_desktops))
+        remoteItems.forEach { item ->
+            featureContent.addView(featureRow(
+                item.name,
+                "${item.desktopName} · ${item.summary}",
+                when (kind) {
+                    AgentCapabilityCatalogKind.NATIVE_TOOL -> R.drawable.ic_agent_control
+                    AgentCapabilityCatalogKind.MCP -> R.drawable.ic_agent_skill
+                    AgentCapabilityCatalogKind.AUTOMATION -> R.drawable.ic_agent_history
+                },
+                marketplaceStateLabel(item.installState)
+            ))
         }
     }
 
@@ -14642,10 +14747,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showAgentSkillDetailPage(id: String, version: String) {
         val installation = agentSkillRuntime.get(id, version)
-            ?: return showCapabilityLibraryPage(AgentCapabilityCatalogKind.SKILL)
+            ?: return showCapabilityLibraryPage(AgentCapabilityCatalogKind.AUTOMATION)
         val manifest = installation.manifest
         showFeaturePage(manifest.title)
-        setFeatureBackAction { returnToCapabilityLibrary(AgentCapabilityCatalogKind.SKILL) }
+        setFeatureBackAction { returnToCapabilityLibrary(AgentCapabilityCatalogKind.AUTOMATION) }
         featureContent.addView(featureHeroCard(
             manifest.title,
             manifest.description.ifBlank { manifest.instructions.take(180) },
@@ -14749,14 +14854,28 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .setNegativeButton(getString(R.string.common_cancel), null)
                     .setPositiveButton(getString(R.string.common_delete)) { _, _ ->
                         agentSkillRuntime.delete(id, version)
-                        showCapabilityLibraryPage(AgentCapabilityCatalogKind.SKILL)
+                        showCapabilityLibraryPage(AgentCapabilityCatalogKind.AUTOMATION)
                     }.show()
             }
         })
     }
 
     private fun capabilityKindPayload(kind: AgentCapabilityCatalogKind): String =
-        if (kind == AgentCapabilityCatalogKind.SKILL) CAPABILITY_KIND_SKILL else CAPABILITY_KIND_MCP
+        when (kind) {
+            AgentCapabilityCatalogKind.NATIVE_TOOL -> CAPABILITY_KIND_NATIVE_TOOL
+            AgentCapabilityCatalogKind.MCP -> CAPABILITY_KIND_MCP
+            AgentCapabilityCatalogKind.AUTOMATION -> CAPABILITY_KIND_AUTOMATION
+        }
+
+    private fun marketplaceStateLabel(state: AgentMarketplaceInstallState): String = getString(
+        when (state) {
+            AgentMarketplaceInstallState.BUILT_IN -> R.string.agent_marketplace_built_in
+            AgentMarketplaceInstallState.AVAILABLE -> R.string.agent_capability_install
+            AgentMarketplaceInstallState.INSTALLED -> R.string.agent_capability_added
+            AgentMarketplaceInstallState.NEEDS_SETUP -> R.string.agent_capability_requires_setup
+            AgentMarketplaceInstallState.UNAVAILABLE -> R.string.cc_status_unavailable
+        }
+    )
 
     private fun skillVersionParts(version: String): String = version.split('.')
         .joinToString(".") { (it.toIntOrNull() ?: 0).toString().padStart(8, '0') }
