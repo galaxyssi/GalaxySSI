@@ -907,6 +907,251 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("waiting_approval"), .paused)
   }
 
+  func testAgentPlanLifecyclePolicyRestoresConnectorResultAndCompletesSession() {
+    let connector = lifecycleAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      status: .completed,
+      result: "The worksheet has been corrected."
+    )
+    let draft = lifecycleAction(
+      id: "draft-plan",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .completed
+    )
+    let session = lifecycleSession(
+      phase: .planning,
+      plan: lifecyclePlan(connector, draft),
+      result: AgentActionResult(actionId: draft.id, success: true, message: "")
+    )
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(session)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.session.currentPlan?.actions, [connector])
+    XCTAssertEqual(normalized.session.phase, .completed)
+    XCTAssertEqual(normalized.session.lastActionResult?.actionId, connector.id)
+    XCTAssertEqual(normalized.session.lastActionResult?.message, connector.result)
+  }
+
+  func testAgentPlanLifecyclePolicyRemovesPendingTrailingDraftBeforeItRuns() {
+    let connector = lifecycleAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      status: .completed,
+      result: "Done"
+    )
+    let draft = lifecycleAction(
+      id: "draft-plan",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .pendingConfirmation
+    )
+    let plan = lifecyclePlan(connector, draft)
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(plan)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.plan.actions, [connector])
+  }
+
+  func testAgentPlanLifecyclePolicyRetiresStandaloneLegacyRuntimeDraft() {
+    let standalone = lifecyclePlan(
+      lifecycleAction(
+        id: "draft-plan",
+        kind: .draftPlan,
+        target: "local-agent-runtime",
+        status: .completed
+      )
+    )
+    let taskComplete = lifecyclePlan(
+      lifecycleAction(id: "connector", kind: .callConnector, target: "Codex", status: .completed),
+      lifecycleAction(id: "done", kind: .draftPlan, target: "task-complete", status: .completed)
+    )
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(standalone)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.plan.actions.first?.target, "task-complete")
+    XCTAssertEqual(normalized.plan.actions.first?.status, .failed)
+    XCTAssertTrue(normalized.plan.actions.first?.result.contains("Send it again") == true)
+    XCTAssertTrue(normalized.plan.validation.valid)
+    XCTAssertFalse(AgentPlanLifecyclePolicy.normalize(taskComplete).changed)
+  }
+
+  func testAgentPlanLifecyclePolicyRecoversCompletedConnectorFromHistory() {
+    let connector = lifecycleAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      status: .completed,
+      result: "Recovered Codex reply"
+    )
+    let draft = lifecycleAction(
+      id: "replanned-draft",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .completed
+    )
+    var sourcePlan = lifecyclePlan(draft)
+    sourcePlan.actionHistory = [connector]
+    let sourceSession = lifecycleSession(
+      phase: .planning,
+      plan: sourcePlan,
+      result: AgentActionResult(actionId: draft.id, success: true, message: "")
+    )
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(sourceSession)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.session.currentPlan?.actions, [connector])
+    XCTAssertTrue(normalized.session.currentPlan?.actionHistory.isEmpty == true)
+    XCTAssertEqual(normalized.session.phase, .completed)
+    XCTAssertEqual(normalized.session.lastActionResult?.message, "Recovered Codex reply")
+  }
+
+  func testAgentPlanLifecyclePolicyRecoversReceivedConnectorWithoutLocalRuntimeDraft() {
+    let draft = lifecycleAction(
+      id: "replanned-draft",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .completed
+    )
+    var sourcePlan = lifecyclePlan(draft)
+    sourcePlan.route = AgentRoute(kind: .desktopAgent, targetTitle: "Codex")
+    let sourceSession = lifecycleSession(
+      phase: .planning,
+      plan: sourcePlan,
+      result: AgentActionResult(actionId: draft.id, success: true, message: "Created a local task plan"),
+      auditTrail: [
+        AgentAuditEntry(
+          event: .connectorResponseReceived,
+          detail: "source_message_id=1",
+          timestampMillis: 2
+        )
+      ]
+    )
+    let durableTask = agentTaskRecord(
+      taskId: sourcePlan.planId,
+      sessionId: "session",
+      goal: sourcePlan.goal,
+      phase: .completed,
+      routeKind: .desktopAgent,
+      targetTitle: "Codex",
+      risk: .low,
+      result: "Durable Codex result"
+    )
+
+    let recovered = AgentPlanLifecyclePolicy.recoverCompletedConnector(
+      session: sourceSession,
+      persistedTask: durableTask,
+      missingResult: "No final result"
+    )
+
+    XCTAssertEqual(recovered.phase, .completed)
+    XCTAssertEqual(recovered.currentPlan?.actions.first?.kind, .callConnector)
+    XCTAssertEqual(recovered.currentPlan?.actions.first?.target, "Codex")
+    XCTAssertEqual(recovered.lastActionResult?.message, "Durable Codex result")
+    XCTAssertFalse(recovered.currentPlan?.actions.contains { $0.target == "local-agent-runtime" } == true)
+  }
+
+  func testAgentPlanLifecyclePolicyDoesNotRewriteWithoutConnectorReceipt() {
+    let draft = lifecycleAction(
+      id: "draft",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .pendingConfirmation
+    )
+    let source = lifecycleSession(phase: .planning, plan: lifecyclePlan(draft), result: nil)
+
+    let recovered = AgentPlanLifecyclePolicy.recoverCompletedConnector(
+      session: source,
+      persistedTask: nil,
+      missingResult: "No final result"
+    )
+
+    XCTAssertEqual(source, recovered)
+  }
+
+  func testAgentPlanLifecycleModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder().decode(
+      AgentSessionSnapshot.self,
+      from: Data(
+        #"""
+        {
+          "session_id": "session",
+          "phase": "PLANNING",
+          "current_goal": "Correct the worksheet",
+          "current_screen": {
+            "foreground_app": "SignalASI",
+            "page_title": "Agent"
+          },
+          "current_plan": {
+            "goal": "Correct the worksheet",
+            "screen": {
+              "foreground_app": "SignalASI",
+              "page_title": "Agent"
+            },
+            "steps": [
+              {"order": 1, "kind": "BUILD_PLAN", "status": "CURRENT"}
+            ],
+            "actions": [
+              {
+                "id": "connector",
+                "kind": "CALL_CONNECTOR",
+                "target": "Codex",
+                "risk": "LOW",
+                "status": "COMPLETED",
+                "description": "Run Codex",
+                "result": "Done"
+              }
+            ],
+            "execution_mode": "AUTO_COMPLETE",
+            "plan_id": "plan",
+            "route": {
+              "kind": "DESKTOP_AGENT",
+              "target_title": "Codex"
+            },
+            "verification_results": [
+              {"action_id": "connector", "success": true, "evidence": "ok", "timestamp_millis": 12}
+            ],
+            "checkpoints": [
+              {"action_id": "connector", "summary": "checkpoint", "timestamp_millis": 13}
+            ]
+          },
+          "audit_trail": [
+            {"event": "CONNECTOR_RESPONSE_RECEIVED", "detail": "ok", "timestamp_millis": 14}
+          ],
+          "last_action_result": {
+            "action_id": "connector",
+            "success": true,
+            "message": "Done"
+          },
+          "task_execution_mode": "AUTO_COMPLETE",
+          "updated_at_millis": 15
+        }
+        """#.utf8
+      )
+    )
+    let fallbackAudit = try JSONDecoder().decode(
+      AgentAuditEvent.self,
+      from: Data(#""FUTURE""#.utf8)
+    )
+    let encoded = String(decoding: try JSONEncoder().encode(decoded), as: UTF8.self)
+
+    XCTAssertEqual(decoded.phase, .planning)
+    XCTAssertEqual(decoded.currentPlan?.route.kind, .desktopAgent)
+    XCTAssertEqual(decoded.currentPlan?.steps.first?.kind, .buildPlan)
+    XCTAssertEqual(decoded.auditTrail.first?.event, .connectorResponseReceived)
+    XCTAssertEqual(fallbackAudit, .invocationAudit)
+    XCTAssertTrue(encoded.contains(#""current_plan":"#) || encoded.contains(#""current_plan":{"#))
+    XCTAssertTrue(encoded.contains(#""task_execution_mode":"AUTO_COMPLETE""#))
+    XCTAssertTrue(encoded.contains(#""timestamp_millis":14"#))
+  }
+
   func testAgentExecutionLoopTimelinePolicyProjectsCanonicalPhases() {
     let plan = AgentExecutionLoopTimelinePolicy.project(loopEvent(.plan))
     let act = AgentExecutionLoopTimelinePolicy.project(
@@ -2977,6 +3222,122 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(object["task_intent_confidence"] as? Int ?? 0, 55)
   }
 
+  func testAgentMcpToolSecurityPolicyMatchesAndroidRiskAndPermissions() {
+    let read = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("get_weather", readOnly: true),
+      arguments: ["city": .string("Shanghai")],
+      transport: .streamableHTTP
+    )
+    let destructive = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("delete_project", destructive: true),
+      arguments: [
+        "project_path": .string("/work"),
+        "api_token": .string("secret-value")
+      ],
+      transport: .localStdio
+    )
+
+    XCTAssertEqual(read.risk, .low)
+    XCTAssertTrue(read.permissions.contains("mcp.network.connect"))
+    XCTAssertEqual(read.publicValue()["risk"], .string("low"))
+
+    XCTAssertEqual(destructive.risk, .high)
+    XCTAssertTrue(destructive.permissions.contains("mcp.destructive"))
+    XCTAssertTrue(destructive.permissions.contains("mcp.files.access"))
+    XCTAssertTrue(destructive.permissions.contains("mcp.secrets.use"))
+    XCTAssertTrue(destructive.permissions.contains("mcp.process.execute"))
+    XCTAssertEqual(destructive.parameterPreview["api_token"], .string("[REDACTED]"))
+    XCTAssertEqual(destructive.inputSha256.count, 64)
+  }
+
+  func testAgentMcpToolSecurityPolicyPermissionMatrixMatchesAndroid() {
+    let high = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("delete_account", destructive: true),
+      arguments: [:],
+      transport: .streamableHTTP
+    )
+    let medium = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("update_document", readOnly: false),
+      arguments: ["content": .string("updated")],
+      transport: .streamableHTTP
+    )
+
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: high, explicitlyApproved: false).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: high, explicitlyApproved: true).allowed)
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .trusted, assessment: high, explicitlyApproved: false).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .trusted, assessment: high, explicitlyApproved: true).allowed)
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: medium, explicitlyApproved: false).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .askForChanges, assessment: medium, explicitlyApproved: true).allowed)
+    XCTAssertTrue(AgentMcpToolSecurityPolicy.decide(mode: .trusted, assessment: medium, explicitlyApproved: false).allowed)
+    XCTAssertFalse(AgentMcpToolSecurityPolicy.decide(mode: .readOnly, assessment: medium, explicitlyApproved: true).allowed)
+    XCTAssertEqual(
+      AgentMcpToolSecurityPolicy.decide(mode: .disabled, assessment: medium, explicitlyApproved: true).requiredUserAction,
+      "enable_connection"
+    )
+  }
+
+  func testAgentMcpParameterRedactorDropsNestedInlineAndURLSecrets() {
+    let sanitized = AgentMcpParameterRedactor.sanitize([
+      "password": .string("secret-value"),
+      "nested": .object([
+        "authorization": .string("Bearer abcdefghijklmnop"),
+        "url": .string("https://example.test/action?token=secret#fragment"),
+        "note": .string("token=inline-secret")
+      ])
+    ])
+    let serialized = AgentMcpJSONCodec.stringify(sanitized)
+    let error = AgentMcpParameterRedactor.sanitizeText(
+      "token=inline-secret at https://example.test/mcp?api_key=secret"
+    )
+
+    XCTAssertFalse(serialized.contains("secret-value"))
+    XCTAssertFalse(serialized.contains("abcdefghijklmnop"))
+    XCTAssertFalse(serialized.contains("inline-secret"))
+    XCTAssertFalse(serialized.contains("fragment"))
+    XCTAssertFalse(error.contains("inline-secret"))
+    XCTAssertFalse(error.contains("api_key=secret"))
+  }
+
+  func testAgentMcpSecurityModelsUseAndroidWireNamesAndStableJson() throws {
+    let mode = try JSONDecoder().decode(AgentMcpPermissionMode.self, from: Data(#""trusted""#.utf8))
+    let fallbackMode = try JSONDecoder().decode(AgentMcpPermissionMode.self, from: Data(#""future""#.utf8))
+    let tool = try JSONDecoder().decode(
+      AgentMcpTool.self,
+      from: Data(
+        #"""
+        {
+          "name": "get_status",
+          "input_schema": {},
+          "annotations": {
+            "read_only_hint": true,
+            "open_world_hint": true
+          },
+          "raw": {"name": "get_status"}
+        }
+        """#.utf8
+      )
+    )
+    let assessment = AgentMcpToolSecurityPolicy.assess(
+      tool: tool,
+      arguments: ["path": .string("/tmp/report.txt")],
+      transport: .streamableHTTP
+    )
+    let encodedAssessment = String(decoding: try JSONEncoder().encode(assessment), as: UTF8.self)
+    let stableJson = AgentMcpJSONCodec.stringify(["b": .int(2), "a": .string("x")])
+
+    XCTAssertEqual(mode, .trusted)
+    XCTAssertEqual(fallbackMode, .askForChanges)
+    XCTAssertEqual(tool.annotations?["read_only_hint"]?.boolValue, true)
+    XCTAssertEqual(assessment.risk, .low)
+    XCTAssertTrue(assessment.permissions.contains("mcp.files.access"))
+    XCTAssertTrue(assessment.permissions.contains("mcp.network.open_world"))
+    XCTAssertTrue(encodedAssessment.contains(#""parameter_preview":"#))
+    XCTAssertEqual(stableJson, #"{"a":"x","b":2}"#)
+    XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "get_status"), .low)
+    XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "control_relay"), .medium)
+    XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "delete_device"), .high)
+  }
+
   func testAgentFailureRecoveryPayloadRoundTripsAndroidWireNames() throws {
     let payload = AgentFailureRecoveryPayload(
       action: .switchAgent,
@@ -3832,6 +4193,55 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  private func lifecycleAction(
+    id: String,
+    kind: AgentActionKind,
+    target: String,
+    status: AgentActionStatus,
+    result: String = ""
+  ) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: kind,
+      target: target,
+      risk: .low,
+      status: status,
+      description: id,
+      result: result
+    )
+  }
+
+  private func lifecyclePlan(_ actions: AgentAction...) -> AgentPlan {
+    let needsRoute = actions.contains {
+      $0.kind == .callConnector || $0.kind == .controlDevice
+    }
+    return AgentPlan(
+      goal: "Correct the worksheet",
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
+      steps: [],
+      actions: actions,
+      route: needsRoute ? AgentRoute(kind: .desktopAgent, targetTitle: "Codex") : AgentRoute()
+    )
+  }
+
+  private func lifecycleSession(
+    phase: AgentPhase,
+    plan: AgentPlan,
+    result: AgentActionResult?,
+    auditTrail: [AgentAuditEntry] = []
+  ) -> AgentSessionSnapshot {
+    AgentSessionSnapshot(
+      sessionId: "session",
+      phase: phase,
+      currentGoal: plan.goal,
+      currentScreen: plan.screen,
+      currentPlan: plan,
+      auditTrail: auditTrail,
+      lastActionResult: result,
+      updatedAtMillis: 1
+    )
+  }
+
   private func agentTaskRecord(
     taskId: String = "task",
     sessionId: String = "conversation",
@@ -4006,6 +4416,26 @@ final class SignalASIStoreTests: XCTestCase {
       agentId: agentId,
       location: location,
       connectionKind: connectionKind
+    )
+  }
+
+  private func mcpTool(
+    _ name: String,
+    readOnly: Bool? = nil,
+    destructive: Bool? = nil
+  ) -> AgentMcpTool {
+    var annotations: AgentMcpJSONObject = [:]
+    if let readOnly {
+      annotations["readOnlyHint"] = .bool(readOnly)
+    }
+    if let destructive {
+      annotations["destructiveHint"] = .bool(destructive)
+    }
+    return AgentMcpTool(
+      name: name,
+      inputSchema: [:],
+      annotations: annotations,
+      raw: ["name": .string(name)]
     )
   }
 

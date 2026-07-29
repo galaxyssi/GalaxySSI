@@ -2431,6 +2431,566 @@ final class AgentExplicitToolHandleRegistry {
   private static let maxMetadataItems = 32
 }
 
+enum AgentMcpJSONValue: Codable, Equatable {
+  case string(String)
+  case int(Int64)
+  case double(Double)
+  case bool(Bool)
+  case object([String: AgentMcpJSONValue])
+  case array([AgentMcpJSONValue])
+  case null
+
+  var boolValue: Bool? {
+    if case .bool(let value) = self {
+      return value
+    }
+    return nil
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if container.decodeNil() {
+      self = .null
+    } else if let value = try? container.decode(Bool.self) {
+      self = .bool(value)
+    } else if let value = try? container.decode(Int64.self) {
+      self = .int(value)
+    } else if let value = try? container.decode(Double.self) {
+      self = .double(value)
+    } else if let value = try? container.decode(String.self) {
+      self = .string(value)
+    } else if let value = try? container.decode([String: AgentMcpJSONValue].self) {
+      self = .object(value)
+    } else {
+      self = .array((try? container.decode([AgentMcpJSONValue].self)) ?? [])
+    }
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .string(let value):
+      try container.encode(value)
+    case .int(let value):
+      try container.encode(value)
+    case .double(let value):
+      try container.encode(value)
+    case .bool(let value):
+      try container.encode(value)
+    case .object(let value):
+      try container.encode(value)
+    case .array(let value):
+      try container.encode(value)
+    case .null:
+      try container.encodeNil()
+    }
+  }
+}
+
+typealias AgentMcpJSONObject = [String: AgentMcpJSONValue]
+
+enum AgentMcpJSONCodec {
+  static func stringify(_ value: AgentMcpJSONValue) -> String {
+    switch value {
+    case .null:
+      return "null"
+    case .bool(let value):
+      return value ? "true" : "false"
+    case .int(let value):
+      return String(value)
+    case .double(let value):
+      guard value.isFinite else {
+        return "null"
+      }
+      return String(value)
+    case .string(let value):
+      return quote(value)
+    case .array(let values):
+      return "[" + values.map(stringify).joined(separator: ",") + "]"
+    case .object(let object):
+      return "{" + object.keys.sorted().map { key in
+        "\(quote(key)):\(stringify(object[key] ?? .null))"
+      }.joined(separator: ",") + "}"
+    }
+  }
+
+  static func stringify(_ object: AgentMcpJSONObject) -> String {
+    stringify(.object(object))
+  }
+
+  static func sha256(_ object: AgentMcpJSONObject) -> String {
+    let digest = SHA256.hash(data: Data(stringify(object).utf8))
+    return digest.map { String(format: "%02x", $0) }.joined()
+  }
+
+  private static func quote(_ value: String) -> String {
+    var result = "\""
+    for scalar in value.unicodeScalars {
+      switch scalar.value {
+      case 34:
+        result += "\\\""
+      case 92:
+        result += "\\\\"
+      case 8:
+        result += "\\b"
+      case 12:
+        result += "\\f"
+      case 10:
+        result += "\\n"
+      case 13:
+        result += "\\r"
+      case 9:
+        result += "\\t"
+      default:
+        if scalar.value < 0x20 {
+          result += String(format: "\\u%04x", scalar.value)
+        } else {
+          result.unicodeScalars.append(scalar)
+        }
+      }
+    }
+    result += "\""
+    return result
+  }
+}
+
+enum AgentMcpPermissionMode: String, Codable, CaseIterable, Identifiable {
+  case readOnly = "read_only"
+  case askForChanges = "ask_for_changes"
+  case trusted = "trusted"
+  case disabled = "disabled"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentMcpPermissionMode {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .askForChanges
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentMcpToolRisk: String, Codable, CaseIterable, Identifiable {
+  case low = "low"
+  case medium = "medium"
+  case high = "high"
+
+  var id: String { rawValue }
+}
+
+enum AgentMcpTransportKind: String, Codable, CaseIterable, Identifiable {
+  case streamableHTTP = "streamable_http"
+  case declarativeHTTP = "declarative_http"
+  case localStdio = "local_stdio"
+
+  var id: String { rawValue }
+}
+
+struct AgentMcpTool: Codable, Equatable {
+  var name: String
+  var title: String?
+  var description: String?
+  var inputSchema: AgentMcpJSONObject
+  var outputSchema: AgentMcpJSONObject?
+  var annotations: AgentMcpJSONObject?
+  var raw: AgentMcpJSONObject
+
+  init(
+    name: String,
+    title: String? = nil,
+    description: String? = nil,
+    inputSchema: AgentMcpJSONObject = [:],
+    outputSchema: AgentMcpJSONObject? = nil,
+    annotations: AgentMcpJSONObject? = nil,
+    raw: AgentMcpJSONObject = [:]
+  ) {
+    self.name = name
+    self.title = title
+    self.description = description
+    self.inputSchema = inputSchema
+    self.outputSchema = outputSchema
+    self.annotations = annotations
+    self.raw = raw
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case name
+    case title
+    case description
+    case inputSchema = "input_schema"
+    case outputSchema = "output_schema"
+    case annotations
+    case raw
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      name: try container.decodeIfPresent(String.self, forKey: .name) ?? "",
+      title: try container.decodeIfPresent(String.self, forKey: .title),
+      description: try container.decodeIfPresent(String.self, forKey: .description),
+      inputSchema: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .inputSchema) ?? [:],
+      outputSchema: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .outputSchema),
+      annotations: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .annotations),
+      raw: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .raw) ?? [:]
+    )
+  }
+}
+
+struct AgentMcpToolAssessment: Codable, Equatable {
+  var risk: AgentMcpToolRisk
+  var permissions: Set<String>
+  var reason: String
+  var parameterPreview: AgentMcpJSONObject
+  var inputSha256: String
+
+  enum CodingKeys: String, CodingKey {
+    case risk
+    case permissions
+    case reason
+    case parameterPreview = "parameter_preview"
+    case inputSha256 = "input_sha256"
+  }
+
+  func publicValue() -> AgentMcpJSONObject {
+    [
+      "risk": .string(risk.rawValue),
+      "permissions": .array(permissions.sorted().map { .string($0) }),
+      "reason": .string(reason),
+      "parameter_preview": .object(parameterPreview),
+      "input_sha256": .string(inputSha256)
+    ]
+  }
+}
+
+struct AgentMcpPermissionDecision: Codable, Equatable {
+  var allowed: Bool
+  var code: String
+  var message: String
+  var requiredUserAction: String
+
+  init(
+    allowed: Bool,
+    code: String,
+    message: String,
+    requiredUserAction: String = ""
+  ) {
+    self.allowed = allowed
+    self.code = code
+    self.message = message
+    self.requiredUserAction = requiredUserAction
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case allowed
+    case code
+    case message
+    case requiredUserAction = "required_user_action"
+  }
+}
+
+enum AgentMcpToolSecurityPolicy {
+  static func provisionalRisk(toolName: String) -> AgentMcpToolRisk {
+    let tokens = nameTokens(toolName)
+    if tokens.contains(where: highRiskTerms.contains) {
+      return .high
+    }
+    if tokens.contains(where: readOnlyTerms.contains) && !tokens.contains(where: mutatingTerms.contains) {
+      return .low
+    }
+    return .medium
+  }
+
+  static func assess(
+    tool: AgentMcpTool,
+    arguments: AgentMcpJSONObject,
+    transport: AgentMcpTransportKind
+  ) -> AgentMcpToolAssessment {
+    let tokens = nameTokens(tool.name)
+    let readOnly = annotationBool(tool.annotations, names: ["readOnlyHint", "read_only_hint"])
+    let destructive = annotationBool(tool.annotations, names: ["destructiveHint", "destructive_hint"])
+    let openWorld = annotationBool(tool.annotations, names: ["openWorldHint", "open_world_hint"])
+    let risk: AgentMcpToolRisk
+    let reason: String
+    if destructive == true || tokens.contains(where: highRiskTerms.contains) {
+      risk = .high
+      reason = "The tool is destructive or controls a sensitive external action."
+    } else if readOnly == true && !tokens.contains(where: mutatingTerms.contains) {
+      risk = .low
+      reason = "The MCP server declares this tool read-only."
+    } else if tokens.contains(where: readOnlyTerms.contains) && !tokens.contains(where: mutatingTerms.contains) {
+      risk = .low
+      reason = "The tool name describes a read-only operation."
+    } else {
+      risk = .medium
+      reason = "The MCP tool can change data or external state."
+    }
+
+    let keys = collectKeys(arguments)
+    var permissions: Set<String> = ["mcp.data.read"]
+    permissions.insert(transport == .localStdio ? "mcp.process.execute" : "mcp.network.connect")
+    if risk != .low {
+      permissions.insert("mcp.data.write")
+    }
+    if risk == .high {
+      permissions.insert("mcp.destructive")
+    }
+    if openWorld == true {
+      permissions.insert("mcp.network.open_world")
+    }
+    if keys.contains(where: { matches(secretKeyPattern, in: $0) }) {
+      permissions.insert("mcp.secrets.use")
+    }
+    if keys.contains(where: { matches(pathKeyPattern, in: $0) }) {
+      permissions.insert("mcp.files.access")
+    }
+    return AgentMcpToolAssessment(
+      risk: risk,
+      permissions: permissions,
+      reason: reason,
+      parameterPreview: AgentMcpParameterRedactor.sanitize(arguments),
+      inputSha256: AgentMcpJSONCodec.sha256(arguments)
+    )
+  }
+
+  static func decide(
+    mode: AgentMcpPermissionMode,
+    assessment: AgentMcpToolAssessment,
+    explicitlyApproved: Bool
+  ) -> AgentMcpPermissionDecision {
+    switch mode {
+    case .disabled:
+      return AgentMcpPermissionDecision(
+        allowed: false,
+        code: "mcp_disabled",
+        message: "This MCP connection is disabled by its permission policy.",
+        requiredUserAction: "enable_connection"
+      )
+    case .readOnly:
+      if assessment.risk == .low {
+        return AgentMcpPermissionDecision(allowed: true, code: "allowed_read_only", message: "Read-only MCP call allowed.")
+      }
+      return AgentMcpPermissionDecision(
+        allowed: false,
+        code: "mcp_write_not_allowed",
+        message: "This MCP connection is restricted to read-only tools.",
+        requiredUserAction: "change_permission_mode"
+      )
+    case .askForChanges:
+      if assessment.risk == .low {
+        return AgentMcpPermissionDecision(allowed: true, code: "allowed_low_risk", message: "Low-risk MCP call allowed.")
+      }
+      if assessment.risk == .medium && explicitlyApproved {
+        return AgentMcpPermissionDecision(
+          allowed: true,
+          code: "allowed_explicit_change",
+          message: "The user explicitly approved this MCP change."
+        )
+      }
+      if assessment.risk == .high && explicitlyApproved {
+        return AgentMcpPermissionDecision(
+          allowed: true,
+          code: "allowed_explicit_high_risk",
+          message: "The user explicitly approved this high-risk MCP call."
+        )
+      }
+      return AgentMcpPermissionDecision(
+        allowed: false,
+        code: assessment.risk == .high ? "mcp_high_risk_approval_required" : "mcp_approval_required",
+        message: "This MCP tool needs explicit user approval.",
+        requiredUserAction: "approve_tool_call"
+      )
+    case .trusted:
+      if assessment.risk != .high {
+        return AgentMcpPermissionDecision(allowed: true, code: "allowed_trusted", message: "Trusted MCP policy allowed the call.")
+      }
+      if explicitlyApproved {
+        return AgentMcpPermissionDecision(
+          allowed: true,
+          code: "allowed_explicit_high_risk",
+          message: "The user explicitly approved this high-risk MCP call."
+        )
+      }
+      return AgentMcpPermissionDecision(
+        allowed: false,
+        code: "mcp_high_risk_approval_required",
+        message: "High-risk MCP calls require approval every time.",
+        requiredUserAction: "approve_tool_call"
+      )
+    }
+  }
+
+  private static func annotationBool(_ value: AgentMcpJSONObject?, names: [String]) -> Bool? {
+    guard let value else {
+      return nil
+    }
+    for name in names {
+      if let result = value[name]?.boolValue {
+        return result
+      }
+    }
+    return nil
+  }
+
+  private static func collectKeys(_ object: AgentMcpJSONObject) -> Set<String> {
+    var keys: Set<String> = []
+    collectKeys(.object(object), into: &keys)
+    return keys
+  }
+
+  private static func collectKeys(_ value: AgentMcpJSONValue, into keys: inout Set<String>) {
+    switch value {
+    case .object(let object):
+      for (key, child) in object {
+        keys.insert(key.lowercased())
+        collectKeys(child, into: &keys)
+      }
+    case .array(let values):
+      values.forEach { collectKeys($0, into: &keys) }
+    case .string, .int, .double, .bool, .null:
+      break
+    }
+  }
+
+  private static func nameTokens(_ value: String) -> Set<String> {
+    Set(
+      value
+        .lowercased()
+        .replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .components(separatedBy: .whitespacesAndNewlines)
+        .filter { !$0.isEmpty }
+    )
+  }
+
+  private static func matches(_ pattern: String, in value: String) -> Bool {
+    value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
+  private static let readOnlyTerms: Set<String> = [
+    "get", "list", "read", "search", "query", "find", "inspect", "status",
+    "describe", "fetch", "lookup", "view", "download"
+  ]
+  private static let mutatingTerms: Set<String> = [
+    "set", "create", "update", "write", "edit", "send", "post", "put", "patch",
+    "upload", "execute", "run", "start", "stop", "control", "toggle", "install",
+    "approve", "merge", "comment", "reply", "publish"
+  ]
+  private static let highRiskTerms: Set<String> = [
+    "delete", "remove", "destroy", "drop", "wipe", "reset", "payment", "purchase",
+    "transfer", "credential", "permission", "shell", "terminal", "sudo", "lock",
+    "unlock", "reboot", "shutdown", "deploy", "release"
+  ]
+  private static let secretKeyPattern =
+    #"(^|[_.-])(password|passwd|passphrase|secret|token|api[_-]?key|authorization|cookie|otp|totp|private[_-]?key)($|[_.-])"#
+  private static let pathKeyPattern =
+    #"(^|[_.-])(path|file|folder|directory|uri|url)($|[_.-])"#
+}
+
+enum AgentMcpParameterRedactor {
+  static func sanitize(_ arguments: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    guard case .object(let sanitized) = sanitizeValue(.object(arguments), key: "", depth: 0) else {
+      return [:]
+    }
+    return sanitized
+  }
+
+  static func sanitizeText(_ value: String, limit: Int = 500) -> String {
+    let boundedLimit = max(0, min(limit, 2_000))
+    return String(stripURLSecrets(redactAssignments(redactBearer(value))).prefix(boundedLimit))
+  }
+
+  private static func sanitizeValue(
+    _ value: AgentMcpJSONValue,
+    key: String,
+    depth: Int
+  ) -> AgentMcpJSONValue {
+    if matches(secretKeyPattern, in: key) {
+      return .string("[REDACTED]")
+    }
+    if depth >= maxDepth {
+      return .string("[TRUNCATED]")
+    }
+    switch value {
+    case .object(let object):
+      let pairs = object.keys.sorted().prefix(maxItems).map { childKey in
+        (childKey, sanitizeValue(object[childKey] ?? .null, key: childKey, depth: depth + 1))
+      }
+      return .object(Dictionary(uniqueKeysWithValues: pairs))
+    case .array(let values):
+      return .array(values.prefix(maxItems).map { sanitizeValue($0, key: key, depth: depth + 1) })
+    case .string(let value):
+      return .string(sanitizeString(value))
+    case .int, .double, .bool, .null:
+      return value
+    }
+  }
+
+  private static func sanitizeString(_ value: String) -> String {
+    var text = redactAssignments(redactBearer(value))
+    if text.lowercased().hasPrefix("https://") || text.lowercased().hasPrefix("http://") {
+      text = text.components(separatedBy: "?").first ?? text
+      text = text.components(separatedBy: "#").first ?? text
+    }
+    return String(text.prefix(maxString)) + (text.count > maxString ? "..." : "")
+  }
+
+  private static func redactBearer(_ value: String) -> String {
+    replaceRegex(pattern: bearerPattern, in: value, with: "Bearer [REDACTED]")
+  }
+
+  private static func redactAssignments(_ value: String) -> String {
+    replaceRegex(pattern: assignmentPattern, in: value, with: "$1=[REDACTED]")
+  }
+
+  private static func stripURLSecrets(_ value: String) -> String {
+    guard let regex = try? NSRegularExpression(pattern: urlInTextPattern, options: [.caseInsensitive]) else {
+      return value
+    }
+    var result = value
+    let range = NSRange(result.startIndex..<result.endIndex, in: result)
+    for match in regex.matches(in: result, options: [], range: range).reversed() {
+      guard let swiftRange = Range(match.range, in: result) else {
+        continue
+      }
+      let url = String(result[swiftRange])
+      let stripped = (url.components(separatedBy: "?").first ?? url)
+        .components(separatedBy: "#").first ?? url
+      result.replaceSubrange(swiftRange, with: stripped)
+    }
+    return result
+  }
+
+  private static func replaceRegex(pattern: String, in value: String, with replacement: String) -> String {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+      return value
+    }
+    let range = NSRange(value.startIndex..<value.endIndex, in: value)
+    return regex.stringByReplacingMatches(in: value, options: [], range: range, withTemplate: replacement)
+  }
+
+  private static func matches(_ pattern: String, in value: String) -> Bool {
+    value.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil
+  }
+
+  private static let maxDepth = 6
+  private static let maxItems = 64
+  private static let maxString = 320
+  private static let secretKeyPattern =
+    #"(^|[_.-])(password|passwd|passphrase|secret|token|api[_-]?key|authorization|cookie|otp|totp|private[_-]?key)($|[_.-])"#
+  private static let bearerPattern = #"\bBearer\s+[A-Za-z0-9._~+/=-]{8,}"#
+  private static let assignmentPattern = #"\b(password|passwd|secret|token|api[_-]?key|authorization)\s*=\s*[^\s,;]+"#
+  private static let urlInTextPattern = #"https?://[^\s<>"]+"#
+}
+
 enum AgentExecutionLoopTimelineLabel: String, Codable, CaseIterable, Identifiable {
   case plan = "PLAN"
   case act = "ACT"
@@ -2976,6 +3536,839 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
     )
   }
+}
+
+enum AgentStepKind: String, Codable, CaseIterable, Identifiable {
+  case observeScreen = "OBSERVE_SCREEN"
+  case analyzeGoal = "ANALYZE_GOAL"
+  case buildPlan = "BUILD_PLAN"
+  case confirmAndAct = "CONFIRM_AND_ACT"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentStepKind {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .buildPlan
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentStepStatus: String, Codable, CaseIterable, Identifiable {
+  case current = "CURRENT"
+  case done = "DONE"
+  case waiting = "WAITING"
+  case safe = "SAFE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentStepStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .waiting
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentStep: Codable, Equatable {
+  var order: Int
+  var kind: AgentStepKind
+  var status: AgentStepStatus
+}
+
+struct AgentPermissionRequirement: Codable, Equatable {
+  var id: String
+  var title: String
+  var required: Bool
+  var granted: Bool
+
+  init(
+    id: String,
+    title: String,
+    required: Bool = true,
+    granted: Bool = false
+  ) {
+    self.id = id
+    self.title = title
+    self.required = required
+    self.granted = granted
+  }
+}
+
+struct AgentPlanValidation: Codable, Equatable {
+  var valid: Bool
+  var issues: [String]
+
+  init(valid: Bool = true, issues: [String] = []) {
+    self.valid = valid
+    self.issues = issues
+  }
+}
+
+struct AgentSafetyReview: Codable, Equatable {
+  var risk: AgentRisk
+  var requiresConfirmation: Bool
+  var blocked: Bool
+  var mode: AgentPermissionMode
+  var deniedPermissions: [String]
+  var warnings: [String]
+  var reason: String
+
+  init(
+    risk: AgentRisk = .low,
+    requiresConfirmation: Bool = true,
+    blocked: Bool = false,
+    mode: AgentPermissionMode = .askBeforeAction,
+    deniedPermissions: [String] = [],
+    warnings: [String] = [],
+    reason: String = ""
+  ) {
+    self.risk = risk
+    self.requiresConfirmation = requiresConfirmation
+    self.blocked = blocked
+    self.mode = mode
+    self.deniedPermissions = deniedPermissions
+    self.warnings = warnings
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case risk
+    case requiresConfirmation = "requires_confirmation"
+    case blocked
+    case mode
+    case deniedPermissions = "denied_permissions"
+    case warnings
+    case reason
+  }
+}
+
+struct AgentRoute: Codable, Equatable {
+  var routeId: String
+  var kind: AgentRouteKind
+  var targetId: String
+  var targetTitle: String
+  var status: String
+  var deliveryMode: String
+  var capabilities: [String]
+
+  init(
+    routeId: String = "",
+    kind: AgentRouteKind = .unknown,
+    targetId: String = "",
+    targetTitle: String = "",
+    status: String = "",
+    deliveryMode: String = "",
+    capabilities: [String] = []
+  ) {
+    self.routeId = routeId
+    self.kind = kind
+    self.targetId = targetId
+    self.targetTitle = targetTitle
+    self.status = status
+    self.deliveryMode = deliveryMode
+    self.capabilities = capabilities
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case routeId = "route_id"
+    case kind
+    case targetId = "target_id"
+    case targetTitle = "target_title"
+    case status
+    case deliveryMode = "delivery_mode"
+    case capabilities
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      routeId: try container.decodeIfPresent(String.self, forKey: .routeId) ?? "",
+      kind: try container.decodeIfPresent(AgentRouteKind.self, forKey: .kind) ?? .unknown,
+      targetId: try container.decodeIfPresent(String.self, forKey: .targetId) ?? "",
+      targetTitle: try container.decodeIfPresent(String.self, forKey: .targetTitle) ?? "",
+      status: try container.decodeIfPresent(String.self, forKey: .status) ?? "",
+      deliveryMode: try container.decodeIfPresent(String.self, forKey: .deliveryMode) ?? "",
+      capabilities: try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+    )
+  }
+}
+
+struct AgentVerificationResult: Codable, Equatable {
+  var actionId: String
+  var success: Bool
+  var evidence: String
+  var timestampMillis: Int64
+
+  init(
+    actionId: String,
+    success: Bool = false,
+    evidence: String = "",
+    timestampMillis: Int64 = 0
+  ) {
+    self.actionId = actionId
+    self.success = success
+    self.evidence = evidence
+    self.timestampMillis = timestampMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "action_id"
+    case success
+    case evidence
+    case timestampMillis = "timestamp_millis"
+  }
+}
+
+struct AgentExecutionCheckpoint: Codable, Equatable {
+  var actionId: String
+  var summary: String
+  var timestampMillis: Int64
+
+  init(
+    actionId: String,
+    summary: String = "",
+    timestampMillis: Int64 = 0
+  ) {
+    self.actionId = actionId
+    self.summary = summary
+    self.timestampMillis = timestampMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "action_id"
+    case summary
+    case timestampMillis = "timestamp_millis"
+  }
+}
+
+enum AgentAuditEvent: String, Codable, CaseIterable, Identifiable {
+  case screenObserved = "SCREEN_OBSERVED"
+  case screenVerified = "SCREEN_VERIFIED"
+  case checkpointSaved = "CHECKPOINT_SAVED"
+  case checkpointRestored = "CHECKPOINT_RESTORED"
+  case checkpointRestoreFailed = "CHECKPOINT_RESTORE_FAILED"
+  case planReplanned = "PLAN_REPLANNED"
+  case planReplanLimitReached = "PLAN_REPLAN_LIMIT_REACHED"
+  case planEdited = "PLAN_EDITED"
+  case planEditRejected = "PLAN_EDIT_REJECTED"
+  case reasoningSummary = "REASONING_SUMMARY"
+  case toolStarted = "TOOL_STARTED"
+  case toolCompleted = "TOOL_COMPLETED"
+  case toolOutputHandoff = "TOOL_OUTPUT_HANDOFF"
+  case toolGraphBlocked = "TOOL_GRAPH_BLOCKED"
+  case autonomyGuardBlocked = "AUTONOMY_GUARD_BLOCKED"
+  case actionRecoveryStarted = "ACTION_RECOVERY_STARTED"
+  case actionRecoveryCompleted = "ACTION_RECOVERY_COMPLETED"
+  case actionRecoveryManualRequired = "ACTION_RECOVERY_MANUAL_REQUIRED"
+  case goalReceived = "GOAL_RECEIVED"
+  case invocationAudit = "INVOCATION_AUDIT"
+  case connectorResponseReceived = "CONNECTOR_RESPONSE_RECEIVED"
+  case responseSelfCheckPassed = "RESPONSE_SELF_CHECK_PASSED"
+  case responseSelfCheckFailed = "RESPONSE_SELF_CHECK_FAILED"
+  case memorySkipped = "MEMORY_SKIPPED"
+  case memoryForgotten = "MEMORY_FORGOTTEN"
+  case memoryUpdated = "MEMORY_UPDATED"
+  case memoryConflictDetected = "MEMORY_CONFLICT_DETECTED"
+  case memoryConflictResolved = "MEMORY_CONFLICT_RESOLVED"
+  case knowledgeImported = "KNOWLEDGE_IMPORTED"
+  case knowledgeAccessed = "KNOWLEDGE_ACCESSED"
+  case knowledgeAccessUpdated = "KNOWLEDGE_ACCESS_UPDATED"
+  case workflowUpdated = "WORKFLOW_UPDATED"
+  case workflowRun = "WORKFLOW_RUN"
+  case actionExecuted = "ACTION_EXECUTED"
+  case actionBlocked = "ACTION_BLOCKED"
+  case taskCancelled = "TASK_CANCELLED"
+  case taskPaused = "TASK_PAUSED"
+  case taskResumed = "TASK_RESUMED"
+  case taskInterrupted = "TASK_INTERRUPTED"
+  case settingsUpdated = "SETTINGS_UPDATED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentAuditEvent {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .invocationAudit
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentAuditEntry: Codable, Equatable {
+  var event: AgentAuditEvent
+  var detail: String
+  var timestampMillis: Int64
+
+  init(
+    event: AgentAuditEvent,
+    detail: String = "",
+    timestampMillis: Int64 = 0
+  ) {
+    self.event = event
+    self.detail = detail
+    self.timestampMillis = timestampMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case event
+    case detail
+    case timestampMillis = "timestamp_millis"
+  }
+}
+
+struct AgentPlan: Codable, Equatable, Identifiable {
+  var goal: String
+  var screen: AgentScreenContext
+  var steps: [AgentStep]
+  var actions: [AgentAction]
+  var executionMode: AgentTaskExecutionMode
+  var planId: String
+  var selectedAgentOrModel: String
+  var requiredPermissions: [AgentPermissionRequirement]
+  var confirmationRequired: Bool
+  var rollbackStrategy: String
+  var expectedResult: String
+  var timeoutSeconds: Int
+  var plannerProfile: String
+  var contextDigest: String
+  var routeRationale: String
+  var route: AgentRoute
+  var validation: AgentPlanValidation
+  var verificationResults: [AgentVerificationResult]
+  var safetyReview: AgentSafetyReview
+  var revision: Int
+  var replanCount: Int
+  var actionHistory: [AgentAction]
+  var checkpoints: [AgentExecutionCheckpoint]
+
+  var id: String { planId }
+
+  init(
+    goal: String,
+    screen: AgentScreenContext,
+    steps: [AgentStep],
+    actions: [AgentAction],
+    executionMode: AgentTaskExecutionMode = .autoComplete,
+    planId: String = UUID().uuidString,
+    selectedAgentOrModel: String? = nil,
+    requiredPermissions: [AgentPermissionRequirement] = [],
+    confirmationRequired: Bool = true,
+    rollbackStrategy: String = "Stop execution and ask the user before retrying.",
+    expectedResult: String? = nil,
+    timeoutSeconds: Int = 60,
+    plannerProfile: String = "rule-based-local",
+    contextDigest: String = "",
+    routeRationale: String = "",
+    route: AgentRoute = AgentRoute(),
+    validation: AgentPlanValidation = AgentPlanValidation(),
+    verificationResults: [AgentVerificationResult] = [],
+    safetyReview: AgentSafetyReview = AgentSafetyReview(),
+    revision: Int = 1,
+    replanCount: Int = 0,
+    actionHistory: [AgentAction] = [],
+    checkpoints: [AgentExecutionCheckpoint] = []
+  ) {
+    self.goal = goal
+    self.screen = screen
+    self.steps = steps
+    self.actions = actions
+    self.executionMode = executionMode
+    self.planId = planId
+    self.selectedAgentOrModel = selectedAgentOrModel ?? actions.first?.target ?? ""
+    self.requiredPermissions = requiredPermissions
+    self.confirmationRequired = confirmationRequired
+    self.rollbackStrategy = rollbackStrategy
+    self.expectedResult = expectedResult ?? actions.first?.description ?? ""
+    self.timeoutSeconds = timeoutSeconds
+    self.plannerProfile = plannerProfile
+    self.contextDigest = contextDigest
+    self.routeRationale = routeRationale
+    self.route = route
+    self.validation = validation
+    self.verificationResults = verificationResults
+    self.safetyReview = safetyReview
+    self.revision = revision
+    self.replanCount = replanCount
+    self.actionHistory = actionHistory
+    self.checkpoints = checkpoints
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case goal
+    case screen
+    case steps
+    case actions
+    case executionMode = "execution_mode"
+    case planId = "plan_id"
+    case selectedAgentOrModel = "selected_agent_or_model"
+    case requiredPermissions = "required_permissions"
+    case confirmationRequired = "confirmation_required"
+    case rollbackStrategy = "rollback_strategy"
+    case expectedResult = "expected_result"
+    case timeoutSeconds = "timeout_seconds"
+    case plannerProfile = "planner_profile"
+    case contextDigest = "context_digest"
+    case routeRationale = "route_rationale"
+    case route
+    case validation
+    case verificationResults = "verification_results"
+    case safetyReview = "safety_review"
+    case revision
+    case replanCount = "replan_count"
+    case actionHistory = "action_history"
+    case checkpoints
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      goal: try container.decodeIfPresent(String.self, forKey: .goal) ?? "",
+      screen: try container.decodeIfPresent(AgentScreenContext.self, forKey: .screen) ?? AgentScreenContext(foregroundApp: ""),
+      steps: try container.decodeIfPresent([AgentStep].self, forKey: .steps) ?? [],
+      actions: try container.decodeIfPresent([AgentAction].self, forKey: .actions) ?? [],
+      executionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .executionMode) ?? .autoComplete,
+      planId: try container.decodeIfPresent(String.self, forKey: .planId) ?? UUID().uuidString,
+      selectedAgentOrModel: try container.decodeIfPresent(String.self, forKey: .selectedAgentOrModel),
+      requiredPermissions: try container.decodeIfPresent([AgentPermissionRequirement].self, forKey: .requiredPermissions) ?? [],
+      confirmationRequired: try container.decodeIfPresent(Bool.self, forKey: .confirmationRequired) ?? true,
+      rollbackStrategy: try container.decodeIfPresent(String.self, forKey: .rollbackStrategy) ?? "Stop execution and ask the user before retrying.",
+      expectedResult: try container.decodeIfPresent(String.self, forKey: .expectedResult),
+      timeoutSeconds: try container.decodeIfPresent(Int.self, forKey: .timeoutSeconds) ?? 60,
+      plannerProfile: try container.decodeIfPresent(String.self, forKey: .plannerProfile) ?? "rule-based-local",
+      contextDigest: try container.decodeIfPresent(String.self, forKey: .contextDigest) ?? "",
+      routeRationale: try container.decodeIfPresent(String.self, forKey: .routeRationale) ?? "",
+      route: try container.decodeIfPresent(AgentRoute.self, forKey: .route) ?? AgentRoute(),
+      validation: try container.decodeIfPresent(AgentPlanValidation.self, forKey: .validation) ?? AgentPlanValidation(),
+      verificationResults: try container.decodeIfPresent([AgentVerificationResult].self, forKey: .verificationResults) ?? [],
+      safetyReview: try container.decodeIfPresent(AgentSafetyReview.self, forKey: .safetyReview) ?? AgentSafetyReview(),
+      revision: try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1,
+      replanCount: try container.decodeIfPresent(Int.self, forKey: .replanCount) ?? 0,
+      actionHistory: try container.decodeIfPresent([AgentAction].self, forKey: .actionHistory) ?? [],
+      checkpoints: try container.decodeIfPresent([AgentExecutionCheckpoint].self, forKey: .checkpoints) ?? []
+    )
+  }
+}
+
+struct AgentSessionSnapshot: Codable, Equatable {
+  var sessionId: String
+  var phase: AgentPhase
+  var currentGoal: String
+  var currentScreen: AgentScreenContext
+  var currentPlan: AgentPlan?
+  var auditTrail: [AgentAuditEntry]
+  var lastActionResult: AgentActionResult?
+  var activeWorkflowExecutionId: String
+  var taskExecutionMode: AgentTaskExecutionMode
+  var executionLoopSnapshot: AgentExecutionLoopSnapshot?
+  var updatedAtMillis: Int64
+
+  init(
+    sessionId: String,
+    phase: AgentPhase,
+    currentGoal: String,
+    currentScreen: AgentScreenContext,
+    currentPlan: AgentPlan?,
+    auditTrail: [AgentAuditEntry],
+    lastActionResult: AgentActionResult?,
+    activeWorkflowExecutionId: String = "",
+    taskExecutionMode: AgentTaskExecutionMode = .autoComplete,
+    executionLoopSnapshot: AgentExecutionLoopSnapshot? = nil,
+    updatedAtMillis: Int64
+  ) {
+    self.sessionId = sessionId
+    self.phase = phase
+    self.currentGoal = currentGoal
+    self.currentScreen = currentScreen
+    self.currentPlan = currentPlan
+    self.auditTrail = auditTrail
+    self.lastActionResult = lastActionResult
+    self.activeWorkflowExecutionId = activeWorkflowExecutionId
+    self.taskExecutionMode = taskExecutionMode
+    self.executionLoopSnapshot = executionLoopSnapshot
+    self.updatedAtMillis = updatedAtMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case sessionId = "session_id"
+    case phase
+    case currentGoal = "current_goal"
+    case currentScreen = "current_screen"
+    case currentPlan = "current_plan"
+    case auditTrail = "audit_trail"
+    case lastActionResult = "last_action_result"
+    case activeWorkflowExecutionId = "active_workflow_execution_id"
+    case taskExecutionMode = "task_execution_mode"
+    case executionLoopSnapshot = "execution_loop_snapshot"
+    case updatedAtMillis = "updated_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      sessionId: try container.decodeIfPresent(String.self, forKey: .sessionId) ?? "",
+      phase: try container.decodeIfPresent(AgentPhase.self, forKey: .phase) ?? .observing,
+      currentGoal: try container.decodeIfPresent(String.self, forKey: .currentGoal) ?? "",
+      currentScreen: try container.decodeIfPresent(AgentScreenContext.self, forKey: .currentScreen) ?? AgentScreenContext(foregroundApp: ""),
+      currentPlan: try container.decodeIfPresent(AgentPlan.self, forKey: .currentPlan),
+      auditTrail: try container.decodeIfPresent([AgentAuditEntry].self, forKey: .auditTrail) ?? [],
+      lastActionResult: try container.decodeIfPresent(AgentActionResult.self, forKey: .lastActionResult),
+      activeWorkflowExecutionId: try container.decodeIfPresent(String.self, forKey: .activeWorkflowExecutionId) ?? "",
+      taskExecutionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .taskExecutionMode) ?? .autoComplete,
+      executionLoopSnapshot: try container.decodeIfPresent(AgentExecutionLoopSnapshot.self, forKey: .executionLoopSnapshot),
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
+    )
+  }
+}
+
+struct AgentPlanLifecycleNormalization: Equatable {
+  var plan: AgentPlan
+  var removedActions: [AgentAction]
+
+  var changed: Bool {
+    !removedActions.isEmpty
+  }
+
+  func recoverResult(previous: AgentActionResult?) -> AgentActionResult? {
+    guard changed else {
+      return previous
+    }
+    let removedIds = Set(removedActions.map(\.id))
+    if let previous,
+      !removedIds.contains(previous.actionId),
+      !previous.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return previous
+    }
+    guard let action = plan.actions.reversed().first(where: {
+      !$0.result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        Self.resultStatuses.contains($0.status)
+    }) else {
+      return previous
+    }
+    return AgentActionResult(
+      actionId: action.id,
+      success: action.status == .completed,
+      message: action.result
+    )
+  }
+
+  private static let resultStatuses: Set<AgentActionStatus> = [
+    .completed,
+    .failed,
+    .blocked
+  ]
+}
+
+struct AgentSessionLifecycleNormalization: Equatable {
+  var session: AgentSessionSnapshot
+  var removedActions: [AgentAction]
+
+  var changed: Bool {
+    !removedActions.isEmpty
+  }
+}
+
+enum AgentPlanValidator {
+  static func validate(_ plan: AgentPlan) -> AgentPlanValidation {
+    var issues: [String] = []
+    if isBlank(plan.goal) {
+      issues.append("goal_blank")
+    }
+    if plan.actions.isEmpty {
+      issues.append("actions_empty")
+    }
+    let actionIds = plan.actions.map(\.id)
+    if Set(actionIds).count != actionIds.count {
+      issues.append("action_ids_duplicate")
+    }
+    for action in plan.actions {
+      if isBlank(action.description) {
+        issues.append("action_description_blank:\(action.id)")
+      }
+    }
+    if plan.safetyReview.risk.weight >= AgentRisk.high.weight && !plan.confirmationRequired {
+      issues.append("high_risk_without_confirmation")
+    }
+    if plan.actions.contains(where: { $0.kind == .callConnector || $0.kind == .controlDevice }) &&
+      plan.route.kind == .unknown {
+      issues.append("route_unknown")
+    }
+    return AgentPlanValidation(valid: issues.isEmpty, issues: issues)
+  }
+
+  private static func isBlank(_ value: String) -> Bool {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+}
+
+enum AgentPlanLifecyclePolicy {
+  static func normalize(_ plan: AgentPlan) -> AgentPlanLifecycleNormalization {
+    let legacyRuntimeDrafts = !plan.actions.isEmpty &&
+      plan.actions.allSatisfy {
+        $0.kind == .draftPlan &&
+          $0.target.caseInsensitiveCompare(localAgentRuntimeTarget) == .orderedSame
+      } ? plan.actions : []
+
+    if !legacyRuntimeDrafts.isEmpty {
+      let recovered = recoverCompletedHistory(plan: plan, drafts: legacyRuntimeDrafts)
+      if recovered.changed {
+        return recovered
+      }
+      return retireLegacyRuntimeFallback(plan: plan, drafts: legacyRuntimeDrafts)
+    }
+
+    let trailingDrafts = trailingRetirableDrafts(plan.actions)
+    if trailingDrafts.isEmpty {
+      return AgentPlanLifecycleNormalization(plan: plan, removedActions: [])
+    }
+    if trailingDrafts.count == plan.actions.count {
+      return recoverCompletedHistory(plan: plan, drafts: trailingDrafts)
+    }
+    let retainedActions = Array(plan.actions.dropLast(trailingDrafts.count))
+    if !retainedActions.contains(where: { $0.kind != .draftPlan }) {
+      return AgentPlanLifecycleNormalization(plan: plan, removedActions: [])
+    }
+    let removedIds = Set(trailingDrafts.map(\.id))
+    var normalized = plan
+    normalized.actions = retainedActions
+    normalized.verificationResults = plan.verificationResults.filter { !removedIds.contains($0.actionId) }
+    normalized.checkpoints = plan.checkpoints.filter { !removedIds.contains($0.actionId) }
+    normalized.validation = AgentPlanValidator.validate(normalized)
+    return AgentPlanLifecycleNormalization(plan: normalized, removedActions: trailingDrafts)
+  }
+
+  static func normalize(_ session: AgentSessionSnapshot) -> AgentSessionLifecycleNormalization {
+    guard let plan = session.currentPlan else {
+      return AgentSessionLifecycleNormalization(session: session, removedActions: [])
+    }
+    let planNormalization = normalize(plan)
+    guard planNormalization.changed else {
+      return AgentSessionLifecycleNormalization(session: session, removedActions: [])
+    }
+    var normalizedSession = session
+    normalizedSession.phase = resolvedPhase(plan: planNormalization.plan, fallback: session.phase)
+    normalizedSession.currentPlan = planNormalization.plan
+    normalizedSession.lastActionResult = planNormalization.recoverResult(previous: session.lastActionResult)
+    return AgentSessionLifecycleNormalization(
+      session: normalizedSession,
+      removedActions: planNormalization.removedActions
+    )
+  }
+
+  static func recoverCompletedConnector(
+    session: AgentSessionSnapshot,
+    persistedTask: AgentTaskRecord?,
+    missingResult: String
+  ) -> AgentSessionSnapshot {
+    guard let plan = session.currentPlan else {
+      return session
+    }
+    let receivedConnectorResponse = session.auditTrail.contains {
+      $0.event == .connectorResponseReceived
+    }
+    let staleRuntimeDrafts = !plan.actions.isEmpty &&
+      plan.actions.allSatisfy {
+        $0.kind == .draftPlan &&
+          $0.target.caseInsensitiveCompare(localAgentRuntimeTarget) == .orderedSame
+      }
+    guard receivedConnectorResponse, staleRuntimeDrafts else {
+      return session
+    }
+
+    let durableResult = durableConnectorResult(from: persistedTask)
+    let previousResult = session.lastActionResult.flatMap { result -> String? in
+      guard !isBlank(result.message),
+        plan.actions.allSatisfy({ $0.id != result.actionId }) else {
+        return nil
+      }
+      return result.message
+    } ?? ""
+    let resultText = firstNonBlank(durableResult, previousResult, missingResult.trimmingCharacters(in: .whitespacesAndNewlines))
+    guard !isBlank(resultText) else {
+      return session
+    }
+
+    let recoveredAction: AgentAction
+    if var historicalConnector = plan.actionHistory.reversed().first(where: { $0.kind == .callConnector }) {
+      historicalConnector.status = .completed
+      historicalConnector.result = resultText
+      historicalConnector.evidence = restoredConnectorEvidence
+      recoveredAction = historicalConnector
+    } else {
+      recoveredAction = AgentAction(
+        id: "restored-connector-result",
+        kind: .callConnector,
+        target: firstNonBlank(persistedTask?.targetTitle ?? "", plan.route.targetTitle, "remote-agent"),
+        risk: persistedTask?.risk ?? .low,
+        status: .completed,
+        description: "Restore completed remote Agent result",
+        requiresConfirmation: false,
+        result: resultText,
+        evidence: restoredConnectorEvidence
+      )
+    }
+
+    var normalizedPlan = plan
+    normalizedPlan.actions = [recoveredAction]
+    normalizedPlan.selectedAgentOrModel = recoveredAction.target
+    normalizedPlan.expectedResult = resultText
+    normalizedPlan.actionHistory = plan.actionHistory.filter { $0.id != recoveredAction.id }
+    normalizedPlan.confirmationRequired = false
+    normalizedPlan.validation = AgentPlanValidator.validate(normalizedPlan)
+
+    var normalizedSession = session
+    normalizedSession.phase = .completed
+    normalizedSession.currentPlan = normalizedPlan
+    normalizedSession.lastActionResult = AgentActionResult(
+      actionId: recoveredAction.id,
+      success: true,
+      message: resultText
+    )
+    return normalizedSession
+  }
+
+  private static func recoverCompletedHistory(
+    plan: AgentPlan,
+    drafts: [AgentAction]
+  ) -> AgentPlanLifecycleNormalization {
+    guard let recoveredIndex = plan.actionHistory.lastIndex(where: {
+      $0.kind != .draftPlan &&
+        $0.status == .completed &&
+        !isBlank($0.result)
+    }) else {
+      return AgentPlanLifecycleNormalization(plan: plan, removedActions: [])
+    }
+    let recoveredAction = plan.actionHistory[recoveredIndex]
+    var retainedHistory = plan.actionHistory
+    retainedHistory.remove(at: recoveredIndex)
+    let removedIds = Set(drafts.map(\.id))
+    var normalized = plan
+    normalized.actions = [recoveredAction]
+    normalized.actionHistory = retainedHistory
+    normalized.selectedAgentOrModel = recoveredAction.target
+    normalized.expectedResult = recoveredAction.result
+    normalized.verificationResults = plan.verificationResults.filter { !removedIds.contains($0.actionId) }
+    normalized.checkpoints = plan.checkpoints.filter { !removedIds.contains($0.actionId) }
+    normalized.validation = AgentPlanValidator.validate(normalized)
+    return AgentPlanLifecycleNormalization(plan: normalized, removedActions: drafts)
+  }
+
+  private static func retireLegacyRuntimeFallback(
+    plan: AgentPlan,
+    drafts: [AgentAction]
+  ) -> AgentPlanLifecycleNormalization {
+    guard var retired = drafts.last else {
+      return AgentPlanLifecycleNormalization(plan: plan, removedActions: [])
+    }
+    retired.target = taskCompleteTarget
+    retired.status = .failed
+    retired.description = "Task routing failed"
+    retired.requiresConfirmation = false
+    retired.result = "No Agent or model accepted this task. Send it again to retry with current resources."
+    retired.evidence = "retired_legacy_runtime_fallback"
+    var normalized = plan
+    normalized.actions = [retired]
+    normalized.selectedAgentOrModel = ""
+    normalized.expectedResult = retired.result
+    normalized.confirmationRequired = false
+    normalized.route = AgentRoute()
+    normalized.routeRationale = "Legacy internal planner fallback retired."
+    let removedIds = Set(drafts.map(\.id))
+    normalized.verificationResults = plan.verificationResults.filter { !removedIds.contains($0.actionId) }
+    normalized.checkpoints = plan.checkpoints.filter { !removedIds.contains($0.actionId) }
+    normalized.validation = AgentPlanValidator.validate(normalized)
+    return AgentPlanLifecycleNormalization(plan: normalized, removedActions: drafts)
+  }
+
+  private static func resolvedPhase(plan: AgentPlan, fallback: AgentPhase) -> AgentPhase {
+    if plan.actions.contains(where: { $0.status == .waitingResponse }) {
+      return .waitingResponse
+    }
+    if plan.actions.contains(where: { $0.status == .running }) {
+      return .paused
+    }
+    if plan.actions.contains(where: { $0.status == .pendingConfirmation || $0.status == .proposed }) {
+      return .waitingConfirmation
+    }
+    if plan.actions.contains(where: { $0.status == .failed }) {
+      return .failed
+    }
+    if plan.actions.contains(where: { $0.status == .blocked }) {
+      return .blocked
+    }
+    if !plan.actions.isEmpty && plan.actions.allSatisfy({ terminalStatuses.contains($0.status) }) {
+      return .completed
+    }
+    return fallback
+  }
+
+  private static func trailingRetirableDrafts(_ actions: [AgentAction]) -> [AgentAction] {
+    var drafts: [AgentAction] = []
+    for action in actions.reversed() {
+      guard action.kind == .draftPlan,
+        action.target.caseInsensitiveCompare(taskCompleteTarget) != .orderedSame else {
+        break
+      }
+      drafts.append(action)
+    }
+    return Array(drafts.reversed())
+  }
+
+  private static func durableConnectorResult(from task: AgentTaskRecord?) -> String {
+    guard let task,
+      !isBlank(task.result),
+      task.targetTitle.caseInsensitiveCompare(localAgentRuntimeTarget) != .orderedSame,
+      connectorRouteKinds.contains(task.routeKind) else {
+      return ""
+    }
+    return task.result
+  }
+
+  private static func firstNonBlank(_ values: String...) -> String {
+    values.first { !isBlank($0) } ?? ""
+  }
+
+  private static func isBlank(_ value: String) -> Bool {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private static let terminalStatuses: Set<AgentActionStatus> = [
+    .completed,
+    .failed,
+    .blocked,
+    .rolledBack
+  ]
+  private static let connectorRouteKinds: Set<AgentRouteKind> = [
+    .desktopAgent,
+    .cloudModel,
+    .localModel
+  ]
+  private static let taskCompleteTarget = "task-complete"
+  private static let localAgentRuntimeTarget = "local-agent-runtime"
+  private static let restoredConnectorEvidence = "restored_connector_terminal_result"
 }
 
 enum AgentTaskLivenessState: String, Codable, CaseIterable, Identifiable {
