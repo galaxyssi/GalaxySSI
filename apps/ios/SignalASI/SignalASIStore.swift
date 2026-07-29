@@ -372,6 +372,31 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
+  func appendDeliveryTrace(
+    _ messageId: UUID,
+    contactId: String? = nil,
+    stage: String,
+    detail: String = "",
+    status: ChatDeliveryStatus? = nil
+  ) -> Bool {
+    let contactIds = contactId.map { [$0] } ?? Array(messagesByContact.keys)
+    for id in contactIds {
+      guard var messages = messagesByContact[id],
+            let index = messages.firstIndex(where: { $0.id == messageId }) else {
+        continue
+      }
+      if let status {
+        messages[index].deliveryStatus = status
+      }
+      messages[index].deliveryTrace.append(DeliveryTraceEvent(stage: stage, detail: detail))
+      messagesByContact[id] = messages
+      save()
+      return true
+    }
+    return false
+  }
+
+  @discardableResult
   func addCloudModelContact(
     displayName: String,
     provider: String,

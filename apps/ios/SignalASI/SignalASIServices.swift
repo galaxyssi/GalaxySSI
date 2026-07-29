@@ -422,20 +422,60 @@ final class MessageCoordinator: ObservableObject {
         if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
           cloudTurns[index].content = cloudText
         }
-        if cloudText != displayText {
-          store.markMessage(outgoing.id, contactId: contact.id, status: .sent, detail: "Attachments described to cloud model.")
-        }
+        let modelDetail = contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(contact.id)
+        let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "cloud_request",
+          detail: requestDetail,
+          status: .sent
+        )
         let reply = try await cloudClient.send(contact: contact, store: store, turns: cloudTurns)
-        store.markMessage(outgoing.id, contactId: contact.id, status: .delivered)
-        store.appendIncoming(reply, from: contact.id)
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "cloud_reply",
+          detail: modelDetail,
+          status: .delivered
+        )
+        let incoming = store.appendIncoming(reply, from: contact.id)
+        store.appendDeliveryTrace(
+          incoming.id,
+          contactId: contact.id,
+          stage: "cloud_reply_received",
+          detail: modelDetail,
+          status: .delivered
+        )
       case .link:
         try await publishLinkMessage(displayText, contact: contact, outgoing: outgoing, attachments: attachments)
       case .local:
-        store.markMessage(outgoing.id, contactId: contact.id, status: .delivered)
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "delivered_local_estimate",
+          detail: "Local conversation",
+          status: .delivered
+        )
       }
     } catch {
       lastError = error.localizedDescription
-      store.markMessage(outgoing.id, contactId: contact.id, status: .failed, detail: error.localizedDescription)
+      let stage: String
+      switch contact.deliveryMode {
+      case .cloudAPI:
+        stage = "cloud_error"
+      case .link:
+        stage = "publish_failed"
+      case .local:
+        stage = "failed"
+      }
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: stage,
+        detail: error.localizedDescription,
+        status: .failed
+      )
       store.appendSystem(error.localizedDescription, to: contact.id)
     }
   }
@@ -515,10 +555,22 @@ final class MessageCoordinator: ObservableObject {
     switch result {
     case .published:
       deliveryStore.markPublished(messageId: outgoing.id.uuidString)
-      store.markMessage(outgoing.id, contactId: contact.id, status: .sent)
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "mqtt_published",
+        detail: link.routes.upTopic,
+        status: .sent
+      )
       scheduleOutboxFlushFromStore()
     case .queued:
-      store.markMessage(outgoing.id, contactId: contact.id, status: .queued, detail: "Waiting for MQTT connection.")
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "queued",
+        detail: "Waiting for MQTT connection.",
+        status: .queued
+      )
       scheduleOutboxFlushFromStore()
     case .failed:
       throw SignalASIError.transportUnavailable
@@ -609,7 +661,7 @@ final class MessageCoordinator: ObservableObject {
     acknowledgedIds.forEach { messageId in
       deliveryStore.acknowledge(messageId: messageId)
       if let uuid = UUID(uuidString: messageId) {
-        store.markMessage(uuid, status: .delivered)
+        store.appendDeliveryTrace(uuid, stage: "desktop_broker_ack", detail: "Delivery ACK", status: .delivered)
       }
     }
     scheduleOutboxFlushFromStore()

@@ -111,6 +111,24 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(updated?.deliveryTrace.last?.detail, "QoS accepted")
   }
 
+  func testAppendDeliveryTraceUpdatesStatusAndKeepsPriorStages() {
+    let store = makeStore()
+    let message = store.appendOutgoing("hello", to: "hermes")
+
+    XCTAssertTrue(store.appendDeliveryTrace(
+      message.id,
+      contactId: "hermes",
+      stage: "mqtt_published",
+      detail: "signalasi/topic",
+      status: .sent
+    ))
+
+    let updated = store.messages(for: "hermes").first { $0.id == message.id }
+    XCTAssertEqual(updated?.deliveryStatus, .sent)
+    XCTAssertEqual(updated?.deliveryTrace.map(\.stage), ["queued", "mqtt_published"])
+    XCTAssertEqual(updated?.deliveryTrace.last?.detail, "signalasi/topic")
+  }
+
   func testDeletingHermesClearsServerLinks() throws {
     let store = makeStore()
     _ = try store.addServerLink(from: makePairingQRCode())
