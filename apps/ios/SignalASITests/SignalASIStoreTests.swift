@@ -1142,6 +1142,130 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(segments.first { $0.text == "keeping this" }?.style, .bold)
   }
 
+  func testAgentTaskIdentityPolicyGeneratesStableAndroidIds() {
+    let conversationId = AgentTaskIdentityPolicy.conversationId(contactId: "codex", requested: "")
+    let turnId = AgentTaskIdentityPolicy.turnId(sourceMessageId: 42, requested: "")
+    let first = AgentTaskIdentityPolicy.taskId(
+      ownerId: "signalasi:phone",
+      contactId: "codex",
+      sourceMessageId: 42,
+      conversationId: conversationId,
+      turnId: turnId
+    )
+    let second = AgentTaskIdentityPolicy.taskId(
+      ownerId: "signalasi:phone",
+      contactId: "codex",
+      sourceMessageId: 42,
+      conversationId: conversationId,
+      turnId: turnId
+    )
+
+    XCTAssertEqual(conversationId, "contact:codex")
+    XCTAssertEqual(turnId, "message:42")
+    XCTAssertEqual(first, second)
+    XCTAssertEqual(first, "89d82315-14f3-3f6a-8e5f-4cb48680373d")
+    XCTAssertEqual(
+      AgentTaskIdentityPolicy.conversationId(contactId: "codex", requested: " conversation-a "),
+      "conversation-a"
+    )
+    XCTAssertEqual(
+      AgentTaskIdentityPolicy.turnId(sourceMessageId: nil, requested: "") {
+        UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
+      },
+      "11111111-2222-3333-4444-555555555555"
+    )
+  }
+
+  func testAgentTaskIdentityPolicyMatchesDesktopResponseIdentity() {
+    let expected = [
+      "resource_location": "desktop",
+      "conversation_id": "conversation-a",
+      "remote_task_id": "task-a",
+      "turn_id": "turn-a"
+    ]
+
+    XCTAssertTrue(
+      AgentTaskIdentityPolicy.matchesDesktopResponse(
+        expected: expected,
+        conversationId: "conversation-a",
+        taskId: "task-a",
+        turnId: "turn-a"
+      )
+    )
+    XCTAssertFalse(
+      AgentTaskIdentityPolicy.matchesDesktopResponse(
+        expected: expected,
+        conversationId: "conversation-b",
+        taskId: "task-a",
+        turnId: "turn-a"
+      )
+    )
+    XCTAssertFalse(
+      AgentTaskIdentityPolicy.matchesDesktopResponse(
+        expected: expected,
+        conversationId: "conversation-a",
+        taskId: "task-a",
+        turnId: "turn-b"
+      )
+    )
+    XCTAssertFalse(
+      AgentTaskIdentityPolicy.matchesDesktopResponse(
+        expected: expected,
+        conversationId: "conversation-a",
+        taskId: "",
+        turnId: "turn-a"
+      )
+    )
+    XCTAssertTrue(
+      AgentTaskIdentityPolicy.matchesDesktopResponse(
+        expected: ["resource_location": "cloud"],
+        conversationId: "",
+        taskId: "",
+        turnId: ""
+      )
+    )
+  }
+
+  func testAgentTaskIdentityCompletenessAndWireNames() throws {
+    let identity = AgentTaskIdentity(
+      clientRouteId: "route-1",
+      conversationId: "conversation-a",
+      taskId: "task-a",
+      turnId: "turn-a"
+    )
+    XCTAssertTrue(identity.isComplete)
+    XCTAssertFalse(
+      AgentTaskIdentity(
+        clientRouteId: "route-1",
+        conversationId: "conversation-a",
+        taskId: "",
+        turnId: "turn-a"
+      ).isComplete
+    )
+
+    let encoded = String(decoding: try JSONEncoder().encode(identity), as: UTF8.self)
+    XCTAssertTrue(encoded.contains(#""client_route_id":"route-1""#))
+    XCTAssertTrue(encoded.contains(#""conversation_id":"conversation-a""#))
+    XCTAssertTrue(encoded.contains(#""task_id":"task-a""#))
+    XCTAssertTrue(encoded.contains(#""turn_id":"turn-a""#))
+
+    let decoded = try JSONDecoder().decode(
+      AgentTaskIdentity.self,
+      from: Data(
+        #"""
+        {
+          "client_route_id": "route-2",
+          "conversation_id": "conversation-b",
+          "task_id": "task-b",
+          "turn_id": "turn-b"
+        }
+        """#.utf8
+      )
+    )
+    XCTAssertEqual(decoded.clientRouteId, "route-2")
+    XCTAssertTrue(decoded.isComplete)
+  }
+
   func testAgentClarificationPolicyAsksTargetedQuestionsForMissingDetails() {
     let cases: [(String, AgentClarificationQuestion)] = [
       ("Help me", .taskGoal),
