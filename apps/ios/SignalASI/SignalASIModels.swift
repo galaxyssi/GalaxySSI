@@ -11383,6 +11383,561 @@ enum AgentPhoneCapabilityCatalog {
   }
 }
 
+struct AgentPhoneNativeToolDefinition: Codable, Equatable, Identifiable {
+  var descriptor: AgentNativeToolDescriptor
+  var executorId: String
+  var provenanceMetadata: [String: String]
+
+  var id: String { descriptor.id }
+
+  init(
+    descriptor: AgentNativeToolDescriptor,
+    executorId: String,
+    provenanceMetadata: [String: String] = [:]
+  ) {
+    self.descriptor = descriptor
+    self.executorId = executorId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.provenanceMetadata = provenanceMetadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case descriptor
+    case executorId = "executor_id"
+    case provenanceMetadata = "provenance_metadata"
+  }
+}
+
+enum AgentPhoneNativeToolCatalog {
+  static let workspaceInitialize = "signalasi.workspace.initialize"
+  static let workspaceMkdir = "signalasi.workspace.directory.create"
+  static let workspaceList = "signalasi.workspace.directory.list"
+  static let workspaceStat = "signalasi.workspace.file.stat"
+  static let workspaceReadText = "signalasi.workspace.file.read.text"
+  static let workspaceReadBytes = "signalasi.workspace.file.read.bytes"
+  static let workspaceWriteText = "signalasi.workspace.file.write.text"
+  static let workspaceCreateText = "signalasi.workspace.file.create.text"
+  static let workspaceAppendText = "signalasi.workspace.file.append.text"
+  static let workspaceWriteBytes = "signalasi.workspace.file.write.bytes"
+  static let workspaceCreateBytes = "signalasi.workspace.file.create.bytes"
+  static let workspaceAppendBytes = "signalasi.workspace.file.append.bytes"
+  static let workspaceMove = "signalasi.workspace.entry.move"
+  static let workspaceCopy = "signalasi.workspace.entry.copy"
+  static let workspaceDelete = "signalasi.workspace.entry.delete"
+  static let workspaceSearchText = "signalasi.workspace.file.search.text"
+  static let workspaceApplyExactPatch = "signalasi.workspace.file.patch.exact"
+  static let workspaceDiffSummary = "signalasi.workspace.file.diff.summary"
+  static let workspaceSha256 = "signalasi.workspace.file.sha256"
+  static let workspaceZipCreate = "signalasi.workspace.zip.create"
+  static let workspaceZipList = "signalasi.workspace.zip.list"
+  static let workspaceZipExtract = "signalasi.workspace.zip.extract"
+
+  static let workspacePrivatePermission = "signalasi.scope.app_private_workspace"
+  static let workspaceReadConsent = "signalasi.consent.workspace_read"
+  static let workspaceWriteConsent = "signalasi.consent.workspace_write"
+
+  static let version = "1.0.0"
+  static let fileExecutorId = "signalasi.workspace_file_tools"
+  static let actionExecutorId = "signalasi.ios_agent_action"
+  static let descriptorExecutorId = "signalasi.ios_native_catalog"
+
+  static let supportedActionKinds: [AgentActionKind] = [
+    .readScreen,
+    .tap,
+    .typeText,
+    .swipe,
+    .longPress,
+    .deleteText,
+    .pasteText,
+    .copyScreenText,
+    .back,
+    .home,
+    .recents,
+    .lockScreen,
+    .openApp,
+    .openURL,
+    .setAlarm,
+    .replyNotification
+  ]
+
+  static let toolIds: Set<String> = Set(workspaceToolIds + supportedActionKinds.map {
+    AgentNativeToolAgentActionAdapter.defaultToolId($0)
+  })
+
+  static let defaultToolIds: Set<String> = toolIds
+    .union(AgentPhoneCapabilityNativeCoverage.coveredToolIds)
+    .union(webMediaToolIds)
+    .union(webIntelligenceToolIds)
+    .union(androidSystemCompatibilityToolIds)
+    .union(mcpToolIds)
+    .union(onDeviceRuntimeToolIds)
+    .union(selfEvolutionToolIds)
+    .union(desktopRemoteToolIds)
+
+  static func definitions(
+    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
+  ) -> [AgentPhoneNativeToolDefinition] {
+    workspaceDefinitions() + actionDefinitions(capabilityStatuses: capabilityStatuses)
+  }
+
+  static func descriptors(
+    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
+  ) -> [AgentNativeToolDescriptor] {
+    definitions(capabilityStatuses: capabilityStatuses).map(\.descriptor)
+  }
+
+  static func capabilities(for kind: AgentActionKind) -> Set<AgentPhoneCapabilityId> {
+    switch kind {
+    case .readScreen:
+      return [.accessibilityUITree]
+    case .copyScreenText:
+      return [.accessibilityUITree, .clipboard]
+    case .pasteText:
+      return [.accessibilityGestures, .clipboard]
+    case .tap, .typeText, .swipe, .longPress, .deleteText, .back, .home, .recents, .lockScreen:
+      return [.accessibilityGestures]
+    case .openApp, .openURL, .setAlarm:
+      return [.intentLaunch]
+    case .replyNotification:
+      return [.notificationReply]
+    case .saveScreenKnowledge, .draftPlan, .createNotification, .importWebKnowledge, .callConnector, .callNativeTool, .controlDevice:
+      return []
+    }
+  }
+
+  private static func workspaceDefinitions() -> [AgentPhoneNativeToolDefinition] {
+    [
+      workspaceDefinition(workspaceInitialize, "Initialize app-private workspace", .low, workspaceWriteConsent, .idempotent),
+      workspaceDefinition(workspaceMkdir, "Create workspace directory", .low, workspaceWriteConsent, .idempotent),
+      workspaceDefinition(workspaceList, "List workspace directory", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceStat, "Inspect workspace entry", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceReadText, "Read workspace text file", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceReadBytes, "Read workspace binary file", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceWriteText, "Write workspace text file", .medium, workspaceWriteConsent, .idempotent),
+      workspaceDefinition(workspaceCreateText, "Create workspace text file", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceAppendText, "Append workspace text file", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceWriteBytes, "Write workspace binary file", .medium, workspaceWriteConsent, .idempotent),
+      workspaceDefinition(workspaceCreateBytes, "Create workspace binary file", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceAppendBytes, "Append workspace binary file", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceMove, "Move workspace entry", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceCopy, "Copy workspace entry", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceDelete, "Delete workspace entry", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceSearchText, "Search workspace text", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceApplyExactPatch, "Apply exact workspace patch", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceDiffSummary, "Summarize workspace diff", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceSha256, "Hash workspace file", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceZipCreate, "Create workspace zip", .medium, workspaceWriteConsent, .idempotencyKeyRequired),
+      workspaceDefinition(workspaceZipList, "List workspace zip", .low, workspaceReadConsent, .idempotent),
+      workspaceDefinition(workspaceZipExtract, "Extract workspace zip", .medium, workspaceWriteConsent, .idempotencyKeyRequired)
+    ]
+  }
+
+  private static func workspaceDefinition(
+    _ id: String,
+    _ title: String,
+    _ risk: AgentNativeToolRisk,
+    _ consentId: String,
+    _ idempotency: AgentNativeToolIdempotency
+  ) -> AgentPhoneNativeToolDefinition {
+    let descriptor = try! AgentNativeToolDescriptor(
+      id: id,
+      version: version,
+      title: title,
+      description: "Bounded operation inside SignalASI app-private Agent workspace storage.",
+      location: .application,
+      inputSchema: workspaceInputSchema(id),
+      outputSchema: workspaceOutputSchema(id),
+      risk: risk,
+      capabilities: ["workspace.app_private", "workspace.file.bounded"],
+      requiredPermissions: [
+        AgentNativePermissionRequirement(
+          id: workspacePrivatePermission,
+          title: "App-private workspace scope",
+          description: "Restricts access to SignalASI-owned workspace storage."
+        )
+      ],
+      requiredConsents: [
+        AgentNativeConsentRequirement(
+          id: consentId,
+          title: consentId == workspaceReadConsent ? "Read app-private workspace" : "Modify app-private workspace",
+          description: "Authorizes this invocation to access the selected Agent workspace."
+        )
+      ],
+      timeoutMillis: 15_000,
+      idempotency: idempotency,
+      availability: .available
+    )
+    return AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: fileExecutorId,
+      provenanceMetadata: [
+        "storage_scope": "app_private",
+        "path_policy": "workspace_relative_no_symlinks",
+        "result_policy": "bounded-v1"
+      ]
+    )
+  }
+
+  private static func actionDefinitions(
+    capabilityStatuses: [AgentPhoneCapabilityStatus]
+  ) -> [AgentPhoneNativeToolDefinition] {
+    supportedActionKinds.map { kind in
+      let capabilityIds = capabilities(for: kind)
+      let boundaries = capabilityIds.map { AgentPhoneCapabilityCatalog.find($0) }
+      let descriptor = try! AgentNativeToolDescriptor(
+        id: AgentNativeToolAgentActionAdapter.defaultToolId(kind),
+        version: version,
+        title: actionTitle(kind),
+        description: actionDescription(kind),
+        location: nativeLocation(boundaries),
+        inputSchema: actionInputSchema(kind),
+        outputSchema: actionOutputSchema(),
+        risk: nativeRisk(boundaries.map(\.risk).max { $0.weight < $1.weight }),
+        capabilities: Set(capabilityIds.map(\.wireId)),
+        requiredPermissions: permissionRequirements(boundaries),
+        requiredConsents: consentRequirements(boundaries),
+        timeoutMillis: 15_000,
+        idempotency: .nonIdempotent,
+        availability: capabilityAvailability(capabilityIds, statuses: capabilityStatuses)
+      )
+      return AgentPhoneNativeToolDefinition(
+        descriptor: descriptor,
+        executorId: actionExecutorId,
+        provenanceMetadata: [
+          "adapter": "AgentActionExecutor",
+          "legacy_action_kind": kind.rawValue,
+          "result_policy": "bounded-v1",
+          "platform": "ios"
+        ]
+      )
+    }
+  }
+
+  private static func permissionRequirements(
+    _ boundaries: [AgentPhoneCapabilityBoundary]
+  ) -> [AgentNativePermissionRequirement] {
+    var requirements: [String: AgentNativePermissionRequirement] = [:]
+    for boundary in boundaries {
+      for permission in boundary.platformPermissions.sorted() {
+        requirements[permission] = AgentNativePermissionRequirement(
+          id: permission,
+          title: permission,
+          description: "iOS permission or Info.plist usage key required by \(boundary.id.wireId)."
+        )
+      }
+      for access in boundary.specialAccess.sorted(by: { $0.rawValue < $1.rawValue }) {
+        let id = "signalasi.special_access.\(access.rawValue.lowercased())"
+        requirements[id] = AgentNativePermissionRequirement(
+          id: id,
+          title: access.rawValue.replacingOccurrences(of: "_", with: " ").lowercased(),
+          description: "Special platform access required by \(boundary.id.wireId)."
+        )
+      }
+    }
+    if requirements.isEmpty {
+      requirements[normalAppExecutionPermission] = AgentNativePermissionRequirement(
+        id: normalAppExecutionPermission,
+        title: "Normal app execution",
+        description: "No runtime permission or special-access grant is required.",
+        required: false
+      )
+    }
+    return requirements.values.sorted { $0.id < $1.id }
+  }
+
+  private static func consentRequirements(
+    _ boundaries: [AgentPhoneCapabilityBoundary]
+  ) -> [AgentNativeConsentRequirement] {
+    let consents = boundaries.reduce(into: Set<AgentPhoneUserConsent>()) { result, boundary in
+      result.formUnion(boundary.userConsent)
+    }
+    if consents.isEmpty || consents == Set([.none]) {
+      return [
+        AgentNativeConsentRequirement(
+          id: "signalasi.consent.none",
+          title: "No additional consent",
+          description: "This capability has no additional interactive consent requirement.",
+          required: false
+        )
+      ]
+    }
+    return consents
+      .filter { $0 != .none }
+      .sorted { $0.rawValue < $1.rawValue }
+      .map { consent in
+        AgentNativeConsentRequirement(
+          id: "signalasi.consent.\(consent.rawValue.lowercased())",
+          title: consent.rawValue.replacingOccurrences(of: "_", with: " ").lowercased(),
+          description: "User consent required by the phone capability boundary."
+        )
+      }
+  }
+
+  private static func capabilityAvailability(
+    _ ids: Set<AgentPhoneCapabilityId>,
+    statuses: [AgentPhoneCapabilityStatus]
+  ) -> AgentNativeToolAvailability {
+    guard !ids.isEmpty else {
+      return AgentNativeToolAvailability(status: .unavailable, reason: "No phone capability mapping is declared")
+    }
+    let byId = Dictionary(uniqueKeysWithValues: statuses.map { ($0.boundary.id, $0) })
+    let resolved = ids.map { id in
+      byId[id] ?? AgentPhoneCapabilityStatus(
+        boundary: AgentPhoneCapabilityCatalog.find(id),
+        availability: .unknown,
+        evidence: "Capability status was not provided"
+      )
+    }
+    if let unavailable = resolved.first(where: { $0.availability.nativeAvailabilityStatus == .unavailable }) {
+      return AgentNativeToolAvailability(
+        status: .unavailable,
+        reason: unavailable.evidence.isEmpty ? unavailable.boundary.limitation : unavailable.evidence
+      )
+    }
+    if let setup = resolved.first(where: { $0.availability.nativeAvailabilityStatus == .requiresSetup }) {
+      return AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: setup.evidence.isEmpty ? setup.boundary.limitation : setup.evidence
+      )
+    }
+    let limitedReason = resolved
+      .filter { $0.availability == .limited }
+      .map(\.boundary.limitation)
+      .joined(separator: "; ")
+    return AgentNativeToolAvailability(status: .available, reason: String(limitedReason.prefix(maxReasonCharacters)))
+  }
+
+  private static func nativeLocation(_ boundaries: [AgentPhoneCapabilityBoundary]) -> AgentNativeToolLocation {
+    if boundaries.contains(where: { $0.executionLocation == .accessibilityService }) {
+      return .accessibilityService
+    }
+    if boundaries.contains(where: {
+      $0.executionLocation == .androidSystemService ||
+        $0.executionLocation == .systemUIHandoff ||
+        $0.executionLocation == .notificationListenerService ||
+        $0.executionLocation == .screenCaptureService
+    }) {
+      return .androidSystem
+    }
+    if boundaries.allSatisfy({ $0.executionLocation == .appProcess }) {
+      return .application
+    }
+    return .phone
+  }
+
+  private static func nativeRisk(_ risk: AgentRisk?) -> AgentNativeToolRisk {
+    switch risk ?? .medium {
+    case .low: return .low
+    case .medium: return .medium
+    case .high: return .high
+    case .blocked: return .blocked
+    }
+  }
+
+  private static func actionTitle(_ kind: AgentActionKind) -> String {
+    kind.rawValue.replacingOccurrences(of: "_", with: " ").lowercased().capitalized
+  }
+
+  private static func actionDescription(_ kind: AgentActionKind) -> String {
+    switch kind {
+    case .readScreen:
+      return "Reads bounded screen context through the iOS phone action adapter when the capability boundary allows it."
+    case .tap, .typeText, .swipe, .longPress, .deleteText, .pasteText, .copyScreenText, .back, .home, .recents, .lockScreen:
+      return "Adapts a legacy phone action into a native tool descriptor with iOS capability, consent, and risk metadata."
+    case .openApp, .openURL, .setAlarm:
+      return "Hands work to an app or system UI surface while keeping target completion untrusted."
+    case .replyNotification:
+      return "Replies only through SignalASI-owned notification actions and explicit user confirmation."
+    case .saveScreenKnowledge, .draftPlan, .createNotification, .importWebKnowledge, .callConnector, .callNativeTool, .controlDevice:
+      return "Unsupported phone-native action kind for this catalog."
+    }
+  }
+
+  private static func workspaceInputSchema(_ id: String) -> AgentMcpJSONObject {
+    var properties: [String: AgentMcpJSONValue] = [
+      "workspace_id": .object(stringSchema(minLength: 1, maxLength: 64))
+    ]
+    var required: [String] = ["workspace_id"]
+    if id != workspaceInitialize {
+      properties["path"] = .object(stringSchema(maxLength: 1_024))
+      required.append("path")
+    }
+    if [workspaceWriteText, workspaceCreateText, workspaceAppendText].contains(id) {
+      properties["text"] = .object(stringSchema(maxLength: 1_048_576))
+      required.append("text")
+    }
+    if [workspaceWriteBytes, workspaceCreateBytes, workspaceAppendBytes].contains(id) {
+      properties["base64"] = .object(stringSchema(maxLength: 22_369_624))
+      required.append("base64")
+    }
+    if [workspaceMove, workspaceCopy].contains(id) {
+      properties.removeValue(forKey: "path")
+      properties["source_path"] = .object(stringSchema(maxLength: 1_024))
+      properties["destination_path"] = .object(stringSchema(maxLength: 1_024))
+      required = ["workspace_id", "source_path", "destination_path"]
+    }
+    if id == workspaceSearchText {
+      properties["query"] = .object(stringSchema(minLength: 1, maxLength: 4_096))
+      required.append("query")
+    }
+    return objectSchema(properties: properties, required: required)
+  }
+
+  private static func workspaceOutputSchema(_ id: String) -> AgentMcpJSONObject {
+    if id == workspaceReadText {
+      return objectSchema(properties: [
+        "path": .object(stringSchema(maxLength: 4_096)),
+        "text": .object(stringSchema(maxLength: 1_048_576)),
+        "sha256": .object(stringSchema(minLength: 64, maxLength: 64))
+      ], required: ["path", "text", "sha256"])
+    }
+    if id == workspaceReadBytes {
+      return objectSchema(properties: [
+        "path": .object(stringSchema(maxLength: 4_096)),
+        "base64": .object(stringSchema(maxLength: 11_184_812)),
+        "sha256": .object(stringSchema(minLength: 64, maxLength: 64))
+      ], required: ["path", "base64", "sha256"])
+    }
+    return objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "kind": .object(stringSchema(maxLength: 64)),
+      "affected_entries": .object(integerSchema(minimum: 0))
+    ])
+  }
+
+  private static func actionInputSchema(_ kind: AgentActionKind) -> AgentMcpJSONObject {
+    var properties: [String: AgentMcpJSONValue] = [
+      "target": .object(stringSchema(maxLength: 512)),
+      "parameters": .object(objectSchema(additionalProperties: true))
+    ]
+    var required: [String] = ["target"]
+    if kind == .openURL {
+      properties["url"] = .object(stringSchema(minLength: 1, maxLength: 2_048))
+      required.append("url")
+    }
+    if kind == .replyNotification {
+      properties["notification_key"] = .object(stringSchema(minLength: 1, maxLength: 1_024))
+      properties["reply_text"] = .object(stringSchema(minLength: 1, maxLength: 16_384))
+      required.append(contentsOf: ["notification_key", "reply_text"])
+    }
+    return objectSchema(properties: properties, required: required)
+  }
+
+  private static func actionOutputSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "action_id": .object(stringSchema(maxLength: 128)),
+      "success": .object(["type": .string("boolean")]),
+      "message": .object(stringSchema(maxLength: 2_048)),
+      "metadata": .object(objectSchema(additionalProperties: true))
+    ], required: ["action_id", "success", "message", "metadata"])
+  }
+
+  private static func objectSchema(
+    properties: [String: AgentMcpJSONValue] = [:],
+    required: [String] = [],
+    additionalProperties: Bool = false
+  ) -> AgentMcpJSONObject {
+    [
+      "type": .string("object"),
+      "properties": .object(properties),
+      "required": .array(required.map(AgentMcpJSONValue.string)),
+      "additionalProperties": .bool(additionalProperties)
+    ]
+  }
+
+  private static func stringSchema(
+    minLength: Int64? = nil,
+    maxLength: Int64? = nil
+  ) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = ["type": .string("string")]
+    if let minLength { schema["minLength"] = .int(minLength) }
+    if let maxLength { schema["maxLength"] = .int(maxLength) }
+    return schema
+  }
+
+  private static func integerSchema(minimum: Int64? = nil) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = ["type": .string("integer")]
+    if let minimum { schema["minimum"] = .int(minimum) }
+    return schema
+  }
+
+  private static let maxReasonCharacters = 2_048
+  private static let normalAppExecutionPermission = "signalasi.scope.normal_app_execution"
+  private static let workspaceToolIds = [
+    workspaceInitialize,
+    workspaceMkdir,
+    workspaceList,
+    workspaceStat,
+    workspaceReadText,
+    workspaceReadBytes,
+    workspaceWriteText,
+    workspaceCreateText,
+    workspaceAppendText,
+    workspaceWriteBytes,
+    workspaceCreateBytes,
+    workspaceAppendBytes,
+    workspaceMove,
+    workspaceCopy,
+    workspaceDelete,
+    workspaceSearchText,
+    workspaceApplyExactPatch,
+    workspaceDiffSummary,
+    workspaceSha256,
+    workspaceZipCreate,
+    workspaceZipList,
+    workspaceZipExtract
+  ]
+  private static let webMediaToolIds: Set<String> = [
+    "signalasi.media.metadata",
+    AgentPhoneCapabilityNativeCoverage.mediaPlaybackHandoff,
+    AgentPhoneCapabilityNativeCoverage.mediaFFmpegTranscode
+  ]
+  private static let webIntelligenceToolIds: Set<String> = [
+    "signalasi.web.intelligence.search",
+    "signalasi.web.intelligence.fetch",
+    "signalasi.web.intelligence.crawl",
+    "signalasi.web.intelligence.extract",
+    "signalasi.web.intelligence.cache",
+    "signalasi.web.intelligence.find_similar",
+    "signalasi.web.intelligence.research",
+    "signalasi.web.intelligence.agent",
+    "signalasi.web.intelligence.diff",
+    "signalasi.web.intelligence.watch"
+  ]
+  private static let androidSystemCompatibilityToolIds: Set<String> = [
+    "signalasi.android.audio.status",
+    "signalasi.android.audio.volume.set",
+    "signalasi.android.audio.mute.set",
+    "signalasi.android.wifi.status",
+    "signalasi.android.wifi.scan_results",
+    "signalasi.android.wifi.scan.start",
+    "signalasi.android.wifi.panel.open",
+    "signalasi.android.wifi.hotspot.panel.open",
+    "signalasi.android.biometric.enrollment.open"
+  ]
+  private static let mcpToolIds: Set<String> = [AgentMcpNativeTools.callTool]
+  private static let onDeviceRuntimeToolIds: Set<String> = [
+    "signalasi.runtime.execute",
+    "signalasi.runtime.packs.install"
+  ]
+  private static let selfEvolutionToolIds: Set<String> = [
+    "signalasi.self_evolution.diff.propose",
+    "signalasi.self_evolution.patch.apply",
+    "signalasi.self_evolution.test.run"
+  ]
+  private static let desktopRemoteToolIds: Set<String> = [
+    "signalasi.desktop.windows.system.status",
+    "signalasi.desktop.windows.process.list",
+    "signalasi.desktop.workspace.file.list",
+    "signalasi.desktop.workspace.file.read.text",
+    "signalasi.desktop.workspace.file.write.text",
+    "signalasi.desktop.workspace.file.sha256",
+    "signalasi.desktop.workspace.archive.create",
+    "signalasi.desktop.terminal.run",
+    "signalasi.desktop.office.document.inspect",
+    "signalasi.desktop.office.document.convert"
+  ]
+}
+
 enum AgentRuntimeCapabilityMatrix {
   static func build(
     nativeTools: [AgentNativeToolDescriptor],

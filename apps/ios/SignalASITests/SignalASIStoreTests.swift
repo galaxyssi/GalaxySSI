@@ -3749,6 +3749,117 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(observationObject["probeSucceeded"])
   }
 
+  func testAgentPhoneNativeToolCatalogRegistersStableDefaultIds() {
+    let expected: Set<String> = [
+      "signalasi.workspace.initialize",
+      "signalasi.workspace.directory.create",
+      "signalasi.workspace.directory.list",
+      "signalasi.workspace.file.stat",
+      "signalasi.workspace.file.read.text",
+      "signalasi.workspace.file.read.bytes",
+      "signalasi.workspace.file.write.text",
+      "signalasi.workspace.file.create.text",
+      "signalasi.workspace.file.append.text",
+      "signalasi.workspace.file.write.bytes",
+      "signalasi.workspace.file.create.bytes",
+      "signalasi.workspace.file.append.bytes",
+      "signalasi.workspace.entry.move",
+      "signalasi.workspace.entry.copy",
+      "signalasi.workspace.entry.delete",
+      "signalasi.workspace.file.search.text",
+      "signalasi.workspace.file.patch.exact",
+      "signalasi.workspace.file.diff.summary",
+      "signalasi.workspace.file.sha256",
+      "signalasi.workspace.zip.create",
+      "signalasi.workspace.zip.list",
+      "signalasi.workspace.zip.extract",
+      "signalasi.agent_action.read.screen",
+      "signalasi.agent_action.tap",
+      "signalasi.agent_action.type.text",
+      "signalasi.agent_action.swipe",
+      "signalasi.agent_action.long.press",
+      "signalasi.agent_action.delete.text",
+      "signalasi.agent_action.paste.text",
+      "signalasi.agent_action.copy.screen.text",
+      "signalasi.agent_action.back",
+      "signalasi.agent_action.home",
+      "signalasi.agent_action.recents",
+      "signalasi.agent_action.lock.screen",
+      "signalasi.agent_action.open.app",
+      "signalasi.agent_action.open.url",
+      "signalasi.agent_action.set.alarm",
+      "signalasi.agent_action.reply.notification"
+    ]
+    let descriptors = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
+
+    XCTAssertEqual(expected, AgentPhoneNativeToolCatalog.toolIds)
+    XCTAssertEqual(expected, Set(descriptors.map(\.id)))
+    XCTAssertEqual(expected.count, descriptors.count)
+  }
+
+  func testAgentPhoneNativeToolCatalogDescriptorsCarryPolicyAndProvenance() {
+    let definitions = AgentPhoneNativeToolCatalog.definitions(capabilityStatuses: readyPhoneCapabilityStatuses())
+
+    XCTAssertEqual(definitions.count, AgentPhoneNativeToolCatalog.toolIds.count)
+    definitions.forEach { definition in
+      let descriptor = definition.descriptor
+      XCTAssertFalse(descriptor.inputSchema.isEmpty, descriptor.id)
+      XCTAssertFalse(descriptor.outputSchema.isEmpty, descriptor.id)
+      XCTAssertFalse(descriptor.capabilities.isEmpty, descriptor.id)
+      XCTAssertFalse(descriptor.requiredPermissions.isEmpty, descriptor.id)
+      XCTAssertFalse(descriptor.requiredConsents.isEmpty, descriptor.id)
+      XCTAssertTrue((1...30_000).contains(descriptor.timeoutMillis), descriptor.id)
+      XCTAssertFalse(definition.executorId.isEmpty, descriptor.id)
+      XCTAssertFalse(definition.provenanceMetadata.isEmpty, descriptor.id)
+    }
+  }
+
+  func testAgentPhoneNativeToolCatalogMapsCapabilityAvailabilityToActions() throws {
+    let declared = AgentPhoneNativeToolCatalog.descriptors()
+    let readScreen = try XCTUnwrap(
+      declared.first { $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.readScreen) }
+    )
+    let openURL = try XCTUnwrap(
+      declared.first { $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.openURL) }
+    )
+    let reply = try XCTUnwrap(
+      declared.first { $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.replyNotification) }
+    )
+
+    XCTAssertEqual(readScreen.availability.status, .unavailable)
+    XCTAssertTrue(readScreen.capabilities.contains("phone.accessibility.ui.tree"))
+    XCTAssertEqual(openURL.availability.status, .available)
+    XCTAssertEqual(reply.availability.status, .available)
+    XCTAssertTrue(reply.availability.reason.contains("SignalASI-owned notification"))
+  }
+
+  func testAgentPhoneNativeToolCatalogDefaultIdsIncludeExpansionGroups() {
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.isSuperset(of: AgentPhoneNativeToolCatalog.toolIds))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains("signalasi.media.playback.handoff"))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains("signalasi.web.intelligence.search"))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains("signalasi.hardware.location.foreground.read"))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains("signalasi.runtime.execute"))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains(AgentMcpNativeTools.callTool))
+  }
+
+  func testAgentPhoneNativeToolCatalogModelsUseAndroidWireNames() throws {
+    let definition = try XCTUnwrap(
+      AgentPhoneNativeToolCatalog.definitions().first { $0.id == AgentPhoneNativeToolCatalog.workspaceReadText }
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(definition)) as? [String: Any]
+    )
+    let descriptor = try XCTUnwrap(object["descriptor"] as? [String: Any])
+
+    XCTAssertEqual(object["executor_id"] as? String, AgentPhoneNativeToolCatalog.fileExecutorId)
+    XCTAssertNotNil(object["provenance_metadata"])
+    XCTAssertEqual(descriptor["id"] as? String, AgentPhoneNativeToolCatalog.workspaceReadText)
+    XCTAssertNotNil(descriptor["input_schema"] as? [String: Any])
+    XCTAssertNotNil(descriptor["output_schema"] as? [String: Any])
+    XCTAssertNil(object["executorId"])
+    XCTAssertNil(descriptor["inputSchema"])
+  }
+
   func testAgentDynamicTeamCompilerBuildsVerifiedDagFromComplementaryAgents() throws {
     let result = AgentDynamicTeamCompiler().compile(
       request: AgentDynamicTeamRequest(
@@ -10613,6 +10724,16 @@ final class SignalASIStoreTests: XCTestCase {
       requiredConsents: requiredConsents,
       availability: availability
     )
+  }
+
+  private func readyPhoneCapabilityStatuses() -> [AgentPhoneCapabilityStatus] {
+    AgentPhoneCapabilityCatalog.capabilities.map { boundary in
+      AgentPhoneCapabilityStatus(
+        boundary: boundary,
+        availability: .ready,
+        evidence: "Ready for test"
+      )
+    }
   }
 
   private func nativeToolResult(
