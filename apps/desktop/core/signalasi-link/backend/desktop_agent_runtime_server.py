@@ -27,7 +27,7 @@ from desktop_agent_adapters import (
 
 
 RUNTIME_PROTOCOL = "signalasi.agent-runtime/1.0"
-RUNTIME_STATE_VERSION = 1
+RUNTIME_STATE_VERSION = 2
 DEFAULT_MAX_WORKERS = 4
 MAX_RUNTIME_RUNS = 2_000
 MAX_RUNTIME_SESSIONS = 500
@@ -41,6 +41,7 @@ TERMINAL_STATES = frozenset({
     "ignored",
     "interrupted",
 })
+SESSION_STATES = frozenset({"active", "idle"})
 
 
 class DesktopAgentRuntimeError(RuntimeError):
@@ -87,6 +88,14 @@ class DesktopAgentRuntimeStore:
                     "updated_at": now_ms,
                     "run_count": 0,
                     "last_run_id": "",
+                    "last_task_id": "",
+                    "last_turn_id": "",
+                    "last_state": "",
+                    "state": "idle",
+                    "active_run_count": 0,
+                    "completed_run_count": 0,
+                    "failed_run_count": 0,
+                    "cancelled_run_count": 0,
                 }
                 self._state["sessions"][session_id] = session
             session["updated_at"] = now_ms
@@ -117,6 +126,7 @@ class DesktopAgentRuntimeStore:
                 "events": [self._event(1, "run_queued", now_ms)],
             }
             self._state["runs"][request.run_id] = row
+            self._sync_session_locked(session_id)
             self._prune_locked()
             self._save_locked()
             return self._public_run(row), True
@@ -130,6 +140,7 @@ class DesktopAgentRuntimeStore:
             row["state"] = "running"
             row["started_at"] = now_ms
             self._append_event_locked(row, "run_started", now_ms)
+            self._sync_session_locked(str(row.get("session_id") or ""))
             self._save_locked()
             return self._public_run(row)
 
@@ -144,6 +155,7 @@ class DesktopAgentRuntimeStore:
             row["adapter_result"] = result.public()
             row["finished_at"] = now_ms
             self._append_event_locked(row, f"run_{result.state}", now_ms)
+            self._sync_session_locked(str(row.get("session_id") or ""))
             self._save_locked()
             return self._public_run(row)
 
@@ -157,6 +169,7 @@ class DesktopAgentRuntimeStore:
             row["error"] = str(error or "Agent runtime execution failed")[:2_000]
             row["finished_at"] = now_ms
             self._append_event_locked(row, "run_failed", now_ms)
+            self._sync_session_locked(str(row.get("session_id") or ""))
             self._save_locked()
             return self._public_run(row)
 
@@ -170,6 +183,7 @@ class DesktopAgentRuntimeStore:
                 row["state"] = "cancelled"
                 row["finished_at"] = now_ms
                 self._append_event_locked(row, "run_cancelled", now_ms)
+                self._sync_session_locked(str(row.get("session_id") or ""))
                 self._save_locked()
             return self._public_run(row)
 
@@ -208,15 +222,42 @@ class DesktopAgentRuntimeStore:
             rows.sort(key=lambda row: int(row.get("created_at") or 0), reverse=True)
             return [self._public_run(row) for row in rows[:max(1, min(int(limit or 100), 500))]]
 
-    def sessions(self, agent_id: str = "", limit: int = 100) -> list[dict]:
+    def session(self, session_id: str) -> dict | None:
+        with self._lock:
+            row = self._state["sessions"].get(str(session_id or "").strip())
+            return self._public_session(row) if isinstance(row, dict) else None
+
+    def sessions(
+        self,
+        *,
+        agent_id: str = "",
+        client_route_id: str = "",
+        conversation_id: str = "",
+        state: str = "",
+        limit: int = 100,
+    ) -> list[dict]:
+        normalized_state = str(state or "").strip().lower()
+        if normalized_state and normalized_state not in SESSION_STATES:
+            raise DesktopAgentRuntimeError(
+                f"Unsupported Agent Runtime Session state: {normalized_state}"
+            )
         with self._lock:
             rows = [
                 row
                 for row in self._state["sessions"].values()
                 if not agent_id or str(row.get("agent_id") or "") == agent_id
+                if not client_route_id
+                or str(row.get("client_route_id") or "") == client_route_id
+                if not conversation_id
+                or str(row.get("conversation_id") or "") == conversation_id
+                if not normalized_state
+                or str(row.get("state") or "idle") == normalized_state
             ]
             rows.sort(key=lambda row: int(row.get("updated_at") or 0), reverse=True)
-            return [dict(row) for row in rows[:max(1, min(int(limit or 100), 500))]]
+            return [
+                self._public_session(row)
+                for row in rows[:max(1, min(int(limit or 100), 500))]
+            ]
 
     def counts(self) -> dict:
         with self._lock:
@@ -243,6 +284,8 @@ class DesktopAgentRuntimeStore:
                 self._append_event_locked(row, "run_interrupted", now_ms)
                 changed = True
             if changed:
+                for session_id in tuple(self._state["sessions"]):
+                    self._sync_session_locked(session_id)
                 self._save_locked()
 
     def adapter_result(self, run_id: str) -> AgentAdapterResult | None:
@@ -291,6 +334,50 @@ class DesktopAgentRuntimeStore:
         events.append(self._event(cursor, event_type, now_ms))
         del events[:-MAX_RUNTIME_EVENTS]
 
+    def _sync_session_locked(self, session_id: str) -> None:
+        session = self._state["sessions"].get(session_id)
+        if not isinstance(session, dict):
+            return
+        runs = [
+            row
+            for row in self._state["runs"].values()
+            if str(row.get("session_id") or "") == session_id
+        ]
+        if not runs:
+            session["state"] = "idle"
+            session["active_run_count"] = 0
+            return
+        runs.sort(
+            key=lambda row: (
+                int(row.get("created_at") or 0),
+                str(row.get("run_id") or ""),
+            )
+        )
+        latest = runs[-1]
+        active = [
+            str(row.get("run_id") or "")
+            for row in runs
+            if str(row.get("state") or "") in ACTIVE_STATES
+        ]
+        session.update({
+            "state": "active" if active else "idle",
+            "active_run_count": len(active),
+            "completed_run_count": sum(
+                1 for row in runs if str(row.get("state") or "") == "completed"
+            ),
+            "failed_run_count": sum(
+                1 for row in runs if str(row.get("state") or "") in {"failed", "interrupted"}
+            ),
+            "cancelled_run_count": sum(
+                1 for row in runs if str(row.get("state") or "") == "cancelled"
+            ),
+            "last_run_id": str(latest.get("run_id") or ""),
+            "last_task_id": str(latest.get("task_id") or ""),
+            "last_turn_id": str(latest.get("turn_id") or ""),
+            "last_state": str(latest.get("state") or ""),
+            "updated_at": int(latest.get("updated_at") or session.get("updated_at") or 0),
+        })
+
     def _prune_locked(self) -> None:
         runs = self._state["runs"]
         if len(runs) > MAX_RUNTIME_RUNS:
@@ -307,10 +394,14 @@ class DesktopAgentRuntimeStore:
         sessions = self._state["sessions"]
         if len(sessions) > MAX_RUNTIME_SESSIONS:
             ordered = sorted(
-                sessions.items(),
+                (
+                    (session_id, row)
+                    for session_id, row in sessions.items()
+                    if str(row.get("state") or "idle") != "active"
+                ),
                 key=lambda item: int(item[1].get("updated_at") or 0),
             )
-            for session_id, _row in ordered[:len(sessions) - MAX_RUNTIME_SESSIONS]:
+            for session_id, _row in ordered[:max(0, len(sessions) - MAX_RUNTIME_SESSIONS)]:
                 sessions.pop(session_id, None)
 
     def _save_locked(self) -> None:
@@ -407,6 +498,27 @@ class DesktopAgentRuntimeStore:
             "replayed": replayed,
         }
 
+    @staticmethod
+    def _public_session(row: dict) -> dict:
+        return {
+            "session_id": str(row.get("session_id") or ""),
+            "agent_id": str(row.get("agent_id") or ""),
+            "client_route_id": str(row.get("client_route_id") or ""),
+            "conversation_id": str(row.get("conversation_id") or ""),
+            "state": str(row.get("state") or "idle"),
+            "active_run_count": max(0, int(row.get("active_run_count") or 0)),
+            "run_count": max(0, int(row.get("run_count") or 0)),
+            "completed_run_count": max(0, int(row.get("completed_run_count") or 0)),
+            "failed_run_count": max(0, int(row.get("failed_run_count") or 0)),
+            "cancelled_run_count": max(0, int(row.get("cancelled_run_count") or 0)),
+            "last_run_id": str(row.get("last_run_id") or ""),
+            "last_task_id": str(row.get("last_task_id") or ""),
+            "last_turn_id": str(row.get("last_turn_id") or ""),
+            "last_state": str(row.get("last_state") or ""),
+            "created_at": max(0, int(row.get("created_at") or 0)),
+            "updated_at": max(0, int(row.get("updated_at") or 0)),
+        }
+
     def _now_ms(self) -> int:
         return int(self._now() * 1_000)
 
@@ -490,8 +602,25 @@ class DesktopAgentRuntimeServer:
             limit=limit,
         )
 
-    def sessions(self, agent_id: str = "", limit: int = 100) -> list[dict]:
-        return self.store.sessions(agent_id=agent_id, limit=limit)
+    def session(self, session_id: str) -> dict | None:
+        return self.store.session(session_id)
+
+    def sessions(
+        self,
+        *,
+        agent_id: str = "",
+        client_route_id: str = "",
+        conversation_id: str = "",
+        state: str = "",
+        limit: int = 100,
+    ) -> list[dict]:
+        return self.store.sessions(
+            agent_id=agent_id,
+            client_route_id=client_route_id,
+            conversation_id=conversation_id,
+            state=state,
+            limit=limit,
+        )
 
     def cancel(self, run_id: str) -> dict | None:
         snapshot = self.store.status(run_id)
@@ -514,6 +643,7 @@ class DesktopAgentRuntimeServer:
         state_counts = counts.get("by_state", {})
         active_runs = int(state_counts.get("running") or 0)
         queued_runs = int(state_counts.get("queued") or 0)
+        sessions = self.store.sessions(limit=MAX_RUNTIME_SESSIONS)
         with self._lock:
             pending_futures = sum(1 for future in self._futures.values() if not future.done())
             closed = self._closed
@@ -526,6 +656,9 @@ class DesktopAgentRuntimeServer:
             "queued_runs": queued_runs,
             "pending_futures": pending_futures,
             "capacity_available": max(0, self.max_workers - active_runs),
+            "active_sessions": sum(
+                1 for session in sessions if session.get("state") == "active"
+            ),
             "features": [
                 "bounded_async_scheduling",
                 "durable_run_registry",

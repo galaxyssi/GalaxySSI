@@ -1183,14 +1183,42 @@ def api_reap_agent_runtime_cli_pool(request: Request):
 def api_agent_runtime_sessions(
     request: Request,
     agent_id: str = Query(""),
+    client_route_id: str = Query(""),
+    conversation_id: str = Query(""),
+    state: str = Query(""),
     limit: int = Query(100),
 ):
     require_loopback(request)
+    try:
+        return {
+            "sessions": desktop_agent_runtime_server().sessions(
+                agent_id=agent_id,
+                client_route_id=client_route_id,
+                conversation_id=conversation_id,
+                state=state,
+                limit=limit,
+            ),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("agent_runtime_session_query_failed", str(exc)[:240]),
+        ) from exc
+
+
+@app.get("/api/agent-runtime/sessions/{session_id}")
+def api_agent_runtime_session(session_id: str, request: Request):
+    require_loopback(request)
+    runtime = desktop_agent_runtime_server()
+    session = runtime.session(session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail=api_error("agent_runtime_session_not_found"),
+        )
     return {
-        "sessions": desktop_agent_runtime_server().sessions(
-            agent_id=agent_id,
-            limit=limit,
-        ),
+        "session": session,
+        "runs": runtime.runs(session_id=session_id, limit=100),
     }
 
 

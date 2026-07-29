@@ -12,6 +12,7 @@ from desktop_agent_adapters import (
 )
 from desktop_agent_runtime_server import (
     DesktopAgentRuntimeConflict,
+    DesktopAgentRuntimeError,
     DesktopAgentRuntimeServer,
     DesktopAgentRuntimeStore,
     RUNTIME_PROTOCOL,
@@ -140,6 +141,67 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
 
         self.assertEqual(3, len(server.sessions()))
 
+    def test_session_registry_tracks_active_run_and_terminal_summary(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def execute(agent_id, request):
+            started.set()
+            release.wait(timeout=2)
+            return "done"
+
+        server = self.server(execute)
+        request = self.request(
+            "build",
+            run_id="run-active",
+            turn_id="turn-active",
+        )
+        server.submit(request)
+        self.assertTrue(started.wait(timeout=1))
+
+        active = server.sessions(state="active")
+        self.assertEqual(1, len(active))
+        self.assertEqual(1, active[0]["active_run_count"])
+        self.assertEqual("run-active", active[0]["last_task_id"])
+        self.assertEqual("turn-active", active[0]["last_turn_id"])
+        self.assertEqual("running", active[0]["last_state"])
+        self.assertEqual(active[0], server.session(active[0]["session_id"]))
+
+        release.set()
+        server.execute(request)
+        idle = server.sessions(state="idle")
+        self.assertEqual(1, len(idle))
+        self.assertEqual(0, idle[0]["active_run_count"])
+        self.assertEqual(1, idle[0]["completed_run_count"])
+        self.assertEqual("completed", idle[0]["last_state"])
+
+    def test_session_registry_filters_by_route_conversation_and_state(self):
+        server = self.server()
+        server.execute(self.request("one", run_id="run-1"))
+        server.execute(self.request(
+            "two",
+            run_id="run-2",
+            conversation_id="conversation-2",
+        ))
+        server.execute(self.request(
+            "three",
+            run_id="run-3",
+            route_id="phone-2",
+        ))
+
+        phone_one = server.sessions(client_route_id="phone-1")
+        conversation_two = server.sessions(conversation_id="conversation-2")
+
+        self.assertEqual(2, len(phone_one))
+        self.assertEqual(
+            {"conversation-1", "conversation-2"},
+            {item["conversation_id"] for item in phone_one},
+        )
+        self.assertEqual(1, len(conversation_two))
+        self.assertEqual("phone-1", conversation_two[0]["client_route_id"])
+        with self.assertRaises(DesktopAgentRuntimeError):
+            server.sessions(state="missing")
+
     def test_idempotent_duplicate_executes_once_and_conflict_is_rejected(self):
         server = self.server()
         request = self.request("one", run_id="run-1", idempotency_key="stable")
@@ -235,6 +297,9 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             "run_interrupted",
             recovered.events("running-run")[-1]["type"],
         )
+        sessions = recovered.sessions()
+        self.assertEqual({"idle"}, {item["state"] for item in sessions})
+        self.assertEqual(2, sum(item["failed_run_count"] for item in sessions))
 
     def test_health_exposes_protocol_capacity_and_durable_counts(self):
         server = self.server(max_workers=3)
@@ -247,6 +312,7 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         self.assertEqual(3, health["max_concurrency"])
         self.assertEqual(1, health["runs"])
         self.assertEqual(1, health["sessions"])
+        self.assertEqual(0, health["active_sessions"])
         self.assertIn("durable_run_registry", health["features"])
 
 
