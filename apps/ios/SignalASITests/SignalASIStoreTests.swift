@@ -2083,6 +2083,136 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(identityMismatch.reasons, ["identity_mismatch"])
   }
 
+  func testCodexStyleResponsePolicyCoversLanguageActionClarificationAndFailures() {
+    let policy = CodexStyleResponsePolicy.promptText
+    let preferred = CodexStyleResponsePolicy.preferredPrompt(languageTag: "zh-Hans-CN", languageName: "Simplified Chinese")
+    let clarification = CodexStyleResponsePolicy.attachmentClarification(names: ["report.pdf", "report.pdf", "chart.png"])
+
+    XCTAssertTrue(policy.contains("Simplified Chinese"))
+    XCTAssertTrue(policy.contains("execute it"))
+    XCTAssertTrue(policy.contains("ask only the most important question"))
+    XCTAssertTrue(policy.contains("Never return a raw exception or stack trace"))
+    XCTAssertTrue(policy.contains("never reproduce the input files as assistant artifacts"))
+    XCTAssertTrue(preferred.contains("Preferred response language: Simplified Chinese (zh-Hans-CN)"))
+    XCTAssertTrue(clarification.contains("report.pdf, chart.png"))
+  }
+
+  func testCodexStyleResponsePolicyDropsInputArtifactsButKeepsGeneratedFiles() throws {
+    let raw = richDocument([
+      [
+        "id": "input",
+        "type": "file",
+        "title": "test.xlsx",
+        "uri": "signalasi-artifact://task/downloads/input/01-test.xlsx"
+      ],
+      [
+        "id": "output",
+        "type": "file",
+        "title": "summary.csv",
+        "uri": "signalasi-artifact://task/outputs/summary.csv"
+      ]
+    ])
+
+    let blocks = try richBlocks(CodexStyleResponsePolicy.filterAssistantRichOutput(raw))
+
+    XCTAssertEqual(blocks.count, 1)
+    XCTAssertEqual(blocks.first?["title"] as? String, "summary.csv")
+  }
+
+  func testCodexStyleResponsePolicyKeepsHostOwnedConversationActions() throws {
+    let raw = richDocument([
+      [
+        "id": "notice",
+        "type": "notice",
+        "text": "A focused topic workspace is ready."
+      ],
+      [
+        "id": "actions",
+        "type": "actions",
+        "actions": [
+          [
+            "id": "open",
+            "label": "Open topic",
+            "verb": "open_conversation",
+            "value": "conversation-id"
+          ]
+        ]
+      ]
+    ])
+
+    let blocks = try richBlocks(CodexStyleResponsePolicy.filterAssistantRichOutput(raw))
+    let actions = try XCTUnwrap(blocks.last?["actions"] as? [[String: Any]])
+
+    XCTAssertEqual(blocks.compactMap { $0["id"] as? String }, ["notice", "actions"])
+    XCTAssertEqual(actions.first?["verb"] as? String, "open_conversation")
+  }
+
+  func testCodexStyleResponsePolicySanitizesToolChatterAndStackFrames() {
+    let raw = """
+    preparing mcp_fetch
+    Useful result
+    at com.signalasi.Internal.run(Internal.kt:10)
+    """
+
+    XCTAssertEqual(CodexStyleResponsePolicy.sanitizeAssistantText(raw), "Useful result")
+  }
+
+  func testCodexStyleResponsePolicyDropsDuplicatePhoneRuntimeVerification() throws {
+    let text = [
+      "\u{5df2}\u{5199}\u{597d}\u{5e76}\u{5728}\u{624b}\u{673a}\u{672c}\u{673a} Linux \u{4e2d}\u{9a8c}\u{8bc1}\u{901a}\u{8fc7}\u{3002}",
+      "",
+      "\u{8fd0}\u{884c}\u{7ed3}\u{679c}\u{ff1a}",
+      "",
+      "```text",
+      "5050",
+      "```",
+      "",
+      "\u{9a8c}\u{8bc1}\u{7ed3}\u{679c}\u{ff1a}",
+      "",
+      "```text",
+      "\u{901a}\u{8fc7}\u{ff08}\u{9000}\u{51fa}\u{7801} 0\u{ff09}",
+      "```"
+    ].joined(separator: "\n")
+    let clean = CodexStyleResponsePolicy.sanitizeAssistantText(text)
+    XCTAssertTrue(clean.contains("5050"))
+    XCTAssertFalse(clean.contains("\u{5df2}\u{5199}\u{597d}"))
+    XCTAssertFalse(clean.contains("\u{9a8c}\u{8bc1}\u{7ed3}\u{679c}"))
+    XCTAssertFalse(clean.contains("\u{9000}\u{51fa}\u{7801}"))
+
+    let rich = richDocument([
+      [
+        "id": "heading",
+        "type": "text",
+        "text": "\u{5df2}\u{5199}\u{597d}\u{5e76}\u{5728}\u{624b}\u{673a}\u{672c}\u{673a} Linux \u{4e2d}\u{9a8c}\u{8bc1}\u{901a}\u{8fc7}\u{3002}"
+      ],
+      [
+        "id": "run-heading",
+        "type": "text",
+        "text": "\u{8fd0}\u{884c}\u{7ed3}\u{679c}\u{ff1a}"
+      ],
+      [
+        "id": "run",
+        "type": "code",
+        "text": "5050",
+        "language": "text"
+      ],
+      [
+        "id": "verify-heading",
+        "type": "text",
+        "text": "\u{9a8c}\u{8bc1}\u{7ed3}\u{679c}\u{ff1a}"
+      ],
+      [
+        "id": "verify",
+        "type": "code",
+        "text": "\u{901a}\u{8fc7}\u{ff08}\u{9000}\u{51fa}\u{7801} 0\u{ff09}",
+        "language": "text"
+      ]
+    ])
+    let blocks = try richBlocks(CodexStyleResponsePolicy.filterAssistantRichOutput(rich))
+
+    XCTAssertEqual(blocks.compactMap { $0["id"] as? String }, ["run-heading", "run"])
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -2537,6 +2667,19 @@ final class SignalASIStoreTests: XCTestCase {
       taskId: "task",
       richOutputJson: richOutputJson
     )
+  }
+
+  private func richDocument(_ blocks: [[String: Any]]) -> String {
+    let data = try! JSONSerialization.data(
+      withJSONObject: ["version": 1, "blocks": blocks],
+      options: [.sortedKeys]
+    )
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  private func richBlocks(_ raw: String) throws -> [[String: Any]] {
+    let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+    return try XCTUnwrap(payload["blocks"] as? [[String: Any]])
   }
 
   private func finalTranscriptEntry(
