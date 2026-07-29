@@ -988,6 +988,8 @@ class GlobalAgentRepository(context: Context) {
         .put("stable_key", item.stableKey)
         .put("kind", item.kind.name)
         .put("layer", item.layer.name)
+        .put("namespace", item.namespace.name)
+        .put("namespace_id", item.namespaceId)
         .put("topic", item.topic)
         .put("value", item.value)
         .put("confidence", item.confidence)
@@ -1017,6 +1019,8 @@ class GlobalAgentRepository(context: Context) {
             stableKey = stableKey,
             kind = enumValue(json.optString("kind"), GlobalWorldItemKind.FACT),
             layer = enumValue(json.optString("layer"), GlobalWorldLayer.TOPIC),
+            namespace = enumValue(json.optString("namespace"), GlobalMemoryNamespace.GENERAL),
+            namespaceId = json.optString("namespace_id").take(96),
             topic = json.optString("topic").take(160),
             value = value.take(1_200),
             confidence = json.optDouble("confidence", 0.5).coerceIn(0.0, 1.0),

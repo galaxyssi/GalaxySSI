@@ -41,6 +41,8 @@ object GlobalMemorySupersessionPolicy {
                             violations += "missing_reverse:${previous.id}:${replacement.id}"
                         previous.status != GlobalWorldItemStatus.SUPERSEDED ->
                             violations += "previous_not_superseded:${previous.id}"
+                        !GlobalMemoryNamespacePolicy.same(previous, replacement) ->
+                            violations += "cross_namespace:${previous.id}:${replacement.id}"
                     }
                 }
             replacement.supersededByItemId
@@ -51,6 +53,8 @@ object GlobalMemorySupersessionPolicy {
                         successor == null -> violations += "missing_replacement:$replacementId"
                         replacement.id !in successor.supersedesItemIds ->
                             violations += "missing_forward:${replacement.id}:$replacementId"
+                        !GlobalMemoryNamespacePolicy.same(replacement, successor) ->
+                            violations += "cross_namespace:${replacement.id}:$replacementId"
                     }
                 }
         }

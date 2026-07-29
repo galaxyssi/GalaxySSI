@@ -255,6 +255,7 @@ object GlobalMemoryEvolutionPolicy {
             val supersededItemIds = world.items.filter { existing ->
                 if (existing.id == approved.item.id) return@filter false
                 val sameSubject = existing.kind == approved.item.kind &&
+                    GlobalMemoryNamespacePolicy.same(existing, approved.item) &&
                     GlobalAgentText.overlap(
                         GlobalAgentText.tokens(existing.topic),
                         GlobalAgentText.tokens(approved.item.topic)
@@ -320,7 +321,7 @@ object GlobalMemoryEvolutionPolicy {
         val replacement = replacementEvent(event)
         return reduction.changedItems.asSequence()
             .filter { item -> item.evidenceEventIds.contains(event.id) || item.evidenceProvenance.any { it.eventId == event.id } }
-            .distinctBy(GlobalWorldItem::stableKey)
+            .distinctBy(GlobalMemoryNamespacePolicy::itemKey)
             .map { item ->
                 val kind = candidateKind(event, item, understanding)
                 val private = event.sensitivity == GlobalConversationSensitivity.SESSION_PRIVATE ||
@@ -345,7 +346,12 @@ object GlobalMemoryEvolutionPolicy {
                     contextVisibility = GlobalWorldContextVisibility.LOCAL_ONLY
                 ) else item.copy(temporalState = temporal)
                 GlobalMemoryCandidate(
-                    id = GlobalAgentText.stableKey("memory-candidate", event.id, item.stableKey),
+                    id = GlobalAgentText.stableKey(
+                        "memory-candidate",
+                        event.id,
+                        item.memoryNamespaceKey(),
+                        item.stableKey
+                    ),
                     sourceEventId = event.id,
                     conversationId = event.conversationId,
                     kind = kind,
@@ -373,25 +379,28 @@ object GlobalMemoryEvolutionPolicy {
         candidates: List<GlobalMemoryCandidate>,
         event: GlobalConversationEvent
     ): GlobalWorldReduction {
-        val gatedStableKeys = candidates.filter { candidate ->
+        val gatedItemKeys = candidates.filter { candidate ->
             candidate.status in setOf(
                 GlobalMemoryCandidateStatus.PENDING_REVIEW,
                 GlobalMemoryCandidateStatus.CONFLICTED,
                 GlobalMemoryCandidateStatus.REJECTED
             )
-        }.mapTo(mutableSetOf()) { it.item.stableKey }
-        if (gatedStableKeys.isEmpty()) return reduction
-        val beforeByStableKey = worldBefore.items.groupBy(GlobalWorldItem::stableKey)
+        }.mapTo(mutableSetOf()) { GlobalMemoryNamespacePolicy.itemKey(it.item) }
+        if (gatedItemKeys.isEmpty()) return reduction
+        val beforeByItemKey = worldBefore.items.groupBy(GlobalMemoryNamespacePolicy::itemKey)
         val gatedConflictIds = reduction.conflicts.asSequence()
-            .filter { (left, right) -> left.stableKey in gatedStableKeys || right.stableKey in gatedStableKeys }
+            .filter { (left, right) ->
+                GlobalMemoryNamespacePolicy.itemKey(left) in gatedItemKeys ||
+                    GlobalMemoryNamespacePolicy.itemKey(right) in gatedItemKeys
+            }
             .flatMap { (left, right) -> sequenceOf(left.id, right.id) }
             .toSet()
         val beforeById = worldBefore.items.associateBy(GlobalWorldItem::id)
         val retained = reduction.world.items.filterNot {
-            it.stableKey in gatedStableKeys || it.id in gatedConflictIds
+            GlobalMemoryNamespacePolicy.itemKey(it) in gatedItemKeys || it.id in gatedConflictIds
         }.toMutableList()
-        gatedStableKeys.forEach { key ->
-            beforeByStableKey[key].orEmpty().forEach { previous ->
+        gatedItemKeys.forEach { key ->
+            beforeByItemKey[key].orEmpty().forEach { previous ->
                 if (retained.none { it.id == previous.id }) retained += previous
             }
         }
@@ -405,9 +414,12 @@ object GlobalMemoryEvolutionPolicy {
                 items = retained.sortedByDescending(GlobalWorldItem::lastSeenAtMillis).take(MAX_WORLD_ITEMS),
                 processedEventIds = (reduction.world.processedEventIds + event.id).distinct().takeLast(MAX_PROCESSED_EVENT_IDS)
             ),
-            changedItems = reduction.changedItems.filterNot { it.stableKey in gatedStableKeys },
+            changedItems = reduction.changedItems.filterNot {
+                GlobalMemoryNamespacePolicy.itemKey(it) in gatedItemKeys
+            },
             conflicts = reduction.conflicts.filterNot { (left, right) ->
-                left.stableKey in gatedStableKeys || right.stableKey in gatedStableKeys
+                GlobalMemoryNamespacePolicy.itemKey(left) in gatedItemKeys ||
+                    GlobalMemoryNamespacePolicy.itemKey(right) in gatedItemKeys
             }
         )
     }
@@ -555,6 +567,7 @@ object GlobalMemoryEvolutionPolicy {
     }
 
     internal fun sameSubject(left: GlobalWorldItem, right: GlobalWorldItem): Boolean {
+        if (!GlobalMemoryNamespacePolicy.same(left, right)) return false
         val leftTopicTokens = GlobalAgentText.tokens(left.topic)
         val rightTopicTokens = GlobalAgentText.tokens(right.topic)
         val topicOverlap = GlobalAgentText.overlap(leftTopicTokens, rightTopicTokens)
@@ -997,6 +1010,7 @@ object GlobalMemoryCritic {
                 val tokens = GlobalAgentText.tokens(item.topic)
                 val cluster = clusters.firstOrNull { existing ->
                     existing.any { member ->
+                        GlobalMemoryNamespacePolicy.same(item, member) &&
                         GlobalAgentText.overlap(tokens, GlobalAgentText.tokens(member.topic)) >= THEME_TOPIC_OVERLAP
                     }
                 }
@@ -1009,9 +1023,15 @@ object GlobalMemoryCritic {
             val title = cluster.maxByOrNull(GlobalWorldItem::lastSeenAtMillis)?.topic.orEmpty().take(160)
             if (title.isBlank()) return@mapNotNull null
             GlobalMemoryTheme(
-                id = GlobalAgentText.stableKey("memory-theme", title),
+                id = GlobalAgentText.stableKey(
+                    "memory-theme",
+                    cluster.first().memoryNamespaceKey(),
+                    title
+                ),
                 title = title,
-                itemStableKeys = cluster.map(GlobalWorldItem::stableKey).distinct().take(MAX_THEME_ITEMS),
+                itemStableKeys = cluster.map(GlobalMemoryNamespacePolicy::itemKey)
+                    .distinct()
+                    .take(MAX_THEME_ITEMS),
                 itemCount = cluster.size,
                 evidenceCount = evidence,
                 conversationCount = conversations.size,
@@ -1289,6 +1309,8 @@ internal object GlobalMemoryEvolutionCodec {
         .put("stable_key", item.stableKey)
         .put("kind", item.kind.name)
         .put("layer", item.layer.name)
+        .put("namespace", item.namespace.name)
+        .put("namespace_id", item.namespaceId)
         .put("topic", item.topic)
         .put("value", item.value)
         .put("confidence", item.confidence)
@@ -1337,6 +1359,8 @@ internal object GlobalMemoryEvolutionCodec {
             stableKey = stableKey,
             kind = enumValue(json.optString("kind"), GlobalWorldItemKind.FACT),
             layer = enumValue(json.optString("layer"), GlobalWorldLayer.TOPIC),
+            namespace = enumValue(json.optString("namespace"), GlobalMemoryNamespace.GENERAL),
+            namespaceId = json.optString("namespace_id").take(96),
             topic = json.optString("topic").take(1_200),
             value = json.optString("value").take(1_200),
             confidence = json.optDouble("confidence", 0.5).coerceIn(0.0, 1.0),

@@ -1530,7 +1530,10 @@ function memoryNamespaceLabel(value) {
     device: "Device",
     security: "Security"
   };
-  return t(labels[value] || value || "General");
+  const [family, ...scopeParts] = String(value || "general").split(":");
+  const label = t(labels[family] || family || "General");
+  const scope = scopeParts.join(":");
+  return scope ? `${label} · ${scope}` : label;
 }
 
 function memoryActionLabel(value) {

@@ -215,7 +215,7 @@ class GlobalAgentCognitionTest {
 
         assertTrue(context.contains("persistent QEMU guest"))
         assertTrue(context.contains("Prefer concise replies"))
-        assertFalse(context.contains("hotel is booked"))
+        assertFalse(context, context.contains("hotel is booked"))
         assertFalse(context.contains("User: "))
     }
 

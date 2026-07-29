@@ -150,6 +150,154 @@ class GlobalMemoryEvolutionTest {
     }
 
     @Test
+    fun namespacePolicyClassifiesPreferenceProjectAndDeviceEvidence() {
+        val preferenceEvent = event(
+            "preference",
+            "Prefer concise responses",
+            metadata = mapOf("memory_kind" to AgentMemoryKind.PREFERENCE.name)
+        )
+        val projectEvent = event(
+            "project",
+            "Project SignalASI build is ready",
+            metadata = mapOf("project_id" to "SignalASI")
+        )
+        val deviceEvent = event(
+            "device",
+            "Battery is at 80 percent",
+            metadata = mapOf("tool_key" to "battery.status")
+        )
+
+        val preference = GlobalMemoryNamespacePolicy.resolve(
+            preferenceEvent,
+            understanding(preferenceEvent, "Response style"),
+            GlobalWorldItemKind.PREFERENCE,
+            GlobalWorldLayer.USER
+        )
+        val project = GlobalMemoryNamespacePolicy.resolve(
+            projectEvent,
+            understanding(projectEvent, "SignalASI").copy(project = "SignalASI"),
+            GlobalWorldItemKind.STATE,
+            GlobalWorldLayer.TOPIC
+        )
+        val device = GlobalMemoryNamespacePolicy.resolve(
+            deviceEvent,
+            understanding(deviceEvent, "Battery status"),
+            GlobalWorldItemKind.STATE,
+            GlobalWorldLayer.REALTIME
+        )
+
+        assertEquals("user:self", preference.key)
+        assertEquals("project:signalasi", project.key)
+        assertEquals("device:local", device.key)
+    }
+
+    @Test
+    fun replacementCannotSupersedeAnEquivalentSubjectInAnotherNamespace() {
+        val device = item(
+            "device-state",
+            GlobalWorldItemKind.STATE,
+            topic = "Runtime status",
+            value = "Runtime status is preparing",
+            eventId = "device-event",
+            namespace = GlobalMemoryNamespace.DEVICE,
+            namespaceId = "phone"
+        ).copy(stableKey = "shared-runtime-state")
+        val project = item(
+            "project-state",
+            GlobalWorldItemKind.STATE,
+            topic = "Runtime status",
+            value = "Runtime status changed to ready",
+            eventId = "project-event",
+            namespace = GlobalMemoryNamespace.PROJECT,
+            namespaceId = "signalasi"
+        ).copy(stableKey = "shared-runtime-state")
+        val source = event("project-event", project.value)
+        val evolved = GlobalMemoryEvolutionPolicy.evolve(
+            PersonalWorldModel(items = listOf(device)),
+            GlobalWorldReduction(
+                PersonalWorldModel(items = listOf(device, project)),
+                listOf(project),
+                emptyList()
+            ),
+            GlobalMemoryInbox(),
+            source,
+            understanding(source, project.topic).copy(project = "SignalASI")
+        )
+
+        assertFalse(evolved.candidates.single().action == GlobalMemoryEvolutionAction.SUPERSEDE)
+        assertEquals(GlobalWorldItemStatus.ACTIVE, evolved.reduction.world.items.first { it.id == device.id }.status)
+        assertEquals(GlobalWorldItemStatus.ACTIVE, evolved.reduction.world.items.first { it.id == project.id }.status)
+    }
+
+    @Test
+    fun crossNamespaceSupersessionFailsIntegrityValidation() {
+        val previous = item(
+            "device-state",
+            GlobalWorldItemKind.STATE,
+            topic = "Runtime status",
+            value = "Runtime is preparing",
+            eventId = "device-event",
+            namespace = GlobalMemoryNamespace.DEVICE,
+            namespaceId = "phone"
+        ).copy(
+            status = GlobalWorldItemStatus.SUPERSEDED,
+            temporalState = GlobalMemoryTemporalState.DEPRECATED,
+            supersededByItemId = "project-state"
+        )
+        val replacement = item(
+            "project-state",
+            GlobalWorldItemKind.STATE,
+            topic = "Runtime status",
+            value = "Runtime is ready",
+            eventId = "project-event",
+            namespace = GlobalMemoryNamespace.PROJECT,
+            namespaceId = "signalasi"
+        ).copy(supersedesItemIds = listOf(previous.id))
+
+        val report = GlobalMemorySupersessionPolicy.inspect(
+            PersonalWorldModel(items = listOf(previous, replacement))
+        )
+
+        assertTrue(report.violations.any { it.startsWith("cross_namespace:") })
+        assertTrue(runCatching { report.requireSafe() }.isFailure)
+    }
+
+    @Test
+    fun deviceQueryDoesNotCompileProjectStateWithTheSameWords() {
+        val device = item(
+            "phone-battery",
+            GlobalWorldItemKind.STATE,
+            topic = "Phone battery status",
+            value = "The phone battery status is 80 percent",
+            eventId = "phone-event",
+            namespace = GlobalMemoryNamespace.DEVICE,
+            namespaceId = "phone"
+        )
+        val project = item(
+            "battery-project",
+            GlobalWorldItemKind.STATE,
+            topic = "Phone battery status",
+            value = "The phone battery status project is blocked",
+            eventId = "project-event",
+            namespace = GlobalMemoryNamespace.PROJECT,
+            namespaceId = "battery-app"
+        )
+        val query = "What is the phone battery status?"
+        val plan = GlobalMemoryQueryPlanner.plan(query)
+        val context = GlobalMemoryPromptCompiler.compile(
+            PersonalWorldModel(items = listOf(device, project)),
+            GlobalTopicProjectGraph(),
+            GlobalEntityMemoryGraph(),
+            query,
+            "conversation-a"
+        )
+
+        assertEquals(setOf(GlobalMemoryNamespace.DEVICE), plan.preferredNamespaces)
+        assertTrue(context.contains(device.value))
+        assertFalse(context.contains(project.value))
+    }
+
+    @Test
     fun replacementDoesNotSupersedeUnrelatedFactsWithAGenericTopic() {
         val tts = item(
             "tts-old",
@@ -1338,6 +1486,15 @@ class GlobalMemoryEvolutionTest {
     }
 
     @Test
+    fun plannerDoesNotTreatRuntimeAsTheRunToolVerb() {
+        val plan = GlobalMemoryQueryPlanner.plan("Improve the Android QEMU runtime")
+
+        assertTrue(GlobalMemoryQueryType.DEVICE_CAPABILITY in plan.types)
+        assertFalse(GlobalMemoryQueryType.TOOL_EVIDENCE in plan.types)
+        assertEquals(setOf(GlobalMemoryNamespace.DEVICE), plan.preferredNamespaces)
+    }
+
+    @Test
     fun plannerInfersTypedGraphRelationHints() {
         val plan = GlobalMemoryQueryPlanner.plan(
             "What model does the phone support and which runtime does it depend on?"
@@ -1415,12 +1572,16 @@ class GlobalMemoryEvolutionTest {
         value: String,
         eventId: String,
         status: GlobalWorldItemStatus = GlobalWorldItemStatus.ACTIVE,
-        visibility: GlobalWorldContextVisibility = GlobalWorldContextVisibility.SHAREABLE
+        visibility: GlobalWorldContextVisibility = GlobalWorldContextVisibility.SHAREABLE,
+        namespace: GlobalMemoryNamespace = GlobalMemoryNamespace.GENERAL,
+        namespaceId: String = ""
     ) = GlobalWorldItem(
         id = id,
         stableKey = GlobalAgentText.stableKey(kind.name, topic, value),
         kind = kind,
         layer = layer,
+        namespace = namespace,
+        namespaceId = namespaceId,
         topic = topic,
         value = value,
         confidence = 0.86,

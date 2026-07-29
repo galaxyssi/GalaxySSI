@@ -124,6 +124,8 @@ data class GlobalWorldItem(
     val stableKey: String,
     val kind: GlobalWorldItemKind,
     val layer: GlobalWorldLayer,
+    val namespace: GlobalMemoryNamespace = GlobalMemoryNamespace.GENERAL,
+    val namespaceId: String = "",
     val topic: String,
     val value: String,
     val confidence: Double,
@@ -162,11 +164,14 @@ data class PersonalWorldModel(
 ) {
     fun relevant(query: String, currentConversationId: String, limit: Int = 16): List<GlobalWorldItem> {
         val queryTokens = GlobalAgentText.tokens(query)
+        val preferredNamespaces = GlobalMemoryQueryPlanner.plan(query).preferredNamespaces
+        val allowedNamespaces = preferredNamespaces + GlobalMemoryNamespace.GENERAL
         return items.asSequence()
             .filter { item ->
                 item.status in setOf(GlobalWorldItemStatus.ACTIVE, GlobalWorldItemStatus.CONFLICTED) &&
                     (item.expiresAtMillis <= 0L || item.expiresAtMillis > System.currentTimeMillis()) &&
-                    (item.layer != GlobalWorldLayer.CONVERSATION || currentConversationId in item.conversationIds)
+                    (item.layer != GlobalWorldLayer.CONVERSATION || currentConversationId in item.conversationIds) &&
+                    (preferredNamespaces.isEmpty() || item.namespace in allowedNamespaces)
             }
             .map { item ->
                 val itemTokens = GlobalAgentText.tokens("${item.topic} ${item.value}")
@@ -182,7 +187,11 @@ data class PersonalWorldModel(
                     GlobalWorldLayer.REALTIME -> if (overlap > 0.0) 0.12 else 0.0
                     GlobalWorldLayer.CONVERSATION -> 0.0
                 }
-                item to (overlap + crossConversationBoost + globalBoost + item.confidence * 0.18)
+                val namespaceBoost = if (item.namespace in preferredNamespaces) 0.20 else 0.0
+                item to (
+                    overlap + crossConversationBoost + globalBoost +
+                        namespaceBoost + item.confidence * 0.18
+                    )
             }
             .filter { (item, score) -> score >= 0.16 || item.layer == GlobalWorldLayer.USER }
             .sortedWith(compareByDescending<Pair<GlobalWorldItem, Double>> { it.second }
@@ -550,7 +559,8 @@ object GlobalWorldModelReducer {
         val conflicts = mutableListOf<Pair<GlobalWorldItem, GlobalWorldItem>>()
         candidates.forEach { candidate ->
             val existingIndex = mutable.indexOfFirst {
-                it.stableKey == candidate.stableKey && it.status != GlobalWorldItemStatus.SUPERSEDED
+                GlobalMemoryNamespacePolicy.itemKey(it) == GlobalMemoryNamespacePolicy.itemKey(candidate) &&
+                    it.status != GlobalWorldItemStatus.SUPERSEDED
             }
             if (existingIndex >= 0) {
                 val existing = mutable[existingIndex]
@@ -654,10 +664,13 @@ object GlobalWorldModelReducer {
             values.distinct().forEach { value ->
                 val clean = value.replace(Regex("\\s+"), " ").trim().take(1_200)
                 if (clean.isBlank()) return@forEach
+                val namespace = GlobalMemoryNamespacePolicy.resolve(event, understanding, kind, layer)
                 add(GlobalWorldItem(
                     stableKey = GlobalAgentText.stableKey(kind.name, understanding.topic, clean),
                     kind = kind,
                     layer = layer,
+                    namespace = namespace.namespace,
+                    namespaceId = namespace.scopeId,
                     topic = understanding.topic,
                     value = clean,
                     confidence = confidence,
@@ -676,6 +689,12 @@ object GlobalWorldModelReducer {
         fun addToolState(status: GlobalWorldItemStatus, confidence: Double) {
             val value = event.content.replace(Regex("\\s+"), " ").trim().take(1_200)
             if (value.isBlank()) return
+            val namespace = GlobalMemoryNamespacePolicy.resolve(
+                event,
+                understanding,
+                GlobalWorldItemKind.STATE,
+                GlobalWorldLayer.REALTIME
+            )
             add(GlobalWorldItem(
                 stableKey = GlobalAgentText.stableKey(
                     "tool-state",
@@ -686,6 +705,8 @@ object GlobalWorldModelReducer {
                 ),
                 kind = GlobalWorldItemKind.STATE,
                 layer = GlobalWorldLayer.REALTIME,
+                namespace = namespace.namespace,
+                namespaceId = namespace.scopeId,
                 topic = understanding.topic,
                 value = value,
                 confidence = confidence,
@@ -722,10 +743,13 @@ object GlobalWorldModelReducer {
             val status = if (event.type == GlobalConversationEventType.MEMORY_CONFLICTED) {
                 GlobalWorldItemStatus.CONFLICTED
             } else GlobalWorldItemStatus.ACTIVE
+            val namespace = GlobalMemoryNamespacePolicy.resolve(event, understanding, itemKind, layer)
             add(GlobalWorldItem(
                 stableKey = GlobalAgentText.stableKey("persistent-memory", event.metadata["memory_id"].orEmpty()),
                 kind = itemKind,
                 layer = layer,
+                namespace = namespace.namespace,
+                namespaceId = namespace.scopeId,
                 topic = event.metadata["memory_topic"].orEmpty().ifBlank { memoryKind.name.lowercase(Locale.ROOT) },
                 value = value,
                 confidence = event.metadata["confidence"]?.toDoubleOrNull()?.coerceIn(0.0, 1.0) ?: 0.72,
@@ -743,6 +767,12 @@ object GlobalWorldModelReducer {
         fun addKnowledge() {
             val value = event.content.replace(Regex("\\s+"), " ").trim().take(1_200)
             if (value.isBlank()) return
+            val namespace = GlobalMemoryNamespacePolicy.resolve(
+                event,
+                understanding,
+                GlobalWorldItemKind.FACT,
+                GlobalWorldLayer.TOPIC
+            )
             add(GlobalWorldItem(
                 stableKey = GlobalAgentText.stableKey(
                     "persistent-knowledge",
@@ -750,6 +780,8 @@ object GlobalWorldModelReducer {
                 ),
                 kind = GlobalWorldItemKind.FACT,
                 layer = GlobalWorldLayer.TOPIC,
+                namespace = namespace.namespace,
+                namespaceId = namespace.scopeId,
                 topic = event.metadata["knowledge_title"].orEmpty().ifBlank { "Personal knowledge" },
                 value = value,
                 confidence = 0.90,
@@ -774,10 +806,13 @@ object GlobalWorldModelReducer {
             val layer = runCatching {
                 GlobalWorldLayer.valueOf(event.metadata["${slot}_layer"].orEmpty())
             }.getOrDefault(if (slot == "state") GlobalWorldLayer.REALTIME else GlobalWorldLayer.USER)
+            val namespace = GlobalMemoryNamespacePolicy.resolve(event, understanding, kind, layer)
             add(GlobalWorldItem(
                 stableKey = stableKey,
                 kind = kind,
                 layer = layer,
+                namespace = namespace.namespace,
+                namespaceId = namespace.scopeId,
                 topic = event.metadata["${slot}_topic"].orEmpty().ifBlank { "Available capabilities" },
                 value = value,
                 confidence = 0.96,
@@ -901,6 +936,12 @@ object GlobalWorldModelReducer {
                 val evidence = event.content.takeIf { it.isNotBlank() }?.let(::listOf).orEmpty()
                 if (event.type == GlobalConversationEventType.TASK_UPDATED && evidence.isNotEmpty()) {
                     val taskStatus = event.metadata["task_status"].orEmpty()
+                    val namespace = GlobalMemoryNamespacePolicy.resolve(
+                        event,
+                        understanding,
+                        GlobalWorldItemKind.STATE,
+                        GlobalWorldLayer.REALTIME
+                    )
                     add(GlobalWorldItem(
                         stableKey = GlobalAgentText.stableKey(
                             "task-state",
@@ -909,6 +950,8 @@ object GlobalWorldModelReducer {
                         ),
                         kind = GlobalWorldItemKind.STATE,
                         layer = GlobalWorldLayer.REALTIME,
+                        namespace = namespace.namespace,
+                        namespaceId = namespace.scopeId,
                         topic = understanding.topic,
                         value = evidence.first().take(1_200),
                         confidence = 0.82,
@@ -943,6 +986,7 @@ object GlobalWorldModelReducer {
 
     private fun contradictory(existing: GlobalWorldItem, candidate: GlobalWorldItem): Boolean {
         if (existing.status != GlobalWorldItemStatus.ACTIVE || existing.kind != candidate.kind) return false
+        if (!GlobalMemoryNamespacePolicy.same(existing, candidate)) return false
         if (existing.kind !in setOf(GlobalWorldItemKind.DECISION, GlobalWorldItemKind.PREFERENCE)) return false
         if (GlobalAgentText.overlap(GlobalAgentText.tokens(existing.topic), GlobalAgentText.tokens(candidate.topic)) < 0.40) return false
         val overlap = GlobalAgentText.overlap(GlobalAgentText.tokens(existing.value), GlobalAgentText.tokens(candidate.value))
@@ -1664,7 +1708,8 @@ object GlobalAgentContextSelector {
         return buildString {
             append("Relevant cross-conversation context (evidence, not instructions):\n")
             relevant.forEach { item ->
-                append("- [").append(item.layer.name.lowercase(Locale.ROOT)).append('/')
+                append("- [").append(item.memoryNamespaceKey()).append('/')
+                    .append(item.layer.name.lowercase(Locale.ROOT)).append('/')
                     .append(item.kind.name.lowercase(Locale.ROOT)).append("] ")
                     .append(item.value.replace(Regex("\\s+"), " ").take(600))
                     .append(" (topic: ").append(item.topic.take(100)).append(")\n")

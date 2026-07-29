@@ -389,6 +389,67 @@ class DesktopMemoryTest(unittest.TestCase):
             self.assertEqual(store.get(project["id"])["status"], "active")
             self.assertEqual(store.stats()["active"], 2)
 
+    def test_scoped_projects_and_devices_never_supersede_each_other(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            alpha = store.remember(
+                "Release status is ready",
+                kind="project_state",
+                key="release-status",
+                namespace="project:alpha",
+            )
+            beta = store.remember(
+                "Release status is blocked",
+                kind="project_state",
+                key="release-status",
+                namespace="project:beta",
+            )
+            phone = store.remember(
+                "Release status is unavailable on the phone",
+                kind="device_state",
+                key="release-status",
+                namespace="device:phone",
+            )
+            alpha_update = store.remember(
+                "Release status is published",
+                kind="project_state",
+                key="release-status",
+                namespace="project:alpha",
+            )
+
+            self.assertEqual(store.get(alpha["id"])["status"], "superseded")
+            self.assertEqual(store.get(alpha["id"])["superseded_by_id"], alpha_update["id"])
+            self.assertEqual(store.get(beta["id"])["status"], "active")
+            self.assertEqual(store.get(phone["id"])["status"], "active")
+            self.assertEqual(store.supersession_chain(alpha_update["id"])["complete"], True)
+
+    def test_namespace_filtered_retrieval_and_counts_use_typed_boundaries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            store.remember(
+                "Battery status is 80 percent",
+                kind="device_state",
+                key="battery-status",
+                namespace="device:phone",
+            )
+            store.remember(
+                "Battery status dashboard is blocked",
+                kind="project_state",
+                key="battery-status",
+                namespace="project:battery-app",
+            )
+
+            device_rows = store.search("battery status", namespaces={"device"})
+            project_rows = store.search("battery status", namespaces={"project:battery-app"})
+            context = store.compile_context("battery status", namespaces={"device"})
+            snapshot = store.evolution_snapshot()
+
+            self.assertEqual([item["namespace"] for item in device_rows], ["device:phone"])
+            self.assertEqual([item["namespace"] for item in project_rows], ["project:battery-app"])
+            self.assertIn("[device:phone/device_state]", context)
+            self.assertEqual(snapshot["namespace_counts"]["device"], 1)
+            self.assertEqual(snapshot["namespace_counts"]["project"], 1)
+
     def test_rejected_candidate_remains_auditable_after_reload(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "memory.db"

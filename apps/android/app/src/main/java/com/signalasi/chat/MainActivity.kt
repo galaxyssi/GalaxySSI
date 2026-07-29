@@ -9327,7 +9327,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 candidate.item.value.ifBlank { candidate.item.topic }.replace(Regex("\\s+"), " ").take(90),
                 getString(
                     R.string.cc_memory_candidate_subtitle_detailed,
-                    memoryCandidateKindLabel(candidate.kind),
+                    "${memoryCandidateKindLabel(candidate.kind)} · ${memoryNamespaceLabel(candidate.item)}",
                     memoryTemporalStateLabel(candidate.temporalState),
                     memoryEvolutionActionLabel(candidate.action),
                     candidate.item.evidenceCount
@@ -9346,7 +9346,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     ) {
         val detail = getString(
             R.string.cc_memory_candidate_dialog_message_detailed,
-            memoryCandidateKindLabel(candidate.kind),
+            "${memoryCandidateKindLabel(candidate.kind)} · ${memoryNamespaceLabel(candidate.item)}",
             candidate.item.topic.ifBlank { getString(R.string.agent_memory_key_none) },
             memoryCandidateRiskLabel(candidate.risk),
             memoryTemporalStateLabel(candidate.temporalState),
@@ -9413,12 +9413,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 getString(
                     R.string.cc_memory_temporal_item_replaced_subtitle,
                     itemState,
+                    memoryNamespaceLabel(item),
                     item.evidenceCount
                 )
             } else {
                 getString(
                     R.string.cc_memory_temporal_item_subtitle,
                     itemState,
+                    memoryNamespaceLabel(item),
                     item.evidenceCount
                 )
             }
@@ -9591,6 +9593,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             GlobalMemoryTemporalState.CONFLICTED -> R.string.cc_memory_state_conflicted
         }
     )
+
+    private fun memoryNamespaceLabel(item: GlobalWorldItem): String {
+        val label = getString(
+            when (item.namespace) {
+                GlobalMemoryNamespace.GENERAL -> R.string.cc_memory_namespace_general
+                GlobalMemoryNamespace.USER -> R.string.cc_memory_namespace_user
+                GlobalMemoryNamespace.PROJECT -> R.string.cc_memory_namespace_project
+                GlobalMemoryNamespace.DEVICE -> R.string.cc_memory_namespace_device
+                GlobalMemoryNamespace.SECURITY -> R.string.cc_memory_namespace_security
+            }
+        )
+        val genericIds = setOf("", "default", "self", "local", "policy")
+        return if (item.namespaceId in genericIds) label else "$label · ${item.namespaceId.take(32)}"
+    }
 
     private fun memoryEvolutionActionLabel(action: GlobalMemoryEvolutionAction): String = getString(
         when (action) {
