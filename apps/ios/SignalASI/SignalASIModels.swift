@@ -8189,6 +8189,173 @@ struct AgentAction: Codable, Equatable, Identifiable {
   }
 }
 
+protocol AgentActionExecutor {
+  func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult
+}
+
+struct PhoneExecutionAuthoritySnapshot: Codable, Equatable {
+  var activeSideEffectTaskId: String
+  var queuedSideEffectTasks: Int
+  var cancelledTaskCount: Int
+
+  init(
+    activeSideEffectTaskId: String = "",
+    queuedSideEffectTasks: Int = 0,
+    cancelledTaskCount: Int = 0
+  ) {
+    self.activeSideEffectTaskId = activeSideEffectTaskId
+    self.queuedSideEffectTasks = max(queuedSideEffectTasks, 0)
+    self.cancelledTaskCount = max(cancelledTaskCount, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case activeSideEffectTaskId = "active_side_effect_task_id"
+    case queuedSideEffectTasks = "queued_side_effect_tasks"
+    case cancelledTaskCount = "cancelled_task_count"
+  }
+}
+
+enum PhoneExecutionAuthority {
+  static func guarded(_ delegate: AgentActionExecutor) -> AgentActionExecutor {
+    GuardedExecutor(delegate: delegate)
+  }
+
+  static func requestCancellation(taskId: String) {
+    let normalized = normalize(taskId)
+    guard !normalized.isEmpty else { return }
+    stateLock.lock()
+    cancelledTasks.insert(normalized)
+    stateLock.unlock()
+  }
+
+  static func clearCancellation(taskId: String) {
+    let normalized = normalize(taskId)
+    guard !normalized.isEmpty else { return }
+    stateLock.lock()
+    cancelledTasks.remove(normalized)
+    stateLock.unlock()
+  }
+
+  static func isCancelled(taskId: String) -> Bool {
+    let normalized = normalize(taskId)
+    guard !normalized.isEmpty else { return false }
+    stateLock.lock()
+    let cancelled = cancelledTasks.contains(normalized)
+    stateLock.unlock()
+    return cancelled
+  }
+
+  static func snapshot() -> PhoneExecutionAuthoritySnapshot {
+    stateLock.lock()
+    let snapshot = PhoneExecutionAuthoritySnapshot(
+      activeSideEffectTaskId: activeSideEffectTask,
+      queuedSideEffectTasks: queuedSideEffectTasks,
+      cancelledTaskCount: cancelledTasks.count
+    )
+    stateLock.unlock()
+    return snapshot
+  }
+
+  fileprivate static func execute(
+    delegate: AgentActionExecutor,
+    action: AgentAction,
+    screen: AgentScreenContext
+  ) -> AgentActionResult {
+    let taskId = taskId(for: action)
+    if isCancelled(taskId: taskId) {
+      return cancelledResult(action: action, taskId: taskId)
+    }
+    if action.kind.isConcurrentPhoneRead {
+      return delegate.execute(action: action, screen: screen)
+        .withAuthorityMetadata(taskId: taskId, serialized: false)
+    }
+
+    stateLock.lock()
+    queuedSideEffectTasks += 1
+    stateLock.unlock()
+    sideEffectLock.lock()
+    stateLock.lock()
+    queuedSideEffectTasks = max(queuedSideEffectTasks - 1, 0)
+    activeSideEffectTask = taskId
+    stateLock.unlock()
+    defer {
+      stateLock.lock()
+      if activeSideEffectTask == taskId {
+        activeSideEffectTask = ""
+      }
+      stateLock.unlock()
+      sideEffectLock.unlock()
+    }
+
+    if isCancelled(taskId: taskId) {
+      return cancelledResult(action: action, taskId: taskId)
+    }
+    return delegate.execute(action: action, screen: screen)
+      .withAuthorityMetadata(taskId: taskId, serialized: true)
+  }
+
+  private static func taskId(for action: AgentAction) -> String {
+    let candidate = normalize(action.parameters[taskIdParameter] ?? "")
+    return candidate.isEmpty ? action.id : candidate
+  }
+
+  private static func cancelledResult(action: AgentAction, taskId: String) -> AgentActionResult {
+    AgentActionResult(
+      actionId: action.id,
+      success: false,
+      message: "Phone tool execution was cancelled",
+      metadata: [
+        "execution_location": "phone",
+        "execution_authority": "signalasi-phone",
+        "task_id": taskId,
+        "cancelled": "true"
+      ]
+    )
+  }
+
+  private static func normalize(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static let taskIdParameter = "_signalasi_task_id"
+  private static let sideEffectLock = NSLock()
+  private static let stateLock = NSLock()
+  private static var activeSideEffectTask = ""
+  private static var queuedSideEffectTasks = 0
+  private static var cancelledTasks: Set<String> = []
+
+  private final class GuardedExecutor: AgentActionExecutor {
+    private let delegate: AgentActionExecutor
+
+    init(delegate: AgentActionExecutor) {
+      self.delegate = delegate
+    }
+
+    func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+      PhoneExecutionAuthority.execute(delegate: delegate, action: action, screen: screen)
+    }
+  }
+}
+
+private extension AgentActionKind {
+  var isConcurrentPhoneRead: Bool {
+    self == .readScreen || self == .draftPlan
+  }
+}
+
+private extension AgentActionResult {
+  func withAuthorityMetadata(taskId: String, serialized: Bool) -> AgentActionResult {
+    var value = self
+    value.metadata.merge([
+      "execution_location": "phone",
+      "execution_authority": "signalasi-phone",
+      "task_id": taskId,
+      "serialized_side_effect": serialized.description
+    ]) { _, new in new }
+    return value
+  }
+}
+
 struct AgentActionRecoveryController {
   func recover(
     action: AgentAction,
