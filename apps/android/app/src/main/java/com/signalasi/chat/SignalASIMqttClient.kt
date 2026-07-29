@@ -563,6 +563,10 @@ object SignalASIMqttClient {
             content,
             configuredExecutionMode
         ).mode
+        val taskBudget = context
+            ?.let(::AgentTaskBudgetStore)
+            ?.load()
+            ?: AgentTaskBudget.forProfile(AgentTaskBudgetProfile.ADAPTIVE)
         val payload = JSONObject()
             .put("type", "text")
             .put("content", content)
@@ -571,6 +575,7 @@ object SignalASIMqttClient {
             .put("conversation_id", resolvedConversationId)
             .put("turn_id", resolvedTurnId)
             .put("execution_mode", resolvedExecutionMode.wireValue)
+            .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
             .put("time", System.currentTimeMillis())
         if (context != null) {
             val policy = LanguagePolicySettings.get(context)
@@ -940,6 +945,32 @@ object SignalASIMqttClient {
             .put("stage", "phone_publish_started")
             .put("at", publishStartedAt)
             .put("detail", contactId))
+        payload.optJSONObject("task_budget")?.let { encodedBudget ->
+            val estimatedBytes = payload.toString().toByteArray(Charsets.UTF_8).size.toLong()
+            val taskBudgetDecision = AgentTaskBudgetPolicy.evaluate(
+                budget = AgentTaskBudgetJsonCodec.decode(encodedBudget),
+                usage = AgentTaskBudgetUsage(
+                    networkBytes = estimatedBytes,
+                    usageEstimated = true
+                ),
+                environment = AgentTaskBudgetProbe.environment(context),
+                networkRequired = true,
+                trustedNetworkTarget = usesPcConnectorTunnel(contactId)
+            )
+            if (!taskBudgetDecision.allowed) {
+                Log.w(TAG, "Publish rejected by task budget: ${taskBudgetDecision.reason}")
+                return MqttPublishResult.FAILED
+            }
+            payload.put(
+                "task_budget_usage",
+                AgentTaskBudgetJsonCodec.encodeUsage(
+                    AgentTaskBudgetUsage(
+                        networkBytes = estimatedBytes,
+                        usageEstimated = true
+                    )
+                )
+            )
+        }
         val applicationEnvelope = SignalASILinkProtocol.makeEnvelope(
             payload,
             SignalASICrypto.localSignalasiId(),

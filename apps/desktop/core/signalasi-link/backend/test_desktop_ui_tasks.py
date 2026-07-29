@@ -233,9 +233,11 @@ def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monke
         lambda quick=False: {"agents": [{"id": "codex", "status": "ready"}]},
     )
     prompts: list[str] = []
+    policies: list[dict] = []
 
-    def flaky_delivery(_agent_id, prompt, **_kwargs):
+    def flaky_delivery(_agent_id, prompt, **kwargs):
         prompts.append(prompt)
+        policies.append(kwargs["execution_policy"])
         if len(prompts) == 1:
             raise RuntimeError("temporary failure")
         return {"reply": "retry completed"}
@@ -250,6 +252,12 @@ def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monke
             agent_id="codex",
             conversation_id="conversation-retry",
             attachments=[str(source)],
+            task_budget={
+                "profile": "custom",
+                "max_elapsed_seconds": 900,
+                "max_input_tokens": 123_000,
+                "allow_paid_providers": False,
+            },
         ),
         LoopbackRequest(),
     )
@@ -265,3 +273,8 @@ def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monke
     assert completed.attempt == 2
     assert completed.attachments == ["downloads/input/report.csv"]
     assert prompts[1].count("Current user request:\nSummarize the attached report") == 1
+    assert policies[0]["task_budget"] == policies[1]["task_budget"]
+    assert policies[0]["task_budget"]["profile"] == "custom"
+    assert policies[0]["task_budget"]["max_elapsed_seconds"] == 900.0
+    assert policies[0]["task_budget"]["max_input_tokens"] == 123_000
+    assert policies[0]["task_budget"]["allow_paid_providers"] is False

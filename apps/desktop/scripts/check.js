@@ -177,6 +177,7 @@ const androidMcpSecurity = fs.readFileSync(path.join(workspaceRoot, "android", "
 const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentMcpRuntime.kt"), "utf8");
 const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentExecutionPresentation.kt"), "utf8");
 const androidTaskIntent = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskIntent.kt"), "utf8");
+const androidTaskBudget = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskBudget.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -602,6 +603,25 @@ for (const taskIntentContract of [
 ]) {
   if (!taskIntentContract[0].includes(taskIntentContract[1])) {
     throw new Error(`Unified task intent classification is incomplete: ${taskIntentContract[1]}`);
+  }
+}
+
+for (const taskBudgetContract of [
+  [backendExecutionHarness, "class AgentTaskBudget"],
+  [backendExecutionHarness, "requested_task_budget"],
+  [backendExecutionHarness, "\"task_budget\""],
+  [backendMain, "task_budget: dict"],
+  [backendMain, "requested_task_budget=req.task_budget"],
+  [backendMqtt, "payload.get(\"task_budget\")"],
+  [main, "task_budget:"],
+  [workspaceRenderer, "taskBudget: state.taskBudget"],
+  [html, 'id="taskBudgetSettingsProfile"'],
+  [androidTaskBudget, "data class AgentTaskBudget"],
+  [androidTaskBudget, "object AgentTaskBudgetPolicy"],
+  [androidMqtt, ".put(\"task_budget\""]
+]) {
+  if (!taskBudgetContract[0].includes(taskBudgetContract[1])) {
+    throw new Error(`Cross-platform task budget is incomplete: ${taskBudgetContract[1]}`);
   }
 }
 

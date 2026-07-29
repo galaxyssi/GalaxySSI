@@ -15,12 +15,13 @@ object AgentBackupData {
 
     fun export(context: Context, includeSessionHistory: Boolean = true): JSONObject {
         val safety = SharedPreferencesAgentSafetySettingsStore(context).load()
+        val taskBudget = AgentTaskBudgetStore(context).load()
         val modelPlanner = AgentModelPlannerSettingsStore(context).load()
         val voiceAssistant = VoiceAssistantSettings.get(context)
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
         return JSONObject()
-            .put("version", 30)
+            .put("version", 31)
             .put("interface_language", AppLanguage.current(context))
             .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
             .put("knowledge", readArray(context, KNOWLEDGE_PREFS, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS))
@@ -51,6 +52,7 @@ object AgentBackupData {
                     .put("device_control_allowed", safety.deviceControlAllowed)
                     .put("execution_paused", safety.executionPaused)
             )
+            .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
             .put("custom_device_connectors", customDevices)
             .put("global_super_agent", GlobalAgentRepository(context).exportSnapshot())
             .put("agent_self_model", AgentSelfModelStore(context).exportJson())
@@ -163,6 +165,9 @@ object AgentBackupData {
                     executionPaused = json.optBoolean("execution_paused", false)
                 )
             )
+        }
+        payload.optJSONObject("task_budget")?.let { json ->
+            AgentTaskBudgetStore(context).save(AgentTaskBudgetJsonCodec.decode(json))
         }
         payload.optJSONObject("home_assistant")?.let { json ->
             HomeAssistantSettingsStore.save(

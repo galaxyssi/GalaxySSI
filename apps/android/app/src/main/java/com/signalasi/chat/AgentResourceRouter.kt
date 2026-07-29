@@ -77,7 +77,9 @@ data class AgentRuntimeEnvironment(
     val powerSaveMode: Boolean = false,
     val networkAvailable: Boolean = false,
     val networkValidated: Boolean = false,
-    val networkMetered: Boolean = false
+    val networkMetered: Boolean = false,
+    val appMemoryBytes: Long = 0L,
+    val availableMemoryBytes: Long = 0L
 ) {
     val energyConstrained: Boolean get() = powerSaveMode || (!charging && batteryPercent in 0..19)
 }
@@ -93,7 +95,8 @@ data class AgentRoutingDecision(
     val primary: AgentResourceCandidate?,
     val fallbacks: List<AgentResourceCandidate>,
     val environment: AgentRuntimeEnvironment = AgentRuntimeEnvironment(),
-    val catalog: List<AgentResourceDescriptor> = emptyList()
+    val catalog: List<AgentResourceDescriptor> = emptyList(),
+    val taskBudget: AgentTaskBudget = AgentTaskBudget.forProfile(AgentTaskBudgetProfile.ADAPTIVE)
 ) {
     val orderedTargetIds: List<String>
         get() = listOfNotNull(primary?.resource?.targetId?.takeIf { it.isNotBlank() }) +
@@ -471,13 +474,16 @@ object AgentRuntimeEnvironmentProbe {
         val power = context.getSystemService(PowerManager::class.java)
         val connectivity = context.getSystemService(ConnectivityManager::class.java)
         val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+        val budgetEnvironment = AgentTaskBudgetProbe.environment(context)
         return AgentRuntimeEnvironment(
             batteryPercent = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY),
             charging = battery.isCharging,
             powerSaveMode = power.isPowerSaveMode,
             networkAvailable = capabilities != null,
             networkValidated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true,
-            networkMetered = connectivity.isActiveNetworkMetered
+            networkMetered = connectivity.isActiveNetworkMetered,
+            appMemoryBytes = budgetEnvironment.appMemoryBytes,
+            availableMemoryBytes = budgetEnvironment.availableMemoryBytes
         )
     }
 }
@@ -695,6 +701,7 @@ class AgentResourceRouter(context: Context) {
     private val healthStore = AgentResourceHealthStore(appContext)
     private val modelUsageStore = GlobalModelCallBudgetStore(appContext)
     private val selfModelStore = AgentSelfModelStore(appContext)
+    private val taskBudgetStore = AgentTaskBudgetStore(appContext)
 
     fun route(
         goal: String,
@@ -704,6 +711,7 @@ class AgentResourceRouter(context: Context) {
     ): AgentRoutingDecision {
         val requirements = AgentTaskRequirementAnalyzer.analyze(goal)
         val environment = AgentRuntimeEnvironmentProbe.probe(appContext)
+        val taskBudget = taskBudgetStore.load()
         val hasPairedDesktop = SignalASILinkProtocol.allServerLinks(appContext).any { it.paired }
         val preferredTargets = preferredTargetOrder(requirements, hasPairedDesktop)
         val registrations = EncryptedAgentRegistry(appContext).list()
@@ -720,7 +728,8 @@ class AgentResourceRouter(context: Context) {
                     resource,
                     requirements,
                     environment,
-                    observedUsage[resource.targetId] ?: GlobalModelResourceUsageSnapshot(resource.targetId)
+                    observedUsage[resource.targetId] ?: GlobalModelResourceUsageSnapshot(resource.targetId),
+                    taskBudget
                 )
                 val preference = preferenceBonus(resource.targetId, preferredTargets)
                 val selfCalibration = AgentSelfModelReducer.calibration(
@@ -749,7 +758,14 @@ class AgentResourceRouter(context: Context) {
                     .thenByDescending { it.score }
             )
             .take(fallbackLimit)
-        return AgentRoutingDecision(requirements, primary, fallbacks, environment, catalog)
+        return AgentRoutingDecision(
+            requirements,
+            primary,
+            fallbacks,
+            environment,
+            catalog,
+            taskBudget
+        )
     }
 
     private fun projectRegistration(
@@ -840,7 +856,8 @@ class AgentResourceRouter(context: Context) {
         resource: AgentResourceDescriptor,
         requirements: AgentTaskRequirements,
         environment: AgentRuntimeEnvironment,
-        observedUsage: GlobalModelResourceUsageSnapshot
+        observedUsage: GlobalModelResourceUsageSnapshot,
+        taskBudget: AgentTaskBudget
     ): AgentResourceCandidate {
         val reasons = mutableListOf<String>()
         if (resource.status != AgentConnectorStatus.AVAILABLE) {
@@ -868,6 +885,48 @@ class AgentResourceRouter(context: Context) {
         }
         if (!environment.networkAvailable && resource.location != AgentResourceLocation.PHONE) {
             return AgentResourceCandidate(resource, -8_200, listOf("network_unavailable"))
+        }
+        val estimatedOutputTokens = resource.providerProfile
+            ?.maxOutputTokens
+            ?.coerceIn(0, 16_000)
+            ?: 4_096
+        val estimatedCostMicros = AgentTaskBudgetPolicy.estimateProviderCostMicros(
+            resource.providerProfile,
+            requirements.estimatedInputTokens.toLong(),
+            estimatedOutputTokens.toLong()
+        )
+        val taskBudgetDecision = AgentTaskBudgetPolicy.evaluate(
+            budget = taskBudget,
+            usage = AgentTaskBudgetUsage(
+                inputTokens = requirements.estimatedInputTokens.toLong(),
+                outputTokens = estimatedOutputTokens.toLong(),
+                costMicros = estimatedCostMicros,
+                peakMemoryBytes = environment.appMemoryBytes,
+                usageEstimated = true
+            ),
+            environment = AgentTaskBudgetEnvironment(
+                batteryPercent = environment.batteryPercent,
+                charging = environment.charging,
+                networkAvailable = environment.networkAvailable,
+                networkMetered = environment.networkMetered,
+                appMemoryBytes = environment.appMemoryBytes,
+                availableMemoryBytes = environment.availableMemoryBytes
+            ),
+            networkRequired = resource.location != AgentResourceLocation.PHONE,
+            trustedNetworkTarget = resource.location in setOf(
+                AgentResourceLocation.PHONE,
+                AgentResourceLocation.TRUSTED_DESKTOP,
+                AgentResourceLocation.PRIVATE_NETWORK
+            ),
+            cloudProvider = resource.location == AgentResourceLocation.CLOUD,
+            paidProvider = resource.cost != AgentResourceCost.FREE
+        )
+        if (!taskBudgetDecision.allowed) {
+            return AgentResourceCandidate(
+                resource,
+                -8_600,
+                listOf("task_budget:${taskBudgetDecision.limit?.name?.lowercase(Locale.US)}")
+            )
         }
         val missing = requirements.capabilities - resource.capabilities
         val mandatory = requirements.capabilities.intersect(MANDATORY_CAPABILITIES)
@@ -961,6 +1020,7 @@ class AgentResourceRouter(context: Context) {
         }
         if (environment.energyConstrained) reasons += "energy_constrained"
         if (environment.networkMetered) reasons += "metered_network"
+        reasons += "task_budget:${taskBudget.profile.wireValue}"
         return AgentResourceCandidate(resource, score, reasons)
     }
 

@@ -1144,6 +1144,11 @@ async function startDesktopTask(payload = {}) {
       conversation_id: String(payload.conversationId || ""),
       attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
       execution_mode: String(payload.executionMode || "auto_complete"),
+      task_budget: (
+        payload.taskBudget
+        && typeof payload.taskBudget === "object"
+        && !Array.isArray(payload.taskBudget)
+      ) ? payload.taskBudget : {},
       response_language: String(payload.responseLanguage || "")
     })
   });

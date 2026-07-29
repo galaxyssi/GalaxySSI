@@ -146,7 +146,12 @@ class _Provider:
 
 
 class MqttAgentInterventionTests(unittest.TestCase):
-    def _dispatch(self, content: str, execution_mode: str = "auto_complete"):
+    def _dispatch(
+        self,
+        content: str,
+        execution_mode: str = "auto_complete",
+        task_budget: dict | None = None,
+    ):
         manager = _TaskManager()
         provider = _Provider()
         published = []
@@ -174,6 +179,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
                     "turn_id": "turn-new",
                     "attachments": [],
                     "execution_mode": execution_mode,
+                    "task_budget": task_budget or {},
                 },
                 trace=[],
                 content=content,
@@ -226,6 +232,22 @@ class MqttAgentInterventionTests(unittest.TestCase):
         self.assertFalse(
             manager.created_execution_policy["requires_artifact"],
         )
+
+    def test_phone_task_budget_is_preserved_for_the_selected_agent(self):
+        manager, _provider, _published = self._dispatch(
+            "Summarize the report",
+            task_budget={
+                "profile": "private",
+                "max_network_bytes": 1_048_576,
+                "allow_cloud": False,
+            },
+        )
+
+        budget = manager.created_execution_policy["task_budget"]
+        self.assertEqual("private", budget["profile"])
+        self.assertEqual(1_048_576, budget["max_network_bytes"])
+        self.assertFalse(budget["allow_cloud"])
+        self.assertFalse(budget["allow_paid_providers"])
 
 
 if __name__ == "__main__":

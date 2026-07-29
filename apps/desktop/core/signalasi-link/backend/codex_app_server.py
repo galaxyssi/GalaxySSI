@@ -17,8 +17,10 @@ from typing import Callable
 from agent_execution_harness import (
     AgentExecutionHarness,
     AgentExecutionPolicy,
+    AgentTaskBudgetExceeded,
     execution_contract,
     execution_policy_for,
+    estimate_text_tokens,
     failure_fingerprint,
     replan_instruction,
 )
@@ -219,13 +221,17 @@ class CodexAppServer:
             self._discard_run(run)
             raise RuntimeError("Codex App Server did not return a thread id")
         self.on_event(task_id, {"status": "starting", "thread_id": run.thread_id, "current_step": "Starting Codex turn"})
-        execution_harness.begin_attempt()
         turn_prompt = self._with_execution_contract(
             prompt if reused_thread else (fresh_thread_prompt or prompt),
             run.execution_policy,
         )
         turn_images = local_images if reused_thread else restored_images
         try:
+            execution_harness.begin_attempt()
+            execution_harness.account_usage(
+                input_tokens=estimate_text_tokens(turn_prompt),
+                estimated=True,
+            )
             try:
                 response = self._start_turn(
                     run.thread_id,
@@ -302,6 +308,7 @@ class CodexAppServer:
         elapsed_seconds: float = 0,
         approval_policy: str = "on-request",
         sandbox: str = "workspace-write",
+        execution_policy: AgentExecutionPolicy | None = None,
     ) -> CodexRun:
         """Reconnect to an existing Codex turn without replaying the prompt."""
         clean_thread_id = str(thread_id or "").strip()
@@ -321,7 +328,7 @@ class CodexAppServer:
             started_monotonic=now - max(0.0, float(elapsed_seconds or 0)),
             last_event_monotonic=now,
             prefers_chinese=self._contains_chinese(original_prompt),
-            execution_policy=execution_policy_for(original_prompt),
+            execution_policy=execution_policy or execution_policy_for(original_prompt),
         )
         run.execution_harness = AgentExecutionHarness(
             task_id,
@@ -376,6 +383,11 @@ class CodexAppServer:
                 if not run.final_text:
                     raise RuntimeError(
                         "The original Codex turn completed without a final response"
+                    )
+                if run.execution_harness is not None:
+                    run.execution_harness.account_usage(
+                        output_tokens=estimate_text_tokens(run.final_text),
+                        estimated=True,
                     )
                 run.finished = True
                 self._remove_turn_mapping(run)
@@ -1177,6 +1189,19 @@ class CodexAppServer:
             )
             if not run.final_text:
                 run.final_text = run.last_agent_text
+            if (
+                mapped == "completed"
+                and not run.finished
+                and run.execution_harness is not None
+            ):
+                try:
+                    run.execution_harness.account_usage(
+                        output_tokens=estimate_text_tokens(run.final_text),
+                        estimated=True,
+                    )
+                except AgentTaskBudgetExceeded as exc:
+                    mapped = "failed"
+                    run.final_text = str(exc)
             run.finished = True
             run.agent_message_deltas.clear()
             run.reasoning_summary_deltas.clear()

@@ -82,6 +82,13 @@
             <button id="agentPickerButton" class="agent-picker"><span>@</span><b id="selectedAgentLabel" data-i18n="Agent">Agent</b></button>
             <button id="autoModeButton" class="mode-button active" data-i18n="Auto">Auto</button>
             <button id="localModeButton" class="mode-button" data-i18n="This desktop">This desktop</button>
+            <select id="taskBudgetProfileSelect" class="task-budget-profile" title="Task budget" aria-label="Task budget">
+              <option value="adaptive" data-i18n="Adaptive">Adaptive</option>
+              <option value="fast" data-i18n="Fast">Fast</option>
+              <option value="economy" data-i18n="Economy">Economy</option>
+              <option value="private" data-i18n="Private">Private</option>
+              <option value="custom" data-i18n="Custom">Custom</option>
+            </select>
             <button id="executionModeButton" class="execution-mode-button" data-i18n="Auto complete">Auto complete</button>
             <button id="sendButton" class="send-button" title="Send" aria-label="Send">↑</button>
           </div>
@@ -284,6 +291,44 @@
         <label class="setting-row"><span><strong data-i18n="Model response language">Model response language</strong><small data-i18n="Language requested from models and Agents">Language requested from models and Agents</small></span><select id="responseLanguageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="zh-CN" data-i18n="Simplified Chinese">Simplified Chinese</option><option value="en-US" data-i18n="English (United States)">English (United States)</option><option value="zh-HK" data-i18n="Traditional Chinese (Hong Kong)">Traditional Chinese (Hong Kong)</option><option value="zh-TW" data-i18n="Traditional Chinese (Taiwan)">Traditional Chinese (Taiwan)</option></select></label>
         <label class="setting-row"><span><strong data-i18n="ASR language">ASR language</strong><small data-i18n="Language used for speech recognition">Language used for speech recognition</small></span><select id="asrLanguageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="zh-CN" data-i18n="Simplified Chinese">Simplified Chinese</option><option value="en-US" data-i18n="English (United States)">English (United States)</option><option value="zh-HK" data-i18n="Traditional Chinese (Hong Kong)">Traditional Chinese (Hong Kong)</option><option value="zh-TW" data-i18n="Traditional Chinese (Taiwan)">Traditional Chinese (Taiwan)</option></select></label>
         <label class="setting-row"><span><strong data-i18n="TTS language">TTS language</strong><small data-i18n="Language used when reading replies aloud">Language used when reading replies aloud</small></span><select id="ttsLanguageSelect"><option value="auto" data-i18n="Automatic (follow system)">Automatic (follow system)</option><option value="zh-CN" data-i18n="Simplified Chinese">Simplified Chinese</option><option value="en-US" data-i18n="English (United States)">English (United States)</option><option value="zh-HK" data-i18n="Traditional Chinese (Hong Kong)">Traditional Chinese (Hong Kong)</option><option value="zh-TW" data-i18n="Traditional Chinese (Taiwan)">Traditional Chinese (Taiwan)</option></select></label>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-heading">
+          <h3 data-i18n="Task resources">Task resources</h3>
+          <span id="taskBudgetSummary" class="state-badge ok" data-i18n="Adaptive">Adaptive</span>
+        </div>
+        <div class="cloud-settings-surface">
+          <div class="form-stack compact-forms">
+            <label><span data-i18n="Budget profile">Budget profile</span><select id="taskBudgetSettingsProfile">
+              <option value="adaptive" data-i18n="Adaptive">Adaptive</option>
+              <option value="fast" data-i18n="Fast">Fast</option>
+              <option value="economy" data-i18n="Economy">Economy</option>
+              <option value="private" data-i18n="Private">Private</option>
+              <option value="custom" data-i18n="Custom">Custom</option>
+            </select><small data-i18n="Applied to local, cloud, Agent, MCP, and paired-phone work.">Applied to local, cloud, Agent, MCP, and paired-phone work.</small></label>
+            <div class="task-budget-grid">
+              <label><span data-i18n="Active time (minutes)">Active time (minutes)</span><input id="taskBudgetTime" type="number" min="0" max="10080" step="1"></label>
+              <label><span data-i18n="Cost limit (USD)">Cost limit (USD)</span><input id="taskBudgetCost" type="number" min="0" max="1000" step="0.01"></label>
+              <label><span data-i18n="Input tokens">Input tokens</span><input id="taskBudgetInputTokens" type="number" min="0" max="10000000" step="1000"></label>
+              <label><span data-i18n="Output tokens">Output tokens</span><input id="taskBudgetOutputTokens" type="number" min="0" max="10000000" step="1000"></label>
+              <label><span data-i18n="Network (MiB)">Network (MiB)</span><input id="taskBudgetNetwork" type="number" min="0" max="10240" step="1"></label>
+              <label><span data-i18n="Memory (MiB)">Memory (MiB)</span><input id="taskBudgetMemory" type="number" min="0" max="16384" step="1"></label>
+              <label><span data-i18n="Minimum battery (%)">Minimum battery (%)</span><input id="taskBudgetBattery" type="number" min="0" max="100" step="1"></label>
+              <label><span data-i18n="Network access">Network access</span><select id="taskBudgetNetworkPolicy">
+                <option value="any" data-i18n="Any available network">Any available network</option>
+                <option value="unmetered_only" data-i18n="Unmetered only">Unmetered only</option>
+                <option value="trusted_only" data-i18n="Trusted targets only">Trusted targets only</option>
+                <option value="offline_only" data-i18n="Offline only">Offline only</option>
+              </select></label>
+            </div>
+            <label class="check-row"><input id="taskBudgetAllowCloud" type="checkbox"><span><strong data-i18n="Allow cloud resources">Allow cloud resources</strong><small data-i18n="Permit cloud models and remote web services when the task needs them.">Permit cloud models and remote web services when the task needs them.</small></span></label>
+            <label class="check-row"><input id="taskBudgetAllowPaid" type="checkbox"><span><strong data-i18n="Allow paid providers">Allow paid providers</strong><small data-i18n="Permit configured resources that may incur usage charges.">Permit configured resources that may incur usage charges.</small></span></label>
+            <p class="cloud-test-result" data-i18n="Use 0 for no fixed limit. Active time excludes approval and offline waiting.">Use 0 for no fixed limit. Active time excludes approval and offline waiting.</p>
+            <div class="cloud-settings-actions">
+              <button id="saveTaskBudgetButton" class="primary-button" data-i18n="Save task budget">Save task budget</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="settings-group">
         <h3 data-i18n="System">System</h3>

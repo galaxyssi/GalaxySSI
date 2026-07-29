@@ -73,6 +73,8 @@ data class AgentExecutionLoopSnapshot(
     val phase: AgentExecutionLoopPhase,
     val budget: AgentExecutionLoopBudget,
     val usage: AgentExecutionLoopUsage,
+    val taskBudget: AgentTaskBudget = AgentTaskBudget.forProfile(AgentTaskBudgetProfile.ADAPTIVE),
+    val taskBudgetUsage: AgentTaskBudgetUsage = AgentTaskBudgetUsage(),
     val resumePhase: AgentExecutionLoopPhase = AgentExecutionLoopPhase.PLAN,
     val lastActionId: String = "",
     val lastReason: String = "",
@@ -124,19 +126,39 @@ class AgentExecutionLoop private constructor(
     fun start(
         taskId: String,
         budget: AgentExecutionLoopBudget,
-        profile: AgentExecutionProfile = AgentExecutionProfile.forGoal("")
+        profile: AgentExecutionProfile = AgentExecutionProfile.forGoal(""),
+        taskBudget: AgentTaskBudget = AgentTaskBudget.forProfile(AgentTaskBudgetProfile.ADAPTIVE),
+        environment: AgentTaskBudgetEnvironment = AgentTaskBudgetEnvironment()
     ): AgentExecutionLoopEvent {
         val now = clock()
+        val normalizedTaskBudget = taskBudget.normalized()
+        val taskBudgetUsage = AgentTaskBudgetUsage(
+            peakMemoryBytes = environment.appMemoryBytes.coerceAtLeast(0L)
+        )
+        val resourceFailure = AgentTaskBudgetPolicy.evaluate(
+            normalizedTaskBudget,
+            taskBudgetUsage,
+            environment
+        )
+        val initialPhase = if (resourceFailure.allowed) {
+            AgentExecutionLoopPhase.PLAN
+        } else {
+            AgentExecutionLoopPhase.FAILED
+        }
+        val initialReason = resourceFailure.reason.ifBlank { "Task accepted" }
         val next = AgentExecutionLoopSnapshot(
             taskId = taskId.trim(),
-            phase = AgentExecutionLoopPhase.PLAN,
+            phase = initialPhase,
             budget = budget,
             usage = AgentExecutionLoopUsage(
                 iterations = 1,
-                activeSinceMillis = now
+                activeSinceMillis = if (initialPhase.isActive) now else 0L
             ),
+            taskBudget = normalizedTaskBudget,
+            taskBudgetUsage = taskBudgetUsage,
             resumePhase = AgentExecutionLoopPhase.PLAN,
-            lastReason = "Task accepted",
+            lastReason = initialReason,
+            budgetFailure = resourceFailure.reason,
             taskKind = profile.taskKind,
             taskIntent = profile.taskIntent,
             taskIntentConfidence = profile.taskIntentConfidence,
@@ -180,7 +202,15 @@ class AgentExecutionLoop private constructor(
         usage = usage.copy(
             activeSinceMillis = if (phase.isActive) now else 0L
         )
-        val budgetFailure = budgetFailure(usage, current.budget)
+        val taskBudgetUsage = current.taskBudgetUsage.copy(
+            elapsedMillis = usage.activeDurationMillis
+        )
+        val budgetFailure = budgetFailure(
+            usage,
+            current.budget,
+            taskBudgetUsage,
+            current.taskBudget
+        )
         val resolvedPhase = if (budgetFailure.isBlank()) phase else AgentExecutionLoopPhase.FAILED
         val resolvedUsage = if (resolvedPhase.isActive) usage else {
             usage.copy(activeSinceMillis = 0L)
@@ -189,6 +219,7 @@ class AgentExecutionLoop private constructor(
         val next = accounted.copy(
             phase = resolvedPhase,
             usage = resolvedUsage,
+            taskBudgetUsage = taskBudgetUsage,
             resumePhase = when {
                 resolvedPhase == AgentExecutionLoopPhase.PAUSED -> current.resumePhase
                 phase.isActive -> phase
@@ -237,12 +268,20 @@ class AgentExecutionLoop private constructor(
         val budgetFailure = if (exhausted) {
             "Same failure repeated $count times"
         } else {
-            budgetFailure(usage, current.budget)
+            budgetFailure(
+                usage,
+                current.budget,
+                current.taskBudgetUsage.copy(elapsedMillis = usage.activeDurationMillis),
+                current.taskBudget
+            )
         }
         val resolvedPhase = if (budgetFailure.isBlank()) nextPhase else AgentExecutionLoopPhase.FAILED
         val next = accounted.copy(
             phase = resolvedPhase,
             usage = usage.copy(activeSinceMillis = if (resolvedPhase.isActive) now else 0L),
+            taskBudgetUsage = current.taskBudgetUsage.copy(
+                elapsedMillis = usage.activeDurationMillis
+            ),
             resumePhase = if (resolvedPhase.isActive) resolvedPhase else current.resumePhase,
             lastActionId = actionId.trim().ifBlank { current.lastActionId },
             lastReason = reason.trim().ifBlank { failureClass },
@@ -271,6 +310,57 @@ class AgentExecutionLoop private constructor(
             failureClass = "no_progress",
             reason = "No meaningful progress for ${current.budget.noProgressTimeoutMillis} ms",
             actionId = current.lastActionId
+        )
+    }
+
+    fun recordTaskBudgetUsage(
+        inputTokens: Long = 0L,
+        outputTokens: Long = 0L,
+        costMicros: Long = 0L,
+        networkBytes: Long = 0L,
+        memoryBytes: Long = 0L,
+        estimated: Boolean = false,
+        environment: AgentTaskBudgetEnvironment = AgentTaskBudgetEnvironment()
+    ): AgentExecutionLoopEvent {
+        val current = requireNotNull(snapshot) { "Agent execution loop has not started" }
+        val now = clock()
+        val accounted = accountActiveDuration(current, now)
+        val usage = accounted.usage.copy(
+            activeSinceMillis = if (current.phase.isActive) now else 0L
+        )
+        val taskUsage = current.taskBudgetUsage.add(
+            elapsedMillis = (usage.activeDurationMillis - current.taskBudgetUsage.elapsedMillis)
+                .coerceAtLeast(0L),
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
+            costMicros = costMicros,
+            networkBytes = networkBytes,
+            memoryBytes = maxOf(memoryBytes, environment.appMemoryBytes),
+            estimated = estimated
+        )
+        val decision = AgentTaskBudgetPolicy.evaluate(
+            current.taskBudget,
+            taskUsage,
+            environment
+        )
+        val nextPhase = if (decision.allowed) current.phase else AgentExecutionLoopPhase.FAILED
+        val nextReason = decision.reason.ifBlank { "Task resource usage updated" }
+        val next = accounted.copy(
+            phase = nextPhase,
+            usage = usage.copy(activeSinceMillis = if (nextPhase.isActive) now else 0L),
+            taskBudgetUsage = taskUsage,
+            lastReason = nextReason,
+            budgetFailure = decision.reason,
+            lastProgressAtMillis = now,
+            updatedAtMillis = now,
+            revision = current.revision + 1L
+        )
+        snapshot = next
+        return AgentExecutionLoopEvent(
+            previousPhase = current.phase,
+            phase = next.phase,
+            reason = nextReason,
+            snapshot = next
         )
     }
 
@@ -313,7 +403,9 @@ class AgentExecutionLoop private constructor(
 
     private fun budgetFailure(
         usage: AgentExecutionLoopUsage,
-        budget: AgentExecutionLoopBudget
+        budget: AgentExecutionLoopBudget,
+        taskBudgetUsage: AgentTaskBudgetUsage,
+        taskBudget: AgentTaskBudget
     ): String = when {
         usage.iterations > budget.maxIterations ->
             "Loop iteration budget exhausted (${budget.maxIterations})"
@@ -325,7 +417,7 @@ class AgentExecutionLoop private constructor(
             "Tool-call budget exhausted (${budget.maxToolCalls})"
         usage.retries > budget.maxRetries ->
             "Retry budget exhausted (${budget.maxRetries})"
-        else -> ""
+        else -> AgentTaskBudgetPolicy.evaluate(taskBudget, taskBudgetUsage).reason
     }
 
     private fun failureFingerprint(failureClass: String, reason: String): String {
@@ -437,7 +529,7 @@ class AgentExecutionLoop private constructor(
 
 object AgentExecutionLoopJsonCodec {
     fun encode(snapshot: AgentExecutionLoopSnapshot): String = JSONObject()
-        .put("version", 3)
+        .put("version", 4)
         .put("task_id", snapshot.taskId)
         .put("phase", snapshot.phase.name)
         .put("resume_phase", snapshot.resumePhase.name)
@@ -470,6 +562,8 @@ object AgentExecutionLoopJsonCodec {
             .put("retries", snapshot.usage.retries)
             .put("active_duration_ms", snapshot.usage.activeDurationMillis)
             .put("active_since_ms", snapshot.usage.activeSinceMillis))
+        .put("task_budget", AgentTaskBudgetJsonCodec.encode(snapshot.taskBudget))
+        .put("task_budget_usage", AgentTaskBudgetJsonCodec.encodeUsage(snapshot.taskBudgetUsage))
         .toString()
 
     fun decode(value: String): AgentExecutionLoopSnapshot? = runCatching {
@@ -496,6 +590,10 @@ object AgentExecutionLoopJsonCodec {
                 retries = usage.getInt("retries"),
                 activeDurationMillis = usage.getLong("active_duration_ms"),
                 activeSinceMillis = usage.getLong("active_since_ms")
+            ),
+            taskBudget = AgentTaskBudgetJsonCodec.decode(root.optJSONObject("task_budget")),
+            taskBudgetUsage = AgentTaskBudgetJsonCodec.decodeUsage(
+                root.optJSONObject("task_budget_usage")
             ),
             resumePhase = enumValue(
                 root.optString("resume_phase"),

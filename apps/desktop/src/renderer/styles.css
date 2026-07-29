@@ -442,6 +442,18 @@ button:disabled { cursor: default; opacity: 0.48; }
 .agent-picker b { max-width: 110px; overflow: hidden; font-size: 8px; font-weight: 550; text-overflow: ellipsis; white-space: nowrap; }
 .mode-button { padding: 0 9px; font-size: 8px; }
 .mode-button.active { background: var(--green-soft) !important; color: var(--green-ink) !important; }
+.task-budget-profile {
+  height: 28px;
+  max-width: 92px;
+  padding: 0 22px 0 8px;
+  border: 0;
+  border-radius: 5px;
+  outline: 0;
+  background: #f0f3f5;
+  color: #4f5962;
+  font-size: 8px;
+}
+.task-budget-profile:focus { box-shadow: 0 0 0 2px var(--blue-soft); }
 .execution-mode-button { padding: 0 9px; margin-left: 3px; font-size: 8px; background: var(--green-soft) !important; color: var(--green-ink) !important; }
 .execution-mode-button.plan-only { background: var(--blue-soft) !important; color: var(--blue) !important; }
 .send-button { width: 30px; height: 30px !important; margin-left: auto; border-radius: 50% !important; background: #20252a !important; color: #fff !important; font-size: 16px; }
@@ -694,6 +706,7 @@ button:disabled { cursor: default; opacity: 0.48; }
   font-size: 9px;
 }
 .cloud-settings-surface select:focus { border-color: #8cb5ec; box-shadow: 0 0 0 2px var(--blue-soft); }
+.task-budget-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; }
 .cloud-settings-actions { display: flex; justify-content: flex-end; gap: 7px; padding-top: 2px; }
 .cloud-test-result { margin: 0; padding: 7px 8px; border-radius: 6px; background: #f1f4f6; color: #55616a; font-size: 8px; line-height: 1.45; overflow-wrap: anywhere; }
 .cloud-test-result.ok { background: var(--green-soft); color: var(--green-ink); }
@@ -843,5 +856,6 @@ button:disabled { cursor: default; opacity: 0.48; }
 }
 
 @media (max-width: 520px) {
-  .cloud-settings-grid { grid-template-columns: minmax(0, 1fr); }
+  .cloud-settings-grid,
+  .task-budget-grid { grid-template-columns: minmax(0, 1fr); }
 }

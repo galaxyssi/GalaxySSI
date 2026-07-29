@@ -302,23 +302,66 @@ class MobileNativeAgent(
             reason.trim().ifBlank { "Task failed" }
         )
 
-    private fun startExecutionLoop(turnId: String) {
+    private fun startExecutionLoop(turnId: String): Boolean {
         val taskId = turnId.trim().ifBlank { sessionId }
         val profile = AgentExecutionProfile.forGoal(
             goal = currentGoal,
             hasAttachments = activeConversationContext.hasAttachments
         )
+        val taskBudget = AgentTaskBudgetStore(appContext).load()
         val event = executionLoop.start(
             taskId = taskId,
             budget = modelPlannerSettings().executionLoopBudget(profile),
-            profile = profile
+            profile = profile,
+            taskBudget = taskBudget,
+            environment = AgentTaskBudgetProbe.environment(appContext)
         )
         persistExecutionLoopEvent(event)
         recordAudit(
             AgentAuditEvent.REASONING_SUMMARY,
             "execution_profile=${profile.taskKind.name}; effort=${profile.reasoningEffort.name}; " +
-                "no_progress_ms=${event.snapshot.budget.noProgressTimeoutMillis}"
+                "no_progress_ms=${event.snapshot.budget.noProgressTimeoutMillis}; " +
+                "task_budget=${taskBudget.profile.wireValue}"
         )
+        if (event.snapshot.budgetFailure.isNotBlank()) {
+            phase = AgentPhase.FAILED
+            lastActionResult = AgentActionResult(
+                actionId = "agent-task-budget",
+                success = false,
+                message = event.snapshot.budgetFailure
+            )
+            saveTaskRecord(result = event.snapshot.budgetFailure)
+            return false
+        }
+        return true
+    }
+
+    fun recordTaskBudgetUsage(
+        inputTokens: Long = 0L,
+        outputTokens: Long = 0L,
+        costMicros: Long = 0L,
+        networkBytes: Long = 0L,
+        estimated: Boolean = false
+    ): Boolean {
+        if (executionLoop.snapshot == null) return true
+        val event = executionLoop.recordTaskBudgetUsage(
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
+            costMicros = costMicros,
+            networkBytes = networkBytes,
+            estimated = estimated,
+            environment = AgentTaskBudgetProbe.environment(appContext)
+        )
+        persistExecutionLoopEvent(event)
+        if (event.snapshot.budgetFailure.isBlank()) return true
+        phase = AgentPhase.FAILED
+        lastActionResult = AgentActionResult(
+            actionId = "agent-task-budget",
+            success = false,
+            message = event.snapshot.budgetFailure
+        )
+        saveTaskRecord(result = event.snapshot.budgetFailure)
+        return false
     }
 
     private fun advanceExecutionLoop(
@@ -1552,7 +1595,7 @@ class MobileNativeAgent(
         ).mode
 
         return try {
-            startExecutionLoop(turnId)
+            if (!startExecutionLoop(turnId)) return snapshot()
             reconcileExecutionLoop(executeSubmittedGoal())
         } catch (failure: CancellationException) {
             runCatching {
@@ -2183,7 +2226,11 @@ class MobileNativeAgent(
         richOutputJson: String = "",
         conversationId: String = "",
         turnId: String = "",
-        taskId: String = ""
+        taskId: String = "",
+        inputTokens: Long = 0L,
+        outputTokens: Long = 0L,
+        costMicros: Long = 0L,
+        networkBytes: Long = 0L
     ): AgentUiState? = acceptConnectorResponseInternal(
         sourceMessageId,
         contactId,
@@ -2192,7 +2239,11 @@ class MobileNativeAgent(
         richOutputJson,
         conversationId,
         turnId,
-        taskId
+        taskId,
+        inputTokens,
+        outputTokens,
+        costMicros,
+        networkBytes
     )?.let(::reconcileExecutionLoop)
 
     private fun acceptConnectorResponseInternal(
@@ -2203,7 +2254,11 @@ class MobileNativeAgent(
         richOutputJson: String,
         conversationId: String,
         turnId: String,
-        taskId: String
+        taskId: String,
+        inputTokens: Long,
+        outputTokens: Long,
+        costMicros: Long,
+        networkBytes: Long
     ): AgentUiState? {
         if (sourceMessageId <= 0L || (success && content.isBlank())) return null
         val pendingResult = lastActionResult ?: return null
@@ -2219,6 +2274,15 @@ class MobileNativeAgent(
                 turnId
             )
         ) return null
+        if (!recordTaskBudgetUsage(
+                inputTokens = inputTokens,
+                outputTokens = outputTokens,
+                costMicros = costMicros,
+                networkBytes = networkBytes
+            )
+        ) {
+            return snapshot()
+        }
         val plan = currentPlan ?: return null
         val actionId = pendingResult.actionId
         if (!advanceExecutionLoop(
@@ -7449,6 +7513,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                     put("routing_fallback_ids", decision.fallbacks.joinToString(",") { it.resource.targetId })
                     put("routing_score", decision.primary?.score?.toString().orEmpty())
                     put("routing_reasons", decision.primary?.reasons?.joinToString("|").orEmpty())
+                    put("task_budget_profile", decision.taskBudget.profile.wireValue)
+                    put("task_budget", AgentTaskBudgetJsonCodec.encode(decision.taskBudget).toString())
                 }
             }
         )

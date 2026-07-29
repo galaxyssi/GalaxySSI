@@ -8,17 +8,64 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import zipfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 
 log = logging.getLogger("signalasi.execution")
 _CHECKPOINT_WRITE_LOCK = threading.RLock()
+_MAX_COUNTER = (1 << 63) - 1
+
+
+def _finite_float(value: object, fallback: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    return parsed if parsed == parsed and abs(parsed) != float("inf") else fallback
+
+
+def _bounded_int(
+    value: object,
+    fallback: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = fallback
+    return min(maximum, max(minimum, parsed))
+
+
+def _nonnegative_int(value: object) -> int:
+    return _bounded_int(value, 0, 0, _MAX_COUNTER)
+
+
+def _saturating_add(left: int, right: int) -> int:
+    return min(_MAX_COUNTER, max(0, int(left)) + max(0, int(right)))
+
+
+def _optional_bool(source: Mapping[str, Any], key: str, fallback: bool) -> bool:
+    if key not in source:
+        return fallback
+    value = source[key]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    normalized = str(value or "").strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off", ""}:
+        return False
+    return fallback
 
 
 class AgentTaskKind(str, Enum):
@@ -69,6 +116,365 @@ class AgentExecutionMode(str, Enum):
     AUTO_COMPLETE = "auto_complete"
 
 
+class AgentTaskBudgetProfile(str, Enum):
+    ADAPTIVE = "adaptive"
+    FAST = "fast"
+    ECONOMY = "economy"
+    PRIVATE = "private"
+    CUSTOM = "custom"
+
+
+class AgentTaskNetworkPolicy(str, Enum):
+    ANY = "any"
+    UNMETERED_ONLY = "unmetered_only"
+    TRUSTED_ONLY = "trusted_only"
+    OFFLINE_ONLY = "offline_only"
+
+
+class AgentTaskBudgetLimit(str, Enum):
+    TIME = "time"
+    COST = "cost"
+    INPUT_TOKENS = "input_tokens"
+    OUTPUT_TOKENS = "output_tokens"
+    NETWORK = "network"
+    BATTERY = "battery"
+    MEMORY = "memory"
+    CLOUD = "cloud"
+    PAID_PROVIDER = "paid_provider"
+
+
+@dataclass(frozen=True)
+class AgentTaskBudgetUsage:
+    active_elapsed_seconds: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_micros: int = 0
+    network_bytes: int = 0
+    peak_memory_bytes: int = 0
+    usage_estimated: bool = False
+
+    def public(self) -> dict:
+        return {
+            "active_elapsed_seconds": round(max(0.0, self.active_elapsed_seconds), 3),
+            "input_tokens": max(0, int(self.input_tokens)),
+            "output_tokens": max(0, int(self.output_tokens)),
+            "cost_micros": max(0, int(self.cost_micros)),
+            "network_bytes": max(0, int(self.network_bytes)),
+            "peak_memory_bytes": max(0, int(self.peak_memory_bytes)),
+            "usage_estimated": bool(self.usage_estimated),
+        }
+
+    @classmethod
+    def from_public(cls, value: Mapping[str, Any] | None) -> "AgentTaskBudgetUsage":
+        source = dict(value or {})
+        return cls(
+            active_elapsed_seconds=max(
+                0.0,
+                _finite_float(source.get("active_elapsed_seconds"), 0.0),
+            ),
+            input_tokens=_nonnegative_int(source.get("input_tokens")),
+            output_tokens=_nonnegative_int(source.get("output_tokens")),
+            cost_micros=_nonnegative_int(source.get("cost_micros")),
+            network_bytes=_nonnegative_int(source.get("network_bytes")),
+            peak_memory_bytes=_nonnegative_int(source.get("peak_memory_bytes")),
+            usage_estimated=bool(source.get("usage_estimated")),
+        )
+
+    def add(
+        self,
+        *,
+        active_elapsed_seconds: float = 0.0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_micros: int = 0,
+        network_bytes: int = 0,
+        memory_bytes: int = 0,
+        estimated: bool = False,
+    ) -> "AgentTaskBudgetUsage":
+        return AgentTaskBudgetUsage(
+            active_elapsed_seconds=max(
+                self.active_elapsed_seconds,
+                max(0.0, float(active_elapsed_seconds)),
+            ),
+            input_tokens=_saturating_add(self.input_tokens, input_tokens),
+            output_tokens=_saturating_add(self.output_tokens, output_tokens),
+            cost_micros=_saturating_add(self.cost_micros, cost_micros),
+            network_bytes=_saturating_add(self.network_bytes, network_bytes),
+            peak_memory_bytes=max(
+                self.peak_memory_bytes,
+                max(0, int(memory_bytes)),
+            ),
+            usage_estimated=self.usage_estimated or bool(estimated),
+        )
+
+
+@dataclass(frozen=True)
+class AgentTaskBudgetDecision:
+    allowed: bool
+    limit: AgentTaskBudgetLimit | None = None
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class AgentTaskBudget:
+    profile: AgentTaskBudgetProfile = AgentTaskBudgetProfile.ADAPTIVE
+    max_elapsed_seconds: float = 0.0
+    max_cost_micros: int = 5_000_000
+    max_input_tokens: int = 1_000_000
+    max_output_tokens: int = 256_000
+    max_network_bytes: int = 256 * 1_048_576
+    minimum_battery_percent: int = 5
+    max_memory_bytes: int = 0
+    network_policy: AgentTaskNetworkPolicy = AgentTaskNetworkPolicy.ANY
+    allow_cloud: bool = True
+    allow_paid_providers: bool = True
+
+    @classmethod
+    def for_profile(
+        cls,
+        profile: AgentTaskBudgetProfile | str,
+    ) -> "AgentTaskBudget":
+        try:
+            resolved = (
+                profile
+                if isinstance(profile, AgentTaskBudgetProfile)
+                else AgentTaskBudgetProfile(str(profile or "adaptive"))
+            )
+        except ValueError:
+            resolved = AgentTaskBudgetProfile.ADAPTIVE
+        if resolved == AgentTaskBudgetProfile.FAST:
+            return cls(
+                profile=resolved,
+                max_elapsed_seconds=300.0,
+                max_cost_micros=2_000_000,
+                max_input_tokens=256_000,
+                max_output_tokens=64_000,
+                max_network_bytes=128 * 1_048_576,
+                minimum_battery_percent=10,
+                max_memory_bytes=1_536 * 1_048_576,
+            )
+        if resolved == AgentTaskBudgetProfile.ECONOMY:
+            return cls(
+                profile=resolved,
+                max_cost_micros=250_000,
+                max_input_tokens=64_000,
+                max_output_tokens=16_000,
+                max_network_bytes=32 * 1_048_576,
+                minimum_battery_percent=15,
+                max_memory_bytes=768 * 1_048_576,
+            )
+        if resolved == AgentTaskBudgetProfile.PRIVATE:
+            return cls(
+                profile=resolved,
+                max_input_tokens=128_000,
+                max_output_tokens=32_000,
+                max_network_bytes=64 * 1_048_576,
+                minimum_battery_percent=10,
+                max_memory_bytes=1_024 * 1_048_576,
+                network_policy=AgentTaskNetworkPolicy.TRUSTED_ONLY,
+                allow_cloud=False,
+                allow_paid_providers=False,
+            )
+        return cls(profile=resolved)
+
+    @classmethod
+    def from_public(cls, value: Mapping[str, Any] | None) -> "AgentTaskBudget":
+        source = dict(value or {})
+        fallback = cls.for_profile(source.get("profile") or "adaptive")
+        try:
+            network_policy = AgentTaskNetworkPolicy(
+                str(source.get("network_policy") or fallback.network_policy.value)
+            )
+        except ValueError:
+            network_policy = fallback.network_policy
+        return cls(
+            profile=fallback.profile,
+            max_elapsed_seconds=min(
+                7 * 24 * 60 * 60,
+                max(
+                    0.0,
+                    _finite_float(
+                        source.get("max_elapsed_seconds"),
+                        fallback.max_elapsed_seconds,
+                    ),
+                ),
+            ),
+            max_cost_micros=_bounded_int(
+                source.get("max_cost_micros"),
+                fallback.max_cost_micros,
+                0,
+                1_000_000_000,
+            ),
+            max_input_tokens=_bounded_int(
+                source.get("max_input_tokens"),
+                fallback.max_input_tokens,
+                0,
+                10_000_000,
+            ),
+            max_output_tokens=_bounded_int(
+                source.get("max_output_tokens"),
+                fallback.max_output_tokens,
+                0,
+                10_000_000,
+            ),
+            max_network_bytes=_bounded_int(
+                source.get("max_network_bytes"),
+                fallback.max_network_bytes,
+                0,
+                10 * 1_073_741_824,
+            ),
+            minimum_battery_percent=_bounded_int(
+                source.get("minimum_battery_percent"),
+                fallback.minimum_battery_percent,
+                0,
+                100,
+            ),
+            max_memory_bytes=_bounded_int(
+                source.get("max_memory_bytes"),
+                fallback.max_memory_bytes,
+                0,
+                16 * 1_073_741_824,
+            ),
+            network_policy=network_policy,
+            allow_cloud=_optional_bool(
+                source,
+                "allow_cloud",
+                fallback.allow_cloud,
+            ),
+            allow_paid_providers=_optional_bool(
+                source,
+                "allow_paid_providers",
+                fallback.allow_paid_providers,
+            ),
+        )
+
+    def public(self) -> dict:
+        return {
+            "version": 1,
+            "profile": self.profile.value,
+            "max_elapsed_seconds": self.max_elapsed_seconds,
+            "max_cost_micros": self.max_cost_micros,
+            "max_input_tokens": self.max_input_tokens,
+            "max_output_tokens": self.max_output_tokens,
+            "max_network_bytes": self.max_network_bytes,
+            "minimum_battery_percent": self.minimum_battery_percent,
+            "max_memory_bytes": self.max_memory_bytes,
+            "network_policy": self.network_policy.value,
+            "allow_cloud": self.allow_cloud,
+            "allow_paid_providers": self.allow_paid_providers,
+        }
+
+    def evaluate(
+        self,
+        usage: AgentTaskBudgetUsage,
+        *,
+        network_required: bool = False,
+        trusted_network_target: bool = False,
+        network_available: bool = True,
+        network_metered: bool = False,
+        battery_percent: int = -1,
+        charging: bool = False,
+        cloud_provider: bool = False,
+        paid_provider: bool = False,
+    ) -> AgentTaskBudgetDecision:
+        checks = (
+            (
+                self.max_elapsed_seconds > 0
+                and usage.active_elapsed_seconds > self.max_elapsed_seconds,
+                AgentTaskBudgetLimit.TIME,
+                "Task time budget exhausted",
+            ),
+            (
+                self.max_cost_micros > 0
+                and usage.cost_micros > self.max_cost_micros,
+                AgentTaskBudgetLimit.COST,
+                "Task cost budget exhausted",
+            ),
+            (
+                self.max_input_tokens > 0
+                and usage.input_tokens > self.max_input_tokens,
+                AgentTaskBudgetLimit.INPUT_TOKENS,
+                "Task input token budget exhausted",
+            ),
+            (
+                self.max_output_tokens > 0
+                and usage.output_tokens > self.max_output_tokens,
+                AgentTaskBudgetLimit.OUTPUT_TOKENS,
+                "Task output token budget exhausted",
+            ),
+            (
+                self.max_network_bytes > 0
+                and usage.network_bytes > self.max_network_bytes,
+                AgentTaskBudgetLimit.NETWORK,
+                "Task network budget exhausted",
+            ),
+            (
+                self.max_memory_bytes > 0
+                and usage.peak_memory_bytes > self.max_memory_bytes,
+                AgentTaskBudgetLimit.MEMORY,
+                "Task memory budget exhausted",
+            ),
+            (
+                battery_percent >= 0
+                and battery_percent < self.minimum_battery_percent
+                and not charging,
+                AgentTaskBudgetLimit.BATTERY,
+                "Phone battery is below the task minimum",
+            ),
+            (
+                cloud_provider and not self.allow_cloud,
+                AgentTaskBudgetLimit.CLOUD,
+                "Cloud resources are disabled for this task",
+            ),
+            (
+                paid_provider and not self.allow_paid_providers,
+                AgentTaskBudgetLimit.PAID_PROVIDER,
+                "Paid resources are disabled for this task",
+            ),
+        )
+        for denied, limit, reason in checks:
+            if denied:
+                return AgentTaskBudgetDecision(False, limit, reason)
+        if network_required:
+            if not network_available:
+                return AgentTaskBudgetDecision(
+                    False,
+                    AgentTaskBudgetLimit.NETWORK,
+                    "Network is unavailable",
+                )
+            if (
+                self.network_policy == AgentTaskNetworkPolicy.UNMETERED_ONLY
+                and network_metered
+            ):
+                return AgentTaskBudgetDecision(
+                    False,
+                    AgentTaskBudgetLimit.NETWORK,
+                    "Task requires an unmetered network",
+                )
+            if (
+                self.network_policy == AgentTaskNetworkPolicy.TRUSTED_ONLY
+                and not trusted_network_target
+            ):
+                return AgentTaskBudgetDecision(
+                    False,
+                    AgentTaskBudgetLimit.NETWORK,
+                    "Task allows trusted network targets only",
+                )
+            if self.network_policy == AgentTaskNetworkPolicy.OFFLINE_ONLY:
+                return AgentTaskBudgetDecision(
+                    False,
+                    AgentTaskBudgetLimit.NETWORK,
+                    "Task is limited to offline resources",
+                )
+        return AgentTaskBudgetDecision(True)
+
+
+class AgentTaskBudgetExceeded(RuntimeError):
+    def __init__(self, decision: AgentTaskBudgetDecision):
+        self.limit = decision.limit
+        super().__init__(decision.reason or "Task budget exhausted")
+
+
 @dataclass(frozen=True)
 class AgentExecutionPolicy:
     task_kind: AgentTaskKind
@@ -83,6 +489,7 @@ class AgentExecutionPolicy:
     task_intent_confidence: int = 100
     task_intent_signals: tuple[str, ...] = ()
     execution_mode: AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE
+    task_budget: AgentTaskBudget = field(default_factory=AgentTaskBudget)
 
     def public(self) -> dict:
         return {
@@ -99,6 +506,7 @@ class AgentExecutionPolicy:
             "target_platform": self.target_platform,
             "verify_installation": self.verify_installation,
             "absolute_timeout_seconds": None,
+            "task_budget": self.task_budget.public(),
         }
 
     @classmethod
@@ -157,6 +565,7 @@ class AgentExecutionPolicy:
                 )
             )[:6],
             execution_mode=execution_mode,
+            task_budget=AgentTaskBudget.from_public(value.get("task_budget")),
         )
 
 
@@ -503,6 +912,7 @@ def execution_policy_for(
     *,
     attachments: Iterable[str] = (),
     requested_execution_mode: str | AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE,
+    requested_task_budget: Mapping[str, Any] | None = None,
 ) -> AgentExecutionPolicy:
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
@@ -569,10 +979,21 @@ def execution_policy_for(
         task_intent_confidence=intent.confidence,
         task_intent_signals=intent.matched_signals,
         execution_mode=execution_mode,
+        task_budget=AgentTaskBudget.from_public(requested_task_budget),
     )
 
 
 def execution_contract(policy: AgentExecutionPolicy) -> str:
+    budget = policy.task_budget
+    budget_line = (
+        "- Resource budget: "
+        f"profile={budget.profile.value}; "
+        f"active_time={'unlimited' if budget.max_elapsed_seconds <= 0 else f'{budget.max_elapsed_seconds:g}s'}; "
+        f"input_tokens={budget.max_input_tokens or 'unlimited'}; "
+        f"output_tokens={budget.max_output_tokens or 'unlimited'}; "
+        f"network_bytes={budget.max_network_bytes or 'unlimited'}; "
+        f"network_policy={budget.network_policy.value}."
+    )
     if policy.execution_mode == AgentExecutionMode.PLAN_ONLY:
         return "\n".join((
             "SignalASI execution contract:",
@@ -582,6 +1003,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
             "- Read-only file, repository, device-state, and web inspection is allowed.",
             "- Do not create, edit, delete, install, launch, send, publish, or mutate anything.",
             "- Do not claim that a command, tool, action, verification, or installation was executed.",
+            budget_line,
             "- Return the proposed steps, important assumptions, risks, and the first approval needed to begin.",
         ))
     target = policy.target_platform or "the requested platform"
@@ -604,6 +1026,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
         "- Work through Plan -> Act -> Observe -> Replan -> Verify -> Finalize.",
         "- Preserve useful work in the task workspace before risky or long-running steps.",
         "- Do not repeat the same failed approach. Diagnose the observed failure and choose a materially different path.",
+        budget_line,
         artifact_line,
         install_line,
         "- Keep user-facing progress concise, but preserve readable reasoning summaries and concrete tool progress.",
@@ -632,6 +1055,71 @@ def failure_fingerprint(kind: str, message: str) -> str:
     return hashlib.sha256(f"{kind.strip().lower()}\0{normalized}".encode("utf-8")).hexdigest()[:24]
 
 
+_ACTIVE_BUDGET_PHASES = frozenset({
+    "plan",
+    "context",
+    "act",
+    "observe",
+    "replan",
+    "verify",
+    "finalize",
+    "learn",
+})
+
+
+def estimate_text_tokens(*values: str) -> int:
+    ascii_characters = 0
+    non_ascii_characters = 0
+    for value in values:
+        for character in str(value or ""):
+            if ord(character) <= 0x7F:
+                ascii_characters += 1
+            else:
+                non_ascii_characters += 1
+    return max(1, ((ascii_characters + 3) // 4) + non_ascii_characters)
+
+
+def _process_memory_bytes() -> int:
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class ProcessMemoryCounters(ctypes.Structure):
+                _fields_ = [
+                    ("cb", wintypes.DWORD),
+                    ("PageFaultCount", wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = ProcessMemoryCounters()
+            counters.cb = ctypes.sizeof(counters)
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            if ctypes.windll.psapi.GetProcessMemoryInfo(
+                handle,
+                ctypes.byref(counters),
+                counters.cb,
+            ):
+                return max(0, int(counters.WorkingSetSize))
+        except (AttributeError, OSError, TypeError, ValueError):
+            return 0
+        return 0
+    try:
+        import resource
+
+        usage = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        return max(0, usage if sys.platform == "darwin" else usage * 1_024)
+    except (ImportError, OSError, TypeError, ValueError):
+        return 0
+
+
 @dataclass
 class AgentExecutionCheckpoint:
     task_id: str
@@ -644,6 +1132,10 @@ class AgentExecutionCheckpoint:
     failure_counts: dict[str, int] = field(default_factory=dict)
     last_failure: str = ""
     verification: dict = field(default_factory=dict)
+    active_elapsed_seconds: float = 0.0
+    active_started_at: float = field(default_factory=time.time)
+    task_budget_usage: AgentTaskBudgetUsage = field(default_factory=AgentTaskBudgetUsage)
+    budget_failure: str = ""
 
     def public(self) -> dict:
         return {
@@ -658,6 +1150,10 @@ class AgentExecutionCheckpoint:
             "failure_counts": dict(self.failure_counts),
             "last_failure": self.last_failure,
             "verification": dict(self.verification),
+            "active_elapsed_seconds": round(max(0.0, self.active_elapsed_seconds), 3),
+            "active_started_at": max(0.0, self.active_started_at),
+            "task_budget_usage": self.task_budget_usage.public(),
+            "budget_failure": self.budget_failure,
         }
 
 
@@ -681,14 +1177,27 @@ class AgentExecutionHarness:
         self.checkpoint = initial
         self.checkpoint = self._load(initial) or initial
         self.checkpoint.policy = self.policy
+        self.checkpoint.active_started_at = (
+            time.time()
+            if self.checkpoint.phase in _ACTIVE_BUDGET_PHASES
+            else 0.0
+        )
         self._save()
 
     def progress(self, phase: str, **verification: object) -> None:
         with self._state_lock:
-            self.checkpoint.phase = str(phase or "act")
-            self.checkpoint.last_progress_at = time.time()
+            now = time.time()
+            self._account_active_time(now)
+            next_phase = str(phase or "act")
+            self.checkpoint.phase = next_phase
+            self.checkpoint.active_started_at = (
+                now if next_phase in _ACTIVE_BUDGET_PHASES else 0.0
+            )
+            self.checkpoint.last_progress_at = now
             if verification:
                 self.checkpoint.verification.update(verification)
+            self._refresh_budget_usage()
+            self._raise_if_budget_exhausted()
             self._save()
 
     def begin_attempt(self) -> int:
@@ -696,6 +1205,65 @@ class AgentExecutionHarness:
             self.checkpoint.attempts += 1
             self.progress("act")
             return self.checkpoint.attempts
+
+    def account_usage(
+        self,
+        *,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_micros: int = 0,
+        network_bytes: int = 0,
+        memory_bytes: int = 0,
+        estimated: bool = False,
+        network_required: bool = False,
+        trusted_network_target: bool = False,
+        cloud_provider: bool = False,
+        paid_provider: bool = False,
+    ) -> AgentTaskBudgetUsage:
+        with self._state_lock:
+            self._account_active_time(time.time())
+            self.checkpoint.task_budget_usage = self.checkpoint.task_budget_usage.add(
+                active_elapsed_seconds=self.checkpoint.active_elapsed_seconds,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_micros=cost_micros,
+                network_bytes=network_bytes,
+                memory_bytes=max(memory_bytes, _process_memory_bytes()),
+                estimated=estimated,
+            )
+            self._raise_if_budget_exhausted(
+                network_required=network_required,
+                trusted_network_target=trusted_network_target,
+                cloud_provider=cloud_provider,
+                paid_provider=paid_provider,
+            )
+            self._save()
+            return self.checkpoint.task_budget_usage
+
+    def ensure_budget(self) -> AgentTaskBudgetUsage:
+        with self._state_lock:
+            self._account_active_time(time.time())
+            self._refresh_budget_usage()
+            self._raise_if_budget_exhausted()
+            self._save()
+            return self.checkpoint.task_budget_usage
+
+    def remaining_active_seconds(self) -> float | None:
+        with self._state_lock:
+            self._account_active_time(time.time())
+            limit = self.policy.task_budget.max_elapsed_seconds
+            if limit <= 0:
+                return None
+            return max(0.0, limit - self.checkpoint.active_elapsed_seconds)
+
+    def effective_timeout(self, requested_seconds: float, minimum: float = 1.0) -> float:
+        remaining = self.remaining_active_seconds()
+        requested = max(minimum, float(requested_seconds))
+        if remaining is None:
+            return requested
+        if remaining <= 0:
+            self.ensure_budget()
+        return max(minimum, min(requested, remaining))
 
     def record_failure(self, kind: str, message: str) -> tuple[bool, int]:
         with self._state_lock:
@@ -713,6 +1281,42 @@ class AgentExecutionHarness:
             else:
                 self.progress("failed")
             return can_replan, count
+
+    def _account_active_time(self, now: float) -> None:
+        started = self.checkpoint.active_started_at
+        if started > 0.0 and self.checkpoint.phase in _ACTIVE_BUDGET_PHASES:
+            self.checkpoint.active_elapsed_seconds += max(0.0, now - started)
+            self.checkpoint.active_started_at = now
+
+    def _refresh_budget_usage(self) -> None:
+        self.checkpoint.task_budget_usage = self.checkpoint.task_budget_usage.add(
+            active_elapsed_seconds=self.checkpoint.active_elapsed_seconds,
+            memory_bytes=_process_memory_bytes(),
+        )
+
+    def _raise_if_budget_exhausted(
+        self,
+        *,
+        network_required: bool = False,
+        trusted_network_target: bool = False,
+        cloud_provider: bool = False,
+        paid_provider: bool = False,
+    ) -> None:
+        decision = self.policy.task_budget.evaluate(
+            self.checkpoint.task_budget_usage,
+            network_required=network_required,
+            trusted_network_target=trusted_network_target,
+            cloud_provider=cloud_provider,
+            paid_provider=paid_provider,
+        )
+        if decision.allowed:
+            self.checkpoint.budget_failure = ""
+            return
+        self.checkpoint.phase = "failed"
+        self.checkpoint.active_started_at = 0.0
+        self.checkpoint.budget_failure = decision.reason
+        self._save()
+        raise AgentTaskBudgetExceeded(decision)
 
     def _save(self) -> None:
         with self._state_lock:
@@ -784,6 +1388,15 @@ class AgentExecutionHarness:
                 },
                 last_failure=str(value.get("last_failure") or "")[:2_000],
                 verification=dict(value.get("verification") or {}),
+                active_elapsed_seconds=max(
+                    0.0,
+                    _finite_float(value.get("active_elapsed_seconds"), 0.0),
+                ),
+                active_started_at=0.0,
+                task_budget_usage=AgentTaskBudgetUsage.from_public(
+                    value.get("task_budget_usage")
+                ),
+                budget_failure=str(value.get("budget_failure") or "")[:1_000],
             )
         return None
 
