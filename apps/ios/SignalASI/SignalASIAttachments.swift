@@ -40,6 +40,208 @@ struct SignalASIDraftAttachment: Identifiable, Equatable {
   }
 }
 
+struct AgentStagedAttachment: Codable, Equatable {
+  var name: String
+  var relativePath: String
+  var mimeType: String
+  var sizeBytes: Int64
+  var sha256: String
+
+  enum CodingKeys: String, CodingKey {
+    case name
+    case relativePath = "relative_path"
+    case mimeType = "mime_type"
+    case sizeBytes = "size_bytes"
+    case sha256
+  }
+}
+
+enum AgentAttachmentWorkspaceStagingError: LocalizedError, Equatable {
+  case invalidTurnId
+  case unsafePath
+  case limitExceeded
+  case unavailable
+  case commitFailed
+
+  var errorDescription: String? {
+    switch self {
+    case .invalidTurnId:
+      return "Attachment turn ID is invalid."
+    case .unsafePath:
+      return "Attachment workspace path is unsafe."
+    case .limitExceeded:
+      return "Attachment input exceeds the workspace limit."
+    case .unavailable:
+      return "Attachment workspace is unavailable."
+    case .commitFailed:
+      return "Attachment could not be committed."
+    }
+  }
+}
+
+enum AgentWorkspaceScope {
+  static func id(conversationId: String, sessionId: String = "") -> String {
+    let owner = conversationId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .ifBlank(sessionId.trimmingCharacters(in: .whitespacesAndNewlines))
+      .ifBlank("default")
+    return nameBasedUUID("signalasi-workspace:\(owner)")
+  }
+
+  static func bindToolInput(
+    toolId: String,
+    input: [String: Any],
+    workspaceId: String
+  ) -> [String: Any] {
+    guard toolId.hasPrefix(workspaceToolPrefix) else {
+      return input
+    }
+    var output = input
+    output["workspace_id"] = workspaceId
+    return output
+  }
+
+  static func withLock<T>(workspaceId: String, _ body: () throws -> T) rethrows -> T {
+    let lock = lock(for: workspaceId)
+    lock.lock()
+    defer { lock.unlock() }
+    return try body()
+  }
+
+  private static func lock(for workspaceId: String) -> NSLock {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    if let existing = locks[workspaceId] {
+      return existing
+    }
+    let created = NSLock()
+    locks[workspaceId] = created
+    return created
+  }
+
+  private static func nameBasedUUID(_ value: String) -> String {
+    var bytes = Array(Insecure.MD5.hash(data: Data(value.utf8)))
+    bytes[6] = (bytes[6] & 0x0f) | 0x30
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    return UUID(uuid: (
+      bytes[0], bytes[1], bytes[2], bytes[3],
+      bytes[4], bytes[5], bytes[6], bytes[7],
+      bytes[8], bytes[9], bytes[10], bytes[11],
+      bytes[12], bytes[13], bytes[14], bytes[15]
+    )).uuidString.lowercased()
+  }
+
+  private static let workspaceToolPrefix = "signalasi.workspace."
+  private static let stateLock = NSLock()
+  private static var locks: [String: NSLock] = [:]
+}
+
+enum AgentAttachmentWorkspaceStager {
+  static let maximumAttachmentBytes: Int64 = 256 * 1024 * 1024
+  static let maximumTurnBytes: Int64 = 512 * 1024 * 1024
+
+  static func stage(
+    conversationId: String,
+    turnId: String,
+    attachments: [SignalASIDraftAttachment],
+    projectRoot: URL? = nil,
+    fileManager: FileManager = .default
+  ) throws -> [AgentStagedAttachment] {
+    guard turnId.range(of: safeIdPattern, options: .regularExpression) != nil else {
+      throw AgentAttachmentWorkspaceStagingError.invalidTurnId
+    }
+    let workspaceId = AgentWorkspaceScope.id(conversationId: conversationId)
+    return try AgentWorkspaceScope.withLock(workspaceId: workspaceId) {
+      let root = try (projectRoot ?? defaultProjectRoot(fileManager: fileManager))
+      let workspace = root.appendingPathComponent(workspaceId, isDirectory: true).standardizedFileURL
+      let inputDirectory = workspace
+        .appendingPathComponent("inputs", isDirectory: true)
+        .appendingPathComponent(turnId, isDirectory: true)
+        .standardizedFileURL
+      guard inputDirectory.path.hasPrefix(workspace.path + pathSeparator) else {
+        throw AgentAttachmentWorkspaceStagingError.unsafePath
+      }
+      try fileManager.createDirectory(at: inputDirectory, withIntermediateDirectories: true)
+
+      var totalBytes: Int64 = 0
+      var staged: [AgentStagedAttachment] = []
+      for (index, attachment) in attachments.enumerated() {
+        let safeName = uniqueName(
+          directory: inputDirectory,
+          baseName: sanitizeName(attachment.displayName),
+          index: index,
+          fileManager: fileManager
+        )
+        let target = inputDirectory.appendingPathComponent(safeName, isDirectory: false)
+        let temporary = inputDirectory.appendingPathComponent(".\(safeName).part", isDirectory: false)
+        let size = Int64(attachment.data.count)
+        totalBytes += size
+        guard size <= maximumAttachmentBytes && totalBytes <= maximumTurnBytes else {
+          try? fileManager.removeItem(at: temporary)
+          throw AgentAttachmentWorkspaceStagingError.limitExceeded
+        }
+        do {
+          try attachment.data.write(to: temporary, options: [.atomic])
+          if fileManager.fileExists(atPath: target.path) {
+            try fileManager.removeItem(at: target)
+          }
+          try fileManager.moveItem(at: temporary, to: target)
+        } catch {
+          try? fileManager.removeItem(at: temporary)
+          throw AgentAttachmentWorkspaceStagingError.commitFailed
+        }
+        staged.append(
+          AgentStagedAttachment(
+            name: attachment.displayName,
+            relativePath: "inputs/\(turnId)/\(safeName)",
+            mimeType: attachment.mimeType,
+            sizeBytes: size,
+            sha256: SignalASIAttachmentPayloadBuilder.sha256(attachment.data)
+          )
+        )
+      }
+      return staged
+    }
+  }
+
+  static func sanitizeName(_ value: String) -> String {
+    SignalASIAttachmentPayloadBuilder.sanitizeName(value)
+  }
+
+  private static func defaultProjectRoot(fileManager: FileManager) throws -> URL {
+    guard let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+      throw AgentAttachmentWorkspaceStagingError.unavailable
+    }
+    return root.appendingPathComponent("agent-native-workspaces", isDirectory: true)
+  }
+
+  private static func uniqueName(
+    directory: URL,
+    baseName: String,
+    index: Int,
+    fileManager: FileManager
+  ) -> String {
+    if !fileManager.fileExists(atPath: directory.appendingPathComponent(baseName).path) {
+      return baseName
+    }
+    let extensionValue = (baseName.split(separator: ".").last.map(String.init) ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let hasExtension = !extensionValue.isEmpty && baseName.contains(".")
+    let stem = hasExtension ? String(baseName.dropLast(extensionValue.count + 1)) : baseName
+    var suffix = index + 1
+    while true {
+      let candidate = "\(stem)-\(suffix)\(hasExtension ? ".\(extensionValue)" : "")"
+      if !fileManager.fileExists(atPath: directory.appendingPathComponent(candidate).path) {
+        return candidate
+      }
+      suffix += 1
+    }
+  }
+
+  private static let safeIdPattern = #"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"#
+  private static let pathSeparator = "/"
+}
+
 enum AgentAnimatedImageTiming {
   private static let gifDelayCentiseconds: UInt8 = 8
 

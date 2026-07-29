@@ -1,6 +1,8 @@
 """Pairing-bound access profiles for SignalASI Desktop."""
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from pathlib import Path
@@ -101,6 +103,25 @@ def has_scope(client: Mapping[str, Any] | None, scope: str) -> bool:
 
 def has_full_executor(client: Mapping[str, Any] | None) -> bool:
     return has_scope(client, EXECUTOR_FULL)
+
+
+def grant_binding(client: Mapping[str, Any] | None) -> str:
+    """Bind a durable authorization to the exact server-issued pairing grant."""
+    grant = client_grant(client)
+    payload = {
+        "contract_version": grant["contract_version"],
+        "version": grant["version"],
+        "profile": grant["profile"],
+        "scopes": sorted(grant["scopes"]),
+        "issued_at": grant["issued_at"],
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def external_paths(text: str, allowed_roots: tuple[str | Path, ...] = ()) -> list[str]:

@@ -140,6 +140,14 @@ Every node and relation carries temporal state, confidence, bounded evidence ref
 
 The graph projects ownership, use, support, components, state, naming, dependencies, connections, preferences, removal, and general relatedness. A removal event deprecates the affected entity and closes every current inbound and outbound relation, including support and dependency edges, instead of leaving stale capabilities reachable from current-state queries. Historical queries can still traverse those closed relations and their validity interval.
 
+Desktop persists the same domain graph in transactional SQLite tables. Only accepted memory
+can project nodes or relations; pending and rejected candidates cannot mutate it. Accepted
+updates close exclusive state, naming, and preference edges while preserving their evidence
+and validity intervals. Query-time traversal expands from matching scoped entities for up to
+three bounded hops, and compiled context labels every returned relationship as untrusted
+evidence. Memory deletion deprecates graph elements that lose their final evidence source,
+while reset removes both accepted memory and its graph projection atomically.
+
 ## Query Planner And Prompt Compiler
 
 Before retrieval, the query planner classifies the request into one or more facets: project state, device capability, historical decision, personal identity, personal preference, security state, long-term goal, tool evidence, relationship, or general memory. A request can therefore combine device, project, relationship, security, and historical intent instead of losing all but the first match.
@@ -153,7 +161,24 @@ The plan controls:
 - item and character budgets;
 - project namespace isolation.
 
+Desktop applies the same planning contract before both SQLite memory ranking and graph
+traversal. Plans are composable: a request may be historical, device-scoped, and relational
+at the same time. The resulting plan selects current-only, history-only, or comparison
+retrieval; scopes project, device, security, and user evidence; prioritizes relevant memory
+and relation kinds; and bounds graph hops and output size. Explicit namespace filters remain
+strict, while automatically planned searches retain relevant user preferences as a
+personalization layer. ASCII trigger terms use word boundaries so terms such as `runtime`
+cannot accidentally activate the `run` tool-evidence path.
+
 The prompt compiler emits only selected shareable evidence. It separates current, historical, and conflicted facts, adds an explicit unresolved-conflict warning, preserves a strict character budget, and labels all memory as untrusted evidence rather than instructions.
+
+Desktop compiles retrieved evidence into current, planned, user-context, historical, and
+relationship sections. Every value is quoted and prefixed as `DATA`; prompt-like text inside
+memory therefore remains evidence rather than executable instruction. Semantically identical
+entries and graph edges are deduplicated, relationship queries reserve budget for graph
+evidence, and the compiler records the exact memory and relation IDs that fit. Only those
+included memories receive an access-count update. Character limits are hard bounds, omitted
+evidence is counted, and callers are no longer constrained to a fixed recent-message window.
 
 Compiled entries carry bounded evidence counts and opaque memory references. Planned state has its own section, and historical or deprecated facts are excluded unless the query plan explicitly needs history or completed-goal context.
 
