@@ -360,6 +360,77 @@ class GlobalMemoryEvolutionTest {
     }
 
     @Test
+    fun temporalSnapshotSeparatesAllAcceptedAndCandidateStates() {
+        val current = item(
+            "current-state",
+            GlobalWorldItemKind.STATE,
+            topic = "Current",
+            value = "Current state",
+            eventId = "event-current"
+        )
+        val planned = item(
+            "planned-state",
+            GlobalWorldItemKind.GOAL,
+            topic = "Planned",
+            value = "Planned state",
+            eventId = "event-planned"
+        ).copy(temporalState = GlobalMemoryTemporalState.PLANNED)
+        val historical = item(
+            "historical-state",
+            GlobalWorldItemKind.FACT,
+            topic = "Historical",
+            value = "Historical state",
+            eventId = "event-historical"
+        ).copy(temporalState = GlobalMemoryTemporalState.HISTORICAL)
+        val completed = item(
+            "completed-state",
+            GlobalWorldItemKind.TASK,
+            topic = "Completed",
+            value = "Completed state",
+            eventId = "event-completed"
+        ).copy(status = GlobalWorldItemStatus.COMPLETED)
+        val deprecated = item(
+            "deprecated-state",
+            GlobalWorldItemKind.DECISION,
+            topic = "Deprecated",
+            value = "Deprecated state",
+            eventId = "event-deprecated"
+        ).copy(status = GlobalWorldItemStatus.SUPERSEDED)
+        val acceptedConflict = item(
+            "conflicted-state",
+            GlobalWorldItemKind.STATE,
+            topic = "Conflict",
+            value = "Conflicted state",
+            eventId = "event-conflict"
+        ).copy(status = GlobalWorldItemStatus.CONFLICTED)
+        val pendingCandidate = candidate(
+            id = "pending-candidate",
+            status = GlobalMemoryCandidateStatus.PENDING_REVIEW,
+            item = current
+        )
+        val conflictCandidate = candidate(
+            id = "conflict-candidate",
+            status = GlobalMemoryCandidateStatus.CONFLICTED,
+            item = acceptedConflict
+        )
+
+        val snapshot = GlobalMemoryTemporalPolicy.snapshot(
+            PersonalWorldModel(
+                items = listOf(current, planned, historical, completed, deprecated, acceptedConflict)
+            ),
+            GlobalMemoryInbox(candidates = listOf(pendingCandidate, conflictCandidate))
+        )
+
+        assertEquals(listOf(current), snapshot.current)
+        assertEquals(listOf(planned), snapshot.planned)
+        assertEquals(setOf(historical.id, completed.id), snapshot.historical.map { it.id }.toSet())
+        assertEquals(listOf(deprecated), snapshot.deprecated)
+        assertEquals(listOf(acceptedConflict), snapshot.conflicted)
+        assertEquals(1, snapshot.count(GlobalMemoryTemporalState.PENDING))
+        assertEquals(2, snapshot.count(GlobalMemoryTemporalState.CONFLICTED))
+    }
+
+    @Test
     fun semanticallyEquivalentEvidenceStrengthensAcceptedMemory() {
         val previous = item(
             "linux-old",
@@ -1146,6 +1217,22 @@ class GlobalMemoryEvolutionTest {
         world = PersonalWorldModel(items = listOf(item), processedEventIds = listOf(event.id)),
         changedItems = listOf(item),
         conflicts = emptyList()
+    )
+
+    private fun candidate(
+        id: String,
+        status: GlobalMemoryCandidateStatus,
+        item: GlobalWorldItem
+    ) = GlobalMemoryCandidate(
+        id = id,
+        sourceEventId = item.evidenceEventIds.firstOrNull().orEmpty(),
+        conversationId = item.conversationIds.firstOrNull().orEmpty(),
+        kind = GlobalMemoryCandidateKind.FACT,
+        temporalState = item.temporalState,
+        risk = GlobalMemoryCandidateRisk.REVIEW_REQUIRED,
+        status = status,
+        item = item,
+        reason = "test"
     )
 
     private fun item(

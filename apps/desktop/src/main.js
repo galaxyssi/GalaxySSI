@@ -319,6 +319,12 @@ async function runUiSmoke() {
           importance: 0.8,
           namespace: "device"
         });
+        await window.signalasi.rememberDesktopMemory({
+          content: "Plan the next desktop memory audit",
+          kind: "goal",
+          importance: 0.8,
+          namespace: "project"
+        });
         await window.signalasi.proposeDesktopMemory({
           content: "The desktop memory runtime is inaccessible",
           kind: "device_state",
@@ -333,6 +339,13 @@ async function runUiSmoke() {
           health: document.querySelector(".memory-health")?.textContent || "",
           recent: document.querySelectorAll(".memory-evolution-list > div").length
         };
+        document.querySelector('[data-memory-view="planned"]')?.click();
+        const plannedState = {
+          active: document.querySelector('[data-memory-view="planned"]')?.classList.contains("active") || false,
+          count: Number(document.querySelector("#memoryPlannedCount")?.textContent || "0"),
+          rows: document.querySelectorAll("#memoryList .capability-item").length,
+          content: document.querySelector("#memoryList")?.textContent || ""
+        };
         document.querySelector('[data-memory-view="inbox"]')?.click();
         await new Promise((resolve) => setTimeout(resolve, 250));
         const memoryState = {
@@ -343,7 +356,8 @@ async function runUiSmoke() {
           inboxCount: document.querySelector("#memoryInboxCount")?.textContent || "",
           candidates: document.querySelectorAll("#memoryList .memory-candidate").length,
           approveActions: document.querySelectorAll("[data-approve-memory-candidate]").length,
-          overviewState
+          overviewState,
+          plannedState
         };
         window.__signalasiMemorySmokeState = memoryState;
         return memoryState;
@@ -351,7 +365,7 @@ async function runUiSmoke() {
     `);
     if (
       !capabilitiesState.active
-      || capabilitiesState.views !== 5
+      || capabilitiesState.views !== 6
       || !capabilitiesState.inboxActive
       || !capabilitiesState.summary.trim()
       || !capabilitiesState.inboxCount.trim()
@@ -360,6 +374,10 @@ async function runUiSmoke() {
       || capabilitiesState.overviewState.metrics !== 4
       || !capabilitiesState.overviewState.health.trim()
       || capabilitiesState.overviewState.recent < 2
+      || !capabilitiesState.plannedState.active
+      || capabilitiesState.plannedState.count !== 1
+      || capabilitiesState.plannedState.rows !== 1
+      || !capabilitiesState.plannedState.content.includes("Plan the next desktop memory audit")
     ) {
       throw new Error(`Memory Inbox did not render: ${JSON.stringify(capabilitiesState)}`);
     }

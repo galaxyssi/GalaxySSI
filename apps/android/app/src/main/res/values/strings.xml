@@ -2020,4 +2020,16 @@
     <string name="agent_recovery_unavailable">This recovery action is no longer available.</string>
     <string name="agent_recovery_already_started">This recovery action has already started.</string>
     <string name="agent_response_self_check_failed">The selected resource did not answer your latest request. You can retry or use another available resource.</string>
+    <string name="cc_memory_state_historical_title">Historical state</string>
+    <string name="cc_memory_state_historical_subtitle">Past observations and completed state retained as evidence</string>
+    <string name="cc_memory_state_deprecated_title">Deprecated state</string>
+    <string name="cc_memory_state_deprecated_subtitle">Facts and decisions replaced by newer accepted evidence</string>
+    <string name="cc_memory_state_pending_subtitle">Identity, preference, and safety changes waiting for your decision</string>
+    <string name="cc_memory_state_conflicted_title">Conflicted state</string>
+    <string name="cc_memory_state_conflicted_subtitle">Competing evidence that has not been resolved</string>
+    <string name="cc_memory_temporal_page_subtitle">%1$s memory remains separate from other lifecycle states.</string>
+    <string name="cc_memory_temporal_items">Accepted memory</string>
+    <string name="cc_memory_temporal_empty">No %1$s memory</string>
+    <string name="cc_memory_temporal_empty_subtitle">SignalASI will place durable evidence here when it reaches this state.</string>
+    <string name="cc_memory_temporal_item_subtitle">%1$s · %2$d evidence references</string>
 </resources>

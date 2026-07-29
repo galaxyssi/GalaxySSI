@@ -855,6 +855,8 @@
 , "Encrypted lifecycle record": "加密生命周期记录"
 , "No memory evolution has been recorded yet.": "还没有记忆演化记录。"
 , "No unresolved memory conflicts.": "没有未解决的记忆冲突。"
+, "No current memory.": "没有当前记忆。"
+, "No planned memory.": "没有计划中的记忆。"
 , "{percent}% confidence": "置信度 {percent}%"
 , "Auto merged": "已自动合并"
 , "Rejected": "已拒绝"

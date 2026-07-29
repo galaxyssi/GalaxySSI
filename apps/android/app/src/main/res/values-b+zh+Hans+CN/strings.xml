@@ -1107,4 +1107,16 @@
     <string name="cc_memory_risk_low">低风险</string>
     <string name="cc_memory_risk_review">需要审核</string>
     <string name="cc_memory_risk_private">私密内容已拦截</string>
+    <string name="cc_memory_state_historical_title">历史状态</string>
+    <string name="cc_memory_state_historical_subtitle">作为证据保留的过去观察与已完成状态</string>
+    <string name="cc_memory_state_deprecated_title">已废弃状态</string>
+    <string name="cc_memory_state_deprecated_subtitle">已被较新可信证据取代的事实与决定</string>
+    <string name="cc_memory_state_pending_subtitle">等待你决定的身份、偏好与安全变更</string>
+    <string name="cc_memory_state_conflicted_title">冲突状态</string>
+    <string name="cc_memory_state_conflicted_subtitle">尚未解决的相互竞争证据</string>
+    <string name="cc_memory_temporal_page_subtitle">%1$s记忆与其他生命周期状态保持分离。</string>
+    <string name="cc_memory_temporal_items">已接受记忆</string>
+    <string name="cc_memory_temporal_empty">暂无%1$s记忆</string>
+    <string name="cc_memory_temporal_empty_subtitle">持久证据进入该状态后会显示在这里。</string>
+    <string name="cc_memory_temporal_item_subtitle">%1$s · %2$d 条证据引用</string>
 </resources>

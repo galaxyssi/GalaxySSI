@@ -51,6 +51,19 @@ Durable memory distinguishes:
 
 The personal world model retains its operational status (`ACTIVE`, `CONFLICTED`, `SUPERSEDED`, or `COMPLETED`) while the memory evolution layer supplies the richer temporal interpretation used by review and retrieval.
 
+The temporal classifier is canonical across Android and Desktop:
+
+- `SUPERSEDED` always resolves to `DEPRECATED`.
+- `COMPLETED` always resolves to `HISTORICAL`.
+- `CONFLICTED` always remains `CONFLICTED`.
+- `ACTIVE` uses the accepted item's explicit temporal state.
+- Pending and conflicted candidates remain in the Memory Inbox and are never counted as accepted current state.
+
+Control Center and Desktop expose separate Current, Planned, Historical, Deprecated,
+Pending, and Conflicted routes. Current-state views and prompt retrieval never include
+planned work or retained history implicitly; historical and deprecated evidence is
+available only through an explicit temporal route or a history-aware query plan.
+
 ## Candidate Memory Gate
 
 Each proposed durable change is classified as a fact, preference, identity, decision, project state, goal, relation, or Skill opportunity.
