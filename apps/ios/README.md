@@ -26,6 +26,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style transcript scroll policy for auto-follow and older-history pagination thresholds
 - Android-style agent task identity generation and desktop response matching
 - Android-style agent task intent classification for chat, code, phone, desktop, research, file, memory, and automation requests
+- Android-style agent execution profiles for task kind, timeout, artifact, installation, and verification contracts
 - Android-style final response identity keys and duplicate transcript coalescing
 - Android-style agent clarification policy for deciding when to execute, ask locally, or ask with model context
 - Android-style final response self-check for empty, echo, acknowledgement-only, attachment, and identity mismatch repair signals

@@ -1319,6 +1319,70 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(generic.intent, .chat)
   }
 
+  func testAgentExecutionProfileMatchesAndroidTaskKindsAndTimeouts() {
+    let chat = AgentExecutionProfile.forGoal("Hello there")
+    let device = AgentExecutionProfile.forGoal("Turn on the flashlight")
+    let research = AgentExecutionProfile.forGoal("Research today's AI news")
+    let artifact = AgentExecutionProfile.forGoal("Summarize this PDF", hasAttachments: true)
+    let build = AgentExecutionProfile.forGoal("Build an Android app and run tests")
+    let install = AgentExecutionProfile.forGoal("Install APK on the phone")
+
+    XCTAssertEqual(chat.taskKind, .chat)
+    XCTAssertEqual(chat.reasoningEffort, .low)
+    XCTAssertEqual(chat.noProgressTimeoutMillis, 180_000)
+    XCTAssertFalse(chat.requiresArtifact)
+
+    XCTAssertEqual(device.taskKind, .device)
+    XCTAssertEqual(device.reasoningEffort, .low)
+    XCTAssertEqual(device.noProgressTimeoutMillis, 120_000)
+
+    XCTAssertEqual(research.taskKind, .research)
+    XCTAssertEqual(research.reasoningEffort, .medium)
+    XCTAssertEqual(research.noProgressTimeoutMillis, 300_000)
+
+    XCTAssertEqual(artifact.taskKind, .artifact)
+    XCTAssertEqual(artifact.noProgressTimeoutMillis, 360_000)
+    XCTAssertTrue(artifact.requiresArtifact)
+    XCTAssertEqual(artifact.taskIntent, .file)
+    XCTAssertTrue(artifact.taskIntentSignals.contains("attachment"))
+
+    XCTAssertEqual(build.taskKind, .build)
+    XCTAssertEqual(build.noProgressTimeoutMillis, 420_000)
+    XCTAssertTrue(build.requiresArtifact)
+    XCTAssertEqual(build.targetPlatform, "android")
+    XCTAssertEqual(build.taskIntent, .code)
+
+    XCTAssertEqual(install.taskKind, .install)
+    XCTAssertEqual(install.reasoningEffort, .medium)
+    XCTAssertEqual(install.noProgressTimeoutMillis, 420_000)
+    XCTAssertTrue(install.requiresArtifact)
+    XCTAssertTrue(install.verifyInstallation)
+    XCTAssertEqual(install.targetPlatform, "android")
+  }
+
+  func testAgentExecutionProfileContractAndWireNamesMatchAndroid() throws {
+    let profile = AgentExecutionProfile.forGoal("Install APK on the phone")
+
+    XCTAssertTrue(profile.contract.contains("task=install"))
+    XCTAssertTrue(profile.contract.contains("reasoning_effort=medium"))
+    XCTAssertTrue(profile.contract.contains("A single deliverable remains in its native format"))
+    XCTAssertTrue(profile.contract.contains("Android returns a verified execution receipt"))
+    XCTAssertTrue(profile.contract.contains("Do not report success without verification evidence."))
+
+    let encoded = try JSONEncoder().encode(profile)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+    XCTAssertEqual(object["task_kind"] as? String, "INSTALL")
+    XCTAssertEqual(object["reasoning_effort"] as? String, "MEDIUM")
+    XCTAssertEqual(object["no_progress_timeout_millis"] as? Int, 420_000)
+    XCTAssertEqual(object["max_same_failure_attempts"] as? Int, 2)
+    XCTAssertEqual(object["requires_artifact"] as? Bool, true)
+    XCTAssertEqual(object["target_platform"] as? String, "android")
+    XCTAssertEqual(object["verify_installation"] as? Bool, true)
+    XCTAssertEqual(object["task_intent"] as? String, "CODE")
+    XCTAssertGreaterThanOrEqual(object["task_intent_confidence"] as? Int ?? 0, 55)
+  }
+
   func testAgentClarificationPolicyAsksTargetedQuestionsForMissingDetails() {
     let cases: [(String, AgentClarificationQuestion)] = [
       ("Help me", .taskGoal),
