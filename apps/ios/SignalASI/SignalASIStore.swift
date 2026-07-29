@@ -293,6 +293,59 @@ final class SignalASIStore: ObservableObject {
     secrets.string(account: model.keychainAccount)
   }
 
+  func exportBackupPayload(includeContacts: Bool = true, includeMessages: Bool = true) -> SignalASIBackupPayload {
+    let cloudSecrets = exportCloudAPISecrets()
+    let identity = secrets.string(account: identityPrivateKeyAccount).map {
+      SignalASIBackupIdentity(
+        identityPrivateKey: $0,
+        identityPublicKey: profile.identityPublicKey,
+        identityFingerprint: profile.identityFingerprint
+      )
+    }
+    return SignalASIBackupPayload(
+      identity: identity,
+      profile: profile,
+      includesContacts: includeContacts,
+      includesMessages: includeMessages,
+      privacyManifest: SignalASIBackupPrivacyManifest(
+        includesIdentity: identity != nil,
+        includesContacts: includeContacts,
+        includesMessages: includeMessages,
+        includesServerLinks: true,
+        includesVoiceSettings: true,
+        includesCloudAPISecrets: !cloudSecrets.isEmpty
+      ),
+      agentData: SignalASIBackupAgentData(
+        serverLinks: serverLinks,
+        voiceSettings: voiceSettings,
+        cloudAPISecrets: cloudSecrets
+      ),
+      contacts: includeContacts ? contacts : [],
+      messagesByContact: includeMessages ? messagesByContact : [:]
+    )
+  }
+
+  func restoreBackupPayload(_ payload: SignalASIBackupPayload, includeMessages: Bool = true) throws {
+    if let identity = payload.identity, !identity.identityPrivateKey.isEmpty {
+      try secrets.setString(identity.identityPrivateKey, account: identityPrivateKeyAccount)
+    }
+    if payload.includesAgentData {
+      try importCloudAPISecrets(payload.agentData.cloudAPISecrets)
+    }
+    profile = payload.profile
+    if payload.includesContacts {
+      contacts = payload.contacts
+    }
+    if includeMessages, payload.includesMessages {
+      messagesByContact = payload.messagesByContact
+    }
+    if payload.includesAgentData {
+      serverLinks = payload.agentData.serverLinks
+      voiceSettings = payload.agentData.voiceSettings
+    }
+    save()
+  }
+
   func setSelectedCloudModel(contactId: String, modelId: String) {
     guard var contact = contact(id: contactId),
           contact.cloudModels.contains(where: { $0.modelId == modelId }) else {
@@ -375,6 +428,28 @@ final class SignalASIStore: ObservableObject {
 
   private func lastMessageDate(for contactId: String) -> Date {
     messagesByContact[contactId]?.last?.createdAt ?? .distantPast
+  }
+
+  private func exportCloudAPISecrets() -> [String: String] {
+    var exported: [String: String] = [:]
+    for contact in contacts {
+      for model in contact.cloudModels {
+        if let value = secrets.string(account: model.keychainAccount), !value.isEmpty {
+          exported[model.keychainAccount] = value
+        }
+      }
+    }
+    return exported
+  }
+
+  private func importCloudAPISecrets(_ values: [String: String]) throws {
+    for (account, value) in values {
+      if value.isEmpty {
+        secrets.delete(account: account)
+      } else {
+        try secrets.setString(value, account: account)
+      }
+    }
   }
 
   private func save() {

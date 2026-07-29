@@ -18,6 +18,8 @@
     A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */; };
     A10000000000000000000010 /* SignalASIAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* SignalASIAttachments.swift */; };
     A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* SignalASIAttachmentTests.swift */; };
+    A10000000000000000000012 /* SignalASIBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* SignalASIBackup.swift */; };
+    A10000000000000000000013 /* SignalASIBackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* SignalASIBackupTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,6 +36,8 @@
     A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkReliabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000012 /* SignalASIAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachments.swift; sourceTree = "<group>"; };
     A20000000000000000000013 /* SignalASIAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachmentTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000014 /* SignalASIBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIBackup.swift; sourceTree = "<group>"; };
+    A20000000000000000000015 /* SignalASIBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIBackupTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,6 +62,7 @@
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
         A20000000000000000000010 /* SignalASILinkReliability.swift */,
+        A20000000000000000000014 /* SignalASIBackup.swift */,
         A20000000000000000000003 /* SignalASIStore.swift */,
         A20000000000000000000004 /* SignalASIServices.swift */,
         A20000000000000000000005 /* SignalASIViews.swift */,
@@ -71,6 +76,7 @@
         A20000000000000000000013 /* SignalASIAttachmentTests.swift */,
         A20000000000000000000006 /* SignalASILinkProtocolTests.swift */,
         A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */,
+        A20000000000000000000015 /* SignalASIBackupTests.swift */,
         A20000000000000000000007 /* SignalASIStoreTests.swift */,
       );
       path = SignalASITests;
@@ -172,6 +178,7 @@
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
         A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */,
+        A10000000000000000000012 /* SignalASIBackup.swift in Sources */,
         A10000000000000000000003 /* SignalASIStore.swift in Sources */,
         A10000000000000000000004 /* SignalASIServices.swift in Sources */,
         A10000000000000000000005 /* SignalASIViews.swift in Sources */,
@@ -185,6 +192,7 @@
         A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */,
         A10000000000000000000006 /* SignalASILinkProtocolTests.swift in Sources */,
         A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */,
+        A10000000000000000000013 /* SignalASIBackupTests.swift in Sources */,
         A10000000000000000000007 /* SignalASIStoreTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
