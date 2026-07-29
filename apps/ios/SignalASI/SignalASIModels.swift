@@ -7809,6 +7809,169 @@ struct AgentObservationOutcome: Codable, Equatable {
   private static let maximumEvidenceLength = 2_000
 }
 
+struct AgentContinuousObservationController {
+  let maxSamples: Int
+  let stableSampleCount: Int
+  let sampleIntervalMillis: Int64
+
+  init(
+    maxSamples: Int = 10,
+    stableSampleCount: Int = 2,
+    sampleIntervalMillis: Int64 = 250
+  ) {
+    precondition((1...Self.maxAllowedSamples).contains(maxSamples))
+    precondition((1...maxSamples).contains(stableSampleCount))
+    precondition((0...Self.maxSampleIntervalMillis).contains(sampleIntervalMillis))
+    self.maxSamples = maxSamples
+    self.stableSampleCount = stableSampleCount
+    self.sampleIntervalMillis = sampleIntervalMillis
+  }
+
+  func observe(
+    beforeAction: AgentScreenContext,
+    actionSucceeded: Bool,
+    changeExpected: Bool,
+    capture: () -> AgentScreenContext,
+    sleep: (Int64) -> Void = { millis in
+      guard millis > 0 else { return }
+      Thread.sleep(forTimeInterval: Double(millis) / 1_000)
+    },
+    nowMillis: () -> Int64 = {
+      Int64(Date().timeIntervalSince1970 * 1_000)
+    }
+  ) -> AgentObservationOutcome {
+    let startedAt = nowMillis()
+    var latest = capture()
+    if !actionSucceeded {
+      return outcome(
+        screen: latest,
+        decision: .actionFailed,
+        sampleCount: 1,
+        startedAt: startedAt,
+        changed: latest.fingerprint() != beforeAction.fingerprint(),
+        stable: false,
+        nowMillis: nowMillis
+      )
+    }
+    if !changeExpected {
+      return outcome(
+        screen: latest,
+        decision: .noChangeRequired,
+        sampleCount: 1,
+        startedAt: startedAt,
+        changed: latest.fingerprint() != beforeAction.fingerprint(),
+        stable: true,
+        nowMillis: nowMillis
+      )
+    }
+
+    let beforeFingerprint = beforeAction.fingerprint()
+    var previousFingerprint: AgentScreenFingerprint?
+    var changed = false
+    var stableSamples = 0
+    var samples = 0
+    for index in 0..<maxSamples {
+      if index > 0 {
+        sleep(sampleIntervalMillis)
+        latest = capture()
+      }
+      samples += 1
+      let fingerprint = latest.fingerprint()
+      let differsFromBefore = fingerprint != beforeFingerprint
+      changed = changed || differsFromBefore
+      if !differsFromBefore {
+        stableSamples = 0
+      } else if previousFingerprint == fingerprint {
+        stableSamples += 1
+      } else {
+        stableSamples = 1
+      }
+      previousFingerprint = fingerprint
+      if changed && stableSamples >= stableSampleCount {
+        return outcome(
+          screen: latest,
+          decision: .changedAndStable,
+          sampleCount: samples,
+          startedAt: startedAt,
+          changed: true,
+          stable: true,
+          nowMillis: nowMillis
+        )
+      }
+    }
+    return outcome(
+      screen: latest,
+      decision: changed ? .changedButUnstable : .timedOut,
+      sampleCount: samples,
+      startedAt: startedAt,
+      changed: changed,
+      stable: false,
+      nowMillis: nowMillis
+    )
+  }
+
+  private func outcome(
+    screen: AgentScreenContext,
+    decision: AgentObservationDecision,
+    sampleCount: Int,
+    startedAt: Int64,
+    changed: Bool,
+    stable: Bool,
+    nowMillis: () -> Int64
+  ) -> AgentObservationOutcome {
+    let duration = max(nowMillis() - startedAt, 0)
+    return AgentObservationOutcome(
+      screen: screen,
+      decision: decision,
+      sampleCount: sampleCount,
+      durationMillis: duration,
+      screenChanged: changed,
+      screenStable: stable,
+      evidence: "decision=\(decision.rawValue); samples=\(sampleCount); duration_ms=\(duration); changed=\(changed); stable=\(stable)"
+    )
+  }
+
+  private static let maxAllowedSamples = 30
+  private static let maxSampleIntervalMillis: Int64 = 2_000
+}
+
+private struct AgentScreenFingerprint: Equatable {
+  var foregroundApp: String
+  var activityName: String
+  var pageTitle: String
+  var visibleTextCount: Int
+  var clickableNodeCount: Int
+  var inputFieldCount: Int
+  var scrollableRegionCount: Int
+  var sensitiveFlagCount: Int
+  var selectedText: String
+  var isAccessibilityEnabled: Bool
+}
+
+private extension AgentScreenContext {
+  func fingerprint() -> AgentScreenFingerprint {
+    AgentScreenFingerprint(
+      foregroundApp: foregroundApp,
+      activityName: activityName,
+      pageTitle: pageTitle,
+      visibleTextCount: visibleTextCount,
+      clickableNodeCount: clickableNodeCount,
+      inputFieldCount: inputFieldCount,
+      scrollableRegionCount: scrollableRegionCount,
+      sensitiveFlagCount: sensitiveFlagCount,
+      selectedText: Self.normalizedFingerprintText(selectedText),
+      isAccessibilityEnabled: isAccessibilityEnabled
+    )
+  }
+
+  private static func normalizedFingerprintText(_ value: String) -> String {
+    value
+      .components(separatedBy: .whitespacesAndNewlines)
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+  }
+}
+
 struct AgentActionResult: Codable, Equatable {
   var actionId: String
   var success: Bool

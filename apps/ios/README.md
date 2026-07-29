@@ -53,6 +53,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style private data inventory for encrypted backup manifests, export eligibility, erase coverage, and identity rotation audits
 - Android-style agent failure recovery payloads, recommended recovery actions, plan-only fallbacks, and retry instructions
 - Android-style agent task liveness policy for progress watchdog warnings, timeouts, and terminal reply suppression
+- Android-style continuous observation controller for post-action screen change and stability sampling
 - Android-style agent action recovery controller for timed-out low-risk navigation retries and manual handoff for unsafe failures
 - Android-style agent action risk hardener for connector danger terms, custom device and Home Assistant control, and low-confidence visual OCR actions
 - Android-style phone execution authority for concurrent reads, serialized side effects, cancellation, and execution metadata

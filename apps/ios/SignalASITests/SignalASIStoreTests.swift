@@ -3470,6 +3470,116 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(screen["visible_text_count"] as? Int, 3)
   }
 
+  func testAgentContinuousObservationControllerReturnsFailureAndNoChangeOutcomes() {
+    let before = agentObservationScreen(pageTitle: "Before", visibleTextCount: 1)
+    let after = agentObservationScreen(pageTitle: "After", visibleTextCount: 2)
+    let controller = AgentContinuousObservationController(maxSamples: 3, stableSampleCount: 2, sampleIntervalMillis: 10)
+
+    let failed = controller.observe(
+      beforeAction: before,
+      actionSucceeded: false,
+      changeExpected: true,
+      capture: { after },
+      sleep: { _ in XCTFail("Failure observation should not sleep") },
+      nowMillis: { 1_000 }
+    )
+    let noChange = controller.observe(
+      beforeAction: before,
+      actionSucceeded: true,
+      changeExpected: false,
+      capture: { before },
+      sleep: { _ in XCTFail("No-change observation should not sleep") },
+      nowMillis: { 2_000 }
+    )
+
+    XCTAssertEqual(failed.decision, .actionFailed)
+    XCTAssertEqual(failed.sampleCount, 1)
+    XCTAssertEqual(failed.durationMillis, 0)
+    XCTAssertTrue(failed.screenChanged)
+    XCTAssertFalse(failed.screenStable)
+    XCTAssertTrue(failed.evidence.contains("decision=ACTION_FAILED"))
+
+    XCTAssertEqual(noChange.decision, .noChangeRequired)
+    XCTAssertEqual(noChange.sampleCount, 1)
+    XCTAssertFalse(noChange.screenChanged)
+    XCTAssertTrue(noChange.screenStable)
+    XCTAssertTrue(noChange.evidence.contains("stable=true"))
+  }
+
+  func testAgentContinuousObservationControllerWaitsForChangedStableScreen() {
+    let before = agentObservationScreen(pageTitle: "Before", visibleTextCount: 1)
+    let changed = agentObservationScreen(pageTitle: "After", visibleTextCount: 2, selectedText: " Done\nnow ")
+    var now: Int64 = 1_000
+    var captures = 0
+    var sleepIntervals: [Int64] = []
+    let controller = AgentContinuousObservationController(maxSamples: 4, stableSampleCount: 2, sampleIntervalMillis: 10)
+
+    let outcome = controller.observe(
+      beforeAction: before,
+      actionSucceeded: true,
+      changeExpected: true,
+      capture: {
+        captures += 1
+        return changed
+      },
+      sleep: { millis in
+        sleepIntervals.append(millis)
+        now += millis
+      },
+      nowMillis: { now }
+    )
+
+    XCTAssertEqual(outcome.decision, .changedAndStable)
+    XCTAssertEqual(outcome.sampleCount, 2)
+    XCTAssertEqual(outcome.durationMillis, 10)
+    XCTAssertTrue(outcome.screenChanged)
+    XCTAssertTrue(outcome.screenStable)
+    XCTAssertEqual(captures, 2)
+    XCTAssertEqual(sleepIntervals, [10])
+    XCTAssertTrue(outcome.evidence.contains("samples=2"))
+  }
+
+  func testAgentContinuousObservationControllerReportsTimeoutAndUnstableChanges() {
+    let before = agentObservationScreen(pageTitle: "Before", visibleTextCount: 1)
+    let first = agentObservationScreen(pageTitle: "First", visibleTextCount: 2)
+    let second = agentObservationScreen(pageTitle: "Second", visibleTextCount: 3)
+    let controller = AgentContinuousObservationController(maxSamples: 3, stableSampleCount: 2, sampleIntervalMillis: 5)
+
+    let timeout = controller.observe(
+      beforeAction: before,
+      actionSucceeded: true,
+      changeExpected: true,
+      capture: { before },
+      sleep: { _ in },
+      nowMillis: { 5_000 }
+    )
+    var unstableIndex = 0
+    let unstableScreens = [first, second, first]
+    let unstable = controller.observe(
+      beforeAction: before,
+      actionSucceeded: true,
+      changeExpected: true,
+      capture: {
+        defer { unstableIndex += 1 }
+        return unstableScreens[min(unstableIndex, unstableScreens.count - 1)]
+      },
+      sleep: { _ in },
+      nowMillis: { 6_000 }
+    )
+
+    XCTAssertEqual(timeout.decision, .timedOut)
+    XCTAssertEqual(timeout.sampleCount, 3)
+    XCTAssertFalse(timeout.screenChanged)
+    XCTAssertFalse(timeout.screenStable)
+    XCTAssertTrue(timeout.evidence.contains("decision=TIMED_OUT"))
+
+    XCTAssertEqual(unstable.decision, .changedButUnstable)
+    XCTAssertEqual(unstable.sampleCount, 3)
+    XCTAssertTrue(unstable.screenChanged)
+    XCTAssertFalse(unstable.screenStable)
+    XCTAssertTrue(unstable.evidence.contains("decision=CHANGED_BUT_UNSTABLE"))
+  }
+
   func testPhoneExecutionAuthorityAnnotatesConcurrentReadsWithoutSerialization() {
     let action = phoneAuthorityAction(
       id: "read-1",
@@ -8008,6 +8118,27 @@ final class SignalASIStoreTests: XCTestCase {
       screenChanged: changed,
       screenStable: stable,
       evidence: "decision=\(decision.rawValue); samples=\(sampleCount)"
+    )
+  }
+
+  private func agentObservationScreen(
+    pageTitle: String,
+    visibleTextCount: Int,
+    selectedText: String = "",
+    clickableNodeCount: Int = 2,
+    inputFieldCount: Int = 0,
+    scrollableRegionCount: Int = 0
+  ) -> AgentScreenContext {
+    AgentScreenContext(
+      foregroundApp: "SpringBoard",
+      activityName: "MainActivity",
+      pageTitle: pageTitle,
+      visibleTextCount: visibleTextCount,
+      clickableNodeCount: clickableNodeCount,
+      inputFieldCount: inputFieldCount,
+      scrollableRegionCount: scrollableRegionCount,
+      selectedText: selectedText,
+      isAccessibilityEnabled: true
     )
   }
 
