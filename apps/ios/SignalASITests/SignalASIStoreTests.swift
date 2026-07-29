@@ -1446,6 +1446,86 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(requestObject["parameters_json"] as? String, #"{"command":"python verify.py","cwd":"C:/workspace"}"#)
   }
 
+  func testAgentRemoteReputationDecodesDesktopReceiptAndPreservesCanonicalFieldOrder() throws {
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+
+    XCTAssertEqual(receipt.agentId, remoteReputationContactId)
+    XCTAssertEqual(receipt.capabilities, Set([AgentCapability.chat, AgentCapability.code]))
+    XCTAssertEqual(receipt.provenance, .hostObserved)
+
+    let canonical = String(decoding: receipt.canonicalPayload(), as: UTF8.self)
+    let taskHash = agentReputationSha256(Data(remoteReputationTaskId.utf8))
+    XCTAssertTrue(canonical.hasPrefix("{\"actual_cost_units\":0,\"agent_id\":\"\(remoteReputationContactId)\""))
+    XCTAssertTrue(
+      canonical.hasSuffix(
+        "\"started_at_millis\":1000,\"task_id_hash\":\"\(taskHash)\",\"version\":1}"
+      )
+    )
+    XCTAssertEqual(
+      agentReputationSha256(Data(canonical.utf8)),
+      "fe6995403d63a8ca06ab70ae20d0e3b62749d3ab9eac8b2a2e3e62e775ecf4e7"
+    )
+  }
+
+  func testAgentRemoteReputationBindsReceiptToPairedDesktopAgentAndTask() throws {
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+    let envelope = remoteReputationEnvelope()
+
+    XCTAssertNil(AgentRemoteReputation.bindingFailure(envelope, receipt: receipt))
+    XCTAssertEqual(AgentRemoteReputation.boundReceipt(from: envelope)?.receiptId, receipt.receiptId)
+
+    var changedTask = envelope
+    changedTask["task_id"] = .string("other-task")
+    XCTAssertEqual(
+      AgentRemoteReputation.bindingFailure(changedTask, receipt: receipt),
+      AgentRemoteReputation.invalidBindingReason
+    )
+  }
+
+  func testAgentRemoteReputationRejectsCrossDesktopOrCrossAgentClaims() throws {
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+    let crossDesktop = remoteReputationEnvelope(
+      desktopId: "desktop_fedcba9876543210",
+      contactId: "desktop_fedcba9876543210:codex"
+    )
+    let crossAgent = remoteReputationEnvelope(contactId: "\(remoteReputationDesktopId):browser")
+
+    XCTAssertEqual(
+      AgentRemoteReputation.bindingFailure(crossDesktop, receipt: receipt),
+      AgentRemoteReputation.invalidBindingReason
+    )
+    XCTAssertEqual(
+      AgentRemoteReputation.bindingFailure(crossAgent, receipt: receipt),
+      AgentRemoteReputation.invalidBindingReason
+    )
+  }
+
+  func testAgentRemoteReputationRejectsMalformedReceiptsAndUsesAndroidWireNames() throws {
+    var invalidReceipt = remoteReputationReceiptObject()
+    invalidReceipt["outcome"] = .string("DONE")
+    XCTAssertNil(AgentReputationWireCodec.decodeReceipt(invalidReceipt))
+
+    var invalidEnvelope = remoteReputationEnvelope()
+    invalidEnvelope["execution_receipt"] = .object(invalidReceipt)
+    XCTAssertEqual(
+      AgentRemoteReputation.receiptFailureReason(from: invalidEnvelope),
+      AgentRemoteReputation.invalidReceiptReason
+    )
+
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(receipt)) as? [String: Any]
+    )
+    XCTAssertEqual(object["receipt_id"] as? String, "receipt-1")
+    XCTAssertEqual(object["task_id_hash"] as? String, agentReputationSha256(Data(remoteReputationTaskId.utf8)))
+    XCTAssertEqual(object["executor_failure_domain"] as? String, remoteReputationDesktopId)
+    XCTAssertEqual(object["started_at_millis"] as? Int, 1_000)
+    XCTAssertEqual(object["completed_at_millis"] as? Int, 2_000)
+    XCTAssertEqual(object["signature_key_id"] as? String, String(repeating: "a", count: 64))
+    XCTAssertNil(object["taskIdHash"])
+    XCTAssertNil(object["startedAtMillis"])
+  }
+
   func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
@@ -5576,6 +5656,53 @@ final class SignalASIStoreTests: XCTestCase {
     ]
     let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
     return String(decoding: data, as: UTF8.self)
+  }
+
+  private var remoteReputationDesktopId: String { "desktop_0123456789abcdef" }
+  private var remoteReputationTaskId: String { "task-123" }
+  private var remoteReputationContactId: String { "\(remoteReputationDesktopId):codex" }
+
+  private func remoteReputationReceiptObject() -> AgentMcpJSONObject {
+    [
+      "version": .int(1),
+      "receipt_id": .string("receipt-1"),
+      "run_id": .string("run-1"),
+      "task_id_hash": .string(agentReputationSha256(Data(remoteReputationTaskId.utf8))),
+      "agent_id": .string(remoteReputationContactId),
+      "installation_id": .string(remoteReputationDesktopId),
+      "executor_failure_domain": .string(remoteReputationDesktopId),
+      "capabilities": .array([.string("CHAT"), .string("CODE")]),
+      "outcome": .string("SUCCEEDED"),
+      "provenance": .string("HOST_OBSERVED"),
+      "started_at_millis": .int(1_000),
+      "completed_at_millis": .int(2_000),
+      "deadline_at_millis": .int(0),
+      "estimated_cost_units": .int(0),
+      "actual_cost_units": .int(0),
+      "output_hash": .string(String(repeating: "b", count: 64)),
+      "evidence_hash": .string(String(repeating: "c", count: 64)),
+      "signer_id": .string(remoteReputationDesktopId),
+      "signature_key_id": .string(String(repeating: "a", count: 64)),
+      "signature": .string("signature")
+    ]
+  }
+
+  private func remoteReputationEnvelope(
+    desktopId: String? = nil,
+    taskId: String? = nil,
+    agentId: String = "codex",
+    contactId: String? = nil
+  ) -> AgentMcpJSONObject {
+    let resolvedDesktopId = desktopId ?? remoteReputationDesktopId
+    let resolvedTaskId = taskId ?? remoteReputationTaskId
+    let resolvedContactId = contactId ?? "\(resolvedDesktopId):\(agentId)"
+    return [
+      "desktop_id": .string(resolvedDesktopId),
+      "task_id": .string(resolvedTaskId),
+      "agent_id": .string(agentId),
+      "contact_id": .string(resolvedContactId),
+      "execution_receipt": .object(remoteReputationReceiptObject())
+    ]
   }
 
   private var globalBudgetNow: Int64 { 1_000_000 }

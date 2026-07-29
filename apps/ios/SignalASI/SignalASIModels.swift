@@ -1162,6 +1162,318 @@ enum AgentCapability: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentReputationOutcome: String, Codable, CaseIterable, Identifiable {
+  case succeeded = "SUCCEEDED"
+  case partial = "PARTIAL"
+  case failed = "FAILED"
+  case timedOut = "TIMED_OUT"
+  case cancelled = "CANCELLED"
+  case rejected = "REJECTED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentReputationOutcome? {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    guard let value = Self.fromWireValue(try container.decode(String.self)) else {
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "Unknown agent reputation outcome"
+      )
+    }
+    self = value
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentReputationReceiptProvenance: String, Codable, CaseIterable, Identifiable {
+  case executorSigned = "EXECUTOR_SIGNED"
+  case hostObserved = "HOST_OBSERVED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentReputationReceiptProvenance? {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    guard let value = Self.fromWireValue(try container.decode(String.self)) else {
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "Unknown agent reputation receipt provenance"
+      )
+    }
+    self = value
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentSignedExecutionReceipt: Codable, Equatable {
+  static let currentVersion = 1
+
+  var receiptId: String
+  var runId: String
+  var taskIdHash: String
+  var agentId: String
+  var installationId: String
+  var executorFailureDomain: String
+  var capabilities: Set<AgentCapability>
+  var outcome: AgentReputationOutcome
+  var provenance: AgentReputationReceiptProvenance
+  var startedAtMillis: Int64
+  var completedAtMillis: Int64
+  var deadlineAtMillis: Int64
+  var estimatedCostUnits: Int
+  var actualCostUnits: Int
+  var outputHash: String
+  var evidenceHash: String
+  var signerId: String
+  var signatureKeyId: String
+  var signature: String
+
+  var canonicalJson: String {
+    AgentMcpJSONCodec.stringify(canonicalObject())
+  }
+
+  init(
+    receiptId: String,
+    runId: String,
+    taskIdHash: String,
+    agentId: String,
+    installationId: String,
+    executorFailureDomain: String,
+    capabilities: Set<AgentCapability>,
+    outcome: AgentReputationOutcome,
+    provenance: AgentReputationReceiptProvenance,
+    startedAtMillis: Int64,
+    completedAtMillis: Int64,
+    deadlineAtMillis: Int64 = 0,
+    estimatedCostUnits: Int = 0,
+    actualCostUnits: Int = 0,
+    outputHash: String = "",
+    evidenceHash: String = "",
+    signerId: String,
+    signatureKeyId: String,
+    signature: String
+  ) {
+    self.receiptId = receiptId
+    self.runId = runId
+    self.taskIdHash = taskIdHash
+    self.agentId = agentId
+    self.installationId = installationId
+    self.executorFailureDomain = executorFailureDomain
+    self.capabilities = capabilities
+    self.outcome = outcome
+    self.provenance = provenance
+    self.startedAtMillis = startedAtMillis
+    self.completedAtMillis = completedAtMillis
+    self.deadlineAtMillis = deadlineAtMillis
+    self.estimatedCostUnits = estimatedCostUnits
+    self.actualCostUnits = actualCostUnits
+    self.outputHash = outputHash
+    self.evidenceHash = evidenceHash
+    self.signerId = signerId
+    self.signatureKeyId = signatureKeyId
+    self.signature = signature
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case receiptId = "receipt_id"
+    case runId = "run_id"
+    case taskIdHash = "task_id_hash"
+    case agentId = "agent_id"
+    case installationId = "installation_id"
+    case executorFailureDomain = "executor_failure_domain"
+    case capabilities
+    case outcome
+    case provenance
+    case startedAtMillis = "started_at_millis"
+    case completedAtMillis = "completed_at_millis"
+    case deadlineAtMillis = "deadline_at_millis"
+    case estimatedCostUnits = "estimated_cost_units"
+    case actualCostUnits = "actual_cost_units"
+    case outputHash = "output_hash"
+    case evidenceHash = "evidence_hash"
+    case signerId = "signer_id"
+    case signatureKeyId = "signature_key_id"
+    case signature
+  }
+
+  func canonicalPayload() -> Data {
+    Data(canonicalJson.utf8)
+  }
+
+  func canonicalObject() -> AgentMcpJSONObject {
+    [
+      "version": .int(Int64(Self.currentVersion)),
+      "receipt_id": .string(receiptId),
+      "run_id": .string(runId),
+      "task_id_hash": .string(taskIdHash.lowercased()),
+      "agent_id": .string(agentId),
+      "installation_id": .string(installationId),
+      "executor_failure_domain": .string(executorFailureDomain),
+      "capabilities": .array(capabilities.map(\.rawValue).sorted().map(AgentMcpJSONValue.string)),
+      "outcome": .string(outcome.rawValue),
+      "provenance": .string(provenance.rawValue),
+      "started_at_millis": .int(startedAtMillis),
+      "completed_at_millis": .int(completedAtMillis),
+      "deadline_at_millis": .int(deadlineAtMillis),
+      "estimated_cost_units": .int(Int64(estimatedCostUnits)),
+      "actual_cost_units": .int(Int64(actualCostUnits)),
+      "output_hash": .string(outputHash.lowercased()),
+      "evidence_hash": .string(evidenceHash.lowercased()),
+      "signer_id": .string(signerId),
+      "signature_key_id": .string(signatureKeyId.lowercased())
+    ]
+  }
+}
+
+enum AgentReputationWireCodec {
+  static func decodeReceipt(_ raw: String) -> AgentSignedExecutionReceipt? {
+    guard let data = raw.data(using: .utf8),
+      let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      return nil
+    }
+    return decodeReceipt(object)
+  }
+
+  static func decodeReceipt(_ object: AgentMcpJSONObject?) -> AgentSignedExecutionReceipt? {
+    guard let object,
+      object.int64("version") == 0 || object.int64("version") == Int64(AgentSignedExecutionReceipt.currentVersion),
+      let outcome = AgentReputationOutcome.fromWireValue(object.string("outcome")),
+      let provenance = AgentReputationReceiptProvenance.fromWireValue(object.string("provenance")) else {
+      return nil
+    }
+
+    let receipt = AgentSignedExecutionReceipt(
+      receiptId: object.string("receipt_id"),
+      runId: object.string("run_id"),
+      taskIdHash: object.string("task_id_hash"),
+      agentId: object.string("agent_id"),
+      installationId: object.string("installation_id"),
+      executorFailureDomain: object.string("executor_failure_domain"),
+      capabilities: decodeCapabilities(object["capabilities"]),
+      outcome: outcome,
+      provenance: provenance,
+      startedAtMillis: object.int64("started_at_millis"),
+      completedAtMillis: object.int64("completed_at_millis"),
+      deadlineAtMillis: object.int64("deadline_at_millis"),
+      estimatedCostUnits: Int(object.int64("estimated_cost_units")),
+      actualCostUnits: Int(object.int64("actual_cost_units")),
+      outputHash: object.string("output_hash"),
+      evidenceHash: object.string("evidence_hash"),
+      signerId: object.string("signer_id"),
+      signatureKeyId: object.string("signature_key_id"),
+      signature: object.string("signature")
+    )
+    guard !receipt.receiptId.isEmpty,
+      !receipt.runId.isEmpty,
+      !receipt.taskIdHash.isEmpty,
+      !receipt.agentId.isEmpty,
+      !receipt.installationId.isEmpty,
+      !receipt.signerId.isEmpty,
+      !receipt.signatureKeyId.isEmpty,
+      !receipt.signature.isEmpty else {
+      return nil
+    }
+    return receipt
+  }
+
+  private static func decodeCapabilities(_ value: AgentMcpJSONValue?) -> Set<AgentCapability> {
+    guard case .array(let values) = value else {
+      return []
+    }
+    return values.reduce(into: Set<AgentCapability>()) { result, value in
+      guard let capability = AgentCapability.fromWireValue(value.stringValue) else {
+        return
+      }
+      result.insert(capability)
+    }
+  }
+}
+
+enum AgentRemoteReputation {
+  static let invalidReceiptReason = "receipt_invalid"
+  static let invalidBindingReason = "receipt_binding_invalid"
+
+  static func boundReceipt(from raw: String) -> AgentSignedExecutionReceipt? {
+    guard let data = raw.data(using: .utf8),
+      let envelope = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      return nil
+    }
+    return boundReceipt(from: envelope)
+  }
+
+  static func boundReceipt(from envelope: AgentMcpJSONObject?) -> AgentSignedExecutionReceipt? {
+    guard let envelope,
+      let receipt = AgentReputationWireCodec.decodeReceipt(envelope.object("execution_receipt")),
+      bindingFailure(envelope, receipt: receipt) == nil else {
+      return nil
+    }
+    return receipt
+  }
+
+  static func receiptFailureReason(from envelope: AgentMcpJSONObject?) -> String? {
+    guard let envelope,
+      let receiptObject = envelope.object("execution_receipt") else {
+      return nil
+    }
+    guard let receipt = AgentReputationWireCodec.decodeReceipt(receiptObject) else {
+      return invalidReceiptReason
+    }
+    return bindingFailure(envelope, receipt: receipt)
+  }
+
+  static func bindingFailure(
+    _ envelope: AgentMcpJSONObject,
+    receipt: AgentSignedExecutionReceipt
+  ) -> String? {
+    let desktopId = envelope.string("desktop_id").trimmingCharacters(in: .whitespacesAndNewlines)
+    let taskId = envelope.string("task_id").trimmingCharacters(in: .whitespacesAndNewlines)
+    let rawAgentId = envelope.string("agent_id").trimmingCharacters(in: .whitespacesAndNewlines)
+    let contactId = envelope.string("contact_id").trimmingCharacters(in: .whitespacesAndNewlines)
+    let expectedAgentId = contactId.hasPrefix("desktop_") && contactId.contains(":")
+      ? contactId
+      : "\(desktopId):\(rawAgentId)"
+
+    guard !desktopId.isEmpty,
+      !taskId.isEmpty,
+      !rawAgentId.isEmpty,
+      receipt.signerId == desktopId,
+      receipt.installationId == desktopId,
+      receipt.executorFailureDomain == desktopId,
+      receipt.agentId == expectedAgentId,
+      receipt.taskIdHash == agentReputationSha256(Data(taskId.utf8)) else {
+      return invalidBindingReason
+    }
+    return nil
+  }
+}
+
+func agentReputationSha256(_ data: Data) -> String {
+  SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
 enum AgentNativeToolLocation: String, Codable, CaseIterable, Identifiable {
   case phone
   case desktop
@@ -3810,6 +4122,33 @@ enum UnifiedCommandProtocol {
 private extension Dictionary where Key == String, Value == AgentMcpJSONValue {
   func string(_ key: String) -> String {
     self[key]?.stringValue ?? ""
+  }
+
+  func int64(_ key: String) -> Int64 {
+    switch self[key] {
+    case .string(let value):
+      return Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    case .int(let value):
+      return Int64(value)
+    case .double(let value):
+      guard value.isFinite else { return 0 }
+      return Int64(value)
+    default:
+      return 0
+    }
+  }
+
+  func bool(_ key: String) -> Bool {
+    switch self[key] {
+    case .bool(let value):
+      return value
+    case .string(let value):
+      return value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
+    case .int(let value):
+      return value != 0
+    default:
+      return false
+    }
   }
 
   func object(_ key: String) -> AgentMcpJSONObject? {
@@ -11762,58 +12101,6 @@ private enum AgentRemoteApprovalValidation {
 enum AgentRemoteApprovalClock {
   static func nowMillis() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-  }
-}
-
-private extension Dictionary where Key == String, Value == AgentMcpJSONValue {
-  func string(_ key: String) -> String {
-    switch self[key] {
-    case .string(let value):
-      return value
-    case .int(let value):
-      return String(value)
-    case .double(let value):
-      guard value.isFinite else { return "" }
-      return String(Int64(value))
-    case .bool(let value):
-      return value ? "true" : "false"
-    default:
-      return ""
-    }
-  }
-
-  func int64(_ key: String) -> Int64 {
-    switch self[key] {
-    case .string(let value):
-      return Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-    case .int(let value):
-      return Int64(value)
-    case .double(let value):
-      guard value.isFinite else { return 0 }
-      return Int64(value)
-    default:
-      return 0
-    }
-  }
-
-  func bool(_ key: String) -> Bool {
-    switch self[key] {
-    case .bool(let value):
-      return value
-    case .string(let value):
-      return value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "true"
-    case .int(let value):
-      return value != 0
-    default:
-      return false
-    }
-  }
-
-  func object(_ key: String) -> AgentMcpJSONObject? {
-    guard case .object(let object) = self[key] else {
-      return nil
-    }
-    return object
   }
 }
 
