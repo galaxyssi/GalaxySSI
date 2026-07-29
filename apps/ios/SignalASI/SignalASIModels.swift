@@ -17150,6 +17150,575 @@ struct AgentMcpAuthProfile: Codable, Equatable {
   }
 }
 
+struct AgentMcpDeclarativeTool: Codable, Equatable, Identifiable {
+  var name: String
+  var title: String
+  var description: String
+  var inputSchema: AgentMcpJSONObject
+  var method: String
+  var pathTemplate: String
+  var headerTemplates: [String: String]
+  var bodyTemplate: String
+  var resultJsonPath: String
+  var mutating: Bool
+
+  var id: String { name }
+
+  enum CodingKeys: String, CodingKey {
+    case name
+    case title
+    case description
+    case inputSchema = "input_schema"
+    case method
+    case pathTemplate = "path"
+    case headerTemplates = "headers"
+    case bodyTemplate = "body_template"
+    case resultJsonPath = "result_json_path"
+    case mutating
+  }
+}
+
+struct AgentMcpLocalRuntimeSpec: Codable, Equatable {
+  var language: AgentRuntimeLanguage
+  var entrypoint: String
+  var arguments: [String]
+  var environment: [String: String]
+  var allowedNetworkDomains: [String]
+  var timeoutMillis: Int64
+
+  init(
+    language: AgentRuntimeLanguage,
+    entrypoint: String,
+    arguments: [String] = [],
+    environment: [String: String] = [:],
+    allowedNetworkDomains: [String] = [],
+    timeoutMillis: Int64 = 60_000
+  ) {
+    self.language = language
+    self.entrypoint = entrypoint
+    self.arguments = arguments
+    self.environment = environment
+    self.allowedNetworkDomains = allowedNetworkDomains
+    self.timeoutMillis = timeoutMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case language = "runtime"
+    case entrypoint
+    case arguments
+    case environment
+    case allowedNetworkDomains = "allowed_network_domains"
+    case timeoutMillis = "timeout_ms"
+  }
+}
+
+struct AgentMcpPackageManifest: Codable, Equatable, Identifiable {
+  static let supportedFormatVersion = 1
+
+  var id: String
+  var version: String
+  var name: String
+  var description: String
+  var catalogId: String
+  var endpoint: String
+  var transport: AgentMcpTransportKind
+  var authProfiles: [AgentMcpAuthProfile]
+  var tools: [AgentMcpDeclarativeTool]
+  var localRuntime: AgentMcpLocalRuntimeSpec?
+  var formatVersion: Int
+  var author: String
+  var website: String
+
+  init(
+    id: String,
+    version: String,
+    name: String,
+    description: String,
+    catalogId: String = "",
+    endpoint: String,
+    transport: AgentMcpTransportKind,
+    authProfiles: [AgentMcpAuthProfile],
+    tools: [AgentMcpDeclarativeTool],
+    localRuntime: AgentMcpLocalRuntimeSpec? = nil,
+    formatVersion: Int = AgentMcpPackageManifest.supportedFormatVersion,
+    author: String = "",
+    website: String = ""
+  ) {
+    self.id = id
+    self.version = version
+    self.name = name
+    self.description = description
+    self.catalogId = catalogId
+    self.endpoint = endpoint
+    self.transport = transport
+    self.authProfiles = authProfiles
+    self.tools = tools
+    self.localRuntime = localRuntime
+    self.formatVersion = formatVersion
+    self.author = author
+    self.website = website
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case version
+    case name
+    case description
+    case catalogId = "catalog_id"
+    case endpoint
+    case transport
+    case authProfiles = "authentication"
+    case tools
+    case localRuntime = "local_runtime"
+    case formatVersion = "format_version"
+    case author
+    case website
+  }
+}
+
+enum AgentMcpPackageManifestCodec {
+  static func decode(_ document: String) throws -> AgentMcpPackageManifest {
+    guard Data(document.utf8).count <= maxManifestBytes,
+          let data = document.data(using: .utf8),
+          let root = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package manifest is invalid")
+    }
+    let formatVersion = Int(root["format_version"]?.intValue ?? 1)
+    guard formatVersion == AgentMcpPackageManifest.supportedFormatVersion else {
+      throw AgentRuntimeCapabilityError.invalid("Unsupported MCP package format version: \(formatVersion)")
+    }
+    let id = try requiredString(root, "id")
+    let version = try requiredString(root, "version")
+    let name = try requiredString(root, "name")
+    guard matches(id, idPattern) else {
+      throw AgentRuntimeCapabilityError.invalid("Invalid MCP package id: \(id)")
+    }
+    guard matches(version, versionPattern) else {
+      throw AgentRuntimeCapabilityError.invalid("Invalid MCP package version: \(version)")
+    }
+    guard let transportObject = root["transport"]?.objectValue else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package transport is required")
+    }
+    let transportValue = string(transportObject, "type", defaultValue: AgentMcpTransportKind.streamableHTTP.rawValue)
+    guard let transport = AgentMcpTransportKind(rawValue: transportValue) else {
+      throw AgentRuntimeCapabilityError.invalid("Unsupported MCP package transport")
+    }
+    let localRuntime = transport == .localStdio ? try decodeLocalRuntime(transportObject) : nil
+    let endpoint: String
+    if transport == .localStdio {
+      endpoint = "local-mcp:\(id)"
+    } else {
+      endpoint = try AgentMcpEndpointPolicy.normalize(try requiredString(transportObject, "endpoint"))
+    }
+    let authProfiles = try decodeAuthProfiles(root["authentication"]?.arrayValue)
+    let tools = try decodeTools(root["tools"]?.arrayValue, transport: transport)
+    if transport == .declarativeHTTP, tools.isEmpty {
+      throw AgentRuntimeCapabilityError.invalid("Declarative MCP package must declare at least one tool")
+    }
+    if transport == .localStdio {
+      let exchanges = authProfiles.flatMap(\.steps).contains { $0.exchange != nil } ||
+        authProfiles.contains { $0.refreshExchange != nil }
+      guard !exchanges else {
+        throw AgentRuntimeCapabilityError.invalid(
+          "Local stdio MCP authentication must be handled inside the sandboxed server"
+        )
+      }
+    }
+    guard Set(tools.map(\.name)).count == tools.count else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package tool names must be unique")
+    }
+    return AgentMcpPackageManifest(
+      id: id,
+      version: version,
+      name: name,
+      description: bounded(string(root, "description"), maxTextCharacters),
+      catalogId: bounded(string(root, "catalog_id"), maxIdCharacters),
+      endpoint: endpoint,
+      transport: transport,
+      authProfiles: authProfiles.isEmpty ? [try AgentMcpAuthProfile(.none)] : authProfiles,
+      tools: tools,
+      localRuntime: localRuntime,
+      formatVersion: formatVersion,
+      author: bounded(string(root, "author"), maxTextCharacters),
+      website: bounded(string(root, "website"), maxUrlCharacters)
+    )
+  }
+
+  static func encode(_ manifest: AgentMcpPackageManifest) throws -> String {
+    var transport: AgentMcpJSONObject = ["type": .string(manifest.transport.rawValue)]
+    if manifest.transport == .localStdio {
+      guard let runtime = manifest.localRuntime else {
+        throw AgentRuntimeCapabilityError.invalid("Local MCP package runtime is required")
+      }
+      transport["runtime"] = .string(runtime.language.rawValue)
+      transport["entrypoint"] = .string(runtime.entrypoint)
+      transport["arguments"] = .array(runtime.arguments.map(AgentMcpJSONValue.string))
+      transport["environment"] = .object(runtime.environment.reduce(into: AgentMcpJSONObject()) { object, item in
+        object[item.key] = .string(item.value)
+      })
+      transport["allowed_network_domains"] = .array(runtime.allowedNetworkDomains.map(AgentMcpJSONValue.string))
+      transport["timeout_ms"] = .int(runtime.timeoutMillis)
+    } else {
+      transport["endpoint"] = .string(manifest.endpoint)
+    }
+    return AgentMcpJSONCodec.stringify([
+      "format_version": .int(Int64(manifest.formatVersion)),
+      "id": .string(manifest.id),
+      "version": .string(manifest.version),
+      "name": .string(manifest.name),
+      "description": .string(manifest.description),
+      "catalog_id": .string(manifest.catalogId),
+      "author": .string(manifest.author),
+      "website": .string(manifest.website),
+      "transport": .object(transport),
+      "authentication": .array(manifest.authProfiles.map { .object(encodeAuthProfile($0)) }),
+      "tools": .array(manifest.tools.map { .object(encodeTool($0)) })
+    ])
+  }
+
+  private static func decodeAuthProfiles(_ array: [AgentMcpJSONValue]?) throws -> [AgentMcpAuthProfile] {
+    guard let array else { return [] }
+    guard array.count <= maxAuthProfiles else {
+      throw AgentRuntimeCapabilityError.invalid("Too many MCP authentication profiles")
+    }
+    var profiles: [AgentMcpAuthProfile] = []
+    var seen: Set<AgentMcpAuthMethod> = []
+    for value in array {
+      guard let raw = value.objectValue else {
+        throw AgentRuntimeCapabilityError.invalid("Invalid MCP authentication profile")
+      }
+      let method = AgentMcpAuthMethod.fromWireValue(string(raw, "method", defaultValue: "none"))
+      let steps = try decodeAuthSteps(raw["steps"]?.arrayValue)
+      let profile = try AgentMcpAuthProfile(
+        method,
+        steps: steps.isEmpty ? nil : steps,
+        accessTokenTtlMillis: max(raw["access_token_ttl_seconds"]?.intValue ?? 0, 0) * 1_000,
+        refreshLeadMillis: max(raw["refresh_lead_seconds"]?.intValue ?? 300, 0) * 1_000,
+        supportsRefresh: raw["supports_refresh"]?.boolValue ?? false,
+        refreshExchange: try raw["refresh_exchange"]?.objectValue.map { try decodeAuthExchange($0) },
+        authorizationUrl: bounded(string(raw, "authorization_url"), maxUrlCharacters),
+        tokenUrl: bounded(string(raw, "token_url"), maxUrlCharacters),
+        scopes: try stringList(raw["scopes"]?.arrayValue, limit: maxScopes)
+      )
+      if !seen.contains(method) {
+        profiles.append(profile)
+        seen.insert(method)
+      }
+    }
+    return profiles
+  }
+
+  private static func decodeAuthSteps(_ array: [AgentMcpJSONValue]?) throws -> [AgentMcpAuthStepSpec] {
+    guard let array else { return [] }
+    guard array.count <= maxAuthSteps else {
+      throw AgentRuntimeCapabilityError.invalid("Too many MCP authentication steps")
+    }
+    return try array.map { value in
+      guard let raw = value.objectValue else {
+        throw AgentRuntimeCapabilityError.invalid("Invalid MCP authentication step")
+      }
+      let fieldsArray = raw["fields"]?.arrayValue ?? []
+      guard fieldsArray.count <= maxAuthFields else {
+        throw AgentRuntimeCapabilityError.invalid("Too many MCP authentication fields")
+      }
+      let fields = try fieldsArray.map { fieldValue -> AgentMcpAuthFieldSpec in
+        guard let field = fieldValue.objectValue else {
+          throw AgentRuntimeCapabilityError.invalid("Invalid MCP authentication field")
+        }
+        let type = AgentMcpAuthFieldType.fromWireValue(string(field, "type", defaultValue: "text"))
+        return try AgentMcpAuthFieldSpec(
+          id: try requiredString(field, "id"),
+          label: bounded(try requiredString(field, "label"), maxTextCharacters),
+          type: type,
+          required: field["required"]?.boolValue ?? true,
+          secret: field["secret"]?.boolValue,
+          placeholder: bounded(string(field, "placeholder"), maxTextCharacters),
+          options: try stringList(field["options"]?.arrayValue, limit: maxOptions)
+        )
+      }
+      return try AgentMcpAuthStepSpec(
+        id: try requiredString(raw, "id"),
+        title: bounded(try requiredString(raw, "title"), maxTextCharacters),
+        description: bounded(string(raw, "description"), maxTextCharacters),
+        fields: fields,
+        expiresInSeconds: max(raw["expires_in_seconds"]?.intValue ?? 0, 0),
+        exchange: try raw["exchange"]?.objectValue.map { try decodeAuthExchange($0) }
+      )
+    }
+  }
+
+  private static func decodeAuthExchange(_ raw: AgentMcpJSONObject) throws -> AgentMcpAuthExchangeSpec {
+    let statuses = raw["accepted_status_codes"]?.arrayValue?
+      .compactMap(\.intValue)
+      .map(Int.init)
+      .filter { (200...299).contains($0) } ?? []
+    return try AgentMcpAuthExchangeSpec(
+      method: string(raw, "method", defaultValue: "POST").uppercased(),
+      pathTemplate: bounded(try requiredString(raw, "path"), maxTemplateCharacters),
+      headerTemplates: stringMap(raw["headers"]?.objectValue, maxValueCharacters: maxTemplateCharacters),
+      bodyTemplate: bounded(string(raw, "body_template"), maxBodyTemplateCharacters),
+      responseMappings: stringMap(raw["response_mappings"]?.objectValue, maxValueCharacters: maxTextCharacters),
+      acceptedStatusCodes: statuses.isEmpty ? Set([200]) : Set(statuses)
+    )
+  }
+
+  private static func decodeTools(
+    _ array: [AgentMcpJSONValue]?,
+    transport: AgentMcpTransportKind
+  ) throws -> [AgentMcpDeclarativeTool] {
+    guard let array else { return [] }
+    guard array.count <= maxTools else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package declares too many tools")
+    }
+    return try array.map { value in
+      guard let raw = value.objectValue else {
+        throw AgentRuntimeCapabilityError.invalid("Invalid MCP package tool")
+      }
+      let request = raw["request"]?.objectValue ?? [:]
+      let method = string(request, "method", defaultValue: "POST").uppercased()
+      guard allowedMethods.contains(method) else {
+        throw AgentRuntimeCapabilityError.invalid("Unsupported declarative MCP method: \(method)")
+      }
+      let path = string(request, "path", defaultValue: "/").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard path.hasPrefix("/"), !path.contains(".."), !path.contains("://") else {
+        throw AgentRuntimeCapabilityError.invalid("Declarative MCP tool path must be an endpoint-relative path")
+      }
+      if transport == .declarativeHTTP, request["path"] == nil {
+        throw AgentRuntimeCapabilityError.invalid("Declarative MCP tool request path is required")
+      }
+      let name = try requiredString(raw, "name")
+      return AgentMcpDeclarativeTool(
+        name: name,
+        title: bounded(string(raw, "title", defaultValue: name), maxTextCharacters),
+        description: bounded(string(raw, "description"), maxTextCharacters),
+        inputSchema: raw["input_schema"]?.objectValue ?? [:],
+        method: method,
+        pathTemplate: bounded(path, maxTemplateCharacters),
+        headerTemplates: stringMap(request["headers"]?.objectValue, maxValueCharacters: maxTemplateCharacters),
+        bodyTemplate: bounded(string(request, "body_template"), maxBodyTemplateCharacters),
+        resultJsonPath: bounded(string(raw, "result_json_path"), maxTextCharacters),
+        mutating: raw["mutating"]?.boolValue ?? !["GET", "HEAD"].contains(method)
+      )
+    }
+  }
+
+  private static func decodeLocalRuntime(_ raw: AgentMcpJSONObject) throws -> AgentMcpLocalRuntimeSpec {
+    let runtime = try requiredString(raw, "runtime").lowercased()
+    guard let language = AgentRuntimeLanguage(rawValue: runtime), localRuntimeLanguages.contains(language) else {
+      throw AgentRuntimeCapabilityError.invalid("Unsupported local MCP runtime")
+    }
+    let entrypoint = try normalizeRuntimePath(try requiredString(raw, "entrypoint"))
+    guard entrypoint.hasPrefix(runtimeDirectory) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP entrypoint must be stored under runtime/")
+    }
+    let arguments = try stringList(raw["arguments"]?.arrayValue, limit: maxLocalArguments)
+    guard arguments.allSatisfy({ $0.count <= maxLocalArgumentCharacters && !$0.contains("\u{0000}") }) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP runtime argument is invalid")
+    }
+    let environment = try localEnvironment(raw["environment"]?.objectValue)
+    let domains = try stringList(raw["allowed_network_domains"]?.arrayValue, limit: maxLocalNetworkDomains)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+    guard domains.allSatisfy({ matches($0, domainPattern) }) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP network domain is invalid")
+    }
+    guard domains.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid(
+        "Local stdio MCP direct networking is unavailable; use a remote or declarative HTTP transport"
+      )
+    }
+    let timeout = raw["timeout_ms"]?.intValue ?? 60_000
+    guard (minLocalTimeoutMillis...maxLocalTimeoutMillis).contains(timeout) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP timeout is outside the allowed range")
+    }
+    return AgentMcpLocalRuntimeSpec(
+      language: language,
+      entrypoint: entrypoint,
+      arguments: arguments,
+      environment: environment,
+      allowedNetworkDomains: unique(domains),
+      timeoutMillis: timeout
+    )
+  }
+
+  private static func normalizeRuntimePath(_ raw: String) throws -> String {
+    let normalized = String(raw.replacingOccurrences(of: "\\", with: "/").drop { $0 == "/" })
+    guard !normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          normalized.count <= maxLocalEntrypointCharacters else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP entrypoint is invalid")
+    }
+    let segments = normalized.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard segments.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP entrypoint is unsafe")
+    }
+    guard normalized.range(of: #"^[A-Za-z]:"#, options: .regularExpression) == nil else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP entrypoint must be relative")
+    }
+    return normalized
+  }
+
+  private static func encodeAuthProfile(_ profile: AgentMcpAuthProfile) -> AgentMcpJSONObject {
+    var object: AgentMcpJSONObject = [
+      "method": .string(profile.method.rawValue),
+      "access_token_ttl_seconds": .int(profile.accessTokenTtlMillis / 1_000),
+      "refresh_lead_seconds": .int(profile.refreshLeadMillis / 1_000),
+      "supports_refresh": .bool(profile.supportsRefresh),
+      "authorization_url": .string(profile.authorizationUrl),
+      "token_url": .string(profile.tokenUrl),
+      "scopes": .array(profile.scopes.map(AgentMcpJSONValue.string)),
+      "steps": .array(profile.steps.map { step in
+        var stepObject: AgentMcpJSONObject = [
+          "id": .string(step.id),
+          "title": .string(step.title),
+          "description": .string(step.description),
+          "expires_in_seconds": .int(step.expiresInSeconds),
+          "fields": .array(step.fields.map { field in
+            .object([
+              "id": .string(field.id),
+              "label": .string(field.label),
+              "type": .string(field.type.rawValue),
+              "required": .bool(field.required),
+              "secret": .bool(field.secret),
+              "placeholder": .string(field.placeholder),
+              "options": .array(field.options.map(AgentMcpJSONValue.string))
+            ])
+          })
+        ]
+        if let exchange = step.exchange {
+          stepObject["exchange"] = .object(encodeAuthExchange(exchange))
+        }
+        return .object(stepObject)
+      })
+    ]
+    if let exchange = profile.refreshExchange {
+      object["refresh_exchange"] = .object(encodeAuthExchange(exchange))
+    }
+    return object
+  }
+
+  private static func encodeAuthExchange(_ exchange: AgentMcpAuthExchangeSpec) -> AgentMcpJSONObject {
+    [
+      "method": .string(exchange.method),
+      "path": .string(exchange.pathTemplate),
+      "headers": .object(exchange.headerTemplates.reduce(into: AgentMcpJSONObject()) { object, item in
+        object[item.key] = .string(item.value)
+      }),
+      "body_template": .string(exchange.bodyTemplate),
+      "response_mappings": .object(exchange.responseMappings.reduce(into: AgentMcpJSONObject()) { object, item in
+        object[item.key] = .string(item.value)
+      }),
+      "accepted_status_codes": .array(exchange.acceptedStatusCodes.sorted().map { .int(Int64($0)) })
+    ]
+  }
+
+  private static func encodeTool(_ tool: AgentMcpDeclarativeTool) -> AgentMcpJSONObject {
+    [
+      "name": .string(tool.name),
+      "title": .string(tool.title),
+      "description": .string(tool.description),
+      "input_schema": .object(tool.inputSchema),
+      "result_json_path": .string(tool.resultJsonPath),
+      "mutating": .bool(tool.mutating),
+      "request": .object([
+        "method": .string(tool.method),
+        "path": .string(tool.pathTemplate),
+        "headers": .object(tool.headerTemplates.reduce(into: AgentMcpJSONObject()) { object, item in
+          object[item.key] = .string(item.value)
+        }),
+        "body_template": .string(tool.bodyTemplate)
+      ])
+    ]
+  }
+
+  private static func requiredString(_ object: AgentMcpJSONObject, _ key: String) throws -> String {
+    let value = string(object, key).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package field '\(key)' is required")
+    }
+    return value
+  }
+
+  private static func string(_ object: AgentMcpJSONObject, _ key: String, defaultValue: String = "") -> String {
+    object[key]?.stringValue ?? defaultValue
+  }
+
+  private static func stringMap(
+    _ object: AgentMcpJSONObject?,
+    maxValueCharacters: Int
+  ) -> [String: String] {
+    object?.reduce(into: [String: String]()) { result, item in
+      result[item.key] = bounded(item.value.stringValue ?? "", maxValueCharacters)
+    } ?? [:]
+  }
+
+  private static func localEnvironment(_ object: AgentMcpJSONObject?) throws -> [String: String] {
+    guard let object else { return [:] }
+    guard object.count <= maxLocalEnvironmentValues else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP environment is too large")
+    }
+    return try object.reduce(into: [String: String]()) { result, item in
+      guard matches(item.key, environmentKeyPattern) else {
+        throw AgentRuntimeCapabilityError.invalid("Local MCP environment key is invalid: \(item.key)")
+      }
+      let value = item.value.stringValue ?? ""
+      guard value.count <= maxLocalEnvironmentValueCharacters, !value.contains("\u{0000}") else {
+        throw AgentRuntimeCapabilityError.invalid("Local MCP environment value is invalid")
+      }
+      result[item.key] = value
+    }
+  }
+
+  private static func stringList(_ values: [AgentMcpJSONValue]?, limit: Int) throws -> [String] {
+    guard let values else { return [] }
+    guard values.count <= limit else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package list is too large")
+    }
+    return values.compactMap {
+      $0.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    }
+  }
+
+  private static func bounded(_ value: String, _ limit: Int) -> String {
+    String(value.prefix(limit))
+  }
+
+  private static func matches(_ value: String, _ pattern: String) -> Bool {
+    value.range(of: pattern, options: .regularExpression) != nil
+  }
+
+  private static func unique(_ values: [String]) -> [String] {
+    var seen: Set<String> = []
+    return values.filter { seen.insert($0).inserted }
+  }
+
+  private static let maxManifestBytes = 256 * 1_024
+  private static let maxIdCharacters = 128
+  private static let maxTextCharacters = 512
+  private static let maxUrlCharacters = 2_048
+  private static let maxTemplateCharacters = 4_096
+  private static let maxBodyTemplateCharacters = 64 * 1_024
+  private static let maxAuthProfiles = 8
+  private static let maxAuthSteps = 8
+  private static let maxAuthFields = 24
+  private static let maxOptions = 64
+  private static let maxScopes = 64
+  private static let maxTools = 128
+  private static let maxLocalArguments = 32
+  private static let maxLocalArgumentCharacters = 2_048
+  private static let maxLocalEnvironmentValues = 32
+  private static let maxLocalEnvironmentValueCharacters = 4_096
+  private static let maxLocalNetworkDomains = 32
+  private static let maxLocalEntrypointCharacters = 512
+  private static let minLocalTimeoutMillis: Int64 = 5_000
+  private static let maxLocalTimeoutMillis: Int64 = 180_000
+  private static let runtimeDirectory = "runtime/"
+  private static let idPattern = #"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$"#
+  private static let versionPattern = #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"#
+  private static let allowedMethods: Set<String> = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+  private static let localRuntimeLanguages: Set<AgentRuntimeLanguage> = [.shell, .python, .javascript, .typescript]
+  private static let environmentKeyPattern = #"^[A-Z_][A-Z0-9_]{0,63}$"#
+  private static let domainPattern = #"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"#
+}
+
 struct AgentMcpCatalogEntry: Codable, Equatable, Identifiable {
   var id: String
   var name: String
