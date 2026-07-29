@@ -1084,6 +1084,158 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  func testAgentRuntimeCapabilityMatrixKeepsUnavailableAndBlockedVisibleButNotExecutable() throws {
+    let available = try nativeToolDescriptor("signalasi.test.available")
+    let setup = try nativeToolDescriptor(
+      "signalasi.test.setup",
+      availability: AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: "Permission missing"
+      )
+    )
+    let unavailable = try nativeToolDescriptor(
+      "signalasi.test.unavailable",
+      availability: AgentNativeToolAvailability(
+        status: .unavailable,
+        reason: "Runtime missing"
+      )
+    )
+    let blocked = try nativeToolDescriptor("signalasi.test.blocked", risk: .blocked)
+
+    let snapshot = AgentRuntimeCapabilityMatrix.build(
+      nativeTools: [available, setup, unavailable, blocked],
+      systemTools: [],
+      targets: []
+    )
+
+    XCTAssertEqual(snapshot.availableNativeToolIds, Set([available.id]))
+    XCTAssertEqual(snapshot.entries.count, 4)
+    XCTAssertEqual(snapshot.setupRequiredEntries.count, 1)
+    XCTAssertEqual(snapshot.unavailableEntries.count, 2)
+    XCTAssertFalse(snapshot.isNativeToolExecutable(id: setup.id))
+    XCTAssertFalse(snapshot.isNativeToolExecutable(id: unavailable.id))
+    XCTAssertFalse(snapshot.isNativeToolExecutable(id: blocked.id))
+  }
+
+  func testAgentRuntimeCapabilityMatrixUsesLiveNativeAdapterStateForSystemTools() throws {
+    let native = try nativeToolDescriptor(
+      AgentNativeToolAgentActionAdapter.defaultToolId(.openApp),
+      availability: AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: "No matching activity"
+      ),
+      requiredPermissions: [
+        AgentNativePermissionRequirement(id: "ios.open_app")
+      ]
+    )
+    let action = AgentSystemTool(
+      id: "open-app",
+      title: "Open app",
+      kind: .openApp,
+      risk: .low,
+      capabilities: [.appNavigation]
+    )
+    let workflow = AgentSystemTool(
+      id: "workflow:daily",
+      title: "Daily workflow",
+      kind: .draftPlan,
+      risk: .low,
+      capabilities: [.taskExecution]
+    )
+
+    let snapshot = AgentRuntimeCapabilityMatrix.build(
+      nativeTools: [native],
+      systemTools: [action, workflow],
+      targets: []
+    )
+    let actionEntry = try XCTUnwrap(snapshot.entry(source: .systemTool, id: action.id))
+    let workflowEntry = try XCTUnwrap(snapshot.entry(source: .systemTool, id: workflow.id))
+
+    XCTAssertEqual(actionEntry.state, .requiresSetup)
+    XCTAssertEqual(actionEntry.reason, "No matching activity")
+    XCTAssertEqual(actionEntry.requiredPermissions, ["ios.open_app"])
+    XCTAssertEqual(workflowEntry.state, .available)
+    XCTAssertEqual(workflowEntry.reason, "Host-owned workflow is installed")
+  }
+
+  func testAgentRuntimeCapabilityMatrixProjectsConnectorAndNativeStatusTogether() throws {
+    let available = try nativeToolDescriptor("signalasi.test.available")
+    let unavailable = try nativeToolDescriptor(
+      "signalasi.test.unavailable",
+      availability: AgentNativeToolAvailability(status: .unavailable, reason: "Missing")
+    )
+    let target = AgentCallableTarget(
+      id: "codex",
+      title: "Codex",
+      kind: .agent,
+      status: .disconnected,
+      capabilities: [.code],
+      failureDomain: "desktop"
+    )
+
+    let snapshot = AgentRuntimeCapabilityMatrix.build(
+      nativeTools: [available, unavailable],
+      systemTools: [],
+      targets: [target]
+    )
+
+    XCTAssertEqual(snapshot.entry(source: .connector, id: "codex")?.state, .unavailable)
+    XCTAssertEqual(snapshot.entry(source: .nativeTool, id: available.id)?.state, .available)
+    XCTAssertEqual(snapshot.entry(source: .nativeTool, id: unavailable.id)?.state, .unavailable)
+    XCTAssertEqual(
+      AgentRuntimeCapabilityMatrix.availableNativeTools(
+        nativeTools: [available, unavailable],
+        targets: [target]
+      ).map(\.id),
+      [available.id]
+    )
+  }
+
+  func testAgentRuntimeCapabilityMatrixModelsUseAndroidWireNames() throws {
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.wire",
+      capabilities: ["test.execute", "test.inspect"],
+      requiredPermissions: [
+        AgentNativePermissionRequirement(id: "ios.camera", title: "Camera")
+      ],
+      requiredConsents: [
+        AgentNativeConsentRequirement(id: "capture.once", title: "Capture once")
+      ]
+    )
+    let snapshot = AgentRuntimeCapabilityMatrix.build(
+      nativeTools: [descriptor],
+      systemTools: [],
+      targets: []
+    )
+    let descriptorObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(descriptor)) as? [String: Any]
+    )
+    let entryObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.entries[0])) as? [String: Any]
+    )
+    let source = try JSONDecoder().decode(
+      AgentRuntimeCapabilitySource.self,
+      from: Data(#""NATIVE_TOOL""#.utf8)
+    )
+    let capability = try JSONDecoder().decode(
+      AgentCapability.self,
+      from: Data(#""app-navigation""#.utf8)
+    )
+
+    XCTAssertNotNil(descriptorObject["input_schema"] as? [String: Any])
+    XCTAssertNotNil(descriptorObject["output_schema"] as? [String: Any])
+    XCTAssertNotNil(descriptorObject["required_permissions"] as? [[String: Any]])
+    XCTAssertNotNil(descriptorObject["required_consents"] as? [[String: Any]])
+    XCTAssertEqual(descriptorObject["timeout_millis"] as? Int, 30_000)
+    XCTAssertEqual((descriptorObject["availability"] as? [String: Any])?["status"] as? String, "available")
+    XCTAssertEqual(entryObject["source"] as? String, "NATIVE_TOOL")
+    XCTAssertEqual(entryObject["state"] as? String, "AVAILABLE")
+    XCTAssertEqual(entryObject["required_permissions"] as? [String], ["ios.camera"])
+    XCTAssertEqual(entryObject["required_consents"] as? [String], ["capture.once"])
+    XCTAssertEqual(source, .nativeTool)
+    XCTAssertEqual(capability, .appNavigation)
+  }
+
   func testAgentConfirmationPolicyMatchesAndroidTiersAndConsentKeys() throws {
     func action(
       id: String,
@@ -5415,6 +5567,28 @@ final class SignalASIStoreTests: XCTestCase {
       steps: [],
       actions: actions,
       actionHistory: actionHistory
+    )
+  }
+
+  private func nativeToolDescriptor(
+    _ id: String,
+    risk: AgentNativeToolRisk = .low,
+    availability: AgentNativeToolAvailability = .available,
+    capabilities: Set<String> = ["test.execute"],
+    requiredPermissions: [AgentNativePermissionRequirement] = [],
+    requiredConsents: [AgentNativeConsentRequirement] = []
+  ) throws -> AgentNativeToolDescriptor {
+    try AgentNativeToolDescriptor(
+      id: id,
+      version: "1.0.0",
+      title: id,
+      description: "Test capability",
+      location: .application,
+      risk: risk,
+      capabilities: capabilities,
+      requiredPermissions: requiredPermissions,
+      requiredConsents: requiredConsents,
+      availability: availability
     )
   }
 
