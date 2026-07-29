@@ -109,6 +109,9 @@ final class SignalASIStore: ObservableObject {
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
+  @Published var modelPlannerSettings: AgentModelPlannerSettings {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -122,6 +125,7 @@ final class SignalASIStore: ObservableObject {
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
     var agentTaskBudget: AgentTaskBudget
+    var modelPlannerSettings: AgentModelPlannerSettings
 
     init(
       profile: SignalASIProfile,
@@ -134,7 +138,8 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: LanguagePolicySettings = .default,
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
-      agentTaskBudget: AgentTaskBudget = .default
+      agentTaskBudget: AgentTaskBudget = .default,
+      modelPlannerSettings: AgentModelPlannerSettings = .default
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -147,6 +152,7 @@ final class SignalASIStore: ObservableObject {
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
       self.agentTaskBudget = agentTaskBudget
+      self.modelPlannerSettings = modelPlannerSettings
     }
 
     init(from decoder: Decoder) throws {
@@ -162,6 +168,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
+      modelPlannerSettings = try container.decodeIfPresent(AgentModelPlannerSettings.self, forKey: .modelPlannerSettings) ?? .default
     }
   }
 
@@ -186,6 +193,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      modelPlannerSettings = state.modelPlannerSettings
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -199,6 +207,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      modelPlannerSettings = .default
       save()
     }
   }
@@ -424,6 +433,12 @@ final class SignalASIStore: ObservableObject {
     mutate(&next)
     next.profile = .custom
     agentTaskBudget = next.normalized
+  }
+
+  func updateModelPlannerSettings(_ mutate: (inout AgentModelPlannerSettings) -> Void) {
+    var next = modelPlannerSettings
+    mutate(&next)
+    modelPlannerSettings = next.normalized
   }
 
   @discardableResult
@@ -724,6 +739,7 @@ final class SignalASIStore: ObservableObject {
         includesDisplaySettings: true,
         includesAgentSafetySettings: true,
         includesAgentTaskBudget: true,
+        includesModelPlannerSettings: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
       agentData: SignalASIBackupAgentData(
@@ -733,7 +749,8 @@ final class SignalASIStore: ObservableObject {
         displaySettings: displaySettings,
         agentSafetySettings: agentSafetySettings,
         cloudAPISecrets: cloudSecrets,
-        taskBudget: agentTaskBudget
+        taskBudget: agentTaskBudget,
+        modelPlannerSettings: modelPlannerSettings
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
@@ -765,6 +782,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = payload.agentData.displaySettings
       agentSafetySettings = payload.agentData.agentSafetySettings
       agentTaskBudget = payload.agentData.taskBudget
+      modelPlannerSettings = payload.agentData.modelPlannerSettings
     }
     save()
   }
@@ -880,6 +898,7 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    modelPlannerSettings = .default
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -946,7 +965,8 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: languagePolicy,
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
-      agentTaskBudget: agentTaskBudget
+      agentTaskBudget: agentTaskBudget,
+      modelPlannerSettings: modelPlannerSettings
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)

@@ -320,6 +320,65 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(networkDecision.limit, .network)
   }
 
+  func testModelPlannerSettingsDecodeAndroidFieldsAndNormalizeBounds() throws {
+    let longContactId = String(repeating: "x", count: 160)
+    let settings = try JSONDecoder.signalASI.decode(
+      AgentModelPlannerSettings.self,
+      from: Data("""
+      {
+        "version": 5,
+        "enabled": true,
+        "share_screen_text": true,
+        "max_actions": 99,
+        "cloud_contact_id": "  \(longContactId)  ",
+        "dynamic_replanning": false,
+        "max_replans": 99,
+        "multi_agent_coordination": false,
+        "share_agent_outputs_with_planner": true,
+        "max_agent_hops": 99,
+        "max_tool_calls": 1,
+        "max_loop_iterations": 99,
+        "max_phase_retries": -1,
+        "no_progress_timeout_seconds": 99999
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let store = makeStore()
+
+    XCTAssertTrue(settings.enabled)
+    XCTAssertTrue(settings.shareScreenText)
+    XCTAssertEqual(settings.maxActions, AgentModelPlannerSettings.maximumActions)
+    XCTAssertEqual(settings.cloudContactId.count, AgentModelPlannerSettings.maximumCloudContactIdLength)
+    XCTAssertFalse(settings.dynamicReplanning)
+    XCTAssertEqual(settings.maxReplans, AgentModelPlannerSettings.maximumReplans)
+    XCTAssertFalse(settings.multiAgentCoordination)
+    XCTAssertTrue(settings.shareAgentOutputsWithPlanner)
+    XCTAssertEqual(settings.maxAgentHops, AgentModelPlannerSettings.maximumAgentHops)
+    XCTAssertEqual(settings.maxToolCalls, AgentModelPlannerSettings.minimumToolCalls)
+    XCTAssertEqual(settings.maxLoopIterations, AgentModelPlannerSettings.maximumLoopIterations)
+    XCTAssertEqual(settings.maxPhaseRetries, AgentModelPlannerSettings.minimumPhaseRetries)
+    XCTAssertEqual(settings.noProgressTimeoutSeconds, AgentModelPlannerSettings.maximumNoProgressTimeoutSeconds)
+    XCTAssertEqual(object["version"] as? Int, 5)
+    XCTAssertEqual(object["max_actions"] as? Int, AgentModelPlannerSettings.maximumActions)
+    XCTAssertEqual(object["max_tool_calls"] as? Int, AgentModelPlannerSettings.minimumToolCalls)
+    XCTAssertEqual(object["no_progress_timeout_seconds"] as? Int, AgentModelPlannerSettings.maximumNoProgressTimeoutSeconds)
+
+    XCTAssertEqual(store.modelPlannerSettings, .default)
+    store.updateModelPlannerSettings {
+      $0.enabled = true
+      $0.maxActions = 0
+      $0.maxPhaseRetries = 99
+      $0.noProgressTimeoutSeconds = 30
+    }
+
+    XCTAssertTrue(store.modelPlannerSettings.enabled)
+    XCTAssertEqual(store.modelPlannerSettings.maxActions, 1)
+    XCTAssertEqual(store.modelPlannerSettings.maxPhaseRetries, AgentModelPlannerSettings.maximumPhaseRetries)
+    XCTAssertEqual(store.modelPlannerSettings.noProgressTimeoutSeconds, AgentModelPlannerSettings.minimumNoProgressTimeoutSeconds)
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -395,6 +454,10 @@ final class SignalASIStoreTests: XCTestCase {
       $0.executionPaused = true
     }
     store.selectAgentTaskBudgetProfile(.privateMode)
+    store.updateModelPlannerSettings {
+      $0.enabled = true
+      $0.maxActions = 12
+    }
 
     store.destroyAllPrivateData()
 
@@ -410,6 +473,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings, .default)
     XCTAssertEqual(store.agentSafetySettings, .default)
     XCTAssertEqual(store.agentTaskBudget, .default)
+    XCTAssertEqual(store.modelPlannerSettings, .default)
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {
