@@ -61,6 +61,9 @@ contextBridge.exposeInMainWorld("signalasi", {
   forgetDesktopMemory: (memoryId) => ipcRenderer.invoke("desktop-memory:forget", memoryId),
   reviewDesktopMemoryCandidate: (candidateId, action) =>
     ipcRenderer.invoke("desktop-memory:review", candidateId, action),
+  getToolMarketplace: () => ipcRenderer.invoke("tool-marketplace:list"),
+  installToolMarketplaceItem: (itemId, configuration = {}) =>
+    ipcRenderer.invoke("tool-marketplace:install", itemId, configuration),
   getDesktopSkills: () => ipcRenderer.invoke("desktop-skills:list"),
   saveDesktopSkill: (payload) => ipcRenderer.invoke("desktop-skills:save", payload),
   setDesktopSkillEnabled: (skillId, enabled) => ipcRenderer.invoke("desktop-skills:enabled", skillId, enabled),

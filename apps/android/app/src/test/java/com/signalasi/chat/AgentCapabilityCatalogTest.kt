@@ -22,6 +22,64 @@ class AgentCapabilityCatalogTest {
     }
 
     @Test
+    fun marketplaceUnifiesBuiltInToolsMcpAndAutomationState() {
+        val nativeTool = AgentNativeToolDescriptor(
+            id = AgentMcpNativeTools.CALL_TOOL,
+            version = "1.0.0",
+            title = "Call MCP tool",
+            description = "Calls one explicitly configured MCP tool",
+            location = AgentNativeToolLocation.APPLICATION,
+            inputSchema = AgentNativeJsonSchema.objectSchema(),
+            outputSchema = AgentNativeJsonSchema.objectSchema(),
+            risk = AgentNativeToolRisk.MEDIUM
+        )
+        val registry = AgentMcpRegistry(InMemoryAgentMcpStore()) { 1_000L }
+
+        val initial = AgentDefaultCapabilityCatalog.marketplaceItems(
+            listOf(nativeTool),
+            registry.list(),
+            emptyList(),
+            1_000L
+        )
+
+        assertEquals(
+            AgentMarketplaceInstallState.BUILT_IN,
+            initial.single { it.id == AgentMcpNativeTools.CALL_TOOL }.installState
+        )
+        assertEquals(
+            AgentMarketplaceInstallState.AVAILABLE,
+            initial.single { it.id == "signalasi.mcp.github" }.installState
+        )
+        assertEquals(
+            AgentMarketplaceInstallState.NEEDS_SETUP,
+            initial.single { it.id == "signalasi.catalog.github-triage" }.installState
+        )
+
+        registry.addRemote(
+            "GitHub",
+            "https://api.githubcopilot.com/mcp/",
+            AgentMcpAuthProfile(AgentMcpAuthMethod.NONE),
+            catalogId = "signalasi.mcp.github",
+            id = "github"
+        )
+        val ready = AgentDefaultCapabilityCatalog.marketplaceItems(
+            listOf(nativeTool),
+            registry.list(),
+            emptyList(),
+            1_000L
+        )
+
+        assertEquals(
+            AgentMarketplaceInstallState.INSTALLED,
+            ready.single { it.id == "signalasi.mcp.github" }.installState
+        )
+        assertEquals(
+            AgentMarketplaceInstallState.AVAILABLE,
+            ready.single { it.id == "signalasi.catalog.github-triage" }.installState
+        )
+    }
+
+    @Test
     fun dynamicAuthenticationAdvancesStepsAndExpiresWithoutLosingRefreshWindow() {
         var now = 1_000L
         val store = InMemoryAgentMcpStore()

@@ -74,6 +74,7 @@ async function runUiSmoke() {
   const mcpImportPath = path.join(outDir, "desktop-mcp-import.png");
   const mcpTaskPath = path.join(outDir, "desktop-mcp-task-transparency.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
+  const marketplacePath = path.join(outDir, "desktop-marketplace.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
   const evolutionV2Path = path.join(outDir, "desktop-evolution-v2.png");
   const runtimePath = path.join(outDir, "desktop-runtimes.png");
@@ -551,6 +552,7 @@ async function runUiSmoke() {
         return {
           active: document.querySelector("#capabilitiesPanel")?.classList.contains("active") || false,
           tabs: document.querySelectorAll("[data-capability-tab]").length,
+          marketplace: document.querySelectorAll("#marketplaceList .capability-item").length,
           skills: document.querySelectorAll("#skillList .capability-item").length,
           memory: document.querySelector("#memorySummary")?.textContent || "",
           mcpForm: Boolean(document.querySelector("#mcpCommand")),
@@ -560,13 +562,31 @@ async function runUiSmoke() {
         };
       })()
     `);
-    if (!capabilityCatalogState.active || capabilityCatalogState.tabs !== 4 || capabilityCatalogState.skills < 4
+    if (!capabilityCatalogState.active || capabilityCatalogState.tabs !== 5
+        || capabilityCatalogState.marketplace < 1 || capabilityCatalogState.skills < 4
         || !capabilityCatalogState.memory.trim() || !capabilityCatalogState.mcpForm
         || !capabilityCatalogState.automationActive || !capabilityCatalogState.automationSummary.trim()
         || !capabilityCatalogState.automationEditor) {
       throw new Error(`Capabilities drawer did not expose memory, Skills, MCP, and automation: ${JSON.stringify(capabilityCatalogState)}`);
     }
     await captureSmokeScreenshot(capabilitiesPath);
+    const marketplaceState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        document.querySelector('[data-capability-tab="marketplace"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        return {
+          active: document.querySelector("#marketplaceCapability")?.classList.contains("active") || false,
+          items: document.querySelectorAll("#marketplaceList .capability-item").length,
+          filters: document.querySelectorAll("[data-marketplace-kind]").length,
+          installActions: document.querySelectorAll("[data-install-marketplace]").length
+        };
+      })()
+    `);
+    if (!marketplaceState.active || marketplaceState.items < 1
+        || marketplaceState.filters !== 4 || marketplaceState.installActions < 1) {
+      throw new Error(`Tool Marketplace did not render installable catalog entries: ${JSON.stringify(marketplaceState)}`);
+    }
+    await captureSmokeScreenshot(marketplacePath);
     const gatewayControlState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         document.querySelector('[data-open-panel="gateway"]')?.click();
@@ -830,6 +850,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${mcpImportPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpTaskPath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
+    console.log(`[ui-smoke] screenshot: ${marketplacePath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
     console.log(`[ui-smoke] screenshot: ${evolutionV2Path}`);
     console.log(`[ui-smoke] screenshot: ${runtimePath}`);
@@ -1578,6 +1599,19 @@ async function getDesktopSkills() {
   return fetchJson("/api/desktop-skills");
 }
 
+async function getToolMarketplace() {
+  await startBackend();
+  return fetchJson("/api/tool-marketplace");
+}
+
+async function installToolMarketplaceItem(itemId, configuration = {}) {
+  await startBackend();
+  return fetchJson(`/api/tool-marketplace/${encodeURIComponent(itemId)}/install`, {
+    method: "POST",
+    body: JSON.stringify({ configuration })
+  });
+}
+
 async function saveDesktopSkill(payload = {}) {
   await startBackend();
   return fetchJson("/api/desktop-skills", { method: "POST", body: JSON.stringify(payload) });
@@ -1772,6 +1806,9 @@ ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMe
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));
 ipcMain.handle("desktop-memory:review", (_event, candidateId, action) =>
   reviewDesktopMemoryCandidate(candidateId, action));
+ipcMain.handle("tool-marketplace:list", getToolMarketplace);
+ipcMain.handle("tool-marketplace:install", (_event, itemId, configuration) =>
+  installToolMarketplaceItem(itemId, configuration));
 ipcMain.handle("desktop-skills:list", getDesktopSkills);
 ipcMain.handle("desktop-skills:save", (_event, payload) => saveDesktopSkill(payload));
 ipcMain.handle("desktop-skills:enabled", (_event, skillId, enabled) => setDesktopSkillEnabled(skillId, enabled));

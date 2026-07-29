@@ -4981,6 +4981,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
     from desktop_control import desktop_control_manager
     from provider_profiles import routable_model_profiles
     from tool_handle_registry import tool_handle_registry
+    from tool_marketplace import tool_marketplace
 
     diagnostics = connector_diagnostics()
     paired_client = get_client(client_route_id) if client_route_id else None
@@ -4989,6 +4990,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
     control_status = desktop_control_manager().status(client_route_id)
     handle_status = tool_handle_registry().status()
     native_manifest = desktop_native_tool_registry().manifest()
+    marketplace = tool_marketplace().catalog()
     provider_profiles = diagnostics.get("provider_profiles") or {
         "schema_version": 1,
         "profiles": [],
@@ -5025,6 +5027,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
         "provider_profiles": provider_profiles,
         "tools": advertised_tools,
         "pairing_access": access,
+        "tool_marketplace": marketplace,
         "desktop_native_tools": native_manifest,
         "desktop_control": {
             "contract_version": control_status.get("contract_version"),
@@ -5069,6 +5072,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "desktop_session_handles_v1",
             "mcp_connection_handles_v1",
             "browser_session_handles_v1",
+            "tool_marketplace_v1",
             "pairing_access_profiles_v1",
             "mqtt_fragmentation_v1",
             "mqtt_fragment_integrity_sha256",

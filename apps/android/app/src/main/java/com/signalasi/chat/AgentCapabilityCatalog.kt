@@ -6,8 +6,40 @@ import java.util.Locale
 import java.util.UUID
 
 enum class AgentCapabilityCatalogKind(val wireValue: String) {
+    NATIVE_TOOL("native_tool"),
     MCP("mcp"),
-    SKILL("skill")
+    AUTOMATION("automation")
+}
+
+enum class AgentMarketplaceInstallState(val wireValue: String) {
+    BUILT_IN("built_in"),
+    AVAILABLE("available"),
+    INSTALLED("installed"),
+    NEEDS_SETUP("needs_setup"),
+    UNAVAILABLE("unavailable")
+}
+
+data class AgentMarketplaceItem(
+    val id: String,
+    val kind: AgentCapabilityCatalogKind,
+    val name: String,
+    val summary: String,
+    val version: String,
+    val publisher: String = "SignalASI",
+    val installState: AgentMarketplaceInstallState,
+    val enabled: Boolean = true,
+    val featured: Boolean = true,
+    val trusted: Boolean = true,
+    val tags: Set<String> = emptySet(),
+    val dependencies: Set<String> = emptySet(),
+    val requiresLocalPackage: Boolean = false
+) {
+    init {
+        require(id.isNotBlank())
+        require(name.isNotBlank())
+        require(summary.isNotBlank())
+        require(version.isNotBlank())
+    }
 }
 
 enum class AgentMcpDistribution(val wireValue: String) {
@@ -979,6 +1011,89 @@ object AgentDefaultCapabilityCatalog {
 
     fun mcp(id: String): AgentMcpCatalogEntry? = mcpEntries.firstOrNull { it.id == id }
     fun skill(id: String): AgentSkillCatalogEntry? = skillEntries.firstOrNull { it.id == id }
+
+    fun marketplaceItems(
+        nativeTools: List<AgentNativeToolDescriptor>,
+        installedMcp: List<AgentMcpConnection>,
+        installedAutomations: List<AgentSkillInstallation>,
+        nowMillis: Long = System.currentTimeMillis()
+    ): List<AgentMarketplaceItem> {
+        val native = nativeTools.map { tool ->
+            AgentMarketplaceItem(
+                id = tool.id,
+                kind = AgentCapabilityCatalogKind.NATIVE_TOOL,
+                name = tool.title,
+                summary = tool.description,
+                version = tool.version,
+                installState = when {
+                    tool.risk == AgentNativeToolRisk.BLOCKED -> AgentMarketplaceInstallState.UNAVAILABLE
+                    tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE ->
+                        AgentMarketplaceInstallState.BUILT_IN
+                    tool.availability.status == AgentNativeToolAvailabilityStatus.REQUIRES_SETUP ->
+                        AgentMarketplaceInstallState.NEEDS_SETUP
+                    else -> AgentMarketplaceInstallState.UNAVAILABLE
+                },
+                enabled = tool.risk != AgentNativeToolRisk.BLOCKED &&
+                    tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE,
+                tags = tool.capabilities,
+                dependencies = buildSet {
+                    addAll(tool.requiredPermissions.map { it.id })
+                    addAll(tool.requiredConsents.map { it.id })
+                }
+            )
+        }
+        val mcp = mcpEntries.map { entry ->
+            val connection = installedMcp.firstOrNull { it.catalogId == entry.id }
+            AgentMarketplaceItem(
+                id = entry.id,
+                kind = AgentCapabilityCatalogKind.MCP,
+                name = entry.name,
+                summary = entry.summary,
+                version = connection?.packageVersion?.ifBlank { "1.0.0" } ?: "1.0.0",
+                installState = when {
+                    connection == null -> AgentMarketplaceInstallState.AVAILABLE
+                    connection.isCallable(nowMillis) -> AgentMarketplaceInstallState.INSTALLED
+                    else -> AgentMarketplaceInstallState.NEEDS_SETUP
+                },
+                enabled = connection?.enabled ?: false,
+                featured = entry.featured,
+                tags = entry.tags,
+                dependencies = entry.toolHints.toSet(),
+                requiresLocalPackage = entry.requiresPackage
+            )
+        }
+        val latestInstallations = installedAutomations
+            .groupBy { it.id }
+            .mapValues { (_, versions) -> versions.maxByOrNull { it.version } }
+        val automations = skillEntries.map { entry ->
+            val installation = latestInstallations[entry.id]
+            val dependency = AgentCapabilityDependencyResolver.resolve(
+                entry,
+                installedMcp,
+                nativeTools.mapTo(mutableSetOf()) { it.id },
+                nowMillis
+            )
+            AgentMarketplaceItem(
+                id = entry.id,
+                kind = AgentCapabilityCatalogKind.AUTOMATION,
+                name = entry.name,
+                summary = entry.summary,
+                version = entry.manifest.version,
+                installState = when {
+                    installation != null -> AgentMarketplaceInstallState.INSTALLED
+                    dependency.available -> AgentMarketplaceInstallState.AVAILABLE
+                    else -> AgentMarketplaceInstallState.NEEDS_SETUP
+                },
+                enabled = installation?.enabled ?: false,
+                featured = entry.featured,
+                tags = setOf("automation", "workflow"),
+                dependencies = entry.requiredNativeTools + entry.requiredMcpCatalogIds
+            )
+        }
+        return (native + mcp + automations).sortedWith(
+            compareBy<AgentMarketplaceItem>({ it.kind.ordinal }, { !it.featured }, { it.name.lowercase(Locale.ROOT) })
+        )
+    }
 
     private fun skill(
         id: String,
