@@ -1,6 +1,20 @@
 import XCTest
 @testable import SignalASI
 
+private final class TestAgentActionExecutor: AgentActionExecutor {
+  var callCount = 0
+  private let handler: (AgentAction, AgentScreenContext) -> AgentActionResult
+
+  init(_ handler: @escaping (AgentAction, AgentScreenContext) -> AgentActionResult) {
+    self.handler = handler
+  }
+
+  func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
+    callCount += 1
+    return handler(action, screen)
+  }
+}
+
 @MainActor
 final class SignalASIStoreTests: XCTestCase {
   func testInitialStoreContainsAndroidParityContacts() {
@@ -1372,6 +1386,105 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(object["screen_stable"] as? Bool, true)
     XCTAssertEqual(screen["foreground_app"] as? String, "SpringBoard")
     XCTAssertEqual(screen["visible_text_count"] as? Int, 3)
+  }
+
+  func testPhoneExecutionAuthorityAnnotatesConcurrentReadsWithoutSerialization() {
+    let action = phoneAuthorityAction(
+      id: "read-1",
+      kind: .readScreen,
+      taskId: "task-read"
+    )
+    let delegate = TestAgentActionExecutor { action, _ in
+      AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "screen read",
+        metadata: ["delegate": "called"]
+      )
+    }
+    let guarded = PhoneExecutionAuthority.guarded(delegate)
+
+    let result = guarded.execute(action: action, screen: phoneAuthorityScreen())
+
+    XCTAssertEqual(delegate.callCount, 1)
+    XCTAssertTrue(result.success)
+    XCTAssertEqual(result.metadata["delegate"], "called")
+    XCTAssertEqual(result.metadata["execution_location"], "phone")
+    XCTAssertEqual(result.metadata["execution_authority"], "signalasi-phone")
+    XCTAssertEqual(result.metadata["task_id"], "task-read")
+    XCTAssertEqual(result.metadata["serialized_side_effect"], "false")
+  }
+
+  func testPhoneExecutionAuthoritySerializesSideEffectsAndReportsActiveTask() {
+    let taskId = "task-side-effect-\(UUID().uuidString)"
+    let action = phoneAuthorityAction(
+      id: "open-1",
+      kind: .openApp,
+      taskId: taskId
+    )
+    var observedSnapshot = PhoneExecutionAuthoritySnapshot()
+    let delegate = TestAgentActionExecutor { action, _ in
+      observedSnapshot = PhoneExecutionAuthority.snapshot()
+      return AgentActionResult(actionId: action.id, success: true, message: "opened")
+    }
+    let guarded = PhoneExecutionAuthority.guarded(delegate)
+
+    let result = guarded.execute(action: action, screen: phoneAuthorityScreen())
+
+    XCTAssertEqual(delegate.callCount, 1)
+    XCTAssertEqual(observedSnapshot.activeSideEffectTaskId, taskId)
+    XCTAssertEqual(result.metadata["serialized_side_effect"], "true")
+    XCTAssertEqual(result.metadata["execution_authority"], "signalasi-phone")
+    XCTAssertEqual(PhoneExecutionAuthority.snapshot().activeSideEffectTaskId, "")
+  }
+
+  func testPhoneExecutionAuthorityCancellationReturnsAndroidMetadataWithoutDelegate() {
+    let taskId = "task-cancel-\(UUID().uuidString)"
+    PhoneExecutionAuthority.requestCancellation(taskId: taskId)
+    defer { PhoneExecutionAuthority.clearCancellation(taskId: taskId) }
+    let action = phoneAuthorityAction(
+      id: "tap-1",
+      kind: .tap,
+      taskId: taskId
+    )
+    let delegate = TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: true, message: "unexpected")
+    }
+    let guarded = PhoneExecutionAuthority.guarded(delegate)
+
+    let result = guarded.execute(action: action, screen: phoneAuthorityScreen())
+
+    XCTAssertEqual(delegate.callCount, 0)
+    XCTAssertFalse(result.success)
+    XCTAssertEqual(result.message, "Phone tool execution was cancelled")
+    XCTAssertEqual(result.metadata["execution_location"], "phone")
+    XCTAssertEqual(result.metadata["execution_authority"], "signalasi-phone")
+    XCTAssertEqual(result.metadata["task_id"], taskId)
+    XCTAssertEqual(result.metadata["cancelled"], "true")
+    XCTAssertTrue(PhoneExecutionAuthority.isCancelled(taskId: taskId))
+    XCTAssertGreaterThanOrEqual(PhoneExecutionAuthority.snapshot().cancelledTaskCount, 1)
+  }
+
+  func testPhoneExecutionAuthoritySnapshotUsesAndroidWireNames() throws {
+    let snapshot = PhoneExecutionAuthoritySnapshot(
+      activeSideEffectTaskId: "task-1",
+      queuedSideEffectTasks: 2,
+      cancelledTaskCount: 3
+    )
+    let encoded = String(decoding: try JSONEncoder.signalASI.encode(snapshot), as: UTF8.self)
+    let decoded = try JSONDecoder.signalASI.decode(
+      PhoneExecutionAuthoritySnapshot.self,
+      from: Data(
+        #"{"active_side_effect_task_id":"task-2","queued_side_effect_tasks":4,"cancelled_task_count":5}"#.utf8
+      )
+    )
+
+    XCTAssertTrue(encoded.contains(#""active_side_effect_task_id":"task-1""#))
+    XCTAssertTrue(encoded.contains(#""queued_side_effect_tasks":2"#))
+    XCTAssertTrue(encoded.contains(#""cancelled_task_count":3"#))
+    XCTAssertEqual(decoded.activeSideEffectTaskId, "task-2")
+    XCTAssertEqual(decoded.queuedSideEffectTasks, 4)
+    XCTAssertEqual(decoded.cancelledTaskCount, 5)
   }
 
   func testAgentActionRecoveryRetriesLowRiskNavigationTimeoutOnce() {
@@ -5051,6 +5164,32 @@ final class SignalASIStoreTests: XCTestCase {
       risk: risk,
       status: .failed,
       description: "Recover \(kind.rawValue)"
+    )
+  }
+
+  private func phoneAuthorityAction(
+    id: String,
+    kind: AgentActionKind,
+    taskId: String
+  ) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: kind,
+      target: "SignalASI",
+      risk: .low,
+      status: .pendingConfirmation,
+      description: id,
+      parameters: ["_signalasi_task_id": taskId]
+    )
+  }
+
+  private func phoneAuthorityScreen() -> AgentScreenContext {
+    AgentScreenContext(
+      foregroundApp: "SignalASI",
+      pageTitle: "Agent",
+      visibleTextCount: 3,
+      clickableNodeCount: 2,
+      isAccessibilityEnabled: true
     )
   }
 
