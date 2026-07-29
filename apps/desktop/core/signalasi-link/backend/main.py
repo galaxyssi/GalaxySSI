@@ -1806,47 +1806,27 @@ def api_desktop_control_settings(req: DesktopControlSettingsReq, request: Reques
 
 def _desktop_control_authorization_action(
     authorization_id: str,
-    action: str,
 ) -> dict:
     from desktop_control import DesktopControlError, desktop_control_manager
     from mqtt_bridge import publish_desktop_control_authorization_changed
 
     manager = desktop_control_manager()
     try:
-        if action == "approve":
-            authorization = manager.approve(authorization_id)
-        elif action == "reject":
-            authorization = manager.reject(authorization_id)
-        elif action == "revoke":
-            authorization = manager.revoke(authorization_id)
-        else:
-            raise HTTPException(status_code=400, detail=api_error("desktop_control_action_invalid"))
+        authorization = manager.revoke(authorization_id)
     except DesktopControlError as exc:
         status_code = 404 if exc.code == "authorization_not_found" else 409
         raise HTTPException(
             status_code=status_code,
             detail=api_error(exc.code, message=str(exc)),
         ) from exc
-    publish_desktop_control_authorization_changed(authorization, reason=action)
+    publish_desktop_control_authorization_changed(authorization, reason="revoke")
     return manager.status(include_revoked=True)
-
-
-@app.post("/api/desktop-control/authorizations/{authorization_id}/approve")
-def api_desktop_control_approve(authorization_id: str, request: Request):
-    require_loopback(request)
-    return _desktop_control_authorization_action(authorization_id, "approve")
-
-
-@app.post("/api/desktop-control/authorizations/{authorization_id}/reject")
-def api_desktop_control_reject(authorization_id: str, request: Request):
-    require_loopback(request)
-    return _desktop_control_authorization_action(authorization_id, "reject")
 
 
 @app.post("/api/desktop-control/authorizations/{authorization_id}/revoke")
 def api_desktop_control_revoke(authorization_id: str, request: Request):
     require_loopback(request)
-    return _desktop_control_authorization_action(authorization_id, "revoke")
+    return _desktop_control_authorization_action(authorization_id)
 
 
 @app.get("/api/desktop-memory")

@@ -4847,7 +4847,6 @@ def handle_pairing_claim(mqttc, payload: dict):
                 control_token,
                 token,
                 paired_client,
-                auto_approve=has_full_executor(paired_client),
             )
     except DesktopControlError as exc:
         log.warning("Desktop control authorization offer rejected: %s", exc)

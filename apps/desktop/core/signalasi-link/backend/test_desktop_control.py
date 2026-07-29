@@ -5,6 +5,7 @@ import unittest
 import uuid
 from pathlib import Path
 
+from pairing_access import grant_for_executor
 from desktop_control import (
     CLICK_XY,
     SCREENSHOT,
@@ -110,6 +111,10 @@ class DesktopControlTests(unittest.TestCase):
             "signal_name": "signalasi:" + "a" * 16,
             "display_name": "Test Phone",
             "platform": "android",
+            "access": grant_for_executor(
+                True,
+                issued_at_millis=int(self.clock() * 1_000),
+            ),
         }
 
     def tearDown(self):
@@ -119,9 +124,13 @@ class DesktopControlTests(unittest.TestCase):
         self.manager.update_settings(enabled=True)
         offer = self.manager.create_offer("pair-token")
         self.assertIsNotNone(offer)
-        pending = self.manager.accept_pairing_offer(offer["token"], "pair-token", self.client)
-        self.assertEqual("pending", pending["status"])
-        return self.manager.approve(pending["authorization_id"])
+        authorization = self.manager.accept_pairing_offer(
+            offer["token"],
+            "pair-token",
+            self.client,
+        )
+        self.assertEqual("active", authorization["status"])
+        return authorization
 
     def request(self, authorization, tool=SCREENSHOT, input_value=None, action_id=None):
         now = int(self.clock() * 1000)
@@ -148,7 +157,7 @@ class DesktopControlTests(unittest.TestCase):
             "second-pair-token",
             {**self.client, "client_route_id": "client-route-2", "identity_fingerprint": "b" * 64},
         )
-        self.assertEqual("pending", pending["status"])
+        self.assertEqual("active", pending["status"])
         with self.assertRaises(DesktopControlError) as raised:
             self.manager.accept_pairing_offer(
                 consumed_offer["token"],
@@ -157,7 +166,7 @@ class DesktopControlTests(unittest.TestCase):
             )
         self.assertEqual("authorization_offer_invalid", raised.exception.code)
 
-    def test_pairing_qr_can_approve_executor_access_in_the_same_consent_step(self):
+    def test_pairing_qr_approves_executor_access_in_the_same_consent_step(self):
         self.manager.update_settings(enabled=True)
         offer = self.manager.create_offer("pair-token")
 
@@ -165,11 +174,34 @@ class DesktopControlTests(unittest.TestCase):
             offer["token"],
             "pair-token",
             self.client,
-            auto_approve=True,
         )
 
         self.assertEqual("active", authorization["status"])
         self.assertGreater(authorization["granted_at"], 0)
+        self.assertEqual("pairing_qr", authorization["grant_source"])
+        self.assertEqual("desktop_executor", authorization["access_profile"])
+        self.assertEqual(64, len(authorization["pairing_access_sha256"]))
+
+    def test_restricted_pairing_cannot_be_promoted_by_the_control_offer(self):
+        self.manager.update_settings(enabled=True)
+        offer = self.manager.create_offer("pair-token")
+        restricted = {
+            **self.client,
+            "access": grant_for_executor(
+                False,
+                issued_at_millis=int(self.clock() * 1_000),
+            ),
+        }
+
+        with self.assertRaises(DesktopControlError) as raised:
+            self.manager.accept_pairing_offer(
+                offer["token"],
+                "pair-token",
+                restricted,
+            )
+
+        self.assertEqual("desktop_executor_scope_required", raised.exception.code)
+        self.assertEqual([], self.manager.status()["authorizations"])
 
     def test_offer_is_rejected_if_executor_is_disabled_before_pairing_completes(self):
         self.manager.update_settings(enabled=True)
@@ -298,6 +330,64 @@ class DesktopControlTests(unittest.TestCase):
         with self.assertRaises(DesktopControlError) as revoked:
             self.manager.execute_request(self.request(authorization), self.client)
         self.assertEqual("authorization_not_found", revoked.exception.code)
+
+    def test_execution_rejects_downgraded_or_replaced_pairing_grants(self):
+        authorization = self.authorize()
+        restricted = {
+            **self.client,
+            "access": grant_for_executor(
+                False,
+                issued_at_millis=int(self.clock() * 1_000),
+            ),
+        }
+        with self.assertRaises(DesktopControlError) as downgraded:
+            self.manager.execute_request(self.request(authorization), restricted)
+        self.assertEqual("desktop_executor_scope_required", downgraded.exception.code)
+
+        replaced_grant = {
+            **self.client,
+            "access": grant_for_executor(
+                True,
+                issued_at_millis=int(self.clock() * 1_000) + 1,
+            ),
+        }
+        with self.assertRaises(DesktopControlError) as replaced:
+            self.manager.execute_request(self.request(authorization), replaced_grant)
+        self.assertEqual("pairing_authorization_stale", replaced.exception.code)
+
+    def test_pairing_authorization_survives_restart_without_another_approval(self):
+        authorization = self.authorize()
+        reloaded_handles = ToolHandleRegistry(now=self.clock)
+        reloaded = DesktopControlManager(
+            Path(self.temporary.name) / "control.json",
+            now=self.clock,
+            screenshot_provider=lambda: {
+                "image_mime": "image/jpeg",
+                "image_base64": "/9j/2Q==",
+                "width": 1,
+                "height": 1,
+                "original_width": 1,
+                "original_height": 1,
+                "bytes": 4,
+                "captured_at": int(self.clock() * 1_000),
+            },
+            input_controller=self.input,
+            identity_provider=self.identity.identity,
+            receipt_signer=self.identity.sign,
+            handle_registry=reloaded_handles,
+        )
+
+        restored = reloaded.status(self.client["client_route_id"])["authorizations"][0]
+        self.assertEqual(authorization["authorization_id"], restored["authorization_id"])
+        self.assertEqual("active", restored["status"])
+        self.assertNotEqual(authorization["desktop_session_id"], restored["desktop_session_id"])
+        self.assertEqual(
+            "succeeded",
+            reloaded.execute_request(
+                self.request(restored),
+                self.client,
+            )["status"],
+        )
 
     def test_explicit_desktop_session_is_required_and_route_scoped(self):
         authorization = self.authorize()
@@ -445,9 +535,8 @@ class DesktopControlTests(unittest.TestCase):
             "second-pair-token",
             second_client,
         )
-        second_authorization = self.manager.approve(second_pending["authorization_id"])
         self.manager.execute_request(
-            self.request(second_authorization),
+            self.request(second_pending),
             second_client,
         )
 
@@ -458,7 +547,7 @@ class DesktopControlTests(unittest.TestCase):
             [receipt["authorization_id"] for receipt in first_receipts],
         )
         self.assertEqual(
-            [second_authorization["authorization_id"]],
+            [second_pending["authorization_id"]],
             [receipt["authorization_id"] for receipt in second_receipts],
         )
 
