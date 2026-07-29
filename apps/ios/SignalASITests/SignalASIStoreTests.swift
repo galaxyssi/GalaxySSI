@@ -1734,6 +1734,233 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(object["evaluatedRuns"])
   }
 
+  func testAgentNetworkSearchRanksCapableNamedAgentsWithoutCollapsingIdentity() {
+    let index = AgentNetworkIndex([
+      networkRegistration(
+        agentId: "codex.office",
+        displayName: "Codex - Office PC",
+        capabilities: [.chat, .code, .taskExecution],
+        latency: .fast
+      ),
+      networkRegistration(
+        agentId: "claude-code.home",
+        displayName: "Claude Code - Home PC",
+        capabilities: [.chat, .code, .reasoning],
+        latency: .normal
+      ),
+      networkRegistration(
+        agentId: "hermes.research",
+        displayName: "Hermes - Research PC",
+        capabilities: [.chat, .research, .liveData]
+      )
+    ])
+
+    let page = index.search(
+      AgentNetworkSearchQuery(text: "Find a fast Agent to debug a Python project"),
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(page.totalMatches, 2)
+    XCTAssertEqual(page.hits.first?.registration.agentId, "codex.office")
+    XCTAssertEqual(page.hits.first?.registration.displayName, "Codex - Office PC")
+    XCTAssertTrue(page.hits.first?.matchedCapabilities.contains(.code) == true)
+    XCTAssertFalse(page.hits.contains { $0.registration.agentId == "hermes.research" })
+  }
+
+  func testAgentNetworkSearchEnforcesTrustCapacityCostAndStaleHeartbeat() {
+    let now: Int64 = 1_000_000
+    let staleHeartbeat = now - AgentNetworkIndex.heartbeatTTLMillis - 1
+    let index = AgentNetworkIndex([
+      networkRegistration(
+        agentId: "phone.local",
+        displayName: "Phone Agent",
+        location: .phone,
+        trust: .phoneSystem,
+        cost: .free,
+        lastHeartbeatMillis: staleHeartbeat
+      ),
+      networkRegistration(
+        agentId: "desktop.busy",
+        displayName: "Codex - Busy PC",
+        activeRuns: 2,
+        maxParallelRuns: 2,
+        cost: .low
+      ),
+      networkRegistration(
+        agentId: "cloud.unknown",
+        displayName: "Unknown Cloud Agent",
+        location: .cloud,
+        trust: .unknown,
+        cost: .high
+      ),
+      networkRegistration(
+        agentId: "desktop.stale",
+        displayName: "Codex - Stale PC",
+        lastHeartbeatMillis: staleHeartbeat
+      )
+    ])
+
+    let filtered = index.search(
+      AgentNetworkSearchQuery(trustedOnly: true, maximumCost: .low),
+      nowMillis: now
+    )
+    let all = index.search(AgentNetworkSearchQuery(routableOnly: false), nowMillis: now)
+
+    XCTAssertEqual(filtered.hits.map { $0.registration.agentId }, ["phone.local"])
+    XCTAssertEqual(
+      all.hits.first { $0.registration.agentId == "desktop.stale" }?.registration.status,
+      .unreachable
+    )
+  }
+
+  func testAgentNetworkSearchCursorInvalidatesAfterDirectoryOrReputationMutation() {
+    let registrations = (0..<75).map {
+      networkRegistration(
+        agentId: "agent-\($0)",
+        displayName: "Agent \(String(format: "%03d", $0))"
+      )
+    }
+    let index = AgentNetworkIndex(registrations)
+    let query = AgentNetworkSearchQuery(pageSize: 25)
+    let first = index.search(query, nowMillis: 1_000_000)
+    let second = index.search(AgentNetworkSearchQuery(pageSize: 25, cursor: first.nextCursor), nowMillis: 1_000_000)
+
+    XCTAssertEqual(first.hits.count, 25)
+    XCTAssertEqual(second.hits.count, 25)
+    XCTAssertTrue(Set(first.hits.map { $0.registration.agentId }).isDisjoint(with: second.hits.map { $0.registration.agentId }))
+    XCTAssertFalse(second.cursorReset)
+
+    index.upsert(networkRegistration(agentId: "agent-new", displayName: "Agent New"))
+    let resetAfterDirectoryChange = index.search(
+      AgentNetworkSearchQuery(pageSize: 25, cursor: second.nextCursor),
+      nowMillis: 1_000_000
+    )
+    XCTAssertTrue(resetAfterDirectoryChange.cursorReset)
+
+    let reputation = AgentReputationSnapshot(
+      agentId: "agent-new",
+      score: 92,
+      confidence: 60,
+      reliability: 92,
+      quality: 92,
+      timeliness: 92,
+      costEfficiency: 92,
+      evaluatedRuns: 5,
+      independentlyVerifiedRuns: 5,
+      disputedRuns: 0,
+      timeoutRuns: 0,
+      independentFailureDomains: 1,
+      lastEvidenceAtMillis: 1_000_000,
+      routingAdjustment: 65
+    )
+    let pageBeforeReputationChange = index.search(query, nowMillis: 1_000_000)
+    index.replaceReputations(["agent-new": reputation], revision: 7)
+    let resetAfterReputationChange = index.search(
+      AgentNetworkSearchQuery(pageSize: 25, cursor: pageBeforeReputationChange.nextCursor),
+      nowMillis: 1_000_000
+    )
+    XCTAssertTrue(resetAfterReputationChange.cursorReset)
+    XCTAssertTrue(resetAfterReputationChange.revision > pageBeforeReputationChange.revision)
+  }
+
+  func testAgentNetworkSearchUsesReputationButDoesNotBlockColdStart() {
+    let proven = AgentReputationSnapshot(
+      agentId: "z-proven",
+      score: 94,
+      confidence: 63,
+      reliability: 94,
+      quality: 94,
+      timeliness: 94,
+      costEfficiency: 94,
+      evaluatedRuns: 5,
+      independentlyVerifiedRuns: 5,
+      disputedRuns: 0,
+      timeoutRuns: 0,
+      independentFailureDomains: 1,
+      lastEvidenceAtMillis: 1_000_000,
+      routingAdjustment: 73
+    )
+    let poor = AgentReputationSnapshot(
+      agentId: "a-poor",
+      score: 31,
+      confidence: 80,
+      reliability: 31,
+      quality: 31,
+      timeliness: 31,
+      costEfficiency: 31,
+      evaluatedRuns: 8,
+      independentlyVerifiedRuns: 0,
+      disputedRuns: 8,
+      timeoutRuns: 0,
+      independentFailureDomains: 1,
+      lastEvidenceAtMillis: 1_000_000,
+      routingAdjustment: -109
+    )
+    let index = AgentNetworkIndex(
+      [
+        networkRegistration(agentId: "a-new", displayName: "New Agent", capabilities: [.chat, .reasoning]),
+        networkRegistration(agentId: "z-proven", displayName: "Proven Agent", capabilities: [.chat, .reasoning]),
+        networkRegistration(agentId: "a-poor", displayName: "Poor Agent", capabilities: [.chat, .reasoning])
+      ],
+      reputations: ["z-proven": proven, "a-poor": poor],
+      reputationRevision: 3
+    )
+
+    let ranked = index.search(
+      AgentNetworkSearchQuery(preferredCapabilities: [.reasoning], pageSize: 10),
+      nowMillis: 1_000_000
+    )
+    let thresholded = index.search(
+      AgentNetworkSearchQuery(
+        minimumReputationScore: 80,
+        minimumReputationConfidence: 40,
+        pageSize: 10
+      ),
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(ranked.hits.first?.registration.agentId, "z-proven")
+    XCTAssertTrue(ranked.hits.first?.reasons.contains("reputation:94") == true)
+    XCTAssertTrue(thresholded.hits.contains { $0.registration.agentId == "a-new" })
+    XCTAssertFalse(thresholded.hits.contains { $0.registration.agentId == "a-poor" })
+  }
+
+  func testAgentNetworkSearchModelsUseAndroidWireNames() throws {
+    let registration = networkRegistration(agentId: "codex.office", displayName: "Codex Office")
+    let index = AgentNetworkIndex([registration])
+    let page = index.search(
+      AgentNetworkSearchQuery(
+        text: "codex",
+        requiredCapabilities: [.chat],
+        preferredCapabilities: [.code],
+        trustedOnly: true,
+        maximumCost: .low,
+        pageSize: 10
+      ),
+      nowMillis: 1_000_000
+    )
+    let pageObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(page)) as? [String: Any]
+    )
+    let registrationObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(registration)) as? [String: Any]
+    )
+
+    XCTAssertEqual(registrationObject["agent_id"] as? String, "codex.office")
+    XCTAssertEqual(registrationObject["installation_id"] as? String, "installation-codex.office")
+    XCTAssertEqual(registrationObject["provider_id"] as? String, "desktop-provider")
+    XCTAssertEqual(registrationObject["display_name"] as? String, "Codex Office")
+    XCTAssertEqual(registrationObject["connection_kind"] as? String, "SIGNALASI_LINK")
+    XCTAssertEqual(registrationObject["last_heartbeat_millis"] as? Int, 0)
+    XCTAssertNil(registrationObject["agentId"])
+    XCTAssertEqual(pageObject["query_id"] as? String, page.queryId)
+    XCTAssertEqual(pageObject["total_matches"] as? Int, 1)
+    XCTAssertEqual(pageObject["next_cursor"] as? String, "")
+    XCTAssertEqual(pageObject["cursor_reset"] as? Bool, false)
+    XCTAssertEqual(pageObject["generated_at_millis"] as? Int, 1_000_000)
+    XCTAssertNil(pageObject["totalMatches"])
+  }
+
   func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
@@ -5986,6 +6213,47 @@ final class SignalASIStoreTests: XCTestCase {
       signerId: "verifier-host",
       signatureKeyId: String(repeating: "d", count: 64),
       signature: "attestation-signature"
+    )
+  }
+
+  private func networkRegistration(
+    agentId: String,
+    displayName: String,
+    providerId: String = "desktop-provider",
+    deviceId: String = "desktop-device",
+    location: AgentResourceLocation = .trustedDesktop,
+    status: AgentEndpointStatus = .online,
+    capabilities: Set<AgentCapability> = [.chat],
+    cost: AgentResourceCost = .free,
+    latency: AgentResourceLatency = .normal,
+    trust: AgentResourceTrust = .verifiedPaired,
+    activeRuns: Int = 0,
+    maxParallelRuns: Int = 4,
+    lastHeartbeatMillis: Int64 = 0
+  ) -> AgentRegistration {
+    AgentRegistration(
+      agentId: agentId,
+      installationId: "installation-\(agentId)",
+      deviceId: deviceId,
+      providerId: providerId,
+      displayName: displayName,
+      kind: .agent,
+      location: location,
+      status: status,
+      capabilities: capabilities,
+      protocol: AgentProtocolRange(
+        preferred: "1.1",
+        minimum: "1.0",
+        maximum: "1.1",
+        features: ["run.cancel", "run.recover"]
+      ),
+      connectionKind: .signalasiLink,
+      cost: cost,
+      latency: latency,
+      trust: trust,
+      activeRuns: activeRuns,
+      maxParallelRuns: maxParallelRuns,
+      lastHeartbeatMillis: lastHeartbeatMillis
     )
   }
 
