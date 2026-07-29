@@ -2629,6 +2629,167 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(inferred.supportsBackground)
   }
 
+  func testAgentConnectorRouteSelectorSelectsCodexWhenPhoneToolIsTopScoredResource() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let phoneWeb = routingResource(
+      targetId: "web.search",
+      type: .localTool,
+      location: .phone
+    )
+    let codexResource = routingResource(
+      targetId: codex.id,
+      type: .remoteAgent,
+      location: .trustedDesktop
+    )
+    let decision = routingDecision(
+      primary: resourceCandidate(phoneWeb, score: 900),
+      fallbacks: [resourceCandidate(codexResource, score: 800)],
+      catalog: [phoneWeb, codexResource]
+    )
+
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex], decision: decision))
+
+    XCTAssertEqual(selected.target.id, codex.id)
+    XCTAssertEqual(selected.decision?.primary?.resource.targetId, codex.id)
+    XCTAssertEqual(selected.decision?.orderedTargetIds, [codex.id])
+  }
+
+  func testAgentConnectorRouteSelectorUsesOnlyConnectorFallbacks() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let codexResource = routingResource(
+      targetId: codex.id,
+      type: .remoteAgent,
+      location: .trustedDesktop
+    )
+    let phoneWeb = routingResource(
+      targetId: "web.search",
+      type: .localTool,
+      location: .phone
+    )
+    let cloudResource = routingResource(
+      targetId: cloud.id,
+      type: .cloudModel,
+      location: .cloud
+    )
+    let decision = routingDecision(
+      primary: resourceCandidate(codexResource, score: 900),
+      fallbacks: [resourceCandidate(phoneWeb, score: 850), resourceCandidate(cloudResource, score: 700)],
+      catalog: [codexResource, phoneWeb, cloudResource]
+    )
+
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [codex, cloud], decision: decision))
+
+    XCTAssertEqual(selected.target.id, codex.id)
+    XCTAssertEqual(selected.decision?.fallbacks.map(\.resource.targetId), [cloud.id])
+  }
+
+  func testAgentConnectorRouteSelectorHonorsExplicitConnectorPreference() throws {
+    let codex = routeTarget("codex", kind: .agent)
+    let cloud = routeTarget("cloud-model:deepseek", kind: .model)
+    let phoneWeb = routingResource(
+      targetId: "web.search",
+      type: .localTool,
+      location: .phone
+    )
+    let cloudResource = routingResource(
+      targetId: cloud.id,
+      type: .cloudModel,
+      location: .cloud
+    )
+    let codexResource = routingResource(
+      targetId: codex.id,
+      type: .remoteAgent,
+      location: .trustedDesktop
+    )
+    let decision = routingDecision(
+      primary: resourceCandidate(phoneWeb, score: 950),
+      fallbacks: [resourceCandidate(cloudResource, score: 900), resourceCandidate(codexResource, score: 800)],
+      catalog: [phoneWeb, cloudResource, codexResource]
+    )
+
+    let selected = try XCTUnwrap(
+      AgentConnectorRouteSelector.select(
+        targets: [codex, cloud],
+        decision: decision,
+        preferredTargetId: codex.id
+      )
+    )
+
+    XCTAssertEqual(selected.decision?.primary?.resource.targetId, codex.id)
+    XCTAssertEqual(selected.decision?.fallbacks.map(\.resource.targetId), [cloud.id])
+  }
+
+  func testAgentConnectorRouteSelectorRecoversReasoningTargetDuringHeartbeat() throws {
+    var recovering = routeTarget("codex", kind: .agent)
+    recovering.status = .disconnected
+
+    let selected = try XCTUnwrap(AgentConnectorRouteSelector.select(targets: [recovering], decision: nil))
+
+    XCTAssertEqual(selected.target.id, "codex")
+    XCTAssertTrue(AgentConnectorRouteSelector.isDeliverable(recovering))
+  }
+
+  func testAgentConnectorRouteSelectorRejectsSetupAndDeviceOnlyTargets() {
+    var unavailable = routeTarget("codex", kind: .agent)
+    unavailable.status = .needsSetup
+    let device = AgentCallableTarget(
+      id: "device:lamp",
+      title: "Lamp",
+      kind: .device,
+      status: .available,
+      capabilities: [.deviceControl]
+    )
+
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [unavailable], decision: nil))
+    XCTAssertFalse(AgentConnectorRouteSelector.isDeliverable(device))
+    XCTAssertNil(AgentConnectorRouteSelector.select(targets: [device], decision: nil))
+  }
+
+  func testAgentResourceRoutingModelsUseAndroidWireNames() throws {
+    let codexResource = routingResource(
+      targetId: "codex",
+      type: .remoteAgent,
+      location: .trustedDesktop
+    )
+    let decision = routingDecision(
+      primary: resourceCandidate(codexResource, score: 800),
+      fallbacks: [],
+      catalog: [codexResource]
+    )
+    let encoded = try JSONEncoder().encode(decision)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let requirements = try XCTUnwrap(object["requirements"] as? [String: Any])
+    let primary = try XCTUnwrap(object["primary"] as? [String: Any])
+    let resource = try XCTUnwrap(primary["resource"] as? [String: Any])
+
+    XCTAssertEqual(requirements["live_data_required"] as? Bool, true)
+    XCTAssertEqual(requirements["estimated_input_tokens"] as? Int, 200)
+    XCTAssertEqual(requirements["execution_horizon"] as? String, "INTERACTIVE")
+    XCTAssertEqual(resource["target_id"] as? String, "codex")
+    XCTAssertEqual(resource["supports_tools"] as? Bool, false)
+    XCTAssertEqual(resource["context_window_tokens"] as? Int, 8_192)
+    XCTAssertEqual(resource["max_parallel_tasks"] as? Int, 1)
+    XCTAssertNotNil(object["task_budget"])
+    XCTAssertNil(resource["targetId"])
+
+    let decoded = try JSONDecoder().decode(
+      AgentRoutingDecision.self,
+      from: Data(
+        #"{"requirements":{"capabilities":["live_data"],"mode":"fast"},"primary":{"resource":{"id":"resource:cloud","title":"Cloud","type":"cloud_model","location":"cloud","status":"available","capabilities":["research"],"cost":"low","latency":"fast","quality":"strong","supports_tools":true,"target_id":"cloud-model:deepseek"},"score":10,"reasons":["capability_match"]}}"#.utf8
+      )
+    )
+
+    XCTAssertEqual(decoded.requirements.mode, .fast)
+    XCTAssertEqual(decoded.requirements.liveDataRequired, true)
+    XCTAssertEqual(decoded.requirements.executionHorizon, .interactive)
+    XCTAssertEqual(decoded.primary?.resource.type, .cloudModel)
+    XCTAssertEqual(decoded.primary?.resource.cost, .low)
+    XCTAssertEqual(decoded.primary?.resource.latency, .fast)
+    XCTAssertEqual(decoded.primary?.resource.quality, .strong)
+    XCTAssertEqual(decoded.fallbacks, [])
+  }
+
   func testAgentDynamicTeamCompilerBuildsVerifiedDagFromComplementaryAgents() throws {
     let result = AgentDynamicTeamCompiler().compile(
       request: AgentDynamicTeamRequest(
@@ -7893,6 +8054,66 @@ final class SignalASIStoreTests: XCTestCase {
       apiStyle: apiStyle,
       keychainAccount: "cloud.\(provider).\(modelId)",
       updatedAt: Date(timeIntervalSince1970: 0)
+    )
+  }
+
+  private func routeTarget(
+    _ id: String,
+    kind: AgentConnectorKind,
+    status: AgentConnectorStatus = .available,
+    capabilities: [AgentCapability] = [.chat, .reasoning, .research]
+  ) -> AgentCallableTarget {
+    AgentCallableTarget(
+      id: id,
+      title: id,
+      kind: kind,
+      status: status,
+      capabilities: capabilities
+    )
+  }
+
+  private func routingResource(
+    targetId: String,
+    type: AgentResourceType,
+    location: AgentResourceLocation
+  ) -> AgentResourceDescriptor {
+    AgentResourceDescriptor(
+      id: "resource:\(targetId)",
+      title: targetId,
+      type: type,
+      location: location,
+      status: .available,
+      capabilities: [.research],
+      cost: .free,
+      latency: .fast,
+      quality: .strong,
+      supportsTools: type == .localTool,
+      targetId: targetId
+    )
+  }
+
+  private func resourceCandidate(
+    _ resource: AgentResourceDescriptor,
+    score: Int
+  ) -> AgentResourceCandidate {
+    AgentResourceCandidate(resource: resource, score: score)
+  }
+
+  private func routingDecision(
+    primary: AgentResourceCandidate,
+    fallbacks: [AgentResourceCandidate],
+    catalog: [AgentResourceDescriptor]
+  ) -> AgentRoutingDecision {
+    AgentRoutingDecision(
+      requirements: AgentTaskRequirements(
+        capabilities: [.research],
+        mode: .balanced,
+        liveDataRequired: true,
+        estimatedInputTokens: 200
+      ),
+      primary: primary,
+      fallbacks: fallbacks,
+      catalog: catalog
     )
   }
 
