@@ -320,6 +320,63 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(networkDecision.limit, .network)
   }
 
+  func testCustomDeviceConnectorsDecodeAndroidFieldsAndStoreTokensInKeychain() throws {
+    let connector = try JSONDecoder.signalASI.decode(
+      CustomDeviceConnector.self,
+      from: Data("""
+      {
+        "id": " custom-device-office ",
+        "name": " Office Light ",
+        "transport": "mqtt",
+        "endpoint": " mqtt://broker.local ",
+        "command_target": " topic/light/office ",
+        "username": " user ",
+        "auth_token": " token ",
+        "risk": "HIGH",
+        "enabled": true
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(connector)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+
+    XCTAssertEqual(connector.id, "custom-device-office")
+    XCTAssertEqual(connector.name, "Office Light")
+    XCTAssertEqual(connector.transport, .mqtt)
+    XCTAssertEqual(connector.endpoint, "mqtt://broker.local")
+    XCTAssertEqual(connector.commandTarget, "topic/light/office")
+    XCTAssertEqual(connector.username, "user")
+    XCTAssertEqual(connector.authToken, "token")
+    XCTAssertEqual(connector.risk, .high)
+    XCTAssertTrue(connector.configured)
+    XCTAssertEqual(object["transport"] as? String, "MQTT")
+    XCTAssertEqual(object["command_target"] as? String, "topic/light/office")
+    XCTAssertEqual(object["auth_token"] as? String, "token")
+    XCTAssertEqual(object["risk"] as? String, "HIGH")
+
+    store.upsertCustomDeviceConnector(connector)
+
+    XCTAssertEqual(store.customDeviceConnectors.count, 1)
+    XCTAssertEqual(store.customDeviceConnectors[0].transport, .mqtt)
+    XCTAssertEqual(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"), "token")
+
+    let overflow = (0..<55).map { index in
+      CustomDeviceConnector(id: "device-\(index)", name: "Device \(index)", endpoint: "http://device-\(index).local")
+    }
+    for item in overflow {
+      store.upsertCustomDeviceConnector(item)
+    }
+
+    XCTAssertEqual(store.customDeviceConnectors.count, CustomDeviceConnector.maximumConnectors)
+    XCTAssertNil(store.customDeviceConnectors.first { $0.id == "custom-device-office" })
+
+    store.upsertCustomDeviceConnector(connector)
+    XCTAssertTrue(store.deleteCustomDeviceConnector(id: connector.id))
+    XCTAssertNil(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"))
+  }
+
   func testModelPlannerSettingsDecodeAndroidFieldsAndNormalizeBounds() throws {
     let longContactId = String(repeating: "x", count: 160)
     let settings = try JSONDecoder.signalASI.decode(
@@ -377,6 +434,58 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.modelPlannerSettings.maxActions, 1)
     XCTAssertEqual(store.modelPlannerSettings.maxPhaseRetries, AgentModelPlannerSettings.maximumPhaseRetries)
     XCTAssertEqual(store.modelPlannerSettings.noProgressTimeoutSeconds, AgentModelPlannerSettings.minimumNoProgressTimeoutSeconds)
+  }
+
+  func testHomeAssistantSettingsDecodeAndroidFieldsAndStoreTokenInKeychain() throws {
+    let longURL = "http://homeassistant.local:8123/" + String(repeating: "x", count: 2_200)
+    let longToken = String(repeating: "t", count: 8_400)
+    let settings = try JSONDecoder.signalASI.decode(
+      HomeAssistantSettings.self,
+      from: Data("""
+      {
+        "version": 1,
+        "enabled": true,
+        "base_url": "  \(longURL)//  ",
+        "access_token": "  \(longToken)  ",
+        "default_entity_id": "  light.living_room  "
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+
+    XCTAssertTrue(settings.enabled)
+    XCTAssertTrue(settings.credentialsConfigured)
+    XCTAssertTrue(settings.configured)
+    XCTAssertFalse(settings.baseUrl.hasSuffix("/"))
+    XCTAssertEqual(settings.baseUrl.count, HomeAssistantSettings.maximumBaseURLLength)
+    XCTAssertEqual(settings.accessToken.count, HomeAssistantSettings.maximumAccessTokenLength)
+    XCTAssertEqual(settings.defaultEntityId, "light.living_room")
+    XCTAssertEqual(object["version"] as? Int, 1)
+    XCTAssertEqual(object["base_url"] as? String, settings.baseUrl)
+    XCTAssertEqual(object["access_token"] as? String, settings.accessToken)
+
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = " http://homeassistant.local:8123/ "
+      $0.accessToken = " ha-token "
+      $0.defaultEntityId = " light.office "
+    }
+
+    XCTAssertTrue(store.homeAssistantSettings.configured)
+    XCTAssertEqual(store.homeAssistantSettings.baseUrl, "http://homeassistant.local:8123")
+    XCTAssertEqual(store.homeAssistantSettings.accessToken, "ha-token")
+    XCTAssertEqual(store.homeAssistantSettings.defaultEntityId, "light.office")
+    XCTAssertEqual(secrets.string(account: "home_assistant.access_token"), "ha-token")
+
+    store.updateHomeAssistantSettings {
+      $0.accessToken = ""
+    }
+
+    XCTAssertFalse(store.homeAssistantSettings.credentialsConfigured)
+    XCTAssertNil(secrets.string(account: "home_assistant.access_token"))
   }
 
   func testAgentActiveTurnPolicyMatchesAndroidContinuationDecisions() {
@@ -441,6 +550,115 @@ final class SignalASIStoreTests: XCTestCase {
       ).disposition,
       .steer
     )
+  }
+
+  func testAgentConfirmationPolicyMatchesAndroidTiersAndConsentKeys() throws {
+    func action(
+      id: String,
+      kind: AgentActionKind,
+      description: String,
+      risk: AgentRisk = .medium,
+      target: String = "iOS",
+      parameters: [String: String] = [:]
+    ) -> AgentAction {
+      AgentAction(
+        id: id,
+        kind: kind,
+        target: target,
+        risk: risk,
+        status: .pendingConfirmation,
+        description: description,
+        parameters: parameters
+      )
+    }
+
+    func nativeAction(_ toolId: String, _ description: String, id: String = "native-tool", inputJson: String = "{}") -> AgentAction {
+      action(
+        id: id,
+        kind: .callNativeTool,
+        description: description,
+        parameters: ["tool_id": toolId, "input_json": inputJson]
+      )
+    }
+
+    let decoded = try JSONDecoder.signalASI.decode(
+      AgentAction.self,
+      from: Data("""
+      {
+        "id": "sms-send",
+        "kind": "CALL_NATIVE_TOOL",
+        "target": "iOS",
+        "risk": "MEDIUM",
+        "status": "PENDING_CONFIRMATION",
+        "description": "Send SMS message",
+        "parameters": {
+          "tool_id": "signalasi.notifications.reply",
+          "input_json": "{}"
+        },
+        "requires_confirmation": true
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(decoded)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+    XCTAssertEqual(decoded.kind, .callNativeTool)
+    XCTAssertEqual(decoded.risk, .medium)
+    XCTAssertEqual(decoded.status, .pendingConfirmation)
+    XCTAssertEqual(object["kind"] as? String, "CALL_NATIVE_TOOL")
+    XCTAssertEqual(object["requires_confirmation"] as? Bool, true)
+
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: action(id: "set-timer", kind: .setAlarm, description: "Set timer for 60 seconds")), .direct)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: action(id: "open-camera", kind: .openApp, description: "Open camera and take photo")), .direct)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: nativeAction("signalasi.android.audio.volume.set", "Set Android stream volume")), .direct)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: nativeAction("signalasi.hardware.bluetooth.pairing.handoff", "Open Bluetooth pairing settings")), .direct)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: nativeAction("signalasi.desktop.workspace.file.read.text", "Read an authorized Desktop file")), .direct)
+
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: action(id: "location", kind: .callNativeTool, description: "Read location")), .confirmOnce)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: action(id: "download", kind: .callNativeTool, description: "Download file")), .confirmOnce)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: nativeAction("signalasi.hardware.bluetooth.discovery.foreground", "Discover nearby Bluetooth devices once")), .confirmOnce)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: nativeAction("signalasi.hardware.apps.installed.list", "List query-visible installed apps")), .confirmOnce)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: nativeAction("signalasi.microphone.record.visible", "Record audio")), .confirmOnce)
+
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: decoded), .confirmAlways)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: action(id: "delete-file", kind: .callNativeTool, description: "Delete file")), .confirmAlways)
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: action(id: "lock", kind: .lockScreen, description: "Lock device")), .confirmAlways)
+
+    let firstBluetooth = nativeAction(
+      "signalasi.hardware.bluetooth.discovery.foreground",
+      "Discover nearby Bluetooth devices once",
+      id: "native-first"
+    )
+    let secondBluetooth = nativeAction(
+      "signalasi.hardware.bluetooth.discovery.foreground",
+      "Scan for nearby Bluetooth devices",
+      id: "native-second"
+    )
+    XCTAssertEqual(AgentConfirmationPolicy.consentKey(for: firstBluetooth), "bluetooth_discovery")
+    XCTAssertEqual(AgentConfirmationPolicy.consentKey(for: firstBluetooth), AgentConfirmationPolicy.consentKey(for: secondBluetooth))
+
+    let homeAssistantInput = #"{"entity_id":"lock.front_door","service_domain":"lock","service":"unlock"}"#
+    let homeAssistantAction = nativeAction(
+      "signalasi.home_assistant.service.call",
+      "Unlock front door",
+      inputJson: homeAssistantInput
+    )
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: homeAssistantAction), .confirmAlways)
+    XCTAssertEqual(AgentConfirmationPolicy.consentKey(for: homeAssistantAction), "home_assistant_control:lock.front_door")
+
+    let connectorAction = AgentAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Ask Codex",
+      parameters: [
+        "prompt": "Show an animated letter",
+        "_signalasi_conversation_context": "Earlier the user asked to send a message"
+      ]
+    )
+    XCTAssertEqual(AgentConfirmationPolicy.tier(for: connectorAction), .direct)
   }
 
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
@@ -518,6 +736,21 @@ final class SignalASIStoreTests: XCTestCase {
       $0.executionPaused = true
     }
     store.selectAgentTaskBudgetProfile(.privateMode)
+    store.upsertCustomDeviceConnector(
+      CustomDeviceConnector(
+        id: "custom-device-office",
+        name: "Office Light",
+        transport: .mqtt,
+        endpoint: "mqtt://broker.local",
+        authToken: "token"
+      )
+    )
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = "http://homeassistant.local:8123"
+      $0.accessToken = "ha-token"
+      $0.defaultEntityId = "light.office"
+    }
     store.updateModelPlannerSettings {
       $0.enabled = true
       $0.maxActions = 12
@@ -537,6 +770,10 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings, .default)
     XCTAssertEqual(store.agentSafetySettings, .default)
     XCTAssertEqual(store.agentTaskBudget, .default)
+    XCTAssertTrue(store.customDeviceConnectors.isEmpty)
+    XCTAssertNil(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"))
+    XCTAssertEqual(store.homeAssistantSettings, .default)
+    XCTAssertNil(secrets.string(account: "home_assistant.access_token"))
     XCTAssertEqual(store.modelPlannerSettings, .default)
   }
 

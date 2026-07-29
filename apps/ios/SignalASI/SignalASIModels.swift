@@ -818,6 +818,110 @@ struct AgentSafetySettings: Codable, Equatable {
   }
 }
 
+enum AgentActionKind: String, Codable, CaseIterable, Identifiable {
+  case readScreen = "READ_SCREEN"
+  case saveScreenKnowledge = "SAVE_SCREEN_KNOWLEDGE"
+  case draftPlan = "DRAFT_PLAN"
+  case tap = "TAP"
+  case typeText = "TYPE_TEXT"
+  case swipe = "SWIPE"
+  case longPress = "LONG_PRESS"
+  case back = "BACK"
+  case home = "HOME"
+  case recents = "RECENTS"
+  case lockScreen = "LOCK_SCREEN"
+  case openApp = "OPEN_APP"
+  case openURL = "OPEN_URL"
+  case setAlarm = "SET_ALARM"
+  case createNotification = "CREATE_NOTIFICATION"
+  case replyNotification = "REPLY_NOTIFICATION"
+  case importWebKnowledge = "IMPORT_WEB_KNOWLEDGE"
+  case copyScreenText = "COPY_SCREEN_TEXT"
+  case deleteText = "DELETE_TEXT"
+  case pasteText = "PASTE_TEXT"
+  case callConnector = "CALL_CONNECTOR"
+  case callNativeTool = "CALL_NATIVE_TOOL"
+  case controlDevice = "CONTROL_DEVICE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentActionKind {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .draftPlan
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentActionStatus: String, Codable, CaseIterable, Identifiable {
+  case proposed = "PROPOSED"
+  case pendingConfirmation = "PENDING_CONFIRMATION"
+  case running = "RUNNING"
+  case waitingResponse = "WAITING_RESPONSE"
+  case completed = "COMPLETED"
+  case failed = "FAILED"
+  case blocked = "BLOCKED"
+  case rolledBack = "ROLLED_BACK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentActionStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .pendingConfirmation
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRisk: String, Codable, CaseIterable, Identifiable {
+  case low = "LOW"
+  case medium = "MEDIUM"
+  case high = "HIGH"
+  case blocked = "BLOCKED"
+
+  var id: String { rawValue }
+
+  var weight: Int {
+    switch self {
+    case .low: return 1
+    case .medium: return 2
+    case .high: return 3
+    case .blocked: return 4
+    }
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentRisk {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .medium
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
 enum AgentActiveTurnDisposition: String, Codable, CaseIterable, Identifiable {
   case independent = "INDEPENDENT"
   case steer = "STEER"
@@ -1040,6 +1144,374 @@ enum AgentActiveTurnPolicy {
     "\u{641c}\u{7d22}", "\u{6253}\u{5f00}", "\u{8fd0}\u{884c}",
     "\u{8bbe}\u{7f6e}", "\u{89e3}\u{91ca}", "\u{603b}\u{7ed3}",
     "\u{7ffb}\u{8bd1}"
+  ]
+}
+
+enum AgentTaskBudgetProfile: String, Codable, CaseIterable, Identifiable {
+  case adaptive
+  case fast
+  case economy
+  case privateMode = "private"
+  case custom
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentTaskBudgetProfile {
+    let candidate = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return allCases.first { $0.rawValue == candidate } ?? .adaptive
+  }
+
+  var displayName: String {
+    switch self {
+    case .adaptive: return "Adaptive"
+    case .fast: return "Fast"
+    case .economy: return "Economy"
+    case .privateMode: return "Private"
+    case .custom: return "Custom"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .adaptive:
+      return "Broad limits with no fixed task deadline."
+    case .fast:
+      return "Five-minute execution window with bounded resources."
+    case .economy:
+      return "Reduce paid usage, tokens, data, and memory."
+    case .privateMode:
+      return "Use phone, private, and trusted paired resources only."
+    case .custom:
+      return "Use the limits configured below."
+    }
+  }
+}
+
+enum AgentConfirmationTier: String, Codable, CaseIterable, Identifiable {
+  case direct = "DIRECT"
+  case confirmOnce = "CONFIRM_ONCE"
+  case confirmAlways = "CONFIRM_ALWAYS"
+
+  var id: String { rawValue }
+}
+
+struct AgentAction: Codable, Equatable, Identifiable {
+  var id: String
+  var kind: AgentActionKind
+  var target: String
+  var risk: AgentRisk
+  var status: AgentActionStatus
+  var description: String
+  var parameters: [String: String]
+  var requiresConfirmation: Bool
+  var result: String
+  var evidence: String
+
+  init(
+    id: String,
+    kind: AgentActionKind,
+    target: String,
+    risk: AgentRisk,
+    status: AgentActionStatus,
+    description: String,
+    parameters: [String: String] = [:],
+    requiresConfirmation: Bool = true,
+    result: String = "",
+    evidence: String = ""
+  ) {
+    self.id = id
+    self.kind = kind
+    self.target = target
+    self.risk = risk
+    self.status = status
+    self.description = description
+    self.parameters = parameters
+    self.requiresConfirmation = requiresConfirmation
+    self.result = result
+    self.evidence = evidence
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case kind
+    case target
+    case risk
+    case status
+    case description
+    case parameters
+    case requiresConfirmation = "requires_confirmation"
+    case result
+    case evidence
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+      kind: try container.decodeIfPresent(AgentActionKind.self, forKey: .kind) ?? .draftPlan,
+      target: try container.decodeIfPresent(String.self, forKey: .target) ?? "",
+      risk: try container.decodeIfPresent(AgentRisk.self, forKey: .risk) ?? .medium,
+      status: try container.decodeIfPresent(AgentActionStatus.self, forKey: .status) ?? .pendingConfirmation,
+      description: try container.decodeIfPresent(String.self, forKey: .description) ?? "",
+      parameters: try container.decodeIfPresent([String: String].self, forKey: .parameters) ?? [:],
+      requiresConfirmation: try container.decodeIfPresent(Bool.self, forKey: .requiresConfirmation) ?? true,
+      result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
+      evidence: try container.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+    )
+  }
+}
+
+enum AgentConfirmationPolicy {
+  static func tier(for action: AgentAction) -> AgentConfirmationTier {
+    let value = searchableValue(action)
+    let toolId = nativeToolId(action)
+    if toolId == homeAssistantServiceCall && requiresAlwaysHomeAssistantConfirmation(action.parameters["input_json"] ?? "") {
+      return .confirmAlways
+    }
+    if alwaysConfirmNativeToolIds.contains(toolId) {
+      return .confirmAlways
+    }
+    if confirmOnceNativeToolIds.contains(toolId) {
+      return .confirmOnce
+    }
+    if desktopRemoteNativeToolIds.contains(toolId) {
+      return .direct
+    }
+    if toolId == webSearch || webIntelligenceToolIds.contains(toolId) {
+      return .direct
+    }
+    if alwaysConfirmKinds.contains(action.kind) || alwaysConfirmTerms.contains(where: value.contains) {
+      return .confirmAlways
+    }
+    if action.kind == .callConnector {
+      return .direct
+    }
+    if confirmOnceTerms.contains(where: value.contains) || action.kind == .controlDevice {
+      return .confirmOnce
+    }
+    if action.kind == .setAlarm ||
+      action.kind == .openApp ||
+      directActionIds.contains(action.id) ||
+      directNativeToolIds.contains(toolId) ||
+      directTerms.contains(where: value.contains) {
+      return .direct
+    }
+    switch action.risk {
+    case .low:
+      return .direct
+    case .medium:
+      return .confirmOnce
+    case .high, .blocked:
+      return .confirmAlways
+    }
+  }
+
+  static func consentKey(for action: AgentAction) -> String {
+    let value = searchableValue(action)
+    let toolId = nativeToolId(action)
+    if locationTerms.contains(where: value.contains) {
+      return "location"
+    }
+    if microphoneTerms.contains(where: value.contains) {
+      return "microphone"
+    }
+    if downloadTerms.contains(where: value.contains) {
+      return "downloads"
+    }
+    if contactWriteTerms.contains(where: value.contains) {
+      return "contacts_write"
+    }
+    if calendarWriteTerms.contains(where: value.contains) {
+      return "calendar_write"
+    }
+    if toolId == bluetoothDiscoveryForeground {
+      return "bluetooth_discovery"
+    }
+    if toolId == wifiScanStart {
+      return "wifi_scan"
+    }
+    if toolId == installedAppsList || toolId == packageDetail {
+      return "installed_apps_read"
+    }
+    if toolId == homeAssistantEntitiesList || toolId == homeAssistantEntityRead {
+      return "home_assistant_read"
+    }
+    if toolId == homeAssistantServiceCall {
+      return homeAssistantConsentScope(action.parameters["input_json"] ?? "")
+    }
+    if action.kind == .controlDevice {
+      return "device_control:\(action.target.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+    return "action:\(action.kind.rawValue.lowercased()):\(action.id.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))"
+  }
+
+  private static func nativeToolId(_ action: AgentAction) -> String {
+    action.parameters["tool_id"] ?? ""
+  }
+
+  private static func searchableValue(_ action: AgentAction) -> String {
+    var parts = [action.id, action.kind.rawValue, action.target, action.description]
+    for (key, value) in action.parameters where !key.hasPrefix(internalParameterPrefix) {
+      parts.append(key)
+      parts.append(value)
+    }
+    return parts.joined(separator: " ").lowercased()
+  }
+
+  private static func requiresAlwaysHomeAssistantConfirmation(_ inputJson: String) -> Bool {
+    let input = homeAssistantInput(inputJson)
+    let cleanEntity = input.entityId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let entityDomain = cleanEntity.split(separator: ".", maxSplits: 1).first.map(String.init) ?? ""
+    let identity = "\(cleanEntity) \(input.serviceDomain.lowercased()) \(input.service.lowercased())"
+    return homeAssistantAlwaysConfirmDomains.contains(entityDomain) ||
+      homeAssistantAlwaysConfirmServices.contains(input.service.lowercased()) ||
+      homeAssistantAlwaysConfirmIdentityTerms.contains(where: identity.contains)
+  }
+
+  private static func homeAssistantConsentScope(_ inputJson: String) -> String {
+    let entityId = homeAssistantInput(inputJson).entityId
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    if entityId.range(of: #"^[a-z0-9_]+\.[a-z0-9_]+$"#, options: .regularExpression) != nil {
+      return "home_assistant_control:\(entityId)"
+    }
+    return "home_assistant_control"
+  }
+
+  private static func homeAssistantInput(_ inputJson: String) -> (entityId: String, serviceDomain: String, service: String) {
+    guard let data = inputJson.data(using: .utf8),
+          let rawObject = try? JSONSerialization.jsonObject(with: data),
+          let object = rawObject as? [String: Any] else {
+      return ("", "", "")
+    }
+    return (
+      object["entity_id"] as? String ?? "",
+      object["service_domain"] as? String ?? "",
+      object["service"] as? String ?? ""
+    )
+  }
+
+  private static let internalParameterPrefix = "_signalasi_"
+  private static let homeAssistantServiceCall = "signalasi.home_assistant.service.call"
+  private static let homeAssistantEntitiesList = "signalasi.home_assistant.entities.list"
+  private static let homeAssistantEntityRead = "signalasi.home_assistant.entity.read"
+  private static let bluetoothDiscoveryForeground = "signalasi.hardware.bluetooth.discovery.foreground"
+  private static let installedAppsList = "signalasi.hardware.apps.installed.list"
+  private static let packageDetail = "signalasi.hardware.apps.package.detail"
+  private static let wifiScanStart = "signalasi.android.wifi.scan.start"
+  private static let webSearch = "web.search"
+
+  private static let alwaysConfirmKinds: Set<AgentActionKind> = [.replyNotification, .deleteText, .lockScreen]
+  private static let directActionIds: Set<String> = [
+    "set-timer", "open-timer", "set-alarm", "open-camera", "open-flashlight",
+    "battery-status", "device-status"
+  ]
+  private static let desktopRemoteNativeToolIds: Set<String> = [
+    "signalasi.desktop.windows.system.status",
+    "signalasi.desktop.windows.process.list",
+    "signalasi.desktop.workspace.file.list",
+    "signalasi.desktop.workspace.file.read.text",
+    "signalasi.desktop.workspace.file.write.text",
+    "signalasi.desktop.workspace.file.sha256",
+    "signalasi.desktop.workspace.archive.create",
+    "signalasi.desktop.terminal.run",
+    "signalasi.desktop.office.document.inspect",
+    "signalasi.desktop.office.document.convert"
+  ]
+  private static let webIntelligenceToolIds: Set<String> = [
+    "signalasi.web.intelligence.search",
+    "signalasi.web.intelligence.fetch",
+    "signalasi.web.intelligence.crawl",
+    "signalasi.web.intelligence.extract",
+    "signalasi.web.intelligence.cache",
+    "signalasi.web.intelligence.find_similar",
+    "signalasi.web.intelligence.research",
+    "signalasi.web.intelligence.agent",
+    "signalasi.web.intelligence.diff",
+    "signalasi.web.intelligence.watch"
+  ]
+  private static let directNativeToolIds = Set([
+    "signalasi.hardware.battery.status",
+    "signalasi.hardware.power.status",
+    "signalasi.hardware.storage.status",
+    "signalasi.hardware.network.status",
+    "signalasi.hardware.sensors.list",
+    "signalasi.hardware.sensor.sample",
+    "signalasi.hardware.bluetooth.status",
+    "signalasi.hardware.nfc.status",
+    "signalasi.hardware.flashlight.set",
+    "signalasi.camera.capture.visible",
+    "web.search",
+    "signalasi.media.ffmpeg.transcode",
+    "signalasi.runtime.execute",
+    "signalasi.hardware.bluetooth.pairing.handoff",
+    "signalasi.android.audio.status",
+    "signalasi.android.audio.volume.set",
+    "signalasi.android.audio.mute.set",
+    "signalasi.android.wifi.panel.open",
+    "signalasi.android.wifi.hotspot.panel.open",
+    "signalasi.android.biometric.enrollment.open"
+  ]).union(webIntelligenceToolIds)
+  private static let confirmOnceNativeToolIds: Set<String> = [
+    "signalasi.microphone.record.visible",
+    "signalasi.notifications.list",
+    bluetoothDiscoveryForeground,
+    installedAppsList,
+    packageDetail,
+    wifiScanStart,
+    "signalasi.runtime.packs.install",
+    homeAssistantEntitiesList,
+    homeAssistantEntityRead,
+    homeAssistantServiceCall
+  ]
+  private static let alwaysConfirmNativeToolIds: Set<String> = [
+    "signalasi.notifications.reply"
+  ]
+
+  private static let alwaysConfirmTerms = [
+    "send sms", "sms.send", "reply sms", "send message", "reply message", "reply notification",
+    "send email", "reply email", "phone call", "dial", "telephony.dial", "delete", "remove",
+    "install", "uninstall", "payment", "purchase", "checkout", "transfer", "grant permission",
+    "authorize", "security setting", "screen lock", "lock device", "device_policy.lock", "reboot",
+    "door lock", "smart lock", "garage door", "alarm panel", "private key", "password",
+    "\u{53D1}\u{9001}\u{77ED}\u{4FE1}", "\u{56DE}\u{590D}\u{77ED}\u{4FE1}",
+    "\u{53D1}\u{6D88}\u{606F}", "\u{56DE}\u{590D}\u{6D88}\u{606F}",
+    "\u{6253}\u{7535}\u{8BDD}", "\u{62E8}\u{53F7}", "\u{5220}\u{9664}",
+    "\u{5B89}\u{88C5}", "\u{5378}\u{8F7D}", "\u{652F}\u{4ED8}",
+    "\u{8F6C}\u{8D26}", "\u{6388}\u{6743}", "\u{6743}\u{9650}",
+    "\u{5B89}\u{5168}\u{8BBE}\u{7F6E}", "\u{9501}\u{5C4F}",
+    "\u{91CD}\u{542F}", "\u{95E8}\u{9501}", "\u{8F66}\u{5E93}\u{95E8}"
+  ]
+  private static let directTerms = [
+    "timer", "alarm clock", "set alarm", "camera capture", "take photo", "flashlight", "torch",
+    "audio volume", "set volume", "audio mute", "open app", "launch app", "battery status",
+    "device status", "read battery", "read device", "\u{8BA1}\u{65F6}\u{5668}",
+    "\u{95F9}\u{949F}", "\u{62CD}\u{7167}", "\u{624B}\u{7535}\u{7B52}",
+    "\u{97F3}\u{91CF}", "\u{6253}\u{5F00}app", "\u{6253}\u{5F00} app",
+    "\u{7535}\u{91CF}", "\u{8BBE}\u{5907}\u{72B6}\u{6001}"
+  ]
+  private static let locationTerms = ["location", "gps", "\u{5B9A}\u{4F4D}", "\u{4F4D}\u{7F6E}"]
+  private static let microphoneTerms = ["microphone", "record audio", "\u{9EA6}\u{514B}\u{98CE}", "\u{5F55}\u{97F3}"]
+  private static let downloadTerms = ["download", "\u{4E0B}\u{8F7D}"]
+  private static let contactWriteTerms = [
+    "contacts.write", "contact upsert", "create contact", "update contact",
+    "\u{65B0}\u{5EFA}\u{8054}\u{7CFB}\u{4EBA}", "\u{4FEE}\u{6539}\u{8054}\u{7CFB}\u{4EBA}",
+    "\u{66F4}\u{65B0}\u{8054}\u{7CFB}\u{4EBA}"
+  ]
+  private static let calendarWriteTerms = [
+    "calendar.write", "calendar event upsert", "create calendar event", "update calendar event",
+    "\u{65B0}\u{5EFA}\u{65E5}\u{7A0B}", "\u{4FEE}\u{6539}\u{65E5}\u{7A0B}",
+    "\u{66F4}\u{65B0}\u{65E5}\u{7A0B}"
+  ]
+  private static let confirmOnceTerms = locationTerms + microphoneTerms + downloadTerms + contactWriteTerms + calendarWriteTerms
+  private static let homeAssistantAlwaysConfirmDomains: Set<String> = [
+    "alarm_control_panel", "automation", "camera", "lock", "script", "siren", "valve"
+  ]
+  private static let homeAssistantAlwaysConfirmServices: Set<String> = [
+    "alarm_arm_away", "alarm_arm_home", "alarm_arm_night", "alarm_disarm", "alarm_trigger", "unlock"
+  ]
+  private static let homeAssistantAlwaysConfirmIdentityTerms = [
+    "alarm", "door", "gate", "garage", "lock", "security", "siren"
   ]
 }
 
@@ -1410,6 +1882,275 @@ enum AgentTaskBudgetPolicy {
 
   private static func denied(_ limit: AgentTaskBudgetLimit, _ reason: String) -> AgentTaskBudgetDecision {
     AgentTaskBudgetDecision(allowed: false, limit: limit, reason: reason)
+  }
+}
+
+enum CustomDeviceTransport: String, Codable, CaseIterable, Identifiable {
+  case httpRest = "HTTP_REST"
+  case mqtt = "MQTT"
+  case websocket = "WEBSOCKET"
+  case tcp = "TCP"
+  case udp = "UDP"
+  case mcp = "MCP"
+  case signalASIAgent = "SIGNALASI_AGENT"
+  case ble = "BLE"
+  case matterThread = "MATTER_THREAD"
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    rawValue.replacingOccurrences(of: "_", with: " ")
+  }
+
+  static func fromWireValue(_ value: String?) -> CustomDeviceTransport {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .uppercased()
+      .replacingOccurrences(of: " ", with: "_") ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .httpRest
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum CustomDeviceRisk: String, Codable, CaseIterable, Identifiable {
+  case low = "LOW"
+  case medium = "MEDIUM"
+  case high = "HIGH"
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    switch self {
+    case .low: return "LOW"
+    case .medium: return "MEDIUM"
+    case .high: return "HIGH"
+    }
+  }
+
+  static func fromWireValue(_ value: String?) -> CustomDeviceRisk {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .medium
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct CustomDeviceConnector: Codable, Equatable, Identifiable {
+  static let maximumConnectors = 50
+  static let maximumIdLength = 80
+  static let maximumNameLength = 100
+  static let maximumEndpointLength = 1_000
+  static let maximumCommandTargetLength = 300
+  static let maximumUsernameLength = 200
+  static let maximumAuthTokenLength = 2_000
+
+  var id: String
+  var name: String
+  var transport: CustomDeviceTransport
+  var endpoint: String
+  var commandTarget: String
+  var username: String
+  var authToken: String
+  var risk: CustomDeviceRisk
+  var enabled: Bool
+
+  init(
+    id: String = UUID().uuidString,
+    name: String = "Custom Device",
+    transport: CustomDeviceTransport = .httpRest,
+    endpoint: String = "",
+    commandTarget: String = "",
+    username: String = "",
+    authToken: String = "",
+    risk: CustomDeviceRisk = .medium,
+    enabled: Bool = true
+  ) {
+    let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.id = String(cleanId.prefix(Self.maximumIdLength)).ifBlank(UUID().uuidString)
+    self.name = String(cleanName.prefix(Self.maximumNameLength)).ifBlank("Custom Device")
+    self.transport = transport
+    self.endpoint = String(endpoint.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumEndpointLength))
+    self.commandTarget = String(commandTarget.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumCommandTargetLength))
+    self.username = String(username.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumUsernameLength))
+    self.authToken = String(authToken.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumAuthTokenLength))
+    self.risk = risk
+    self.enabled = enabled
+  }
+
+  var configured: Bool {
+    enabled && !name.isEmpty && !endpoint.isEmpty
+  }
+
+  var normalized: CustomDeviceConnector {
+    CustomDeviceConnector(
+      id: id,
+      name: name,
+      transport: transport,
+      endpoint: endpoint,
+      commandTarget: commandTarget,
+      username: username,
+      authToken: authToken,
+      risk: risk,
+      enabled: enabled
+    )
+  }
+
+  var withoutAuthToken: CustomDeviceConnector {
+    CustomDeviceConnector(
+      id: id,
+      name: name,
+      transport: transport,
+      endpoint: endpoint,
+      commandTarget: commandTarget,
+      username: username,
+      authToken: "",
+      risk: risk,
+      enabled: enabled
+    )
+  }
+
+  var maskedAuthToken: String {
+    guard !authToken.isEmpty else { return "" }
+    if authToken.count <= 8 { return "****" }
+    return "\(authToken.prefix(4))****\(authToken.suffix(4))"
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case transport
+    case endpoint
+    case commandTarget = "command_target"
+    case username
+    case authToken = "auth_token"
+    case risk
+    case enabled
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      name: try container.decodeIfPresent(String.self, forKey: .name) ?? "Custom Device",
+      transport: try container.decodeIfPresent(CustomDeviceTransport.self, forKey: .transport) ?? .httpRest,
+      endpoint: try container.decodeIfPresent(String.self, forKey: .endpoint) ?? "",
+      commandTarget: try container.decodeIfPresent(String.self, forKey: .commandTarget) ?? "",
+      username: try container.decodeIfPresent(String.self, forKey: .username) ?? "",
+      authToken: try container.decodeIfPresent(String.self, forKey: .authToken) ?? "",
+      risk: try container.decodeIfPresent(CustomDeviceRisk.self, forKey: .risk) ?? .medium,
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+    )
+  }
+}
+
+struct HomeAssistantSettings: Codable, Equatable {
+  static let maximumBaseURLLength = 2_000
+  static let maximumAccessTokenLength = 8_000
+  static let maximumEntityIdLength = 240
+
+  var enabled: Bool
+  var baseUrl: String
+  var accessToken: String
+  var defaultEntityId: String
+
+  init(
+    enabled: Bool = false,
+    baseUrl: String = "",
+    accessToken: String = "",
+    defaultEntityId: String = ""
+  ) {
+    self.enabled = enabled
+    var cleanBaseURL = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    while cleanBaseURL.hasSuffix("/") {
+      cleanBaseURL.removeLast()
+    }
+    self.baseUrl = String(cleanBaseURL.prefix(Self.maximumBaseURLLength))
+    self.accessToken = String(
+      accessToken.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumAccessTokenLength)
+    )
+    self.defaultEntityId = String(
+      defaultEntityId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumEntityIdLength)
+    )
+  }
+
+  static let `default` = HomeAssistantSettings()
+
+  var credentialsConfigured: Bool {
+    !baseUrl.isEmpty && !accessToken.isEmpty
+  }
+
+  var configured: Bool {
+    enabled && credentialsConfigured
+  }
+
+  var normalized: HomeAssistantSettings {
+    HomeAssistantSettings(
+      enabled: enabled,
+      baseUrl: baseUrl,
+      accessToken: accessToken,
+      defaultEntityId: defaultEntityId
+    )
+  }
+
+  var withoutAccessToken: HomeAssistantSettings {
+    HomeAssistantSettings(
+      enabled: enabled,
+      baseUrl: baseUrl,
+      accessToken: "",
+      defaultEntityId: defaultEntityId
+    )
+  }
+
+  var maskedAccessToken: String {
+    guard !accessToken.isEmpty else { return "" }
+    if accessToken.count <= 8 { return "********" }
+    return "\(accessToken.prefix(4))...\(accessToken.suffix(4))"
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case version
+    case enabled
+    case baseUrl = "base_url"
+    case accessToken = "access_token"
+    case defaultEntityId = "default_entity_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false,
+      baseUrl: try container.decodeIfPresent(String.self, forKey: .baseUrl) ?? "",
+      accessToken: try container.decodeIfPresent(String.self, forKey: .accessToken) ?? "",
+      defaultEntityId: try container.decodeIfPresent(String.self, forKey: .defaultEntityId) ?? ""
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    let value = normalized
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(1, forKey: .version)
+    try container.encode(value.enabled, forKey: .enabled)
+    try container.encode(value.baseUrl, forKey: .baseUrl)
+    try container.encode(value.accessToken, forKey: .accessToken)
+    try container.encode(value.defaultEntityId, forKey: .defaultEntityId)
   }
 }
 

@@ -954,6 +954,26 @@ struct SettingsView: View {
             }
           }
         }
+        Section("Custom Devices") {
+          NavigationLink(destination: CustomDeviceConnectorsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Device Connectors")
+              Text(customDeviceSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
+        Section("Home Assistant") {
+          NavigationLink(destination: HomeAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Smart Home")
+              Text(homeAssistantSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -1134,6 +1154,20 @@ struct SettingsView: View {
     let settings = store.modelPlannerSettings
     guard settings.enabled else { return "Local deterministic planner" }
     return "Model planning / \(settings.maxActions) actions / \(settings.maxReplans) replans"
+  }
+
+  private var customDeviceSummary: String {
+    let total = store.customDeviceConnectors.count
+    guard total > 0 else { return "No custom devices" }
+    let enabled = store.customDeviceConnectors.filter(\.enabled).count
+    return "\(total) configured / \(enabled) enabled"
+  }
+
+  private var homeAssistantSummary: String {
+    let settings = store.homeAssistantSettings
+    if settings.configured { return "Configured and enabled" }
+    if settings.credentialsConfigured { return "Configured, disabled" }
+    return "Not configured"
   }
 }
 
@@ -1416,6 +1450,220 @@ private extension AgentTaskBudget {
   }
 }
 
+struct CustomDeviceConnectorsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Devices") {
+        if store.customDeviceConnectors.isEmpty {
+          Text("No custom devices")
+            .foregroundColor(.secondary)
+        }
+        ForEach(store.customDeviceConnectors) { connector in
+          NavigationLink(destination: CustomDeviceConnectorEditorView(connector: connector)) {
+            VStack(alignment: .leading, spacing: 4) {
+              HStack {
+                Text(connector.name)
+                Spacer()
+                if connector.configured {
+                  Image(systemName: "checkmark.circle")
+                    .foregroundColor(.green)
+                }
+              }
+              Text("\(connector.transport.displayName) / \(connector.risk.displayName)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
+        .onDelete { offsets in
+          let ids = offsets.map { store.customDeviceConnectors[$0].id }
+          for id in ids {
+            store.deleteCustomDeviceConnector(id: id)
+          }
+        }
+      }
+      Section {
+        NavigationLink(destination: CustomDeviceConnectorEditorView(connector: CustomDeviceConnector())) {
+          Label("Add Custom Device", systemImage: "plus.circle")
+        }
+      }
+    }
+    .navigationTitle("Custom Devices")
+  }
+}
+
+struct CustomDeviceConnectorEditorView: View {
+  @EnvironmentObject private var store: SignalASIStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var draft: CustomDeviceConnector
+  private let originalId: String
+
+  init(connector: CustomDeviceConnector) {
+    _draft = State(initialValue: connector)
+    originalId = connector.id
+  }
+
+  var body: some View {
+    Form {
+      Section("Connection") {
+        TextField("Name", text: stringBinding(\.name))
+        Picker("Transport", selection: transportBinding) {
+          ForEach(CustomDeviceTransport.allCases) { transport in
+            Text(transport.displayName).tag(transport)
+          }
+        }
+        TextField("Endpoint", text: stringBinding(\.endpoint))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        TextField("Command Target", text: stringBinding(\.commandTarget))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+      }
+      Section("Authentication") {
+        TextField("Username", text: stringBinding(\.username))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        SecureField("Auth Token", text: stringBinding(\.authToken))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        if !draft.maskedAuthToken.isEmpty {
+          Text("Stored token: \(draft.maskedAuthToken)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+      }
+      Section("Safety") {
+        Picker("Risk", selection: riskBinding) {
+          ForEach(CustomDeviceRisk.allCases) { risk in
+            Text(risk.displayName).tag(risk)
+          }
+        }
+        Toggle("Enabled", isOn: boolBinding(\.enabled))
+      }
+      Section("Status") {
+        if draft.configured {
+          Label("Configured", systemImage: "checkmark.circle")
+            .foregroundColor(.green)
+        } else {
+          Label("Name and endpoint are required", systemImage: "exclamationmark.triangle")
+            .foregroundColor(.orange)
+        }
+      }
+      Section {
+        Button {
+          store.upsertCustomDeviceConnector(draft)
+          dismiss()
+        } label: {
+          Label("Save", systemImage: "checkmark.circle")
+        }
+        .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+          draft.endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+        if store.customDeviceConnectors.contains(where: { $0.id == originalId }) {
+          Button(role: .destructive) {
+            store.deleteCustomDeviceConnector(id: originalId)
+            dismiss()
+          } label: {
+            Label("Delete", systemImage: "trash")
+          }
+        }
+      }
+    }
+    .navigationTitle("Custom Device")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var transportBinding: Binding<CustomDeviceTransport> {
+    Binding(
+      get: { draft.transport },
+      set: { draft.transport = $0 }
+    )
+  }
+
+  private var riskBinding: Binding<CustomDeviceRisk> {
+    Binding(
+      get: { draft.risk },
+      set: { draft.risk = $0 }
+    )
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<CustomDeviceConnector, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { draft[keyPath: keyPath] },
+      set: { draft[keyPath: keyPath] = $0 }
+    )
+  }
+
+  private func stringBinding(_ keyPath: WritableKeyPath<CustomDeviceConnector, String>) -> Binding<String> {
+    Binding(
+      get: { draft[keyPath: keyPath] },
+      set: { draft[keyPath: keyPath] = $0 }
+    )
+  }
+}
+
+struct HomeAssistantSettingsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Connection") {
+        Toggle("Enable Home Assistant", isOn: boolBinding(\.enabled))
+        TextField("Server URL", text: stringBinding(\.baseUrl))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+          .keyboardType(.URL)
+        SecureField("Access Token", text: stringBinding(\.accessToken))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        if !store.homeAssistantSettings.maskedAccessToken.isEmpty {
+          Text("Stored token: \(store.homeAssistantSettings.maskedAccessToken)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+      }
+      Section("Default Target") {
+        TextField("Default Entity", text: stringBinding(\.defaultEntityId))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        Text("Example: light.living_room")
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Section("Status") {
+        if store.homeAssistantSettings.configured {
+          Label("Configured", systemImage: "checkmark.circle")
+            .foregroundColor(.green)
+        } else if store.homeAssistantSettings.credentialsConfigured {
+          Label("Configured, disabled", systemImage: "pause.circle")
+            .foregroundColor(.orange)
+        } else {
+          Label("Not configured", systemImage: "exclamationmark.triangle")
+            .foregroundColor(.secondary)
+        }
+      }
+    }
+    .navigationTitle("Home Assistant")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<HomeAssistantSettings, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { store.homeAssistantSettings[keyPath: keyPath] },
+      set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+
+  private func stringBinding(_ keyPath: WritableKeyPath<HomeAssistantSettings, String>) -> Binding<String> {
+    Binding(
+      get: { store.homeAssistantSettings[keyPath: keyPath] },
+      set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+}
+
 struct AgentModelPlannerSettingsView: View {
   @EnvironmentObject private var store: SignalASIStore
 
@@ -1561,7 +1809,7 @@ struct ResetPrivateDataView: View {
     NavigationView {
       Form {
         Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, model planner settings, and saved model keys on this device.")
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, custom device connectors, Home Assistant configuration, model planner settings, and saved model keys on this device.")
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)

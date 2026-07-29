@@ -695,9 +695,12 @@ class DesktopMcpReq(BaseModel):
     name: str
     transport: str = "local_stdio"
     command: str = ""
+    command_argv: list[str] = Field(default_factory=list)
+    environment_env: dict[str, str] = Field(default_factory=dict)
     endpoint: str = ""
     working_directory: str = ""
     header_env: dict[str, str] = Field(default_factory=dict)
+    header_templates: dict[str, str] = Field(default_factory=dict)
     protocol_version: str = "2025-11-25"
     stdio_framing: str = "newline"
     allow_insecure_http: bool = False
@@ -707,6 +710,19 @@ class DesktopMcpReq(BaseModel):
     auto_invoke: bool = False
     permission_mode: str = "ask_for_changes"
     timeout_seconds: int = 20
+    import_source: str = ""
+
+
+class DesktopMcpImportPreviewReq(BaseModel):
+    content: str = Field(min_length=1, max_length=1_048_576)
+    file_name: str = Field(default="", max_length=260)
+    base_directory: str = Field(default="", max_length=1_000)
+    source_hint: str = Field(default="auto", max_length=32)
+
+
+class DesktopMcpImportCommitReq(DesktopMcpImportPreviewReq):
+    digest: str = Field(min_length=64, max_length=64)
+    selected_ids: list[str] = Field(default_factory=list, max_length=128)
 
 
 class DesktopControlSettingsReq(BaseModel):
@@ -1823,6 +1839,102 @@ def api_save_desktop_mcp(req: DesktopMcpReq, request: Request):
         return desktop_mcp_registry().upsert(req.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=api_error("desktop_mcp_invalid", str(exc))) from exc
+
+
+@app.get("/api/desktop-mcp-import/sources")
+def api_desktop_mcp_import_sources(request: Request):
+    require_loopback(request)
+    from mcp_config_import import discover_mcp_config_sources
+
+    return {"sources": discover_mcp_config_sources()}
+
+
+@app.post("/api/desktop-mcp-import/preview")
+def api_desktop_mcp_import_preview(
+    req: DesktopMcpImportPreviewReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_mcp import desktop_mcp_registry
+    from mcp_config_import import McpConfigImportError, parse_mcp_import
+
+    registry = desktop_mcp_registry()
+    try:
+        document = parse_mcp_import(
+            req.content,
+            source_hint=req.source_hint,
+            file_name=req.file_name,
+            base_directory=req.base_directory,
+        )
+        return document.public(
+            connection["id"]
+            for connection in registry.list(include_configuration=True)
+        )
+    except McpConfigImportError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("desktop_mcp_import_invalid", str(exc)),
+        ) from exc
+
+
+@app.post("/api/desktop-mcp-import/commit")
+def api_desktop_mcp_import_commit(
+    req: DesktopMcpImportCommitReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_mcp import desktop_mcp_registry
+    from mcp_config_import import McpConfigImportError, parse_mcp_import
+
+    registry = desktop_mcp_registry()
+    selected = {str(value).strip().casefold() for value in req.selected_ids}
+    if not selected:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("desktop_mcp_import_empty"),
+        )
+    try:
+        document = parse_mcp_import(
+            req.content,
+            source_hint=req.source_hint,
+            file_name=req.file_name,
+            base_directory=req.base_directory,
+        )
+        if document.digest != req.digest.casefold():
+            raise McpConfigImportError(
+                "The MCP configuration changed after preview. Preview it again."
+            )
+        imported = []
+        skipped = []
+        for candidate in document.candidates:
+            connection_id = candidate.connection["id"]
+            if connection_id not in selected:
+                continue
+            if not candidate.importable:
+                skipped.append(
+                    {
+                        "id": connection_id,
+                        "reason": "This MCP server needs a safe configuration update before import.",
+                    }
+                )
+                continue
+            imported.append(registry.upsert(candidate.connection))
+        return {
+            "source": document.source,
+            "digest": document.digest,
+            "imported": imported,
+            "skipped": skipped,
+        }
+    except McpConfigImportError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("desktop_mcp_import_invalid", str(exc)),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("desktop_mcp_invalid", str(exc)),
+        ) from exc
 
 
 @app.post("/api/desktop-mcp/{connection_id}/probe")

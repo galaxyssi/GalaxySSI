@@ -194,6 +194,17 @@
       <div id="mcpCapability" class="capability-pane">
         <div class="capability-summary"><div><strong data-i18n="MCP connections">MCP connections</strong><p id="mcpSummary"></p></div></div>
         <div id="mcpList" class="capability-list"></div>
+        <details id="mcpImporter" class="drawer-details">
+          <summary data-i18n="Import MCP configuration">Import MCP configuration</summary>
+          <div class="mcp-import-panel">
+            <p data-i18n="Import Claude, Codex, OpenClaw, Hermes, or standard MCP configuration files. Secrets remain environment variable references.">Import Claude, Codex, OpenClaw, Hermes, or standard MCP configuration files. Secrets remain environment variable references.</p>
+            <div id="mcpDiscoveredSources" class="mcp-import-sources"></div>
+            <button id="chooseMcpImportButton" class="secondary-button" data-i18n="Choose configuration file">Choose configuration file</button>
+            <div id="mcpImportFileSummary" class="mcp-import-file" hidden></div>
+            <div id="mcpImportPreview" class="mcp-import-preview"></div>
+            <button id="commitMcpImportButton" class="primary-button" data-i18n="Import selected connections" hidden>Import selected connections</button>
+          </div>
+        </details>
         <section class="mcp-audit-section">
           <div class="mcp-audit-heading">
             <strong data-i18n="Recent tool activity">Recent tool activity</strong>
@@ -212,6 +223,7 @@
             </select></label>
             <label id="mcpCommandField"><span data-i18n="Server command">Server command</span><input id="mcpCommand" maxlength="4000" placeholder="python server.py"></label>
             <label id="mcpWorkingDirectoryField"><span data-i18n="Working directory">Working directory</span><input id="mcpWorkingDirectory" maxlength="1000" data-i18n-placeholder="Optional local working directory" placeholder="Optional local working directory"></label>
+            <label id="mcpProcessEnvField"><span data-i18n="Process environment variables">Process environment variables</span><textarea id="mcpProcessEnv" rows="3" maxlength="4000" placeholder="API_KEY=HOST_API_KEY"></textarea><small data-i18n="One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.">One CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.</small></label>
             <label id="mcpEndpointField" hidden><span data-i18n="MCP endpoint">MCP endpoint</span><input id="mcpEndpoint" maxlength="2000" placeholder="https://example.com/mcp"></label>
             <label id="mcpHeaderEnvField" hidden><span data-i18n="Header environment variables">Header environment variables</span><textarea id="mcpHeaderEnv" rows="3" maxlength="4000" placeholder="Authorization=SIGNALASI_MCP_TOKEN"></textarea><small data-i18n="One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.">One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.</small></label>
             <label><span data-i18n="Protocol version">Protocol version</span><select id="mcpProtocolVersion">

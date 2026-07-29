@@ -237,6 +237,16 @@ def _client_config(args: argparse.Namespace) -> McpClientConfig:
     return McpClientConfig(
         transport=transport,
         command=str(command or ""),
+        command_argv=tuple(
+            str(value)
+            for value in list(getattr(args, "command_argv", ()) or ())
+        ),
+        process_environment={
+            str(key): str(value)
+            for key, value in dict(
+                getattr(args, "process_environment", {}) or {}
+            ).items()
+        },
         endpoint=str(getattr(args, "endpoint", "") or ""),
         request_headers=dict(getattr(args, "request_headers", {}) or {}),
         working_directory=str(getattr(args, "working_directory", "") or ""),

@@ -179,6 +179,14 @@ const state = {
   skills: [],
   mcp: [],
   mcpAudit: [],
+  mcpImport: {
+    sources: [],
+    fileName: "",
+    baseDirectory: "",
+    content: "",
+    sourceHint: "auto",
+    preview: null
+  },
   proactiveTasks: [],
   proactiveRuns: [],
   selectedProactiveTaskId: "",
@@ -1542,6 +1550,64 @@ function renderMcp() {
         <code>${escapeHtml(parameters)}</code>
       </article>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("No MCP tool activity yet."))}</div>`;
+  renderMcpImporter();
+}
+
+function mcpImportSourceLabel(source) {
+  return {
+    claude: "Claude",
+    codex: "Codex",
+    openclaw: "OpenClaw",
+    hermes: "Hermes",
+    mcp_json: "MCP JSON",
+    mcp_toml: "MCP TOML",
+    mcp_yaml: "MCP YAML"
+  }[source] || "MCP";
+}
+
+function renderMcpImporter() {
+  const sources = Array.isArray(state.mcpImport.sources) ? state.mcpImport.sources : [];
+  $("#mcpDiscoveredSources").innerHTML = sources.length
+    ? `<small>${escapeHtml(t("Detected configurations"))}</small>${sources.map((source) => `
+      <button class="mcp-import-source" data-mcp-import-path="${escapeHtml(source.path)}" data-mcp-import-hint="${escapeHtml(source.source)}">
+        <strong>${escapeHtml(mcpImportSourceLabel(source.source))}</strong>
+        <span>${escapeHtml(source.file_name || "")}</span>
+      </button>`).join("")}`
+    : `<small>${escapeHtml(t("No installed MCP configuration was detected. Choose a file instead."))}</small>`;
+
+  const summary = $("#mcpImportFileSummary");
+  const preview = state.mcpImport.preview;
+  summary.hidden = !state.mcpImport.fileName;
+  summary.textContent = state.mcpImport.fileName
+    ? `${state.mcpImport.fileName} · ${mcpImportSourceLabel(preview?.source || state.mcpImport.sourceHint)}`
+    : "";
+  $("#mcpImportPreview").innerHTML = preview?.candidates?.length
+    ? preview.candidates.map((candidate) => {
+      const warnings = Array.isArray(candidate.warnings) ? candidate.warnings : [];
+      const missing = Array.isArray(candidate.missing_environment)
+        ? candidate.missing_environment
+        : [];
+      const target = candidate.transport === "local_stdio"
+        ? candidate.command
+        : candidate.endpoint;
+      return `
+        <label class="mcp-import-candidate ${candidate.importable ? "" : "blocked"}">
+          <input type="checkbox" data-mcp-import-id="${escapeHtml(candidate.id)}" ${candidate.importable ? "checked" : "disabled"}>
+          <span class="mcp-import-candidate-body">
+            <span class="mcp-import-candidate-heading">
+              <strong>${escapeHtml(candidate.name || candidate.id)}</strong>
+              <span>${escapeHtml(t(candidate.conflict ? "Replace" : candidate.importable ? "Ready to import" : "Needs changes"))}</span>
+            </span>
+            <small>${escapeHtml(mcpImportSourceLabel(candidate.source))} · ${escapeHtml(target || t("No safe target"))}</small>
+            ${missing.length ? `<small class="mcp-import-warning">${escapeHtml(t("Missing environment"))}: ${escapeHtml(missing.join(", "))}</small>` : ""}
+            ${warnings.map((warning) => `<small class="mcp-import-warning">${escapeHtml(t(warning))}</small>`).join("")}
+          </span>
+        </label>`;
+    }).join("")
+    : "";
+  $("#commitMcpImportButton").hidden = !preview?.candidates?.some(
+    (candidate) => candidate.importable
+  );
 }
 
 function proactiveTriggerSummary(trigger = {}) {
@@ -1642,12 +1708,13 @@ async function refreshMemory(query = "") {
 
 async function refreshCapabilities() {
   try {
-    const [memory, memoryHistory, memoryInbox, skills, mcp, proactive, proactiveRuns] = await Promise.all([
+    const [memory, memoryHistory, memoryInbox, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
       window.signalasi.getDesktopMemory("", 100, "active"),
       window.signalasi.getDesktopMemory("", 100, "history"),
       window.signalasi.getDesktopMemoryInbox(100),
       window.signalasi.getDesktopSkills(),
       window.signalasi.getDesktopMcp(),
+      window.signalasi.getDesktopMcpImportSources(),
       window.signalasi.listProactiveTasks(200),
       window.signalasi.listProactiveRuns(state.selectedProactiveTaskId, 100)
     ]);
@@ -1662,6 +1729,9 @@ async function refreshCapabilities() {
     state.skills = Array.isArray(skills.skills) ? skills.skills : [];
     state.mcp = Array.isArray(mcp.connections) ? mcp.connections : [];
     state.mcpAudit = Array.isArray(mcp.audit) ? mcp.audit : [];
+    state.mcpImport.sources = Array.isArray(mcpImportSources.sources)
+      ? mcpImportSources.sources
+      : [];
     state.proactiveTasks = Array.isArray(proactive.tasks) ? proactive.tasks : [];
     state.proactiveRuns = Array.isArray(proactiveRuns.runs) ? proactiveRuns.runs : [];
     renderMemory();
@@ -2041,14 +2111,22 @@ async function saveSkill() {
 
 async function saveMcp() {
   const transport = $("#mcpTransport").value;
+  const connectionId = $("#mcpId").value.trim().toLowerCase();
+  const existing = state.mcp.find((connection) => connection.id === connectionId);
+  const command = $("#mcpCommand").value.trim();
   const payload = {
-    id: $("#mcpId").value.trim().toLowerCase(),
+    id: connectionId,
     name: $("#mcpName").value.trim(),
     transport,
-    command: $("#mcpCommand").value.trim(),
+    command,
+    command_argv: existing?.command === command
+      ? (existing.command_argv || [])
+      : [],
+    environment_env: parseMcpEnvironmentMapping($("#mcpProcessEnv").value),
     endpoint: $("#mcpEndpoint").value.trim(),
     working_directory: $("#mcpWorkingDirectory").value.trim(),
     header_env: parseMcpHeaderEnvironment($("#mcpHeaderEnv").value),
+    header_templates: existing?.header_templates || {},
     protocol_version: $("#mcpProtocolVersion").value,
     stdio_framing: "newline",
     allow_insecure_http: $("#mcpAllowInsecureHttp").checked,
@@ -2057,7 +2135,8 @@ async function saveMcp() {
     enabled: true,
     auto_invoke: $("#mcpAutoInvoke").checked,
     permission_mode: $("#mcpPermissionMode").value,
-    timeout_seconds: Number($("#mcpTimeout").value || 20)
+    timeout_seconds: Number($("#mcpTimeout").value || 20),
+    import_source: existing?.import_source || ""
   };
   const targetComplete = transport === "local_stdio" ? payload.command : payload.endpoint;
   if (!payload.id || !payload.name || !targetComplete) {
@@ -2072,11 +2151,21 @@ async function saveMcp() {
 }
 
 function parseMcpHeaderEnvironment(value) {
+  return parseMcpEnvironmentMapping(
+    value,
+    "Use one Header=ENVIRONMENT_VARIABLE mapping per line."
+  );
+}
+
+function parseMcpEnvironmentMapping(
+  value,
+  errorMessage = "Use one CHILD_VARIABLE=HOST_ENVIRONMENT_VARIABLE mapping per line."
+) {
   const result = {};
   String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).forEach((line) => {
     const separator = line.indexOf("=");
     if (separator <= 0 || separator === line.length - 1) {
-      throw new Error(t("Use one Header=ENVIRONMENT_VARIABLE mapping per line."));
+      throw new Error(t(errorMessage));
     }
     result[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
   });
@@ -2087,6 +2176,7 @@ function syncMcpTransportFields() {
   const remote = $("#mcpTransport").value === "streamable_http";
   $("#mcpCommandField").hidden = remote;
   $("#mcpWorkingDirectoryField").hidden = remote;
+  $("#mcpProcessEnvField").hidden = remote;
   $("#mcpEndpointField").hidden = !remote;
   $("#mcpHeaderEnvField").hidden = !remote;
   $("#mcpInsecureHttpField").hidden = !remote;
@@ -2099,6 +2189,7 @@ function resetMcpEditor() {
     "#mcpCommand",
     "#mcpEndpoint",
     "#mcpWorkingDirectory",
+    "#mcpProcessEnv",
     "#mcpHeaderEnv",
     "#mcpTool",
     "#mcpTriggers"
@@ -2121,6 +2212,9 @@ function editMcp(connection) {
   $("#mcpCommand").value = connection.command || "";
   $("#mcpEndpoint").value = connection.endpoint || "";
   $("#mcpWorkingDirectory").value = connection.working_directory || "";
+  $("#mcpProcessEnv").value = Object.entries(connection.environment_env || {})
+    .map(([child, environment]) => `${child}=${environment}`)
+    .join("\n");
   $("#mcpHeaderEnv").value = Object.entries(connection.header_env || {})
     .map(([header, environment]) => `${header}=${environment}`)
     .join("\n");
@@ -2134,6 +2228,55 @@ function editMcp(connection) {
   syncMcpTransportFields();
   $("#mcpEditor").open = true;
   $("#mcpEditor").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function previewMcpImport(file, sourceHint = "auto") {
+  if (!file?.content || !file?.fileName) return;
+  const preview = await window.signalasi.previewDesktopMcpImport({
+    content: file.content,
+    file_name: file.fileName,
+    base_directory: file.baseDirectory || "",
+    source_hint: sourceHint
+  });
+  state.mcpImport = {
+    ...state.mcpImport,
+    fileName: file.fileName,
+    baseDirectory: file.baseDirectory || "",
+    content: file.content,
+    sourceHint,
+    preview
+  };
+  renderMcpImporter();
+}
+
+async function commitMcpImport() {
+  const preview = state.mcpImport.preview;
+  if (!preview) return;
+  const selectedIds = $$("[data-mcp-import-id]:checked")
+    .map((input) => input.dataset.mcpImportId)
+    .filter(Boolean);
+  if (!selectedIds.length) {
+    return showToast(t("Select at least one MCP connection."));
+  }
+  const result = await window.signalasi.commitDesktopMcpImport({
+    content: state.mcpImport.content,
+    file_name: state.mcpImport.fileName,
+    base_directory: state.mcpImport.baseDirectory,
+    source_hint: state.mcpImport.sourceHint,
+    digest: preview.digest,
+    selected_ids: selectedIds
+  });
+  const imported = Array.isArray(result.imported) ? result.imported.length : 0;
+  showToast(t("{count} MCP connections imported", { count: imported }));
+  state.mcpImport = {
+    ...state.mcpImport,
+    fileName: "",
+    baseDirectory: "",
+    content: "",
+    sourceHint: "auto",
+    preview: null
+  };
+  await refreshCapabilities();
 }
 
 function selectCapabilityTab(name) {
@@ -2742,6 +2885,28 @@ function bindEvents() {
     if (remove && window.confirm(t("Delete this skill?"))) await window.signalasi.deleteDesktopSkill(remove.dataset.deleteSkill);
     if (toggle || remove) await refreshCapabilities();
   });
+  $("#chooseMcpImportButton").addEventListener("click", async () => {
+    try {
+      const file = await window.signalasi.chooseMcpConfig();
+      if (file) await previewMcpImport(file, "auto");
+    } catch (error) {
+      showToast(error.message || String(error));
+    }
+  });
+  $("#mcpDiscoveredSources").addEventListener("click", async (event) => {
+    const source = event.target.closest("[data-mcp-import-path]");
+    if (!source) return;
+    try {
+      const file = await window.signalasi.readDiscoveredMcpConfig(
+        source.dataset.mcpImportPath
+      );
+      await previewMcpImport(file, source.dataset.mcpImportHint || "auto");
+    } catch (error) {
+      showToast(error.message || String(error));
+    }
+  });
+  $("#commitMcpImportButton").addEventListener("click", () =>
+    commitMcpImport().catch((error) => showToast(error.message || String(error))));
   $("#saveMcpButton").addEventListener("click", () => saveMcp().catch((error) => showToast(error.message || String(error))));
   $("#mcpTransport").addEventListener("change", syncMcpTransportFields);
   $("#mcpList").addEventListener("click", async (event) => {

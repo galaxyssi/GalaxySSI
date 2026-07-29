@@ -109,6 +109,12 @@ final class SignalASIStore: ObservableObject {
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
+  @Published private(set) var customDeviceConnectors: [CustomDeviceConnector] {
+    didSet { save() }
+  }
+  @Published private(set) var homeAssistantSettings: HomeAssistantSettings {
+    didSet { save() }
+  }
   @Published var modelPlannerSettings: AgentModelPlannerSettings {
     didSet { save() }
   }
@@ -125,6 +131,8 @@ final class SignalASIStore: ObservableObject {
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
     var agentTaskBudget: AgentTaskBudget
+    var customDeviceConnectors: [CustomDeviceConnector]
+    var homeAssistantSettings: HomeAssistantSettings
     var modelPlannerSettings: AgentModelPlannerSettings
 
     init(
@@ -139,6 +147,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
       agentTaskBudget: AgentTaskBudget = .default,
+      customDeviceConnectors: [CustomDeviceConnector] = [],
+      homeAssistantSettings: HomeAssistantSettings = .default,
       modelPlannerSettings: AgentModelPlannerSettings = .default
     ) {
       self.profile = profile
@@ -152,6 +162,8 @@ final class SignalASIStore: ObservableObject {
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
       self.agentTaskBudget = agentTaskBudget
+      self.customDeviceConnectors = customDeviceConnectors
+      self.homeAssistantSettings = homeAssistantSettings
       self.modelPlannerSettings = modelPlannerSettings
     }
 
@@ -168,6 +180,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
+      customDeviceConnectors = try container.decodeIfPresent([CustomDeviceConnector].self, forKey: .customDeviceConnectors) ?? []
+      homeAssistantSettings = try container.decodeIfPresent(HomeAssistantSettings.self, forKey: .homeAssistantSettings) ?? .default
       modelPlannerSettings = try container.decodeIfPresent(AgentModelPlannerSettings.self, forKey: .modelPlannerSettings) ?? .default
     }
   }
@@ -176,6 +190,7 @@ final class SignalASIStore: ObservableObject {
   private let secrets: SignalASISecretStore
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
+  private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
     self.defaults = defaults
@@ -193,6 +208,26 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      customDeviceConnectors = state.customDeviceConnectors.map { connector in
+        CustomDeviceConnector(
+          id: connector.id,
+          name: connector.name,
+          transport: connector.transport,
+          endpoint: connector.endpoint,
+          commandTarget: connector.commandTarget,
+          username: connector.username,
+          authToken: secrets.string(account: "custom_device_connector.\(connector.id).auth_token") ?? "",
+          risk: connector.risk,
+          enabled: connector.enabled
+        )
+      }
+      let storedHomeAssistantAccessToken = secrets.string(account: "home_assistant.access_token") ?? ""
+      homeAssistantSettings = HomeAssistantSettings(
+        enabled: state.homeAssistantSettings.enabled,
+        baseUrl: state.homeAssistantSettings.baseUrl,
+        accessToken: storedHomeAssistantAccessToken,
+        defaultEntityId: state.homeAssistantSettings.defaultEntityId
+      )
       modelPlannerSettings = state.modelPlannerSettings
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
@@ -207,6 +242,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      customDeviceConnectors = []
+      homeAssistantSettings = .default
       modelPlannerSettings = .default
       save()
     }
@@ -383,7 +420,11 @@ final class SignalASIStore: ObservableObject {
     for account in accounts {
       secrets.delete(account: account)
     }
+    for connector in customDeviceConnectors {
+      secrets.delete(account: customDeviceAuthTokenAccount(id: connector.id))
+    }
     secrets.delete(account: identityPrivateKeyAccount)
+    secrets.delete(account: homeAssistantAccessTokenAccount)
     defaults.removeObject(forKey: storageKey)
     resetToFreshState()
     save()
@@ -435,6 +476,24 @@ final class SignalASIStore: ObservableObject {
     agentTaskBudget = next.normalized
   }
 
+  func upsertCustomDeviceConnector(_ connector: CustomDeviceConnector) {
+    let clean = connector.normalized
+    let next = Array((customDeviceConnectors.filter { $0.id != clean.id } + [clean]).suffix(CustomDeviceConnector.maximumConnectors))
+    try? applyCustomDeviceConnectors(next)
+  }
+
+  @discardableResult
+  func deleteCustomDeviceConnector(id: String) -> Bool {
+    let next = customDeviceConnectors.filter { $0.id != id }
+    guard next.count != customDeviceConnectors.count else { return false }
+    try? applyCustomDeviceConnectors(next)
+    return true
+  }
+  func updateHomeAssistantSettings(_ mutate: (inout HomeAssistantSettings) -> Void) {
+    var next = homeAssistantSettings
+    mutate(&next)
+    try? applyHomeAssistantSettings(next)
+  }
   func updateModelPlannerSettings(_ mutate: (inout AgentModelPlannerSettings) -> Void) {
     var next = modelPlannerSettings
     mutate(&next)
@@ -739,6 +798,8 @@ final class SignalASIStore: ObservableObject {
         includesDisplaySettings: true,
         includesAgentSafetySettings: true,
         includesAgentTaskBudget: true,
+        includesCustomDeviceConnectors: true,
+        includesHomeAssistantSettings: true,
         includesModelPlannerSettings: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
@@ -750,6 +811,8 @@ final class SignalASIStore: ObservableObject {
         agentSafetySettings: agentSafetySettings,
         cloudAPISecrets: cloudSecrets,
         taskBudget: agentTaskBudget,
+        customDeviceConnectors: customDeviceConnectors,
+        homeAssistantSettings: homeAssistantSettings,
         modelPlannerSettings: modelPlannerSettings
       ),
       contacts: includeContacts ? contacts : [],
@@ -782,6 +845,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings = payload.agentData.displaySettings
       agentSafetySettings = payload.agentData.agentSafetySettings
       agentTaskBudget = payload.agentData.taskBudget
+      try applyCustomDeviceConnectors(payload.agentData.customDeviceConnectors)
+      try applyHomeAssistantSettings(payload.agentData.homeAssistantSettings)
       modelPlannerSettings = payload.agentData.modelPlannerSettings
     }
     save()
@@ -898,6 +963,8 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    customDeviceConnectors = []
+    homeAssistantSettings = .default
     modelPlannerSettings = .default
   }
 
@@ -953,6 +1020,41 @@ final class SignalASIStore: ObservableObject {
     }
   }
 
+  private func applyCustomDeviceConnectors(_ connectors: [CustomDeviceConnector]) throws {
+    var unique: [CustomDeviceConnector] = []
+    for connector in connectors.map(\.normalized) {
+      unique.removeAll { $0.id == connector.id }
+      unique.append(connector)
+    }
+    let normalized = Array(unique.suffix(CustomDeviceConnector.maximumConnectors))
+    let nextIds = Set(normalized.map(\.id))
+    for connector in customDeviceConnectors where !nextIds.contains(connector.id) {
+      secrets.delete(account: customDeviceAuthTokenAccount(id: connector.id))
+    }
+    for connector in normalized {
+      let account = customDeviceAuthTokenAccount(id: connector.id)
+      if connector.authToken.isEmpty {
+        secrets.delete(account: account)
+      } else {
+        try secrets.setString(connector.authToken, account: account)
+      }
+    }
+    customDeviceConnectors = normalized
+  }
+
+  private func customDeviceAuthTokenAccount(id: String) -> String {
+    "custom_device_connector.\(id).auth_token"
+  }
+  private func applyHomeAssistantSettings(_ settings: HomeAssistantSettings) throws {
+    let next = settings.normalized
+    if next.accessToken.isEmpty {
+      secrets.delete(account: homeAssistantAccessTokenAccount)
+    } else {
+      try secrets.setString(next.accessToken, account: homeAssistantAccessTokenAccount)
+    }
+    homeAssistantSettings = next
+  }
+
   private func save() {
     let state = PersistedState(
       profile: profile,
@@ -966,6 +1068,8 @@ final class SignalASIStore: ObservableObject {
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
       agentTaskBudget: agentTaskBudget,
+      customDeviceConnectors: customDeviceConnectors.map(\.withoutAuthToken),
+      homeAssistantSettings: homeAssistantSettings.withoutAccessToken,
       modelPlannerSettings: modelPlannerSettings
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
