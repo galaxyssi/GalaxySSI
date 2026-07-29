@@ -21,6 +21,7 @@ from desktop_memory_graph import (
     retract_memory_graph_evidence,
     search_memory_graph,
 )
+from desktop_memory_query_planner import DesktopMemoryQueryPlan, plan_memory_query
 
 
 MAX_CONTENT_CHARS = 2_000
@@ -145,14 +146,16 @@ def _normalize_namespace(value: str, kind: str, content: str) -> str:
         return "user"
     if kind == "security":
         return "security"
-    if kind in {"device", "device_state"} or re.search(
+    if kind in {"device", "device_state"}:
+        return "device"
+    if kind in {"decision", "goal", "project_state", "episode"}:
+        return "project"
+    if re.search(
         r"(?i)(?:\b(?:phone|desktop|computer|device|android|windows)\b|"
         r"\u624b\u673a|\u7535\u8111|\u8bbe\u5907)",
         content,
     ):
         return "device"
-    if kind in {"decision", "goal", "project_state", "episode"}:
-        return "project"
     return "general"
 
 
@@ -880,18 +883,39 @@ class DesktopMemoryStore:
         limit: int = 8,
         *,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+        query_plan: DesktopMemoryQueryPlan | None = None,
     ) -> list[dict[str, Any]]:
         query_tokens = _tokens(query)
         if not query_tokens:
             return []
+        plan = query_plan or plan_memory_query(query)
+        planned_namespaces = list(plan.namespaces)
+        if planned_namespaces:
+            for fallback_namespace in ("general", "user"):
+                if fallback_namespace not in planned_namespaces:
+                    planned_namespaces.append(fallback_namespace)
+        namespace_values = namespaces if namespaces is not None else planned_namespaces
         requested_namespaces = {
             _normalize_namespace(value, "", "")
-            for value in (namespaces or [])
+            for value in (namespace_values or [])
             if str(value or "").strip()
         }
         with self._lock, self._connect() as connection:
+            if plan.temporal_scope == "history":
+                selection = (
+                    "WHERE status = 'superseded' OR "
+                    "(status = 'active' AND temporal_state IN ('historical', 'deprecated'))"
+                )
+            elif plan.temporal_scope == "current_and_history":
+                selection = "WHERE status IN ('active', 'superseded')"
+            else:
+                selection = (
+                    "WHERE status = 'active' "
+                    "AND temporal_state NOT IN ('historical', 'deprecated')"
+                )
             rows = connection.execute(
-                "SELECT * FROM memories WHERE status = 'active' ORDER BY importance DESC, updated_at DESC LIMIT 500"
+                f"SELECT * FROM memories {selection} "
+                "ORDER BY importance DESC, updated_at DESC LIMIT 500"
             ).fetchall()
             now_ms = int(self.now() * 1_000)
             ranked: list[tuple[float, sqlite3.Row]] = []
@@ -905,9 +929,20 @@ class DesktopMemoryStore:
                 coverage = overlap / max(1, len(query_tokens))
                 age_days = max(0.0, (now_ms - int(row["updated_at"])) / 86_400_000)
                 recency = 1.0 / (1.0 + age_days / 30.0)
-                score = coverage * 0.62 + float(row["importance"]) * 0.25 + recency * 0.13
+                kind_boost = (
+                    0.13
+                    if plan.preferred_kinds and str(row["kind"]) in plan.preferred_kinds
+                    else 0.0
+                )
+                score = coverage * 0.55 + float(row["importance"]) * 0.22 + recency * 0.10 + kind_boost
                 ranked.append((score, row))
-            selected = [row for _score, row in sorted(ranked, key=lambda item: item[0], reverse=True)[:max(1, min(limit, 20))]]
+            bounded_limit = max(1, min(limit, plan.maximum_memories, 24))
+            selected = [
+                row
+                for _score, row in sorted(ranked, key=lambda item: item[0], reverse=True)[
+                    :bounded_limit
+                ]
+            ]
             if selected:
                 connection.executemany(
                     "UPDATE memories SET last_accessed_at = ?, use_count = use_count + 1 WHERE id = ?",
@@ -923,16 +958,22 @@ class DesktopMemoryStore:
         max_chars: int = 5_000,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
     ) -> str:
-        rows = self.search(query, limit=limit, namespaces=namespaces)
-        lines = [
+        plan = plan_memory_query(query)
+        rows = self.search(
+            query,
+            limit=min(limit, plan.maximum_memories),
+            namespaces=namespaces,
+            query_plan=plan,
+        )
+        memory_lines = [
             f"- [{row['namespace']}/{row['kind']}] {row['content']}"
             for row in rows
         ]
         graph = self.search_graph(
             query,
             namespaces=namespaces,
-            hops=2,
             limit=max(8, min(limit * 3, 36)),
+            query_plan=plan,
         )
         nodes = {
             node["id"]: node
@@ -949,27 +990,46 @@ class DesktopMemoryStore:
                 f"{source['label']} {relation['kind']} {target['label']} "
                 f"[{relation['temporal_state']}]"
             )
+        if not memory_lines and not relation_lines:
+            return ""
+        lines = [
+            "Memory query plan: "
+            f"types={','.join(plan.types)}; temporal={plan.temporal_scope}",
+            *memory_lines,
+        ]
         if relation_lines:
             lines.extend(["Relationship graph (untrusted evidence):", *relation_lines])
-        return "\n".join(lines)[:max_chars]
+        return "\n".join(lines)[: min(max_chars, plan.maximum_characters)]
 
     def search_graph(
         self,
         query: str,
         *,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
-        hops: int = 2,
-        limit: int = 24,
-        include_historical: bool = False,
+        hops: int | None = None,
+        limit: int | None = None,
+        include_historical: bool | None = None,
+        query_plan: DesktopMemoryQueryPlan | None = None,
     ) -> dict[str, list[dict[str, Any]]]:
+        plan = query_plan or plan_memory_query(query)
+        planned_namespaces = list(plan.namespaces)
+        if planned_namespaces:
+            for fallback_namespace in ("general", "user"):
+                if fallback_namespace not in planned_namespaces:
+                    planned_namespaces.append(fallback_namespace)
+        namespace_values = namespaces if namespaces is not None else planned_namespaces
         with self._lock, self._connect() as connection:
             return search_memory_graph(
                 connection,
                 query,
-                namespaces=namespaces,
-                hops=hops,
-                limit=limit,
-                include_historical=include_historical,
+                namespaces=namespace_values,
+                hops=plan.graph_hops if hops is None else hops,
+                limit=min(limit or plan.maximum_graph_nodes, plan.maximum_graph_nodes),
+                include_historical=plan.include_historical
+                if include_historical is None
+                else include_historical,
+                historical_only=plan.temporal_scope == "history",
+                preferred_relations=plan.preferred_relations,
             )
 
     def graph_snapshot(self) -> dict[str, Any]:

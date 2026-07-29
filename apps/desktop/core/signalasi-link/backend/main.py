@@ -1843,19 +1843,30 @@ def api_desktop_memory(
 ):
     require_loopback(request)
     from desktop_memory import desktop_memory_store
+    from desktop_memory_query_planner import plan_memory_query
 
     store = desktop_memory_store()
+    plan = plan_memory_query(query) if query.strip() else None
     rows = (
-        store.search(query, limit=limit)
+        store.search(query, limit=limit, query_plan=plan)
         if query.strip() and status == "active"
         else store.list(limit=limit, status=status)
     )
     graph = (
-        store.search_graph(query, limit=min(max(limit, 8), 60))
+        store.search_graph(
+            query,
+            limit=min(max(limit, 8), 60),
+            query_plan=plan,
+        )
         if query.strip()
         else store.graph_snapshot()
     )
-    return {"memories": rows, "stats": store.stats(), "graph": graph}
+    return {
+        "memories": rows,
+        "stats": store.stats(),
+        "graph": graph,
+        "query_plan": plan.as_dict() if plan else None,
+    }
 
 
 @app.get("/api/desktop-memory/inbox")

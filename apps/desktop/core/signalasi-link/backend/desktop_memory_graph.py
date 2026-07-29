@@ -203,17 +203,29 @@ def search_memory_graph(
     hops: int = 2,
     limit: int = 24,
     include_historical: bool = False,
+    historical_only: bool = False,
+    preferred_relations: Iterable[str] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     query_tokens = _tokens(query)
     if not query_tokens:
         return {"nodes": [], "relations": []}
     requested = {_normalize_namespace(value) for value in (namespaces or []) if str(value).strip()}
-    states = ACTIVE_STATES | HISTORICAL_STATES if include_historical else ACTIVE_STATES
-    placeholders = ",".join("?" for _ in states)
+    preferred = {
+        str(value).casefold()
+        for value in (preferred_relations or [])
+        if str(value).casefold() in RELATION_KINDS
+    }
+    node_states = (
+        ACTIVE_STATES | HISTORICAL_STATES
+        if include_historical or historical_only
+        else ACTIVE_STATES
+    )
+    relation_states = HISTORICAL_STATES if historical_only else node_states
+    node_placeholders = ",".join("?" for _ in node_states)
     nodes = connection.execute(
-        f"SELECT * FROM memory_graph_nodes WHERE temporal_state IN ({placeholders}) "
+        f"SELECT * FROM memory_graph_nodes WHERE temporal_state IN ({node_placeholders}) "
         "ORDER BY updated_at DESC LIMIT 2000",
-        tuple(sorted(states)),
+        tuple(sorted(node_states)),
     ).fetchall()
     ranked: list[tuple[float, sqlite3.Row]] = []
     for node in nodes:
@@ -235,11 +247,21 @@ def search_memory_graph(
         return {"nodes": [], "relations": []}
     selected_ids = {str(row["id"]) for row in seeds}
     selected_order = [str(row["id"]) for row in seeds]
+    relation_placeholders = ",".join("?" for _ in relation_states)
     relation_rows = connection.execute(
-        f"SELECT * FROM memory_graph_relations WHERE temporal_state IN ({placeholders}) "
+        f"SELECT * FROM memory_graph_relations WHERE temporal_state IN ({relation_placeholders}) "
         "ORDER BY confidence DESC, updated_at DESC LIMIT 8000",
-        tuple(sorted(states)),
+        tuple(sorted(relation_states)),
     ).fetchall()
+    relation_rows = sorted(
+        relation_rows,
+        key=lambda row: (
+            str(row["relation_kind"]) in preferred,
+            float(row["confidence"]),
+            int(row["updated_at"]),
+        ),
+        reverse=True,
+    )
     for _ in range(max(0, min(int(hops), 3))):
         neighbors: list[str] = []
         for relation in relation_rows:

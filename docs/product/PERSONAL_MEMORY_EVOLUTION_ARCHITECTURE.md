@@ -161,6 +161,15 @@ The plan controls:
 - item and character budgets;
 - project namespace isolation.
 
+Desktop applies the same planning contract before both SQLite memory ranking and graph
+traversal. Plans are composable: a request may be historical, device-scoped, and relational
+at the same time. The resulting plan selects current-only, history-only, or comparison
+retrieval; scopes project, device, security, and user evidence; prioritizes relevant memory
+and relation kinds; and bounds graph hops and output size. Explicit namespace filters remain
+strict, while automatically planned searches retain relevant user preferences as a
+personalization layer. ASCII trigger terms use word boundaries so terms such as `runtime`
+cannot accidentally activate the `run` tool-evidence path.
+
 The prompt compiler emits only selected shareable evidence. It separates current, historical, and conflicted facts, adds an explicit unresolved-conflict warning, preserves a strict character budget, and labels all memory as untrusted evidence rather than instructions.
 
 Compiled entries carry bounded evidence counts and opaque memory references. Planned state has its own section, and historical or deprecated facts are excluded unless the query plan explicitly needs history or completed-goal context.
