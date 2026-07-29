@@ -17719,6 +17719,356 @@ enum AgentMcpPackageManifestCodec {
   private static let domainPattern = #"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"#
 }
 
+struct AgentMcpPackageInspection: Codable, Equatable {
+  var manifest: AgentMcpPackageManifest
+  var rawManifest: String
+  var packageSha256: String
+  var manifestSha256: String
+  var integrityVerified: Bool
+  var archiveEntries: [String]
+  var runtimeFiles: [String: Data]
+
+  enum CodingKeys: String, CodingKey {
+    case manifest
+    case rawManifest = "raw_manifest"
+    case packageSha256 = "package_sha256"
+    case manifestSha256 = "manifest_sha256"
+    case integrityVerified = "integrity_verified"
+    case archiveEntries = "archive_entries"
+    case runtimeFiles = "runtime_files"
+  }
+}
+
+struct AgentMcpPackageInstaller {
+  func inspect(_ packageData: Data) throws -> AgentMcpPackageInspection {
+    guard packageData.count <= Self.maxPackageBytes else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(Self.maxPackageBytes) bytes")
+    }
+    let packageSha = Self.sha256(packageData)
+    let files = try readArchive(packageData)
+    guard let rawManifestData = files[Self.manifestPath],
+          let rawManifest = String(data: rawManifestData, encoding: .utf8) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package is missing \(Self.manifestPath)")
+    }
+    guard rawManifestData.count <= Self.maxManifestBytes else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package manifest is too large")
+    }
+    let manifestSha = Self.sha256(Data(rawManifest.utf8))
+    let integrityVerified: Bool
+    if let integrityData = files[Self.integrityPath],
+       let integrity = String(data: integrityData, encoding: .utf8) {
+      integrityVerified = try verifyIntegrity(integrity, manifestSha: manifestSha)
+    } else {
+      integrityVerified = false
+    }
+    let manifest = try AgentMcpPackageManifestCodec.decode(rawManifest)
+    let runtimeFiles = files.filter { $0.key.hasPrefix(Self.runtimeDirectory) }
+    if manifest.transport == .localStdio {
+      let entrypoint = try requireLocalRuntime(manifest).entrypoint
+      guard runtimeFiles[entrypoint] != nil else {
+        throw AgentRuntimeCapabilityError.invalid("Local MCP package is missing its runtime entrypoint: \(entrypoint)")
+      }
+    }
+    return AgentMcpPackageInspection(
+      manifest: manifest,
+      rawManifest: rawManifest,
+      packageSha256: packageSha,
+      manifestSha256: manifestSha,
+      integrityVerified: integrityVerified,
+      archiveEntries: files.keys.sorted(),
+      runtimeFiles: runtimeFiles
+    )
+  }
+
+  static func sha256(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+
+  private struct ZipEntry {
+    var path: String
+    var directory: Bool
+    var method: UInt16
+    var compressedBytes: Int64
+    var uncompressedBytes: Int64
+    var crc32: UInt32
+    var dataOffset: Int
+    var dataLength: Int
+  }
+
+  private func readArchive(_ data: Data) throws -> [String: Data] {
+    let entries = try inspectZipData(data)
+    var files: [String: Data] = [:]
+    var extractedBytes: Int64 = 0
+    for entry in entries where !entry.directory {
+      guard files.count < Self.maxEntries else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package contains too many files")
+      }
+      guard files[entry.path] == nil else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package contains a duplicate path: \(entry.path)")
+      }
+      guard isAllowedEntry(entry.path) else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package contains unsupported executable content: \(entry.path)")
+      }
+      guard entry.method == 0 else {
+        throw AgentRuntimeCapabilityError.invalid("Compressed MCP package entries are not supported on iOS yet: \(entry.path)")
+      }
+      let maxBytes: Int
+      if entry.path == Self.manifestPath || entry.path == Self.integrityPath {
+        maxBytes = Self.maxManifestBytes
+      } else {
+        maxBytes = Self.maxAssetBytes
+      }
+      guard entry.dataLength <= maxBytes,
+            rangeFits(start: entry.dataOffset, length: entry.dataLength, in: data) else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+      }
+      let content = data.subdata(in: entry.dataOffset..<(entry.dataOffset + entry.dataLength))
+      guard Int64(content.count) == entry.uncompressedBytes else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package entry size changed during extraction")
+      }
+      guard crc32(content) == entry.crc32 else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package entry CRC did not match")
+      }
+      guard let nextBytes = checkedAdd(extractedBytes, Int64(content.count)),
+            nextBytes <= Self.maxExtractedBytes else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package expands beyond the allowed size")
+      }
+      extractedBytes = nextBytes
+      files[entry.path] = content
+    }
+    return files
+  }
+
+  private func inspectZipData(_ data: Data) throws -> [ZipEntry] {
+    guard let eocdOffset = endOfCentralDirectoryOffset(data),
+          let diskNumber = readUInt16LE(data, eocdOffset + 4),
+          let centralDisk = readUInt16LE(data, eocdOffset + 6),
+          let diskEntryCount = readUInt16LE(data, eocdOffset + 8),
+          let totalEntryCount = readUInt16LE(data, eocdOffset + 10),
+          let centralSizeValue = readUInt32LE(data, eocdOffset + 12),
+          let centralOffsetValue = readUInt32LE(data, eocdOffset + 16) else {
+      throw AgentRuntimeCapabilityError.invalid("ZIP central directory was not found")
+    }
+    guard diskNumber == 0, centralDisk == 0, diskEntryCount == totalEntryCount else {
+      throw AgentRuntimeCapabilityError.invalid("Multi-disk MCP package archives are not supported")
+    }
+    let entryCount = Int(totalEntryCount)
+    guard entryCount <= Self.maxEntries else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package contains too many files")
+    }
+    let centralOffset = Int(centralOffsetValue)
+    let centralSize = Int(centralSizeValue)
+    guard rangeFits(start: centralOffset, length: centralSize, in: data) else {
+      throw AgentRuntimeCapabilityError.invalid("ZIP central directory is out of bounds")
+    }
+
+    var cursor = centralOffset
+    var entries: [ZipEntry] = []
+    var seen: Set<String> = []
+    for _ in 0..<entryCount {
+      guard readUInt32LE(data, cursor) == 0x02014b50,
+            let flags = readUInt16LE(data, cursor + 8),
+            let method = readUInt16LE(data, cursor + 10),
+            let crc = readUInt32LE(data, cursor + 16),
+            let compressed = readUInt32LE(data, cursor + 20),
+            let uncompressed = readUInt32LE(data, cursor + 24),
+            let nameLength = readUInt16LE(data, cursor + 28),
+            let extraLength = readUInt16LE(data, cursor + 30),
+            let commentLength = readUInt16LE(data, cursor + 32),
+            let localOffsetValue = readUInt32LE(data, cursor + 42) else {
+        throw AgentRuntimeCapabilityError.invalid("ZIP central directory entry is invalid")
+      }
+      guard flags & 0x0001 == 0 else {
+        throw AgentRuntimeCapabilityError.invalid("Encrypted MCP package entries are not supported")
+      }
+      guard method == 0 || method == 8 else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package ZIP compression method is not supported on iOS yet")
+      }
+      let nameStart = cursor + 46
+      let extraStart = nameStart + Int(nameLength)
+      let commentStart = extraStart + Int(extraLength)
+      let nextCursor = commentStart + Int(commentLength)
+      guard rangeFits(start: nameStart, length: Int(nameLength), in: data),
+            rangeFits(start: extraStart, length: Int(extraLength), in: data),
+            rangeFits(start: commentStart, length: Int(commentLength), in: data),
+            nextCursor <= centralOffset + centralSize else {
+        throw AgentRuntimeCapabilityError.invalid("ZIP central directory entry is out of bounds")
+      }
+      guard let rawName = String(data: data.subdata(in: nameStart..<extraStart), encoding: .utf8) else {
+        throw AgentRuntimeCapabilityError.invalid("ZIP entry name is not valid UTF-8")
+      }
+      let directory = rawName.hasSuffix("/") || rawName.hasSuffix("\\")
+      let normalizedName = try normalizeEntryName(rawName)
+      guard seen.insert(normalizedName).inserted else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package contains a duplicate path: \(normalizedName)")
+      }
+      let localOffset = Int(localOffsetValue)
+      guard let dataOffset = zipEntryDataOffset(data, localOffset: localOffset),
+            rangeFits(start: dataOffset, length: Int(compressed), in: data) else {
+        throw AgentRuntimeCapabilityError.invalid("ZIP local entry is out of bounds")
+      }
+      entries.append(ZipEntry(
+        path: normalizedName,
+        directory: directory,
+        method: method,
+        compressedBytes: Int64(compressed),
+        uncompressedBytes: Int64(uncompressed),
+        crc32: crc,
+        dataOffset: dataOffset,
+        dataLength: Int(compressed)
+      ))
+      cursor = nextCursor
+    }
+    return entries.sorted { $0.path < $1.path }
+  }
+
+  private func normalizeEntryName(_ raw: String) throws -> String {
+    var value = raw.replacingOccurrences(of: "\\", with: "/")
+    while value.hasPrefix("/") {
+      value.removeFirst()
+    }
+    while value.hasSuffix("/") {
+      value.removeLast()
+    }
+    guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package contains an empty path")
+    }
+    guard !value.contains("\u{0000}") else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package path contains a null character")
+    }
+    guard value.range(of: #"^[A-Za-z]:"#, options: .regularExpression) == nil else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package path must be relative")
+    }
+    let segments = value.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    guard segments.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package path traversal is not allowed")
+    }
+    return value
+  }
+
+  private func isAllowedEntry(_ name: String) -> Bool {
+    if [Self.manifestPath, Self.integrityPath, "README.md", "LICENSE"].contains(name) {
+      return true
+    }
+    if name.hasPrefix(Self.runtimeDirectory) {
+      let fileName = name.split(separator: "/").last.map(String.init) ?? ""
+      let ext = fileName.split(separator: ".").last.map { String($0).lowercased() } ?? ""
+      return Self.allowedRuntimeExtensions.contains(ext) || Self.allowedRuntimeFilenames.contains(fileName)
+    }
+    guard name.hasPrefix("assets/") else {
+      return false
+    }
+    let ext = name.split(separator: ".").last.map { String($0).lowercased() } ?? ""
+    return Self.allowedAssetExtensions.contains(ext)
+  }
+
+  private func verifyIntegrity(_ document: String, manifestSha: String) throws -> Bool {
+    guard let data = document.data(using: .utf8),
+          let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package integrity digest is invalid")
+    }
+    let expected = (object["manifest_sha256"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    guard expected.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package integrity digest is invalid")
+    }
+    guard expected == manifestSha else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package manifest integrity check failed")
+    }
+    return true
+  }
+
+  private func requireLocalRuntime(_ manifest: AgentMcpPackageManifest) throws -> AgentMcpLocalRuntimeSpec {
+    guard let localRuntime = manifest.localRuntime else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP package runtime is required")
+    }
+    return localRuntime
+  }
+
+  private func checkedAdd(_ left: Int64, _ right: Int64) -> Int64? {
+    guard right >= 0, left <= Int64.max - right else {
+      return nil
+    }
+    return left + right
+  }
+
+  private func readUInt16LE(_ data: Data, _ offset: Int) -> UInt16? {
+    guard rangeFits(start: offset, length: 2, in: data) else { return nil }
+    return UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
+  }
+
+  private func readUInt32LE(_ data: Data, _ offset: Int) -> UInt32? {
+    guard rangeFits(start: offset, length: 4, in: data) else { return nil }
+    return UInt32(data[offset]) |
+      (UInt32(data[offset + 1]) << 8) |
+      (UInt32(data[offset + 2]) << 16) |
+      (UInt32(data[offset + 3]) << 24)
+  }
+
+  private func rangeFits(start: Int, length: Int, in data: Data) -> Bool {
+    start >= 0 && length >= 0 && start <= data.count && length <= data.count - start
+  }
+
+  private func endOfCentralDirectoryOffset(_ data: Data) -> Int? {
+    guard data.count >= 22 else { return nil }
+    let minimumOffset = max(0, data.count - 65_557)
+    for offset in stride(from: data.count - 22, through: minimumOffset, by: -1) {
+      if readUInt32LE(data, offset) == 0x06054b50 {
+        return offset
+      }
+    }
+    return nil
+  }
+
+  private func zipEntryDataOffset(_ data: Data, localOffset: Int) -> Int? {
+    guard readUInt32LE(data, localOffset) == 0x04034b50,
+          let nameLength = readUInt16LE(data, localOffset + 26),
+          let extraLength = readUInt16LE(data, localOffset + 28) else {
+      return nil
+    }
+    let dataOffset = localOffset + 30 + Int(nameLength) + Int(extraLength)
+    return rangeFits(start: dataOffset, length: 0, in: data) ? dataOffset : nil
+  }
+
+  private func crc32(_ data: Data) -> UInt32 {
+    var crc: UInt32 = 0xffffffff
+    for byte in data {
+      let index = Int((crc ^ UInt32(byte)) & 0xff)
+      crc = (crc >> 8) ^ Self.crc32Table[index]
+    }
+    return crc ^ 0xffffffff
+  }
+
+  static let maxPackageBytes = 8 * 1_024 * 1_024
+  static let maxManifestBytes = 256 * 1_024
+  static let maxAssetBytes = 2 * 1_024 * 1_024
+  static let maxExtractedBytes = 12 * 1_024 * 1_024
+  static let maxEntries = 64
+  static let manifestPath = "mcp.json"
+  static let integrityPath = "integrity.json"
+  static let runtimeDirectory = "runtime/"
+
+  private static let allowedAssetExtensions = Set(["png", "jpg", "jpeg", "webp", "svg", "txt", "md"])
+  private static let allowedRuntimeExtensions = Set([
+    "py", "js", "mjs", "cjs", "json", "toml", "yaml", "yml", "txt", "md", "sh", "lock"
+  ])
+  private static let allowedRuntimeFilenames = Set(["package-lock.json", "uv.lock"])
+  private static let crc32Table: [UInt32] = {
+    (0..<256).map { value -> UInt32 in
+      var crc = UInt32(value)
+      for _ in 0..<8 {
+        if crc & 1 == 1 {
+          crc = (crc >> 1) ^ 0xedb88320
+        } else {
+          crc >>= 1
+        }
+      }
+      return crc
+    }
+  }()
+}
+
 struct AgentMcpCatalogEntry: Codable, Equatable, Identifiable {
   var id: String
   var name: String
