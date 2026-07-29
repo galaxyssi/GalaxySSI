@@ -74,6 +74,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style agent resource catalog projection for callable targets, system tools, and native tools
 - Android-style routing requirement analyzer for live data, private/offline, background, long-running, and Chinese task signals
 - Android-style phone capability catalog with iOS 15+ permission, consent, availability, and native coverage boundaries
+- Android-style phone native tool catalog descriptors for app-private workspace tools, phone action adapters, default tool IDs, and capability-gated availability
 - Android-style custom device connector configuration for HTTP REST, MQTT, WebSocket, TCP, UDP, MCP, SignalASI Agent, BLE, and Matter/Thread targets
 - Android-style MCP tool security policy for risk assessment, permission decisions, and parameter redaction
 - Android-style Home Assistant configuration with enabled state, local server URL, Keychain access token storage, and default entity target
