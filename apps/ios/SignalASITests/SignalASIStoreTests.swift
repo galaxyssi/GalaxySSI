@@ -1072,6 +1072,130 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encodedProjection.contains(#""timeline_contract":"signalasi.run-timeline/1.0""#))
   }
 
+  func testAgentRunEventStoreReducerPreservesTerminalStateUntilExplicitRecovery() {
+    let completed = AgentRunEventStore.reduce(current: .running, event: .runCompleted)
+    let ignoredLateProgress = AgentRunEventStore.reduce(current: completed, event: .toolProgress)
+    let recovered = AgentRunEventStore.reduce(current: completed, event: .runRecovered)
+    let waiting = AgentRunEventStore.reduce(current: .running, event: .toolPermissionRequired)
+    let paused = AgentRunEventStore.reduce(current: .running, event: .permissionRevoked)
+
+    XCTAssertEqual(completed, .completed)
+    XCTAssertEqual(ignoredLateProgress, .completed)
+    XCTAssertEqual(recovered, .running)
+    XCTAssertEqual(waiting, .waitingForUser)
+    XCTAssertEqual(paused, .paused)
+  }
+
+  func testAgentRunRecoveryPolicyMatchesAndroidDurableDesktopRules() {
+    let snapshot = runControlSnapshot(state: .waitingForDevice)
+    let recorded = AgentRecordedRun(
+      runId: "run",
+      conversationId: "conversation",
+      taskThreadId: "task",
+      originalRequest: "Continue the task"
+    )
+    let paused = runControlSnapshot(state: .paused)
+    let completed = runControlSnapshot(state: .completed)
+
+    let durable = AgentRunRecoveryPolicy.decide(
+      snapshot: snapshot,
+      recordedRun: recorded,
+      registration: runRecoveryRegistration()
+    )
+    let cloud = AgentRunRecoveryPolicy.decide(
+      snapshot: snapshot,
+      recordedRun: recorded,
+      registration: runRecoveryRegistration(location: .cloud, connectionKind: .http)
+    )
+    let localWait = AgentRunRecoveryPolicy.decide(
+      snapshot: paused,
+      recordedRun: recorded,
+      registration: nil
+    )
+    let terminal = AgentRunRecoveryPolicy.decide(
+      snapshot: snapshot,
+      recordedRun: AgentRecordedRun(
+        runId: "run",
+        conversationId: "conversation",
+        taskThreadId: "task",
+        originalRequest: "Done",
+        status: .completed
+      ),
+      registration: runRecoveryRegistration()
+    )
+    let recoverable = AgentRunEventStore.recoverableRuns([snapshot, paused, completed])
+
+    XCTAssertEqual(durable.disposition, .reconnectDurableRemote)
+    XCTAssertEqual(durable.reason, "durable_remote_run_can_reconnect")
+    XCTAssertEqual(cloud.disposition, .failNonReplayable)
+    XCTAssertEqual(cloud.reason, "interrupted_run_cannot_be_replayed_safely")
+    XCTAssertEqual(localWait.disposition, .restoreLocalWait)
+    XCTAssertEqual(localWait.reason, "user_resumable_checkpoint")
+    XCTAssertEqual(terminal.disposition, .ignoreTerminal)
+    XCTAssertEqual(recoverable.map(\.state), [.waitingForDevice, .paused])
+  }
+
+  func testAgentRunRecoveryModelsUseAndroidWireNames() throws {
+    let decodedSnapshot = try JSONDecoder().decode(
+      AgentRunControlSnapshot.self,
+      from: Data(
+        #"""
+        {
+          "run_id": "run",
+          "task_id": "task",
+          "state": "WAITING_FOR_DEVICE",
+          "agent_id": "codex",
+          "device_id": "desktop",
+          "last_sequence": 4,
+          "last_event": {
+            "event_id": "event",
+            "conversation_id": "conversation",
+            "message_id": "message",
+            "task_id": "task",
+            "run_id": "run",
+            "agent_id": "codex",
+            "device_id": "desktop",
+            "type": "WAITING_FOR_DEVICE",
+            "sequence": 4,
+            "timestamp_millis": 1000
+          }
+        }
+        """#.utf8
+      )
+    )
+    let decodedRegistration = try JSONDecoder().decode(
+      AgentRunRecoveryRegistration.self,
+      from: Data(#"{"agent_id":"codex","location":"TRUSTED_DESKTOP","connection_kind":"SIGNALASI_LINK"}"#.utf8)
+    )
+    let fallbackRegistration = try JSONDecoder().decode(
+      AgentRunRecoveryRegistration.self,
+      from: Data(#"{"agent_id":"future","location":"FUTURE","connection_kind":"FUTURE"}"#.utf8)
+    )
+    let missingStatus = try JSONDecoder().decode(
+      AgentRecordedRun.self,
+      from: Data(#"{"run_id":"run","conversation_id":"conversation","task_thread_id":"task","original_request":"Continue"}"#.utf8)
+    )
+    let futureStatus = try JSONDecoder().decode(
+      AgentRecordedRunStatus.self,
+      from: Data(#""FUTURE""#.utf8)
+    )
+    let encodedSnapshot = String(decoding: try JSONEncoder().encode(decodedSnapshot), as: UTF8.self)
+    let encodedRegistration = String(decoding: try JSONEncoder().encode(decodedRegistration), as: UTF8.self)
+    let encodedRun = String(decoding: try JSONEncoder().encode(missingStatus), as: UTF8.self)
+
+    XCTAssertEqual(decodedSnapshot.state, .waitingForDevice)
+    XCTAssertEqual(decodedSnapshot.lastEvent.type, .waitingForDevice)
+    XCTAssertEqual(decodedRegistration.location, .trustedDesktop)
+    XCTAssertEqual(decodedRegistration.connectionKind, .signalasiLink)
+    XCTAssertEqual(fallbackRegistration.location, .cloud)
+    XCTAssertEqual(fallbackRegistration.connectionKind, .http)
+    XCTAssertEqual(missingStatus.status, .running)
+    XCTAssertEqual(futureStatus, .failed)
+    XCTAssertTrue(encodedSnapshot.contains(#""last_sequence":4"#))
+    XCTAssertTrue(encodedRegistration.contains(#""connection_kind":"SIGNALASI_LINK""#))
+    XCTAssertTrue(encodedRun.contains(#""task_thread_id":"task""#))
+  }
+
   func testAgentFailoverPolicyMatchesAndroidDesktopFallbackAndTimeoutStages() {
     let primary = AgentFailoverResource(location: .trustedDesktop, failureDomain: "desktop-a")
     let cloud = AgentFailoverResource(location: .cloud, failureDomain: "cloud-openai")
@@ -3610,6 +3734,7 @@ final class SignalASIStoreTests: XCTestCase {
   private func runControlEvent(
     type: AgentRunControlEventType,
     toolCallId: String = "",
+    sequence: Int64 = 1,
     payload: AgentRunControlPayload = [:]
   ) -> AgentRunControlEvent {
     AgentRunControlEvent(
@@ -3622,8 +3747,35 @@ final class SignalASIStoreTests: XCTestCase {
       agentId: "signalasi-mobile",
       deviceId: "phone",
       type: type,
-      sequence: 1,
+      sequence: sequence,
       payload: payload
+    )
+  }
+
+  private func runControlSnapshot(
+    state: AgentRunControlState,
+    sequence: Int64 = 4
+  ) -> AgentRunControlSnapshot {
+    AgentRunControlSnapshot(
+      runId: "run",
+      taskId: "task",
+      state: state,
+      agentId: "codex",
+      deviceId: "desktop",
+      lastSequence: sequence,
+      lastEvent: runControlEvent(type: .waitingForDevice, sequence: sequence)
+    )
+  }
+
+  private func runRecoveryRegistration(
+    agentId: String = "codex",
+    location: AgentResourceLocation = .trustedDesktop,
+    connectionKind: AgentConnectionKind = .signalasiLink
+  ) -> AgentRunRecoveryRegistration {
+    AgentRunRecoveryRegistration(
+      agentId: agentId,
+      location: location,
+      connectionKind: connectionKind
     )
   }
 
