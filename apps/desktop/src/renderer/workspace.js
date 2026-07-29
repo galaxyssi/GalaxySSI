@@ -1536,6 +1536,23 @@ function memoryNamespaceLabel(value) {
   return scope ? `${label} · ${scope}` : label;
 }
 
+function memoryGraphNodeKindLabel(value) {
+  const labels = {
+    user: "User",
+    device: "Device",
+    application: "Application",
+    feature: "Feature",
+    setting: "Setting",
+    agent: "Agent",
+    model: "Model",
+    tool: "Tool",
+    project: "Project",
+    concept: "Concept",
+    state: "State"
+  };
+  return t(labels[value] || value || "Concept");
+}
+
 function memoryActionLabel(value) {
   const labels = {
     create: "Create",
@@ -1719,6 +1736,7 @@ function renderMemory() {
 
   if (state.memory.view === "overview") {
     const health = evolution.health || {};
+    const graph = evolution.graph || stats.graph || {};
     const findings = Array.isArray(health.findings) ? health.findings : [];
     const recent = Array.isArray(evolution.recent_evolution)
       ? evolution.recent_evolution.slice(0, 6)
@@ -1763,6 +1781,22 @@ function renderMemory() {
           ${Object.entries(evolution.namespace_counts || {}).map(([namespace, count]) => `
             <div><span>${escapeHtml(memoryNamespaceLabel(namespace))}</span><strong>${escapeHtml(String(count))}</strong></div>
           `).join("") || `<p>${escapeHtml(t("No durable memory yet."))}</p>`}
+        </div>
+      </section>
+      <section class="memory-overview-section">
+        <div class="memory-section-heading">
+          <strong>${escapeHtml(t("Relationship graph"))}</strong>
+          <span>${escapeHtml(t("{nodes} entities · {relations} relationships", {
+            nodes: Number(graph.node_count || 0),
+            relations: Number(graph.relation_count || 0)
+          }))}</span>
+        </div>
+        <div class="memory-namespace-grid">
+          ${Object.entries(graph.node_kinds || {})
+            .filter(([, count]) => Number(count) > 0)
+            .map(([kind, count]) => `
+              <div><span>${escapeHtml(memoryGraphNodeKindLabel(kind))}</span><strong>${escapeHtml(String(count))}</strong></div>
+            `).join("") || `<p>${escapeHtml(t("No entity relationships yet."))}</p>`}
         </div>
       </section>
       <section class="memory-overview-section">
