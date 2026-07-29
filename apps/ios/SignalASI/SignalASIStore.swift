@@ -97,6 +97,9 @@ final class SignalASIStore: ObservableObject {
   @Published var voiceSettings: VoiceSettings {
     didSet { save() }
   }
+  @Published var languagePolicy: LanguagePolicySettings {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -106,6 +109,7 @@ final class SignalASIStore: ObservableObject {
     var readAtByContact: [String: Date]
     var serverLinks: [ServerLink]
     var voiceSettings: VoiceSettings
+    var languagePolicy: LanguagePolicySettings
 
     init(
       profile: SignalASIProfile,
@@ -114,7 +118,8 @@ final class SignalASIStore: ObservableObject {
       messagesByContact: [String: [ChatMessage]],
       readAtByContact: [String: Date] = [:],
       serverLinks: [ServerLink],
-      voiceSettings: VoiceSettings
+      voiceSettings: VoiceSettings,
+      languagePolicy: LanguagePolicySettings = .default
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -123,6 +128,7 @@ final class SignalASIStore: ObservableObject {
       self.readAtByContact = readAtByContact
       self.serverLinks = serverLinks
       self.voiceSettings = voiceSettings
+      self.languagePolicy = languagePolicy
     }
 
     init(from decoder: Decoder) throws {
@@ -134,6 +140,7 @@ final class SignalASIStore: ObservableObject {
       readAtByContact = try container.decodeIfPresent([String: Date].self, forKey: .readAtByContact) ?? [:]
       serverLinks = try container.decode([ServerLink].self, forKey: .serverLinks)
       voiceSettings = try container.decode(VoiceSettings.self, forKey: .voiceSettings)
+      languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
     }
   }
 
@@ -154,6 +161,7 @@ final class SignalASIStore: ObservableObject {
       readAtByContact = state.readAtByContact
       serverLinks = state.serverLinks
       voiceSettings = state.voiceSettings
+      languagePolicy = state.languagePolicy
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -163,6 +171,7 @@ final class SignalASIStore: ObservableObject {
       readAtByContact = [:]
       serverLinks = []
       voiceSettings = .default
+      languagePolicy = .default
       save()
     }
   }
@@ -348,6 +357,23 @@ final class SignalASIStore: ObservableObject {
     var next = voiceSettings
     mutate(&next)
     voiceSettings = next
+  }
+
+  func updateLanguagePolicy(_ mutate: (inout LanguagePolicySettings) -> Void) {
+    var next = languagePolicy
+    mutate(&next)
+    next = LanguagePolicySettings(
+      interfaceLanguage: next.interfaceLanguage,
+      responseLanguage: next.responseLanguage,
+      asrLanguage: next.asrLanguage,
+      ttsLanguage: next.ttsLanguage
+    )
+    languagePolicy = next
+    if voiceSettings.preferredLocaleIdentifier != next.asrLocaleIdentifier {
+      updateVoiceSettings {
+        $0.preferredLocaleIdentifier = next.asrLocaleIdentifier
+      }
+    }
   }
 
   @discardableResult
@@ -650,6 +676,7 @@ final class SignalASIStore: ObservableObject {
       agentData: SignalASIBackupAgentData(
         serverLinks: serverLinks,
         voiceSettings: voiceSettings,
+        languagePolicy: languagePolicy,
         cloudAPISecrets: cloudSecrets
       ),
       contacts: includeContacts ? contacts : [],
@@ -678,6 +705,7 @@ final class SignalASIStore: ObservableObject {
     if payload.includesAgentData {
       serverLinks = payload.agentData.serverLinks
       voiceSettings = payload.agentData.voiceSettings
+      languagePolicy = payload.agentData.languagePolicy
     }
     save()
   }
@@ -789,6 +817,7 @@ final class SignalASIStore: ObservableObject {
     readAtByContact = [:]
     serverLinks = []
     voiceSettings = .default
+    languagePolicy = .default
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -851,7 +880,8 @@ final class SignalASIStore: ObservableObject {
       messagesByContact: messagesByContact,
       readAtByContact: readAtByContact,
       serverLinks: serverLinks,
-      voiceSettings: voiceSettings
+      voiceSettings: voiceSettings,
+      languagePolicy: languagePolicy
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)

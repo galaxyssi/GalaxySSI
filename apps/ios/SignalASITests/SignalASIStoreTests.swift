@@ -131,6 +131,29 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.markContactRead("hermes"), 0)
   }
 
+  func testLanguagePolicyNormalizesAndUpdatesVoiceLocale() {
+    let store = makeStore()
+
+    store.updateLanguagePolicy {
+      $0.interfaceLanguage = "zh-CN"
+      $0.responseLanguage = "en-US"
+      $0.asrLanguage = "zh-HK"
+      $0.ttsLanguage = "not-supported"
+    }
+
+    XCTAssertEqual(store.languagePolicy.interfaceLanguage, "zh-CN")
+    XCTAssertEqual(store.languagePolicy.responseLanguage, "en-US")
+    XCTAssertEqual(store.languagePolicy.asrLanguage, "zh-HK")
+    XCTAssertEqual(store.languagePolicy.ttsLanguage, "auto")
+    XCTAssertEqual(store.voiceSettings.preferredLocaleIdentifier, "zh_HK")
+  }
+
+  func testCloudSystemPromptUsesConfiguredResponseLanguage() {
+    let prompt = CloudModelClient.systemPrompt(languagePolicy: LanguagePolicySettings(responseLanguage: "zh-CN"))
+
+    XCTAssertTrue(prompt.contains("Reply in Simplified Chinese"))
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")

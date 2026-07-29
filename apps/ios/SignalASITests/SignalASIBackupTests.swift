@@ -50,6 +50,11 @@ final class SignalASIBackupTests: XCTestCase {
       $0.wakeListeningEnabled = true
       $0.preferredLocaleIdentifier = "en-US"
     }
+    store.updateLanguagePolicy {
+      $0.responseLanguage = "zh-CN"
+      $0.asrLanguage = "en-US"
+      $0.ttsLanguage = "zh-TW"
+    }
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
     store.appendIncoming("desktop hello", from: "hermes")
@@ -68,7 +73,9 @@ final class SignalASIBackupTests: XCTestCase {
     try restored.restoreBackupPayload(payload)
 
     XCTAssertEqual(restored.profile.name, "Alice")
-    XCTAssertEqual(restored.voiceSettings.preferredLocaleIdentifier, "en-US")
+    XCTAssertEqual(restored.voiceSettings.preferredLocaleIdentifier, "en_US")
+    XCTAssertEqual(restored.languagePolicy.responseLanguage, "zh-CN")
+    XCTAssertEqual(restored.languagePolicy.ttsLanguage, "zh-TW")
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.serverLinks.first?.desktopId, "desktop-test")
     XCTAssertEqual(restored.messages(for: "hermes").last?.content, "hello desktop")

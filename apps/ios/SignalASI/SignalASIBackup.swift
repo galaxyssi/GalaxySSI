@@ -60,18 +60,41 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
 struct SignalASIBackupAgentData: Codable, Equatable {
   var serverLinks: [ServerLink]
   var voiceSettings: VoiceSettings
+  var languagePolicy: LanguagePolicySettings
   var cloudAPISecrets: [String: String]
 
   static let empty = SignalASIBackupAgentData(
     serverLinks: [],
     voiceSettings: .default,
+    languagePolicy: .default,
     cloudAPISecrets: [:]
   )
+
+  init(
+    serverLinks: [ServerLink],
+    voiceSettings: VoiceSettings,
+    languagePolicy: LanguagePolicySettings = .default,
+    cloudAPISecrets: [String: String]
+  ) {
+    self.serverLinks = serverLinks
+    self.voiceSettings = voiceSettings
+    self.languagePolicy = languagePolicy
+    self.cloudAPISecrets = cloudAPISecrets
+  }
 
   enum CodingKeys: String, CodingKey {
     case serverLinks = "server_links"
     case voiceSettings = "voice_settings"
+    case languagePolicy = "language_policy"
     case cloudAPISecrets = "cloud_api_secrets"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    serverLinks = try container.decodeIfPresent([ServerLink].self, forKey: .serverLinks) ?? []
+    voiceSettings = try container.decodeIfPresent(VoiceSettings.self, forKey: .voiceSettings) ?? .default
+    languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
+    cloudAPISecrets = try container.decodeIfPresent([String: String].self, forKey: .cloudAPISecrets) ?? [:]
   }
 }
 
