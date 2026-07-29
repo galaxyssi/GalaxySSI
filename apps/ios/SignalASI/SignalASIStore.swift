@@ -109,6 +109,9 @@ final class SignalASIStore: ObservableObject {
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
+  @Published private(set) var customDeviceConnectors: [CustomDeviceConnector] {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -122,6 +125,7 @@ final class SignalASIStore: ObservableObject {
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
     var agentTaskBudget: AgentTaskBudget
+    var customDeviceConnectors: [CustomDeviceConnector]
 
     init(
       profile: SignalASIProfile,
@@ -134,7 +138,8 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: LanguagePolicySettings = .default,
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
-      agentTaskBudget: AgentTaskBudget = .default
+      agentTaskBudget: AgentTaskBudget = .default,
+      customDeviceConnectors: [CustomDeviceConnector] = []
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -147,6 +152,7 @@ final class SignalASIStore: ObservableObject {
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
       self.agentTaskBudget = agentTaskBudget
+      self.customDeviceConnectors = customDeviceConnectors
     }
 
     init(from decoder: Decoder) throws {
@@ -162,6 +168,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
+      customDeviceConnectors = try container.decodeIfPresent([CustomDeviceConnector].self, forKey: .customDeviceConnectors) ?? []
     }
   }
 
@@ -186,6 +193,19 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      customDeviceConnectors = state.customDeviceConnectors.map { connector in
+        CustomDeviceConnector(
+          id: connector.id,
+          name: connector.name,
+          transport: connector.transport,
+          endpoint: connector.endpoint,
+          commandTarget: connector.commandTarget,
+          username: connector.username,
+          authToken: secrets.string(account: "custom_device_connector.\(connector.id).auth_token") ?? "",
+          risk: connector.risk,
+          enabled: connector.enabled
+        )
+      }
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -199,6 +219,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      customDeviceConnectors = []
       save()
     }
   }
@@ -374,6 +395,9 @@ final class SignalASIStore: ObservableObject {
     for account in accounts {
       secrets.delete(account: account)
     }
+    for connector in customDeviceConnectors {
+      secrets.delete(account: customDeviceAuthTokenAccount(id: connector.id))
+    }
     secrets.delete(account: identityPrivateKeyAccount)
     defaults.removeObject(forKey: storageKey)
     resetToFreshState()
@@ -424,6 +448,20 @@ final class SignalASIStore: ObservableObject {
     mutate(&next)
     next.profile = .custom
     agentTaskBudget = next.normalized
+  }
+
+  func upsertCustomDeviceConnector(_ connector: CustomDeviceConnector) {
+    let clean = connector.normalized
+    let next = Array((customDeviceConnectors.filter { $0.id != clean.id } + [clean]).suffix(CustomDeviceConnector.maximumConnectors))
+    try? applyCustomDeviceConnectors(next)
+  }
+
+  @discardableResult
+  func deleteCustomDeviceConnector(id: String) -> Bool {
+    let next = customDeviceConnectors.filter { $0.id != id }
+    guard next.count != customDeviceConnectors.count else { return false }
+    try? applyCustomDeviceConnectors(next)
+    return true
   }
 
   @discardableResult
@@ -724,6 +762,7 @@ final class SignalASIStore: ObservableObject {
         includesDisplaySettings: true,
         includesAgentSafetySettings: true,
         includesAgentTaskBudget: true,
+        includesCustomDeviceConnectors: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
       agentData: SignalASIBackupAgentData(
@@ -733,7 +772,8 @@ final class SignalASIStore: ObservableObject {
         displaySettings: displaySettings,
         agentSafetySettings: agentSafetySettings,
         cloudAPISecrets: cloudSecrets,
-        taskBudget: agentTaskBudget
+        taskBudget: agentTaskBudget,
+        customDeviceConnectors: customDeviceConnectors
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
@@ -765,6 +805,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = payload.agentData.displaySettings
       agentSafetySettings = payload.agentData.agentSafetySettings
       agentTaskBudget = payload.agentData.taskBudget
+      try applyCustomDeviceConnectors(payload.agentData.customDeviceConnectors)
     }
     save()
   }
@@ -880,6 +921,7 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    customDeviceConnectors = []
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -934,6 +976,32 @@ final class SignalASIStore: ObservableObject {
     }
   }
 
+  private func applyCustomDeviceConnectors(_ connectors: [CustomDeviceConnector]) throws {
+    var unique: [CustomDeviceConnector] = []
+    for connector in connectors.map(\.normalized) {
+      unique.removeAll { $0.id == connector.id }
+      unique.append(connector)
+    }
+    let normalized = Array(unique.suffix(CustomDeviceConnector.maximumConnectors))
+    let nextIds = Set(normalized.map(\.id))
+    for connector in customDeviceConnectors where !nextIds.contains(connector.id) {
+      secrets.delete(account: customDeviceAuthTokenAccount(id: connector.id))
+    }
+    for connector in normalized {
+      let account = customDeviceAuthTokenAccount(id: connector.id)
+      if connector.authToken.isEmpty {
+        secrets.delete(account: account)
+      } else {
+        try secrets.setString(connector.authToken, account: account)
+      }
+    }
+    customDeviceConnectors = normalized
+  }
+
+  private func customDeviceAuthTokenAccount(id: String) -> String {
+    "custom_device_connector.\(id).auth_token"
+  }
+
   private func save() {
     let state = PersistedState(
       profile: profile,
@@ -946,7 +1014,8 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: languagePolicy,
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
-      agentTaskBudget: agentTaskBudget
+      agentTaskBudget: agentTaskBudget,
+      customDeviceConnectors: customDeviceConnectors.map(\.withoutAuthToken)
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)

@@ -320,6 +320,63 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(networkDecision.limit, .network)
   }
 
+  func testCustomDeviceConnectorsDecodeAndroidFieldsAndStoreTokensInKeychain() throws {
+    let connector = try JSONDecoder.signalASI.decode(
+      CustomDeviceConnector.self,
+      from: Data("""
+      {
+        "id": " custom-device-office ",
+        "name": " Office Light ",
+        "transport": "mqtt",
+        "endpoint": " mqtt://broker.local ",
+        "command_target": " topic/light/office ",
+        "username": " user ",
+        "auth_token": " token ",
+        "risk": "HIGH",
+        "enabled": true
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(connector)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+
+    XCTAssertEqual(connector.id, "custom-device-office")
+    XCTAssertEqual(connector.name, "Office Light")
+    XCTAssertEqual(connector.transport, .mqtt)
+    XCTAssertEqual(connector.endpoint, "mqtt://broker.local")
+    XCTAssertEqual(connector.commandTarget, "topic/light/office")
+    XCTAssertEqual(connector.username, "user")
+    XCTAssertEqual(connector.authToken, "token")
+    XCTAssertEqual(connector.risk, .high)
+    XCTAssertTrue(connector.configured)
+    XCTAssertEqual(object["transport"] as? String, "MQTT")
+    XCTAssertEqual(object["command_target"] as? String, "topic/light/office")
+    XCTAssertEqual(object["auth_token"] as? String, "token")
+    XCTAssertEqual(object["risk"] as? String, "HIGH")
+
+    store.upsertCustomDeviceConnector(connector)
+
+    XCTAssertEqual(store.customDeviceConnectors.count, 1)
+    XCTAssertEqual(store.customDeviceConnectors[0].transport, .mqtt)
+    XCTAssertEqual(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"), "token")
+
+    let overflow = (0..<55).map { index in
+      CustomDeviceConnector(id: "device-\(index)", name: "Device \(index)", endpoint: "http://device-\(index).local")
+    }
+    for item in overflow {
+      store.upsertCustomDeviceConnector(item)
+    }
+
+    XCTAssertEqual(store.customDeviceConnectors.count, CustomDeviceConnector.maximumConnectors)
+    XCTAssertNil(store.customDeviceConnectors.first { $0.id == "custom-device-office" })
+
+    store.upsertCustomDeviceConnector(connector)
+    XCTAssertTrue(store.deleteCustomDeviceConnector(id: connector.id))
+    XCTAssertNil(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"))
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -395,6 +452,15 @@ final class SignalASIStoreTests: XCTestCase {
       $0.executionPaused = true
     }
     store.selectAgentTaskBudgetProfile(.privateMode)
+    store.upsertCustomDeviceConnector(
+      CustomDeviceConnector(
+        id: "custom-device-office",
+        name: "Office Light",
+        transport: .mqtt,
+        endpoint: "mqtt://broker.local",
+        authToken: "token"
+      )
+    )
 
     store.destroyAllPrivateData()
 
@@ -410,6 +476,8 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings, .default)
     XCTAssertEqual(store.agentSafetySettings, .default)
     XCTAssertEqual(store.agentTaskBudget, .default)
+    XCTAssertTrue(store.customDeviceConnectors.isEmpty)
+    XCTAssertNil(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"))
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {

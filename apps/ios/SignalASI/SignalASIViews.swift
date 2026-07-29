@@ -944,6 +944,16 @@ struct SettingsView: View {
             }
           }
         }
+        Section("Custom Devices") {
+          NavigationLink(destination: CustomDeviceConnectorsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Device Connectors")
+              Text(customDeviceSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -1118,6 +1128,13 @@ struct SettingsView: View {
       get: { store.displaySettings.textScale },
       set: { value in store.updateDisplaySettings { $0.textScale = value } }
     )
+  }
+
+  private var customDeviceSummary: String {
+    let enabled = store.customDeviceConnectors.filter(\.configured).count
+    let total = store.customDeviceConnectors.count
+    guard total > 0 else { return "No custom devices" }
+    return "\(enabled) enabled / \(total) saved"
   }
 }
 
@@ -1400,6 +1417,160 @@ private extension AgentTaskBudget {
   }
 }
 
+struct CustomDeviceConnectorsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Devices") {
+        if store.customDeviceConnectors.isEmpty {
+          Text("No custom devices")
+            .foregroundColor(.secondary)
+        }
+        ForEach(store.customDeviceConnectors) { connector in
+          NavigationLink(destination: CustomDeviceConnectorEditorView(connector: connector)) {
+            VStack(alignment: .leading, spacing: 4) {
+              HStack {
+                Text(connector.name)
+                Spacer()
+                if connector.configured {
+                  Image(systemName: "checkmark.circle")
+                    .foregroundColor(.green)
+                }
+              }
+              Text("\(connector.transport.displayName) / \(connector.risk.displayName)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
+        .onDelete { offsets in
+          let ids = offsets.map { store.customDeviceConnectors[$0].id }
+          for id in ids {
+            store.deleteCustomDeviceConnector(id: id)
+          }
+        }
+      }
+      Section {
+        NavigationLink(destination: CustomDeviceConnectorEditorView(connector: CustomDeviceConnector())) {
+          Label("Add Custom Device", systemImage: "plus.circle")
+        }
+      }
+    }
+    .navigationTitle("Custom Devices")
+  }
+}
+
+struct CustomDeviceConnectorEditorView: View {
+  @EnvironmentObject private var store: SignalASIStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var draft: CustomDeviceConnector
+  private let originalId: String
+
+  init(connector: CustomDeviceConnector) {
+    _draft = State(initialValue: connector)
+    originalId = connector.id
+  }
+
+  var body: some View {
+    Form {
+      Section("Connection") {
+        TextField("Name", text: stringBinding(\.name))
+        Picker("Transport", selection: transportBinding) {
+          ForEach(CustomDeviceTransport.allCases) { transport in
+            Text(transport.displayName).tag(transport)
+          }
+        }
+        TextField("Endpoint", text: stringBinding(\.endpoint))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        TextField("Command Target", text: stringBinding(\.commandTarget))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+      }
+      Section("Authentication") {
+        TextField("Username", text: stringBinding(\.username))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        SecureField("Auth Token", text: stringBinding(\.authToken))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        if !draft.maskedAuthToken.isEmpty {
+          Text("Stored token: \(draft.maskedAuthToken)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+      }
+      Section("Safety") {
+        Picker("Risk", selection: riskBinding) {
+          ForEach(CustomDeviceRisk.allCases) { risk in
+            Text(risk.displayName).tag(risk)
+          }
+        }
+        Toggle("Enabled", isOn: boolBinding(\.enabled))
+      }
+      Section("Status") {
+        if draft.configured {
+          Label("Configured", systemImage: "checkmark.circle")
+            .foregroundColor(.green)
+        } else {
+          Label("Name and endpoint are required", systemImage: "exclamationmark.triangle")
+            .foregroundColor(.orange)
+        }
+      }
+      Section {
+        Button {
+          store.upsertCustomDeviceConnector(draft)
+          dismiss()
+        } label: {
+          Label("Save", systemImage: "checkmark.circle")
+        }
+        .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+          draft.endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+        if store.customDeviceConnectors.contains(where: { $0.id == originalId }) {
+          Button(role: .destructive) {
+            store.deleteCustomDeviceConnector(id: originalId)
+            dismiss()
+          } label: {
+            Label("Delete", systemImage: "trash")
+          }
+        }
+      }
+    }
+    .navigationTitle("Custom Device")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var transportBinding: Binding<CustomDeviceTransport> {
+    Binding(
+      get: { draft.transport },
+      set: { draft.transport = $0 }
+    )
+  }
+
+  private var riskBinding: Binding<CustomDeviceRisk> {
+    Binding(
+      get: { draft.risk },
+      set: { draft.risk = $0 }
+    )
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<CustomDeviceConnector, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { draft[keyPath: keyPath] },
+      set: { draft[keyPath: keyPath] = $0 }
+    )
+  }
+
+  private func stringBinding(_ keyPath: WritableKeyPath<CustomDeviceConnector, String>) -> Binding<String> {
+    Binding(
+      get: { draft[keyPath: keyPath] },
+      set: { draft[keyPath: keyPath] = $0 }
+    )
+  }
+}
+
 struct ResetPrivateDataView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var confirmation = ""
@@ -1409,7 +1580,7 @@ struct ResetPrivateDataView: View {
     NavigationView {
       Form {
         Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, and saved model keys on this device.")
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, custom device connectors, and saved model keys on this device.")
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)

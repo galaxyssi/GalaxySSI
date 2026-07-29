@@ -78,6 +78,18 @@ final class SignalASIBackupTests: XCTestCase {
       $0.networkPolicy = .offlineOnly
       $0.allowPaidProviders = false
     }
+    store.upsertCustomDeviceConnector(
+      CustomDeviceConnector(
+        id: "custom-device-office",
+        name: "Office Light",
+        transport: .mqtt,
+        endpoint: "mqtt://broker.local",
+        commandTarget: "topic/light/office",
+        username: "user",
+        authToken: "device-token",
+        risk: .high
+      )
+    )
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
     store.appendIncoming("desktop hello", from: "hermes")
@@ -95,6 +107,7 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertTrue(payload.privacyManifest.includesDisplaySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentSafetySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentTaskBudget)
+    XCTAssertTrue(payload.privacyManifest.includesCustomDeviceConnectors)
     let restored = makeStore()
     try restored.restoreBackupPayload(payload)
 
@@ -113,6 +126,11 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.agentTaskBudget.maxInputTokens, 42_000)
     XCTAssertEqual(restored.agentTaskBudget.networkPolicy, .offlineOnly)
     XCTAssertFalse(restored.agentTaskBudget.allowPaidProviders)
+    XCTAssertEqual(restored.customDeviceConnectors.count, 1)
+    XCTAssertEqual(restored.customDeviceConnectors[0].id, "custom-device-office")
+    XCTAssertEqual(restored.customDeviceConnectors[0].transport, .mqtt)
+    XCTAssertEqual(restored.customDeviceConnectors[0].authToken, "device-token")
+    XCTAssertEqual(restored.customDeviceConnectors[0].risk, .high)
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
     XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)
