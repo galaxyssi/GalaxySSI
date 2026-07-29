@@ -1073,6 +1073,34 @@ enum AgentRisk: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentElementOrigin: String, Codable, CaseIterable, Identifiable {
+  case accessibility = "ACCESSIBILITY"
+  case visualOcr = "VISUAL_OCR"
+  case manual = "MANUAL"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentElementOrigin {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .uppercased()
+      .replacingOccurrences(of: "-", with: "_")
+      .replacingOccurrences(of: " ", with: "_") ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unknown
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
 enum AgentConnectorKind: String, Codable, CaseIterable, Identifiable {
   case model = "MODEL"
   case agent = "AGENT"
@@ -17969,6 +17997,221 @@ struct AgentActionRecoveryController {
   }
 
   private static let safeRetryActions: Set<AgentActionKind> = [.openApp, .home, .recents]
+}
+
+enum AgentActionRiskHardener {
+  static let minConfidentVisualAction = 0.70
+
+  static func enforce(plan: AgentPlan) -> AgentPlan {
+    enforce(plan: plan, customDeviceRisks: [:])
+  }
+
+  static func enforce(
+    plan: AgentPlan,
+    customDeviceConnectors: [CustomDeviceConnector],
+    homeAssistantSettings: HomeAssistantSettings = .default
+  ) -> AgentPlan {
+    var customDeviceRisks: [String: CustomDeviceRisk] = [:]
+    for connector in customDeviceConnectors {
+      customDeviceRisks[connector.id] = connector.risk
+    }
+    return enforce(
+      plan: plan,
+      customDeviceRisks: customDeviceRisks,
+      homeAssistantDefaultEntityId: homeAssistantSettings.defaultEntityId
+    )
+  }
+
+  static func enforce(
+    plan: AgentPlan,
+    customDeviceRisks: [String: CustomDeviceRisk],
+    homeAssistantDefaultEntityId: String = ""
+  ) -> AgentPlan {
+    let actions = plan.actions.map { action in
+      var copy = action
+      copy.risk = higherRisk(
+        action.risk,
+        hardenedRisk(
+          for: action,
+          customDeviceRisks: customDeviceRisks,
+          homeAssistantDefaultEntityId: homeAssistantDefaultEntityId
+        )
+      )
+      return copy
+    }
+    var hardened = plan
+    hardened.actions = actions
+    hardened.validation = AgentPlanValidator.validate(hardened)
+    return hardened
+  }
+
+  private static func hardenedRisk(
+    for action: AgentAction,
+    customDeviceRisks: [String: CustomDeviceRisk],
+    homeAssistantDefaultEntityId: String
+  ) -> AgentRisk {
+    switch action.kind {
+    case .controlDevice:
+      return deviceRisk(
+        action,
+        customDeviceRisks: customDeviceRisks,
+        homeAssistantDefaultEntityId: homeAssistantDefaultEntityId
+      )
+    case .callConnector:
+      return connectorRisk(action)
+    case .tap, .longPress:
+      return visualGroundingRisk(
+        origin: action.parameters["element_origin"] ?? "",
+        confidenceValue: action.parameters["element_confidence"] ?? ""
+      )
+    case .typeText, .deleteText, .pasteText:
+      return visualGroundingRisk(
+        origin: action.parameters["field_origin"] ?? "",
+        confidenceValue: action.parameters["field_confidence"] ?? ""
+      )
+    default:
+      return action.risk
+    }
+  }
+
+  private static func deviceRisk(
+    _ action: AgentAction,
+    customDeviceRisks: [String: CustomDeviceRisk],
+    homeAssistantDefaultEntityId: String
+  ) -> AgentRisk {
+    let connectorId = (action.parameters["connector_id"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if connectorId.hasPrefix(customDevicePrefix) {
+      let customDeviceId = String(connectorId.dropFirst(customDevicePrefix.count))
+      guard let risk = customDeviceRisks[customDeviceId] else { return .high }
+      return agentRisk(for: risk)
+    }
+    if connectorId == homeAssistantConnectorId {
+      return AgentHomeAssistantRiskPolicy.riskForPrompt(
+        action.parameters["prompt"] ?? "",
+        defaultEntityId: homeAssistantDefaultEntityId
+      )
+    }
+    return .high
+  }
+
+  private static func connectorRisk(_ action: AgentAction) -> AgentRisk {
+    let value = [
+      action.description,
+      action.target,
+      action.parameters["prompt"] ?? ""
+    ].joined(separator: " ").lowercased()
+    return highRiskConnectorTerms.contains(where: { value.contains($0) }) ? .high : action.risk
+  }
+
+  private static func visualGroundingRisk(origin: String, confidenceValue: String) -> AgentRisk {
+    guard AgentElementOrigin.fromWireValue(origin) == .visualOcr else {
+      return .low
+    }
+    let confidence = Double(confidenceValue.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+    return confidence < minConfidentVisualAction ? .high : .medium
+  }
+
+  private static func higherRisk(_ first: AgentRisk, _ second: AgentRisk) -> AgentRisk {
+    first.weight >= second.weight ? first : second
+  }
+
+  private static func agentRisk(for risk: CustomDeviceRisk) -> AgentRisk {
+    switch risk {
+    case .low: return .low
+    case .medium: return .medium
+    case .high: return .high
+    }
+  }
+
+  private static let customDevicePrefix = "custom-device:"
+  private static let homeAssistantConnectorId = "home-assistant"
+  private static let highRiskConnectorTerms = [
+    "delete", "erase", "remove account", "install", "uninstall", "deploy", "publish",
+    "send message", "send email", "payment", "purchase", "buy", "order", "transfer",
+    "credential", "password", "private key", "api key", "unlock", "open door",
+    "\u{5220}\u{9664}", "\u{6e05}\u{9664}", "\u{5b89}\u{88c5}", "\u{5378}\u{8f7d}",
+    "\u{90e8}\u{7f72}", "\u{53d1}\u{5e03}", "\u{53d1}\u{9001}", "\u{652f}\u{4ed8}",
+    "\u{8d2d}\u{4e70}", "\u{8f6c}\u{8d26}", "\u{5bc6}\u{7801}", "\u{79c1}\u{94a5}",
+    "\u{89e3}\u{9501}", "\u{5f00}\u{95e8}"
+  ]
+}
+
+enum AgentHomeAssistantRiskPolicy {
+  static func riskForPrompt(_ prompt: String, defaultEntityId: String = "") -> AgentRisk {
+    riskForEntity(
+      prompt: prompt,
+      entityId: entityId(for: prompt, defaultEntityId: defaultEntityId)
+    )
+  }
+
+  static func entityId(for prompt: String, defaultEntityId: String = "") -> String {
+    if let range = prompt.range(of: entityIdPattern, options: .regularExpression) {
+      return String(prompt[range]).lowercased()
+    }
+    return defaultEntityId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  private static func riskForEntity(prompt: String, entityId: String) -> AgentRisk {
+    let lower = prompt.lowercased()
+    let domain = entityId.split(separator: ".", maxSplits: 1).first.map(String.init) ?? ""
+    if highRiskControlDomains.contains(domain) {
+      return .high
+    }
+    if domain == "cover" && highRiskControlTerms.contains(where: { lower.contains($0) }) {
+      return .high
+    }
+    if mediumRiskControlDomains.contains(domain) {
+      return .medium
+    }
+    if highRiskControlTerms.contains(where: { lower.contains($0) }) {
+      return .high
+    }
+    if mediumRiskControlTerms.contains(where: { lower.contains($0) }) {
+      return .medium
+    }
+    return .low
+  }
+
+  private static let entityIdPattern = #"[A-Za-z0-9_]+\.[A-Za-z0-9_]+"#
+  private static let highRiskControlDomains: Set<String> = [
+    "alarm_control_panel",
+    "automation",
+    "camera",
+    "lock",
+    "siren",
+    "script",
+    "valve"
+  ]
+  private static let mediumRiskControlDomains: Set<String> = [
+    "climate",
+    "cover",
+    "fan",
+    "scene",
+    "switch",
+    "vacuum"
+  ]
+  private static let highRiskControlTerms = [
+    "alarm",
+    "camera",
+    "door",
+    "gate",
+    "garage",
+    "lock",
+    "security",
+    "siren",
+    "valve"
+  ]
+  private static let mediumRiskControlTerms = [
+    "automation",
+    "blind",
+    "climate",
+    "cover",
+    "curtain",
+    "scene",
+    "script",
+    "switch",
+    "thermostat"
+  ]
 }
 
 enum AgentConfirmationPolicy {
