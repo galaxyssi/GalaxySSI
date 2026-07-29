@@ -20,10 +20,12 @@ protocol SignalASILinkTransport: AnyObject {
 final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   @Published private(set) var isConnected = false
   var onMessage: ((String, Data) -> Void)?
+  var onConnectionChanged: ((Bool) -> Void)?
 
   private let host = NWEndpoint.Host("broker.emqx.io")
   private let port = NWEndpoint.Port(rawValue: 8883)!
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
+  private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
   private var connection: NWConnection?
   private var clientId = ""
   private var subscriptions: [String] = []
@@ -52,8 +54,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
           continuation.resume(returning: .queued)
           return
         }
-        self.sendPublish(topic: topic, payload: payload)
-        continuation.resume(returning: .published)
+        continuation.resume(returning: self.sendWirePayload(topic: topic, payload: payload) ? .published : .failed)
       }
     }
   }
@@ -69,6 +70,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
         self.sendConnect()
         self.receiveLoop()
       case .failed, .cancelled:
+        self.inboundChunkAssembler.clear()
         self.setConnected(false)
         self.connection = nil
       default:
@@ -109,6 +111,17 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     body.appendUInt16(packetId)
     body.append(payload)
     sendFrame(typeAndFlags: 0x32, body)
+  }
+
+  private func sendWirePayload(topic: String, payload: Data) -> Bool {
+    let wirePayload = String(decoding: payload, as: UTF8.self)
+    guard let packets = try? SignalASIMqttWireChunking.encode(wirePayload: wirePayload) else {
+      return false
+    }
+    packets.forEach { packet in
+      sendPublish(topic: topic, payload: Data(packet.utf8))
+    }
+    return true
   }
 
   private func sendPubAck(_ packetId: UInt16) {
@@ -169,7 +182,22 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     if qos > 0, let packetId = packet.payload.readUInt16(at: &index) {
       sendPubAck(packetId)
     }
-    let payload = packet.payload.suffix(from: index)
+    let payload = Data(packet.payload.suffix(from: index))
+    if let rawObject = try? JSONSerialization.jsonObject(with: payload),
+       let object = rawObject as? [String: Any],
+       SignalASIMqttWireChunking.isChunk(object) {
+      do {
+        guard let assembled = try inboundChunkAssembler.accept(scope: topic, wire: object) else {
+          return
+        }
+        DispatchQueue.main.async {
+          self.onMessage?(topic, Data(assembled.utf8))
+        }
+      } catch {
+        return
+      }
+      return
+    }
     DispatchQueue.main.async {
       self.onMessage?(topic, Data(payload))
     }
@@ -178,7 +206,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private func flushQueuedPublishes() {
     let pending = queuedPublishes
     queuedPublishes.removeAll()
-    pending.forEach { sendPublish(topic: $0.topic, payload: $0.payload) }
+    pending.forEach { _ = sendWirePayload(topic: $0.topic, payload: $0.payload) }
   }
 
   private func nextPacketIdentifier() -> UInt16 {
@@ -190,6 +218,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
     connected = value
     DispatchQueue.main.async {
       self.isConnected = value
+      self.onConnectionChanged?(value)
     }
   }
 }
@@ -338,15 +367,20 @@ final class MessageCoordinator: ObservableObject {
   @Published var lastError = ""
 
   private let store: SignalASIStore
+  private let deliveryStore: SignalASILinkDeliveryStore
   private let cloudClient: CloudModelClient
   let mqttClient: SignalASIMqttClient
+  private var outboxRetryTask: Task<Void, Never>?
+  private let transportEpoch = "v7-flow-control"
 
   init(
     store: SignalASIStore,
+    deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
     cloudClient: CloudModelClient = CloudModelClient(),
     mqttClient: SignalASIMqttClient = SignalASIMqttClient()
   ) {
     self.store = store
+    self.deliveryStore = deliveryStore
     self.cloudClient = cloudClient
     self.mqttClient = mqttClient
     self.mqttClient.onMessage = { [weak self] topic, payload in
@@ -354,10 +388,20 @@ final class MessageCoordinator: ObservableObject {
         self?.handleIncoming(topic: topic, payload: payload)
       }
     }
+    self.mqttClient.onConnectionChanged = { [weak self] connected in
+      guard connected else { return }
+      Task { @MainActor in
+        self?.scheduleOutboxFlush(after: 0)
+      }
+    }
   }
 
   func start() {
+    _ = deliveryStore.ensureTransportEpoch(transportEpoch)
+    deliveryStore.makePendingImmediatelyRetryable()
     mqttClient.connect(clientId: mqttClientId, serverLinks: store.serverLinks)
+    replayPendingIncoming()
+    scheduleOutboxFlush(after: 0)
   }
 
   func send(_ text: String, to contact: SignalASIContact) async {
@@ -422,6 +466,7 @@ final class MessageCoordinator: ObservableObject {
     }
     let payload: [String: Any] = [
       "type": "text",
+      "message_id": outgoing.id.uuidString,
       "content": text,
       "contact_id": contact.id,
       "sender": store.profile.signalASIId,
@@ -440,25 +485,42 @@ final class MessageCoordinator: ObservableObject {
       "to": link.desktopId,
       "envelope": envelope
     ])
+    let wireText = String(decoding: wire, as: UTF8.self)
+    deliveryStore.enqueue(messageId: outgoing.id.uuidString, topic: link.routes.upTopic, wirePayload: wireText)
+    deliveryStore.markAttempt(messageId: outgoing.id.uuidString)
     let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire)
     switch result {
     case .published:
+      deliveryStore.markPublished(messageId: outgoing.id.uuidString)
       store.markMessage(outgoing.id, contactId: contact.id, status: .sent)
+      scheduleOutboxFlushFromStore()
     case .queued:
       store.markMessage(outgoing.id, contactId: contact.id, status: .queued, detail: "Waiting for MQTT connection.")
+      scheduleOutboxFlushFromStore()
     case .failed:
       throw SignalASIError.transportUnavailable
     }
   }
 
   private func handleIncoming(topic: String, payload: Data) {
-    guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any] else {
+    guard let rawObject = try? JSONSerialization.jsonObject(with: payload),
+          let object = rawObject as? [String: Any] else {
       return
     }
+    dispatchIncomingWire(topic: topic, object: object, originalPayload: String(decoding: payload, as: UTF8.self), allowStage: true)
+  }
+
+  private func dispatchIncomingWire(
+    topic: String,
+    object: [String: Any],
+    originalPayload: String,
+    allowStage: Bool
+  ) {
     if object.string("type") == "pairing_confirmed" {
       let access = SignalASILinkProtocol.pairingAccess(from: object.dictionary("pairing_access"))
       store.markServerPaired(desktopId: object.string("desktop_id"), access: access)
       pairingStatus = "Pairing confirmed"
+      scheduleOutboxFlush(after: 0)
       return
     }
     let appPayload: [String: Any]
@@ -468,11 +530,154 @@ final class MessageCoordinator: ObservableObject {
     } else {
       appPayload = object
     }
+    if appPayload.string("type") == "delivery_ack" {
+      handleDeliveryAck(appPayload)
+      return
+    }
+    let messageId = appPayload.string("message_id")
+    let link = serverLink(for: topic, payload: object)
+    if allowStage, !messageId.isEmpty {
+      let digest = ciphertextReplayDigest(for: object)
+      if !digest.isEmpty {
+        if let known = deliveryStore.messageForCiphertext(digest: digest) {
+          if known.receiptRequired {
+            publishInboundReceipt(link: link, receivedMessageId: known.messageId)
+          }
+          return
+        }
+      }
+      switch deliveryStore.stageIncoming(messageId: messageId, payload: originalPayload) {
+      case .invalid:
+        return
+      case .completed, .pending:
+        publishInboundReceipt(link: link, receivedMessageId: messageId)
+        return
+      case .staged:
+        if !digest.isEmpty {
+          try? deliveryStore.bindCiphertext(
+            digest: digest,
+            messageId: messageId,
+            receiptRequired: appPayload.string("type") != "delivery_ack"
+          )
+        }
+        publishInboundReceipt(link: link, receivedMessageId: messageId)
+      }
+    }
     let contactId = appPayload.string("contact_id").ifBlank("hermes")
     let content = appPayload.string("content").ifBlank(appPayload.string("text"))
-    guard !content.isEmpty else { return }
+    guard !content.isEmpty else {
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
+      }
+      return
+    }
     store.appendIncoming(content, from: contactId, remoteMessageId: appPayload.string("message_id"))
+    if !messageId.isEmpty {
+      deliveryStore.completeIncoming(messageId: messageId)
+    }
     NotificationService.notify(title: store.contact(id: contactId)?.displayName ?? "SignalASI", body: content)
+  }
+
+  private func handleDeliveryAck(_ payload: [String: Any]) {
+    let acknowledgedIds = [
+      SignalASILinkDeliveryAckPolicy.transportMessageId(payload: payload),
+      SignalASILinkDeliveryAckPolicy.clientSourceMessageId(payload: payload)
+    ].filter { !$0.isEmpty }
+    acknowledgedIds.forEach { messageId in
+      deliveryStore.acknowledge(messageId: messageId)
+      if let uuid = UUID(uuidString: messageId) {
+        store.markMessage(uuid, status: .delivered)
+      }
+    }
+    scheduleOutboxFlushFromStore()
+  }
+
+  private func publishInboundReceipt(link: ServerLink?, receivedMessageId: String) {
+    guard let link, !receivedMessageId.isEmpty else { return }
+    let ackPayload: [String: Any] = [
+      "type": "delivery_ack",
+      "transport_message_id": receivedMessageId,
+      "source_message_id": receivedMessageId,
+      "delivery_status": "accepted",
+      "sender": "system",
+      "time": Int64(Date().timeIntervalSince1970 * 1000)
+    ]
+    guard let envelope = try? SignalASILinkProtocol.makeEnvelope(
+      payload: ackPayload,
+      sourceId: store.profile.signalASIId,
+      targetId: link.desktopId
+    ),
+      let wire = try? SignalASILinkProtocol.jsonData([
+        "scheme": "signalasi-link-ios-preview",
+        "from": store.profile.signalASIId,
+        "to": link.desktopId,
+        "envelope": envelope
+      ]) else {
+      return
+    }
+    Task {
+      _ = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire)
+    }
+  }
+
+  private func replayPendingIncoming() {
+    deliveryStore.pendingIncoming().forEach { pending in
+      guard let data = pending.payload.data(using: .utf8),
+            let rawObject = try? JSONSerialization.jsonObject(with: data),
+            let object = rawObject as? [String: Any] else {
+        deliveryStore.completeIncoming(messageId: pending.messageId)
+        return
+      }
+      dispatchIncomingWire(topic: "", object: object, originalPayload: pending.payload, allowStage: false)
+      deliveryStore.completeIncoming(messageId: pending.messageId)
+    }
+  }
+
+  private func flushPendingOutbox() async {
+    let pending = deliveryStore.pending()
+    guard !pending.isEmpty else { return }
+    for item in pending {
+      deliveryStore.markAttempt(messageId: item.messageId)
+      let result = await mqttClient.publish(topic: item.topic, payload: Data(item.wirePayload.utf8))
+      if result == .published {
+        deliveryStore.markPublished(messageId: item.messageId)
+      }
+    }
+    scheduleOutboxFlushFromStore()
+  }
+
+  private func scheduleOutboxFlushFromStore() {
+    if let delay = deliveryStore.nextRetryDelay() {
+      scheduleOutboxFlush(after: delay)
+    }
+  }
+
+  private func scheduleOutboxFlush(after delay: TimeInterval) {
+    outboxRetryTask?.cancel()
+    outboxRetryTask = Task { [weak self] in
+      if delay > 0 {
+        try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+      }
+      await self?.flushPendingOutbox()
+    }
+  }
+
+  private func serverLink(for topic: String, payload: [String: Any]) -> ServerLink? {
+    store.serverLinks.first { link in
+      topic == link.routes.downTopic ||
+        topic == link.routes.controlTopic ||
+        topic == link.routes.upTopic ||
+        topic == link.routes.pairingTopic ||
+        payload.string("desktop_id") == link.desktopId ||
+        payload.string("from") == link.desktopId
+    }
+  }
+
+  private func ciphertextReplayDigest(for wire: [String: Any]) -> String {
+    guard wire.string("scheme") == "signal" || wire["body"] != nil else {
+      return ""
+    }
+    return SignalASILinkCiphertextReplayPolicy.digest(wire: wire)
   }
 
   private var mqttClientId: String {
