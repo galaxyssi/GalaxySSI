@@ -104,6 +104,34 @@ Each proposed durable change is classified as a fact, preference, identity, deci
 - Semantically equivalent, same-polarity evidence strengthens the accepted item instead of creating another list entry.
 - Causal deletion removes source candidates and their payloads from the inbox before the deletion event is committed.
 
+## Namespace Isolation
+
+Every accepted memory belongs to one typed namespace:
+
+- `user:self` for identity and personal preferences;
+- `project:<scope>` for project decisions, goals, tasks, and state;
+- `device:<scope>` for phone, computer, sensor, and smart-device state;
+- `security:policy` for authorization and safety policy;
+- `general` for durable evidence that does not belong to another domain.
+
+Project and device scopes use explicit stable identifiers when an event provides one and
+otherwise use a bounded local scope. The namespace is persisted with the world item,
+candidate, evidence chain, and Desktop SQLite record.
+
+Stable keys are unique only inside a namespace. Strengthening, contradiction detection,
+candidate review, duplicate consolidation, and supersession require an exact namespace
+match. A cross-namespace supersession edge fails integrity validation instead of
+silently replacing unrelated evidence.
+
+Retrieval plans prefer the namespace implied by the request. Device questions exclude
+project state, project questions exclude device state, and personal-preference queries
+remain in the user namespace. Compiled context labels every entry with its namespace,
+and the Control Center exposes the same boundary during memory and candidate review.
+
+Desktop supports scoped namespace keys such as `project:alpha` and `device:phone`.
+Category filters still match all scopes in that category, and Overview aggregates scoped
+records into the five stable namespace families.
+
 ## Typed Relationship Graph
 
 The graph stores typed nodes for users, devices, applications, features, settings, Agents, models, tools, projects, concepts, and states. Relations include ownership, use, support, composition, state, naming, dependencies, connections, preferences, removals, and general relatedness.

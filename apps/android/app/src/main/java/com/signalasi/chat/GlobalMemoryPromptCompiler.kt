@@ -33,7 +33,8 @@ data class GlobalMemoryQueryPlan(
     val temporalScope: GlobalMemoryTemporalQueryScope = if (includeHistorical) {
         GlobalMemoryTemporalQueryScope.CURRENT_AND_HISTORY
     } else GlobalMemoryTemporalQueryScope.CURRENT,
-    val preferredRelationKinds: Set<GlobalEntityRelationKind> = emptySet()
+    val preferredRelationKinds: Set<GlobalEntityRelationKind> = emptySet(),
+    val preferredNamespaces: Set<GlobalMemoryNamespace> = emptySet()
 )
 
 object GlobalMemoryQueryPlanner {
@@ -68,7 +69,8 @@ object GlobalMemoryQueryPlanner {
             maximumGraphNodes = components.maxOf(GlobalMemoryQueryPlan::maximumGraphNodes),
             types = types,
             temporalScope = temporalScope,
-            preferredRelationKinds = relationKinds(normalized)
+            preferredRelationKinds = relationKinds(normalized),
+            preferredNamespaces = types.flatMap(::namespacesFor).toSet()
         )
     }
 
@@ -175,7 +177,30 @@ object GlobalMemoryQueryPlanner {
         graphNodes: Int
     ) = GlobalMemoryQueryPlan(type, kinds, layers, historical, hops, worldItems, graphNodes)
 
-    private fun containsAny(value: String, terms: List<String>): Boolean = terms.any(value::contains)
+    private fun containsAny(value: String, terms: List<String>): Boolean = terms.any { term ->
+        if (term.any { it.code > 0x7F }) {
+            value.contains(term)
+        } else {
+            Regex("(?<![a-z0-9_])${Regex.escape(term)}(?![a-z0-9_])").containsMatchIn(value)
+        }
+    }
+
+    private fun namespacesFor(type: GlobalMemoryQueryType): Set<GlobalMemoryNamespace> = when (type) {
+        GlobalMemoryQueryType.PROJECT_STATE,
+        GlobalMemoryQueryType.LONG_TERM_GOAL -> setOf(GlobalMemoryNamespace.PROJECT)
+        GlobalMemoryQueryType.DEVICE_CAPABILITY -> setOf(GlobalMemoryNamespace.DEVICE)
+        GlobalMemoryQueryType.PERSONAL_IDENTITY,
+        GlobalMemoryQueryType.PERSONAL_PREFERENCE -> setOf(GlobalMemoryNamespace.USER)
+        GlobalMemoryQueryType.SECURITY_STATE -> setOf(GlobalMemoryNamespace.SECURITY)
+        GlobalMemoryQueryType.TOOL_EVIDENCE -> setOf(
+            GlobalMemoryNamespace.PROJECT,
+            GlobalMemoryNamespace.DEVICE,
+            GlobalMemoryNamespace.GENERAL
+        )
+        GlobalMemoryQueryType.HISTORICAL_DECISION,
+        GlobalMemoryQueryType.RELATIONSHIP,
+        GlobalMemoryQueryType.GENERAL -> emptySet()
+    }
 
     private fun relationKinds(value: String): Set<GlobalEntityRelationKind> = mutableSetOf<GlobalEntityRelationKind>()
         .apply {
@@ -225,8 +250,8 @@ object GlobalMemoryQueryPlanner {
         "\u5de5\u5177", "\u547d\u4ee4", "\u7ed3\u679c", "\u8f93\u51fa", "\u65e5\u5fd7", "\u8fd0\u884c"
     )
     private val PROJECT_TERMS = listOf(
-        "project", "status", "task", "feature", "bug", "build", "release",
-        "\u9879\u76ee", "\u72b6\u6001", "\u4efb\u52a1", "\u529f\u80fd", "\u7f3a\u9677", "\u6784\u5efa", "\u53d1\u5e03"
+        "project", "task", "feature", "bug", "build", "release",
+        "\u9879\u76ee", "\u4efb\u52a1", "\u529f\u80fd", "\u7f3a\u9677", "\u6784\u5efa", "\u53d1\u5e03"
     )
     private val RELATIONSHIP_TERMS = listOf(
         "relationship", "related", "connected", "depend on", "depends on", "uses", "support", "supports", "belongs to", "paired",
@@ -330,14 +355,21 @@ object GlobalMemoryPromptCompiler {
     ): List<GlobalWorldItem> {
         val queryTokens = GlobalAgentText.tokens(query)
         val requestedProject = projectNamespace(query)
+        val allowedNamespaces = plan.preferredNamespaces + GlobalMemoryNamespace.GENERAL
         val now = System.currentTimeMillis()
         return world.items.asSequence()
             .filter { it.contextVisibility == GlobalWorldContextVisibility.SHAREABLE }
             .filter { it.expiresAtMillis <= 0L || it.expiresAtMillis > now }
             .filter { it.layer != GlobalWorldLayer.CONVERSATION || currentConversationId in it.conversationIds }
+            .filter {
+                plan.preferredNamespaces.isEmpty() || it.namespace in allowedNamespaces
+            }
             .filter { item ->
                 if (requestedProject.isBlank()) return@filter true
-                val itemProject = projectNamespace("${item.topic} ${item.value}")
+                val itemProject = item.namespaceId
+                    .takeIf { item.namespace == GlobalMemoryNamespace.PROJECT && it != "default" }
+                    .orEmpty()
+                    .ifBlank { projectNamespace("${item.topic} ${item.value}") }
                 itemProject.isBlank() || itemProject == requestedProject
             }
             .filter {
@@ -379,8 +411,12 @@ object GlobalMemoryPromptCompiler {
             .map { (item, overlap) ->
                 val kindBoost = if (item.kind in plan.preferredKinds) 0.32 else 0.0
                 val layerBoost = if (item.layer in plan.preferredLayers) 0.18 else 0.0
+                val namespaceBoost = if (item.namespace in plan.preferredNamespaces) 0.24 else 0.0
                 val currentBoost = if (item.status == GlobalWorldItemStatus.ACTIVE) 0.18 else 0.0
-                item to (overlap + kindBoost + layerBoost + currentBoost + item.confidence * 0.16)
+                item to (
+                    overlap + kindBoost + layerBoost + namespaceBoost +
+                        currentBoost + item.confidence * 0.16
+                    )
             }
             .filter { (item, score) ->
                 score >= 0.42 || (item.layer == GlobalWorldLayer.USER && item.kind in plan.preferredKinds)
@@ -393,7 +429,8 @@ object GlobalMemoryPromptCompiler {
     }
 
     private fun StringBuilder.appendWorldItem(state: String, item: GlobalWorldItem) {
-        append("- [").append(state).append('/').append(item.layer.name.lowercase(Locale.ROOT)).append('/')
+        append("- [").append(state).append('/').append(item.memoryNamespaceKey()).append('/')
+            .append(item.layer.name.lowercase(Locale.ROOT)).append('/')
             .append(item.kind.name.lowercase(Locale.ROOT)).append("] ")
             .append(sanitize(item.value, 600))
             .append(" (topic: ").append(sanitize(item.topic, 120))

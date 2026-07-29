@@ -2031,6 +2031,11 @@
     <string name="cc_memory_temporal_items">Accepted memory</string>
     <string name="cc_memory_temporal_empty">No %1$s memory</string>
     <string name="cc_memory_temporal_empty_subtitle">SignalASI will place durable evidence here when it reaches this state.</string>
-    <string name="cc_memory_temporal_item_subtitle">%1$s · %2$d evidence references</string>
-    <string name="cc_memory_temporal_item_replaced_subtitle">%1$s · %2$d evidence references · Replaced by newer memory</string>
+    <string name="cc_memory_temporal_item_subtitle">%1$s · %2$s · %3$d evidence references</string>
+    <string name="cc_memory_temporal_item_replaced_subtitle">%1$s · %2$s · %3$d evidence references · Replaced by newer memory</string>
+    <string name="cc_memory_namespace_general">General</string>
+    <string name="cc_memory_namespace_user">User</string>
+    <string name="cc_memory_namespace_project">Project</string>
+    <string name="cc_memory_namespace_device">Device</string>
+    <string name="cc_memory_namespace_security">Security</string>
 </resources>

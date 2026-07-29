@@ -17,6 +17,7 @@ from typing import Any
 MAX_CONTENT_CHARS = 2_000
 REVIEW_KINDS = {"identity", "preference", "security"}
 MEMORY_NAMESPACES = {"general", "user", "project", "device", "security"}
+SCOPED_MEMORY_NAMESPACES = {"project", "device"}
 TEMPORAL_STATES = {"current", "historical", "planned", "deprecated", "conflicted", "pending"}
 SECRET_PATTERN = re.compile(
     r"(?i)(api[_ -]?key|access[_ -]?token|password|passwd|secret|authorization)\s*[:=]\s*\S+"
@@ -106,10 +107,31 @@ def _normalize_kind(value: str) -> str:
     return re.sub(r"[^a-z0-9_-]", "", str(value or "fact").casefold())[:32] or "fact"
 
 
+def _namespace_scope(value: str) -> str:
+    normalized = []
+    previous_separator = False
+    for character in str(value or "").strip().casefold():
+        if character.isalnum() or character in "._-":
+            normalized.append(character)
+            previous_separator = False
+        elif not previous_separator:
+            normalized.append("-")
+            previous_separator = True
+    return "".join(normalized).strip("-")[:96]
+
+
+def _namespace_family(value: str) -> str:
+    family = str(value or "").partition(":")[0].strip().casefold()
+    return family if family in MEMORY_NAMESPACES else "general"
+
+
 def _normalize_namespace(value: str, kind: str, content: str) -> str:
-    requested = re.sub(r"[^a-z0-9_-]", "", str(value or "").casefold())[:32]
-    if requested in MEMORY_NAMESPACES:
-        return requested
+    raw = str(value or "").strip()
+    requested_family, separator, requested_scope = raw.partition(":")
+    family = re.sub(r"[^a-z0-9_-]", "", requested_family.casefold())[:32]
+    if family in MEMORY_NAMESPACES:
+        scope = _namespace_scope(requested_scope) if separator and family in SCOPED_MEMORY_NAMESPACES else ""
+        return f"{family}:{scope}" if scope else family
     if kind in {"identity", "preference", "explicit"}:
         return "user"
     if kind == "security":
@@ -123,6 +145,14 @@ def _normalize_namespace(value: str, kind: str, content: str) -> str:
     if kind in {"decision", "goal", "project_state", "episode"}:
         return "project"
     return "general"
+
+
+def _namespace_matches(value: str, requested: set[str]) -> bool:
+    if not requested:
+        return True
+    normalized = str(value or "general").casefold()
+    family = _namespace_family(normalized)
+    return normalized in requested or family in requested
 
 
 def _infer_temporal_state(content: str, kind: str) -> str:
@@ -830,10 +860,21 @@ class DesktopMemoryStore:
                 learned.append(value)
         return learned
 
-    def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        limit: int = 8,
+        *,
+        namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> list[dict[str, Any]]:
         query_tokens = _tokens(query)
         if not query_tokens:
             return []
+        requested_namespaces = {
+            _normalize_namespace(value, "", "")
+            for value in (namespaces or [])
+            if str(value or "").strip()
+        }
         with self._lock, self._connect() as connection:
             rows = connection.execute(
                 "SELECT * FROM memories WHERE status = 'active' ORDER BY importance DESC, updated_at DESC LIMIT 500"
@@ -841,6 +882,8 @@ class DesktopMemoryStore:
             now_ms = int(self.now() * 1_000)
             ranked: list[tuple[float, sqlite3.Row]] = []
             for row in rows:
+                if not _namespace_matches(str(row["namespace"]), requested_namespaces):
+                    continue
                 memory_tokens = _tokens(str(row["content"]))
                 overlap = len(query_tokens & memory_tokens)
                 if overlap <= 0:
@@ -858,9 +901,19 @@ class DesktopMemoryStore:
                 )
         return [self._public(row) for row in selected]
 
-    def compile_context(self, query: str, *, limit: int = 6, max_chars: int = 5_000) -> str:
-        rows = self.search(query, limit=limit)
-        lines = [f"- [{row['kind']}] {row['content']}" for row in rows]
+    def compile_context(
+        self,
+        query: str,
+        *,
+        limit: int = 6,
+        max_chars: int = 5_000,
+        namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> str:
+        rows = self.search(query, limit=limit, namespaces=namespaces)
+        lines = [
+            f"- [{row['namespace']}/{row['kind']}] {row['content']}"
+            for row in rows
+        ]
         return "\n".join(lines)[:max_chars]
 
     def list(self, limit: int = 100, status: str = "active") -> list[dict[str, Any]]:
@@ -912,6 +965,8 @@ class DesktopMemoryStore:
                     break
                 if str(previous["superseded_by_id"]) != str(cursor["id"]):
                     complete = False
+                if str(previous["namespace"]) != str(cursor["namespace"]):
+                    complete = False
                 older.append(previous)
                 visited.add(previous_id)
                 cursor = previous
@@ -930,6 +985,8 @@ class DesktopMemoryStore:
                     complete = False
                     break
                 if str(replacement["supersedes_id"]) != str(cursor["id"]):
+                    complete = False
+                if str(replacement["namespace"]) != str(cursor["namespace"]):
                     complete = False
                 newer.append(replacement)
                 visited.add(replacement_id)
@@ -1024,12 +1081,12 @@ class DesktopMemoryStore:
                 "SELECT evidence_json FROM memories WHERE status = 'active'"
             ).fetchall()
             supersession_rows = connection.execute(
-                "SELECT id, supersedes_id, superseded_by_id FROM memories"
+                "SELECT id, namespace, supersedes_id, superseded_by_id FROM memories"
             ).fetchall()
-        raw_namespace_counts = {
-            str(row["namespace"]): int(row["count"])
-            for row in namespace_rows
-        }
+        raw_namespace_counts: dict[str, int] = {}
+        for row in namespace_rows:
+            family = _namespace_family(str(row["namespace"]))
+            raw_namespace_counts[family] = raw_namespace_counts.get(family, 0) + int(row["count"])
         namespace_counts = {
             namespace: raw_namespace_counts.get(namespace, 0)
             for namespace in sorted(MEMORY_NAMESPACES)
@@ -1057,6 +1114,8 @@ class DesktopMemoryStore:
                 str(row["supersedes_id"]) not in supersession_by_id
                 or str(supersession_by_id[str(row["supersedes_id"])]["superseded_by_id"])
                     != str(row["id"])
+                or str(supersession_by_id[str(row["supersedes_id"])]["namespace"])
+                    != str(row["namespace"])
             )
         }
         broken_supersession_edges.update({
@@ -1069,6 +1128,8 @@ class DesktopMemoryStore:
                 str(row["superseded_by_id"]) not in supersession_by_id
                 or str(supersession_by_id[str(row["superseded_by_id"])]["supersedes_id"])
                     != str(row["id"])
+                or str(supersession_by_id[str(row["superseded_by_id"])]["namespace"])
+                    != str(row["namespace"])
             )
         })
         conflicts: list[dict[str, Any]] = []
