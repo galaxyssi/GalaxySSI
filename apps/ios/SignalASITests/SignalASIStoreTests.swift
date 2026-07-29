@@ -1878,6 +1878,57 @@ final class SignalASIStoreTests: XCTestCase {
     ))
   }
 
+  func testAgentMcpPackageInstallerInspectsIntegrityAndRuntimeFiles() throws {
+    let manifest = mcpLocalStdioPackageManifest()
+    let runtime = "print('server')"
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", manifest),
+      ("integrity.json", mcpPackageIntegrity(for: manifest)),
+      ("runtime/server.py", runtime),
+      ("README.md", "# Local MCP")
+    ))
+
+    XCTAssertTrue(inspection.integrityVerified)
+    XCTAssertEqual(inspection.manifest.transport, .localStdio)
+    XCTAssertEqual(inspection.manifest.endpoint, "local-mcp:example.local_mcp")
+    XCTAssertEqual(inspection.manifestSha256, AgentMcpPackageInstaller.sha256(Data(manifest.utf8)))
+    XCTAssertEqual(inspection.packageSha256.count, 64)
+    XCTAssertEqual(inspection.archiveEntries, ["README.md", "integrity.json", "mcp.json", "runtime/server.py"])
+    XCTAssertEqual(inspection.runtimeFiles["runtime/server.py"], Data(runtime.utf8))
+  }
+
+  func testAgentMcpPackageInstallerAcceptsUnsignedPackageButReportsItForReview() throws {
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpDeclarativePackageManifest())
+    ))
+
+    XCTAssertFalse(inspection.integrityVerified)
+    XCTAssertEqual(inspection.manifest.transport, .declarativeHTTP)
+    XCTAssertEqual(inspection.manifest.tools.first?.name, "relay.switch")
+    XCTAssertTrue(inspection.runtimeFiles.isEmpty)
+  }
+
+  func testAgentMcpPackageInstallerRejectsTraversalUnsupportedAndTamperedPackages() {
+    let manifest = mcpDeclarativePackageManifest()
+    let installer = AgentMcpPackageInstaller()
+
+    XCTAssertThrowsError(try installer.inspect(storedMcpPackage(("../mcp.json", manifest))))
+    XCTAssertThrowsError(try installer.inspect(storedMcpPackage(
+      ("mcp.json", manifest),
+      ("server.js", "run()")
+    )))
+    XCTAssertThrowsError(try installer.inspect(storedMcpPackage(
+      ("mcp.json", manifest),
+      ("integrity.json", #"{"manifest_sha256":"0000000000000000000000000000000000000000000000000000000000000000"}"#)
+    )))
+  }
+
+  func testAgentMcpPackageInstallerRejectsLocalStdioPackageMissingEntrypoint() {
+    XCTAssertThrowsError(try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpLocalStdioPackageManifest())
+    )))
+  }
+
   func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
     let skill = AgentDefaultCapabilityCatalog.skill("signalasi.catalog.github-triage")!
     let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 1_000 })
@@ -12770,6 +12821,105 @@ final class SignalASIStoreTests: XCTestCase {
     }
     """#
   }
+
+  private func mcpPackageIntegrity(for manifest: String) -> String {
+    let digest = AgentMcpPackageInstaller.sha256(Data(manifest.utf8))
+    return #"{"manifest_sha256":"\#(digest)"}"#
+  }
+
+  private func storedMcpPackage(_ files: (String, String)...) -> Data {
+    var output = Data()
+    var centralRecords: [(name: String, data: Data, crc32: UInt32, localOffset: Int)] = []
+    for file in files {
+      let nameBytes = Data(file.0.utf8)
+      let body = Data(file.1.utf8)
+      let crc = mcpPackageCRC32(body)
+      let size = UInt32(body.count)
+      let localOffset = output.count
+      appendMcpZipUInt32LE(0x04034b50, to: &output)
+      appendMcpZipUInt16LE(20, to: &output)
+      appendMcpZipUInt16LE(0x0800, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt32LE(crc, to: &output)
+      appendMcpZipUInt32LE(size, to: &output)
+      appendMcpZipUInt32LE(size, to: &output)
+      appendMcpZipUInt16LE(UInt16(nameBytes.count), to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      output.append(nameBytes)
+      output.append(body)
+      centralRecords.append((file.0, body, crc, localOffset))
+    }
+    let centralStart = output.count
+    for record in centralRecords {
+      let nameBytes = Data(record.name.utf8)
+      let size = UInt32(record.data.count)
+      appendMcpZipUInt32LE(0x02014b50, to: &output)
+      appendMcpZipUInt16LE(20, to: &output)
+      appendMcpZipUInt16LE(20, to: &output)
+      appendMcpZipUInt16LE(0x0800, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt32LE(record.crc32, to: &output)
+      appendMcpZipUInt32LE(size, to: &output)
+      appendMcpZipUInt32LE(size, to: &output)
+      appendMcpZipUInt16LE(UInt16(nameBytes.count), to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt32LE(0, to: &output)
+      appendMcpZipUInt32LE(UInt32(record.localOffset), to: &output)
+      output.append(nameBytes)
+    }
+    let centralSize = output.count - centralStart
+    appendMcpZipUInt32LE(0x06054b50, to: &output)
+    appendMcpZipUInt16LE(0, to: &output)
+    appendMcpZipUInt16LE(0, to: &output)
+    appendMcpZipUInt16LE(UInt16(centralRecords.count), to: &output)
+    appendMcpZipUInt16LE(UInt16(centralRecords.count), to: &output)
+    appendMcpZipUInt32LE(UInt32(centralSize), to: &output)
+    appendMcpZipUInt32LE(UInt32(centralStart), to: &output)
+    appendMcpZipUInt16LE(0, to: &output)
+    return output
+  }
+
+  private func appendMcpZipUInt16LE(_ value: UInt16, to data: inout Data) {
+    data.append(UInt8(value & 0x00ff))
+    data.append(UInt8((value >> 8) & 0x00ff))
+  }
+
+  private func appendMcpZipUInt32LE(_ value: UInt32, to data: inout Data) {
+    data.append(UInt8(value & 0x000000ff))
+    data.append(UInt8((value >> 8) & 0x000000ff))
+    data.append(UInt8((value >> 16) & 0x000000ff))
+    data.append(UInt8((value >> 24) & 0x000000ff))
+  }
+
+  private func mcpPackageCRC32(_ data: Data) -> UInt32 {
+    var crc: UInt32 = 0xffffffff
+    for byte in data {
+      let index = Int((crc ^ UInt32(byte)) & 0xff)
+      crc = (crc >> 8) ^ Self.mcpPackageCRC32Table[index]
+    }
+    return crc ^ 0xffffffff
+  }
+
+  private static let mcpPackageCRC32Table: [UInt32] = {
+    (0..<256).map { value -> UInt32 in
+      var crc = UInt32(value)
+      for _ in 0..<8 {
+        if crc & 1 == 1 {
+          crc = (crc >> 1) ^ 0xedb88320
+        } else {
+          crc >>= 1
+        }
+      }
+      return crc
+    }
+  }()
 
   private func transcriptEntry(
     _ id: String,
