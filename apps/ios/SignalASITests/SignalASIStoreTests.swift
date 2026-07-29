@@ -15,6 +15,30 @@ private final class TestAgentActionExecutor: AgentActionExecutor {
   }
 }
 
+private extension AgentRuntimePackCatalogEntry {
+  func with(
+    version: String? = nil,
+    downloadUrl: String? = nil,
+    minimumHostVersionCode: Int64? = nil,
+    guestApiVersion: Int? = nil
+  ) -> AgentRuntimePackCatalogEntry {
+    var copy = self
+    if let version {
+      copy.version = version
+    }
+    if let downloadUrl {
+      copy.downloadUrl = downloadUrl
+    }
+    if let minimumHostVersionCode {
+      copy.minimumHostVersionCode = minimumHostVersionCode
+    }
+    if let guestApiVersion {
+      copy.guestApiVersion = guestApiVersion
+    }
+    return copy
+  }
+}
+
 @MainActor
 final class SignalASIStoreTests: XCTestCase {
   func testInitialStoreContainsAndroidParityContacts() {
@@ -6718,6 +6742,169 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(object["task_intent_confidence"] as? Int ?? 0, 55)
   }
 
+  func testAgentRuntimePackCatalogSigningPayloadCodecAndWireNamesMatchAndroid() throws {
+    let now: Int64 = 1_750_000_000_000
+    let first = runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    let second = runtimeCatalogEntry(
+      packId: "python-uv",
+      architecture: "arm64-v8a",
+      dependencies: ["linux-base"]
+    )
+    let forward = runtimeCatalog(now: now, entries: [first, second])
+    let reversed = runtimeCatalog(now: now, entries: [second, first])
+
+    XCTAssertEqual(forward.signingPayload(), reversed.signingPayload())
+    XCTAssertFalse(first.canonicalValue().contains("|"))
+
+    let encoded = try JSONEncoder().encode(forward)
+    let decoded = try JSONDecoder().decode(AgentRuntimePackCatalog.self, from: encoded)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let entries = try XCTUnwrap(object["entries"] as? [[String: Any]])
+
+    XCTAssertEqual(decoded, forward)
+    XCTAssertEqual(object["format_version"] as? Int, 1)
+    XCTAssertEqual(object["catalog_version"] as? String, "1.0.0")
+    XCTAssertEqual(object["signature_key_id"] as? String, String(repeating: "a", count: 64))
+    XCTAssertEqual(entries.first?["pack_id"] as? String, "linux-base")
+    XCTAssertEqual(entries.first?["archive_sha256"] as? String, String(repeating: "b", count: 64))
+    XCTAssertEqual((entries.first?["archive_size_bytes"] as? NSNumber)?.int64Value, Int64(1_024))
+
+    let manifest = AgentRuntimePackManifest(
+      id: "python-uv",
+      version: "1.0.0",
+      architecture: "arm64-v8a",
+      imageFile: "python.img",
+      imageSha256: String(repeating: "c", count: 64),
+      capabilities: ["uv.sync", "python.execute"],
+      dependencies: ["linux-base"],
+      installedSizeBytes: 2_048,
+      license: "Apache-2.0",
+      signatureKeyId: String(repeating: "d", count: 64),
+      signature: "signed",
+      archiveSizeBytes: 1_024
+    )
+    let status = AgentRuntimePackStatus(id: "python-uv", state: .ready, manifest: manifest)
+    let install = AgentRuntimePackInstallResult(
+      packId: "python-uv",
+      version: "1.0.0",
+      state: .ready,
+      installedBytes: 2_048,
+      replacedExisting: true
+    )
+    let progress = AgentRuntimePackInstallProgress(stage: .verifying, processedBytes: 128, totalBytes: 256)
+    let installObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: try JSONEncoder().encode(install)) as? [String: Any]
+    )
+
+    XCTAssertFalse(manifest.signingPayload().isEmpty)
+    XCTAssertEqual(status.manifest, Optional(manifest))
+    XCTAssertEqual(installObject["pack_id"] as? String, "python-uv")
+    XCTAssertEqual((installObject["installed_bytes"] as? NSNumber)?.int64Value, Int64(2_048))
+    XCTAssertEqual(installObject["replaced_existing"] as? Bool, true)
+    XCTAssertEqual(installObject["state"] as? String, "ready")
+    XCTAssertEqual(progress.stage.rawValue, "VERIFYING")
+    XCTAssertEqual(AgentRuntimePackState.fromWireValue("NOT-INSTALLED"), .notInstalled)
+    XCTAssertEqual(AgentRuntimeLanguage.typescript.requiredPack, "node-js")
+    XCTAssertTrue(AgentRuntimePackCatalogPolicy.requiredPacks.contains("browser-automation"))
+    XCTAssertEqual(
+      AgentRuntimePackCatalogPolicy.requiredPackCapabilities["ffmpeg"] ?? [],
+      Set(["ffmpeg.execute", "ffprobe.inspect"])
+    )
+  }
+
+  func testAgentRuntimePackCatalogPolicyRejectsDuplicateInsecureExpiredAndUntrustedCatalogs() throws {
+    let now: Int64 = 1_750_000_000_000
+    let valid = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    ])
+    let trusted: (AgentRuntimePackCatalog) -> Bool = { _ in true }
+
+    XCTAssertEqual(try AgentRuntimePackCatalogPolicy.validate(valid, nowMillis: now, verifier: trusted), valid)
+
+    var duplicate = valid
+    duplicate.entries = [
+      valid.entries[0],
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a").with(version: "1.0.1")
+    ]
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(duplicate, nowMillis: now, verifier: trusted))
+
+    var insecure = valid
+    insecure.entries = [valid.entries[0].with(downloadUrl: "http://example.com/runtime.sarpack")]
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(insecure, nowMillis: now, verifier: trusted))
+
+    var expired = valid
+    expired.expiresAtMillis = now - 1
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(expired, nowMillis: now, verifier: trusted))
+
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(valid, nowMillis: now, verifier: { _ in false }))
+
+    let missingDependency = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "python-uv", architecture: "arm64-v8a", dependencies: ["linux-base"])
+    ])
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(missingDependency, nowMillis: now, verifier: trusted))
+
+    let dependencyCycle = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a", dependencies: ["python-uv"]),
+      runtimeCatalogEntry(packId: "python-uv", architecture: "arm64-v8a", dependencies: ["linux-base"])
+    ])
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(dependencyCycle, nowMillis: now, verifier: trusted))
+  }
+
+  func testAgentRuntimePackCatalogPolicyChecksReplacementAndCompatibility() throws {
+    let now: Int64 = 1_750_000_000_000
+    let previous = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    ])
+
+    var rollback = previous
+    rollback.generatedAtMillis = previous.generatedAtMillis - 1
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: rollback))
+
+    var reusedGeneration = previous
+    reusedGeneration.entries = [previous.entries[0].with(version: "1.0.1")]
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: reusedGeneration))
+
+    try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: previous)
+    var newer = previous
+    newer.generatedAtMillis = previous.generatedAtMillis + 1
+    try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: newer)
+
+    let compatible = runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    let wrongArchitecture = runtimeCatalogEntry(packId: "python-uv", architecture: "x86_64")
+    let futureHost = runtimeCatalogEntry(packId: "node-js", architecture: "arm64-v8a")
+      .with(minimumHostVersionCode: 99)
+    let wrongGuest = runtimeCatalogEntry(packId: "go", architecture: "arm64-v8a")
+      .with(guestApiVersion: AgentRuntimeGuestProtocol.version + 1)
+    let catalog = runtimeCatalog(now: now, entries: [compatible, wrongArchitecture, futureHost, wrongGuest])
+
+    XCTAssertEqual(
+      AgentRuntimePackCatalogPolicy.compatibleEntries(
+        in: catalog,
+        supportedArchitectures: ["arm64-v8a"],
+        hostVersionCode: 1
+      ),
+      [compatible]
+    )
+  }
+
+  func testAgentRuntimeDistributionSourcesMatchAndroidAcceleratorPolicy() {
+    let official = AgentRuntimeDistributionSources.githubCatalogURL
+
+    XCTAssertEqual(AgentRuntimeDistributionSources.catalogCandidates(languageTag: "en-US"), [official])
+
+    let chinese = AgentRuntimeDistributionSources.catalogCandidates(languageTag: "zh-CN")
+    XCTAssertEqual(chinese.count, 4)
+    XCTAssertEqual(chinese.last ?? "", official)
+    XCTAssertTrue(chinese.prefix(3).allSatisfy { $0.hasSuffix(official) })
+    XCTAssertEqual(
+      AgentRuntimeDistributionSources.downloadCandidates(
+        url: "https://downloads.example.com/tool.sarpack",
+        languageTag: "zh-CN"
+      ),
+      ["https://downloads.example.com/tool.sarpack"]
+    )
+  }
+
   func testAgentMcpToolSecurityPolicyMatchesAndroidRiskAndPermissions() {
     let read = AgentMcpToolSecurityPolicy.assess(
       tool: mcpTool("get_weather", readOnly: true),
@@ -8425,6 +8612,40 @@ final class SignalASIStoreTests: XCTestCase {
       absoluteTimeoutMillis: 1_000,
       watchdogIntervalMillis: 60_000,
       heartbeatWriteThrottleMillis: 0
+    )
+  }
+
+  private func runtimeCatalog(
+    now: Int64,
+    entries: [AgentRuntimePackCatalogEntry]
+  ) -> AgentRuntimePackCatalog {
+    AgentRuntimePackCatalog(
+      catalogVersion: "1.0.0",
+      generatedAtMillis: now - 1_000,
+      expiresAtMillis: now + 60_000,
+      entries: entries,
+      signatureKeyId: String(repeating: "a", count: 64),
+      signature: "signed"
+    )
+  }
+
+  private func runtimeCatalogEntry(
+    packId: String,
+    architecture: String,
+    dependencies: [String] = []
+  ) -> AgentRuntimePackCatalogEntry {
+    AgentRuntimePackCatalogEntry(
+      packId: packId,
+      version: "1.0.0",
+      architecture: architecture,
+      downloadUrl: "https://downloads.example.com/\(packId).sarpack",
+      archiveSha256: String(repeating: "b", count: 64),
+      archiveSizeBytes: 1_024,
+      installedSizeBytes: 2_048,
+      dependencies: dependencies,
+      license: "Apache-2.0",
+      minimumHostVersionCode: 1,
+      guestApiVersion: AgentRuntimeGuestProtocol.version
     )
   }
 
