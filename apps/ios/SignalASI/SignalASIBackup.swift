@@ -40,6 +40,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
   var includesAgentSafetySettings: Bool
   var includesAgentTaskBudget: Bool
   var includesCustomDeviceConnectors: Bool
+  var includesHomeAssistantSettings: Bool
+  var includesModelPlannerSettings: Bool
   var includesCloudAPISecrets: Bool
 
   init(
@@ -52,6 +54,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentSafetySettings: Bool = false,
     includesAgentTaskBudget: Bool = false,
     includesCustomDeviceConnectors: Bool = false,
+    includesHomeAssistantSettings: Bool = false,
+    includesModelPlannerSettings: Bool = false,
     includesCloudAPISecrets: Bool
   ) {
     self.includesIdentity = includesIdentity
@@ -63,6 +67,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     self.includesAgentSafetySettings = includesAgentSafetySettings
     self.includesAgentTaskBudget = includesAgentTaskBudget
     self.includesCustomDeviceConnectors = includesCustomDeviceConnectors
+    self.includesHomeAssistantSettings = includesHomeAssistantSettings
+    self.includesModelPlannerSettings = includesModelPlannerSettings
     self.includesCloudAPISecrets = includesCloudAPISecrets
   }
 
@@ -76,6 +82,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentSafetySettings: false,
     includesAgentTaskBudget: false,
     includesCustomDeviceConnectors: false,
+    includesHomeAssistantSettings: false,
+    includesModelPlannerSettings: false,
     includesCloudAPISecrets: false
   )
 
@@ -89,6 +97,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     case includesAgentSafetySettings = "includes_agent_safety_settings"
     case includesAgentTaskBudget = "includes_agent_task_budget"
     case includesCustomDeviceConnectors = "includes_custom_device_connectors"
+    case includesHomeAssistantSettings = "includes_home_assistant_settings"
+    case includesModelPlannerSettings = "includes_model_planner_settings"
     case includesCloudAPISecrets = "includes_cloud_api_secrets"
   }
 
@@ -103,6 +113,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
     includesAgentSafetySettings = try container.decodeIfPresent(Bool.self, forKey: .includesAgentSafetySettings) ?? false
     includesAgentTaskBudget = try container.decodeIfPresent(Bool.self, forKey: .includesAgentTaskBudget) ?? false
     includesCustomDeviceConnectors = try container.decodeIfPresent(Bool.self, forKey: .includesCustomDeviceConnectors) ?? false
+    includesHomeAssistantSettings = try container.decodeIfPresent(Bool.self, forKey: .includesHomeAssistantSettings) ?? false
+    includesModelPlannerSettings = try container.decodeIfPresent(Bool.self, forKey: .includesModelPlannerSettings) ?? false
     includesCloudAPISecrets = try container.decodeIfPresent(Bool.self, forKey: .includesCloudAPISecrets) ?? false
   }
 }
@@ -116,6 +128,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   var cloudAPISecrets: [String: String]
   var taskBudget: AgentTaskBudget
   var customDeviceConnectors: [CustomDeviceConnector]
+  var homeAssistantSettings: HomeAssistantSettings
+  var modelPlannerSettings: AgentModelPlannerSettings
 
   static let empty = SignalASIBackupAgentData(
     serverLinks: [],
@@ -125,7 +139,9 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     agentSafetySettings: .default,
     cloudAPISecrets: [:],
     taskBudget: .default,
-    customDeviceConnectors: []
+    customDeviceConnectors: [],
+    homeAssistantSettings: .default,
+    modelPlannerSettings: .default
   )
 
   init(
@@ -136,7 +152,9 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     agentSafetySettings: AgentSafetySettings = .default,
     cloudAPISecrets: [String: String],
     taskBudget: AgentTaskBudget = .default,
-    customDeviceConnectors: [CustomDeviceConnector] = []
+    customDeviceConnectors: [CustomDeviceConnector] = [],
+    homeAssistantSettings: HomeAssistantSettings = .default,
+    modelPlannerSettings: AgentModelPlannerSettings = .default
   ) {
     self.serverLinks = serverLinks
     self.voiceSettings = voiceSettings
@@ -146,6 +164,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     self.cloudAPISecrets = cloudAPISecrets
     self.taskBudget = taskBudget
     self.customDeviceConnectors = Array(customDeviceConnectors.suffix(CustomDeviceConnector.maximumConnectors))
+    self.homeAssistantSettings = homeAssistantSettings
+    self.modelPlannerSettings = modelPlannerSettings
   }
 
   enum CodingKeys: String, CodingKey {
@@ -157,6 +177,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     case cloudAPISecrets = "cloud_api_secrets"
     case taskBudget = "task_budget"
     case customDeviceConnectors = "custom_device_connectors"
+    case homeAssistantSettings = "home_assistant"
+    case modelPlannerSettings = "model_planner"
   }
 
   init(from decoder: Decoder) throws {
@@ -172,6 +194,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
       (try container.decodeIfPresent([CustomDeviceConnector].self, forKey: .customDeviceConnectors) ?? [])
         .suffix(CustomDeviceConnector.maximumConnectors)
     )
+    homeAssistantSettings = try container.decodeIfPresent(HomeAssistantSettings.self, forKey: .homeAssistantSettings) ?? .default
+    modelPlannerSettings = try container.decodeIfPresent(AgentModelPlannerSettings.self, forKey: .modelPlannerSettings) ?? .default
   }
 }
 

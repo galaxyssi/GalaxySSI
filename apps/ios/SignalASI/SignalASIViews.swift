@@ -944,11 +944,31 @@ struct SettingsView: View {
             }
           }
         }
+        Section("Planning & Coordination") {
+          NavigationLink(destination: AgentModelPlannerSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Model Planner")
+              Text(modelPlannerSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section("Custom Devices") {
           NavigationLink(destination: CustomDeviceConnectorsView()) {
             VStack(alignment: .leading, spacing: 4) {
               Text("Device Connectors")
               Text(customDeviceSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
+        Section("Home Assistant") {
+          NavigationLink(destination: HomeAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Smart Home")
+              Text(homeAssistantSummary)
                 .font(.caption)
                 .foregroundColor(.secondary)
             }
@@ -1130,11 +1150,24 @@ struct SettingsView: View {
     )
   }
 
+  private var modelPlannerSummary: String {
+    let settings = store.modelPlannerSettings
+    guard settings.enabled else { return "Local deterministic planner" }
+    return "Model planning / \(settings.maxActions) actions / \(settings.maxReplans) replans"
+  }
+
   private var customDeviceSummary: String {
-    let enabled = store.customDeviceConnectors.filter(\.configured).count
     let total = store.customDeviceConnectors.count
     guard total > 0 else { return "No custom devices" }
-    return "\(enabled) enabled / \(total) saved"
+    let enabled = store.customDeviceConnectors.filter(\.enabled).count
+    return "\(total) configured / \(enabled) enabled"
+  }
+
+  private var homeAssistantSummary: String {
+    let settings = store.homeAssistantSettings
+    if settings.configured { return "Configured and enabled" }
+    if settings.credentialsConfigured { return "Configured, disabled" }
+    return "Not configured"
   }
 }
 
@@ -1571,6 +1604,202 @@ struct CustomDeviceConnectorEditorView: View {
   }
 }
 
+struct HomeAssistantSettingsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Connection") {
+        Toggle("Enable Home Assistant", isOn: boolBinding(\.enabled))
+        TextField("Server URL", text: stringBinding(\.baseUrl))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+          .keyboardType(.URL)
+        SecureField("Access Token", text: stringBinding(\.accessToken))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        if !store.homeAssistantSettings.maskedAccessToken.isEmpty {
+          Text("Stored token: \(store.homeAssistantSettings.maskedAccessToken)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+      }
+      Section("Default Target") {
+        TextField("Default Entity", text: stringBinding(\.defaultEntityId))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        Text("Example: light.living_room")
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Section("Status") {
+        if store.homeAssistantSettings.configured {
+          Label("Configured", systemImage: "checkmark.circle")
+            .foregroundColor(.green)
+        } else if store.homeAssistantSettings.credentialsConfigured {
+          Label("Configured, disabled", systemImage: "pause.circle")
+            .foregroundColor(.orange)
+        } else {
+          Label("Not configured", systemImage: "exclamationmark.triangle")
+            .foregroundColor(.secondary)
+        }
+      }
+    }
+    .navigationTitle("Home Assistant")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<HomeAssistantSettings, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { store.homeAssistantSettings[keyPath: keyPath] },
+      set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+
+  private func stringBinding(_ keyPath: WritableKeyPath<HomeAssistantSettings, String>) -> Binding<String> {
+    Binding(
+      get: { store.homeAssistantSettings[keyPath: keyPath] },
+      set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+}
+
+struct AgentModelPlannerSettingsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Planning Model") {
+        Toggle("Model-driven Planning", isOn: boolBinding(\.enabled))
+        Picker("Planning Model", selection: cloudContactBinding) {
+          Text("Automatic").tag("")
+          ForEach(store.cloudModelContacts) { contact in
+            Text(contact.displayName).tag(contact.id)
+          }
+          if selectedCloudContactMissing {
+            Text("Missing: \(store.modelPlannerSettings.cloudContactId)").tag(store.modelPlannerSettings.cloudContactId)
+          }
+        }
+        Text(plannerStatusDetail)
+          .font(.caption)
+          .foregroundColor(plannerNeedsModel ? .orange : .secondary)
+      }
+      Section("Replanning & Coordination") {
+        Toggle("Dynamic Replanning", isOn: boolBinding(\.dynamicReplanning))
+        stepper(
+          "Maximum Replans",
+          keyPath: \.maxReplans,
+          range: 1...AgentModelPlannerSettings.maximumReplans,
+          detail: "Bound autonomous recovery to plan revisions per task."
+        )
+        Toggle("Multi-Agent Coordination", isOn: boolBinding(\.multiAgentCoordination))
+      }
+      Section("Task Control") {
+        stepper(
+          "Maximum Actions",
+          keyPath: \.maxActions,
+          range: 1...AgentModelPlannerSettings.maximumActions,
+          detail: "Maximum validated actions per plan."
+        )
+        stepper(
+          "Maximum Tool Calls",
+          keyPath: \.maxToolCalls,
+          range: AgentModelPlannerSettings.minimumToolCalls...AgentModelPlannerSettings.maximumToolCalls,
+          detail: "Stop repeated or runaway tool execution."
+        )
+        stepper(
+          "Maximum Agent Hops",
+          keyPath: \.maxAgentHops,
+          range: 1...AgentModelPlannerSettings.maximumAgentHops,
+          detail: "Limit dependency levels in coordinated task graphs."
+        )
+        stepper(
+          "Maximum Loop Iterations",
+          keyPath: \.maxLoopIterations,
+          range: AgentModelPlannerSettings.minimumLoopIterations...AgentModelPlannerSettings.maximumLoopIterations,
+          detail: "Bound Plan, Act, Observe, and Replan cycles."
+        )
+        stepper(
+          "Maximum Phase Retries",
+          keyPath: \.maxPhaseRetries,
+          range: AgentModelPlannerSettings.minimumPhaseRetries...AgentModelPlannerSettings.maximumPhaseRetries,
+          detail: "Limit retries after failed actions or verification."
+        )
+        stepper(
+          "No-progress Recovery",
+          keyPath: \.noProgressTimeoutSeconds,
+          range: AgentModelPlannerSettings.minimumNoProgressTimeoutSeconds...AgentModelPlannerSettings.maximumNoProgressTimeoutSeconds,
+          detail: "Seconds without meaningful progress before recovery."
+        )
+      }
+      Section("Privacy Boundary") {
+        Toggle("Share Screen Text", isOn: boolBinding(\.shareScreenText))
+        Toggle("Share Agent Outputs with Planner", isOn: boolBinding(\.shareAgentOutputsWithPlanner))
+      }
+    }
+    .navigationTitle("Planning")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var plannerNeedsModel: Bool {
+    store.modelPlannerSettings.enabled && store.cloudModelContacts.isEmpty
+  }
+
+  private var selectedCloudContactMissing: Bool {
+    let selected = store.modelPlannerSettings.cloudContactId
+    guard !selected.isEmpty else { return false }
+    return !store.cloudModelContacts.contains { $0.id == selected }
+  }
+
+  private var plannerStatusDetail: String {
+    if !store.modelPlannerSettings.enabled {
+      return "Fast local rules remain active; model planning is disabled."
+    }
+    if store.cloudModelContacts.isEmpty {
+      return "Model planning is enabled, but no ready cloud model is configured. Local fallback remains active."
+    }
+    return "A configured model can propose plans; iOS validates every action locally."
+  }
+
+  private var cloudContactBinding: Binding<String> {
+    Binding(
+      get: { store.modelPlannerSettings.cloudContactId },
+      set: { value in store.updateModelPlannerSettings { $0.cloudContactId = value } }
+    )
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<AgentModelPlannerSettings, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { store.modelPlannerSettings[keyPath: keyPath] },
+      set: { value in store.updateModelPlannerSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+
+  private func intBinding(
+    _ keyPath: WritableKeyPath<AgentModelPlannerSettings, Int>,
+    range: ClosedRange<Int>
+  ) -> Binding<Int> {
+    Binding(
+      get: { store.modelPlannerSettings[keyPath: keyPath] },
+      set: { value in store.updateModelPlannerSettings { $0[keyPath: keyPath] = max(range.lowerBound, min(value, range.upperBound)) } }
+    )
+  }
+
+  private func stepper(
+    _ title: String,
+    keyPath: WritableKeyPath<AgentModelPlannerSettings, Int>,
+    range: ClosedRange<Int>,
+    detail: String
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Stepper("\(title): \(store.modelPlannerSettings[keyPath: keyPath])", value: intBinding(keyPath, range: range), in: range)
+      Text(detail)
+        .font(.caption)
+        .foregroundColor(.secondary)
+    }
+  }
+}
+
 struct ResetPrivateDataView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var confirmation = ""
@@ -1580,7 +1809,7 @@ struct ResetPrivateDataView: View {
     NavigationView {
       Form {
         Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, custom device connectors, and saved model keys on this device.")
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, custom device connectors, Home Assistant configuration, model planner settings, and saved model keys on this device.")
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)

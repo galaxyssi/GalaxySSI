@@ -90,6 +90,21 @@ final class SignalASIBackupTests: XCTestCase {
         risk: .high
       )
     )
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = "http://homeassistant.local:8123/"
+      $0.accessToken = "ha-token"
+      $0.defaultEntityId = "light.office"
+    }
+    store.updateModelPlannerSettings {
+      $0.enabled = true
+      $0.cloudContactId = "cloud:openai"
+      $0.dynamicReplanning = false
+      $0.maxReplans = 5
+      $0.shareAgentOutputsWithPlanner = true
+      $0.maxToolCalls = 24
+      $0.noProgressTimeoutSeconds = 600
+    }
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
     store.appendIncoming("desktop hello", from: "hermes")
@@ -108,6 +123,8 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertTrue(payload.privacyManifest.includesAgentSafetySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentTaskBudget)
     XCTAssertTrue(payload.privacyManifest.includesCustomDeviceConnectors)
+    XCTAssertTrue(payload.privacyManifest.includesHomeAssistantSettings)
+    XCTAssertTrue(payload.privacyManifest.includesModelPlannerSettings)
     let restored = makeStore()
     try restored.restoreBackupPayload(payload)
 
@@ -131,6 +148,17 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.customDeviceConnectors[0].transport, .mqtt)
     XCTAssertEqual(restored.customDeviceConnectors[0].authToken, "device-token")
     XCTAssertEqual(restored.customDeviceConnectors[0].risk, .high)
+    XCTAssertTrue(restored.homeAssistantSettings.configured)
+    XCTAssertEqual(restored.homeAssistantSettings.baseUrl, "http://homeassistant.local:8123")
+    XCTAssertEqual(restored.homeAssistantSettings.accessToken, "ha-token")
+    XCTAssertEqual(restored.homeAssistantSettings.defaultEntityId, "light.office")
+    XCTAssertTrue(restored.modelPlannerSettings.enabled)
+    XCTAssertEqual(restored.modelPlannerSettings.cloudContactId, "cloud:openai")
+    XCTAssertFalse(restored.modelPlannerSettings.dynamicReplanning)
+    XCTAssertEqual(restored.modelPlannerSettings.maxReplans, 5)
+    XCTAssertTrue(restored.modelPlannerSettings.shareAgentOutputsWithPlanner)
+    XCTAssertEqual(restored.modelPlannerSettings.maxToolCalls, 24)
+    XCTAssertEqual(restored.modelPlannerSettings.noProgressTimeoutSeconds, 600)
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
     XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)

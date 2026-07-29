@@ -377,6 +377,117 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"))
   }
 
+  func testModelPlannerSettingsDecodeAndroidFieldsAndNormalizeBounds() throws {
+    let longContactId = String(repeating: "x", count: 160)
+    let settings = try JSONDecoder.signalASI.decode(
+      AgentModelPlannerSettings.self,
+      from: Data("""
+      {
+        "version": 5,
+        "enabled": true,
+        "share_screen_text": true,
+        "max_actions": 99,
+        "cloud_contact_id": "  \(longContactId)  ",
+        "dynamic_replanning": false,
+        "max_replans": 99,
+        "multi_agent_coordination": false,
+        "share_agent_outputs_with_planner": true,
+        "max_agent_hops": 99,
+        "max_tool_calls": 1,
+        "max_loop_iterations": 99,
+        "max_phase_retries": -1,
+        "no_progress_timeout_seconds": 99999
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let store = makeStore()
+
+    XCTAssertTrue(settings.enabled)
+    XCTAssertTrue(settings.shareScreenText)
+    XCTAssertEqual(settings.maxActions, AgentModelPlannerSettings.maximumActions)
+    XCTAssertEqual(settings.cloudContactId.count, AgentModelPlannerSettings.maximumCloudContactIdLength)
+    XCTAssertFalse(settings.dynamicReplanning)
+    XCTAssertEqual(settings.maxReplans, AgentModelPlannerSettings.maximumReplans)
+    XCTAssertFalse(settings.multiAgentCoordination)
+    XCTAssertTrue(settings.shareAgentOutputsWithPlanner)
+    XCTAssertEqual(settings.maxAgentHops, AgentModelPlannerSettings.maximumAgentHops)
+    XCTAssertEqual(settings.maxToolCalls, AgentModelPlannerSettings.minimumToolCalls)
+    XCTAssertEqual(settings.maxLoopIterations, AgentModelPlannerSettings.maximumLoopIterations)
+    XCTAssertEqual(settings.maxPhaseRetries, AgentModelPlannerSettings.minimumPhaseRetries)
+    XCTAssertEqual(settings.noProgressTimeoutSeconds, AgentModelPlannerSettings.maximumNoProgressTimeoutSeconds)
+    XCTAssertEqual(object["version"] as? Int, 5)
+    XCTAssertEqual(object["max_actions"] as? Int, AgentModelPlannerSettings.maximumActions)
+    XCTAssertEqual(object["max_tool_calls"] as? Int, AgentModelPlannerSettings.minimumToolCalls)
+    XCTAssertEqual(object["no_progress_timeout_seconds"] as? Int, AgentModelPlannerSettings.maximumNoProgressTimeoutSeconds)
+
+    XCTAssertEqual(store.modelPlannerSettings, .default)
+    store.updateModelPlannerSettings {
+      $0.enabled = true
+      $0.maxActions = 0
+      $0.maxPhaseRetries = 99
+      $0.noProgressTimeoutSeconds = 30
+    }
+
+    XCTAssertTrue(store.modelPlannerSettings.enabled)
+    XCTAssertEqual(store.modelPlannerSettings.maxActions, 1)
+    XCTAssertEqual(store.modelPlannerSettings.maxPhaseRetries, AgentModelPlannerSettings.maximumPhaseRetries)
+    XCTAssertEqual(store.modelPlannerSettings.noProgressTimeoutSeconds, AgentModelPlannerSettings.minimumNoProgressTimeoutSeconds)
+  }
+
+  func testHomeAssistantSettingsDecodeAndroidFieldsAndStoreTokenInKeychain() throws {
+    let longURL = "http://homeassistant.local:8123/" + String(repeating: "x", count: 2_200)
+    let longToken = String(repeating: "t", count: 8_400)
+    let settings = try JSONDecoder.signalASI.decode(
+      HomeAssistantSettings.self,
+      from: Data("""
+      {
+        "version": 1,
+        "enabled": true,
+        "base_url": "  \(longURL)//  ",
+        "access_token": "  \(longToken)  ",
+        "default_entity_id": "  light.living_room  "
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+
+    XCTAssertTrue(settings.enabled)
+    XCTAssertTrue(settings.credentialsConfigured)
+    XCTAssertTrue(settings.configured)
+    XCTAssertFalse(settings.baseUrl.hasSuffix("/"))
+    XCTAssertEqual(settings.baseUrl.count, HomeAssistantSettings.maximumBaseURLLength)
+    XCTAssertEqual(settings.accessToken.count, HomeAssistantSettings.maximumAccessTokenLength)
+    XCTAssertEqual(settings.defaultEntityId, "light.living_room")
+    XCTAssertEqual(object["version"] as? Int, 1)
+    XCTAssertEqual(object["base_url"] as? String, settings.baseUrl)
+    XCTAssertEqual(object["access_token"] as? String, settings.accessToken)
+
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = " http://homeassistant.local:8123/ "
+      $0.accessToken = " ha-token "
+      $0.defaultEntityId = " light.office "
+    }
+
+    XCTAssertTrue(store.homeAssistantSettings.configured)
+    XCTAssertEqual(store.homeAssistantSettings.baseUrl, "http://homeassistant.local:8123")
+    XCTAssertEqual(store.homeAssistantSettings.accessToken, "ha-token")
+    XCTAssertEqual(store.homeAssistantSettings.defaultEntityId, "light.office")
+    XCTAssertEqual(secrets.string(account: "home_assistant.access_token"), "ha-token")
+
+    store.updateHomeAssistantSettings {
+      $0.accessToken = ""
+    }
+
+    XCTAssertFalse(store.homeAssistantSettings.credentialsConfigured)
+    XCTAssertNil(secrets.string(account: "home_assistant.access_token"))
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -461,6 +572,16 @@ final class SignalASIStoreTests: XCTestCase {
         authToken: "token"
       )
     )
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = "http://homeassistant.local:8123"
+      $0.accessToken = "ha-token"
+      $0.defaultEntityId = "light.office"
+    }
+    store.updateModelPlannerSettings {
+      $0.enabled = true
+      $0.maxActions = 12
+    }
 
     store.destroyAllPrivateData()
 
@@ -478,6 +599,9 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.agentTaskBudget, .default)
     XCTAssertTrue(store.customDeviceConnectors.isEmpty)
     XCTAssertNil(secrets.string(account: "custom_device_connector.custom-device-office.auth_token"))
+    XCTAssertEqual(store.homeAssistantSettings, .default)
+    XCTAssertNil(secrets.string(account: "home_assistant.access_token"))
+    XCTAssertEqual(store.modelPlannerSettings, .default)
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {
