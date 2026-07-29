@@ -969,10 +969,37 @@ class DesktopControlManager:
         encoded = str(screenshot.get("image_base64") or "")
         if not encoded:
             return ""
+        if str(screenshot.get("image_mime") or "") != "image/jpeg":
+            raise DesktopControlError(
+                "invalid_screenshot",
+                "Desktop screenshot evidence must be JPEG",
+            )
         try:
             value = base64.b64decode(encoded, validate=True)
         except (ValueError, TypeError) as exc:
             raise DesktopControlError("invalid_screenshot", "Desktop screenshot evidence is invalid") from exc
+        if not value:
+            raise DesktopControlError(
+                "invalid_screenshot",
+                "Desktop screenshot evidence is empty",
+            )
+        if len(value) > MAX_SCREENSHOT_BYTES:
+            raise DesktopControlError(
+                "screenshot_too_large",
+                "Desktop screenshot exceeds the 100 KB transport budget",
+            )
+        try:
+            declared_bytes = int(screenshot.get("bytes") or len(value))
+        except (TypeError, ValueError) as exc:
+            raise DesktopControlError(
+                "invalid_screenshot",
+                "Desktop screenshot byte metadata is invalid",
+            ) from exc
+        if declared_bytes != len(value):
+            raise DesktopControlError(
+                "invalid_screenshot",
+                "Desktop screenshot byte metadata does not match its payload",
+            )
         return hashlib.sha256(value).hexdigest()
 
     @classmethod

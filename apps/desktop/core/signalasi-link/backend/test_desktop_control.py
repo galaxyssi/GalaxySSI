@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import tempfile
 import threading
@@ -528,6 +529,52 @@ class DesktopControlTests(unittest.TestCase):
             tampered = dict(receipt)
             tampered[field] = value
             self.assertFalse(self.identity.verify(tampered), field)
+
+    def test_oversized_screenshot_is_rejected_before_transport(self):
+        authorization = self.authorize()
+        oversized = b"x" * 100_001
+        self.manager._screenshot_provider = lambda: {
+            "image_mime": "image/jpeg",
+            "image_base64": base64.b64encode(oversized).decode("ascii"),
+            "width": 960,
+            "height": 540,
+            "original_width": 1920,
+            "original_height": 1080,
+            "bytes": len(oversized),
+            "captured_at": int(self.clock() * 1_000),
+        }
+
+        receipt = self.manager.execute_request(
+            self.request(authorization),
+            self.client,
+        )
+
+        self.assertEqual("failed", receipt["status"])
+        self.assertEqual("screenshot_too_large", receipt["error_code"])
+        self.assertTrue(self.identity.verify(receipt))
+        self.assertNotIn("image_base64", str(receipt))
+
+    def test_screenshot_byte_metadata_must_match_payload(self):
+        authorization = self.authorize()
+        self.manager._screenshot_provider = lambda: {
+            "image_mime": "image/jpeg",
+            "image_base64": "/9j/2Q==",
+            "width": 1,
+            "height": 1,
+            "original_width": 1,
+            "original_height": 1,
+            "bytes": 5,
+            "captured_at": int(self.clock() * 1_000),
+        }
+
+        receipt = self.manager.execute_request(
+            self.request(authorization),
+            self.client,
+        )
+
+        self.assertEqual("failed", receipt["status"])
+        self.assertEqual("invalid_screenshot", receipt["error_code"])
+        self.assertTrue(self.identity.verify(receipt))
 
     def test_request_digest_binds_task_action_and_controller_identity(self):
         authorization = self.authorize()

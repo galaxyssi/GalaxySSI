@@ -8,6 +8,8 @@ import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
+internal const val DESKTOP_SCREENSHOT_BYTE_LIMIT = 100_000
+
 data class DesktopControlAuthorization(
     val authorizationId: String,
     val appInstanceId: String,
@@ -74,6 +76,11 @@ data class DesktopControlScreenshot(
     val originalHeight: Int,
     val capturedAt: Long
 )
+
+internal fun shouldApplyDesktopScreenshot(
+    current: DesktopControlScreenshot?,
+    candidate: DesktopControlScreenshot
+): Boolean = current == null || candidate.capturedAt >= current.capturedAt
 
 data class DesktopControlAudit(
     val eventType: String,
@@ -165,11 +172,37 @@ data class DesktopRemoteControlSnapshot(
 
 internal data class DesktopControlPendingRequest(
     val actionId: String,
+    val desktopId: String,
+    val toolId: String,
     val desktopSessionId: String,
     val requestSha256: String,
     val inputSha256: String,
     val expiresAt: Long
 )
+
+internal class DesktopScreenshotRequestGate {
+    private data class Pending(val actionId: String, val expiresAt: Long)
+
+    private val pending = mutableMapOf<String, Pending>()
+
+    @Synchronized
+    fun claim(desktopId: String, actionId: String, expiresAt: Long, now: Long): Boolean {
+        val current = pending[desktopId]
+        if (current != null && current.expiresAt >= now) return false
+        pending[desktopId] = Pending(actionId, expiresAt)
+        return true
+    }
+
+    @Synchronized
+    fun release(desktopId: String, actionId: String) {
+        if (pending[desktopId]?.actionId == actionId) pending.remove(desktopId)
+    }
+
+    @Synchronized
+    fun clear(desktopId: String) {
+        pending.remove(desktopId)
+    }
+}
 
 internal object DesktopControlReceiptProtocol {
     const val CONTRACT_VERSION = "signalasi.desktop-control/1.2"
@@ -179,12 +212,15 @@ internal object DesktopControlReceiptProtocol {
         payload: JSONObject,
         clientRouteId: String,
         controllerFingerprint: String,
-        controllerSignalName: String
+        controllerSignalName: String,
+        desktopId: String = ""
     ): DesktopControlPendingRequest {
         val input = payload.optJSONObject("input") ?: JSONObject()
         val actionId = payload.optString("action_id")
         return DesktopControlPendingRequest(
             actionId = actionId,
+            desktopId = desktopId,
+            toolId = payload.optString("tool_id"),
             desktopSessionId = payload.optString("desktop_session_id"),
             inputSha256 = digest(input),
             expiresAt = payload.optLong("expires_at"),
@@ -254,12 +290,17 @@ internal object DesktopControlReceiptProtocol {
         val evidenceSha256 = payload.optString("evidence_sha256")
         if (evidenceSha256.isNotBlank() && !validDigest(evidenceSha256)) return false
         if (evidence != null) {
+            if (evidence.optString("image_mime") != "image/jpeg") return false
             evidence.optString("image_base64")
                 .takeIf(String::isNotBlank)
                 ?.let { encoded ->
                     val actualEvidenceSha256 = runCatching {
                         Base64.getDecoder().decode(encoded)
-                    }.getOrNull()?.let(::digest) ?: return false
+                    }.getOrNull()?.takeIf {
+                        it.isNotEmpty() &&
+                            it.size <= DESKTOP_SCREENSHOT_BYTE_LIMIT &&
+                            evidence.optInt("bytes", it.size) == it.size
+                    }?.let(::digest) ?: return false
                     if (evidenceSha256 != actualEvidenceSha256) return false
                 }
         }
@@ -359,7 +400,6 @@ object DesktopRemoteControl {
     private const val PREFS = "signalasi_desktop_control_v2"
     private const val KEY_DESKTOPS = "desktops"
     private const val ACTION_TTL_MS = 30_000L
-    private const val MAX_SCREENSHOT_BYTES = 100_000
     private const val MAX_RECENT_RECEIPTS = 50
 
     private data class RuntimeState(
@@ -371,6 +411,7 @@ object DesktopRemoteControl {
 
     private val runtime = ConcurrentHashMap<String, RuntimeState>()
     private val pendingActions = ConcurrentHashMap<String, DesktopControlPendingRequest>()
+    private val screenshotRequestGate = DesktopScreenshotRequestGate()
 
     fun handleInbound(context: Context, payload: JSONObject): Boolean {
         val type = payload.optString("type")
@@ -452,12 +493,15 @@ object DesktopRemoteControl {
                         )
                     }
                 )
-                pendingActions.remove(actionId)
                 if (!verified) {
                     state.status = "unverified"
                     state.summary = "desktop_action_receipt_unverified"
                     state.at = System.currentTimeMillis()
                     return true
+                }
+                pendingActions.remove(actionId)
+                pending?.takeIf { it.toolId == SCREENSHOT }?.let {
+                    screenshotRequestGate.release(it.desktopId, actionId)
                 }
                 state.status = payload.optString("status")
                 state.summary = payload.optString("summary")
@@ -465,7 +509,11 @@ object DesktopRemoteControl {
                 (
                     screenshotFrom(payload.optJSONObject("post_screenshot"))
                         ?: screenshotFrom(payload.optJSONObject("output")?.optJSONObject("screenshot"))
-                    )?.let { state.screenshot = it }
+                    )?.let { candidate ->
+                        if (shouldApplyDesktopScreenshot(state.screenshot, candidate)) {
+                            state.screenshot = candidate
+                        }
+                    }
                 if (payload.optString("status") == "succeeded") {
                     touchAuthorization(context, desktopId, state.at)
                 }
@@ -575,6 +623,8 @@ object DesktopRemoteControl {
         root.remove(desktopId)
         write(context, root)
         runtime.remove(desktopId)
+        screenshotRequestGate.clear(desktopId)
+        pendingActions.entries.removeIf { it.value.desktopId == desktopId }
     }
 
     private fun requestAction(desktopId: String, toolId: String, input: JSONObject): Boolean {
@@ -589,7 +639,12 @@ object DesktopRemoteControl {
             return false
         }
         val now = System.currentTimeMillis()
+        pendingActions.entries.removeIf { it.value.expiresAt < now }
         val actionId = UUID.randomUUID().toString()
+        val expiresAt = now + ACTION_TTL_MS
+        if (toolId == SCREENSHOT &&
+            !screenshotRequestGate.claim(desktopId, actionId, expiresAt, now)
+        ) return true
         val payload = JSONObject()
             .put("type", "desktop_executor_request")
             .put("task_id", "desktop-control-$actionId")
@@ -599,14 +654,14 @@ object DesktopRemoteControl {
             .put("tool_id", toolId)
             .put("input", input)
             .put("sent_at", now)
-            .put("expires_at", now + ACTION_TTL_MS)
+            .put("expires_at", expiresAt)
         val pending = DesktopControlReceiptProtocol.pendingRequest(
             payload,
             link.routes.clientRouteId,
             SignalASICrypto.localIdentitySha256(),
-            SignalASICrypto.localSignalasiId()
+            SignalASICrypto.localSignalasiId(),
+            desktopId
         )
-        pendingActions.entries.removeIf { it.value.expiresAt < now }
         pendingActions[actionId] = pending
         runtime.computeIfAbsent(desktopId) { RuntimeState() }.apply {
             status = "sending"
@@ -614,7 +669,10 @@ object DesktopRemoteControl {
             at = now
         }
         val published = SignalASIMqttClient.publishDesktopExecutorRequest(desktopId, payload)
-        if (!published) pendingActions.remove(actionId)
+        if (!published) {
+            pendingActions.remove(actionId)
+            if (toolId == SCREENSHOT) screenshotRequestGate.release(desktopId, actionId)
+        }
         return published
     }
 
@@ -758,7 +816,8 @@ object DesktopRemoteControl {
         if (source.optString("image_mime") != "image/jpeg") return null
         val bytes = runCatching { Base64.getDecoder().decode(source.optString("image_base64")) }
             .getOrNull() ?: return null
-        if (bytes.isEmpty() || bytes.size > MAX_SCREENSHOT_BYTES) return null
+        if (bytes.isEmpty() || bytes.size > DESKTOP_SCREENSHOT_BYTE_LIMIT) return null
+        if (source.optInt("bytes", bytes.size) != bytes.size) return null
         return DesktopControlScreenshot(
             jpegBytes = bytes,
             width = source.optInt("width"),
