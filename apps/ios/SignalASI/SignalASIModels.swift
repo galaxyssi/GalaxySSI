@@ -922,6 +922,231 @@ enum AgentRisk: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentPhase: String, Codable, CaseIterable, Identifiable {
+  case observing = "OBSERVING"
+  case planning = "PLANNING"
+  case waitingConfirmation = "WAITING_CONFIRMATION"
+  case executing = "EXECUTING"
+  case verifying = "VERIFYING"
+  case waitingResponse = "WAITING_RESPONSE"
+  case paused = "PAUSED"
+  case cancelled = "CANCELLED"
+  case blocked = "BLOCKED"
+  case completed = "COMPLETED"
+  case failed = "FAILED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentPhase {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .executing
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRouteKind: String, Codable, CaseIterable, Identifiable {
+  case localSystem = "LOCAL_SYSTEM"
+  case cloudModel = "CLOUD_MODEL"
+  case localModel = "LOCAL_MODEL"
+  case desktopAgent = "DESKTOP_AGENT"
+  case deviceConnector = "DEVICE_CONNECTOR"
+  case knowledge = "KNOWLEDGE"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRouteKind {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unknown
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentExecutionLocationKind: String, Codable, CaseIterable, Identifiable {
+  case phone = "PHONE"
+  case desktop = "DESKTOP"
+  case cloud = "CLOUD"
+  case connectedDevice = "CONNECTED_DEVICE"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+}
+
+struct AgentExecutionPresentation: Codable, Equatable {
+  var executorId: String
+  var executorLabel: String
+  var locationKind: AgentExecutionLocationKind
+  var locationLabelHint: String
+  var currentStep: String
+  var phase: AgentPhase
+  var cancellable: Bool
+  var startedAtMillis: Int64
+  var completedAtMillis: Int64
+
+  init(
+    executorId: String,
+    executorLabel: String,
+    locationKind: AgentExecutionLocationKind,
+    locationLabelHint: String,
+    currentStep: String,
+    phase: AgentPhase,
+    cancellable: Bool,
+    startedAtMillis: Int64,
+    completedAtMillis: Int64 = 0
+  ) {
+    self.executorId = executorId
+    self.executorLabel = executorLabel
+    self.locationKind = locationKind
+    self.locationLabelHint = locationLabelHint
+    self.currentStep = currentStep
+    self.phase = phase
+    self.cancellable = cancellable
+    self.startedAtMillis = startedAtMillis
+    self.completedAtMillis = completedAtMillis
+  }
+}
+
+enum AgentExecutionPresentationPolicy {
+  static func local(
+    routeKind: AgentRouteKind,
+    targetTitle: String,
+    selectedAgentOrModel: String,
+    phase: AgentPhase,
+    currentStep: String,
+    startedAtMillis: Int64,
+    completedAtMillis: Int64 = 0
+  ) -> AgentExecutionPresentation {
+    let targetTitle = trim(targetTitle)
+    let fallbackTarget = trim(selectedAgentOrModel)
+    let target = targetTitle.isEmpty ? fallbackTarget : targetTitle
+    let targetParts = target.components(separatedBy: targetSeparator).map(trim)
+    let firstTarget = targetParts.first ?? ""
+    let locationKind: AgentExecutionLocationKind
+    switch routeKind {
+    case .cloudModel:
+      locationKind = .cloud
+    case .desktopAgent:
+      locationKind = .desktop
+    case .deviceConnector:
+      locationKind = .connectedDevice
+    case .localSystem, .localModel, .knowledge:
+      locationKind = .phone
+    case .unknown:
+      locationKind = .unknown
+    }
+    let executor: String
+    switch routeKind {
+    case .localSystem, .knowledge, .unknown:
+      executor = "SignalASI"
+    default:
+      executor = firstTarget.isEmpty ? "SignalASI" : firstTarget
+    }
+    return AgentExecutionPresentation(
+      executorId: firstTarget.isEmpty ? "signalasi" : firstTarget,
+      executorLabel: executor,
+      locationKind: locationKind,
+      locationLabelHint: locationKind == .desktop && targetParts.count > 1 ? targetParts[1] : "",
+      currentStep: trim(currentStep),
+      phase: phase,
+      cancellable: isCancellable(phase),
+      startedAtMillis: startedAtMillis,
+      completedAtMillis: completedAtMillis
+    )
+  }
+
+  static func remote(
+    executorId: String,
+    executorLabel: String,
+    locationKind: String,
+    locationName: String,
+    status: String,
+    currentStep: String,
+    startedAtMillis: Int64,
+    completedAtMillis: Int64,
+    advertisedCancellable: Bool
+  ) -> AgentExecutionPresentation {
+    let phase = phaseForRemoteStatus(status)
+    let cleanExecutorId = trim(executorId)
+    let cleanExecutorLabel = trim(executorLabel)
+    let resolvedExecutorId = cleanExecutorId.isEmpty ? cleanExecutorLabel : cleanExecutorId
+    let resolvedExecutorLabel: String
+    if cleanExecutorLabel.isEmpty {
+      resolvedExecutorLabel = cleanExecutorId.isEmpty ? "Agent" : cleanExecutorId
+    } else {
+      resolvedExecutorLabel = cleanExecutorLabel
+    }
+    return AgentExecutionPresentation(
+      executorId: resolvedExecutorId,
+      executorLabel: resolvedExecutorLabel,
+      locationKind: locationKindForRemoteValue(locationKind),
+      locationLabelHint: trim(locationName),
+      currentStep: trim(currentStep),
+      phase: phase,
+      cancellable: advertisedCancellable && isCancellable(phase),
+      startedAtMillis: startedAtMillis,
+      completedAtMillis: completedAtMillis
+    )
+  }
+
+  static func isCancellable(_ phase: AgentPhase) -> Bool {
+    ![.completed, .failed, .cancelled, .blocked].contains(phase)
+  }
+
+  static func phaseForRemoteStatus(_ status: String) -> AgentPhase {
+    switch trim(status).lowercased() {
+    case "waiting_input", "waiting_approval":
+      return .paused
+    case "completed":
+      return .completed
+    case "failed", "timed_out", "not_found":
+      return .failed
+    case "cancelled":
+      return .cancelled
+    default:
+      return .executing
+    }
+  }
+
+  private static func locationKindForRemoteValue(_ value: String) -> AgentExecutionLocationKind {
+    switch trim(value).lowercased() {
+    case "phone", "android", "ios":
+      return .phone
+    case "desktop", "windows", "macos", "linux":
+      return .desktop
+    case "cloud":
+      return .cloud
+    case "device", "connected_device":
+      return .connectedDevice
+    default:
+      return .unknown
+    }
+  }
+
+  private static func trim(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private static let targetSeparator = " \u{00b7} "
+}
+
 enum AgentActiveTurnDisposition: String, Codable, CaseIterable, Identifiable {
   case independent = "INDEPENDENT"
   case steer = "STEER"
