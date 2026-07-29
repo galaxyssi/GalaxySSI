@@ -72,6 +72,12 @@ final class SignalASIBackupTests: XCTestCase {
       $0.connectorCallsAllowed = false
       $0.executionPaused = true
     }
+    store.selectAgentTaskBudgetProfile(.privateMode)
+    store.updateAgentTaskBudget {
+      $0.maxInputTokens = 42_000
+      $0.networkPolicy = .offlineOnly
+      $0.allowPaidProviders = false
+    }
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
     store.appendIncoming("desktop hello", from: "hermes")
@@ -88,6 +94,7 @@ final class SignalASIBackupTests: XCTestCase {
     let payload = try SignalASIBackupManager.importBackup(data: encrypted, password: "password123")
     XCTAssertTrue(payload.privacyManifest.includesDisplaySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentSafetySettings)
+    XCTAssertTrue(payload.privacyManifest.includesAgentTaskBudget)
     let restored = makeStore()
     try restored.restoreBackupPayload(payload)
 
@@ -102,6 +109,10 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertFalse(restored.agentSafetySettings.memoryCapture)
     XCTAssertFalse(restored.agentSafetySettings.connectorCallsAllowed)
     XCTAssertTrue(restored.agentSafetySettings.executionPaused)
+    XCTAssertEqual(restored.agentTaskBudget.profile, .custom)
+    XCTAssertEqual(restored.agentTaskBudget.maxInputTokens, 42_000)
+    XCTAssertEqual(restored.agentTaskBudget.networkPolicy, .offlineOnly)
+    XCTAssertFalse(restored.agentTaskBudget.allowPaidProviders)
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
     XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)

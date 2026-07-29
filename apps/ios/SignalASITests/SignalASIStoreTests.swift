@@ -234,6 +234,92 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(store.agentSafetySettings.executionPaused)
   }
 
+  func testAgentTaskBudgetDecodesAndroidProfilesAndNormalizesLimits() throws {
+    let decoded = try JSONDecoder.signalASI.decode(
+      AgentTaskBudget.self,
+      from: Data("""
+      {
+        "version": 1,
+        "profile": "PRIVATE",
+        "max_elapsed_seconds": 999999999,
+        "max_cost_micros": 9999999999,
+        "max_input_tokens": -25,
+        "max_output_tokens": 999999999,
+        "max_network_bytes": 999999999999,
+        "minimum_battery_percent": 250,
+        "max_memory_bytes": 999999999999,
+        "network_policy": "TRUSTED_ONLY",
+        "allow_cloud": false,
+        "allow_paid_providers": false
+      }
+      """.utf8)
+    )
+    let fallback = try JSONDecoder.signalASI.decode(
+      AgentTaskBudget.self,
+      from: Data(#"{"profile":"not-supported","network_policy":"not-supported"}"#.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(AgentTaskBudget.forProfile(.fast))
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let store = makeStore()
+
+    XCTAssertEqual(decoded.profile, .privateMode)
+    XCTAssertEqual(decoded.maxElapsedSeconds, AgentTaskBudget.maximumElapsedSeconds)
+    XCTAssertEqual(decoded.maxCostMicros, AgentTaskBudget.maximumCostMicros)
+    XCTAssertEqual(decoded.maxInputTokens, 0)
+    XCTAssertEqual(decoded.maxOutputTokens, AgentTaskBudget.maximumTokens)
+    XCTAssertEqual(decoded.maxNetworkBytes, AgentTaskBudget.maximumNetworkBytes)
+    XCTAssertEqual(decoded.minimumBatteryPercent, 100)
+    XCTAssertEqual(decoded.maxMemoryBytes, AgentTaskBudget.maximumMemoryBytes)
+    XCTAssertEqual(decoded.networkPolicy, .trustedOnly)
+    XCTAssertFalse(decoded.allowCloud)
+    XCTAssertFalse(decoded.allowPaidProviders)
+    XCTAssertEqual(fallback.profile, .adaptive)
+    XCTAssertEqual(fallback.networkPolicy, .any)
+    XCTAssertEqual(object["version"] as? Int, 1)
+    XCTAssertEqual(object["profile"] as? String, "fast")
+    XCTAssertEqual(object["max_elapsed_seconds"] as? Int, 300)
+    XCTAssertEqual(object["max_network_bytes"] as? Int, 128 * 1_048_576)
+
+    XCTAssertEqual(store.agentTaskBudget.profile, .adaptive)
+    store.selectAgentTaskBudgetProfile(.economy)
+    XCTAssertEqual(store.agentTaskBudget.maxCostMicros, 250_000)
+    XCTAssertEqual(store.agentTaskBudget.minimumBatteryPercent, 15)
+
+    store.updateAgentTaskBudget {
+      $0.maxInputTokens = 999_999_999
+      $0.allowPaidProviders = false
+    }
+
+    XCTAssertEqual(store.agentTaskBudget.profile, .custom)
+    XCTAssertEqual(store.agentTaskBudget.maxInputTokens, AgentTaskBudget.maximumTokens)
+    XCTAssertFalse(store.agentTaskBudget.allowPaidProviders)
+  }
+
+  func testAgentTaskBudgetPolicyMatchesAndroidLimitDecisions() {
+    let timeDecision = AgentTaskBudgetPolicy.evaluate(
+      budget: .forProfile(.fast),
+      usage: AgentTaskBudgetUsage(elapsedMillis: 301_000)
+    )
+    let cloudDecision = AgentTaskBudgetPolicy.evaluate(
+      budget: .forProfile(.privateMode),
+      usage: AgentTaskBudgetUsage(),
+      cloudProvider: true
+    )
+    let networkDecision = AgentTaskBudgetPolicy.evaluate(
+      budget: AgentTaskBudget(networkPolicy: .offlineOnly),
+      usage: AgentTaskBudgetUsage(),
+      environment: AgentTaskBudgetEnvironment(networkAvailable: true),
+      networkRequired: true
+    )
+
+    XCTAssertFalse(timeDecision.allowed)
+    XCTAssertEqual(timeDecision.limit, .time)
+    XCTAssertFalse(cloudDecision.allowed)
+    XCTAssertEqual(cloudDecision.limit, .cloud)
+    XCTAssertFalse(networkDecision.allowed)
+    XCTAssertEqual(networkDecision.limit, .network)
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -308,6 +394,7 @@ final class SignalASIStoreTests: XCTestCase {
       $0.permissionMode = .observeOnly
       $0.executionPaused = true
     }
+    store.selectAgentTaskBudgetProfile(.privateMode)
 
     store.destroyAllPrivateData()
 
@@ -322,6 +409,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.voiceSettings, .default)
     XCTAssertEqual(store.displaySettings, .default)
     XCTAssertEqual(store.agentSafetySettings, .default)
+    XCTAssertEqual(store.agentTaskBudget, .default)
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {
