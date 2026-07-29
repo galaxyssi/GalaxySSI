@@ -147,8 +147,8 @@ class DesktopProactiveDispatcherTests(unittest.TestCase):
         )
         calls = []
 
-        def deliver(agent_id, prompt, **_kwargs):
-            calls.append((agent_id, prompt))
+        def deliver(agent_id, prompt, **kwargs):
+            calls.append((agent_id, prompt, kwargs))
             if agent_id == "codex" and "delegation plan only" in prompt:
                 return {"reply": "Claude reviews code; Hermes checks evidence."}
             if agent_id == "codex":
@@ -164,10 +164,22 @@ class DesktopProactiveDispatcherTests(unittest.TestCase):
         self.assertEqual(2, output["specialist_count"])
         self.assertEqual(2, output["worker_count"])
         self.assertEqual("codex", calls[0][0])
+        self.assertEqual("tool", calls[0][2]["invocation_mode"])
+        self.assertEqual(
+            "signalasi.proactive.runtime",
+            calls[0][2]["caller_agent_id"],
+        )
         self.assertEqual({"claude", "hermes"}, {
-            agent_id for agent_id, _prompt in calls[1:-1]
+            agent_id for agent_id, _prompt, _kwargs in calls[1:-1]
         })
+        self.assertTrue(all(
+            kwargs["invocation_mode"] == "tool"
+            and kwargs["caller_agent_id"] == "codex"
+            for _agent_id, _prompt, kwargs in calls[1:-1]
+        ))
         self.assertEqual("codex", calls[-1][0])
+        self.assertEqual("handoff", calls[-1][2]["invocation_mode"])
+        self.assertEqual("run-1", calls[-1][2]["parent_run_id"])
         self.assertIn("Available specialists", calls[0][1])
         self.assertIn("only final responder", calls[-1][1])
 

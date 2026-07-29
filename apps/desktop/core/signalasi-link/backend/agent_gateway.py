@@ -42,8 +42,10 @@ from desktop_agent_adapters import (
     AgentAdapterExecutionError,
     AgentAdapterRequest,
     AgentDeliveryMode,
+    AgentInvocationMode,
     DesktopAgentProvider,
     DesktopAgentStateStore,
+    MAX_HANDOFF_DEPTH,
 )
 from desktop_agent_runtime_server import (
     AgentFaultDomainRegistry,
@@ -1344,6 +1346,72 @@ def list_agents(quick: bool = False) -> list[dict]:
     return [agent_status(spec, quick=quick) for spec in visible_agent_specs().values()]
 
 
+def agent_tool_manifest(quick: bool = True) -> dict:
+    statuses = {
+        str(item.get("id") or ""): item
+        for item in list_agents(quick=quick)
+    }
+    tools = []
+    for descriptor in desktop_agent_provider().enumerate():
+        capabilities = tuple(descriptor.get("capabilities") or ())
+        if "conversation" not in capabilities:
+            continue
+        agent_id = str(descriptor.get("agent_id") or "")
+        if agent_id not in statuses:
+            continue
+        status = statuses.get(agent_id, {})
+        tools.append({
+            "tool_id": f"signalasi.agent.{agent_id}.invoke",
+            "agent_id": agent_id,
+            "name": str(descriptor.get("name") or agent_id),
+            "description": (
+                f"Use {descriptor.get('name') or agent_id} as a bounded Agent tool "
+                "or hand off final response ownership."
+            ),
+            "status": str(status.get("status") or "unknown"),
+            "available": str(status.get("status") or "") in {
+                "ready",
+                "busy",
+                "degraded",
+            },
+            "capabilities": list(capabilities),
+            "invocation_modes": [
+                AgentInvocationMode.TOOL.value,
+                AgentInvocationMode.HANDOFF.value,
+            ],
+            "input_schema": {
+                "type": "object",
+                "required": [
+                    "prompt",
+                    "invocation_mode",
+                    "caller_agent_id",
+                    "parent_run_id",
+                ],
+                "properties": {
+                    "prompt": {"type": "string", "minLength": 1},
+                    "invocation_mode": {
+                        "type": "string",
+                        "enum": [
+                            AgentInvocationMode.TOOL.value,
+                            AgentInvocationMode.HANDOFF.value,
+                        ],
+                    },
+                    "caller_agent_id": {"type": "string", "minLength": 1},
+                    "parent_run_id": {"type": "string", "minLength": 1},
+                    "handoff_chain": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+            },
+        })
+    return {
+        "contract": "signalasi.agent-tool/1.0",
+        "max_handoff_depth": MAX_HANDOFF_DEPTH,
+        "tools": tools,
+    }
+
+
 def provider_profile_catalog(
     quick: bool = True,
     agent_rows: list[dict] | None = None,
@@ -1394,6 +1462,9 @@ def connector_diagnostics(quick: bool = False) -> dict:
             "api_response_codes",
             "agent_diagnostics_codes",
             "agent_adapter_provider",
+            "agent_as_tool",
+            "explicit_agent_handoff",
+            "parent_child_agent_runs",
             "respond_observe_ignore",
             "durable_agent_run_receipts",
             "agent_protocol_negotiation",
@@ -1752,6 +1823,11 @@ def deliver_agent_sync(
     collaboration_task_id: str = "",
     repository_id: str = "",
     working_directory: str = "",
+    run_id: str = "",
+    invocation_mode: str | AgentInvocationMode = AgentInvocationMode.DIRECT,
+    caller_agent_id: str = "",
+    parent_run_id: str = "",
+    handoff_chain: tuple[str, ...] = (),
 ) -> dict:
     from agent_execution_harness import execution_policy_for
 
@@ -1765,6 +1841,9 @@ def deliver_agent_sync(
         else execution_policy_for(resolved_execution_prompt).public()
     )
     mode = AgentDeliveryMode.parse(delivery_mode)
+    resolved_invocation_mode = AgentInvocationMode.parse(invocation_mode)
+    resolved_run_id = str(run_id or task_id or "").strip()
+    resolved_task_id = str(task_id or resolved_run_id).strip()
     start = time.perf_counter()
     if mode == AgentDeliveryMode.RESPOND:
         _agent_execution_started(contact_id)
@@ -1773,9 +1852,13 @@ def deliver_agent_sync(
             AgentAdapterRequest(
                 agent_id=contact_id,
                 prompt=text,
-                run_id=task_id,
-                idempotency_key=task_id,
+                run_id=resolved_run_id,
+                idempotency_key=resolved_run_id,
                 delivery_mode=mode,
+                invocation_mode=resolved_invocation_mode,
+                caller_agent_id=caller_agent_id,
+                parent_run_id=parent_run_id,
+                handoff_chain=tuple(handoff_chain),
                 protocol=protocol,
                 required_features=frozenset(required_features),
                 conversation_id=conversation_id,
@@ -1783,7 +1866,7 @@ def deliver_agent_sync(
                 return_path=return_path,
                 response_language=response_language,
                 checkpoint={
-                    "task_id": task_id,
+                    "task_id": resolved_task_id,
                     "client_route_id": client_route_id,
                     "turn_id": turn_id,
                     "desktop_access_profile": str(
@@ -1800,7 +1883,7 @@ def deliver_agent_sync(
                         collaboration_actor_id or contact_id
                     ).strip(),
                     "collaboration_task_id": str(
-                        collaboration_task_id or task_id
+                        collaboration_task_id or resolved_task_id
                     ).strip(),
                     "repository_id": str(repository_id or "").strip(),
                     "working_directory": str(working_directory or "").strip(),

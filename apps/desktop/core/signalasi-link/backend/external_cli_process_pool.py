@@ -397,14 +397,10 @@ class ExternalCliProcessPool:
             environment_key,
             dict(env),
             Path(cwd),
+            task_id=request.task_id,
             process_limit=effective_process_limit,
             timeout_seconds=request.timeout_seconds,
         )
-        with self._condition:
-            self._active_tasks[request.task_id] = worker.worker_id
-            self._metrics["requests"] += 1
-            if reused:
-                self._metrics["warm_reuses"] += 1
         try:
             if request.on_process is not None:
                 request.on_process(worker.process)
@@ -533,18 +529,26 @@ class ExternalCliProcessPool:
         env: dict[str, str],
         cwd: Path,
         *,
+        task_id: str,
         process_limit: int,
         timeout_seconds: float,
     ) -> tuple[_PersistentJsonlWorker, bool]:
         deadline = self._now() + max(0.1, float(timeout_seconds or 120))
+        normalized_task_id = str(task_id or "").strip()
+        if not normalized_task_id:
+            raise ExternalCliPoolError("Persistent Agent task ID is empty")
         with self._condition:
+            if normalized_task_id in self._active_tasks:
+                raise ExternalCliPoolError(
+                    f"Persistent Agent task is already active: {normalized_task_id}"
+                )
             while True:
                 self._ensure_open_locked()
                 self._prune_locked()
                 matching = self._matching_workers_locked(agent_id, command, environment_key)
                 for worker in matching:
                     if not worker.busy and worker.alive():
-                        worker.busy = True
+                        self._activate_locked(worker, normalized_task_id, reused=True)
                         return worker, True
                 if (
                     len(matching) < process_limit
@@ -557,7 +561,7 @@ class ExternalCliProcessPool:
                         env,
                         cwd,
                     )
-                    worker.busy = True
+                    self._activate_locked(worker, normalized_task_id, reused=False)
                     return worker, False
                 idle_other = sorted(
                     (
@@ -576,6 +580,19 @@ class ExternalCliProcessPool:
                         f"No persistent process capacity available for {agent_id}"
                     )
                 self._condition.wait(timeout=min(remaining, 0.25))
+
+    def _activate_locked(
+        self,
+        worker: _PersistentJsonlWorker,
+        task_id: str,
+        *,
+        reused: bool,
+    ) -> None:
+        worker.busy = True
+        self._active_tasks[task_id] = worker.worker_id
+        self._metrics["requests"] += 1
+        if reused:
+            self._metrics["warm_reuses"] += 1
 
     def _spawn_locked(
         self,

@@ -300,6 +300,7 @@ class DesktopSuperAgent:
                 current_step=f"Working with {label}",
             )
             event_id = f"agent-loop:{iteration}:delegate:{delegate}"
+            child_run_id = f"{task_id}:handoff:{iteration}:{delegate}"
             self._phase(
                 task_id,
                 AgentLoopPhase.ACT,
@@ -307,7 +308,7 @@ class DesktopSuperAgent:
                 status="running",
                 event_id=event_id,
                 iteration=iteration,
-                metadata={"actor_id": delegate, "actor_role": "respond"},
+                metadata={"actor_id": delegate, "actor_role": "handoff"},
             )
             delegated_prompt = self._delegated_prompt(
                 compiled_prompt=compiled_prompt,
@@ -324,6 +325,11 @@ class DesktopSuperAgent:
                     delegate,
                     delegated_prompt,
                     task_id=task_id,
+                    run_id=child_run_id,
+                    invocation_mode="handoff",
+                    caller_agent_id="signalasi.desktop.super-agent",
+                    parent_run_id=task_id,
+                    handoff_chain=("signalasi.desktop.super-agent",),
                     conversation_id=conversation_id,
                     source_message_id=f"desktop:{task_id}",
                     return_path="desktop-ui",
@@ -372,7 +378,7 @@ class DesktopSuperAgent:
                 detail=observation.message,
                 metadata={
                     "actor_id": delegate,
-                    "actor_role": "respond",
+                    "actor_role": "handoff",
                     "failure_kind": observation.failure_kind.value if observation.failure_kind else "",
                 },
             )

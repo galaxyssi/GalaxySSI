@@ -216,10 +216,10 @@ class DesktopSuperAgentTest(unittest.TestCase):
 
     def test_starting_a_project_is_delegated_instead_of_treated_as_an_app(self):
         manager = FakeTaskManager()
-        delivered: list[tuple[str, str]] = []
+        delivered: list[dict] = []
 
-        def deliver(agent_id, prompt, **_kwargs):
-            delivered.append((agent_id, prompt))
+        def deliver(agent_id, prompt, **kwargs):
+            delivered.append({"agent_id": agent_id, "prompt": prompt, **kwargs})
             return {"reply": "Project started."}
 
         coordinator = DesktopSuperAgent(
@@ -241,7 +241,17 @@ class DesktopSuperAgentTest(unittest.TestCase):
         )
 
         self.assertEqual(outcome.delegate_agent_id, "codex")
-        self.assertEqual(delivered[0][0], "codex")
+        self.assertEqual(delivered[0]["agent_id"], "codex")
+        self.assertEqual(delivered[0]["invocation_mode"], "handoff")
+        self.assertEqual(
+            delivered[0]["caller_agent_id"],
+            "signalasi.desktop.super-agent",
+        )
+        self.assertEqual(delivered[0]["parent_run_id"], "task-project")
+        self.assertEqual(
+            delivered[0]["run_id"],
+            "task-project:handoff:1:codex",
+        )
 
     def test_build_task_uses_medium_policy_checkpoint_and_verified_project_archive(self):
         manager = FakeTaskManager()

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from models import init_db, get_session, Contact, Message, ContactType, MessageType, SenderType
 from agent_gateway import (
     acp_runtime_manifest,
+    agent_tool_manifest,
     ask_agent_sync,
     connector_diagnostics,
     connector_self_test,
@@ -37,7 +38,11 @@ from agent_gateway import (
     shutdown_desktop_agent_runtime_server,
     shutdown_external_cli_process_pool,
 )
-from desktop_agent_adapters import AgentAdapterRequest, AgentDeliveryMode
+from desktop_agent_adapters import (
+    AgentAdapterRequest,
+    AgentDeliveryMode,
+    AgentInvocationMode,
+)
 from agent_collaboration_channels import (
     AgentCollaborationAccessError,
     AgentCollaborationConflict,
@@ -585,6 +590,10 @@ class AgentDeliveryReq(BaseModel):
     prompt: str
     task_id: str = ""
     delivery_mode: str = "respond"
+    invocation_mode: str = "direct"
+    caller_agent_id: str = ""
+    parent_run_id: str = ""
+    handoff_chain: list[str] = Field(default_factory=list)
     conversation_id: str = ""
     source_message_id: str = ""
     return_path: str = ""
@@ -601,6 +610,10 @@ class AgentRuntimeSubmitReq(BaseModel):
     run_id: str = ""
     idempotency_key: str = ""
     delivery_mode: str = "respond"
+    invocation_mode: str = "direct"
+    caller_agent_id: str = ""
+    parent_run_id: str = ""
+    handoff_chain: list[str] = Field(default_factory=list)
     conversation_id: str = ""
     client_route_id: str = ""
     task_id: str = ""
@@ -614,6 +627,23 @@ class AgentRuntimeSubmitReq(BaseModel):
     collaboration_channel_ids: list[str] = Field(default_factory=list)
     collaboration_actor_id: str = ""
     repository_id: str = ""
+
+
+class AgentToolInvokeReq(BaseModel):
+    prompt: str
+    invocation_mode: str = "tool"
+    caller_agent_id: str
+    parent_run_id: str
+    handoff_chain: list[str] = Field(default_factory=list)
+    run_id: str = ""
+    conversation_id: str = ""
+    client_route_id: str = ""
+    task_id: str = ""
+    turn_id: str = ""
+    source_message_id: str = ""
+    return_path: str = ""
+    response_language: str = ""
+    desktop_access_profile: str = "restricted"
 
 
 class AgentCollaborationChannelReq(BaseModel):
@@ -1286,6 +1316,9 @@ def api_agent_runtime_runs(
     state: str = Query(""),
     agent_id: str = Query(""),
     session_id: str = Query(""),
+    invocation_mode: str = Query(""),
+    caller_agent_id: str = Query(""),
+    parent_run_id: str = Query(""),
     limit: int = Query(100),
 ):
     require_loopback(request)
@@ -1294,6 +1327,9 @@ def api_agent_runtime_runs(
             state=state,
             agent_id=agent_id,
             session_id=session_id,
+            invocation_mode=invocation_mode,
+            caller_agent_id=caller_agent_id,
+            parent_run_id=parent_run_id,
             limit=limit,
         ),
     }
@@ -1313,6 +1349,10 @@ def api_submit_agent_runtime_run(req: AgentRuntimeSubmitReq, request: Request):
                 run_id=req.run_id,
                 idempotency_key=req.idempotency_key,
                 delivery_mode=AgentDeliveryMode.parse(req.delivery_mode),
+                invocation_mode=AgentInvocationMode.parse(req.invocation_mode),
+                caller_agent_id=req.caller_agent_id,
+                parent_run_id=req.parent_run_id,
+                handoff_chain=tuple(req.handoff_chain),
                 protocol=req.protocol,
                 required_features=frozenset(req.required_features),
                 conversation_id=req.conversation_id,
@@ -1339,6 +1379,62 @@ def api_submit_agent_runtime_run(req: AgentRuntimeSubmitReq, request: Request):
         raise HTTPException(
             status_code=409 if "Idempotency key" in str(exc) else 502,
             detail=api_error("agent_runtime_submit_failed", str(exc)[:240]),
+        ) from exc
+
+
+@app.get("/api/agent-runtime/agent-tools")
+def api_agent_runtime_agent_tools(request: Request):
+    require_loopback(request)
+    return agent_tool_manifest(quick=True)
+
+
+@app.post("/api/agent-runtime/agent-tools/{agent_id}/invoke")
+def api_invoke_agent_tool(
+    agent_id: str,
+    req: AgentToolInvokeReq,
+    request: Request,
+):
+    require_loopback(request)
+    try:
+        invocation_mode = AgentInvocationMode.parse(req.invocation_mode)
+        if invocation_mode == AgentInvocationMode.DIRECT:
+            raise ValueError("Agent tool invocation must use tool or handoff mode")
+        run_id = str(req.run_id or req.task_id or uuid.uuid4()).strip()
+        result = deliver_agent_sync(
+            agent_id,
+            req.prompt,
+            task_id=req.task_id or req.parent_run_id,
+            run_id=run_id,
+            invocation_mode=invocation_mode,
+            caller_agent_id=req.caller_agent_id,
+            parent_run_id=req.parent_run_id,
+            handoff_chain=tuple(req.handoff_chain),
+            conversation_id=req.conversation_id,
+            source_message_id=req.source_message_id,
+            return_path=req.return_path,
+            response_language=req.response_language,
+            desktop_access_profile=req.desktop_access_profile,
+            client_route_id=req.client_route_id,
+            turn_id=req.turn_id,
+        )
+        return {
+            "tool_id": f"signalasi.agent.{agent_id}.invoke",
+            "result_role": (
+                "tool_result"
+                if invocation_mode == AgentInvocationMode.TOOL
+                else "final_response"
+            ),
+            "run": result,
+        }
+    except Exception as exc:
+        conflict_terms = ("cycle", "maximum depth", "cannot invoke itself", "requires")
+        raise HTTPException(
+            status_code=409 if any(term in str(exc).lower() for term in conflict_terms) else 502,
+            detail=api_error(
+                "agent_tool_invocation_failed",
+                str(exc)[:240],
+                params={"agent_id": agent_id},
+            ),
         ) from exc
 
 
@@ -2017,6 +2113,10 @@ def api_deliver_agent(agent_id: str, req: AgentDeliveryReq, request: Request):
             req.prompt,
             task_id=req.task_id,
             delivery_mode=req.delivery_mode,
+            invocation_mode=req.invocation_mode,
+            caller_agent_id=req.caller_agent_id,
+            parent_run_id=req.parent_run_id,
+            handoff_chain=tuple(req.handoff_chain),
             conversation_id=req.conversation_id,
             source_message_id=req.source_message_id,
             return_path=req.return_path,

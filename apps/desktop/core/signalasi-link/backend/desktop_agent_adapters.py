@@ -24,6 +24,7 @@ MAX_RUNS = 1_000
 MAX_EVENTS_PER_RUN = 64
 MAX_OBSERVATIONS = 500
 MAX_OBSERVATION_CHARS = 16_000
+MAX_HANDOFF_DEPTH = 4
 TERMINAL_STATES = {"completed", "failed", "cancelled", "observed", "ignored"}
 
 
@@ -43,6 +44,22 @@ class AgentDeliveryMode(str, Enum):
             raise ValueError(f"Unsupported delivery mode: {value}") from exc
 
 
+class AgentInvocationMode(str, Enum):
+    DIRECT = "direct"
+    TOOL = "tool"
+    HANDOFF = "handoff"
+
+    @classmethod
+    def parse(cls, value: str | "AgentInvocationMode") -> "AgentInvocationMode":
+        if isinstance(value, cls):
+            return value
+        normalized = str(value or cls.DIRECT.value).strip().lower()
+        try:
+            return cls(normalized)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported Agent invocation mode: {value}") from exc
+
+
 @dataclass(frozen=True)
 class AgentAdapterDescriptor:
     agent_id: str
@@ -56,6 +73,8 @@ class AgentAdapterDescriptor:
         "delivery_modes",
         "durable_idempotency",
         "event_cursor",
+        "invocation_modes",
+        "parent_child_runs",
         "run_recovery",
     })
     independently_upgradeable: bool = True
@@ -72,6 +91,7 @@ class AgentAdapterDescriptor:
             "features": sorted(self.features),
             "independently_upgradeable": self.independently_upgradeable,
             "delivery_modes": [mode.value for mode in AgentDeliveryMode],
+            "invocation_modes": [mode.value for mode in AgentInvocationMode],
         }
 
 
@@ -82,6 +102,10 @@ class AgentAdapterRequest:
     run_id: str = ""
     idempotency_key: str = ""
     delivery_mode: AgentDeliveryMode = AgentDeliveryMode.RESPOND
+    invocation_mode: AgentInvocationMode = AgentInvocationMode.DIRECT
+    caller_agent_id: str = ""
+    parent_run_id: str = ""
+    handoff_chain: tuple[str, ...] = ()
     protocol: str = "1.0"
     required_features: frozenset[str] = frozenset()
     allow_protocol_downgrade: bool = True
@@ -94,12 +118,48 @@ class AgentAdapterRequest:
 
     def normalized(self) -> "AgentAdapterRequest":
         run_id = self.run_id.strip() or str(uuid.uuid4())
+        agent_id = self.agent_id.strip()
+        invocation_mode = AgentInvocationMode.parse(self.invocation_mode)
+        caller_agent_id = str(self.caller_agent_id or "").strip()
+        parent_run_id = str(self.parent_run_id or "").strip()
+        handoff_chain = tuple(
+            str(item or "").strip()
+            for item in self.handoff_chain
+            if str(item or "").strip()
+        )
+        if invocation_mode != AgentInvocationMode.DIRECT:
+            if not caller_agent_id:
+                raise AgentAdapterError(
+                    f"{invocation_mode.value} invocation requires caller_agent_id"
+                )
+            if not parent_run_id:
+                raise AgentAdapterError(
+                    f"{invocation_mode.value} invocation requires parent_run_id"
+                )
+            if caller_agent_id == agent_id:
+                raise AgentAdapterConflict("An Agent cannot invoke itself")
+            if not handoff_chain or handoff_chain[-1] != caller_agent_id:
+                handoff_chain = (*handoff_chain, caller_agent_id)
+            if len(set(handoff_chain)) != len(handoff_chain):
+                raise AgentAdapterConflict("Agent invocation chain already contains a cycle")
+            if agent_id in handoff_chain:
+                raise AgentAdapterConflict(
+                    f"Agent invocation cycle detected for {agent_id}"
+                )
+            if len(handoff_chain) >= MAX_HANDOFF_DEPTH:
+                raise AgentAdapterConflict(
+                    f"Agent invocation exceeds maximum depth {MAX_HANDOFF_DEPTH}"
+                )
         return AgentAdapterRequest(
-            agent_id=self.agent_id.strip(),
+            agent_id=agent_id,
             prompt=str(self.prompt or ""),
             run_id=run_id,
             idempotency_key=self.idempotency_key.strip() or run_id,
             delivery_mode=AgentDeliveryMode.parse(self.delivery_mode),
+            invocation_mode=invocation_mode,
+            caller_agent_id=caller_agent_id,
+            parent_run_id=parent_run_id,
+            handoff_chain=handoff_chain,
             protocol=str(self.protocol or "1.0").strip() or "1.0",
             required_features=frozenset(str(item).strip() for item in self.required_features if str(item).strip()),
             allow_protocol_downgrade=bool(self.allow_protocol_downgrade),
@@ -118,6 +178,10 @@ class AgentAdapterResult:
     agent_id: str
     delivery_mode: AgentDeliveryMode
     state: str
+    invocation_mode: AgentInvocationMode = AgentInvocationMode.DIRECT
+    caller_agent_id: str = ""
+    parent_run_id: str = ""
+    handoff_chain: tuple[str, ...] = ()
     reply: str = ""
     error: str = ""
     cursor: int = 0
@@ -136,6 +200,15 @@ class AgentAdapterResult:
             "run_id": self.run_id,
             "agent_id": self.agent_id,
             "delivery_mode": self.delivery_mode.value,
+            "invocation_mode": self.invocation_mode.value,
+            "caller_agent_id": self.caller_agent_id,
+            "parent_run_id": self.parent_run_id,
+            "handoff_chain": list(self.handoff_chain),
+            "response_owner_agent_id": (
+                self.caller_agent_id
+                if self.invocation_mode == AgentInvocationMode.TOOL
+                else self.agent_id
+            ),
             "state": self.state,
             "reply": self.reply,
             "error": self.error,
@@ -196,6 +269,10 @@ class DesktopAgentStateStore:
                 "agent_id": request.agent_id,
                 "adapter_type": descriptor.adapter_type,
                 "delivery_mode": request.delivery_mode.value,
+                "invocation_mode": request.invocation_mode.value,
+                "caller_agent_id": request.caller_agent_id,
+                "parent_run_id": request.parent_run_id,
+                "handoff_chain": list(request.handoff_chain),
                 "fingerprint": fingerprint,
                 "state": "running",
                 "reply": "",
@@ -397,6 +474,16 @@ class DesktopAgentStateStore:
             agent_id=str(row.get("agent_id") or ""),
             delivery_mode=AgentDeliveryMode.parse(str(row.get("delivery_mode") or "respond")),
             state=str(row.get("state") or "unknown"),
+            invocation_mode=AgentInvocationMode.parse(
+                str(row.get("invocation_mode") or "direct")
+            ),
+            caller_agent_id=str(row.get("caller_agent_id") or ""),
+            parent_run_id=str(row.get("parent_run_id") or ""),
+            handoff_chain=tuple(
+                str(item or "").strip()
+                for item in row.get("handoff_chain", [])
+                if str(item or "").strip()
+            ),
             reply=str(row.get("reply") or ""),
             error=str(row.get("error") or ""),
             cursor=int(row.get("cursor") or 0),
@@ -414,6 +501,10 @@ class DesktopAgentStateStore:
                 "agent_id": request.agent_id,
                 "prompt": request.prompt,
                 "delivery_mode": request.delivery_mode.value,
+                "invocation_mode": request.invocation_mode.value,
+                "caller_agent_id": request.caller_agent_id,
+                "parent_run_id": request.parent_run_id,
+                "handoff_chain": request.handoff_chain,
                 "conversation_id": request.conversation_id,
                 "source_message_id": request.source_message_id,
                 "desktop_access_profile": str(
@@ -468,6 +559,10 @@ class DesktopAgentAdapter:
                 agent_id=request.agent_id,
                 delivery_mode=request.delivery_mode,
                 state="ignored",
+                invocation_mode=request.invocation_mode,
+                caller_agent_id=request.caller_agent_id,
+                parent_run_id=request.parent_run_id,
+                handoff_chain=request.handoff_chain,
                 negotiated_protocol=negotiated,
             )
         if request.delivery_mode == AgentDeliveryMode.OBSERVE:

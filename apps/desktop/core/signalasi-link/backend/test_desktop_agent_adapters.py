@@ -9,6 +9,7 @@ from desktop_agent_adapters import (
     AgentAdapterProtocolError,
     AgentAdapterRequest,
     AgentDeliveryMode,
+    AgentInvocationMode,
     DesktopAgentProvider,
     DesktopAgentStateStore,
 )
@@ -69,6 +70,93 @@ class DesktopAgentAdaptersTest(unittest.TestCase):
         self.assertEqual("cloud-model-api", adapters["cloud-model"])
         self.assertEqual("windows-host-tools", adapters["windows"])
         self.assertEqual("android-device-tools", adapters["android"])
+        codex = next(
+            item for item in provider.enumerate()
+            if item["agent_id"] == "codex"
+        )
+        self.assertEqual(
+            ["direct", "tool", "handoff"],
+            codex["invocation_modes"],
+        )
+
+    def test_agent_tool_receipt_preserves_caller_and_response_ownership(self):
+        provider = self.provider(descriptor("codex"))
+        result = provider.deliver(AgentAdapterRequest(
+            agent_id="codex",
+            prompt="Inspect this implementation",
+            run_id="child-run",
+            invocation_mode=AgentInvocationMode.TOOL,
+            caller_agent_id="signalasi.desktop.super-agent",
+            parent_run_id="parent-run",
+            handoff_chain=("coordinator",),
+        ))
+
+        public = result.public()
+
+        self.assertEqual("completed", result.state)
+        self.assertEqual("tool", public["invocation_mode"])
+        self.assertEqual("signalasi.desktop.super-agent", public["caller_agent_id"])
+        self.assertEqual("parent-run", public["parent_run_id"])
+        self.assertEqual(
+            ["coordinator", "signalasi.desktop.super-agent"],
+            public["handoff_chain"],
+        )
+        self.assertEqual(
+            "signalasi.desktop.super-agent",
+            public["response_owner_agent_id"],
+        )
+
+    def test_handoff_transfers_response_ownership_to_target_agent(self):
+        result = self.provider(descriptor("hermes")).deliver(AgentAdapterRequest(
+            agent_id="hermes",
+            prompt="Finish the research",
+            run_id="handoff-run",
+            invocation_mode=AgentInvocationMode.HANDOFF,
+            caller_agent_id="coordinator",
+            parent_run_id="parent-run",
+        ))
+
+        self.assertEqual("handoff", result.public()["invocation_mode"])
+        self.assertEqual("hermes", result.public()["response_owner_agent_id"])
+
+    def test_agent_invocation_rejects_self_call_cycle_and_excess_depth(self):
+        provider = self.provider(descriptor("codex"))
+
+        with self.assertRaisesRegex(AgentAdapterConflict, "cannot invoke itself"):
+            provider.deliver(AgentAdapterRequest(
+                agent_id="codex",
+                prompt="self call",
+                invocation_mode=AgentInvocationMode.TOOL,
+                caller_agent_id="codex",
+                parent_run_id="parent",
+            ))
+        with self.assertRaisesRegex(AgentAdapterConflict, "cycle"):
+            provider.deliver(AgentAdapterRequest(
+                agent_id="codex",
+                prompt="cycle",
+                invocation_mode=AgentInvocationMode.HANDOFF,
+                caller_agent_id="hermes",
+                parent_run_id="parent",
+                handoff_chain=("codex", "hermes"),
+            ))
+        with self.assertRaisesRegex(AgentAdapterConflict, "already contains a cycle"):
+            provider.deliver(AgentAdapterRequest(
+                agent_id="codex",
+                prompt="existing cycle",
+                invocation_mode=AgentInvocationMode.TOOL,
+                caller_agent_id="hermes",
+                parent_run_id="parent",
+                handoff_chain=("root", "hermes", "root"),
+            ))
+        with self.assertRaisesRegex(AgentAdapterConflict, "maximum depth"):
+            provider.deliver(AgentAdapterRequest(
+                agent_id="codex",
+                prompt="too deep",
+                invocation_mode=AgentInvocationMode.HANDOFF,
+                caller_agent_id="openclaw",
+                parent_run_id="parent",
+                handoff_chain=("root", "hermes", "claude", "openclaw"),
+            ))
 
     def test_acp_descriptor_reports_the_live_transport(self):
         acp_descriptor = AgentAdapterDescriptor(
