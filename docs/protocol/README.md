@@ -4,6 +4,7 @@ This directory contains protocol specifications, schemas, and compatibility note
 
 Additional protocol contracts:
 
+- [Explicit Tool Handles v1](Explicit-Tool-Handles-v1.md)
 - [Desktop Native Tool Execution v1](Desktop-Native-Tool-Execution-v1.md)
 - [Phone-Native Tool Session v1](Phone-Native-Tool-Session-v1.md)
 - [Super Agent Rich Output](Super-Agent-Rich-Output.md)

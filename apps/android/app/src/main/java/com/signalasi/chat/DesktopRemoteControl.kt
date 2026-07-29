@@ -15,7 +15,9 @@ data class DesktopControlAuthorization(
     val grantedAt: Long,
     val lastUsedAt: Long,
     val status: String,
-    val allowedTools: List<String>
+    val allowedTools: List<String>,
+    val desktopSessionId: String,
+    val desktopSessionExpiresAt: Long
 )
 
 data class DesktopControlScreenshot(
@@ -40,6 +42,7 @@ data class DesktopControlReceipt(
     val taskId: String,
     val actionId: String,
     val authorizationId: String,
+    val desktopSessionId: String,
     val toolId: String,
     val status: String,
     val summary: String,
@@ -76,14 +79,15 @@ data class DesktopRemoteControlSnapshot(
 
 internal data class DesktopControlPendingRequest(
     val actionId: String,
+    val desktopSessionId: String,
     val requestSha256: String,
     val inputSha256: String,
     val expiresAt: Long
 )
 
 internal object DesktopControlReceiptProtocol {
-    const val CONTRACT_VERSION = "signalasi.desktop-control/1.1"
-    const val RECEIPT_VERSION = 2
+    const val CONTRACT_VERSION = "signalasi.desktop-control/1.2"
+    const val RECEIPT_VERSION = 3
 
     fun pendingRequest(
         payload: JSONObject,
@@ -95,6 +99,7 @@ internal object DesktopControlReceiptProtocol {
         val actionId = payload.optString("action_id")
         return DesktopControlPendingRequest(
             actionId = actionId,
+            desktopSessionId = payload.optString("desktop_session_id"),
             inputSha256 = digest(input),
             expiresAt = payload.optLong("expires_at"),
             requestSha256 = digest(JSONObject()
@@ -103,6 +108,7 @@ internal object DesktopControlReceiptProtocol {
                 .put("task_id", payload.optString("task_id"))
                 .put("action_id", actionId)
                 .put("authorization_id", payload.optString("authorization_id"))
+                .put("desktop_session_id", payload.optString("desktop_session_id"))
                 .put("tool_id", payload.optString("tool_id"))
                 .put("input", input)
                 .put("sent_at", payload.optLong("sent_at"))
@@ -135,6 +141,7 @@ internal object DesktopControlReceiptProtocol {
         if (!validDigest(requestSha256) || !validDigest(inputSha256)) return false
         if (pendingRequest != null && (
                 pendingRequest.actionId != payload.optString("action_id") ||
+                    pendingRequest.desktopSessionId != payload.optString("desktop_session_id") ||
                     pendingRequest.requestSha256 != requestSha256 ||
                     pendingRequest.inputSha256 != inputSha256
                 )
@@ -178,6 +185,7 @@ internal object DesktopControlReceiptProtocol {
             .put("task_id", payload.optString("task_id"))
             .put("action_id", payload.optString("action_id"))
             .put("authorization_id", payload.optString("authorization_id"))
+            .put("desktop_session_id", payload.optString("desktop_session_id"))
             .put("request_sha256", requestSha256)
             .put("output_sha256", outputSha256)
             .put("evidence_sha256", evidenceSha256)
@@ -190,6 +198,7 @@ internal object DesktopControlReceiptProtocol {
             .put("task_id", payload.optString("task_id"))
             .put("action_id", payload.optString("action_id"))
             .put("authorization_id", payload.optString("authorization_id"))
+            .put("desktop_session_id", payload.optString("desktop_session_id"))
             .put("tool_id", payload.optString("tool_id"))
             .put("status", payload.optString("status", "failed"))
             .put("summary", payload.optString("summary"))
@@ -464,6 +473,12 @@ object DesktopRemoteControl {
         val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
         val authorization = snapshot(context, desktopId).currentAuthorization
             ?.takeIf { it.status == "active" } ?: return false
+        if (authorization.desktopSessionId.isBlank() ||
+            authorization.desktopSessionExpiresAt <= System.currentTimeMillis()
+        ) {
+            requestAuthorizations(desktopId)
+            return false
+        }
         val now = System.currentTimeMillis()
         val actionId = UUID.randomUUID().toString()
         val payload = JSONObject()
@@ -471,6 +486,7 @@ object DesktopRemoteControl {
             .put("task_id", "desktop-control-$actionId")
             .put("action_id", actionId)
             .put("authorization_id", authorization.authorizationId)
+            .put("desktop_session_id", authorization.desktopSessionId)
             .put("tool_id", toolId)
             .put("input", input)
             .put("sent_at", now)
@@ -671,6 +687,7 @@ object DesktopRemoteControl {
                 taskId = source.optString("task_id"),
                 actionId = source.optString("action_id"),
                 authorizationId = source.optString("authorization_id"),
+                desktopSessionId = source.optString("desktop_session_id"),
                 toolId = source.optString("tool_id"),
                 status = source.optString("status"),
                 summary = source.optString("summary"),
@@ -697,7 +714,9 @@ object DesktopRemoteControl {
             grantedAt = source.optLong("granted_at"),
             lastUsedAt = source.optLong("last_used_at"),
             status = status,
-            allowedTools = buildList { for (index in 0 until tools.length()) add(tools.optString(index)) }
+            allowedTools = buildList { for (index in 0 until tools.length()) add(tools.optString(index)) },
+            desktopSessionId = source.optString("desktop_session_id"),
+            desktopSessionExpiresAt = source.optLong("desktop_session_expires_at")
         )
     }
 

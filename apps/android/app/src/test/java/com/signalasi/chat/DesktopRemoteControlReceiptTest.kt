@@ -10,6 +10,7 @@ import java.util.Base64
 
 class DesktopRemoteControlReceiptTest {
     private val signerId = "desktop_test"
+    private val desktopSessionId = "sth_desktops_00000000000000000000000000000000"
     private val signatureKeyId = DesktopControlReceiptProtocol.digest("desktop-key".toByteArray())
     private val controllerFingerprint = DesktopControlReceiptProtocol.digest("phone-key".toByteArray())
     private val secret = "receipt-secret".toByteArray()
@@ -26,7 +27,7 @@ class DesktopRemoteControlReceiptTest {
         val receipt = receipt(request, pending)
 
         assertEquals(
-            "aa03fde69a349af4c0c1914a040982621486077bac6e7229c1f0ca838ee85f93",
+            "320b5809d533c2407684646af17dfae82422b4bd17ce4784909a72898629cee7",
             pending.requestSha256
         )
         assertTrue(verify(receipt, pending))
@@ -92,6 +93,7 @@ class DesktopRemoteControlReceiptTest {
         .put("task_id", "task-1")
         .put("action_id", "00000000-0000-4000-8000-000000000001")
         .put("authorization_id", "00000000-0000-4000-8000-000000000002")
+        .put("desktop_session_id", desktopSessionId)
         .put("tool_id", "desktop.screenshot")
         .put("input", JSONObject())
         .put("sent_at", 1_800_000_000_000L)
@@ -128,6 +130,7 @@ class DesktopRemoteControlReceiptTest {
             .put("task_id", request.getString("task_id"))
             .put("action_id", request.getString("action_id"))
             .put("authorization_id", request.getString("authorization_id"))
+            .put("desktop_session_id", request.getString("desktop_session_id"))
             .put("request_sha256", pending.requestSha256)
             .put("output_sha256", outputSha256)
             .put("evidence_sha256", evidenceSha256)
@@ -139,6 +142,7 @@ class DesktopRemoteControlReceiptTest {
             .put("task_id", request.getString("task_id"))
             .put("action_id", request.getString("action_id"))
             .put("authorization_id", request.getString("authorization_id"))
+            .put("desktop_session_id", request.getString("desktop_session_id"))
             .put("tool_id", request.getString("tool_id"))
             .put("status", "succeeded")
             .put("summary", summary)
@@ -163,6 +167,7 @@ class DesktopRemoteControlReceiptTest {
             "task_id",
             "action_id",
             "authorization_id",
+            "desktop_session_id",
             "tool_id",
             "status",
             "summary",

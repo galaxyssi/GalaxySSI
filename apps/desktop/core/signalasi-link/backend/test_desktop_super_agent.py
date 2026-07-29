@@ -73,13 +73,29 @@ class MatchingMcp:
     def explicitly_named(self, connection, prompt):
         return connection.name.casefold() in prompt.casefold()
 
-    def invoke_prompt(self, connection_id, prompt, process_callback=None, **kwargs):
+    def open_handle(
+        self,
+        connection_id,
+        *,
+        owner_id,
+        context_id="",
+        parent_run_id="",
+    ):
+        return {
+            "handle_id": f"sth_mcpconne_{connection_id}",
+            "owner_id": owner_id,
+            "context_id": context_id,
+            "parent_run_id": parent_run_id,
+        }
+
+    def invoke_handle(self, handle_id, prompt, process_callback=None, **kwargs):
         callback = kwargs.get("tool_call_callback")
         event = {
             "kind": "mcp_tool_call",
             "invocation_id": "relay-invocation",
-            "connection_id": connection_id,
+            "connection_id": "relay",
             "connection_name": "Relay MCP",
+            "mcp_handle_id": handle_id,
             "tool_name": "relay",
             "transport": "local_stdio",
             "source": "desktop-mcp:relay",
@@ -96,7 +112,11 @@ class MatchingMcp:
         if callback:
             callback(dict(event))
             callback({**event, "status": "succeeded", "duration_ms": 17})
-        return {"result": "Relay is on.", "duration_ms": 17}
+        return {
+            "result": "Relay is on.",
+            "duration_ms": 17,
+            "mcp_handle_id": handle_id,
+        }
 
 
 def succeeded(output: dict, message: str = "ok") -> dict:

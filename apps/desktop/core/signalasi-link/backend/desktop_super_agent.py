@@ -476,10 +476,18 @@ class DesktopSuperAgent:
                 input_tokens=estimate_text_tokens(prompt),
                 estimated=True,
             )
-            result = self.mcp.invoke_prompt(
+            handle = self.mcp.open_handle(
                 connection.id,
+                owner_id="signalasi.desktop.agent_loop",
+                context_id=conversation_id,
+                parent_run_id=task_id,
+            )
+            result = self.mcp.invoke_handle(
+                str(handle["handle_id"]),
                 prompt,
                 process_callback=self._process_callback(task_id),
+                owner_id="signalasi.desktop.agent_loop",
+                context_id=conversation_id,
                 explicit_user_selection=self.mcp.explicitly_named(connection, prompt),
                 audit_context={
                     "caller_id": "signalasi.desktop.agent_loop",
@@ -509,6 +517,7 @@ class DesktopSuperAgent:
                 output={
                     "reply": reply,
                     "duration_ms": int(result.get("duration_ms") or 0),
+                    "mcp_handle_id": str(result.get("mcp_handle_id") or ""),
                     "mcp_audit": result.get("audit") or {},
                 },
                 verification={"status": "passed", "message": "MCP returned a non-empty result"},

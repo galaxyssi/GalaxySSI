@@ -30,6 +30,12 @@ from mcp_security import (
     source_fingerprint,
 )
 from mcp_transport import DEFAULT_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS
+from tool_handle_registry import (
+    DEFAULT_TTL_SECONDS,
+    ToolHandleRegistry,
+    ToolHandleScope,
+    tool_handle_registry,
+)
 
 
 MCP_ID = re.compile(r"[a-z0-9][a-z0-9._-]{1,63}\Z")
@@ -38,6 +44,8 @@ ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 MCP_TRANSPORTS = {"local_stdio", "streamable_http"}
 MCP_STATES = {"configured", "connecting", "ready", "error", "disabled"}
 MAX_LIVE_PARAMETER_PREVIEW_BYTES = 4_096
+MCP_HANDLE_KIND = "mcp_connection"
+MCP_HANDLE_CAPABILITY = "mcp.invoke"
 
 
 log = logging.getLogger("signalasi.desktop-mcp")
@@ -110,11 +118,13 @@ class DesktopMcpRegistry:
         self,
         path: Path | None = None,
         audit_store: McpAuditStore | None = None,
+        handle_registry: ToolHandleRegistry | None = None,
     ) -> None:
         self.path = Path(path) if path else _state_path()
         self.audit_store = audit_store or McpAuditStore(
             self.path.with_name("mcp-tool-audit.json")
         )
+        self.handle_registry = handle_registry or tool_handle_registry()
         self._lock = threading.RLock()
 
     def list(
@@ -215,6 +225,10 @@ class DesktopMcpRegistry:
             rows = [item for item in self._load() if item.id != connection_id]
             rows.append(connection)
             self._save(rows)
+        if existing is not None and (
+            not enabled or _connection_target(existing) != _connection_target(connection)
+        ):
+            self.handle_registry.revoke_resource(MCP_HANDLE_KIND, connection_id)
         return connection.public(include_configuration=True)
 
     def delete(self, connection_id: str) -> bool:
@@ -225,7 +239,70 @@ class DesktopMcpRegistry:
                 return False
             self._save(updated)
             self.audit_store.clear(str(connection_id))
+            self.handle_registry.revoke_resource(
+                MCP_HANDLE_KIND,
+                str(connection_id),
+            )
             return True
+
+    def open_handle(
+        self,
+        connection_id: str,
+        *,
+        owner_id: str,
+        context_id: str = "",
+        parent_run_id: str = "",
+        ttl_seconds: int = DEFAULT_TTL_SECONDS,
+    ) -> dict[str, Any]:
+        connection = self._require(connection_id)
+        if not connection.enabled:
+            raise RuntimeError("MCP connection is disabled")
+        return self.handle_registry.create(
+            kind=MCP_HANDLE_KIND,
+            resource_id=connection.id,
+            scope=ToolHandleScope(owner_id=owner_id, context_id=context_id),
+            capabilities=[MCP_HANDLE_CAPABILITY],
+            ttl_seconds=ttl_seconds,
+            parent_run_id=parent_run_id,
+            metadata={
+                "connection_name": connection.name,
+                "transport": connection.transport,
+            },
+        )
+
+    def invoke_handle(
+        self,
+        handle_id: str,
+        prompt: str,
+        process_callback=None,
+        *,
+        owner_id: str,
+        context_id: str = "",
+        explicit_user_selection: bool = False,
+        audit_context: dict[str, Any] | None = None,
+        tool_call_callback: Callable[[dict[str, Any]], None] | None = None,
+    ) -> dict[str, Any]:
+        resolved = self.handle_registry.resolve(
+            handle_id,
+            kind=MCP_HANDLE_KIND,
+            scope=ToolHandleScope(owner_id=owner_id, context_id=context_id),
+            required_capability=MCP_HANDLE_CAPABILITY,
+        )
+        context = dict(audit_context or {})
+        context.setdefault("caller_id", owner_id)
+        result = self.invoke_prompt(
+            str(resolved["resource_id"]),
+            prompt,
+            process_callback=process_callback,
+            explicit_user_selection=explicit_user_selection,
+            audit_context=context,
+            tool_call_callback=tool_call_callback,
+            tool_handle_id=str(resolved["handle_id"]),
+        )
+        return {
+            **result,
+            "mcp_handle_id": str(resolved["handle_id"]),
+        }
 
     def match(self, prompt: str) -> DesktopMcpConnection | None:
         normalized = re.sub(r"\s+", " ", str(prompt or "")).casefold()
@@ -330,6 +407,7 @@ class DesktopMcpRegistry:
         explicit_user_selection: bool = False,
         audit_context: dict[str, Any] | None = None,
         tool_call_callback: Callable[[dict[str, Any]], None] | None = None,
+        tool_handle_id: str = "",
     ) -> dict[str, Any]:
         connection = self._require(connection_id)
         if not connection.enabled:
@@ -365,6 +443,7 @@ class DesktopMcpRegistry:
                 "invocation_id": invocation_id,
                 "connection_id": connection.id,
                 "connection_name": connection.name,
+                "mcp_handle_id": str(tool_handle_id or ""),
                 "tool_name": str(selected_tool or "unknown")[:160],
                 "transport": connection.transport,
                 "source": f"desktop-mcp:{connection.id}",

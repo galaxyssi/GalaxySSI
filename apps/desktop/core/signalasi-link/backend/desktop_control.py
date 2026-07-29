@@ -22,13 +22,21 @@ from typing import Any, Callable, Mapping
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_state import DATA_DIR
 from signalasi_client import get_signal_bundle, sign_signal_identity
+from tool_handle_registry import (
+    TOOL_HANDLE_CONTRACT,
+    ToolHandleError,
+    ToolHandleRegistry,
+    ToolHandleScope,
+    tool_handle_registry,
+)
 
 
-CONTRACT_VERSION = "signalasi.desktop-control/1.1"
+CONTRACT_VERSION = "signalasi.desktop-control/1.2"
 AUTHORIZATION_VERSION = 1
-RECEIPT_VERSION = 2
+RECEIPT_VERSION = 3
 OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
+DESKTOP_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_CLOCK_SKEW_MILLIS = 30_000
 MAX_SCREENSHOT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
 MAX_AUDIT_EVENTS = 1_000
@@ -48,6 +56,7 @@ RECEIPT_SIGNED_FIELDS = (
     "task_id",
     "action_id",
     "authorization_id",
+    "desktop_session_id",
     "tool_id",
     "status",
     "summary",
@@ -146,6 +155,7 @@ class DesktopControlManager:
         input_controller: "WindowsInputController | None" = None,
         identity_provider: IdentityProvider = _default_identity,
         receipt_signer: ReceiptSigner = sign_signal_identity,
+        handle_registry: ToolHandleRegistry | None = None,
     ) -> None:
         self.state_path = Path(state_path or DATA_DIR / "desktop_control.json")
         self.now = now
@@ -157,6 +167,7 @@ class DesktopControlManager:
         self._input = input_controller or WindowsInputController()
         self._identity_provider = identity_provider
         self._receipt_signer = receipt_signer
+        self._handles = handle_registry or tool_handle_registry()
 
     def settings(self) -> dict[str, Any]:
         with self._lock:
@@ -174,6 +185,7 @@ class DesktopControlManager:
                 settings["enabled"] = bool(enabled)
                 if not settings["enabled"]:
                     self._offers.clear()
+                    self._handles.revoke_kind("desktop_session")
             if require_unlocked is not None:
                 settings["require_unlocked"] = bool(require_unlocked)
             self._append_audit_locked(
@@ -341,6 +353,7 @@ class DesktopControlManager:
             row["revoked_at"] = now_ms
             row["revoke_reason"] = str(reason or "user_revoked")[:120]
             row["updated_at"] = now_ms
+            self._handles.revoke_resource("desktop_session", authorization_id)
             self._append_audit_locked(
                 "authorization_revoked",
                 authorization_id=authorization_id,
@@ -413,6 +426,7 @@ class DesktopControlManager:
             ][:MAX_VISIBLE_RECEIPTS]
             return {
                 "contract_version": CONTRACT_VERSION,
+                "tool_handle_contract": TOOL_HANDLE_CONTRACT,
                 "enabled": bool(self._state["settings"].get("enabled")),
                 "require_unlocked": bool(self._state["settings"].get("require_unlocked")),
                 "allowed_tools": list(DEFAULT_ALLOWED_TOOLS),
@@ -430,9 +444,14 @@ class DesktopControlManager:
         *,
         on_running: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
-        action_id, authorization, tool_id, arguments, request_digest = self._validate_request(
-            payload, paired_client
-        )
+        (
+            action_id,
+            authorization,
+            desktop_session_id,
+            tool_id,
+            arguments,
+            request_digest,
+        ) = self._validate_request(payload, paired_client)
         with self._lock:
             previous = self._state["recent_actions"].get(action_id)
             if isinstance(previous, dict):
@@ -458,6 +477,7 @@ class DesktopControlManager:
                 "task_id": str(payload.get("task_id") or ""),
                 "action_id": action_id,
                 "authorization_id": str(authorization["authorization_id"]),
+                "desktop_session_id": desktop_session_id,
                 "tool_id": tool_id,
                 "status": "running",
                 "summary": self._action_summary(tool_id, arguments, running=True),
@@ -472,6 +492,7 @@ class DesktopControlManager:
                 authorization = self._revalidate_authorization(
                     str(authorization["authorization_id"]),
                     paired_client,
+                    desktop_session_id,
                     tool_id,
                 )
                 if self.settings().get("require_unlocked") and self._input.is_locked():
@@ -548,6 +569,7 @@ class DesktopControlManager:
                 "task_id": str(payload.get("task_id") or ""),
                 "action_id": action_id,
                 "authorization_id": str(authorization["authorization_id"]),
+                "desktop_session_id": desktop_session_id,
                 "tool_id": tool_id,
                 "status": "succeeded",
                 "summary": self._action_summary(tool_id, arguments),
@@ -627,11 +649,22 @@ class DesktopControlManager:
         self,
         payload: Mapping[str, Any],
         paired_client: Mapping[str, Any],
-    ) -> tuple[str, dict[str, Any], str, dict[str, Any], str]:
+    ) -> tuple[str, dict[str, Any], str, str, dict[str, Any], str]:
         if not self.settings().get("enabled"):
             raise DesktopControlError("desktop_executor_disabled", "Desktop Executor is disabled")
         action_id = _uuid(payload.get("action_id"), "action_id")
         authorization_id = _uuid(payload.get("authorization_id"), "authorization_id")
+        desktop_session_id = _bounded_text(
+            payload.get("desktop_session_id"),
+            "desktop_session_id",
+            240,
+        ).strip()
+        if not desktop_session_id:
+            raise DesktopControlError(
+                "desktop_session_required",
+                "Desktop control requires an explicit desktop_session_id",
+                retryable=True,
+            )
         task_id = _bounded_text(payload.get("task_id"), "task_id", 160).strip()
         if not task_id:
             raise DesktopControlError("invalid_input", "task_id must not be empty")
@@ -665,12 +698,19 @@ class DesktopControlManager:
                 raise DesktopControlError("authorization_identity_mismatch", "Phone identity does not match authorization")
             if tool_id not in set(authorization.get("allowed_tools") or []):
                 raise DesktopControlError("tool_not_allowed", "Tool is outside this authorization")
+            self._resolve_desktop_session(
+                desktop_session_id,
+                authorization_id,
+                route,
+                tool_id,
+            )
         digest = _canonical_digest({
             "contract_version": CONTRACT_VERSION,
             "type": "desktop_executor_request",
             "task_id": task_id,
             "action_id": action_id,
             "authorization_id": authorization_id,
+            "desktop_session_id": desktop_session_id,
             "tool_id": tool_id,
             "input": arguments,
             "sent_at": sent_at,
@@ -679,12 +719,20 @@ class DesktopControlManager:
             "controller_fingerprint": fingerprint,
             "controller_signal_name": str(paired_client.get("signal_name") or ""),
         })
-        return action_id, authorization, tool_id, dict(arguments), digest
+        return (
+            action_id,
+            authorization,
+            desktop_session_id,
+            tool_id,
+            dict(arguments),
+            digest,
+        )
 
     def _revalidate_authorization(
         self,
         authorization_id: str,
         paired_client: Mapping[str, Any],
+        desktop_session_id: str,
         tool_id: str,
     ) -> dict[str, Any]:
         with self._lock:
@@ -702,7 +750,43 @@ class DesktopControlManager:
                 raise DesktopControlError("authorization_identity_mismatch", "Phone identity does not match authorization")
             if tool_id not in set(authorization.get("allowed_tools") or []):
                 raise DesktopControlError("tool_not_allowed", "Tool is outside this authorization")
+            self._resolve_desktop_session(
+                desktop_session_id,
+                authorization_id,
+                route,
+                tool_id,
+            )
             return authorization
+
+    def _resolve_desktop_session(
+        self,
+        desktop_session_id: str,
+        authorization_id: str,
+        client_route_id: str,
+        tool_id: str,
+    ) -> dict[str, Any]:
+        try:
+            handle = self._handles.resolve(
+                desktop_session_id,
+                kind="desktop_session",
+                scope=ToolHandleScope(client_route_id),
+                required_capability=tool_id,
+            )
+        except ToolHandleError as exc:
+            raise DesktopControlError(
+                exc.code,
+                str(exc),
+                retryable=exc.retryable,
+            ) from exc
+        if not secrets.compare_digest(
+            str(handle.get("resource_id") or ""),
+            authorization_id,
+        ):
+            raise DesktopControlError(
+                "desktop_session_authorization_mismatch",
+                "Desktop session belongs to a different authorization",
+            )
+        return handle
 
     def _failure_receipt(
         self,
@@ -722,6 +806,7 @@ class DesktopControlManager:
             "task_id": str(payload.get("task_id") or ""),
             "action_id": action_id,
             "authorization_id": str(payload.get("authorization_id") or ""),
+            "desktop_session_id": str(payload.get("desktop_session_id") or ""),
             "tool_id": tool_id,
             "status": "failed",
             "summary": str(error)[:500],
@@ -748,6 +833,7 @@ class DesktopControlManager:
             "task_id": str(payload.get("task_id") or "")[:160],
             "action_id": str(payload.get("action_id") or "")[:160],
             "authorization_id": str(payload.get("authorization_id") or "")[:160],
+            "desktop_session_id": str(payload.get("desktop_session_id") or "")[:240],
             "tool_id": str(payload.get("tool_id") or "")[:160],
             "input": safe_arguments,
             "sent_at": self._safe_int(payload.get("sent_at")),
@@ -795,6 +881,7 @@ class DesktopControlManager:
             "task_id": str(receipt.get("task_id") or ""),
             "action_id": str(receipt.get("action_id") or ""),
             "authorization_id": str(receipt.get("authorization_id") or ""),
+            "desktop_session_id": str(receipt.get("desktop_session_id") or ""),
             "request_sha256": request_digest,
             "output_sha256": output_sha256,
             "evidence_sha256": evidence_sha256,
@@ -806,6 +893,7 @@ class DesktopControlManager:
             "task_id": str(receipt.get("task_id") or ""),
             "action_id": str(receipt.get("action_id") or ""),
             "authorization_id": str(receipt.get("authorization_id") or ""),
+            "desktop_session_id": str(receipt.get("desktop_session_id") or ""),
             "tool_id": str(receipt.get("tool_id") or ""),
             "status": str(receipt.get("status") or "failed"),
             "summary": str(receipt.get("summary") or ""),
@@ -904,9 +992,22 @@ class DesktopControlManager:
             raise DesktopControlError("authorization_not_found", "Desktop control authorization was not found")
         return row
 
-    @staticmethod
-    def _public_authorization(row: Mapping[str, Any]) -> dict[str, Any]:
+    def _public_authorization(self, row: Mapping[str, Any]) -> dict[str, Any]:
         fingerprint = str(row.get("phone_identity_fingerprint") or "")
+        desktop_session = {}
+        if row.get("status") == "active":
+            desktop_session = self._handles.create(
+                kind="desktop_session",
+                resource_id=str(row.get("authorization_id") or ""),
+                scope=ToolHandleScope(str(row.get("client_route_id") or "")),
+                capabilities=list(row.get("allowed_tools") or []),
+                ttl_seconds=DESKTOP_SESSION_TTL_SECONDS,
+                metadata={
+                    "authorization_id": str(row.get("authorization_id") or ""),
+                    "platform": str(row.get("platform") or "unknown"),
+                },
+                reuse=True,
+            )
         return {
             "authorization_id": str(row.get("authorization_id") or ""),
             "grant_type": "desktop_control",
@@ -923,6 +1024,10 @@ class DesktopControlManager:
             "status": str(row.get("status") or "unknown"),
             "revoked_at": int(row.get("revoked_at") or 0),
             "revoke_reason": str(row.get("revoke_reason") or ""),
+            "desktop_session_id": str(desktop_session.get("handle_id") or ""),
+            "desktop_session_expires_at": int(
+                desktop_session.get("expires_at") or 0
+            ),
         }
 
     def _append_audit_locked(

@@ -15,6 +15,7 @@ from desktop_control import (
     WindowsInputController,
     _canonical_json,
 )
+from tool_handle_registry import ToolHandleRegistry, ToolHandleScope
 
 
 class FakeClock:
@@ -78,6 +79,7 @@ class DesktopControlTests(unittest.TestCase):
         self.clock = FakeClock()
         self.input = FakeInput()
         self.identity = FakeReceiptIdentity()
+        self.handles = ToolHandleRegistry(now=self.clock)
         self.screenshot_calls = 0
 
         def screenshot():
@@ -100,6 +102,7 @@ class DesktopControlTests(unittest.TestCase):
             input_controller=self.input,
             identity_provider=self.identity.identity,
             receipt_signer=self.identity.sign,
+            handle_registry=self.handles,
         )
         self.client = {
             "client_route_id": "client-route-1",
@@ -127,6 +130,7 @@ class DesktopControlTests(unittest.TestCase):
             "task_id": "task-1",
             "action_id": action_id or str(uuid.uuid4()),
             "authorization_id": authorization["authorization_id"],
+            "desktop_session_id": authorization["desktop_session_id"],
             "tool_id": tool,
             "input": input_value or {},
             "sent_at": now,
@@ -183,7 +187,11 @@ class DesktopControlTests(unittest.TestCase):
         result = self.manager.execute_request(request, self.client, on_running=events.append)
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(SCREENSHOT, result["tool_id"])
-        self.assertEqual(2, result["receipt_version"])
+        self.assertEqual(3, result["receipt_version"])
+        self.assertEqual(
+            authorization["desktop_session_id"],
+            result["desktop_session_id"],
+        )
         self.assertTrue(self.identity.verify(result))
         self.assertEqual("a" * 64, result["controller_fingerprint"])
         self.assertEqual(
@@ -291,6 +299,41 @@ class DesktopControlTests(unittest.TestCase):
             self.manager.execute_request(self.request(authorization), self.client)
         self.assertEqual("authorization_not_found", revoked.exception.code)
 
+    def test_explicit_desktop_session_is_required_and_route_scoped(self):
+        authorization = self.authorize()
+        missing = self.request(authorization)
+        missing.pop("desktop_session_id")
+        with self.assertRaises(DesktopControlError) as required:
+            self.manager.execute_request(missing, self.client)
+        self.assertEqual("desktop_session_required", required.exception.code)
+
+        released = self.request(authorization)
+        self.assertTrue(
+            self.handles.release(
+                authorization["desktop_session_id"],
+                scope=ToolHandleScope(self.client["client_route_id"]),
+            )
+        )
+        with self.assertRaises(DesktopControlError) as stale:
+            self.manager.execute_request(released, self.client)
+        self.assertEqual("tool_handle_not_found", stale.exception.code)
+        self.assertTrue(stale.exception.retryable)
+
+        refreshed = self.manager.status(
+            self.client["client_route_id"]
+        )["authorizations"][0]
+        wrong_scope = self.handles.create(
+            kind="desktop_session",
+            resource_id=refreshed["authorization_id"],
+            scope=ToolHandleScope("another-client-route"),
+            capabilities=[SCREENSHOT],
+        )
+        crossed = self.request(refreshed)
+        crossed["desktop_session_id"] = wrong_scope["handle_id"]
+        with self.assertRaises(DesktopControlError) as mismatch:
+            self.manager.execute_request(crossed, self.client)
+        self.assertEqual("tool_handle_owner_mismatch", mismatch.exception.code)
+
     def test_revocation_while_waiting_for_input_lock_prevents_execution(self):
         authorization = self.authorize()
         request = self.request(
@@ -332,6 +375,7 @@ class DesktopControlTests(unittest.TestCase):
             input_controller=self.input,
             identity_provider=self.identity.identity,
             receipt_signer=self.identity.sign,
+            handle_registry=self.handles,
         )
 
         recent = reloaded.status(self.client["client_route_id"])["recent_receipts"]
