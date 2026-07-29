@@ -112,6 +112,9 @@ object AgentConfirmationPolicy {
         if (nativeToolId in CONFIRM_ONCE_NATIVE_TOOL_IDS) {
             return AgentConfirmationTier.CONFIRM_ONCE
         }
+        if (nativeToolId in AgentDesktopRemoteNativeTools.alwaysConfirmToolIds) {
+            return AgentConfirmationTier.CONFIRM_ALWAYS
+        }
         if (nativeToolId in AgentDesktopRemoteNativeTools.toolIds) {
             return AgentConfirmationTier.DIRECT
         }
@@ -242,11 +245,13 @@ object AgentConfirmationPolicy {
         "send sms", "sms.send", "reply sms", "send message", "reply message", "reply notification",
         "send email", "reply email", "phone call", "dial", "telephony.dial", "delete", "remove",
         "install", "uninstall", "payment", "purchase", "checkout", "transfer", "grant permission",
-        "authorize", "security setting", "screen lock", "lock device", "device_policy.lock", "reboot",
+        "authorize", "security setting", "system setting", "registry edit", "screen lock", "lock device",
+        "device_policy.lock", "reboot", "git commit", "git push", "submit code", "commit code",
         "door lock", "smart lock", "garage door", "alarm panel", "private key", "password",
         "\u53d1\u9001\u77ed\u4fe1", "\u56de\u590d\u77ed\u4fe1", "\u53d1\u6d88\u606f", "\u56de\u590d\u6d88\u606f",
         "\u6253\u7535\u8bdd", "\u62e8\u53f7", "\u5220\u9664", "\u5b89\u88c5", "\u5378\u8f7d", "\u652f\u4ed8",
-        "\u8f6c\u8d26", "\u6388\u6743", "\u6743\u9650", "\u5b89\u5168\u8bbe\u7f6e", "\u9501\u5c4f", "\u91cd\u542f",
+        "\u8f6c\u8d26", "\u6388\u6743", "\u6743\u9650", "\u5b89\u5168\u8bbe\u7f6e", "\u7cfb\u7edf\u8bbe\u7f6e",
+        "\u63d0\u4ea4\u4ee3\u7801", "\u63a8\u9001\u4ee3\u7801", "\u9501\u5c4f", "\u91cd\u542f",
         "\u95e8\u9501", "\u8f66\u5e93\u95e8"
     )
 

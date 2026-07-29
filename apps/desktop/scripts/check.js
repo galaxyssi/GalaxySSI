@@ -680,7 +680,7 @@ if (!backendDesktopFileTools.includes("try_execute_explicit_file_task") || !back
 }
 
 for (const contract of [
-  "signalasi.desktop-native-tools/1.0",
+  "signalasi.desktop-native-tools/1.1",
   "signalasi.desktop.windows.system.status",
   "signalasi.desktop.windows.app.list",
   "signalasi.desktop.windows.app.launch",

@@ -22,10 +22,9 @@ object AgentDesktopRemoteNativeTools {
     const val OFFICE_CONVERT = "signalasi.desktop.office.document.convert"
 
     const val READ_CONSENT = "signalasi.consent.desktop.read"
-    const val WRITE_CONSENT = "signalasi.consent.desktop.write"
     const val EXECUTE_CONSENT = "signalasi.consent.desktop.execute"
 
-    private const val VERSION = "1.0.0"
+    private const val VERSION = "1.1.0"
     private const val MAX_PATH = 4_096
     internal val workspaceToolIds = setOf(
         FILE_LIST,
@@ -50,6 +49,7 @@ object AgentDesktopRemoteNativeTools {
         OFFICE_INSPECT,
         OFFICE_CONVERT
     )
+    val alwaysConfirmToolIds: Set<String> = setOf(TERMINAL_RUN)
 
     fun definitions(context: Context): List<AgentNativeToolDefinition> = listOf(
         definition(
@@ -128,7 +128,7 @@ object AgentDesktopRemoteNativeTools {
             ),
             AgentNativeToolRisk.MEDIUM,
             AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
-            listOf(consent(WRITE_CONSENT, "Write paired Desktop workspace")),
+            emptyList(),
             30_000L,
             setOf("desktop.workspace.write")
         ),
@@ -157,7 +157,7 @@ object AgentDesktopRemoteNativeTools {
             ),
             AgentNativeToolRisk.MEDIUM,
             AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
-            listOf(consent(WRITE_CONSENT, "Create archive on paired Desktop")),
+            emptyList(),
             60_000L,
             setOf("desktop.workspace.read", "desktop.workspace.write", "archive.zip")
         ),
@@ -210,7 +210,7 @@ object AgentDesktopRemoteNativeTools {
             ),
             AgentNativeToolRisk.MEDIUM,
             AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED,
-            listOf(consent(WRITE_CONSENT, "Create converted document on paired Desktop")),
+            emptyList(),
             90_000L,
             setOf("desktop.office.convert", "desktop.workspace.read", "desktop.workspace.write")
         )

@@ -20,6 +20,10 @@ class AgentConfirmationPolicyTest {
             AgentConfirmationTier.DIRECT,
             nativeTier(AgentDesktopRemoteNativeTools.FILE_READ_TEXT, "Read an authorized Desktop file")
         )
+        assertEquals(
+            AgentConfirmationTier.DIRECT,
+            nativeTier(AgentDesktopRemoteNativeTools.FILE_WRITE_TEXT, "Write a bounded task workspace file")
+        )
     }
 
     @Test
@@ -64,6 +68,18 @@ class AgentConfirmationPolicyTest {
         assertEquals(
             AgentConfirmationTier.CONFIRM_ALWAYS,
             nativeTier(AgentNotificationNativeTools.NOTIFICATION_REPLY, "Reply to a notification")
+        )
+        assertEquals(
+            AgentConfirmationTier.CONFIRM_ALWAYS,
+            nativeTier(AgentDesktopRemoteNativeTools.TERMINAL_RUN, "Run a Desktop workspace command")
+        )
+        assertEquals(
+            AgentConfirmationTier.CONFIRM_ALWAYS,
+            tier("submit-code", AgentActionKind.CALL_CONNECTOR, "Git commit and push the code")
+        )
+        assertEquals(
+            AgentConfirmationTier.CONFIRM_ALWAYS,
+            tier("system-settings", AgentActionKind.CALL_CONNECTOR, "Change a system setting")
         )
     }
 

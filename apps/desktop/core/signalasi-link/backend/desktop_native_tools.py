@@ -40,8 +40,8 @@ from web_intelligence import (
 )
 
 
-CONTRACT_VERSION = "signalasi.desktop-native-tools/1.0"
-TOOL_VERSION = "1.0.0"
+CONTRACT_VERSION = "signalasi.desktop-native-tools/1.1"
+TOOL_VERSION = "1.1.0"
 MAX_JSON_BYTES = 256 * 1024
 MAX_TEXT_BYTES = 128 * 1024
 MAX_WRITE_BYTES = 1024 * 1024
@@ -361,7 +361,6 @@ def _specs() -> tuple[DesktopToolSpec, ...]:
             risk="medium",
             capabilities=("desktop.workspace.write",),
             idempotency="idempotency_key_required",
-            confirmation="write",
         ),
         DesktopToolSpec(
             FILE_SHA256,
@@ -383,7 +382,6 @@ def _specs() -> tuple[DesktopToolSpec, ...]:
             capabilities=("desktop.workspace.read", "desktop.workspace.write", "archive.zip"),
             timeout_ms=60_000,
             idempotency="idempotency_key_required",
-            confirmation="write",
         ),
         DesktopToolSpec(
             TERMINAL_RUN,
@@ -425,7 +423,6 @@ def _specs() -> tuple[DesktopToolSpec, ...]:
             capabilities=("desktop.office.convert", "desktop.workspace.read", "desktop.workspace.write"),
             timeout_ms=90_000,
             idempotency="idempotency_key_required",
-            confirmation="write",
             availability=_office_availability,
         ),
     ) + _web_intelligence_specs()

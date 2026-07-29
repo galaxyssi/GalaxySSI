@@ -22,6 +22,7 @@ from desktop_native_tools import (
     RUNTIME_STATUS,
     SYSTEM_STATUS,
     TERMINAL_RUN,
+    TOOL_VERSION,
     WEB_FETCH,
     DesktopNativeToolRegistry,
     _digest,
@@ -54,7 +55,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             confirmation = {
                 "decision": "approved",
                 "tool_id": tool_id,
-                "tool_version": "1.0.0",
+                "tool_version": TOOL_VERSION,
                 "arguments_sha256": _digest(arguments),
                 "expires_at": int(__import__("time").time() * 1000) + 60_000,
             }
@@ -73,7 +74,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         manifest = self.registry.manifest()
         tools = {item["id"]: item for item in manifest["tools"]}
 
-        self.assertEqual("signalasi.desktop-native-tools/1.0", manifest["contract_version"])
+        self.assertEqual("signalasi.desktop-native-tools/1.1", manifest["contract_version"])
         for tool_id in (
             SYSTEM_STATUS, RUNTIME_STATUS, PROCESS_LIST, FILE_LIST, FILE_READ_TEXT, FILE_WRITE_TEXT,
             FILE_SHA256, ARCHIVE_CREATE, TERMINAL_RUN, OFFICE_INSPECT, OFFICE_CONVERT,
@@ -83,6 +84,13 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             self.assertIn(tool_id, tools)
             self.assertEqual("desktop", tools[tool_id]["location"])
             self.assertFalse(tools[tool_id]["input_schema"]["additionalProperties"])
+        self.assertEqual([], tools[FILE_WRITE_TEXT]["required_consents"])
+        self.assertEqual([], tools[ARCHIVE_CREATE]["required_consents"])
+        self.assertEqual([], tools[OFFICE_CONVERT]["required_consents"])
+        self.assertEqual(
+            ["signalasi.consent.desktop.execute"],
+            [item["id"] for item in tools[TERMINAL_RUN]["required_consents"]],
+        )
 
     def test_web_intelligence_tools_delegate_to_bounded_native_service(self):
         calls = []
@@ -136,24 +144,21 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         self.assertEqual("failed", result["status"])
         self.assertEqual("invalid_path", result["error"]["code"])
 
-    def test_write_requires_exact_confirmation_and_replays_same_receipt(self):
+    def test_bounded_workspace_write_is_direct_and_replays_same_receipt(self):
         arguments = {
             "workspace_id": "task-a",
             "path": "src/hello.txt",
             "content": "hello",
             "mode": "create",
         }
-        rejected = self.invoke(FILE_WRITE_TEXT, arguments, key="write-1")
-        accepted = self.invoke(FILE_WRITE_TEXT, arguments, key="write-1", confirmed=True)
+        accepted = self.invoke(FILE_WRITE_TEXT, arguments, key="write-1")
         replayed = self.invoke(
             FILE_WRITE_TEXT,
             arguments,
             key="write-1",
-            confirmed=True,
             invocation_id="invocation-2",
         )
 
-        self.assertEqual("confirmation_required", rejected["error"]["code"])
         self.assertEqual("succeeded", accepted["status"])
         self.assertEqual("hello", (self.workspace() / "src" / "hello.txt").read_text(encoding="utf-8"))
         self.assertTrue(replayed["receipt"]["replayed"])
@@ -162,15 +167,15 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
     def test_idempotency_key_cannot_be_reused_with_different_input(self):
         first = {"workspace_id": "task-a", "path": "a.txt", "content": "one", "mode": "create"}
         second = {"workspace_id": "task-a", "path": "b.txt", "content": "two", "mode": "create"}
-        self.assertEqual("succeeded", self.invoke(FILE_WRITE_TEXT, first, key="same", confirmed=True)["status"])
+        self.assertEqual("succeeded", self.invoke(FILE_WRITE_TEXT, first, key="same")["status"])
 
-        result = self.invoke(FILE_WRITE_TEXT, second, key="same", confirmed=True, invocation_id="invocation-2")
+        result = self.invoke(FILE_WRITE_TEXT, second, key="same", invocation_id="invocation-2")
 
         self.assertEqual("failed", result["status"])
         self.assertEqual("idempotency_key_conflict", result["error"]["code"])
         self.assertFalse((self.workspace() / "b.txt").exists())
 
-        replay = self.invoke(FILE_WRITE_TEXT, first, key="same", confirmed=True, invocation_id="invocation-3")
+        replay = self.invoke(FILE_WRITE_TEXT, first, key="same", invocation_id="invocation-3")
         self.assertEqual("succeeded", replay["status"])
         self.assertTrue(replay["receipt"]["replayed"])
 
@@ -199,7 +204,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             "output_path": "outputs/result.zip",
         }
 
-        result = self.invoke(ARCHIVE_CREATE, arguments, key="zip-1", confirmed=True)
+        result = self.invoke(ARCHIVE_CREATE, arguments, key="zip-1")
 
         self.assertEqual("succeeded", result["status"])
         with zipfile.ZipFile(workspace / "outputs" / "result.zip") as archive:
@@ -213,8 +218,10 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             "timeout_seconds": 10,
         }
 
+        unconfirmed = self.invoke(TERMINAL_RUN, arguments, key="terminal-1")
         result = self.invoke(TERMINAL_RUN, arguments, key="terminal-1", confirmed=True)
 
+        self.assertEqual("confirmation_required", unconfirmed["error"]["code"])
         self.assertEqual("failed", result["status"])
         self.assertEqual("shell_blocked", result["error"]["code"])
 
@@ -226,8 +233,10 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             "timeout_seconds": 10,
         }
         with patch.object(self.registry, "_resolve_executable", return_value=sys.executable):
+            unconfirmed = self.invoke(TERMINAL_RUN, arguments, key="terminal-2")
             result = self.invoke(TERMINAL_RUN, arguments, key="terminal-2", confirmed=True)
 
+        self.assertEqual("confirmation_required", unconfirmed["error"]["code"])
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(0, result["output"]["exit_code"])
         self.assertEqual("ok", result["output"]["stdout"].strip())
@@ -247,7 +256,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         self.assertEqual("word", result["output"]["document_type"])
         self.assertEqual(["Hello report"], result["output"]["text_items"])
 
-    def test_office_conversion_requires_confirmation_and_verifies_artifact(self):
+    def test_office_conversion_is_direct_and_verifies_artifact(self):
         source = self.workspace() / "report.docx"
         with zipfile.ZipFile(source, "w") as archive:
             archive.writestr(
@@ -262,7 +271,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         }
 
         with patch.object(self.registry, "_run_office_conversion", side_effect=lambda _id, _src, dst, _fmt: dst.write_bytes(b"%PDF-test")):
-            result = self.invoke(OFFICE_CONVERT, arguments, key="office-1", confirmed=True)
+            result = self.invoke(OFFICE_CONVERT, arguments, key="office-1")
 
         self.assertEqual("succeeded", result["status"])
         self.assertEqual("application/pdf", result["output"]["mime_type"])
@@ -295,7 +304,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
             "output_path": "outputs/data.txt",
         }
 
-        result = self.invoke(OFFICE_CONVERT, arguments, key="office-text-1", confirmed=True)
+        result = self.invoke(OFFICE_CONVERT, arguments, key="office-text-1")
 
         self.assertEqual("succeeded", result["status"])
         self.assertEqual("Name\tSignalASI", (self.workspace() / "outputs" / "data.txt").read_text(encoding="utf-8"))

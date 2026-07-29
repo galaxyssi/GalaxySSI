@@ -63,6 +63,7 @@ object AgentActionRiskHardener {
 
     private val HIGH_RISK_CONNECTOR_TERMS = listOf(
         "delete", "erase", "remove account", "install", "uninstall", "deploy", "publish",
+        "git commit", "git push", "submit code", "commit code", "system setting", "registry edit",
         "send message", "send email", "payment", "purchase", "buy", "order", "transfer",
         "credential", "password", "private key", "api key", "unlock", "open door",
         "\u5220\u9664", "\u6e05\u9664", "\u5b89\u88c5", "\u5378\u8f7d", "\u90e8\u7f72",

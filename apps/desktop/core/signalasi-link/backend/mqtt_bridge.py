@@ -558,6 +558,8 @@ def _desktop_tool_failure(
     *,
     retryable: bool = False,
 ) -> dict:
+    from desktop_native_tools import CONTRACT_VERSION, TOOL_VERSION
+
     now_ms = int(time.time() * 1000)
     return {
         "status": "failed",
@@ -585,10 +587,10 @@ def _desktop_tool_failure(
         },
         "provenance": {
             "tool_id": "unknown",
-            "tool_version": "1.0.0",
+            "tool_version": TOOL_VERSION,
             "location": "desktop",
             "executor_id": "signalasi.desktop_native",
-            "contract_version": "signalasi.desktop-native-tools/1.0",
+            "contract_version": CONTRACT_VERSION,
         },
         "artifacts": [],
     }
@@ -601,7 +603,11 @@ def _execute_desktop_tool_request(
     payload: dict,
     paired_client: dict,
 ) -> dict:
-    from desktop_native_tools import canonical_input_sha256, desktop_native_tool_registry
+    from desktop_native_tools import (
+        TOOL_VERSION,
+        canonical_input_sha256,
+        desktop_native_tool_registry,
+    )
 
     call_id = _phone_tool_identifier("call_id", payload.get("call_id"))
     invocation_id = _phone_tool_identifier(
@@ -640,7 +646,7 @@ def _execute_desktop_tool_request(
         str(payload.get("tool_id") or ""),
         arguments,
         {
-            "tool_version": str(payload.get("tool_version") or "1.0.0"),
+            "tool_version": str(payload.get("tool_version") or TOOL_VERSION),
             "invocation_id": invocation_id,
             "task_id": task_id,
             "conversation_id": conversation_id,
