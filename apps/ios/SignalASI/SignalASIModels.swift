@@ -26577,6 +26577,207 @@ enum AgentRuntimeGuestProtocol {
   static let version = 1
 }
 
+struct AgentEmbeddedRuntimePack: Codable, Equatable, Identifiable {
+  var packId: String
+  var version: String
+  var architecture: String
+  var assetPath: String
+  var archiveSha256: String
+  var archiveSizeBytes: Int64
+  var installedSizeBytes: Int64
+  var dependencies: [String]
+
+  var id: String { packId }
+
+  init(
+    packId: String,
+    version: String,
+    architecture: String,
+    assetPath: String,
+    archiveSha256: String,
+    archiveSizeBytes: Int64,
+    installedSizeBytes: Int64,
+    dependencies: [String] = []
+  ) {
+    self.packId = packId
+    self.version = version
+    self.architecture = architecture
+    self.assetPath = assetPath
+    self.archiveSha256 = archiveSha256.lowercased()
+    self.archiveSizeBytes = archiveSizeBytes
+    self.installedSizeBytes = installedSizeBytes
+    self.dependencies = dependencies
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case packId = "pack_id"
+    case version
+    case architecture
+    case assetPath = "asset_path"
+    case archiveSha256 = "archive_sha256"
+    case archiveSizeBytes = "archive_size_bytes"
+    case installedSizeBytes = "installed_size_bytes"
+    case dependencies
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      packId: try container.decode(String.self, forKey: .packId),
+      version: try container.decode(String.self, forKey: .version),
+      architecture: try container.decode(String.self, forKey: .architecture),
+      assetPath: try container.decode(String.self, forKey: .assetPath),
+      archiveSha256: try container.decode(String.self, forKey: .archiveSha256),
+      archiveSizeBytes: try container.decode(Int64.self, forKey: .archiveSizeBytes),
+      installedSizeBytes: try container.decode(Int64.self, forKey: .installedSizeBytes),
+      dependencies: try container.decodeIfPresent([String].self, forKey: .dependencies) ?? []
+    )
+  }
+}
+
+struct AgentEmbeddedRuntimeBundle: Codable, Equatable {
+  var architecture: String
+  var packs: [AgentEmbeddedRuntimePack]
+  var formatVersion: Int
+
+  init(
+    architecture: String,
+    packs: [AgentEmbeddedRuntimePack],
+    formatVersion: Int = 1
+  ) {
+    self.architecture = architecture
+    self.packs = packs
+    self.formatVersion = formatVersion
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case architecture
+    case packs
+    case formatVersion = "format_version"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      architecture: try container.decode(String.self, forKey: .architecture),
+      packs: try container.decodeIfPresent([AgentEmbeddedRuntimePack].self, forKey: .packs) ?? [],
+      formatVersion: try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 0
+    )
+  }
+}
+
+struct AgentEmbeddedRuntimeBootstrapResult: Codable, Equatable {
+  var bundled: Bool
+  var installed: [String]
+  var retained: [String]
+
+  init(
+    bundled: Bool,
+    installed: [String] = [],
+    retained: [String] = []
+  ) {
+    self.bundled = bundled
+    self.installed = installed
+    self.retained = retained
+  }
+}
+
+enum AgentEmbeddedRuntimeBundleCodec {
+  static func decode(_ raw: String) throws -> AgentEmbeddedRuntimeBundle {
+    let size = Data(raw.utf8).count
+    guard (1...maxIndexBytes).contains(size) else {
+      throw AgentRuntimeCapabilityError.invalid("Embedded runtime index exceeds the size limit")
+    }
+    let bundle = try JSONDecoder().decode(AgentEmbeddedRuntimeBundle.self, from: Data(raw.utf8))
+    try validate(bundle)
+    return bundle
+  }
+
+  private static func validate(_ bundle: AgentEmbeddedRuntimeBundle) throws {
+    guard bundle.formatVersion == 1 else {
+      throw AgentRuntimeCapabilityError.invalid("Embedded runtime index version is unsupported")
+    }
+    guard bundle.architecture == defaultArchitecture else {
+      throw AgentRuntimeCapabilityError.invalid("Embedded runtime architecture is unsupported")
+    }
+    guard bundle.packs.map(\.packId) == defaultPacks else {
+      throw AgentRuntimeCapabilityError.invalid("Embedded runtime must contain linux-base followed by python-uv")
+    }
+    for pack in bundle.packs {
+      guard pack.architecture == defaultArchitecture, matches(pack.version, versionPattern) else {
+        throw AgentRuntimeCapabilityError.invalid("Embedded runtime pack is incompatible: \(pack.packId)")
+      }
+      guard matches(pack.assetPath, assetPathPattern), matches(pack.archiveSha256, sha256Pattern) else {
+        throw AgentRuntimeCapabilityError.invalid("Embedded runtime pack metadata is invalid: \(pack.packId)")
+      }
+      guard (1...maxArchiveBytes).contains(pack.archiveSizeBytes),
+            (1...maxInstalledBytes).contains(pack.installedSizeBytes) else {
+        throw AgentRuntimeCapabilityError.invalid("Embedded runtime pack size is invalid: \(pack.packId)")
+      }
+      guard Set(pack.dependencies).count == pack.dependencies.count,
+            pack.dependencies.allSatisfy({ defaultPacks.contains($0) && $0 != pack.packId }) else {
+        throw AgentRuntimeCapabilityError.invalid("Embedded runtime pack dependencies are invalid: \(pack.packId)")
+      }
+    }
+    guard bundle.packs.first?.dependencies.isEmpty == true else {
+      throw AgentRuntimeCapabilityError.invalid("linux-base cannot depend on another embedded pack")
+    }
+    guard bundle.packs.last?.dependencies == ["linux-base"] else {
+      throw AgentRuntimeCapabilityError.invalid("python-uv must depend on linux-base")
+    }
+  }
+
+  private static func matches(_ value: String, _ pattern: String) -> Bool {
+    value.range(of: pattern, options: .regularExpression) != nil
+  }
+
+  private static let maxIndexBytes = 64 * 1_024
+  private static let maxArchiveBytes: Int64 = 6 * 1_024 * 1_024 * 1_024
+  private static let maxInstalledBytes: Int64 = 12 * 1_024 * 1_024 * 1_024
+  private static let defaultArchitecture = "arm64-v8a"
+  private static let defaultPacks = ["linux-base", "python-uv"]
+  private static let versionPattern = #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z._-]+)?$"#
+  private static let sha256Pattern = #"^[0-9a-f]{64}$"#
+  private static let assetPathPattern = #"^runtime/bootstrap/[A-Za-z0-9._+-]+\.sarpack$"#
+}
+
+enum AgentEmbeddedRuntimeBootstrap {
+  static func compareVersions(_ left: String, _ right: String) -> Int {
+    let leftValue = left.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let rightValue = right.split(separator: "+", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let leftRelease = leftValue.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let rightRelease = rightValue.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
+    let leftParts = leftRelease.split(separator: ".").map { Int($0) ?? 0 }
+    let rightParts = rightRelease.split(separator: ".").map { Int($0) ?? 0 }
+    for index in 0..<max(leftParts.count, rightParts.count) {
+      let comparison = (leftParts.indices.contains(index) ? leftParts[index] : 0) -
+        (rightParts.indices.contains(index) ? rightParts[index] : 0)
+      if comparison != 0 {
+        return comparison > 0 ? 1 : -1
+      }
+    }
+    let leftPrerelease = prerelease(leftValue)
+    let rightPrerelease = prerelease(rightValue)
+    switch (leftPrerelease, rightPrerelease) {
+    case (nil, nil):
+      return 0
+    case (nil, _):
+      return 1
+    case (_, nil):
+      return -1
+    case (let left?, let right?):
+      if left == right { return 0 }
+      return left < right ? -1 : 1
+    }
+  }
+
+  private static func prerelease(_ value: String) -> String? {
+    let parts = value.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+    guard parts.count == 2, !parts[1].isEmpty else { return nil }
+    return String(parts[1])
+  }
+}
+
 enum AgentRuntimePackState: String, Codable, CaseIterable, Identifiable {
   case ready = "ready"
   case notInstalled = "not_installed"
