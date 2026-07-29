@@ -1359,6 +1359,7 @@
     <string name="agent_trace_remote_file">正在更新文件</string>
     <string name="agent_trace_remote_network">正在联网搜索</string>
     <string name="agent_trace_remote_mcp">正在调用 MCP</string>
+    <string name="agent_trace_mcp_tool_details">MCP · %1$s\n来源：%2$s\n风险：%3$s\n权限：%4$s\n参数：%5$s</string>
     <string name="agent_trace_remote_provider">正在调用 %1$s</string>
     <string name="agent_trace_remote_tool">正在运行工具</string>
     <string name="agent_trace_recovery_started">正在恢复中断的步骤</string>

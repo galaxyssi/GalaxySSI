@@ -71,6 +71,7 @@ async function runUiSmoke() {
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
   const mcpGovernancePath = path.join(outDir, "desktop-mcp-governance.png");
+  const mcpTaskPath = path.join(outDir, "desktop-mcp-task-transparency.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
   const evolutionV2Path = path.join(outDir, "desktop-evolution-v2.png");
@@ -201,9 +202,64 @@ async function runUiSmoke() {
       throw new Error(`Self-evolution timeline did not render in the main output: ${JSON.stringify(evolutionTimelineState)}`);
     }
     await captureSmokeScreenshot(evolutionTimelinePath);
+    const mcpTaskState = await mainWindow.webContents.executeJavaScript(`
+      (() => {
+        const task = {
+          task_id: "smoke-mcp-task",
+          agent_id: "mcp:smoke-vault",
+          conversation_id: "mcp:smoke-task",
+          source_message_id: "desktop:smoke-mcp-task",
+          prompt: "Search the private release index",
+          status: "running",
+          current_step: "Smoke Vault · search",
+          created_at: Date.now() - 2_000,
+          started_at: Date.now() - 1_900,
+          updated_at: Date.now(),
+          events: [{
+            event_id: "mcp-tool:smoke",
+            kind: "mcp",
+            title: "Smoke Vault · search",
+            status: "running",
+            metadata: {
+              kind: "mcp_tool_call",
+              source: "desktop-mcp:smoke-vault",
+              risk: "low",
+              permissions: ["mcp.data.read", "mcp.network.connect"],
+              parameter_preview: { query: "release notes" },
+              status: "running"
+            }
+          }],
+          output_files: [],
+          attachments: []
+        };
+        mergeTaskUpdate(task);
+        state.currentConversationId = task.conversation_id;
+        state.renderingSignature = "";
+        renderHistory();
+        renderConversation(true);
+        document.querySelector('[data-toggle-run="smoke-mcp-task"]')?.click();
+        const turn = document.querySelector('[data-task-id="smoke-mcp-task"]');
+        return {
+          eventCount: turn?.querySelectorAll(".mcp-tool-event").length || 0,
+          text: turn?.querySelector(".mcp-tool-event")?.textContent || "",
+          code: turn?.querySelector(".mcp-tool-event code")?.textContent || "",
+          expanded: turn?.querySelector(".run-detail")?.hidden === false
+        };
+      })()
+    `);
+    if (
+      mcpTaskState.eventCount !== 1
+      || !mcpTaskState.expanded
+      || !mcpTaskState.text.includes("desktop-mcp:smoke-vault")
+      || !mcpTaskState.text.includes("mcp.data.read")
+      || !mcpTaskState.code.includes("release notes")
+    ) {
+      throw new Error(`MCP task transparency did not render: ${JSON.stringify(mcpTaskState)}`);
+    }
+    await captureSmokeScreenshot(mcpTaskPath);
     await mainWindow.webContents.executeJavaScript(`
       (() => {
-        state.tasks = state.tasks.filter((task) => task.task_id !== "smoke-self-evolution");
+        state.tasks = state.tasks.filter((task) => !["smoke-self-evolution", "smoke-mcp-task"].includes(task.task_id));
         newTask();
       })()
     `);
@@ -678,6 +734,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpGovernancePath}`);
+    console.log(`[ui-smoke] screenshot: ${mcpTaskPath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
     console.log(`[ui-smoke] screenshot: ${evolutionV2Path}`);

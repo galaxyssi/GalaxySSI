@@ -2350,7 +2350,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             val title = event.optString("title").trim()
             val detail = event.optString("detail").trim()
             if (eventId.isBlank() || (title.isBlank() && detail.isBlank())) continue
-            val rendered = remoteTaskEventText(kind, title, detail, targetName)
+            val rendered = if (kind == "mcp") {
+                connectorProgressText(event)
+            } else {
+                remoteTaskEventText(kind, title, detail, targetName)
+            }
             if (rendered.isBlank()) continue
             val contentKind = if (kind in setOf("narration", "reasoning", "plan")) {
                 "REASONING_SUMMARY"
@@ -2414,6 +2418,42 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val status = progress.optString("status").ifBlank { "completed" }
         val metadata = progress.optJSONObject("metadata")
+        if (kind == "mcp" && metadata?.optString("kind") == "mcp_tool_call") {
+            val connectionName = metadata.optString("connection_name")
+                .ifBlank { metadata.optString("connection_id") }
+            val toolName = metadata.optString("tool_name").ifBlank { title }
+            val toolLabel = listOf(connectionName, toolName)
+                .filter(String::isNotBlank)
+                .joinToString(" · ")
+            val risk = when (metadata.optString("risk")) {
+                "low" -> getString(R.string.agent_risk_low)
+                "high" -> getString(R.string.agent_risk_high)
+                else -> getString(R.string.agent_risk_medium)
+            }
+            val permissionArray = metadata.optJSONArray("permissions")
+            val permissions = buildList {
+                if (permissionArray != null) {
+                    for (index in 0 until permissionArray.length()) {
+                        permissionArray.optString(index)
+                            .takeIf(String::isNotBlank)
+                            ?.let(::add)
+                    }
+                }
+            }.joinToString(" · ").ifBlank { "—" }
+            val parameters = metadata.optJSONObject("parameter_preview")
+                ?.toString()
+                ?.take(MAX_CONNECTOR_PROGRESS_DETAIL_CHARACTERS)
+                .orEmpty()
+                .ifBlank { "{}" }
+            return getString(
+                R.string.agent_trace_mcp_tool_details,
+                toolLabel.ifBlank { getString(R.string.agent_trace_connector_operation_mcp) },
+                metadata.optString("source").ifBlank { "—" },
+                risk,
+                permissions,
+                parameters
+            ).take(MAX_CONNECTOR_PROGRESS_TEXT_CHARACTERS)
+        }
         val count = metadata?.optInt("count", 1)?.coerceAtLeast(1) ?: 1
         if (code == "image_view") {
             return resources.getQuantityString(

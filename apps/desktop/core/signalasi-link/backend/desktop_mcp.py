@@ -4,13 +4,15 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
+import logging
 import os
 import re
 import threading
 import time
+import uuid
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 from mcp_agent_wrapper import call_mcp_detailed, inspect_mcp_server
@@ -35,6 +37,10 @@ HEADER_NAME = re.compile(r"[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}\Z")
 ENVIRONMENT_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}\Z")
 MCP_TRANSPORTS = {"local_stdio", "streamable_http"}
 MCP_STATES = {"configured", "connecting", "ready", "error", "disabled"}
+MAX_LIVE_PARAMETER_PREVIEW_BYTES = 4_096
+
+
+log = logging.getLogger("signalasi.desktop-mcp")
 
 
 def _state_path() -> Path:
@@ -301,16 +307,67 @@ class DesktopMcpRegistry:
         *,
         explicit_user_selection: bool = False,
         audit_context: dict[str, Any] | None = None,
+        tool_call_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         connection = self._require(connection_id)
         if not connection.enabled:
             raise RuntimeError("MCP connection is disabled")
         started = time.monotonic()
+        invocation_id = str(uuid.uuid4())
         assessment: McpToolAssessment | None = None
         permission_decision = None
         selected_tool = connection.default_tool
         context = dict(audit_context or {})
         self._record_runtime(connection.id, state="connecting", last_error="")
+
+        def publish_tool_call(status: str, *, duration_ms: int = 0, error: str = "") -> None:
+            if tool_call_callback is None or assessment is None or permission_decision is None:
+                return
+            preview = assessment.parameter_preview
+            encoded_preview = json.dumps(
+                preview,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            if len(encoded_preview.encode("utf-8")) > MAX_LIVE_PARAMETER_PREVIEW_BYTES:
+                preview = {
+                    "truncated": True,
+                    "summary": sanitize_mcp_text(
+                        encoded_preview,
+                        MAX_LIVE_PARAMETER_PREVIEW_BYTES,
+                    ),
+                }
+            event = {
+                "kind": "mcp_tool_call",
+                "invocation_id": invocation_id,
+                "connection_id": connection.id,
+                "connection_name": connection.name,
+                "tool_name": str(selected_tool or "unknown")[:160],
+                "transport": connection.transport,
+                "source": f"desktop-mcp:{connection.id}",
+                "risk": assessment.risk,
+                "permissions": list(assessment.permissions),
+                "parameter_preview": preview,
+                "input_sha256": assessment.input_sha256,
+                "permission_mode": normalize_permission_mode(connection.permission_mode),
+                "permission_decision": permission_decision.code,
+                "allowed": bool(permission_decision.allowed),
+                "required_user_action": permission_decision.required_user_action,
+                "status": str(status or "running")[:32],
+                "duration_ms": max(0, int(duration_ms)),
+            }
+            if error:
+                event["error"] = sanitize_mcp_text(error, 500)
+            try:
+                tool_call_callback(event)
+            except Exception as exc:
+                log.warning(
+                    "MCP tool-call event callback failed connection_id=%s invocation_id=%s: %s",
+                    connection.id,
+                    invocation_id,
+                    exc,
+                )
 
         def authorize(tool: dict[str, Any], arguments: dict[str, Any]) -> None:
             nonlocal assessment, permission_decision, selected_tool
@@ -320,6 +377,9 @@ class DesktopMcpRegistry:
                 connection.permission_mode,
                 assessment,
                 explicit_user_selection=explicit_user_selection,
+            )
+            publish_tool_call(
+                "running" if permission_decision.allowed else "denied",
             )
             if not permission_decision.allowed:
                 raise McpPermissionDenied(permission_decision, assessment)
@@ -368,6 +428,7 @@ class DesktopMcpRegistry:
                 duration_ms=duration_ms,
                 output_sha256=sha256_json({"result": result}),
             )
+            publish_tool_call("succeeded", duration_ms=duration_ms)
             return {
                 "id": connection.id,
                 "name": connection.name,
@@ -399,6 +460,11 @@ class DesktopMcpRegistry:
                 duration_ms=duration_ms,
                 error_code=decision_code,
                 error_message=str(error)[:500],
+            )
+            publish_tool_call(
+                "denied" if isinstance(error, McpPermissionDenied) else "failed",
+                duration_ms=duration_ms,
+                error=str(error),
             )
             if not isinstance(error, McpPermissionDenied):
                 self._record_runtime(
