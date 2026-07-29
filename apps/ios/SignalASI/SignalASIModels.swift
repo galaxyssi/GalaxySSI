@@ -1228,6 +1228,38 @@ enum AgentReputationReceiptProvenance: String, Codable, CaseIterable, Identifiab
   }
 }
 
+enum AgentReputationVerificationVerdict: String, Codable, CaseIterable, Identifiable {
+  case passed = "PASSED"
+  case failed = "FAILED"
+  case inconclusive = "INCONCLUSIVE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentReputationVerificationVerdict? {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    guard let value = Self.fromWireValue(try container.decode(String.self)) else {
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "Unknown agent reputation verification verdict"
+      )
+    }
+    self = value
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
 struct AgentSignedExecutionReceipt: Codable, Equatable {
   static let currentVersion = 1
 
@@ -1348,6 +1380,131 @@ struct AgentSignedExecutionReceipt: Codable, Equatable {
   }
 }
 
+struct AgentSignedReputationAttestation: Codable, Equatable {
+  static let currentVersion = 1
+
+  var attestationId: String
+  var receiptId: String
+  var receiptPayloadHash: String
+  var verifierAgentId: String
+  var verifierInstallationId: String
+  var verifierFailureDomain: String
+  var verdict: AgentReputationVerificationVerdict
+  var evidenceHash: String
+  var createdAtMillis: Int64
+  var signerId: String
+  var signatureKeyId: String
+  var signature: String
+
+  var canonicalJson: String {
+    AgentMcpJSONCodec.stringify(canonicalObject())
+  }
+
+  init(
+    attestationId: String,
+    receiptId: String,
+    receiptPayloadHash: String,
+    verifierAgentId: String,
+    verifierInstallationId: String,
+    verifierFailureDomain: String,
+    verdict: AgentReputationVerificationVerdict,
+    evidenceHash: String,
+    createdAtMillis: Int64,
+    signerId: String,
+    signatureKeyId: String,
+    signature: String
+  ) {
+    self.attestationId = attestationId
+    self.receiptId = receiptId
+    self.receiptPayloadHash = receiptPayloadHash
+    self.verifierAgentId = verifierAgentId
+    self.verifierInstallationId = verifierInstallationId
+    self.verifierFailureDomain = verifierFailureDomain
+    self.verdict = verdict
+    self.evidenceHash = evidenceHash
+    self.createdAtMillis = createdAtMillis
+    self.signerId = signerId
+    self.signatureKeyId = signatureKeyId
+    self.signature = signature
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case attestationId = "attestation_id"
+    case receiptId = "receipt_id"
+    case receiptPayloadHash = "receipt_payload_hash"
+    case verifierAgentId = "verifier_agent_id"
+    case verifierInstallationId = "verifier_installation_id"
+    case verifierFailureDomain = "verifier_failure_domain"
+    case verdict
+    case evidenceHash = "evidence_hash"
+    case createdAtMillis = "created_at_millis"
+    case signerId = "signer_id"
+    case signatureKeyId = "signature_key_id"
+    case signature
+  }
+
+  func canonicalPayload() -> Data {
+    Data(canonicalJson.utf8)
+  }
+
+  func canonicalObject() -> AgentMcpJSONObject {
+    [
+      "version": .int(Int64(Self.currentVersion)),
+      "attestation_id": .string(attestationId),
+      "receipt_id": .string(receiptId),
+      "receipt_payload_hash": .string(receiptPayloadHash.lowercased()),
+      "verifier_agent_id": .string(verifierAgentId),
+      "verifier_installation_id": .string(verifierInstallationId),
+      "verifier_failure_domain": .string(verifierFailureDomain),
+      "verdict": .string(verdict.rawValue),
+      "evidence_hash": .string(evidenceHash.lowercased()),
+      "created_at_millis": .int(createdAtMillis),
+      "signer_id": .string(signerId),
+      "signature_key_id": .string(signatureKeyId.lowercased())
+    ]
+  }
+
+  func validationFailure(
+    for receipt: AgentSignedExecutionReceipt,
+    nowMillis: Int64
+  ) -> String? {
+    guard AgentReputationValidation.validId(attestationId),
+      AgentReputationValidation.validId(verifierAgentId),
+      AgentReputationValidation.validId(verifierInstallationId),
+      AgentReputationValidation.validId(signerId) else {
+      return AgentReputationValidation.identityInvalidReason
+    }
+    guard AgentReputationValidation.isSha256(receiptPayloadHash),
+      AgentReputationValidation.isSha256(evidenceHash),
+      AgentReputationValidation.isSha256(signatureKeyId) else {
+      return AgentReputationValidation.hashInvalidReason
+    }
+    guard receiptPayloadHash == agentReputationSha256(receipt.canonicalPayload()) else {
+      return AgentRemoteReputation.invalidBindingReason
+    }
+    let verifierDomain = verifierFailureDomain.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard verifierAgentId != receipt.agentId,
+      verifierInstallationId != receipt.installationId,
+      signerId != receipt.signerId,
+      !verifierDomain.isEmpty,
+      verifierDomain != receipt.executorFailureDomain else {
+      return AgentReputationValidation.independenceBoundaryInvalidReason
+    }
+    guard verifierInstallationId == signerId else {
+      return AgentReputationValidation.signerSubjectMismatchReason
+    }
+    guard createdAtMillis >= receipt.completedAtMillis,
+      createdAtMillis <= nowMillis + AgentReputationValidation.maxClockSkewMillis else {
+      return AgentReputationValidation.timeBoundaryInvalidReason
+    }
+    guard !signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      signature.count <= AgentReputationValidation.maxSignatureCharacters else {
+      return AgentReputationValidation.signatureInvalidReason
+    }
+    return nil
+  }
+}
+
 enum AgentReputationWireCodec {
   static func decodeReceipt(_ raw: String) -> AgentSignedExecutionReceipt? {
     guard let data = raw.data(using: .utf8),
@@ -1409,6 +1566,49 @@ enum AgentReputationWireCodec {
       }
       result.insert(capability)
     }
+  }
+
+  static func decodeAttestation(_ raw: String) -> AgentSignedReputationAttestation? {
+    guard let data = raw.data(using: .utf8),
+      let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
+      return nil
+    }
+    return decodeAttestation(object)
+  }
+
+  static func decodeAttestation(_ object: AgentMcpJSONObject?) -> AgentSignedReputationAttestation? {
+    guard let object,
+      object.int64("version") == 0 || object.int64("version") == Int64(AgentSignedReputationAttestation.currentVersion),
+      let verdict = AgentReputationVerificationVerdict.fromWireValue(object.string("verdict")) else {
+      return nil
+    }
+    let attestation = AgentSignedReputationAttestation(
+      attestationId: object.string("attestation_id"),
+      receiptId: object.string("receipt_id"),
+      receiptPayloadHash: object.string("receipt_payload_hash"),
+      verifierAgentId: object.string("verifier_agent_id"),
+      verifierInstallationId: object.string("verifier_installation_id"),
+      verifierFailureDomain: object.string("verifier_failure_domain"),
+      verdict: verdict,
+      evidenceHash: object.string("evidence_hash"),
+      createdAtMillis: object.int64("created_at_millis"),
+      signerId: object.string("signer_id"),
+      signatureKeyId: object.string("signature_key_id"),
+      signature: object.string("signature")
+    )
+    guard !attestation.attestationId.isEmpty,
+      !attestation.receiptId.isEmpty,
+      !attestation.receiptPayloadHash.isEmpty,
+      !attestation.verifierAgentId.isEmpty,
+      !attestation.verifierInstallationId.isEmpty,
+      !attestation.verifierFailureDomain.isEmpty,
+      !attestation.evidenceHash.isEmpty,
+      !attestation.signerId.isEmpty,
+      !attestation.signatureKeyId.isEmpty,
+      !attestation.signature.isEmpty else {
+      return nil
+    }
+    return attestation
   }
 }
 
@@ -1472,6 +1672,29 @@ enum AgentRemoteReputation {
 
 func agentReputationSha256(_ data: Data) -> String {
   SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+}
+
+private enum AgentReputationValidation {
+  static let identityInvalidReason = "identity_invalid"
+  static let hashInvalidReason = "hash_invalid"
+  static let independenceBoundaryInvalidReason = "independence_boundary_invalid"
+  static let signerSubjectMismatchReason = "signer_subject_mismatch"
+  static let timeBoundaryInvalidReason = "time_boundary_invalid"
+  static let signatureInvalidReason = "signature_invalid"
+
+  static let maxClockSkewMillis: Int64 = 5 * 60 * 1_000
+  static let maxIdCharacters = 256
+  static let maxSignatureCharacters = 2_048
+  private static let sha256Pattern = #"^[0-9a-fA-F]{64}$"#
+
+  static func validId(_ value: String) -> Bool {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return !trimmed.isEmpty && trimmed.count <= maxIdCharacters
+  }
+
+  static func isSha256(_ value: String) -> Bool {
+    value.range(of: sha256Pattern, options: .regularExpression) != nil
+  }
 }
 
 enum AgentNativeToolLocation: String, Codable, CaseIterable, Identifiable {
