@@ -800,6 +800,94 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("waiting_approval"), .paused)
   }
 
+  func testAgentFailoverPolicyMatchesAndroidDesktopFallbackAndTimeoutStages() {
+    let primary = AgentFailoverResource(location: .trustedDesktop, failureDomain: "desktop-a")
+    let cloud = AgentFailoverResource(location: .cloud, failureDomain: "cloud-openai")
+    let phone = AgentFailoverResource(location: .phone, failureDomain: "phone")
+    let otherDesktop = AgentFailoverResource(location: .trustedDesktop, failureDomain: "desktop-b")
+    let sameDesktop = AgentFailoverResource(location: .trustedDesktop, failureDomain: "desktop-a")
+
+    XCTAssertEqual(AgentFailoverPolicy.fallbackTier(primary: primary, candidate: cloud), 0)
+    XCTAssertEqual(AgentFailoverPolicy.fallbackTier(primary: primary, candidate: phone), 0)
+    XCTAssertEqual(AgentFailoverPolicy.fallbackTier(primary: primary, candidate: otherDesktop), 1)
+    XCTAssertEqual(AgentFailoverPolicy.fallbackTier(primary: primary, candidate: sameDesktop), 2)
+    XCTAssertEqual(AgentFailoverPolicy.fallbackTier(primary: phone, candidate: sameDesktop), 0)
+
+    XCTAssertTrue(
+      AgentFailoverPolicy.shouldFailOver(stage: .notAccepted, status: "", liveReadOnly: false)
+    )
+    XCTAssertFalse(
+      AgentFailoverPolicy.shouldFailOver(stage: .notAccepted, status: "accepted", liveReadOnly: false)
+    )
+    XCTAssertTrue(
+      AgentFailoverPolicy.shouldFailOver(stage: .notRunning, status: "queued", liveReadOnly: false)
+    )
+    XCTAssertFalse(
+      AgentFailoverPolicy.shouldFailOver(stage: .notRunning, status: "running", liveReadOnly: false)
+    )
+    XCTAssertTrue(
+      AgentFailoverPolicy.shouldFailOver(stage: .readOnlyStale, status: "running", liveReadOnly: true)
+    )
+    XCTAssertFalse(
+      AgentFailoverPolicy.shouldFailOver(stage: .readOnlyStale, status: "running", liveReadOnly: false)
+    )
+  }
+
+  func testAgentFailoverPolicyMatchesAndroidOnlyResourceAndCooldownBehavior() {
+    XCTAssertTrue(
+      AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage: .notRunning, status: "accepted", hasFallback: false)
+    )
+    XCTAssertTrue(
+      AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage: .notRunning, status: "queued", hasFallback: false)
+    )
+    XCTAssertFalse(
+      AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage: .notRunning, status: "accepted", hasFallback: true)
+    )
+    XCTAssertTrue(
+      AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage: .notAccepted, status: "", hasFallback: false)
+    )
+    XCTAssertFalse(
+      AgentFailoverPolicy.shouldKeepOnlyResourceAlive(stage: .readOnlyStale, status: "running", hasFallback: false)
+    )
+
+    XCTAssertEqual(AgentFailoverPolicy.domainCooldownMs(consecutiveFailures: 0), 60_000)
+    XCTAssertEqual(AgentFailoverPolicy.domainCooldownMs(consecutiveFailures: 1), 60_000)
+    XCTAssertEqual(AgentFailoverPolicy.domainCooldownMs(consecutiveFailures: 2), 5 * 60_000)
+    XCTAssertEqual(AgentFailoverPolicy.domainCooldownMs(consecutiveFailures: 3), 15 * 60_000)
+    XCTAssertEqual(AgentFailoverPolicy.domainCooldownMs(consecutiveFailures: 8), 60 * 60_000)
+  }
+
+  func testAgentConnectorTimingPolicyMatchesAndroidAttachmentDeadlinesAndWireNames() throws {
+    let regular = AgentConnectorTimingPolicy.deadlines(hasAttachments: false)
+    let attachment = AgentConnectorTimingPolicy.deadlines(hasAttachments: true)
+
+    XCTAssertEqual(regular.acceptedMs, 5_000)
+    XCTAssertEqual(regular.runningMs, 8_000)
+    XCTAssertEqual(regular.liveStaleMs, 15_000)
+    XCTAssertEqual(attachment.acceptedMs, 60_000)
+    XCTAssertEqual(attachment.runningMs, 90_000)
+    XCTAssertGreaterThan(attachment.liveStaleMs, regular.liveStaleMs)
+
+    let encoded = try JSONEncoder.signalASI.encode(attachment)
+    let encodedObject = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    XCTAssertEqual(encodedObject["accepted_ms"] as? Int, 60_000)
+    XCTAssertEqual(encodedObject["running_ms"] as? Int, 90_000)
+    XCTAssertEqual(encodedObject["live_stale_ms"] as? Int, 180_000)
+
+    let stage = try JSONDecoder.signalASI.decode(
+      AgentConnectorTimeoutStage.self,
+      from: Data(#""READ_ONLY_STALE""#.utf8)
+    )
+    let resource = try JSONDecoder.signalASI.decode(
+      AgentFailoverResource.self,
+      from: Data(#"{"location":"TRUSTED_DESKTOP","failure_domain":"desktop-a"}"#.utf8)
+    )
+
+    XCTAssertEqual(stage, .readOnlyStale)
+    XCTAssertEqual(resource.location, .trustedDesktop)
+    XCTAssertEqual(resource.failureDomain, "desktop-a")
+  }
+
   func testAgentCronExpressionMatchesAndroidTimeZoneAndWeekdayBehavior() throws {
     func millis(
       year: Int,

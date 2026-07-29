@@ -1233,6 +1233,140 @@ enum AgentExecutionPresentationPolicy {
   private static let targetSeparator = " \u{00b7} "
 }
 
+enum AgentConnectorTimeoutStage: String, Codable, CaseIterable, Identifiable {
+  case notAccepted = "NOT_ACCEPTED"
+  case notRunning = "NOT_RUNNING"
+  case readOnlyStale = "READ_ONLY_STALE"
+
+  var id: String { rawValue }
+}
+
+struct AgentConnectorTimeoutSchedule: Codable, Equatable {
+  var acceptedMs: Int64
+  var runningMs: Int64
+  var liveStaleMs: Int64
+
+  enum CodingKeys: String, CodingKey {
+    case acceptedMs = "accepted_ms"
+    case runningMs = "running_ms"
+    case liveStaleMs = "live_stale_ms"
+  }
+
+  init(acceptedMs: Int64, runningMs: Int64, liveStaleMs: Int64) {
+    self.acceptedMs = acceptedMs
+    self.runningMs = runningMs
+    self.liveStaleMs = liveStaleMs
+  }
+}
+
+enum AgentFailoverResourceLocation: String, Codable, CaseIterable, Identifiable {
+  case phone = "PHONE"
+  case trustedDesktop = "TRUSTED_DESKTOP"
+  case privateNetwork = "PRIVATE_NETWORK"
+  case cloud = "CLOUD"
+
+  var id: String { rawValue }
+}
+
+struct AgentFailoverResource: Codable, Equatable {
+  var location: AgentFailoverResourceLocation
+  var failureDomain: String
+
+  enum CodingKeys: String, CodingKey {
+    case location
+    case failureDomain = "failure_domain"
+  }
+
+  init(location: AgentFailoverResourceLocation, failureDomain: String = "") {
+    self.location = location
+    self.failureDomain = failureDomain
+  }
+}
+
+enum AgentFailoverPolicy {
+  static func fallbackTier(primary: AgentFailoverResource?, candidate: AgentFailoverResource) -> Int {
+    guard let primary = primary, primary.location == .trustedDesktop else {
+      return 0
+    }
+    switch candidate.location {
+    case .cloud, .phone:
+      return 0
+    case .trustedDesktop, .privateNetwork:
+      return candidate.failureDomain != primary.failureDomain ? 1 : 2
+    }
+  }
+
+  static func shouldFailOver(
+    stage: AgentConnectorTimeoutStage,
+    status: String,
+    liveReadOnly: Bool
+  ) -> Bool {
+    switch stage {
+    case .notAccepted:
+      return normalizedStatus(status).isEmpty
+    case .notRunning:
+      return normalizedStatus(status).isEmpty || waitingStatuses.contains(normalizedStatus(status))
+    case .readOnlyStale:
+      return liveReadOnly && normalizedStatus(status) == "running"
+    }
+  }
+
+  static func shouldKeepOnlyResourceAlive(
+    stage: AgentConnectorTimeoutStage,
+    status: String,
+    hasFallback: Bool
+  ) -> Bool {
+    if hasFallback {
+      return false
+    }
+    switch stage {
+    case .notAccepted:
+      return normalizedStatus(status).isEmpty
+    case .notRunning:
+      return normalizedStatus(status).isEmpty || waitingStatuses.contains(normalizedStatus(status))
+    case .readOnlyStale:
+      return false
+    }
+  }
+
+  static func domainCooldownMs(consecutiveFailures: Int) -> Int64 {
+    switch max(consecutiveFailures, 1) {
+    case 1:
+      return 60_000
+    case 2:
+      return 5 * 60_000
+    case 3:
+      return 15 * 60_000
+    default:
+      return 60 * 60_000
+    }
+  }
+
+  private static func normalizedStatus(_ status: String) -> String {
+    status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  private static let waitingStatuses: Set<String> = ["accepted", "queued", "starting"]
+}
+
+enum AgentConnectorTimingPolicy {
+  static func deadlines(hasAttachments: Bool) -> AgentConnectorTimeoutSchedule {
+    hasAttachments ? attachment : interactive
+  }
+
+  private static let interactive = AgentConnectorTimeoutSchedule(
+    acceptedMs: 5_000,
+    runningMs: 8_000,
+    liveStaleMs: 15_000
+  )
+
+  private static let attachment = AgentConnectorTimeoutSchedule(
+    acceptedMs: 60_000,
+    runningMs: 90_000,
+    liveStaleMs: 180_000
+  )
+}
+
 enum AgentCronExpressionError: LocalizedError, Equatable {
   case invalid(String)
 
