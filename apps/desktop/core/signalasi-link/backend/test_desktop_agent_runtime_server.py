@@ -8,6 +8,7 @@ from desktop_agent_adapters import (
     AgentAdapterDescriptor,
     AgentAdapterExecutionError,
     AgentAdapterRequest,
+    AgentInvocationMode,
     DesktopAgentProvider,
     DesktopAgentStateStore,
 )
@@ -140,6 +141,40 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         self.assertEqual(1, len(sessions))
         self.assertEqual(2, sessions[0]["run_count"])
         self.assertEqual("run-2", sessions[0]["last_run_id"])
+
+    def test_parent_child_agent_runs_are_persisted_and_queryable(self):
+        server = self.server(descriptors=(descriptor("codex"), descriptor("hermes")))
+        result = server.execute(AgentAdapterRequest(
+            agent_id="hermes",
+            prompt="Verify the implementation",
+            run_id="child-run",
+            idempotency_key="child-run",
+            invocation_mode=AgentInvocationMode.TOOL,
+            caller_agent_id="codex",
+            parent_run_id="parent-run",
+            handoff_chain=("coordinator", "codex"),
+            conversation_id="conversation-1",
+            checkpoint={
+                "client_route_id": "phone-1",
+                "task_id": "parent-run",
+                "turn_id": "turn-child",
+            },
+        ))
+
+        child = server.status("child-run")
+        children = server.runs(parent_run_id="parent-run")
+
+        self.assertEqual("completed", result.state)
+        self.assertEqual("tool", child["invocation_mode"])
+        self.assertEqual("codex", child["caller_agent_id"])
+        self.assertEqual("parent-run", child["parent_run_id"])
+        self.assertEqual(["coordinator", "codex"], child["handoff_chain"])
+        self.assertEqual("codex", child["response_owner_agent_id"])
+        self.assertEqual(["child-run"], [item["run_id"] for item in children])
+        self.assertEqual(
+            ["child-run"],
+            [item["run_id"] for item in server.runs(invocation_mode="tool")],
+        )
 
     def test_routes_or_conversations_get_distinct_sessions(self):
         server = self.server()

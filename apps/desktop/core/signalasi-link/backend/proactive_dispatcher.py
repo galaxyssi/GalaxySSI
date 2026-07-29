@@ -18,6 +18,7 @@ from proactive_tasks import (
 
 MAX_OBSERVATION_CHARS = 8_000
 MAX_CAUSE_CHARS = 12_000
+PROACTIVE_RUNTIME_AGENT_ID = "signalasi.proactive.runtime"
 
 
 class DesktopProactiveDispatcher:
@@ -159,6 +160,10 @@ class DesktopProactiveDispatcher:
                 run,
                 expect_goal_state=False,
                 collaboration=collaboration,
+                invocation_mode="tool",
+                caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+                parent_run_id=run.run_id,
+                handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
             )
             coordination_plan = str(planning_result.get("reply") or "").strip()[
                 :MAX_OBSERVATION_CHARS
@@ -185,6 +190,7 @@ class DesktopProactiveDispatcher:
             worker_prompt,
             phase="specialist_execution" if specialist_mode else "investigation",
             collaboration=collaboration,
+            caller_agent_id=lead["agent_id"],
         )
         lead_prompt = self._lead_prompt(
             base_prompt,
@@ -198,6 +204,10 @@ class DesktopProactiveDispatcher:
             run,
             expect_goal_state=True,
             collaboration=collaboration,
+            invocation_mode="handoff",
+            caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+            parent_run_id=run.run_id,
+            handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
         )
         reply = str(lead_result.get("reply") or "")
         self._publish_team_message(
@@ -214,6 +224,7 @@ class DesktopProactiveDispatcher:
             self._verification_prompt(base_prompt, reply),
             phase="verification",
             collaboration=collaboration,
+            caller_agent_id=lead["agent_id"],
         )
         if verification:
             revision_prompt = (
@@ -231,6 +242,10 @@ class DesktopProactiveDispatcher:
                 run,
                 expect_goal_state=True,
                 collaboration=collaboration,
+                invocation_mode="handoff",
+                caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+                parent_run_id=run.run_id,
+                handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
             )
             reply = str(lead_result.get("reply") or reply)
             self._publish_team_message(
@@ -368,6 +383,10 @@ class DesktopProactiveDispatcher:
                         conversation_id=(
                             f"{conversation_prefix}:{coordinator['agent_id']}"
                         ),
+                        invocation_mode="tool",
+                        caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+                        parent_run_id=run.run_id,
+                        handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
                     )
                 plan = str(planning.get("reply") or "")[:MAX_OBSERVATION_CHARS]
                 self._publish_team_message(
@@ -392,6 +411,7 @@ class DesktopProactiveDispatcher:
                     self._headless_specialist_prompt(spec, plan, review_context),
                     collaboration,
                     phase="headless_investigation",
+                    caller_agent_id=coordinator["agent_id"],
                 )
                 if spec.workflow == "pr_review":
                     final_result = self._run_agent(
@@ -410,6 +430,10 @@ class DesktopProactiveDispatcher:
                         conversation_id=(
                             f"{conversation_prefix}:{coordinator['agent_id']}"
                         ),
+                        invocation_mode="handoff",
+                        caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+                        parent_run_id=run.run_id,
+                        handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
                     )
                     workspace.assert_read_only()
                     reply = str(final_result.get("reply") or "")
@@ -465,6 +489,10 @@ class DesktopProactiveDispatcher:
                     conversation_id=(
                         f"{conversation_prefix}:{coordinator['agent_id']}"
                     ),
+                    invocation_mode="tool",
+                    caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+                    parent_run_id=run.run_id,
+                    handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
                 )
                 self._progress(
                     run,
@@ -498,6 +526,7 @@ class DesktopProactiveDispatcher:
                     ),
                     collaboration,
                     phase="headless_verification",
+                    caller_agent_id=coordinator["agent_id"],
                 )
                 with workspace.observer(
                     "coordinator-final",
@@ -520,6 +549,10 @@ class DesktopProactiveDispatcher:
                         conversation_id=(
                             f"{conversation_prefix}:{coordinator['agent_id']}"
                         ),
+                        invocation_mode="handoff",
+                        caller_agent_id=PROACTIVE_RUNTIME_AGENT_ID,
+                        parent_run_id=run.run_id,
+                        handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID,),
                     )
                 reply = str(final_result.get("reply") or "")
                 return {
@@ -561,6 +594,7 @@ class DesktopProactiveDispatcher:
         collaboration: dict | None,
         *,
         phase: str,
+        caller_agent_id: str,
     ) -> list[dict[str, str]]:
         if not members:
             return []
@@ -590,6 +624,10 @@ class DesktopProactiveDispatcher:
                     conversation_id=(
                         f"headless:{task.task_id}:{run.run_id}:{member['agent_id']}"
                     ),
+                    invocation_mode="tool",
+                    caller_agent_id=caller_agent_id,
+                    parent_run_id=run.run_id,
+                    handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID, caller_agent_id),
                 )
                 return str(result.get("reply") or "")
 
@@ -783,6 +821,7 @@ class DesktopProactiveDispatcher:
         *,
         phase: str,
         collaboration: dict | None = None,
+        caller_agent_id: str = PROACTIVE_RUNTIME_AGENT_ID,
     ) -> list[dict[str, str]]:
         if not members:
             return []
@@ -800,6 +839,7 @@ class DesktopProactiveDispatcher:
                     run,
                     phase,
                     collaboration,
+                    caller_agent_id,
                 ): member
                 for member in members
             }
@@ -842,6 +882,7 @@ class DesktopProactiveDispatcher:
         run: ProactiveRun,
         phase: str,
         collaboration: dict | None,
+        caller_agent_id: str,
     ) -> str:
         instructions = member.get("instructions", "").strip()
         prompt = (
@@ -859,6 +900,10 @@ class DesktopProactiveDispatcher:
             run,
             expect_goal_state=False,
             collaboration=collaboration,
+            invocation_mode="tool",
+            caller_agent_id=caller_agent_id,
+            parent_run_id=run.run_id,
+            handoff_chain=(PROACTIVE_RUNTIME_AGENT_ID, caller_agent_id),
         )
         reply = str(result.get("reply") or "")
         self._publish_team_message(
@@ -882,6 +927,10 @@ class DesktopProactiveDispatcher:
         working_directory: str = "",
         desktop_access_profile: str = "",
         conversation_id: str = "",
+        invocation_mode: str = "direct",
+        caller_agent_id: str = "",
+        parent_run_id: str = "",
+        handoff_chain: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         from agent_execution_harness import execution_policy_for
         from agent_gateway import deliver_agent_sync
@@ -899,6 +948,10 @@ class DesktopProactiveDispatcher:
                 agent_id,
                 prompt,
                 task_id=f"{run.run_id}:{agent_id}:{invocation_hash}",
+                invocation_mode=invocation_mode,
+                caller_agent_id=caller_agent_id,
+                parent_run_id=parent_run_id,
+                handoff_chain=handoff_chain,
                 conversation_id=(
                     str(conversation_id or "").strip()
                     or str(collaboration_scope.get("conversation_id") or "")

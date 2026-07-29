@@ -22,12 +22,13 @@ from desktop_agent_adapters import (
     AgentAdapterRequest,
     AgentAdapterResult,
     AgentDeliveryMode,
+    AgentInvocationMode,
     DesktopAgentProvider,
 )
 
 
 RUNTIME_PROTOCOL = "signalasi.agent-runtime/1.0"
-RUNTIME_STATE_VERSION = 2
+RUNTIME_STATE_VERSION = 3
 DEFAULT_MAX_WORKERS = 4
 DEFAULT_MAX_QUEUED_RUNS = 64
 DEFAULT_AGENT_FAILURE_THRESHOLD = 3
@@ -339,6 +340,10 @@ class DesktopAgentRuntimeStore:
                 "session_id": session_id,
                 "agent_id": request.agent_id,
                 "delivery_mode": request.delivery_mode.value,
+                "invocation_mode": request.invocation_mode.value,
+                "caller_agent_id": request.caller_agent_id,
+                "parent_run_id": request.parent_run_id,
+                "handoff_chain": list(request.handoff_chain),
                 "client_route_id": route_id,
                 "conversation_id": request.conversation_id,
                 "task_id": str(request.checkpoint.get("task_id") or request.run_id).strip(),
@@ -439,8 +444,14 @@ class DesktopAgentRuntimeStore:
         state: str = "",
         agent_id: str = "",
         session_id: str = "",
+        invocation_mode: str = "",
+        caller_agent_id: str = "",
+        parent_run_id: str = "",
         limit: int = 100,
     ) -> list[dict]:
+        normalized_invocation_mode = str(invocation_mode or "").strip().lower()
+        if normalized_invocation_mode:
+            AgentInvocationMode.parse(normalized_invocation_mode)
         with self._lock:
             rows = [
                 row
@@ -448,6 +459,19 @@ class DesktopAgentRuntimeStore:
                 if (not state or str(row.get("state") or "") == state)
                 and (not agent_id or str(row.get("agent_id") or "") == agent_id)
                 and (not session_id or str(row.get("session_id") or "") == session_id)
+                and (
+                    not normalized_invocation_mode
+                    or str(row.get("invocation_mode") or "direct")
+                    == normalized_invocation_mode
+                )
+                and (
+                    not caller_agent_id
+                    or str(row.get("caller_agent_id") or "") == caller_agent_id
+                )
+                and (
+                    not parent_run_id
+                    or str(row.get("parent_run_id") or "") == parent_run_id
+                )
             ]
             rows.sort(key=lambda row: int(row.get("created_at") or 0), reverse=True)
             return [self._public_run(row) for row in rows[:max(1, min(int(limit or 100), 500))]]
@@ -660,6 +684,10 @@ class DesktopAgentRuntimeStore:
                 "agent_id": request.agent_id,
                 "prompt": request.prompt,
                 "delivery_mode": request.delivery_mode.value,
+                "invocation_mode": request.invocation_mode.value,
+                "caller_agent_id": request.caller_agent_id,
+                "parent_run_id": request.parent_run_id,
+                "handoff_chain": request.handoff_chain,
                 "protocol": request.protocol,
                 "required_features": sorted(request.required_features),
                 "allow_protocol_downgrade": request.allow_protocol_downgrade,
@@ -690,6 +718,16 @@ class DesktopAgentRuntimeStore:
             agent_id=str(payload.get("agent_id") or ""),
             delivery_mode=AgentDeliveryMode.parse(payload.get("delivery_mode") or "respond"),
             state=str(payload.get("state") or "unknown"),
+            invocation_mode=AgentInvocationMode.parse(
+                payload.get("invocation_mode") or "direct"
+            ),
+            caller_agent_id=str(payload.get("caller_agent_id") or ""),
+            parent_run_id=str(payload.get("parent_run_id") or ""),
+            handoff_chain=tuple(
+                str(item or "").strip()
+                for item in payload.get("handoff_chain", [])
+                if str(item or "").strip()
+            ),
             reply=str(payload.get("reply") or ""),
             error=str(payload.get("error") or ""),
             cursor=int(payload.get("cursor") or 0),
@@ -712,6 +750,19 @@ class DesktopAgentRuntimeStore:
             "session_id": str(row.get("session_id") or ""),
             "agent_id": str(row.get("agent_id") or ""),
             "delivery_mode": str(row.get("delivery_mode") or ""),
+            "invocation_mode": str(row.get("invocation_mode") or "direct"),
+            "caller_agent_id": str(row.get("caller_agent_id") or ""),
+            "parent_run_id": str(row.get("parent_run_id") or ""),
+            "handoff_chain": [
+                str(item or "").strip()
+                for item in row.get("handoff_chain", [])
+                if str(item or "").strip()
+            ],
+            "response_owner_agent_id": (
+                str(row.get("caller_agent_id") or "")
+                if str(row.get("invocation_mode") or "direct") == "tool"
+                else str(row.get("agent_id") or "")
+            ),
             "client_route_id": str(row.get("client_route_id") or ""),
             "conversation_id": str(row.get("conversation_id") or ""),
             "task_id": str(row.get("task_id") or ""),
@@ -845,12 +896,18 @@ class DesktopAgentRuntimeServer:
         state: str = "",
         agent_id: str = "",
         session_id: str = "",
+        invocation_mode: str = "",
+        caller_agent_id: str = "",
+        parent_run_id: str = "",
         limit: int = 100,
     ) -> list[dict]:
         return self.store.runs(
             state=state,
             agent_id=agent_id,
             session_id=session_id,
+            invocation_mode=invocation_mode,
+            caller_agent_id=caller_agent_id,
+            parent_run_id=parent_run_id,
             limit=limit,
         )
 
@@ -919,6 +976,9 @@ class DesktopAgentRuntimeServer:
                 "bounded_async_scheduling",
                 "durable_run_registry",
                 "durable_session_registry",
+                "agent_as_tool",
+                "explicit_handoff",
+                "parent_child_runs",
                 "strict_idempotency",
                 "event_cursor",
                 "cancellation",
@@ -1006,6 +1066,16 @@ class DesktopAgentRuntimeServer:
             agent_id=str(snapshot.get("agent_id") or ""),
             delivery_mode=AgentDeliveryMode.parse(snapshot.get("delivery_mode") or "respond"),
             state=str(snapshot.get("state") or "unknown"),
+            invocation_mode=AgentInvocationMode.parse(
+                snapshot.get("invocation_mode") or "direct"
+            ),
+            caller_agent_id=str(snapshot.get("caller_agent_id") or ""),
+            parent_run_id=str(snapshot.get("parent_run_id") or ""),
+            handoff_chain=tuple(
+                str(item or "").strip()
+                for item in snapshot.get("handoff_chain", [])
+                if str(item or "").strip()
+            ),
             error=str(snapshot.get("error") or ""),
             replayed=bool(snapshot.get("replayed")),
         )

@@ -241,6 +241,40 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
         self.assertEqual(0, pool.health()["process_count"])
         self.assertEqual(1, pool.health()["metrics"]["cancellations"])
 
+    def test_worker_reservation_is_immediately_cancellable(self):
+        pool = self.pool()
+        failures = []
+        acquired = threading.Event()
+        release_execute = threading.Event()
+        original_acquire = pool._acquire
+
+        def paused_acquire(*args, **kwargs):
+            result = original_acquire(*args, **kwargs)
+            acquired.set()
+            release_execute.wait(timeout=2)
+            return result
+
+        pool._acquire = paused_acquire
+        thread = threading.Thread(
+            target=lambda: self._capture_failure(
+                failures,
+                lambda: self.execute(pool, "sleep:5", "task-reserved", timeout_seconds=10),
+            )
+        )
+        thread.start()
+        self.assertTrue(acquired.wait(timeout=2))
+
+        try:
+            self.assertEqual(1, pool.health()["busy_count"])
+            self.assertTrue(pool.cancel("task-reserved"))
+        finally:
+            release_execute.set()
+            thread.join(timeout=3)
+
+        self.assertTrue(failures)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(0, pool.health()["process_count"])
+
     def test_crash_after_send_is_not_automatically_retried(self):
         pool = self.pool()
 
