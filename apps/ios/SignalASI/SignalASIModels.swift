@@ -2447,6 +2447,41 @@ enum AgentMcpJSONValue: Codable, Equatable {
     return nil
   }
 
+  var stringValue: String? {
+    switch self {
+    case .string(let value):
+      return value
+    case .int(let value):
+      return String(value)
+    case .double(let value):
+      return String(value)
+    case .bool(let value):
+      return value ? "true" : "false"
+    case .object, .array, .null:
+      return nil
+    }
+  }
+
+  var intValue: Int64? {
+    switch self {
+    case .int(let value):
+      return value
+    case .double(let value):
+      return Int64(value)
+    case .string(let value):
+      return Int64(value)
+    case .bool, .object, .array, .null:
+      return nil
+    }
+  }
+
+  var objectValue: AgentMcpJSONObject? {
+    if case .object(let value) = self {
+      return value
+    }
+    return nil
+  }
+
   init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()
     if container.decodeNil() {
@@ -2551,6 +2586,119 @@ enum AgentMcpJSONCodec {
     }
     result += "\""
     return result
+  }
+}
+
+enum UnifiedCommandProtocolError: Error, Equatable {
+  case missingCommand
+}
+
+struct UnifiedCommandResult: Codable, Equatable {
+  var commandId: String
+  var status: String
+  var runId: String
+  var sourceMessageId: String
+  var data: AgentMcpJSONObject
+  var display: AgentMcpJSONObject
+  var errorCode: String
+  var message: String
+
+  init(
+    commandId: String,
+    status: String,
+    runId: String = "",
+    sourceMessageId: String = "",
+    data: AgentMcpJSONObject = [:],
+    display: AgentMcpJSONObject = [:],
+    errorCode: String = "",
+    message: String = ""
+  ) {
+    self.commandId = commandId
+    self.status = status
+    self.runId = runId
+    self.sourceMessageId = sourceMessageId
+    self.data = data
+    self.display = display
+    self.errorCode = errorCode
+    self.message = message
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case commandId = "command_id"
+    case status
+    case runId = "run_id"
+    case sourceMessageId = "source_message_id"
+    case data
+    case display
+    case errorCode = "error_code"
+    case message
+  }
+}
+
+enum UnifiedCommandProtocol {
+  static let requestType = "unified_command"
+  static let resultType = "unified_command_result"
+
+  static func requestPayload(
+    commandId: String,
+    args: AgentMcpJSONObject = [:],
+    raw: String = "",
+    slash: String = "",
+    contactId: String = "system",
+    requestedBy: String = "paired_phone",
+    approve: Bool = false,
+    messageId: String = UUID().uuidString
+  ) throws -> AgentMcpJSONObject {
+    guard !isBlank(commandId) || !isBlank(raw) || !isBlank(slash) else {
+      throw UnifiedCommandProtocolError.missingCommand
+    }
+    return [
+      "type": .string(requestType),
+      "message_id": .string(messageId),
+      "source_message_id": .string(messageId),
+      "contact_id": .string(contactId),
+      "command_id": .string(commandId),
+      "args": .object(args),
+      "raw": .string(raw),
+      "slash": .string(slash),
+      "requested_by": .string(requestedBy),
+      "approve": .bool(approve)
+    ]
+  }
+
+  static func decodeResult(_ payload: AgentMcpJSONObject) -> UnifiedCommandResult? {
+    guard payload.string("type") == resultType else {
+      return nil
+    }
+    let result = payload.object("result") ?? [:]
+    return UnifiedCommandResult(
+      commandId: ifBlank(payload.string("command_id"), fallback: result.string("command_id")),
+      status: ifBlank(payload.string("command_status"), fallback: result.string("status")),
+      runId: result.string("run_id"),
+      sourceMessageId: payload.string("source_message_id"),
+      data: result.object("data") ?? [:],
+      display: result.object("display") ?? [:],
+      errorCode: result.string("error_code"),
+      message: result.string("message")
+    )
+  }
+
+  private static func isBlank(_ value: String) -> Bool {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+  }
+
+  private static func ifBlank(_ value: String, fallback: String) -> String {
+    isBlank(value) ? fallback : value
+  }
+}
+
+private extension Dictionary where Key == String, Value == AgentMcpJSONValue {
+  func string(_ key: String) -> String {
+    self[key]?.stringValue ?? ""
+  }
+
+  func object(_ key: String) -> AgentMcpJSONObject? {
+    self[key]?.objectValue
   }
 }
 

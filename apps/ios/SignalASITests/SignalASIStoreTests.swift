@@ -3656,6 +3656,103 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "delete_device"), .high)
   }
 
+  func testUnifiedCommandProtocolRequestPayloadUsesAndroidDesktopMqttContract() throws {
+    let payload = try UnifiedCommandProtocol.requestPayload(
+      commandId: "commands.list",
+      args: ["dry_run": .bool(true)],
+      messageId: "message-1"
+    )
+
+    XCTAssertEqual(payload["type"]?.stringValue, UnifiedCommandProtocol.requestType)
+    XCTAssertEqual(payload["message_id"]?.stringValue, "message-1")
+    XCTAssertEqual(payload["source_message_id"]?.stringValue, "message-1")
+    XCTAssertEqual(payload["contact_id"]?.stringValue, "system")
+    XCTAssertEqual(payload["command_id"]?.stringValue, "commands.list")
+    XCTAssertEqual(payload["args"]?.objectValue?["dry_run"]?.boolValue, true)
+    XCTAssertEqual(payload["requested_by"]?.stringValue, "paired_phone")
+    XCTAssertEqual(payload["approve"]?.boolValue, false)
+  }
+
+  func testUnifiedCommandProtocolSlashPayloadCanOmitCommandIdAndRejectsBlankRequests() throws {
+    let payload = try UnifiedCommandProtocol.requestPayload(
+      commandId: "",
+      slash: "/commands",
+      messageId: "message-2"
+    )
+
+    XCTAssertEqual(payload["command_id"]?.stringValue, "")
+    XCTAssertEqual(payload["slash"]?.stringValue, "/commands")
+    XCTAssertThrowsError(
+      try UnifiedCommandProtocol.requestPayload(commandId: "", raw: "  ", slash: "")
+    ) { error in
+      XCTAssertEqual(error as? UnifiedCommandProtocolError, .missingCommand)
+    }
+  }
+
+  func testUnifiedCommandProtocolDecodesStructuredCommandResult() throws {
+    let payload: AgentMcpJSONObject = [
+      "type": .string("unified_command_result"),
+      "command_id": .string("commands.list"),
+      "command_status": .string("completed"),
+      "source_message_id": .string("message-1"),
+      "result": .object([
+        "status": .string("completed"),
+        "command_id": .string("commands.list"),
+        "run_id": .string("run-1"),
+        "data": .object(["catalog_size": .int(753)]),
+        "display": .object(["type": .string("command_list")])
+      ])
+    ]
+
+    let result = try XCTUnwrap(UnifiedCommandProtocol.decodeResult(payload))
+
+    XCTAssertEqual(result.commandId, "commands.list")
+    XCTAssertEqual(result.status, "completed")
+    XCTAssertEqual(result.runId, "run-1")
+    XCTAssertEqual(result.sourceMessageId, "message-1")
+    XCTAssertEqual(result.data["catalog_size"]?.intValue, 753)
+    XCTAssertEqual(result.display["type"]?.stringValue, "command_list")
+  }
+
+  func testUnifiedCommandProtocolIgnoresOtherPayloadTypesAndUsesResultFallbacks() throws {
+    XCTAssertNil(UnifiedCommandProtocol.decodeResult(["type": .string("text")]))
+
+    let result = try XCTUnwrap(
+      UnifiedCommandProtocol.decodeResult([
+        "type": .string("unified_command_result"),
+        "source_message_id": .string("message-fallback"),
+        "result": .object([
+          "status": .string("failed"),
+          "command_id": .string("commands.run"),
+          "error_code": .string("command_failed"),
+          "message": .string("Command failed")
+        ])
+      ])
+    )
+
+    XCTAssertEqual(result.commandId, "commands.run")
+    XCTAssertEqual(result.status, "failed")
+    XCTAssertEqual(result.errorCode, "command_failed")
+    XCTAssertEqual(result.message, "Command failed")
+  }
+
+  func testUnifiedCommandResultUsesAndroidWireNames() throws {
+    let result = UnifiedCommandResult(
+      commandId: "commands.list",
+      status: "completed",
+      runId: "run-1",
+      sourceMessageId: "message-1",
+      data: ["catalog_size": .int(753)],
+      display: ["type": .string("command_list")]
+    )
+    let encoded = String(decoding: try JSONEncoder.signalASI.encode(result), as: UTF8.self)
+
+    XCTAssertTrue(encoded.contains(#""command_id":"commands.list""#))
+    XCTAssertTrue(encoded.contains(#""run_id":"run-1""#))
+    XCTAssertTrue(encoded.contains(#""source_message_id":"message-1""#))
+    XCTAssertTrue(encoded.contains(#""catalog_size":753"#))
+  }
+
   func testAgentFailureRecoveryPayloadRoundTripsAndroidWireNames() throws {
     let payload = AgentFailureRecoveryPayload(
       action: .switchAgent,
