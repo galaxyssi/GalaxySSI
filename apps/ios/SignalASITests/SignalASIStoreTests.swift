@@ -6026,6 +6026,114 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encodedPolicy.contains(#""heartbeat_write_throttle_millis":2000"#))
   }
 
+  func testAgentWorkspaceFileModelsUseAndroidWireNames() throws {
+    let policy = AgentWorkspaceFilePolicy(maxTextReadBytes: -1, maxZipCompressionRatio: 0)
+    let encodedPolicy = String(decoding: try JSONEncoder().encode(policy), as: UTF8.self)
+    let decodedMutation = try JSONDecoder().decode(
+      AgentWorkspaceMutation.self,
+      from: Data(
+        #"""
+        {
+          "kind": "MOVE",
+          "path": "docs/new.txt",
+          "source_path": "docs/old.txt",
+          "affected_entries": 1,
+          "affected_bytes": 12,
+          "metadata": {
+            "path": "docs/new.txt",
+            "type": "FILE",
+            "size_bytes": 12,
+            "last_modified_millis": 123
+          }
+        }
+        """#.utf8
+      )
+    )
+    let zipEntry = AgentWorkspaceZipEntryMetadata(
+      path: "docs/a.txt",
+      directory: false,
+      compressedBytes: 3,
+      uncompressedBytes: 9,
+      compressionRatio: 3,
+      crc32: 42,
+      lastModifiedMillis: 100
+    )
+    let encodedZip = String(
+      decoding: try JSONEncoder().encode(
+        AgentWorkspaceZipListing(
+          archivePath: "bundle.zip",
+          archiveBytes: 100,
+          totalCompressedBytes: 3,
+          totalUncompressedBytes: 9,
+          entries: [zipEntry]
+        )
+      ),
+      as: UTF8.self
+    )
+
+    XCTAssertEqual(policy.maxTextReadBytes, 1)
+    XCTAssertEqual(policy.maxZipCompressionRatio, 1)
+    XCTAssertTrue(encodedPolicy.contains(#""max_text_read_bytes":1"#))
+    XCTAssertTrue(encodedPolicy.contains(#""max_zip_entry_name_characters":512"#))
+    XCTAssertEqual(decodedMutation.kind, .move)
+    XCTAssertEqual(decodedMutation.sourcePath, "docs/old.txt")
+    XCTAssertEqual(decodedMutation.metadata?.type, .file)
+    XCTAssertEqual(AgentWorkspaceFileErrorCode.fromWireValue("path_escape"), .pathEscape)
+    XCTAssertEqual(AgentWorkspaceMutationKind.fromWireValue("mkdir"), .mkdir)
+    XCTAssertEqual(AgentWorkspaceEntryType.fromWireValue("directory"), .directory)
+    XCTAssertTrue(encodedZip.contains(#""archive_path":"bundle.zip""#))
+    XCTAssertTrue(encodedZip.contains(#""total_uncompressed_bytes":9"#))
+    XCTAssertTrue(encodedZip.contains(#""compression_ratio":3"#))
+  }
+
+  func testAgentWorkspaceFilePathPolicyRejectsEscapesAndNormalizesPortablePaths() {
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.workspaceDirectoryName("alpha_1.2-3").value, "alpha_1.2-3")
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.workspaceDirectoryName("../alpha").error?.code, .invalidWorkspace)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("docs/./nested//note.txt").value, ["docs", "nested", "note.txt"])
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("docs\\note.txt").value, ["docs", "note.txt"])
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("../escape.txt").error?.code, .pathEscape)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("docs/../escape.txt").error?.code, .pathEscape)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("/absolute.txt").error?.code, .pathEscape)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("C:\\absolute.txt").error?.code, .pathEscape)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("contains\u{0000}null").error?.code, .invalidPath)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeRelativePath("", allowRoot: false).error?.code, .invalidPath)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.displayPath("docs\\note.txt"), "docs/note.txt")
+  }
+
+  func testAgentWorkspaceFileArchivePolicyRejectsZipSlipAndAbsoluteEntries() {
+    let policy = AgentWorkspaceFilePolicy(maxZipEntryNameCharacters: 12)
+
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("docs\\a.txt").value, "docs/a.txt")
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("docs/a.txt/").value, "docs/a.txt")
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("../escaped.txt").error?.code, .invalidArchive)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("/absolute.txt").error?.code, .invalidArchive)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("C:\\absolute.txt").error?.code, .invalidArchive)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("/").error?.code, .invalidArchive)
+    XCTAssertEqual(AgentWorkspaceFilePathPolicy.normalizeArchiveEntry("very-long-entry-name.txt", policy: policy).error?.code, .invalidArchive)
+  }
+
+  func testAgentWorkspacePatchPolicyMatchesAndroidDiffAndReplacementRules() {
+    let before = "one\ntwo\nthree\n"
+    let after = AgentWorkspacePatchPolicy.replaceOccurrences(text: before, expected: "two", replacement: "TWO")
+    let diff = AgentWorkspacePatchPolicy.summarizeDiff(before: before, after: after)
+    let unchanged = AgentWorkspacePatchPolicy.summarizeDiff(before: after, after: after)
+    let inserted = AgentWorkspacePatchPolicy.summarizeDiff(before: "one\nthree", after: "one\ntwo\nthree")
+
+    XCTAssertEqual(AgentWorkspacePatchPolicy.countOccurrences(text: before, expected: "two"), 1)
+    XCTAssertEqual(AgentWorkspacePatchPolicy.countOccurrences(text: "aaaa", expected: "aa"), 2)
+    XCTAssertEqual(after, "one\nTWO\nthree\n")
+    XCTAssertEqual(diff.beforeSha256, agentReputationSha256(Data(before.utf8)))
+    XCTAssertEqual(diff.afterSha256, agentReputationSha256(Data(after.utf8)))
+    XCTAssertEqual(diff.firstChangedLine, 2)
+    XCTAssertEqual(diff.changedLinePairs, 1)
+    XCTAssertEqual(diff.addedLines, 0)
+    XCTAssertEqual(diff.deletedLines, 0)
+    XCTAssertNil(unchanged.firstChangedLine)
+    XCTAssertEqual(inserted.firstChangedLine, 2)
+    XCTAssertEqual(inserted.addedLines, 1)
+    XCTAssertEqual(inserted.deletedLines, 0)
+  }
+
   func testAgentFastLocalResponseAnswersBoundedBinaryArithmeticLocally() {
     let context = AgentConversationContext(conversationId: "test", summary: "", turns: [], privateMode: false)
 
