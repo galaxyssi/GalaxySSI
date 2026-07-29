@@ -1734,6 +1734,457 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(object["evaluatedRuns"])
   }
 
+  func testAgentNetworkSearchRanksCapableNamedAgentsWithoutCollapsingIdentity() {
+    let index = AgentNetworkIndex([
+      networkRegistration(
+        agentId: "codex.office",
+        displayName: "Codex - Office PC",
+        capabilities: [.chat, .code, .taskExecution],
+        latency: .fast
+      ),
+      networkRegistration(
+        agentId: "claude-code.home",
+        displayName: "Claude Code - Home PC",
+        capabilities: [.chat, .code, .reasoning],
+        latency: .normal
+      ),
+      networkRegistration(
+        agentId: "hermes.research",
+        displayName: "Hermes - Research PC",
+        capabilities: [.chat, .research, .liveData]
+      )
+    ])
+
+    let page = index.search(
+      AgentNetworkSearchQuery(text: "Find a fast Agent to debug a Python project"),
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(page.totalMatches, 2)
+    XCTAssertEqual(page.hits.first?.registration.agentId, "codex.office")
+    XCTAssertEqual(page.hits.first?.registration.displayName, "Codex - Office PC")
+    XCTAssertTrue(page.hits.first?.matchedCapabilities.contains(.code) == true)
+    XCTAssertFalse(page.hits.contains { $0.registration.agentId == "hermes.research" })
+  }
+
+  func testAgentNetworkSearchEnforcesTrustCapacityCostAndStaleHeartbeat() {
+    let now: Int64 = 1_000_000
+    let staleHeartbeat = now - AgentNetworkIndex.heartbeatTTLMillis - 1
+    let index = AgentNetworkIndex([
+      networkRegistration(
+        agentId: "phone.local",
+        displayName: "Phone Agent",
+        location: .phone,
+        trust: .phoneSystem,
+        cost: .free,
+        lastHeartbeatMillis: staleHeartbeat
+      ),
+      networkRegistration(
+        agentId: "desktop.busy",
+        displayName: "Codex - Busy PC",
+        activeRuns: 2,
+        maxParallelRuns: 2,
+        cost: .low
+      ),
+      networkRegistration(
+        agentId: "cloud.unknown",
+        displayName: "Unknown Cloud Agent",
+        location: .cloud,
+        trust: .unknown,
+        cost: .high
+      ),
+      networkRegistration(
+        agentId: "desktop.stale",
+        displayName: "Codex - Stale PC",
+        lastHeartbeatMillis: staleHeartbeat
+      )
+    ])
+
+    let filtered = index.search(
+      AgentNetworkSearchQuery(trustedOnly: true, maximumCost: .low),
+      nowMillis: now
+    )
+    let all = index.search(AgentNetworkSearchQuery(routableOnly: false), nowMillis: now)
+
+    XCTAssertEqual(filtered.hits.map { $0.registration.agentId }, ["phone.local"])
+    XCTAssertEqual(
+      all.hits.first { $0.registration.agentId == "desktop.stale" }?.registration.status,
+      .unreachable
+    )
+  }
+
+  func testAgentNetworkSearchCursorInvalidatesAfterDirectoryOrReputationMutation() {
+    let registrations = (0..<75).map {
+      networkRegistration(
+        agentId: "agent-\($0)",
+        displayName: "Agent \(String(format: "%03d", $0))"
+      )
+    }
+    let index = AgentNetworkIndex(registrations)
+    let query = AgentNetworkSearchQuery(pageSize: 25)
+    let first = index.search(query, nowMillis: 1_000_000)
+    let second = index.search(AgentNetworkSearchQuery(pageSize: 25, cursor: first.nextCursor), nowMillis: 1_000_000)
+
+    XCTAssertEqual(first.hits.count, 25)
+    XCTAssertEqual(second.hits.count, 25)
+    XCTAssertTrue(Set(first.hits.map { $0.registration.agentId }).isDisjoint(with: second.hits.map { $0.registration.agentId }))
+    XCTAssertFalse(second.cursorReset)
+
+    index.upsert(networkRegistration(agentId: "agent-new", displayName: "Agent New"))
+    let resetAfterDirectoryChange = index.search(
+      AgentNetworkSearchQuery(pageSize: 25, cursor: second.nextCursor),
+      nowMillis: 1_000_000
+    )
+    XCTAssertTrue(resetAfterDirectoryChange.cursorReset)
+
+    let reputation = AgentReputationSnapshot(
+      agentId: "agent-new",
+      score: 92,
+      confidence: 60,
+      reliability: 92,
+      quality: 92,
+      timeliness: 92,
+      costEfficiency: 92,
+      evaluatedRuns: 5,
+      independentlyVerifiedRuns: 5,
+      disputedRuns: 0,
+      timeoutRuns: 0,
+      independentFailureDomains: 1,
+      lastEvidenceAtMillis: 1_000_000,
+      routingAdjustment: 65
+    )
+    let pageBeforeReputationChange = index.search(query, nowMillis: 1_000_000)
+    index.replaceReputations(["agent-new": reputation], revision: 7)
+    let resetAfterReputationChange = index.search(
+      AgentNetworkSearchQuery(pageSize: 25, cursor: pageBeforeReputationChange.nextCursor),
+      nowMillis: 1_000_000
+    )
+    XCTAssertTrue(resetAfterReputationChange.cursorReset)
+    XCTAssertTrue(resetAfterReputationChange.revision > pageBeforeReputationChange.revision)
+  }
+
+  func testAgentNetworkSearchUsesReputationButDoesNotBlockColdStart() {
+    let proven = AgentReputationSnapshot(
+      agentId: "z-proven",
+      score: 94,
+      confidence: 63,
+      reliability: 94,
+      quality: 94,
+      timeliness: 94,
+      costEfficiency: 94,
+      evaluatedRuns: 5,
+      independentlyVerifiedRuns: 5,
+      disputedRuns: 0,
+      timeoutRuns: 0,
+      independentFailureDomains: 1,
+      lastEvidenceAtMillis: 1_000_000,
+      routingAdjustment: 73
+    )
+    let poor = AgentReputationSnapshot(
+      agentId: "a-poor",
+      score: 31,
+      confidence: 80,
+      reliability: 31,
+      quality: 31,
+      timeliness: 31,
+      costEfficiency: 31,
+      evaluatedRuns: 8,
+      independentlyVerifiedRuns: 0,
+      disputedRuns: 8,
+      timeoutRuns: 0,
+      independentFailureDomains: 1,
+      lastEvidenceAtMillis: 1_000_000,
+      routingAdjustment: -109
+    )
+    let index = AgentNetworkIndex(
+      [
+        networkRegistration(agentId: "a-new", displayName: "New Agent", capabilities: [.chat, .reasoning]),
+        networkRegistration(agentId: "z-proven", displayName: "Proven Agent", capabilities: [.chat, .reasoning]),
+        networkRegistration(agentId: "a-poor", displayName: "Poor Agent", capabilities: [.chat, .reasoning])
+      ],
+      reputations: ["z-proven": proven, "a-poor": poor],
+      reputationRevision: 3
+    )
+
+    let ranked = index.search(
+      AgentNetworkSearchQuery(preferredCapabilities: [.reasoning], pageSize: 10),
+      nowMillis: 1_000_000
+    )
+    let thresholded = index.search(
+      AgentNetworkSearchQuery(
+        minimumReputationScore: 80,
+        minimumReputationConfidence: 40,
+        pageSize: 10
+      ),
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(ranked.hits.first?.registration.agentId, "z-proven")
+    XCTAssertTrue(ranked.hits.first?.reasons.contains("reputation:94") == true)
+    XCTAssertTrue(thresholded.hits.contains { $0.registration.agentId == "a-new" })
+    XCTAssertFalse(thresholded.hits.contains { $0.registration.agentId == "a-poor" })
+  }
+
+  func testAgentNetworkSearchModelsUseAndroidWireNames() throws {
+    let registration = networkRegistration(agentId: "codex.office", displayName: "Codex Office")
+    let index = AgentNetworkIndex([registration])
+    let page = index.search(
+      AgentNetworkSearchQuery(
+        text: "codex",
+        requiredCapabilities: [.chat],
+        preferredCapabilities: [.code],
+        trustedOnly: true,
+        maximumCost: .low,
+        pageSize: 10
+      ),
+      nowMillis: 1_000_000
+    )
+    let pageObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(page)) as? [String: Any]
+    )
+    let registrationObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(registration)) as? [String: Any]
+    )
+
+    XCTAssertEqual(registrationObject["agent_id"] as? String, "codex.office")
+    XCTAssertEqual(registrationObject["installation_id"] as? String, "installation-codex.office")
+    XCTAssertEqual(registrationObject["provider_id"] as? String, "desktop-provider")
+    XCTAssertEqual(registrationObject["display_name"] as? String, "Codex Office")
+    XCTAssertEqual(registrationObject["connection_kind"] as? String, "SIGNALASI_LINK")
+    XCTAssertEqual(registrationObject["last_heartbeat_millis"] as? Int, 0)
+    XCTAssertNil(registrationObject["agentId"])
+    XCTAssertEqual(pageObject["query_id"] as? String, page.queryId)
+    XCTAssertEqual(pageObject["total_matches"] as? Int, 1)
+    XCTAssertEqual(pageObject["next_cursor"] as? String, "")
+    XCTAssertEqual(pageObject["cursor_reset"] as? Bool, false)
+    XCTAssertEqual(pageObject["generated_at_millis"] as? Int, 1_000_000)
+    XCTAssertNil(pageObject["totalMatches"])
+  }
+
+  func testAgentDynamicTeamCompilerBuildsVerifiedDagFromComplementaryAgents() throws {
+    let result = AgentDynamicTeamCompiler().compile(
+      request: AgentDynamicTeamRequest(
+        goal: "Research the latest API and implement a Python program with high quality",
+        teamId: "dynamic-team"
+      ),
+      registrations: [
+        networkRegistration(
+          agentId: "hermes.office",
+          displayName: "Hermes - Office PC",
+          capabilities: [.chat, .reasoning, .research, .liveData, .toolUse],
+          failureDomain: "desktop-office"
+        ),
+        networkRegistration(
+          agentId: "codex.dev",
+          displayName: "Codex - Development PC",
+          capabilities: [.chat, .reasoning, .code, .taskExecution, .toolUse],
+          latency: .fast,
+          failureDomain: "desktop-dev"
+        ),
+        networkRegistration(
+          agentId: "claude-code.review",
+          displayName: "Claude Code - Review PC",
+          capabilities: [.chat, .reasoning, .code, .taskExecution],
+          failureDomain: "desktop-review"
+        ),
+        networkRegistration(
+          agentId: "auditor.independent",
+          displayName: "Independent Auditor",
+          capabilities: [.chat, .reasoning, .research],
+          failureDomain: "cloud-audit"
+        )
+      ],
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(result.outcome, .team)
+    XCTAssertEqual(result.primaryAgentId, "codex.dev")
+    XCTAssertEqual(
+      Set(result.assignments.map { $0.registration.agentId }),
+      Set(["codex.dev", "hermes.office", "claude-code.review", "auditor.independent"])
+    )
+    let definition = try XCTUnwrap(result.definition)
+    XCTAssertEqual(definition.members.filter { $0.deliveryMode == .respond }.count, 1)
+    XCTAssertEqual(definition.collectiveCapabilities, Set([AgentCapability.liveData, AgentCapability.code]))
+    let verifier = try XCTUnwrap(definition.members.first { $0.role == "independent verifier" })
+    XCTAssertEqual(verifier.dependsOnAgentIds, Set(["hermes.office", "claude-code.review"]))
+    let lead = try XCTUnwrap(definition.members.first { $0.agentId == result.primaryAgentId })
+    XCTAssertEqual(
+      lead.dependsOnAgentIds,
+      Set(definition.members.filter { $0.deliveryMode == .observe }.map { $0.agentId })
+    )
+  }
+
+  func testAgentDynamicTeamCompilerKeepsSimpleConversationSingleAgentAndHonorsPinnedIdentity() {
+    let simple = AgentDynamicTeamCompiler().compile(
+      request: AgentDynamicTeamRequest(goal: "Hello"),
+      registrations: [
+        networkRegistration(agentId: "hermes", displayName: "Hermes", capabilities: [.chat, .reasoning])
+      ],
+      nowMillis: 1_000_000
+    )
+    let pinned = AgentDynamicTeamCompiler().compile(
+      request: AgentDynamicTeamRequest(
+        goal: "Discuss the architecture",
+        policy: AgentDynamicTeamPolicy(pinnedAgentIds: ["hermes.home"])
+      ),
+      registrations: [
+        networkRegistration(
+          agentId: "codex.office",
+          displayName: "Codex - Office PC",
+          capabilities: [.chat, .reasoning],
+          latency: .instant
+        ),
+        networkRegistration(
+          agentId: "hermes.home",
+          displayName: "Hermes - Home PC",
+          capabilities: [.chat, .reasoning],
+          latency: .normal
+        )
+      ],
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(simple.outcome, .singleAgent)
+    XCTAssertEqual(simple.primaryAgentId, "hermes")
+    XCTAssertNil(simple.definition)
+    XCTAssertEqual(pinned.primaryAgentId, "hermes.home")
+    XCTAssertEqual(pinned.assignments.first?.registration.displayName, "Hermes - Home PC")
+  }
+
+  func testAgentDynamicTeamCompilerAppliesPrivacyVerifierAndRuntimeIdentityBoundaries() {
+    let privateResult = AgentDynamicTeamCompiler().compile(
+      request: AgentDynamicTeamRequest(goal: "Handle my private key locally only"),
+      registrations: [
+        networkRegistration(
+          agentId: "phone.agent",
+          displayName: "Phone Agent",
+          location: .phone,
+          trust: .phoneSystem,
+          capabilities: [.chat, .reasoning],
+          failureDomain: "phone"
+        ),
+        networkRegistration(
+          agentId: "cloud.agent",
+          displayName: "Cloud Agent",
+          location: .cloud,
+          trust: .cloudConfigured,
+          capabilities: [.chat, .reasoning],
+          failureDomain: "cloud"
+        )
+      ],
+      nowMillis: 1_000_000
+    )
+    let sameDomain = [
+      networkRegistration(
+        agentId: "codex",
+        displayName: "Codex",
+        capabilities: [.chat, .code, .reasoning],
+        failureDomain: "desktop-one"
+      ),
+      networkRegistration(
+        agentId: "claude-code",
+        displayName: "Claude Code",
+        capabilities: [.chat, .code, .reasoning],
+        failureDomain: "desktop-one"
+      )
+    ]
+    let requiredVerifierRequest = AgentDynamicTeamRequest(
+      goal: "Implement and verify a Python program",
+      policy: AgentDynamicTeamPolicy(verificationMode: .required)
+    )
+    let blocked = AgentDynamicTeamCompiler().compile(
+      request: requiredVerifierRequest,
+      registrations: sameDomain,
+      nowMillis: 1_000_000
+    )
+    let verified = AgentDynamicTeamCompiler().compile(
+      request: requiredVerifierRequest,
+      registrations: sameDomain + [
+        networkRegistration(
+          agentId: "auditor",
+          displayName: "Auditor",
+          capabilities: [.chat, .reasoning],
+          failureDomain: "desktop-two"
+        )
+      ],
+      nowMillis: 1_000_000
+    )
+    let aliasBlocked = AgentDynamicTeamCompiler().compile(
+      request: AgentDynamicTeamRequest(
+        goal: "Implement and verify a Python program",
+        policy: AgentDynamicTeamPolicy(forceTeam: true)
+      ),
+      registrations: [
+        networkRegistration(
+          agentId: "codex.alias-one",
+          displayName: "Codex",
+          capabilities: [.chat, .reasoning, .code],
+          failureDomain: "desktop-one",
+          runtimeFailureDomain: "desktop-one:codex"
+        ),
+        networkRegistration(
+          agentId: "codex.alias-two",
+          displayName: "Codex Alias",
+          capabilities: [.chat, .reasoning, .code],
+          failureDomain: "desktop-one",
+          runtimeFailureDomain: "desktop-one:codex"
+        )
+      ],
+      nowMillis: 1_000_000
+    )
+
+    XCTAssertEqual(privateResult.primaryAgentId, "phone.agent")
+    XCTAssertFalse(privateResult.assignments.contains { $0.registration.location == .cloud })
+    XCTAssertEqual(blocked.outcome, .blocked)
+    XCTAssertTrue(blocked.unfilledRoles.contains(.verifier))
+    XCTAssertEqual(verified.outcome, .team)
+    XCTAssertEqual(verified.assignments.first { $0.role == .verifier }?.failureDomain, "desktop-two")
+    XCTAssertEqual(aliasBlocked.outcome, .blocked)
+    XCTAssertEqual(aliasBlocked.assignments.count, 1)
+  }
+
+  func testAgentDynamicTeamCompilerModelsUseAndroidWireNames() throws {
+    let result = AgentDynamicTeamCompiler().compile(
+      request: AgentDynamicTeamRequest(
+        goal: "Implement and verify a Python program",
+        teamId: "wire-team",
+        policy: AgentDynamicTeamPolicy(verificationMode: .required)
+      ),
+      registrations: [
+        networkRegistration(
+          agentId: "codex",
+          displayName: "Codex",
+          capabilities: [.chat, .code, .reasoning],
+          failureDomain: "desktop-one"
+        ),
+        networkRegistration(
+          agentId: "auditor",
+          displayName: "Auditor",
+          capabilities: [.chat, .reasoning],
+          failureDomain: "desktop-two"
+        )
+      ],
+      nowMillis: 1_000_000
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any]
+    )
+    let definition = try XCTUnwrap(object["definition"] as? [String: Any])
+    let members = try XCTUnwrap(definition["members"] as? [[String: Any]])
+
+    XCTAssertEqual(object["primary_agent_id"] as? String, "codex")
+    XCTAssertEqual(object["estimated_cost_units"] as? Int, 0)
+    XCTAssertNotNil(object["unfilled_roles"])
+    XCTAssertEqual(definition["team_id"] as? String, "wire-team")
+    XCTAssertEqual(definition["primary_agent_id"] as? String, "codex")
+    XCTAssertEqual(definition["visibility_mode"] as? String, "BACKGROUND")
+    XCTAssertEqual(members.first?["delivery_mode"] as? String, "RESPOND")
+    XCTAssertNotNil(members.first?["depends_on_agent_ids"])
+    XCTAssertNil(object["primaryAgentId"])
+    XCTAssertNil(definition["primaryAgentId"])
+  }
+
   func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
@@ -5986,6 +6437,53 @@ final class SignalASIStoreTests: XCTestCase {
       signerId: "verifier-host",
       signatureKeyId: String(repeating: "d", count: 64),
       signature: "attestation-signature"
+    )
+  }
+
+  private func networkRegistration(
+    agentId: String,
+    displayName: String,
+    providerId: String = "desktop-provider",
+    deviceId: String = "desktop-device",
+    location: AgentResourceLocation = .trustedDesktop,
+    status: AgentEndpointStatus = .online,
+    capabilities: Set<AgentCapability> = [.chat],
+    cost: AgentResourceCost = .free,
+    latency: AgentResourceLatency = .normal,
+    trust: AgentResourceTrust = .verifiedPaired,
+    activeRuns: Int = 0,
+    maxParallelRuns: Int = 4,
+    failureDomain: String = "",
+    runtimeFailureDomain: String = "",
+    adapterType: String = "",
+    lastHeartbeatMillis: Int64 = 0
+  ) -> AgentRegistration {
+    AgentRegistration(
+      agentId: agentId,
+      installationId: "installation-\(agentId)",
+      deviceId: deviceId,
+      providerId: providerId,
+      displayName: displayName,
+      kind: .agent,
+      location: location,
+      status: status,
+      capabilities: capabilities,
+      protocol: AgentProtocolRange(
+        preferred: "1.1",
+        minimum: "1.0",
+        maximum: "1.1",
+        features: ["run.cancel", "run.recover"]
+      ),
+      connectionKind: .signalasiLink,
+      cost: cost,
+      latency: latency,
+      trust: trust,
+      activeRuns: activeRuns,
+      maxParallelRuns: maxParallelRuns,
+      failureDomain: failureDomain,
+      runtimeFailureDomain: runtimeFailureDomain,
+      adapterType: adapterType,
+      lastHeartbeatMillis: lastHeartbeatMillis
     )
   }
 

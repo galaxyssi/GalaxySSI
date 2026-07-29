@@ -1787,6 +1787,1661 @@ enum AgentReputationScoring {
   private static let reputationHalfLifeMillis = Double(30 * 24 * 60 * 60 * 1_000)
 }
 
+enum AgentEndpointStatus: String, Codable, CaseIterable, Identifiable {
+  case online = "ONLINE"
+  case offline = "OFFLINE"
+  case idle = "IDLE"
+  case busy = "BUSY"
+  case degraded = "DEGRADED"
+  case updating = "UPDATING"
+  case permissionRequired = "PERMISSION_REQUIRED"
+  case unreachable = "UNREACHABLE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentEndpointStatus {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .offline
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentResourceCost: String, Codable, CaseIterable, Comparable, Identifiable {
+  case free = "FREE"
+  case low = "LOW"
+  case medium = "MEDIUM"
+  case high = "HIGH"
+
+  var id: String { rawValue }
+  var rank: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+
+  static func < (lhs: AgentResourceCost, rhs: AgentResourceCost) -> Bool {
+    lhs.rank < rhs.rank
+  }
+}
+
+enum AgentResourceLatency: String, Codable, CaseIterable, Comparable, Identifiable {
+  case instant = "INSTANT"
+  case fast = "FAST"
+  case normal = "NORMAL"
+  case slow = "SLOW"
+
+  var id: String { rawValue }
+  var rank: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+
+  static func < (lhs: AgentResourceLatency, rhs: AgentResourceLatency) -> Bool {
+    lhs.rank < rhs.rank
+  }
+}
+
+enum AgentResourceTrust: String, Codable, CaseIterable, Identifiable {
+  case phoneSystem = "PHONE_SYSTEM"
+  case verifiedPaired = "VERIFIED_PAIRED"
+  case privateConfigured = "PRIVATE_CONFIGURED"
+  case cloudConfigured = "CLOUD_CONFIGURED"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+}
+
+struct AgentProtocolRange: Codable, Equatable {
+  var preferred: String
+  var minimum: String
+  var maximum: String
+  var features: Set<String>
+
+  init(
+    preferred: String = "1.1",
+    minimum: String = "1.0",
+    maximum: String = "1.1",
+    features: Set<String> = []
+  ) {
+    self.preferred = preferred
+    self.minimum = minimum
+    self.maximum = maximum
+    self.features = features
+  }
+}
+
+struct AgentRegistration: Codable, Equatable, Identifiable {
+  var agentId: String
+  var installationId: String
+  var deviceId: String
+  var providerId: String
+  var displayName: String
+  var kind: AgentConnectorKind
+  var location: AgentResourceLocation
+  var status: AgentEndpointStatus
+  var capabilities: Set<AgentCapability>
+  var toolIds: Set<String>
+  var permissionScopes: Set<String>
+  var `protocol`: AgentProtocolRange
+  var connectionKind: AgentConnectionKind
+  var cost: AgentResourceCost
+  var latency: AgentResourceLatency
+  var trust: AgentResourceTrust
+  var activeRuns: Int
+  var maxParallelRuns: Int
+  var capabilitiesHash: String
+  var failureDomain: String
+  var runtimeFailureDomain: String
+  var adapterType: String
+  var independentlyUpgradeable: Bool
+  var lastHeartbeatMillis: Int64
+  var updatedAtMillis: Int64
+
+  var id: String { agentId }
+  var hasCapacity: Bool { activeRuns < max(maxParallelRuns, 1) }
+
+  init(
+    agentId: String,
+    installationId: String,
+    deviceId: String,
+    providerId: String,
+    displayName: String,
+    kind: AgentConnectorKind = .agent,
+    location: AgentResourceLocation = .trustedDesktop,
+    status: AgentEndpointStatus = .online,
+    capabilities: Set<AgentCapability> = [.chat],
+    toolIds: Set<String> = [],
+    permissionScopes: Set<String> = [],
+    protocol: AgentProtocolRange = AgentProtocolRange(),
+    connectionKind: AgentConnectionKind = .signalasiLink,
+    cost: AgentResourceCost = .free,
+    latency: AgentResourceLatency = .normal,
+    trust: AgentResourceTrust = .verifiedPaired,
+    activeRuns: Int = 0,
+    maxParallelRuns: Int = 1,
+    capabilitiesHash: String = "",
+    failureDomain: String = "",
+    runtimeFailureDomain: String = "",
+    adapterType: String = "",
+    independentlyUpgradeable: Bool = true,
+    lastHeartbeatMillis: Int64 = 0,
+    updatedAtMillis: Int64 = 0
+  ) {
+    self.agentId = agentId
+    self.installationId = installationId
+    self.deviceId = deviceId
+    self.providerId = providerId
+    self.displayName = displayName
+    self.kind = kind
+    self.location = location
+    self.status = status
+    self.capabilities = capabilities
+    self.toolIds = toolIds
+    self.permissionScopes = permissionScopes
+    self.`protocol` = `protocol`
+    self.connectionKind = connectionKind
+    self.cost = cost
+    self.latency = latency
+    self.trust = trust
+    self.activeRuns = activeRuns
+    self.maxParallelRuns = maxParallelRuns
+    self.capabilitiesHash = capabilitiesHash
+    self.failureDomain = failureDomain
+    self.runtimeFailureDomain = runtimeFailureDomain
+    self.adapterType = adapterType
+    self.independentlyUpgradeable = independentlyUpgradeable
+    self.lastHeartbeatMillis = lastHeartbeatMillis
+    self.updatedAtMillis = updatedAtMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case installationId = "installation_id"
+    case deviceId = "device_id"
+    case providerId = "provider_id"
+    case displayName = "display_name"
+    case kind
+    case location
+    case status
+    case capabilities
+    case toolIds = "tool_ids"
+    case permissionScopes = "permission_scopes"
+    case `protocol`
+    case connectionKind = "connection_kind"
+    case cost
+    case latency
+    case trust
+    case activeRuns = "active_runs"
+    case maxParallelRuns = "max_parallel_runs"
+    case capabilitiesHash = "capabilities_hash"
+    case failureDomain = "failure_domain"
+    case runtimeFailureDomain = "runtime_failure_domain"
+    case adapterType = "adapter_type"
+    case independentlyUpgradeable = "independently_upgradeable"
+    case lastHeartbeatMillis = "last_heartbeat_millis"
+    case updatedAtMillis = "updated_at_millis"
+  }
+}
+
+struct AgentNetworkSearchQuery: Codable, Equatable {
+  static let defaultPageSize = 24
+  static let maxPageSize = 100
+
+  var text: String
+  var requiredCapabilities: Set<AgentCapability>
+  var preferredCapabilities: Set<AgentCapability>
+  var kinds: Set<AgentConnectorKind>
+  var locations: Set<AgentResourceLocation>
+  var statuses: Set<AgentEndpointStatus>
+  var providerIds: Set<String>
+  var deviceIds: Set<String>
+  var excludedAgentIds: Set<String>
+  var trustedOnly: Bool
+  var routableOnly: Bool
+  var includeAtCapacity: Bool
+  var maximumCost: AgentResourceCost?
+  var maximumLatency: AgentResourceLatency?
+  var minimumReputationScore: Int?
+  var minimumReputationConfidence: Int
+  var pageSize: Int
+  var cursor: String
+
+  init(
+    text: String = "",
+    requiredCapabilities: Set<AgentCapability> = [],
+    preferredCapabilities: Set<AgentCapability> = [],
+    kinds: Set<AgentConnectorKind> = [],
+    locations: Set<AgentResourceLocation> = [],
+    statuses: Set<AgentEndpointStatus> = [],
+    providerIds: Set<String> = [],
+    deviceIds: Set<String> = [],
+    excludedAgentIds: Set<String> = [],
+    trustedOnly: Bool = false,
+    routableOnly: Bool = true,
+    includeAtCapacity: Bool = false,
+    maximumCost: AgentResourceCost? = nil,
+    maximumLatency: AgentResourceLatency? = nil,
+    minimumReputationScore: Int? = nil,
+    minimumReputationConfidence: Int = 40,
+    pageSize: Int = Self.defaultPageSize,
+    cursor: String = ""
+  ) {
+    self.text = text
+    self.requiredCapabilities = requiredCapabilities
+    self.preferredCapabilities = preferredCapabilities
+    self.kinds = kinds
+    self.locations = locations
+    self.statuses = statuses
+    self.providerIds = providerIds
+    self.deviceIds = deviceIds
+    self.excludedAgentIds = excludedAgentIds
+    self.trustedOnly = trustedOnly
+    self.routableOnly = routableOnly
+    self.includeAtCapacity = includeAtCapacity
+    self.maximumCost = maximumCost
+    self.maximumLatency = maximumLatency
+    self.minimumReputationScore = minimumReputationScore
+    self.minimumReputationConfidence = minimumReputationConfidence
+    self.pageSize = pageSize
+    self.cursor = cursor
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case text
+    case requiredCapabilities = "required_capabilities"
+    case preferredCapabilities = "preferred_capabilities"
+    case kinds
+    case locations
+    case statuses
+    case providerIds = "provider_ids"
+    case deviceIds = "device_ids"
+    case excludedAgentIds = "excluded_agent_ids"
+    case trustedOnly = "trusted_only"
+    case routableOnly = "routable_only"
+    case includeAtCapacity = "include_at_capacity"
+    case maximumCost = "maximum_cost"
+    case maximumLatency = "maximum_latency"
+    case minimumReputationScore = "minimum_reputation_score"
+    case minimumReputationConfidence = "minimum_reputation_confidence"
+    case pageSize = "page_size"
+    case cursor
+  }
+}
+
+struct AgentNetworkSearchHit: Codable, Equatable {
+  var registration: AgentRegistration
+  var score: Int
+  var matchedCapabilities: Set<AgentCapability>
+  var reasons: [String]
+  var reputation: AgentReputationSnapshot
+
+  enum CodingKeys: String, CodingKey {
+    case registration
+    case score
+    case matchedCapabilities = "matched_capabilities"
+    case reasons
+    case reputation
+  }
+}
+
+struct AgentNetworkSearchPage: Codable, Equatable {
+  var queryId: String
+  var revision: Int64
+  var hits: [AgentNetworkSearchHit]
+  var totalMatches: Int
+  var nextCursor: String
+  var cursorReset: Bool
+  var generatedAtMillis: Int64
+
+  enum CodingKeys: String, CodingKey {
+    case queryId = "query_id"
+    case revision
+    case hits
+    case totalMatches = "total_matches"
+    case nextCursor = "next_cursor"
+    case cursorReset = "cursor_reset"
+    case generatedAtMillis = "generated_at_millis"
+  }
+}
+
+final class AgentNetworkIndex {
+  private var registrationsById: [String: AgentRegistration] = [:]
+  private var order: [String] = []
+  private var currentRevision: Int64 = 0
+  private var reputationsByAgentId: [String: AgentReputationSnapshot] = [:]
+  private var reputationRevision: Int64 = 0
+
+  init(
+    _ registrations: [AgentRegistration] = [],
+    reputations: [String: AgentReputationSnapshot] = [:],
+    reputationRevision: Int64 = 0
+  ) {
+    for registration in registrations where registrationsById[registration.agentId] == nil {
+      registrationsById[registration.agentId] = registration
+      order.append(registration.agentId)
+    }
+    if !registrationsById.isEmpty {
+      currentRevision = 1
+    }
+    self.reputationsByAgentId = reputations
+    self.reputationRevision = reputationRevision
+  }
+
+  func size() -> Int {
+    registrationsById.count
+  }
+
+  func revision() -> Int64 {
+    effectiveRevision()
+  }
+
+  func get(_ agentId: String, nowMillis: Int64 = AgentRemoteApprovalClock.nowMillis()) -> AgentRegistration? {
+    registrationsById[agentId]?.withEffectiveNetworkStatus(nowMillis: nowMillis)
+  }
+
+  func upsert(_ registration: AgentRegistration) {
+    let previous = registrationsById[registration.agentId]
+    guard previous != registration else {
+      return
+    }
+    if previous == nil {
+      order.append(registration.agentId)
+    }
+    registrationsById[registration.agentId] = registration
+    currentRevision += 1
+  }
+
+  func replaceReputations(_ reputations: [String: AgentReputationSnapshot], revision: Int64) {
+    reputationsByAgentId = reputations
+    reputationRevision = revision
+  }
+
+  func search(
+    _ query: AgentNetworkSearchQuery,
+    nowMillis: Int64 = AgentRemoteApprovalClock.nowMillis()
+  ) -> AgentNetworkSearchPage {
+    var normalizedQuery = query
+    normalizedQuery.pageSize = min(max(query.pageSize, 1), AgentNetworkSearchQuery.maxPageSize)
+    let searchRevision = effectiveRevision()
+    let queryId = fingerprint(normalizedQuery)
+    let inferred = inferredCapabilities(from: normalizedQuery.text)
+    let preferredCapabilities = normalizedQuery.preferredCapabilities.union(inferred)
+    let queryTokens = searchTokens(normalizedQuery.text)
+
+    let ranked = order
+      .compactMap { registrationsById[$0] }
+      .map { $0.withEffectiveNetworkStatus(nowMillis: nowMillis) }
+      .filter { matches($0, query: normalizedQuery, inferred: inferred, preferred: preferredCapabilities, nowMillis: nowMillis) }
+      .map {
+        toSearchHit(
+          registration: $0,
+          query: normalizedQuery,
+          preferredCapabilities: preferredCapabilities,
+          queryTokens: queryTokens,
+          nowMillis: nowMillis
+        )
+      }
+      .sorted {
+        if $0.score != $1.score {
+          return $0.score > $1.score
+        }
+        let lhsName = $0.registration.displayName.lowercased()
+        let rhsName = $1.registration.displayName.lowercased()
+        if lhsName != rhsName {
+          return lhsName < rhsName
+        }
+        return $0.registration.agentId < $1.registration.agentId
+      }
+
+    let decodedCursor = AgentNetworkCursor.decode(normalizedQuery.cursor)
+    let cursorValid = decodedCursor?.revision == searchRevision && decodedCursor?.queryId == queryId
+    let cursorIndex = cursorValid
+      ? ranked.firstIndex { $0.registration.agentId == decodedCursor?.lastAgentId } ?? -1
+      : -1
+    let cursorReset = !normalizedQuery.cursor.isEmpty && (!cursorValid || cursorIndex < 0)
+    let startIndex = cursorValid && cursorIndex >= 0 ? cursorIndex + 1 : 0
+    let endIndex = min(startIndex + normalizedQuery.pageSize, ranked.count)
+    let hits = startIndex < ranked.count ? Array(ranked[startIndex..<endIndex]) : []
+    let nextCursor = endIndex < ranked.count && !hits.isEmpty
+      ? AgentNetworkCursor(revision: searchRevision, queryId: queryId, lastAgentId: hits.last?.registration.agentId ?? "").encode()
+      : ""
+    return AgentNetworkSearchPage(
+      queryId: queryId,
+      revision: searchRevision,
+      hits: hits,
+      totalMatches: ranked.count,
+      nextCursor: nextCursor,
+      cursorReset: cursorReset,
+      generatedAtMillis: nowMillis
+    )
+  }
+
+  private func matches(
+    _ registration: AgentRegistration,
+    query: AgentNetworkSearchQuery,
+    inferred: Set<AgentCapability>,
+    preferred: Set<AgentCapability>,
+    nowMillis: Int64
+  ) -> Bool {
+    if query.excludedAgentIds.contains(registration.agentId) { return false }
+    if !registration.capabilities.isSuperset(of: query.requiredCapabilities) { return false }
+    if !query.kinds.isEmpty && !query.kinds.contains(registration.kind) { return false }
+    if !query.locations.isEmpty && !query.locations.contains(registration.location) { return false }
+    if !query.statuses.isEmpty && !query.statuses.contains(registration.status) { return false }
+    if !query.providerIds.isEmpty &&
+      !query.providerIds.map(normalizeSearchText).contains(normalizeSearchText(registration.providerId)) {
+      return false
+    }
+    if !query.deviceIds.isEmpty &&
+      !query.deviceIds.map(normalizeSearchText).contains(normalizeSearchText(registration.deviceId)) {
+      return false
+    }
+    if query.trustedOnly && registration.trust == .unknown { return false }
+    if let maximumCost = query.maximumCost, registration.cost > maximumCost { return false }
+    if let maximumLatency = query.maximumLatency, registration.latency > maximumLatency { return false }
+    if query.routableOnly && !Self.routableStates.contains(registration.status) { return false }
+    if query.routableOnly && !query.includeAtCapacity && !registration.hasCapacity { return false }
+    if !query.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      let tokenMatches = !registration.indexTokens().isDisjoint(with: searchTokens(query.text))
+      let capabilityMatches = inferred.isEmpty || !registration.capabilities.isDisjoint(with: inferred)
+      if !tokenMatches && !capabilityMatches {
+        return false
+      }
+    }
+    if let minimumReputation = query.minimumReputationScore {
+      let reputation = reputation(for: registration, capabilities: query.requiredCapabilities.union(preferred))
+      let minimumConfidence = min(max(query.minimumReputationConfidence, 0), 100)
+      if reputation.confidence >= minimumConfidence && reputation.score < min(max(minimumReputation, 0), 100) {
+        return false
+      }
+    }
+    return true
+  }
+
+  private func toSearchHit(
+    registration: AgentRegistration,
+    query: AgentNetworkSearchQuery,
+    preferredCapabilities: Set<AgentCapability>,
+    queryTokens: Set<String>,
+    nowMillis: Int64
+  ) -> AgentNetworkSearchHit {
+    var reasons: [String] = []
+    var score = 0
+    let normalizedText = normalizeSearchText(query.text)
+    let searchableFields = [
+      registration.agentId,
+      registration.displayName,
+      registration.providerId,
+      registration.deviceId,
+      registration.adapterType
+    ].map(normalizeSearchText).filter { !$0.isEmpty }
+    if !normalizedText.isEmpty {
+      if searchableFields.contains(normalizedText) {
+        score += 1_200
+        reasons.append("identity_exact")
+      } else if searchableFields.contains(where: { $0.hasPrefix(normalizedText) }) {
+        score += 760
+        reasons.append("identity_prefix")
+      } else if searchableFields.contains(where: { $0.contains(normalizedText) }) {
+        score += 520
+        reasons.append("identity_contains")
+      }
+      let tokenMatches = registration.indexTokens().intersection(queryTokens)
+      if !tokenMatches.isEmpty {
+        score += tokenMatches.count * 90
+        reasons.append("text_tokens:\(tokenMatches.count)")
+      }
+    }
+    let matchedCapabilities = registration.capabilities.intersection(preferredCapabilities)
+    let missingPreferred = preferredCapabilities.subtracting(registration.capabilities)
+    score += matchedCapabilities.count * 130
+    score -= missingPreferred.count * 45
+    if !matchedCapabilities.isEmpty {
+      reasons.append("capabilities:\(matchedCapabilities.map(\.rawValue).sorted().joined(separator: ","))")
+    }
+    score += statusScore(registration.status)
+    score += registration.hasCapacity ? 90 : -260
+    score += trustScore(registration.trust)
+    score -= registration.cost.rank * 35
+    score -= registration.latency.rank * 30
+    let reputation = reputation(for: registration, capabilities: query.requiredCapabilities.union(preferredCapabilities))
+    score += reputation.routingAdjustment
+    if searchTokens(query.text).contains("fast"), registration.latency <= .fast {
+      score += 180
+    }
+    if searchTokens(query.text).contains("economy"), registration.cost <= .low {
+      score += 180
+    }
+    if registration.lastHeartbeatMillis > 0 {
+      let heartbeatAge = max(Int64(0), nowMillis - registration.lastHeartbeatMillis)
+      switch heartbeatAge {
+      case 0...30_000:
+        score += 90
+      case 30_001...120_000:
+        score += 55
+      case 120_001...Self.heartbeatTTLMillis:
+        score += 20
+      default:
+        score -= 120
+      }
+      reasons.append("heartbeat_age_ms:\(heartbeatAge)")
+    }
+    reasons.append("status:\(registration.status.rawValue.lowercased())")
+    reasons.append("trust:\(registration.trust.rawValue.lowercased())")
+    reasons.append("latency:\(registration.latency.rawValue.lowercased())")
+    reasons.append("cost:\(registration.cost.rawValue.lowercased())")
+    if reputation.confidence > 0 {
+      reasons.append("reputation:\(reputation.score)")
+      reasons.append("reputation_confidence:\(reputation.confidence)")
+    }
+    return AgentNetworkSearchHit(
+      registration: registration,
+      score: score,
+      matchedCapabilities: matchedCapabilities,
+      reasons: distinctReasons(reasons),
+      reputation: reputation
+    )
+  }
+
+  private func reputation(
+    for registration: AgentRegistration,
+    capabilities: Set<AgentCapability>
+  ) -> AgentReputationSnapshot {
+    reputationsByAgentId[registration.agentId] ?? .neutral(registration.agentId)
+  }
+
+  private func effectiveRevision() -> Int64 {
+    currentRevision * 1_000_003 + reputationRevision
+  }
+
+  private func fingerprint(_ query: AgentNetworkSearchQuery) -> String {
+    let canonical = [
+      normalizeSearchText(query.text),
+      query.requiredCapabilities.map(\.rawValue).sorted().joined(separator: ","),
+      query.preferredCapabilities.map(\.rawValue).sorted().joined(separator: ","),
+      query.kinds.map(\.rawValue).sorted().joined(separator: ","),
+      query.locations.map(\.rawValue).sorted().joined(separator: ","),
+      query.statuses.map(\.rawValue).sorted().joined(separator: ","),
+      query.providerIds.map(normalizeSearchText).sorted().joined(separator: ","),
+      query.deviceIds.map(normalizeSearchText).sorted().joined(separator: ","),
+      query.excludedAgentIds.sorted().joined(separator: ","),
+      String(query.trustedOnly),
+      String(query.routableOnly),
+      String(query.includeAtCapacity),
+      query.maximumCost?.rawValue ?? "",
+      query.maximumLatency?.rawValue ?? "",
+      query.minimumReputationScore.map { String(min(max($0, 0), 100)) } ?? "",
+      String(min(max(query.minimumReputationConfidence, 0), 100)),
+      String(min(max(query.pageSize, 1), AgentNetworkSearchQuery.maxPageSize))
+    ].joined(separator: "\u{001f}")
+    return String(agentReputationSha256(Data(canonical.utf8)).prefix(24))
+  }
+
+  private func inferredCapabilities(from text: String) -> Set<AgentCapability> {
+    let tokens = searchTokens(text)
+    var capabilities = Set<AgentCapability>()
+    if !tokens.isDisjoint(with: ["code", "coding", "debug", "python", "repo", "project", "commit"]) {
+      capabilities.insert(.code)
+    }
+    if !tokens.isDisjoint(with: ["research", "search", "web", "latest", "news"]) {
+      capabilities.insert(.research)
+    }
+    if !tokens.isDisjoint(with: ["live", "realtime", "online"]) {
+      capabilities.insert(.liveData)
+    }
+    if !tokens.isDisjoint(with: ["reason", "architecture", "plan"]) {
+      capabilities.insert(.reasoning)
+    }
+    if !tokens.isDisjoint(with: ["verify", "verification", "validate", "audit", "auditor"]) {
+      capabilities.insert(.reasoning)
+      capabilities.insert(.research)
+    }
+    return capabilities
+  }
+
+  private func statusScore(_ status: AgentEndpointStatus) -> Int {
+    switch status {
+    case .idle: return 240
+    case .online: return 220
+    case .busy: return 120
+    case .degraded: return -80
+    case .updating: return -140
+    case .permissionRequired: return -180
+    case .offline: return -300
+    case .unreachable: return -420
+    }
+  }
+
+  private func trustScore(_ trust: AgentResourceTrust) -> Int {
+    switch trust {
+    case .phoneSystem: return 180
+    case .verifiedPaired: return 160
+    case .privateConfigured: return 110
+    case .cloudConfigured: return 55
+    case .unknown: return -160
+    }
+  }
+
+  private func distinctReasons(_ reasons: [String]) -> [String] {
+    var seen = Set<String>()
+    return reasons.filter { seen.insert($0).inserted }
+  }
+
+  private static let routableStates: Set<AgentEndpointStatus> = [.online, .idle, .busy]
+  static let heartbeatTTLMillis: Int64 = 10 * 60_000
+}
+
+private struct AgentNetworkCursor {
+  var revision: Int64
+  var queryId: String
+  var lastAgentId: String
+
+  func encode() -> String {
+    Data("\(revision)\u{001f}\(queryId)\u{001f}\(lastAgentId)".utf8)
+      .base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  static func decode(_ raw: String) -> AgentNetworkCursor? {
+    guard !raw.isEmpty else {
+      return nil
+    }
+    var base64 = raw
+      .replacingOccurrences(of: "-", with: "+")
+      .replacingOccurrences(of: "_", with: "/")
+    while base64.count % 4 != 0 {
+      base64 += "="
+    }
+    guard let data = Data(base64Encoded: base64) else {
+      return nil
+    }
+    let parts = String(decoding: data, as: UTF8.self).split(separator: "\u{001f}", omittingEmptySubsequences: false)
+    guard parts.count == 3,
+      let revision = Int64(parts[0]) else {
+      return nil
+    }
+    return AgentNetworkCursor(revision: revision, queryId: String(parts[1]), lastAgentId: String(parts[2]))
+  }
+}
+
+private extension AgentRegistration {
+  func withEffectiveNetworkStatus(nowMillis: Int64) -> AgentRegistration {
+    let stale = location != .phone &&
+      lastHeartbeatMillis > 0 &&
+      nowMillis - lastHeartbeatMillis > AgentNetworkIndex.heartbeatTTLMillis &&
+      status != .offline &&
+      status != .unreachable
+    guard stale else {
+      return self
+    }
+    var copy = self
+    copy.status = .unreachable
+    return copy
+  }
+
+  func indexTokens() -> Set<String> {
+    var tokens = Set<String>()
+    [agentId, installationId, deviceId, providerId, displayName, adapterType].forEach {
+      tokens.formUnion(searchTokens($0))
+    }
+    capabilities.forEach { tokens.formUnion(searchTokens($0.rawValue)) }
+    toolIds.forEach { tokens.formUnion(searchTokens($0)) }
+    return tokens
+  }
+}
+
+private func searchTokens(_ value: String) -> Set<String> {
+  Set(normalizeSearchText(value)
+    .components(separatedBy: CharacterSet.alphanumerics.inverted)
+    .filter { $0.count >= 2 })
+}
+
+private func normalizeSearchText(_ value: String) -> String {
+  value
+    .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+    .lowercased()
+    .trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+enum AgentDeliveryMode: String, Codable, CaseIterable, Identifiable {
+  case respond = "RESPOND"
+  case observe = "OBSERVE"
+  case ignore = "IGNORE"
+
+  var id: String { rawValue }
+}
+
+enum AgentRoutingMode: String, Codable, CaseIterable, Identifiable {
+  case balanced = "BALANCED"
+  case fast = "FAST"
+  case economy = "ECONOMY"
+  case quality = "QUALITY"
+  case `private` = "PRIVATE"
+
+  var id: String { rawValue }
+}
+
+enum AgentDataSensitivity: String, Codable, CaseIterable, Identifiable {
+  case `public` = "PUBLIC"
+  case personal = "PERSONAL"
+  case confidential = "CONFIDENTIAL"
+  case restricted = "RESTRICTED"
+
+  var id: String { rawValue }
+}
+
+struct AgentTaskRequirements: Codable, Equatable {
+  var capabilities: Set<AgentCapability>
+  var mode: AgentRoutingMode
+  var localOnly: Bool
+  var complexReasoning: Bool
+  var dataSensitivity: AgentDataSensitivity
+
+  init(
+    capabilities: Set<AgentCapability> = [],
+    mode: AgentRoutingMode = .balanced,
+    localOnly: Bool = false,
+    complexReasoning: Bool = false,
+    dataSensitivity: AgentDataSensitivity = .personal
+  ) {
+    self.capabilities = capabilities
+    self.mode = mode
+    self.localOnly = localOnly
+    self.complexReasoning = complexReasoning
+    self.dataSensitivity = dataSensitivity
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case capabilities
+    case mode
+    case localOnly = "local_only"
+    case complexReasoning = "complex_reasoning"
+    case dataSensitivity = "data_sensitivity"
+  }
+}
+
+enum AgentDynamicTeamOutcome: String, Codable, CaseIterable, Identifiable {
+  case singleAgent = "SINGLE_AGENT"
+  case team = "TEAM"
+  case unavailable = "UNAVAILABLE"
+  case blocked = "BLOCKED"
+
+  var id: String { rawValue }
+}
+
+enum AgentDynamicTeamRole: String, Codable, CaseIterable, Identifiable {
+  case lead = "LEAD"
+  case researcher = "RESEARCHER"
+  case implementer = "IMPLEMENTER"
+  case knowledgeSpecialist = "KNOWLEDGE_SPECIALIST"
+  case deviceOperator = "DEVICE_OPERATOR"
+  case toolSpecialist = "TOOL_SPECIALIST"
+  case analyst = "ANALYST"
+  case verifier = "VERIFIER"
+  case requestedSpecialist = "REQUESTED_SPECIALIST"
+
+  var id: String { rawValue }
+}
+
+enum AgentTeamVerificationMode: String, Codable, CaseIterable, Identifiable {
+  case disabled = "DISABLED"
+  case auto = "AUTO"
+  case required = "REQUIRED"
+
+  var id: String { rawValue }
+}
+
+enum AgentTeamVisibilityMode: String, Codable, CaseIterable, Identifiable {
+  case background = "BACKGROUND"
+  case visible = "VISIBLE"
+
+  var id: String { rawValue }
+}
+
+struct AgentTeamCompilationBudget: Codable, Equatable {
+  var maxMembers: Int
+  var maxCloudMembers: Int
+  var maximumMemberCost: AgentResourceCost
+  var maximumMemberLatency: AgentResourceLatency
+  var maxEstimatedCostUnits: Int
+
+  init(
+    maxMembers: Int = 5,
+    maxCloudMembers: Int = 1,
+    maximumMemberCost: AgentResourceCost = .high,
+    maximumMemberLatency: AgentResourceLatency = .slow,
+    maxEstimatedCostUnits: Int = 16
+  ) {
+    self.maxMembers = maxMembers
+    self.maxCloudMembers = maxCloudMembers
+    self.maximumMemberCost = maximumMemberCost
+    self.maximumMemberLatency = maximumMemberLatency
+    self.maxEstimatedCostUnits = maxEstimatedCostUnits
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case maxMembers = "max_members"
+    case maxCloudMembers = "max_cloud_members"
+    case maximumMemberCost = "maximum_member_cost"
+    case maximumMemberLatency = "maximum_member_latency"
+    case maxEstimatedCostUnits = "max_estimated_cost_units"
+  }
+}
+
+struct AgentDynamicTeamPolicy: Codable, Equatable {
+  var forceTeam: Bool
+  var trustedOnly: Bool
+  var preferFailureDomainDiversity: Bool
+  var verificationMode: AgentTeamVerificationMode
+  var visibilityMode: AgentTeamVisibilityMode
+  var pinnedAgentIds: Set<String>
+  var excludedAgentIds: Set<String>
+  var budget: AgentTeamCompilationBudget
+
+  init(
+    forceTeam: Bool = false,
+    trustedOnly: Bool = true,
+    preferFailureDomainDiversity: Bool = true,
+    verificationMode: AgentTeamVerificationMode = .auto,
+    visibilityMode: AgentTeamVisibilityMode = .background,
+    pinnedAgentIds: Set<String> = [],
+    excludedAgentIds: Set<String> = [],
+    budget: AgentTeamCompilationBudget = AgentTeamCompilationBudget()
+  ) {
+    self.forceTeam = forceTeam
+    self.trustedOnly = trustedOnly
+    self.preferFailureDomainDiversity = preferFailureDomainDiversity
+    self.verificationMode = verificationMode
+    self.visibilityMode = visibilityMode
+    self.pinnedAgentIds = pinnedAgentIds
+    self.excludedAgentIds = excludedAgentIds
+    self.budget = budget
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case forceTeam = "force_team"
+    case trustedOnly = "trusted_only"
+    case preferFailureDomainDiversity = "prefer_failure_domain_diversity"
+    case verificationMode = "verification_mode"
+    case visibilityMode = "visibility_mode"
+    case pinnedAgentIds = "pinned_agent_ids"
+    case excludedAgentIds = "excluded_agent_ids"
+    case budget
+  }
+}
+
+struct AgentDynamicTeamRequest: Codable, Equatable {
+  var goal: String
+  var teamId: String
+  var policy: AgentDynamicTeamPolicy
+
+  init(
+    goal: String,
+    teamId: String = UUID().uuidString,
+    policy: AgentDynamicTeamPolicy = AgentDynamicTeamPolicy()
+  ) {
+    self.goal = goal
+    self.teamId = teamId
+    self.policy = policy
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case goal
+    case teamId = "team_id"
+    case policy
+  }
+}
+
+struct AgentDynamicTeamAssignment: Codable, Equatable {
+  var role: AgentDynamicTeamRole
+  var registration: AgentRegistration
+  var score: Int
+  var requiredCapabilities: Set<AgentCapability>
+  var objective: String
+  var reasons: [String]
+
+  var failureDomain: String {
+    registration.effectiveTeamFailureDomain()
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case role
+    case registration
+    case score
+    case requiredCapabilities = "required_capabilities"
+    case objective
+    case reasons
+  }
+}
+
+struct AgentTeamMember: Codable, Equatable {
+  var agentId: String
+  var deliveryMode: AgentDeliveryMode
+  var requiredCapabilities: Set<AgentCapability>
+  var role: String
+  var objective: String
+  var dependsOnAgentIds: Set<String>
+  var context: [String: String]
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case deliveryMode = "delivery_mode"
+    case requiredCapabilities = "required_capabilities"
+    case role
+    case objective
+    case dependsOnAgentIds = "depends_on_agent_ids"
+    case context
+  }
+}
+
+struct AgentTeamDefinition: Codable, Equatable {
+  var teamId: String
+  var primaryAgentId: String
+  var members: [AgentTeamMember]
+  var visibilityMode: AgentTeamVisibilityMode
+  var collectiveCapabilities: Set<AgentCapability>
+
+  enum CodingKeys: String, CodingKey {
+    case teamId = "team_id"
+    case primaryAgentId = "primary_agent_id"
+    case members
+    case visibilityMode = "visibility_mode"
+    case collectiveCapabilities = "collective_capabilities"
+  }
+}
+
+struct AgentDynamicTeamCompilation: Codable, Equatable {
+  var outcome: AgentDynamicTeamOutcome
+  var goal: String
+  var requirements: AgentTaskRequirements
+  var definition: AgentTeamDefinition?
+  var primaryAgentId: String?
+  var assignments: [AgentDynamicTeamAssignment]
+  var unfilledRoles: Set<AgentDynamicTeamRole>
+  var warnings: [String]
+  var estimatedCostUnits: Int
+  var failureDomains: Set<String>
+  var rationale: [String]
+
+  enum CodingKeys: String, CodingKey {
+    case outcome
+    case goal
+    case requirements
+    case definition
+    case primaryAgentId = "primary_agent_id"
+    case assignments
+    case unfilledRoles = "unfilled_roles"
+    case warnings
+    case estimatedCostUnits = "estimated_cost_units"
+    case failureDomains = "failure_domains"
+    case rationale
+  }
+}
+
+enum AgentTaskRequirementAnalyzer {
+  static func analyze(_ goal: String) -> AgentTaskRequirements {
+    let normalized = normalizeSearchText(goal)
+    let tokens = searchTokens(goal)
+    var capabilities = Set<AgentCapability>()
+    if !tokens.isDisjoint(with: ["code", "coding", "debug", "python", "program", "implement", "api"]) {
+      capabilities.insert(.code)
+    }
+    if !tokens.isDisjoint(with: ["latest", "current", "web", "research", "search"]) {
+      capabilities.insert(.liveData)
+      capabilities.insert(.research)
+    }
+    if !tokens.isDisjoint(with: ["knowledge", "memory", "private"]) {
+      capabilities.insert(.knowledgeSearch)
+    }
+    if !tokens.isDisjoint(with: ["device", "phone", "app", "open", "navigate"]) {
+      capabilities.insert(.deviceControl)
+    }
+    let localOnly = normalized.contains("local only") || normalized.contains("locally only")
+    let dataSensitivity: AgentDataSensitivity
+    if normalized.contains("private key") || normalized.contains("secret") || normalized.contains("restricted") {
+      dataSensitivity = .restricted
+    } else if normalized.contains("private") || normalized.contains("confidential") {
+      dataSensitivity = .confidential
+    } else {
+      dataSensitivity = .personal
+    }
+    let mode: AgentRoutingMode
+    if localOnly {
+      mode = .private
+    } else if tokens.contains("fast") {
+      mode = .fast
+    } else if tokens.contains("economy") || tokens.contains("cheap") {
+      mode = .economy
+    } else if normalized.contains("high quality") || tokens.contains("quality") || tokens.contains("best") {
+      mode = .quality
+    } else {
+      mode = .balanced
+    }
+    let complexReasoning = normalized.contains("architecture") ||
+      normalized.contains("high quality") ||
+      normalized.contains("difficult") ||
+      tokens.contains("analyze")
+    return AgentTaskRequirements(
+      capabilities: capabilities,
+      mode: mode,
+      localOnly: localOnly,
+      complexReasoning: complexReasoning,
+      dataSensitivity: dataSensitivity
+    )
+  }
+}
+
+final class AgentDynamicTeamCompiler {
+  func compile(
+    request: AgentDynamicTeamRequest,
+    registrations: [AgentRegistration],
+    reputations: [String: AgentReputationSnapshot] = [:],
+    reputationRevision: Int64 = 0,
+    nowMillis: Int64 = AgentRemoteApprovalClock.nowMillis()
+  ) -> AgentDynamicTeamCompilation {
+    let goal = request.goal.trimmingCharacters(in: .whitespacesAndNewlines)
+    precondition(!goal.isEmpty, "Dynamic Agent team goal must not be blank")
+    precondition(!request.teamId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "Dynamic Agent team id must not be blank")
+
+    let policy = request.policy
+    let budget = normalized(policy.budget)
+    let requirements = AgentTaskRequirementAnalyzer.analyze(goal)
+    let index = AgentNetworkIndex(registrations, reputations: reputations, reputationRevision: reputationRevision)
+    var warnings: [String] = []
+    var unfilledRoles = Set<AgentDynamicTeamRole>()
+    var assignments: [AgentDynamicTeamAssignment] = []
+
+    let leadSpec = RoleSpec(
+      role: .lead,
+      requiredAny: Self.leadCapabilities,
+      preferred: requirements.capabilities.union([.chat, .reasoning]),
+      objective: "Own the task, synthesize specialist evidence, and return one final result.",
+      priority: 1_000
+    )
+    guard let lead = select(
+      role: leadSpec,
+      goal: goal,
+      index: index,
+      requirements: requirements,
+      policy: policy,
+      budget: budget,
+      selected: assignments,
+      reservedSlots: 0,
+      nowMillis: nowMillis
+    ) else {
+      return unavailable(request, requirements: requirements, warnings: ["No trusted and routable lead Agent satisfies the task boundary."], unfilledRoles: [.lead])
+    }
+    let collectiveCapabilities = mandatoryCapabilities(requirements)
+    assignments.append(lead.withRequiredCapabilities(collectiveCapabilities.intersection(lead.registration.capabilities)))
+
+    let verificationWanted = verificationWanted(goal: goal, requirements: requirements, mode: policy.verificationMode)
+    let reserveVerifier = verificationWanted && budget.maxMembers > 1 ? 1 : 0
+    addPinnedAssignments(
+      policy: policy,
+      index: index,
+      goal: goal,
+      requirements: requirements,
+      budget: budget,
+      assignments: &assignments,
+      warnings: &warnings,
+      reservedSlots: reserveVerifier,
+      nowMillis: nowMillis
+    )
+
+    for role in roleSpecs(goal: goal, requirements: requirements) {
+      let leadCoversRole = assignments.first?.registration.satisfies(role) == true
+      let independentSpecialistWanted = policy.forceTeam || requirements.mode == .quality
+      if leadCoversRole && !independentSpecialistWanted {
+        continue
+      }
+      if let selected = select(
+        role: role,
+        goal: goal,
+        index: index,
+        requirements: requirements,
+        policy: policy,
+        budget: budget,
+        selected: assignments,
+        reservedSlots: reserveVerifier,
+        nowMillis: nowMillis
+      ) {
+        assignments.append(selected)
+      } else if !leadCoversRole {
+        unfilledRoles.insert(role.role)
+      }
+    }
+
+    if verificationWanted && assignments.count < budget.maxMembers {
+      if let verifier = select(
+        role: verifierSpec(goal: goal, requirements: requirements),
+        goal: "\(goal) independent verification",
+        index: index,
+        requirements: requirements,
+        policy: policy,
+        budget: budget,
+        selected: assignments,
+        reservedSlots: 0,
+        nowMillis: nowMillis,
+        requireIndependentFailureDomain: policy.verificationMode == .required
+      ) {
+        assignments.append(verifier)
+      } else {
+        unfilledRoles.insert(.verifier)
+        warnings.append("No independent verifier is currently available.")
+      }
+    }
+
+    let coveredCapabilities = assignments.reduce(into: Set<AgentCapability>()) {
+      $0.formUnion($1.registration.capabilities)
+    }
+    let missingCapabilities = collectiveCapabilities.subtracting(coveredCapabilities)
+    if !missingCapabilities.isEmpty {
+      warnings.append("Missing task capabilities: \(missingCapabilities.map(\.rawValue).sorted().joined(separator: ","))")
+      return unavailable(request, requirements: requirements, warnings: warnings, unfilledRoles: unfilledRoles, assignments: assignments)
+    }
+    if policy.verificationMode == .required && !assignments.contains(where: { $0.role == .verifier }) {
+      return blocked(request, requirements: requirements, warnings: warnings, unfilledRoles: unfilledRoles, assignments: assignments)
+    }
+    if policy.forceTeam && assignments.count < 2 {
+      warnings.append("The requested team cannot be formed within the current trust and budget boundary.")
+      return blocked(request, requirements: requirements, warnings: warnings, unfilledRoles: unfilledRoles, assignments: assignments)
+    }
+
+    let uniqueAssignments = assignments.distinctByAgentId()
+    let shouldUseTeam = uniqueAssignments.count >= 2 &&
+      (policy.forceTeam || uniqueAssignments.contains { $0.role == .verifier } || uniqueAssignments.contains { $0.role != .lead })
+    if !shouldUseTeam {
+      return result(
+        outcome: .singleAgent,
+        request: request,
+        requirements: requirements,
+        definition: nil,
+        assignments: uniqueAssignments,
+        unfilledRoles: unfilledRoles,
+        warnings: warnings,
+        collectiveCapabilities: collectiveCapabilities
+      )
+    }
+    return result(
+      outcome: .team,
+      request: request,
+      requirements: requirements,
+      definition: buildDefinition(request: request, assignments: uniqueAssignments, collectiveCapabilities: collectiveCapabilities),
+      assignments: uniqueAssignments,
+      unfilledRoles: unfilledRoles,
+      warnings: warnings,
+      collectiveCapabilities: collectiveCapabilities
+    )
+  }
+
+  private func addPinnedAssignments(
+    policy: AgentDynamicTeamPolicy,
+    index: AgentNetworkIndex,
+    goal: String,
+    requirements: AgentTaskRequirements,
+    budget: AgentTeamCompilationBudget,
+    assignments: inout [AgentDynamicTeamAssignment],
+    warnings: inout [String],
+    reservedSlots: Int,
+    nowMillis: Int64
+  ) {
+    for agentId in policy.pinnedAgentIds.sorted() where !assignments.contains(where: { $0.registration.agentId == agentId }) {
+      guard assignments.count < budget.maxMembers - reservedSlots else {
+        warnings.append("Pinned Agent \(agentId) exceeds the team member budget.")
+        continue
+      }
+      guard let registration = index.get(agentId, nowMillis: nowMillis),
+        isEligible(registration, requirements: requirements, policy: policy, budget: budget, selected: assignments) else {
+        warnings.append("Pinned Agent \(agentId) is unavailable or outside the task boundary.")
+        continue
+      }
+      assignments.append(AgentDynamicTeamAssignment(
+        role: .requestedSpecialist,
+        registration: registration,
+        score: Self.pinnedAgentScore,
+        requiredCapabilities: mandatoryCapabilities(requirements).intersection(registration.capabilities),
+        objective: "Contribute the explicitly requested Agent expertise to: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+        reasons: ["user_pinned", "identity:\(registration.agentId)"]
+      ))
+    }
+  }
+
+  private func select(
+    role: RoleSpec,
+    goal: String,
+    index: AgentNetworkIndex,
+    requirements: AgentTaskRequirements,
+    policy: AgentDynamicTeamPolicy,
+    budget: AgentTeamCompilationBudget,
+    selected: [AgentDynamicTeamAssignment],
+    reservedSlots: Int,
+    nowMillis: Int64,
+    requireIndependentFailureDomain: Bool = false
+  ) -> AgentDynamicTeamAssignment? {
+    guard selected.count < budget.maxMembers - reservedSlots else {
+      return nil
+    }
+    let usedAgentIds = Set(selected.map { $0.registration.agentId })
+    var searchHits = index.search(
+      AgentNetworkSearchQuery(
+        text: goal,
+        requiredCapabilities: role.requiredAll,
+        preferredCapabilities: role.preferred.union(role.requiredAny),
+        kinds: role.allowedKinds,
+        excludedAgentIds: policy.excludedAgentIds.union(usedAgentIds),
+        trustedOnly: policy.trustedOnly,
+        routableOnly: true,
+        includeAtCapacity: false,
+        maximumCost: budget.maximumMemberCost,
+        maximumLatency: budget.maximumMemberLatency,
+        pageSize: AgentNetworkSearchQuery.maxPageSize
+      ),
+      nowMillis: nowMillis
+    ).hits
+
+    for agentId in policy.pinnedAgentIds.sorted() where !searchHits.contains(where: { $0.registration.agentId == agentId }) {
+      if let registration = index.get(agentId, nowMillis: nowMillis) {
+        searchHits.append(AgentNetworkSearchHit(
+          registration: registration,
+          score: 0,
+          matchedCapabilities: registration.capabilities.intersection(role.preferred),
+          reasons: ["pinned_agent"],
+          reputation: .neutral(registration.agentId)
+        ))
+      }
+    }
+
+    let selectedDomains = Set(selected.map(\.failureDomain))
+    let candidates = searchHits
+      .filter { $0.registration.satisfies(role) }
+      .filter { isEligible($0.registration, requirements: requirements, policy: policy, budget: budget, selected: selected) }
+      .map { hit -> RankedRoleCandidate in
+        let domain = hit.registration.effectiveTeamFailureDomain()
+        let independent = !selectedDomains.contains(domain)
+        let diversityBonus = policy.preferFailureDomainDiversity && independent ? 180 : 0
+        let pinnedBonus = policy.pinnedAgentIds.contains(hit.registration.agentId) ? Self.pinnedAgentScore : 0
+        let leadExecutionBonus = role.role == .lead && requirements.capabilities.contains(.code) && hit.registration.capabilities.contains(.code) ? 300 : 0
+        let taskExecutionBonus = role.role == .lead && hit.registration.capabilities.contains(.taskExecution) ? 120 : 0
+        return RankedRoleCandidate(
+          hit: hit,
+          score: hit.score +
+            role.priority +
+            role.preferred.intersection(hit.registration.capabilities).count * 120 +
+            diversityBonus +
+            pinnedBonus +
+            leadExecutionBonus +
+            taskExecutionBonus,
+          independent: independent
+        )
+      }
+      .sorted {
+        if $0.score != $1.score { return $0.score > $1.score }
+        let lhsName = $0.hit.registration.displayName.lowercased()
+        let rhsName = $1.hit.registration.displayName.lowercased()
+        if lhsName != rhsName { return lhsName < rhsName }
+        return $0.hit.registration.agentId < $1.hit.registration.agentId
+      }
+
+    let selectedCandidate: RankedRoleCandidate?
+    if requireIndependentFailureDomain || role.role == .verifier {
+      selectedCandidate = candidates.first { $0.independent } ?? (requireIndependentFailureDomain ? nil : candidates.first)
+    } else {
+      selectedCandidate = candidates.first
+    }
+    guard let selectedCandidate else {
+      return nil
+    }
+    let registration = selectedCandidate.hit.registration
+    let anyCapability = role.requiredAny.intersection(registration.capabilities).sorted { $0.rawValue < $1.rawValue }.first
+    let requiredCapabilities = role.requiredAll.union(anyCapability.map { Set([$0]) } ?? Set<AgentCapability>())
+    return AgentDynamicTeamAssignment(
+      role: role.role,
+      registration: registration,
+      score: selectedCandidate.score,
+      requiredCapabilities: requiredCapabilities,
+      objective: role.objective,
+      reasons: (selectedCandidate.hit.reasons +
+        ["role:\(role.role.rawValue.lowercased())", "failure_domain:\(registration.effectiveTeamFailureDomain())"] +
+        (selectedCandidate.independent ? ["independent_failure_domain"] : []))
+        .stableDistinct()
+    )
+  }
+
+  private func buildDefinition(
+    request: AgentDynamicTeamRequest,
+    assignments: [AgentDynamicTeamAssignment],
+    collectiveCapabilities: Set<AgentCapability>
+  ) -> AgentTeamDefinition {
+    let lead = assignments.first { $0.role == .lead } ?? assignments[0]
+    let observers = assignments.filter { $0.registration.agentId != lead.registration.agentId }
+    let observerIds = Set(observers.map { $0.registration.agentId })
+    let nonVerifierObserverIds = Set(observers.filter { $0.role != .verifier }.map { $0.registration.agentId })
+    let members = assignments.map { assignment -> AgentTeamMember in
+      let dependencies: Set<String>
+      if assignment.role == .lead {
+        dependencies = observerIds
+      } else if assignment.role == .verifier {
+        dependencies = nonVerifierObserverIds
+      } else {
+        dependencies = []
+      }
+      return AgentTeamMember(
+        agentId: assignment.registration.agentId,
+        deliveryMode: assignment.role == .lead ? .respond : .observe,
+        requiredCapabilities: assignment.requiredCapabilities,
+        role: roleName(assignment.role),
+        objective: String(assignment.objective.prefix(Self.maxObjectiveCharacters)),
+        dependsOnAgentIds: dependencies,
+        context: [
+          "compiled_role": assignment.role.rawValue.lowercased(),
+          "agent_display_name": assignment.registration.displayName,
+          "agent_failure_domain": assignment.failureDomain
+        ]
+      )
+    }
+    return AgentTeamDefinition(
+      teamId: request.teamId,
+      primaryAgentId: lead.registration.agentId,
+      members: members,
+      visibilityMode: request.policy.visibilityMode,
+      collectiveCapabilities: collectiveCapabilities
+    )
+  }
+
+  private func result(
+    outcome: AgentDynamicTeamOutcome,
+    request: AgentDynamicTeamRequest,
+    requirements: AgentTaskRequirements,
+    definition: AgentTeamDefinition?,
+    assignments: [AgentDynamicTeamAssignment],
+    unfilledRoles: Set<AgentDynamicTeamRole>,
+    warnings: [String],
+    collectiveCapabilities: Set<AgentCapability>
+  ) -> AgentDynamicTeamCompilation {
+    let domains = Set(assignments.map(\.failureDomain))
+    return AgentDynamicTeamCompilation(
+      outcome: outcome,
+      goal: request.goal.trimmingCharacters(in: .whitespacesAndNewlines),
+      requirements: requirements,
+      definition: definition,
+      primaryAgentId: assignments.first { $0.role == .lead }?.registration.agentId,
+      assignments: assignments,
+      unfilledRoles: unfilledRoles,
+      warnings: warnings.stableDistinct(),
+      estimatedCostUnits: assignments.reduce(0) { $0 + costUnits($1.registration.cost) },
+      failureDomains: domains,
+      rationale: [
+        "outcome:\(outcome.rawValue.lowercased())",
+        "members:\(assignments.count)",
+        "collective_capabilities:\(collectiveCapabilities.map(\.rawValue).sorted().joined(separator: ","))",
+        "failure_domains:\(domains.count)",
+        "verification:\(request.policy.verificationMode.rawValue.lowercased())"
+      ]
+    )
+  }
+
+  private func unavailable(
+    _ request: AgentDynamicTeamRequest,
+    requirements: AgentTaskRequirements,
+    warnings: [String],
+    unfilledRoles: Set<AgentDynamicTeamRole>,
+    assignments: [AgentDynamicTeamAssignment] = []
+  ) -> AgentDynamicTeamCompilation {
+    result(
+      outcome: .unavailable,
+      request: request,
+      requirements: requirements,
+      definition: nil,
+      assignments: assignments,
+      unfilledRoles: unfilledRoles,
+      warnings: warnings,
+      collectiveCapabilities: mandatoryCapabilities(requirements)
+    )
+  }
+
+  private func blocked(
+    _ request: AgentDynamicTeamRequest,
+    requirements: AgentTaskRequirements,
+    warnings: [String],
+    unfilledRoles: Set<AgentDynamicTeamRole>,
+    assignments: [AgentDynamicTeamAssignment]
+  ) -> AgentDynamicTeamCompilation {
+    result(
+      outcome: .blocked,
+      request: request,
+      requirements: requirements,
+      definition: nil,
+      assignments: assignments,
+      unfilledRoles: unfilledRoles,
+      warnings: warnings,
+      collectiveCapabilities: mandatoryCapabilities(requirements)
+    )
+  }
+
+  private func roleSpecs(goal: String, requirements: AgentTaskRequirements) -> [RoleSpec] {
+    var specs: [RoleSpec] = []
+    if requirements.capabilities.contains(.liveData) {
+      specs.append(RoleSpec(
+        role: .researcher,
+        requiredAll: [.liveData],
+        preferred: [.research, .toolUse],
+        objective: "Collect current, attributable evidence needed for: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+        priority: 760
+      ))
+    }
+    if requirements.capabilities.contains(.code) {
+      specs.append(RoleSpec(
+        role: .implementer,
+        requiredAll: [.code],
+        preferred: [.taskExecution, .toolUse],
+        objective: "Implement and validate the technical work required for: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+        priority: 800
+      ))
+    }
+    if requirements.capabilities.contains(.knowledgeSearch) {
+      specs.append(RoleSpec(
+        role: .knowledgeSpecialist,
+        requiredAll: [.knowledgeSearch],
+        preferred: [.reasoning],
+        objective: "Retrieve relevant private knowledge with evidence for: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+        priority: 720
+      ))
+    }
+    let deviceCapabilities = requirements.capabilities.intersection([.deviceControl, .appNavigation])
+    if !deviceCapabilities.isEmpty {
+      specs.append(RoleSpec(
+        role: .deviceOperator,
+        requiredAll: deviceCapabilities,
+        preferred: [.toolUse],
+        allowedKinds: [.agent, .device],
+        objective: "Plan and perform the authorized device actions required for: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+        priority: 820
+      ))
+    }
+    if specs.isEmpty && requirements.complexReasoning {
+      specs.append(RoleSpec(
+        role: .analyst,
+        requiredAny: [.reasoning, .research],
+        preferred: [.reasoning],
+        objective: "Independently analyze assumptions and solution paths for: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+        priority: 680
+      ))
+    }
+    return specs
+  }
+
+  private func verifierSpec(goal: String, requirements: AgentTaskRequirements) -> RoleSpec {
+    var preferred: Set<AgentCapability> = [.reasoning, .research]
+    if requirements.capabilities.contains(.code) { preferred.insert(.code) }
+    if requirements.capabilities.contains(.liveData) { preferred.insert(.liveData) }
+    return RoleSpec(
+      role: .verifier,
+      requiredAny: preferred,
+      preferred: preferred,
+      objective: "Independently verify the team evidence, execution, and claims for: \(String(goal.prefix(Self.maxObjectiveCharacters)))",
+      priority: 900
+    )
+  }
+
+  private func verificationWanted(
+    goal: String,
+    requirements: AgentTaskRequirements,
+    mode: AgentTeamVerificationMode
+  ) -> Bool {
+    switch mode {
+    case .disabled:
+      return false
+    case .required:
+      return true
+    case .auto:
+      let normalized = normalizeSearchText(goal)
+      return requirements.capabilities.contains(.code) ||
+        requirements.mode == .quality ||
+        requirements.dataSensitivity == .restricted ||
+        ["verify", "validate", "audit", "double check", "critical", "security"].contains { normalized.contains($0) }
+    }
+  }
+
+  private func mandatoryCapabilities(_ requirements: AgentTaskRequirements) -> Set<AgentCapability> {
+    requirements.capabilities.intersection(Self.mandatoryCollectiveCapabilities)
+  }
+
+  private func isEligible(
+    _ registration: AgentRegistration,
+    requirements: AgentTaskRequirements,
+    policy: AgentDynamicTeamPolicy,
+    budget: AgentTeamCompilationBudget,
+    selected: [AgentDynamicTeamAssignment]
+  ) -> Bool {
+    if policy.excludedAgentIds.contains(registration.agentId) { return false }
+    if !Self.teamRoutableStates.contains(registration.status) || !registration.hasCapacity { return false }
+    if policy.trustedOnly && registration.trust == .unknown { return false }
+    if requirements.localOnly && registration.location == .cloud { return false }
+    if requirements.dataSensitivity == .restricted &&
+      registration.trust != .phoneSystem &&
+      registration.trust != .verifiedPaired {
+      return false
+    }
+    if selected.contains(where: { $0.registration.effectiveTeamRuntimeIdentity() == registration.effectiveTeamRuntimeIdentity() }) {
+      return false
+    }
+    if registration.cost > budget.maximumMemberCost { return false }
+    if registration.latency > budget.maximumMemberLatency { return false }
+    if registration.location == .cloud && selected.filter({ $0.registration.location == .cloud }).count >= budget.maxCloudMembers {
+      return false
+    }
+    let projectedCost = selected.reduce(0) { $0 + costUnits($1.registration.cost) } + costUnits(registration.cost)
+    return projectedCost <= budget.maxEstimatedCostUnits
+  }
+
+  private func normalized(_ budget: AgentTeamCompilationBudget) -> AgentTeamCompilationBudget {
+    AgentTeamCompilationBudget(
+      maxMembers: min(max(budget.maxMembers, 1), Self.maxTeamMembers),
+      maxCloudMembers: min(max(budget.maxCloudMembers, 0), Self.maxTeamMembers),
+      maximumMemberCost: budget.maximumMemberCost,
+      maximumMemberLatency: budget.maximumMemberLatency,
+      maxEstimatedCostUnits: max(budget.maxEstimatedCostUnits, 0)
+    )
+  }
+
+  private func costUnits(_ cost: AgentResourceCost) -> Int {
+    switch cost {
+    case .free: return 0
+    case .low: return 1
+    case .medium: return 3
+    case .high: return 8
+    }
+  }
+
+  private func roleName(_ role: AgentDynamicTeamRole) -> String {
+    switch role {
+    case .lead: return "lead synthesizer"
+    case .researcher: return "research specialist"
+    case .implementer: return "implementation specialist"
+    case .knowledgeSpecialist: return "knowledge specialist"
+    case .deviceOperator: return "device operator"
+    case .toolSpecialist: return "tool specialist"
+    case .analyst: return "analysis specialist"
+    case .verifier: return "independent verifier"
+    case .requestedSpecialist: return "requested specialist"
+    }
+  }
+
+  private struct RankedRoleCandidate {
+    var hit: AgentNetworkSearchHit
+    var score: Int
+    var independent: Bool
+  }
+
+  struct RoleSpec {
+    var role: AgentDynamicTeamRole
+    var requiredAll: Set<AgentCapability> = []
+    var requiredAny: Set<AgentCapability> = []
+    var preferred: Set<AgentCapability> = []
+    var allowedKinds: Set<AgentConnectorKind> = [.agent]
+    var objective: String
+    var priority: Int
+  }
+
+  private static let maxTeamMembers = 12
+  private static let maxObjectiveCharacters = 4_000
+  private static let pinnedAgentScore = 4_000
+  private static let leadCapabilities: Set<AgentCapability> = [
+    .chat, .reasoning, .research, .code, .taskExecution, .toolUse
+  ]
+  private static let mandatoryCollectiveCapabilities: Set<AgentCapability> = [
+    .liveData, .code, .deviceControl, .appNavigation, .knowledgeSearch, .mcp, .skill
+  ]
+  private static let teamRoutableStates: Set<AgentEndpointStatus> = [.online, .idle, .busy]
+}
+
+private extension AgentDynamicTeamAssignment {
+  func withRequiredCapabilities(_ capabilities: Set<AgentCapability>) -> AgentDynamicTeamAssignment {
+    var copy = self
+    copy.requiredCapabilities = capabilities
+    return copy
+  }
+}
+
+private extension AgentRegistration {
+  func effectiveTeamFailureDomain() -> String {
+    if !failureDomain.isEmpty { return failureDomain }
+    if !runtimeFailureDomain.isEmpty { return runtimeFailureDomain }
+    return "\(location.rawValue.lowercased()):\(deviceId.isEmpty ? installationId : deviceId)"
+  }
+
+  func effectiveTeamRuntimeIdentity() -> String {
+    if !runtimeFailureDomain.isEmpty { return runtimeFailureDomain }
+    return "\(effectiveTeamFailureDomain()):\(adapterType.isEmpty ? agentId : adapterType)"
+  }
+
+  func satisfies(_ role: AgentDynamicTeamCompiler.RoleSpec) -> Bool {
+    capabilities.isSuperset(of: role.requiredAll) &&
+      (role.requiredAny.isEmpty || !capabilities.isDisjoint(with: role.requiredAny))
+  }
+}
+
+private extension Array where Element == AgentDynamicTeamAssignment {
+  func distinctByAgentId() -> [AgentDynamicTeamAssignment] {
+    var seen = Set<String>()
+    return filter { seen.insert($0.registration.agentId).inserted }
+  }
+}
+
+private extension Array where Element == String {
+  func stableDistinct() -> [String] {
+    var seen = Set<String>()
+    return filter { seen.insert($0).inserted }
+  }
+}
+
 enum AgentReputationWireCodec {
   static func decodeReceipt(_ raw: String) -> AgentSignedExecutionReceipt? {
     guard let data = raw.data(using: .utf8),
