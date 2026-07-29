@@ -1929,6 +1929,63 @@ final class SignalASIStoreTests: XCTestCase {
     )))
   }
 
+  func testAgentMcpRegistryInstallsPackageConnection() throws {
+    let manifest = try AgentMcpPackageManifestCodec.decode(mcpDeclarativePackageManifest())
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 9_000 })
+
+    let connection = try registry.installPackage(manifest, packageSha256: String(repeating: "a", count: 64))
+
+    XCTAssertEqual(connection.id, "example.relay")
+    XCTAssertEqual(connection.catalogId, "signalasi.mcp.relay")
+    XCTAssertEqual(connection.displayName, "Relay Controller")
+    XCTAssertEqual(connection.endpoint, "https://relay.example/api/")
+    XCTAssertEqual(connection.distribution, .localPackage)
+    XCTAssertEqual(connection.transport, .declarativeHTTP)
+    XCTAssertEqual(connection.authProfile.method, .dynamic)
+    XCTAssertEqual(connection.authState, .notConfigured)
+    XCTAssertEqual(connection.state, .needsSetup)
+    XCTAssertEqual(connection.toolIds, ["relay.switch"])
+    XCTAssertEqual(connection.packageVersion, "1.0.0")
+    XCTAssertEqual(connection.packageSha256, String(repeating: "a", count: 64))
+    XCTAssertEqual(connection.installedAtMillis, 9_000)
+    XCTAssertEqual(registry.get("example.relay"), connection)
+  }
+
+  func testAgentMcpPackageRepositorySavesAndPreparesLocalInvocation() throws {
+    let root = try temporaryDirectory("mcp-package-repository")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let runtime = "print('server')"
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpLocalStdioPackageManifest()),
+      ("runtime/server.py", runtime)
+    ))
+
+    try repository.save(inspection)
+    let saved = try XCTUnwrap(repository.get("example.local_mcp"))
+    let invocation = try repository.prepareLocalInvocation(
+      id: "example.local_mcp",
+      payload: #"{"operation":"list_tools"}"#
+    )
+
+    let workspace = root
+      .appendingPathComponent("agent-native-workspaces", isDirectory: true)
+      .appendingPathComponent(invocation.workspaceId, isDirectory: true)
+    let runtimeFile = workspace.appendingPathComponent("runtime/server.py", isDirectory: false)
+    let requestFile = relativeFile(invocation.requestPath, under: workspace)
+
+    XCTAssertEqual(saved.id, "example.local_mcp")
+    XCTAssertTrue(invocation.workspaceId.hasPrefix("mcp-"))
+    XCTAssertTrue(invocation.requestPath.hasPrefix(".signalasi-mcp/request-"))
+    XCTAssertEqual(try String(contentsOf: runtimeFile, encoding: .utf8), runtime)
+    XCTAssertEqual(try String(contentsOf: requestFile, encoding: .utf8), #"{"operation":"list_tools"}"#)
+
+    repository.completeLocalInvocation(invocation)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: requestFile.path))
+    repository.delete("example.local_mcp")
+    XCTAssertNil(repository.get("example.local_mcp"))
+  }
+
   func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
     let skill = AgentDefaultCapabilityCatalog.skill("signalasi.catalog.github-triage")!
     let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 1_000 })
@@ -12825,6 +12882,22 @@ final class SignalASIStoreTests: XCTestCase {
   private func mcpPackageIntegrity(for manifest: String) -> String {
     let digest = AgentMcpPackageInstaller.sha256(Data(manifest.utf8))
     return #"{"manifest_sha256":"\#(digest)"}"#
+  }
+
+  private func temporaryDirectory(_ label: String) throws -> URL {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("signalasi-\(label)-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    return root
+  }
+
+  private func relativeFile(_ relative: String, under root: URL) -> URL {
+    relative
+      .split(separator: "/")
+      .map(String.init)
+      .reduce(root) { partial, segment in
+        partial.appendingPathComponent(segment)
+      }
   }
 
   private func storedMcpPackage(_ files: (String, String)...) -> Data {
