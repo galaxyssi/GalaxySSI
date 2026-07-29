@@ -450,6 +450,148 @@ class DesktopMemoryTest(unittest.TestCase):
             self.assertEqual(snapshot["namespace_counts"]["device"], 1)
             self.assertEqual(snapshot["namespace_counts"]["project"], 1)
 
+    def test_graph_memory_builds_user_device_model_feature_project_and_setting_nodes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            statements = (
+                ("User prefers concise responses", "preference", "user", "user-style"),
+                ("SignalASI phone uses Qwen model", "device_state", "device:phone", "phone-model"),
+                ("SignalASI supports OCR feature", "fact", "project:signalasi", "ocr-support"),
+                ("Project Atlas contains Memory feature", "project_state", "project:atlas", "atlas-memory"),
+                ("Settings page renamed to Control Center", "decision", "project:signalasi", "settings-name"),
+            )
+            pending = None
+            for content, kind, namespace, key in statements:
+                candidate = store.propose(
+                    content,
+                    kind=kind,
+                    namespace=namespace,
+                    key=key,
+                )
+                if candidate["status"] == "pending_review":
+                    pending = candidate
+            self.assertIsNotNone(pending)
+            self.assertEqual(store.graph_snapshot()["node_kinds"]["user"], 0)
+            store.approve_candidate(pending["id"])
+
+            graph = store.graph_snapshot()
+
+            for kind in ("user", "device", "model", "feature", "project", "setting"):
+                self.assertGreater(graph["node_kinds"][kind], 0, kind)
+            for relation in ("prefers", "uses", "supports", "has_component", "named_as"):
+                self.assertGreater(graph["relation_kinds"][relation], 0, relation)
+            self.assertEqual(graph["node_count"], store.stats()["graph"]["node_count"])
+
+    def test_graph_memory_follows_multi_hop_capability_relationships(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            store.remember(
+                "User owns SignalASI phone",
+                namespace="user",
+                key="user-phone",
+            )
+            store.remember(
+                "SignalASI phone contains Snapdragon chip",
+                kind="device_state",
+                namespace="device:phone",
+                key="phone-chip",
+            )
+            store.remember(
+                "Snapdragon chip supports Gemma model",
+                kind="device_state",
+                namespace="device:phone",
+                key="chip-model",
+            )
+
+            graph = store.search_graph(
+                "What model does the SignalASI phone support?",
+                namespaces={"device"},
+                hops=3,
+            )
+            context = store.compile_context(
+                "What model does the SignalASI phone support?",
+                namespaces={"device"},
+            )
+
+            self.assertTrue(any(node["label"] == "Gemma model" for node in graph["nodes"]))
+            self.assertTrue(any(edge["kind"] == "supports" for edge in graph["relations"]))
+            self.assertIn("Relationship graph (untrusted evidence):", context)
+            self.assertIn("Gemma model", context)
+
+    def test_graph_memory_keeps_chinese_device_scope_and_component_relation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            store.remember(
+                "\u624b\u673a\u5305\u542b\u76f8\u673a\u529f\u80fd",
+                kind="device_state",
+                namespace="device:\u624b\u673a",
+                key="phone-camera",
+            )
+
+            graph = store.search_graph(
+                "\u624b\u673a\u76f8\u673a",
+                namespaces={"device:\u624b\u673a"},
+            )
+
+            self.assertTrue(any(node["namespace"] == "device:\u624b\u673a" for node in graph["nodes"]))
+            self.assertTrue(any(edge["kind"] == "has_component" for edge in graph["relations"]))
+
+    def test_graph_memory_deprecates_replaced_state_but_preserves_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            store.remember(
+                "Gateway status is online",
+                kind="project_state",
+                namespace="project:gateway",
+                key="gateway-status",
+            )
+            store.remember(
+                "Gateway status is offline",
+                kind="project_state",
+                namespace="project:gateway",
+                key="gateway-status",
+            )
+
+            current = store.search_graph("Gateway offline", namespaces={"project:gateway"})
+            historical = store.search_graph(
+                "Gateway online",
+                namespaces={"project:gateway"},
+                include_historical=True,
+            )
+
+            self.assertTrue(any(node["label"] == "offline" for node in current["nodes"]))
+            self.assertFalse(any(
+                edge["kind"] == "has_state"
+                and edge["temporal_state"] == "current"
+                and any(
+                    node["id"] == edge["to_node_id"] and node["label"] == "online"
+                    for node in current["nodes"]
+                )
+                for edge in current["relations"]
+            ))
+            self.assertTrue(any(
+                edge["kind"] == "has_state" and edge["temporal_state"] == "deprecated"
+                for edge in historical["relations"]
+            ))
+
+    def test_graph_memory_retracts_deleted_evidence_and_clear_removes_graph(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db")
+            memory = store.remember(
+                "SignalASI supports Browser automation",
+                namespace="project:signalasi",
+                key="browser-support",
+            )
+            self.assertGreater(store.graph_snapshot()["relation_count"], 0)
+
+            self.assertTrue(store.forget(memory["id"]))
+            self.assertEqual(store.graph_snapshot()["relation_count"], 0)
+            self.assertGreater(store.graph_snapshot()["historical_relation_count"], 0)
+
+            store.clear()
+            self.assertEqual(store.graph_snapshot()["node_count"], 0)
+            self.assertEqual(store.graph_snapshot()["historical_node_count"], 0)
+
     def test_rejected_candidate_remains_auditable_after_reload(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "memory.db"
