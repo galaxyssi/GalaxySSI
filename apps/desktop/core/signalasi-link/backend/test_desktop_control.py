@@ -228,12 +228,15 @@ class DesktopControlTests(unittest.TestCase):
         result = self.manager.execute_request(request, self.client, on_running=events.append)
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(SCREENSHOT, result["tool_id"])
-        self.assertEqual(3, result["receipt_version"])
+        self.assertEqual(4, result["receipt_version"])
         self.assertEqual(
             authorization["desktop_session_id"],
             result["desktop_session_id"],
         )
         self.assertTrue(self.identity.verify(result))
+        self.assertEqual("signalasi:" + "a" * 16, result["controller_app_instance_id"])
+        self.assertEqual("Test Phone", result["controller_name"])
+        self.assertEqual("android", result["controller_platform"])
         self.assertEqual("a" * 64, result["controller_fingerprint"])
         self.assertEqual(
             hashlib.sha256(b"\xff\xd8\xff\xd9").hexdigest(),
@@ -501,10 +504,30 @@ class DesktopControlTests(unittest.TestCase):
         self.assertEqual("desktop_control_busy", receipt["error_code"])
         self.assertTrue(receipt["error_retryable"])
         self.assertTrue(self.identity.verify(receipt))
+        self.assertEqual("Test Phone", receipt["controller_name"])
         self.assertEqual(
             hashlib.sha256(_canonical_json({"text": "private"})).hexdigest(),
             receipt["input_sha256"],
         )
+
+    def test_controller_identity_and_result_are_tamper_evident(self):
+        authorization = self.authorize()
+        receipt = self.manager.execute_request(
+            self.request(authorization),
+            self.client,
+        )
+
+        for field, value in (
+            ("controller_app_instance_id", "signalasi:other"),
+            ("controller_name", "Other phone"),
+            ("controller_platform", "ios"),
+            ("tool_id", TYPE_TEXT),
+            ("status", "failed"),
+            ("completed_at", receipt["completed_at"] + 1),
+        ):
+            tampered = dict(receipt)
+            tampered[field] = value
+            self.assertFalse(self.identity.verify(tampered), field)
 
     def test_request_digest_binds_task_action_and_controller_identity(self):
         authorization = self.authorize()

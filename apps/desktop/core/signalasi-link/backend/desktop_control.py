@@ -40,7 +40,7 @@ from tool_handle_registry import (
 CONTRACT_VERSION = "signalasi.desktop-control/1.2"
 AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
-RECEIPT_VERSION = 3
+RECEIPT_VERSION = 4
 OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
 DESKTOP_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -73,6 +73,9 @@ RECEIPT_SIGNED_FIELDS = (
     "input_sha256",
     "output_sha256",
     "evidence_sha256",
+    "controller_app_instance_id",
+    "controller_name",
+    "controller_platform",
     "controller_fingerprint",
     "started_at",
     "completed_at",
@@ -931,6 +934,15 @@ class DesktopControlManager:
             "input_sha256": input_sha256,
             "output_sha256": output_sha256,
             "evidence_sha256": evidence_sha256,
+            "controller_app_instance_id": str(
+                paired_client.get("signal_name") or ""
+            ),
+            "controller_name": str(
+                paired_client.get("display_name") or "SignalASI App"
+            )[:120],
+            "controller_platform": str(
+                paired_client.get("platform") or "unknown"
+            )[:32],
             "controller_fingerprint": str(paired_client.get("identity_fingerprint") or "").lower(),
             "started_at": int(receipt.get("started_at") or 0),
             "completed_at": int(receipt.get("completed_at") or 0),
