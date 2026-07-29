@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 import unittest
 
 from tool_marketplace import ToolMarketplace, ToolMarketplaceError
+from tool_marketplace_lifecycle import MarketplaceLifecycleStore
 
 
 class FakeMcpRegistry:
@@ -63,12 +66,26 @@ class FakeProactiveRuntime:
         task = SimpleNamespace(
             task_id=value["task_id"],
             enabled=bool(value.get("enabled", True)),
+            public=lambda: {
+                "task_id": value["task_id"],
+                "name": value["name"],
+                "trigger": dict(value["trigger"]),
+                "action": dict(value["action"]),
+                "policy": dict(value.get("policy") or {}),
+                "enabled": bool(value.get("enabled", True)),
+            },
         )
         self.store.rows[task.task_id] = task
         return {"task_id": task.task_id, "enabled": task.enabled}
 
     def delete(self, task_id):
         return self.store.rows.pop(task_id, None) is not None
+
+    def update(self, task_id, *, enabled=None):
+        task = self.store.rows[task_id]
+        if enabled is not None:
+            task.enabled = bool(enabled)
+        return task.public()
 
 
 def native_manifest():
@@ -103,16 +120,31 @@ def native_manifest():
 
 class ToolMarketplaceTest(unittest.TestCase):
     def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
         self.mcp = FakeMcpRegistry()
         self.skills = FakeSkillRegistry()
         self.proactive = FakeProactiveRuntime()
+        self.lifecycle = MarketplaceLifecycleStore(Path(self.temp.name) / "lifecycle.json")
         self.marketplace = ToolMarketplace(
             native_manifest=native_manifest,
             mcp_registry=self.mcp,
             skill_registry=self.skills,
             proactive_runtime=self.proactive,
             environment={},
+            lifecycle_store=self.lifecycle,
         )
+
+    def approved(self, item_id: str) -> list[str]:
+        item = next(
+            item
+            for item in self.marketplace.catalog()["items"]
+            if item["id"] == item_id
+        )
+        return [
+            permission["id"]
+            for permission in item["permission_diff"]["added"]
+        ]
 
     def test_catalog_unifies_native_mcp_and_automation_items(self):
         catalog = self.marketplace.catalog()
@@ -138,7 +170,10 @@ class ToolMarketplaceTest(unittest.TestCase):
         self.assertGreaterEqual(catalog["summary"]["installed"], 2)
 
     def test_mcp_install_uses_environment_references_without_secret_values(self):
-        result = self.marketplace.install("signalasi.mcp.github")
+        result = self.marketplace.install(
+            "signalasi.mcp.github",
+            approved_permissions=self.approved("signalasi.mcp.github"),
+        )
 
         self.assertTrue(result["changed"])
         self.assertEqual(
@@ -155,26 +190,43 @@ class ToolMarketplaceTest(unittest.TestCase):
             skill_registry=self.skills,
             proactive_runtime=self.proactive,
             environment={"SIGNALASI_GITHUB_TOKEN": "configured"},
+            lifecycle_store=self.lifecycle,
         )
 
-        result = marketplace.install("signalasi.mcp.github")
+        permissions = [
+            permission["id"]
+            for permission in next(
+                item
+                for item in marketplace.catalog()["items"]
+                if item["id"] == "signalasi.mcp.github"
+            )["permission_diff"]["added"]
+        ]
+        result = marketplace.install(
+            "signalasi.mcp.github",
+            approved_permissions=permissions,
+        )
 
         self.assertEqual("installed", result["item"]["install_state"])
 
     def test_endpoint_backed_mcp_requires_explicit_setup(self):
         with self.assertRaises(ToolMarketplaceError) as raised:
-            self.marketplace.install("signalasi.mcp.home_assistant")
+            self.marketplace.install(
+                "signalasi.mcp.home_assistant",
+                approved_permissions=self.approved("signalasi.mcp.home_assistant"),
+            )
         self.assertEqual("configuration_required", raised.exception.code)
 
         result = self.marketplace.install(
             "signalasi.mcp.home_assistant",
             {"endpoint": "https://home.example/mcp"},
+            self.approved("signalasi.mcp.home_assistant"),
         )
         self.assertEqual("needs_setup", result["item"]["install_state"])
 
     def test_automation_install_and_uninstall_use_durable_task_runtime(self):
         installed = self.marketplace.install(
-            "signalasi.automation.desktop-health"
+            "signalasi.automation.desktop-health",
+            approved_permissions=self.approved("signalasi.automation.desktop-health"),
         )
         self.assertEqual("installed", installed["item"]["install_state"])
         self.assertIn(
@@ -187,6 +239,85 @@ class ToolMarketplaceTest(unittest.TestCase):
         )
         self.assertTrue(removed["changed"])
         self.assertEqual("available", removed["item"]["install_state"])
+        self.assertTrue(removed["item"]["rollback_available"])
+
+        restored = self.marketplace.rollback("signalasi.automation.desktop-health")
+        self.assertTrue(restored["changed"])
+        self.assertEqual("installed", restored["item"]["install_state"])
+
+    def test_install_requires_explicit_new_permission_approval(self):
+        with self.assertRaises(ToolMarketplaceError) as raised:
+            self.marketplace.install("signalasi.mcp.github")
+
+        self.assertEqual("permission_confirmation_required", raised.exception.code)
+        self.assertEqual(
+            {"network.github", "repositories.read", "repositories.write"},
+            {
+                permission["id"]
+                for permission in raised.exception.details["permissions"]
+            },
+        )
+
+    def test_revoke_preserves_configuration_and_install_restores_access(self):
+        item_id = "signalasi.mcp.github"
+        self.marketplace.install(
+            item_id,
+            approved_permissions=self.approved(item_id),
+        )
+
+        revoked = self.marketplace.revoke(item_id)
+        self.assertTrue(revoked["item"]["revoked"])
+        self.assertFalse(self.mcp.rows["marketplace.github"]["enabled"])
+
+        restored = self.marketplace.install(item_id)
+        self.assertFalse(restored["item"]["revoked"])
+        self.assertTrue(self.mcp.rows["marketplace.github"]["enabled"])
+
+    def test_catalog_reports_version_and_permission_diff(self):
+        item_id = "signalasi.mcp.github"
+        configuration = {
+            "id": "marketplace.github",
+            "name": "GitHub",
+            "transport": "streamable_http",
+            "endpoint": "https://api.githubcopilot.com/mcp/",
+            "enabled": True,
+        }
+        self.mcp.upsert(configuration)
+        self.lifecycle.ensure_active(
+            item_id,
+            version="0.9.0",
+            permissions=["network.github", "repositories.read"],
+            capabilities=["repositories.read"],
+            snapshot={"configuration": configuration},
+        )
+
+        item = next(
+            item
+            for item in self.marketplace.catalog()["items"]
+            if item["id"] == item_id
+        )
+
+        self.assertTrue(item["update_available"])
+        self.assertEqual("0.9.0", item["installed_version"])
+        self.assertEqual(
+            ["repositories.write"],
+            [permission["id"] for permission in item["permission_diff"]["added"]],
+        )
+
+    def test_lifecycle_receipts_reject_embedded_secret_values(self):
+        with self.assertRaises(ValueError):
+            self.lifecycle.activate(
+                "signalasi.mcp.unsafe",
+                version="1.0.0",
+                permissions=["network"],
+                capabilities=["query"],
+                snapshot={
+                    "configuration": {
+                        "endpoint": "https://example.test/mcp",
+                        "access_token": "must-not-be-stored",
+                    }
+                },
+            )
 
     def test_built_in_tools_fail_closed_for_uninstall(self):
         with self.assertRaises(ToolMarketplaceError) as raised:

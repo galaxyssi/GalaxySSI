@@ -14066,7 +14066,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ready.forEach { item ->
             featureContent.addView(featureRow(
                 item.name,
-                item.summary,
+                listOf(item.summary, marketplaceLifecycleSummary(item)).filter(String::isNotBlank).joinToString(" · "),
                 R.drawable.ic_agent_control,
                 getString(R.string.agent_marketplace_built_in)
             ).apply {
@@ -14083,7 +14083,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             attention.forEach { item ->
                 featureContent.addView(featureRow(
                     item.name,
-                    item.summary,
+                    listOf(item.summary, marketplaceLifecycleSummary(item)).filter(String::isNotBlank).joinToString(" · "),
                     R.drawable.ic_agent_control,
                     marketplaceStateLabel(item.installState)
                 ).apply {
@@ -14134,11 +14134,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
 
         addSectionTitle(getString(R.string.agent_capability_recommended))
+        val marketplaceById = marketplaceItems()
+            .filter { it.kind == AgentCapabilityCatalogKind.MCP }
+            .associateBy { it.id }
         AgentDefaultCapabilityCatalog.mcpEntries.forEach { entry ->
             val connection = installed.firstOrNull { it.catalogId == entry.id }
+            val marketplaceItem = marketplaceById[entry.id]
             featureContent.addView(featureRow(
                 entry.name,
-                localizedMcpSummary(entry),
+                listOf(
+                    localizedMcpSummary(entry),
+                    marketplaceItem?.let(::marketplaceLifecycleSummary).orEmpty()
+                ).filter(String::isNotBlank).joinToString(" · "),
                 R.drawable.ic_agent_skill,
                 when {
                     connection != null -> mcpConnectionStatus(connection)
@@ -14189,9 +14196,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         } else {
             installations.forEach { installation ->
                 val state = getString(if (installation.enabled) R.string.agent_skill_enabled else R.string.agent_skill_disabled)
+                val marketItem = marketplaceItems().firstOrNull { it.id == installation.id }
                 featureContent.addView(featureRow(
                     installation.manifest.title,
-                    listOf(installation.manifest.description, "v${installation.version}", getString(R.string.agent_skill_uses, installation.useCount))
+                    listOf(
+                        installation.manifest.description,
+                        "v${installation.version}",
+                        marketItem?.let(::marketplaceLifecycleSummary).orEmpty(),
+                        getString(R.string.agent_skill_uses, installation.useCount)
+                    )
                         .filter(String::isNotBlank).joinToString(" · "),
                     R.drawable.ic_agent_skill,
                     state
@@ -14243,16 +14256,57 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         remoteItems.forEach { item ->
             featureContent.addView(featureRow(
                 item.name,
-                "${item.desktopName} · ${item.summary}",
+                listOf(
+                    item.desktopName,
+                    item.summary,
+                    desktopMarketplaceLifecycleSummary(item)
+                ).filter(String::isNotBlank).joinToString(" · "),
                 when (kind) {
                     AgentCapabilityCatalogKind.NATIVE_TOOL -> R.drawable.ic_agent_control
                     AgentCapabilityCatalogKind.MCP -> R.drawable.ic_agent_skill
                     AgentCapabilityCatalogKind.AUTOMATION -> R.drawable.ic_agent_history
                 },
-                marketplaceStateLabel(item.installState)
+                when {
+                    item.revoked -> getString(R.string.agent_marketplace_access_revoked)
+                    item.updateAvailable -> getString(R.string.agent_marketplace_update)
+                    else -> marketplaceStateLabel(item.installState)
+                }
             ))
         }
     }
+
+    private fun marketplaceLifecycleSummary(item: AgentMarketplaceItem): String = buildList {
+        add(getString(R.string.agent_marketplace_version, item.availableVersion))
+        if (item.capabilities.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_capability_count, item.capabilities.size))
+        }
+        if (item.permissionDiff.added.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_new_permission_count, item.permissionDiff.added.size))
+        } else if (item.permissions.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_permission_count, item.permissions.size))
+        }
+        if (item.rollbackVersions.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_rollback_count, item.rollbackVersions.size))
+        }
+    }.joinToString(" · ")
+
+    private fun desktopMarketplaceLifecycleSummary(item: AgentDesktopMarketplaceItem): String = buildList {
+        val version = if (item.installedVersion.isNotBlank() && item.installedVersion != item.availableVersion) {
+            "${item.installedVersion} → ${item.availableVersion}"
+        } else {
+            item.availableVersion
+        }
+        add(getString(R.string.agent_marketplace_version, version))
+        if (item.capabilities.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_capability_count, item.capabilities.size))
+        }
+        if (item.permissionDiff.added.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_new_permission_count, item.permissionDiff.added.size))
+        }
+        if (item.rollbackVersions.isNotEmpty()) {
+            add(getString(R.string.agent_marketplace_rollback_count, item.rollbackVersions.size))
+        }
+    }.joinToString(" · ")
 
     private fun showRemoteMcpSetupPage(entry: AgentMcpCatalogEntry? = null) {
         showFeaturePage(getString(R.string.agent_mcp_add_remote))
@@ -14411,6 +14465,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showMcpConnectionDetailPage(connectionId: String) {
         val connection = agentMcpRegistry.get(connectionId) ?: return showCapabilityLibraryPage(AgentCapabilityCatalogKind.MCP)
+        val marketplaceItem = marketplaceItems().firstOrNull {
+            it.kind == AgentCapabilityCatalogKind.MCP && it.id == connection.catalogId
+        }
         showFeaturePage(connection.displayName)
         setFeatureBackAction { returnToCapabilityLibrary(AgentCapabilityCatalogKind.MCP) }
         featureContent.addView(featureHeroCard(
@@ -14420,6 +14477,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (connection.isCallable(System.currentTimeMillis())) "#14C66A" else "#F0A500",
             mcpConnectionStatus(connection)
         ))
+        marketplaceItem?.let { item ->
+            featureContent.addView(featureRow(
+                getString(R.string.agent_marketplace_release),
+                getString(
+                    R.string.agent_marketplace_release_detail,
+                    item.installedVersion.ifBlank { item.availableVersion },
+                    item.availableVersion
+                ),
+                R.drawable.ic_info_outline,
+                if (item.updateAvailable) getString(R.string.agent_marketplace_update)
+                else getString(R.string.agent_marketplace_current)
+            ))
+            featureContent.addView(featureRow(
+                getString(R.string.agent_marketplace_capabilities_permissions),
+                (item.capabilities + item.permissions.map { it.title }).joinToString("\n"),
+                R.drawable.ic_security_shield,
+                getString(
+                    R.string.agent_marketplace_capability_permission_count,
+                    item.capabilities.size,
+                    item.permissions.size
+                )
+            ))
+        }
         if (connection.transport == AgentMcpTransportKind.LOCAL_STDIO) {
             val runtime = agentMcpPackageRepository.get(connection.id)?.localRuntime
             featureContent.addView(featureRow(
@@ -14497,10 +14577,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             getString(R.string.common_test)
         ).apply { setOnClickListener { testMcpConnection(connectionId) } })
         featureContent.addView(featureRow(
-            getString(if (connection.enabled) R.string.common_enabled else R.string.status_disabled),
-            getString(R.string.agent_mcp_enable_subtitle),
+            getString(
+                if (connection.enabled) R.string.agent_marketplace_access_active
+                else R.string.agent_marketplace_access_revoked
+            ),
+            getString(R.string.agent_marketplace_revoke_access_subtitle),
             R.drawable.ic_agent_control,
-            getString(if (connection.enabled) R.string.common_disable else R.string.common_enable)
+            getString(
+                if (connection.enabled) R.string.agent_marketplace_revoke
+                else R.string.agent_marketplace_restore_access
+            )
         ).apply {
             setOnClickListener {
                 agentMcpRegistry.setEnabled(connectionId, !connection.enabled)
@@ -14808,6 +14894,48 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .show()
             }
         })
+        val previousVersion = versions.firstOrNull {
+            skillVersionParts(it.version) < skillVersionParts(version)
+        }
+        if (previousVersion != null) {
+            featureContent.addView(featureRow(
+                getString(R.string.agent_marketplace_rollback),
+                getString(
+                    R.string.agent_marketplace_rollback_detail,
+                    version,
+                    previousVersion.version
+                ),
+                R.drawable.ic_agent_history,
+                getString(R.string.agent_marketplace_restore)
+            ).apply {
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle(R.string.agent_marketplace_rollback)
+                        .setMessage(
+                            getString(
+                                R.string.agent_marketplace_rollback_confirm,
+                                manifest.title,
+                                previousVersion.version
+                            )
+                        )
+                        .setNegativeButton(R.string.common_cancel, null)
+                        .setPositiveButton(R.string.agent_marketplace_restore) { _, _ ->
+                            runCatching {
+                                AgentSkillVersionManager(agentSkillRuntime).rollback(id, version)
+                            }.onSuccess { restored ->
+                                showAgentSkillDetailPage(restored.id, restored.version)
+                            }.onFailure { error ->
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    error.message ?: getString(R.string.agent_marketplace_rollback_failed),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }
+                        .show()
+                }
+            })
+        }
         featureContent.addView(featureRow(
             getString(R.string.agent_skill_run_test),
             getString(R.string.agent_skill_test_passed),
@@ -14905,12 +15033,30 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val manifest = inspection.manifest
+        val current = agentSkillRuntime.list()
+            .filter { it.id == manifest.id }
+            .maxByOrNull { skillVersionParts(it.version) }
+        val currentPermissions = current?.manifest?.let {
+            it.permissions + it.nativeTools
+        }.orEmpty().toSet()
+        val nextPermissions = (manifest.permissions + manifest.nativeTools).toSet()
+        val addedPermissions = (nextPermissions - currentPermissions).sorted()
+        val removedPermissions = (currentPermissions - nextPermissions).sorted()
         val details = buildString {
             append(manifest.description.ifBlank { manifest.instructions.take(220) })
             append("\n\n").append(getString(R.string.agent_skill_workflow)).append(":\n")
             manifest.nativeTools.forEach { append("• ").append(it).append('\n') }
             append('\n').append(getString(R.string.agent_skill_permissions)).append(":\n")
             if (manifest.permissions.isEmpty()) append("• None\n") else manifest.permissions.forEach { append("• ").append(it).append('\n') }
+            if (current != null) {
+                append('\n').append(getString(R.string.agent_marketplace_permission_changes)).append(":\n")
+                if (addedPermissions.isEmpty() && removedPermissions.isEmpty()) {
+                    append("• ").append(getString(R.string.agent_marketplace_no_permission_changes)).append('\n')
+                } else {
+                    addedPermissions.forEach { append("• + ").append(it).append('\n') }
+                    removedPermissions.forEach { append("• − ").append(it).append('\n') }
+                }
+            }
             append('\n').append(if (inspection.integrityVerified) getString(R.string.agent_skill_integrity_verified) else getString(R.string.agent_skill_integrity_unsigned))
         }
         android.app.AlertDialog.Builder(this)

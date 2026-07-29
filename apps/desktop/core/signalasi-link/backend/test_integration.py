@@ -153,6 +153,8 @@ class BackendIntegrationContractTest(unittest.TestCase):
                 "/api/desktop-tools",
                 "/api/tool-marketplace",
                 "/api/tool-marketplace/{item_id}/install",
+                "/api/tool-marketplace/{item_id}/revoke",
+                "/api/tool-marketplace/{item_id}/rollback",
                 "/api/desktop-runtime",
                 "/api/agent-adapters",
                 "/api/commands",

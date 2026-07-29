@@ -50,6 +50,14 @@ class AgentCapabilityCatalogTest {
             AgentMarketplaceInstallState.AVAILABLE,
             initial.single { it.id == "signalasi.mcp.github" }.installState
         )
+        assertTrue(
+            initial.single { it.id == "signalasi.mcp.github" }
+                .permissionDiff.requiresApproval
+        )
+        assertTrue(
+            initial.single { it.id == "signalasi.mcp.github" }
+                .capabilities.contains("github.repositories")
+        )
         assertEquals(
             AgentMarketplaceInstallState.NEEDS_SETUP,
             initial.single { it.id == "signalasi.catalog.github-triage" }.installState
@@ -73,10 +81,41 @@ class AgentCapabilityCatalogTest {
             AgentMarketplaceInstallState.INSTALLED,
             ready.single { it.id == "signalasi.mcp.github" }.installState
         )
+        assertTrue(ready.single { it.id == "signalasi.mcp.github" }.revocable)
+        assertFalse(
+            ready.single { it.id == "signalasi.mcp.github" }
+                .permissionDiff.requiresApproval
+        )
         assertEquals(
             AgentMarketplaceInstallState.AVAILABLE,
             ready.single { it.id == "signalasi.catalog.github-triage" }.installState
         )
+    }
+
+    @Test
+    fun marketplaceReportsAutomationRollbackVersionsAndPermissionChanges() {
+        val entry = AgentDefaultCapabilityCatalog.skillEntries
+            .single { it.id == "signalasi.catalog.device-health" }
+        val previous = AgentSkillInstallation(
+            entry.manifest.copy(
+                version = "0.9.0",
+                permissions = emptySet(),
+                nativeTools = entry.manifest.nativeTools - AgentHardwareNativeTools.NETWORK_STATUS
+            ),
+            enabled = false
+        )
+        val current = AgentSkillInstallation(entry.manifest, enabled = true)
+
+        val item = AgentDefaultCapabilityCatalog.marketplaceItems(
+            nativeTools = emptyList(),
+            installedMcp = emptyList(),
+            installedAutomations = listOf(previous, current)
+        ).single { it.id == entry.id }
+
+        assertEquals("1.0.0", item.installedVersion)
+        assertEquals(listOf("0.9.0"), item.rollbackVersions)
+        assertTrue(item.revocable)
+        assertFalse(item.permissionDiff.requiresApproval)
     }
 
     @Test

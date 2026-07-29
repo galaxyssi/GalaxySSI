@@ -1216,7 +1216,19 @@ async function fetchJson(pathname, options = {}) {
         }
       });
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        const contentType = response.headers.get("content-type") || "";
+        const payload = contentType.includes("application/json")
+          ? await response.json().catch(() => ({}))
+          : {};
+        const detail = payload?.detail || payload || {};
+        const error = new Error(
+          detail.message || detail.error || `HTTP ${response.status}`
+        );
+        error.status = response.status;
+        error.code = detail.code || "";
+        error.details = detail.details || {};
+        error.retryable = response.status >= 500;
+        throw error;
       }
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.includes("application/json")) {
@@ -1225,7 +1237,7 @@ async function fetchJson(pathname, options = {}) {
       return response.json();
     } catch (error) {
       lastError = error;
-      if (attempt === 7) break;
+      if (attempt === 7 || error.retryable === false) break;
       await startBackend();
       await new Promise((resolve) => setTimeout(resolve, 350));
     }
@@ -1604,11 +1616,35 @@ async function getToolMarketplace() {
   return fetchJson("/api/tool-marketplace");
 }
 
-async function installToolMarketplaceItem(itemId, configuration = {}) {
+async function installToolMarketplaceItem(itemId, configuration = {}, approvedPermissions = []) {
   await startBackend();
   return fetchJson(`/api/tool-marketplace/${encodeURIComponent(itemId)}/install`, {
     method: "POST",
-    body: JSON.stringify({ configuration })
+    body: JSON.stringify({
+      configuration,
+      approved_permissions: Array.isArray(approvedPermissions) ? approvedPermissions : []
+    })
+  });
+}
+
+async function uninstallToolMarketplaceItem(itemId) {
+  await startBackend();
+  return fetchJson(`/api/tool-marketplace/${encodeURIComponent(itemId)}`, {
+    method: "DELETE"
+  });
+}
+
+async function revokeToolMarketplaceItem(itemId) {
+  await startBackend();
+  return fetchJson(`/api/tool-marketplace/${encodeURIComponent(itemId)}/revoke`, {
+    method: "POST"
+  });
+}
+
+async function rollbackToolMarketplaceItem(itemId) {
+  await startBackend();
+  return fetchJson(`/api/tool-marketplace/${encodeURIComponent(itemId)}/rollback`, {
+    method: "POST"
   });
 }
 
@@ -1807,8 +1843,14 @@ ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemor
 ipcMain.handle("desktop-memory:review", (_event, candidateId, action) =>
   reviewDesktopMemoryCandidate(candidateId, action));
 ipcMain.handle("tool-marketplace:list", getToolMarketplace);
-ipcMain.handle("tool-marketplace:install", (_event, itemId, configuration) =>
-  installToolMarketplaceItem(itemId, configuration));
+ipcMain.handle("tool-marketplace:install", (_event, itemId, configuration, approvedPermissions) =>
+  installToolMarketplaceItem(itemId, configuration, approvedPermissions));
+ipcMain.handle("tool-marketplace:uninstall", (_event, itemId) =>
+  uninstallToolMarketplaceItem(itemId));
+ipcMain.handle("tool-marketplace:revoke", (_event, itemId) =>
+  revokeToolMarketplaceItem(itemId));
+ipcMain.handle("tool-marketplace:rollback", (_event, itemId) =>
+  rollbackToolMarketplaceItem(itemId));
 ipcMain.handle("desktop-skills:list", getDesktopSkills);
 ipcMain.handle("desktop-skills:save", (_event, payload) => saveDesktopSkill(payload));
 ipcMain.handle("desktop-skills:enabled", (_event, skillId, enabled) => setDesktopSkillEnabled(skillId, enabled));

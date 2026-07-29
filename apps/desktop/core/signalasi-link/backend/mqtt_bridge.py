@@ -5073,6 +5073,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "mcp_connection_handles_v1",
             "browser_session_handles_v1",
             "tool_marketplace_v1",
+            "tool_marketplace_lifecycle_v1",
             "pairing_access_profiles_v1",
             "mqtt_fragmentation_v1",
             "mqtt_fragment_integrity_sha256",
