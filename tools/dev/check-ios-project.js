@@ -76,6 +76,8 @@ const requiredSourceSnippets = [
   [models, "static let androidParity"],
   [models, "SignalASIFriendRequest"],
   [models, "mqttInboxTopic"],
+  [models, "CloudModelCredentialPolicy"],
+  [models, "isAutoRoutableCredential"],
   [contactExchange, "signalasi_contact"],
   [contactExchange, "importContactQRCode"],
   [contactExchange, "makeContactQRText"],
@@ -93,6 +95,7 @@ const requiredSourceSnippets = [
   [store, "func renameContact"],
   [store, "func deleteContact"],
   [store, "func destroyAllPrivateData"],
+  [services, "CloudModelCredentialPolicy.isStoredCredential"],
   [services, "broker.emqx.io"],
   [services, "scheduleOutboxFlush"],
   [services, "UNUserNotificationCenter"],
@@ -102,6 +105,7 @@ const requiredSourceSnippets = [
   [views, "FriendRequestDetailView"],
   [views, "ContactDetailView"],
   [views, "ResetPrivateDataView"],
+  [views, "CloudModelProviderDetailView"],
   [views, "fileImporter"],
   [views, "AVCaptureMetadataOutput"],
   [tests, "testAttachmentDescriptorsMatchAndroidWireNames"],
@@ -116,6 +120,10 @@ const requiredSourceSnippets = [
   [tests, "testCloudModelContactsAreGroupedByProvider"],
   [tests, "testDeleteContactSoftDeletesAndOptionallyRemovesMessages"],
   [tests, "testDestroyAllPrivateDataRegeneratesIdentityAndClearsSecrets"],
+  [tests, "testSelectingCloudModelChangesProviderActiveModel"],
+  [tests, "testDeletingSelectedCloudModelRemovesSecretAndFallsBack"],
+  [tests, "testDeletingLastCloudModelHidesProviderContact"],
+  [tests, "testCloudModelCredentialPolicyRejectsPlaceholders"],
 ];
 
 for (const snippet of requiredProjectSnippets) {

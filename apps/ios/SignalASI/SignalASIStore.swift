@@ -159,6 +159,12 @@ final class SignalASIStore: ObservableObject {
       }
   }
 
+  var cloudModelContacts: [SignalASIContact] {
+    contacts
+      .filter { !$0.deleted && $0.deliveryMode == .cloudAPI }
+      .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+  }
+
   var pendingFriendRequests: [SignalASIFriendRequest] {
     friendRequests
       .filter { $0.status == .pending }
@@ -355,18 +361,29 @@ final class SignalASIStore: ObservableObject {
     apiStyle: SignalASICloudAPIStyle
   ) throws -> SignalASIContact {
     let providerName = provider.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Custom")
+    let cleanDisplayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanModelId = modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanAPIKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanModelId.isEmpty else {
+      throw SignalASIError.invalidPayload("Cloud model ID is required.")
+    }
+    guard !cleanEndpoint.isEmpty else {
+      throw SignalASIError.invalidPayload("Cloud endpoint is required.")
+    }
+    guard CloudModelCredentialPolicy.isStoredCredential(cleanAPIKey) else {
+      throw SignalASIError.missingAPIKey
+    }
     let providerSlug = SignalASIStore.slug(providerName)
     let contactId = "cloud:\(providerSlug)"
-    let account = "cloud.\(providerSlug).\(SignalASIStore.slug(modelId))"
-    if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      try secrets.setString(apiKey, account: account)
-    }
+    let account = "cloud.\(providerSlug).\(SignalASIStore.slug(cleanModelId))"
+    try secrets.setString(cleanAPIKey, account: account)
     let model = CloudModelConfig(
-      id: "\(providerSlug):\(modelId)",
-      displayName: displayName.ifBlank(modelId),
+      id: "\(providerSlug):\(cleanModelId)",
+      displayName: cleanDisplayName.ifBlank(cleanModelId),
       provider: providerName,
-      modelId: modelId,
-      endpoint: endpoint,
+      modelId: cleanModelId,
+      endpoint: cleanEndpoint,
       apiStyle: apiStyle,
       keychainAccount: account,
       updatedAt: Date()
@@ -393,13 +410,14 @@ final class SignalASIStore: ObservableObject {
       createdAt: now,
       updatedAt: now
     )
-    if let existingIndex = contact.cloudModels.firstIndex(where: { $0.modelId == modelId }) {
+    if let existingIndex = contact.cloudModels.firstIndex(where: { $0.modelId == cleanModelId }) {
       contact.cloudModels[existingIndex] = model
     } else {
       contact.cloudModels.append(model)
     }
-    if contact.selectedCloudModelId.isEmpty {
-      contact.selectedCloudModelId = model.modelId
+    if contact.selectedCloudModelId.isEmpty ||
+       !contact.cloudModels.contains(where: { $0.modelId == contact.selectedCloudModelId }) {
+      contact.selectedCloudModelId = contact.cloudModels.first?.modelId ?? model.modelId
     }
     contact.deleted = false
     contact.deletedAt = nil
@@ -568,15 +586,40 @@ final class SignalASIStore: ObservableObject {
     save()
   }
 
-  func setSelectedCloudModel(contactId: String, modelId: String) {
+  @discardableResult
+  func setSelectedCloudModel(contactId: String, modelId: String) -> Bool {
     guard var contact = contact(id: contactId),
           contact.cloudModels.contains(where: { $0.modelId == modelId }) else {
-      return
+      return false
     }
     contact.selectedCloudModelId = modelId
     contact.updatedAt = Date()
     upsert(contact)
     save()
+    return true
+  }
+
+  @discardableResult
+  func deleteCloudModel(contactId: String, modelId: String) -> Bool {
+    guard let index = contacts.firstIndex(where: { $0.id == contactId || $0.signalASIId == contactId }),
+          contacts[index].deliveryMode == .cloudAPI,
+          let modelIndex = contacts[index].cloudModels.firstIndex(where: { $0.modelId == modelId }) else {
+      return false
+    }
+    let removed = contacts[index].cloudModels.remove(at: modelIndex)
+    secrets.delete(account: removed.keychainAccount)
+    if contacts[index].selectedCloudModelId == modelId {
+      contacts[index].selectedCloudModelId = contacts[index].cloudModels.first?.modelId ?? ""
+    }
+    contacts[index].updatedAt = Date()
+    if contacts[index].cloudModels.isEmpty {
+      contacts[index].deleted = true
+      contacts[index].trustState = .deleted
+      contacts[index].setupStatus = "needs_setup"
+      contacts[index].setupDetail = "Add a cloud model before chatting."
+    }
+    save()
+    return true
   }
 
   @discardableResult
