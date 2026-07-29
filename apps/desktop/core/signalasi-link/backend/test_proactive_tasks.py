@@ -235,6 +235,39 @@ class ProactiveTaskRuntimeTests(unittest.TestCase):
         self.assertIn("observe", [event["kind"] for event in events])
         runtime.stop(wait_for_workers=True)
 
+    def test_dispatcher_can_record_durable_phase_progress(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def dispatcher(_task, _run):
+            started.set()
+            release.wait(timeout=2)
+            return {"reply": "Done"}
+
+        runtime = self.runtime(dispatcher)
+        created = self.create_interval(runtime)
+        run = runtime.trigger_now(created["task_id"])
+        self.assertTrue(started.wait(timeout=2))
+
+        self.assertTrue(
+            runtime.record_progress(
+                run.run_id,
+                "headless_plan",
+                "Coordinator prepared a plan",
+                {"phase": "plan"},
+            )
+        )
+        release.set()
+        self.wait_terminal(runtime, run.run_id)
+        events = runtime.store.events(run.run_id)
+
+        progress = next(
+            event for event in events if event["kind"] == "headless_plan"
+        )
+        self.assertEqual("Coordinator prepared a plan", progress["detail"])
+        self.assertEqual("plan", progress["metadata"]["phase"])
+        runtime.stop(wait_for_workers=True)
+
     def test_cancelled_run_cannot_be_overwritten_by_late_agent_result(self):
         started = threading.Event()
         release = threading.Event()
@@ -243,6 +276,29 @@ class ProactiveTaskRuntimeTests(unittest.TestCase):
             started.set()
             release.wait(timeout=2)
             return {"reply": "Late result"}
+
+        runtime = self.runtime(dispatcher)
+        created = self.create_interval(runtime)
+        run = runtime.trigger_now(created["task_id"])
+        self.assertTrue(started.wait(timeout=2))
+
+        self.assertTrue(runtime.cancel_run(run.run_id))
+        release.set()
+        result = self.wait_terminal(runtime, run.run_id)
+        time.sleep(0.05)
+
+        self.assertEqual("cancelled", result.status)
+        self.assertEqual("cancelled", runtime.store.run(run.run_id).status)
+        runtime.stop(wait_for_workers=True)
+
+    def test_cancelled_run_cannot_be_overwritten_by_late_agent_failure(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def dispatcher(_task, _run):
+            started.set()
+            release.wait(timeout=2)
+            raise RuntimeError("Late failure")
 
         runtime = self.runtime(dispatcher)
         created = self.create_interval(runtime)
@@ -343,6 +399,42 @@ class ProactiveTaskRuntimeTests(unittest.TestCase):
                     "team": [
                         {"agent_id": "codex", "role": "coordinator"},
                         {"agent_id": "codex", "role": "specialist"},
+                    ],
+                }
+            )
+
+    def test_headless_swarm_validates_workflow_team_scope_and_checks(self):
+        action = ProactiveAction.parse(
+            {
+                "kind": "headless_swarm",
+                "target_id": "test_repair",
+                "prompt": "Repair the failing tests",
+                "arguments": {
+                    "repository_root": str(Path("test-repository").resolve()),
+                    "scope": ["src"],
+                    "checks": [["python", "-m", "unittest"]],
+                },
+                "team": [
+                    {"agent_id": "codex", "role": "coordinator"},
+                    {"agent_id": "hermes", "role": "specialist"},
+                ],
+            }
+        )
+
+        self.assertEqual("headless_swarm", action.kind)
+        self.assertEqual("test_repair", action.target_id)
+        with self.assertRaisesRegex(ProactiveTaskError, "one coordinator"):
+            ProactiveAction.parse(
+                {
+                    "kind": "headless_swarm",
+                    "target_id": "pr_review",
+                    "prompt": "Review the candidate",
+                    "arguments": {
+                        "repository_root": str(Path("test-repository").resolve()),
+                    },
+                    "team": [
+                        {"agent_id": "codex", "role": "lead"},
+                        {"agent_id": "hermes", "role": "specialist"},
                     ],
                 }
             )
