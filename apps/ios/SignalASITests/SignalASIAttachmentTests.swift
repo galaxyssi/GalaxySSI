@@ -64,4 +64,43 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertEqual(attachment.mimeType, "image/png")
     XCTAssertTrue(attachment.isImage)
   }
+
+  func testAnimatedImageTimingAddsDelayToZeroDurationGifFrames() {
+    let gif = Data([
+      0x47, 0x49, 0x46,
+      0x38, 0x39, 0x61,
+      0x21, 0xf9, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00
+    ])
+
+    let normalized = AgentAnimatedImageTiming.normalizeZeroFrameDelays(gif)
+
+    XCTAssertEqual(normalized[10], 8)
+    XCTAssertEqual(normalized[11], 0)
+  }
+
+  func testAnimatedImageTimingPreservesExistingGifTiming() {
+    let gif = Data([
+      0x47, 0x49, 0x46,
+      0x38, 0x39, 0x61,
+      0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00
+    ])
+
+    XCTAssertEqual(AgentAnimatedImageTiming.normalizeZeroFrameDelays(gif), gif)
+  }
+
+  func testPhotoAttachmentNormalizesGifTiming() {
+    let gif = Data([
+      0x47, 0x49, 0x46,
+      0x38, 0x39, 0x61,
+      0x21, 0xf9, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00
+    ])
+
+    let attachment = SignalASIAttachmentPayloadBuilder.makePhotoAttachment(
+      data: gif,
+      suggestedName: "loop.gif"
+    )
+
+    XCTAssertEqual(attachment.mimeType, "image/gif")
+    XCTAssertEqual(attachment.data[10], 8)
+  }
 }

@@ -40,6 +40,44 @@ struct SignalASIDraftAttachment: Identifiable, Equatable {
   }
 }
 
+enum AgentAnimatedImageTiming {
+  private static let gifDelayCentiseconds: UInt8 = 8
+
+  static func normalizeZeroFrameDelays(_ source: Data) -> Data {
+    guard isGif(source) else { return source }
+    var output: Data?
+    var index = 0
+    while index + 7 < source.count {
+      let isGraphicControlExtension = source[index] == 0x21 &&
+        source[index + 1] == 0xf9 &&
+        source[index + 2] == 0x04
+      if !isGraphicControlExtension {
+        index += 1
+        continue
+      }
+      let delay = Int(source[index + 4]) | (Int(source[index + 5]) << 8)
+      if delay == 0 {
+        var normalized = output ?? source
+        normalized[index + 4] = gifDelayCentiseconds
+        normalized[index + 5] = 0
+        output = normalized
+      }
+      index += 8
+    }
+    return output ?? source
+  }
+
+  private static func isGif(_ data: Data) -> Bool {
+    data.count >= 6 &&
+      data[0] == 0x47 &&
+      data[1] == 0x49 &&
+      data[2] == 0x46 &&
+      data[3] == 0x38 &&
+      (data[4] == 0x37 || data[4] == 0x39) &&
+      data[5] == 0x61
+  }
+}
+
 enum SignalASIAttachmentPayloadBuilder {
   static let maximumAttachmentCount = 10
   static let maximumAttachmentBytes = 20 * 1024 * 1024
@@ -99,7 +137,9 @@ enum SignalASIAttachmentPayloadBuilder {
         url.stopAccessingSecurityScopedResource()
       }
     }
-    let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+    let data = AgentAnimatedImageTiming.normalizeZeroFrameDelays(
+      try Data(contentsOf: url, options: [.mappedIfSafe])
+    )
     let values = try? url.resourceValues(forKeys: [.nameKey, .contentTypeKey, .fileSizeKey])
     let name = values?.name ?? url.lastPathComponent.ifBlank("attachment")
     let type = values?.contentType?.preferredMIMEType ??
@@ -114,11 +154,12 @@ enum SignalASIAttachmentPayloadBuilder {
   }
 
   static func makePhotoAttachment(data: Data, suggestedName: String = "photo.jpg") -> SignalASIDraftAttachment {
-    let type = imageMimeType(for: data) ?? "image/jpeg"
+    let normalizedData = AgentAnimatedImageTiming.normalizeZeroFrameDelays(data)
+    let type = imageMimeType(for: normalizedData) ?? "image/jpeg"
     return SignalASIDraftAttachment(
       displayName: sanitizeName(suggestedName),
       mimeType: type,
-      data: data,
+      data: normalizedData,
       sourceDescription: "photo-library"
     )
   }
