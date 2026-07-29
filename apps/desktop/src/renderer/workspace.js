@@ -1465,7 +1465,9 @@ function desktopControlToolLabel(toolId) {
     "desktop.click_xy": "Click",
     "desktop.type_text": "Type text",
     "desktop.hotkey": "Keyboard shortcut",
-    "desktop.scroll": "Scroll"
+    "desktop.scroll": "Scroll",
+    "desktop.window_switch": "Switch window",
+    "desktop.file_select": "Select file"
   }[toolId] || "Desktop action");
 }
 

@@ -55,8 +55,18 @@ CLICK_XY = "desktop.click_xy"
 TYPE_TEXT = "desktop.type_text"
 HOTKEY = "desktop.hotkey"
 SCROLL = "desktop.scroll"
+WINDOW_SWITCH = "desktop.window_switch"
+FILE_SELECT = "desktop.file_select"
 
-DEFAULT_ALLOWED_TOOLS = (SCREENSHOT, CLICK_XY, TYPE_TEXT, HOTKEY, SCROLL)
+DEFAULT_ALLOWED_TOOLS = (
+    SCREENSHOT,
+    CLICK_XY,
+    TYPE_TEXT,
+    HOTKEY,
+    SCROLL,
+    WINDOW_SWITCH,
+    FILE_SELECT,
+)
 RECEIPT_SIGNED_FIELDS = (
     "receipt_version",
     "receipt_id",
@@ -303,6 +313,7 @@ class DesktopControlManager:
                 existing["access_profile"] = DESKTOP_EXECUTOR
                 existing["access_scopes"] = list(pairing_access["scopes"])
                 existing["pairing_access_sha256"] = access_binding
+                existing["allowed_tools"] = list(DEFAULT_ALLOWED_TOOLS)
                 existing["status"] = "active"
                 existing["granted_at"] = int(existing.get("granted_at") or now * 1_000)
                 existing["updated_at"] = int(now * 1_000)
@@ -565,6 +576,45 @@ class DesktopControlManager:
                         raise DesktopControlError("invalid_input", "delta must not be zero")
                     self._input.scroll(delta)
                     output = {"delta": delta}
+                    screenshot = self._screenshot_provider()
+                elif tool_id == WINDOW_SWITCH:
+                    direction = str(arguments.get("direction") or "next").lower()
+                    if direction not in {"next", "previous"}:
+                        raise DesktopControlError(
+                            "invalid_input",
+                            "direction must be next or previous",
+                        )
+                    self._input.window_switch(direction)
+                    output = {"direction": direction}
+                    screenshot = self._screenshot_provider()
+                elif tool_id == FILE_SELECT:
+                    raw_path = _bounded_text(
+                        arguments.get("path"),
+                        "path",
+                        32_767,
+                    ).strip()
+                    if not raw_path:
+                        raise DesktopControlError(
+                            "invalid_input",
+                            "path must not be empty",
+                        )
+                    try:
+                        selected_path = Path(raw_path).expanduser().resolve(strict=True)
+                    except (OSError, RuntimeError) as exc:
+                        raise DesktopControlError(
+                            "file_not_found",
+                            "The selected Desktop file does not exist",
+                        ) from exc
+                    if not selected_path.is_file():
+                        raise DesktopControlError(
+                            "file_not_found",
+                            "The selected Desktop path is not a file",
+                        )
+                    self._input.select_file(str(selected_path))
+                    output = {
+                        "selected": True,
+                        "file_name": selected_path.name,
+                    }
                     screenshot = self._screenshot_provider()
                 else:
                     raise DesktopControlError("invalid_tool", "Desktop control tool is not supported")
@@ -1194,6 +1244,10 @@ class DesktopControlManager:
             return f"{prefix} shortcut {'+'.join(str(key) for key in arguments.get('keys') or [])}"
         if tool_id == SCROLL:
             return f"{prefix} desktop scroll"
+        if tool_id == WINDOW_SWITCH:
+            return f"{prefix} window switch"
+        if tool_id == FILE_SELECT:
+            return f"{prefix} file selection"
         return f"{prefix} desktop action"
 
     @staticmethod
@@ -1208,6 +1262,10 @@ class DesktopControlManager:
             return f"pressed {'+'.join(str(key) for key in arguments.get('keys') or [])}"
         if tool_id == SCROLL:
             return f"scrolled {arguments.get('delta')}"
+        if tool_id == WINDOW_SWITCH:
+            return f"switched to the {arguments.get('direction', 'next')} window"
+        if tool_id == FILE_SELECT:
+            return "selected an existing file in the active file dialog"
         return "executed desktop action"
 
     def _load(self) -> dict[str, Any]:
@@ -1341,6 +1399,32 @@ class WindowsInputController:
     def scroll(self, delta: int) -> None:
         self._require_windows()
         ctypes.windll.user32.mouse_event(0x0800, 0, 0, int(delta), 0)
+
+    def window_switch(self, direction: str) -> None:
+        keys = ["alt", "tab"] if direction == "next" else ["alt", "shift", "tab"]
+        self.hotkey(keys)
+
+    def select_file(self, path: str) -> None:
+        self._require_windows()
+        if self._foreground_window_class() != "#32770":
+            raise DesktopControlError(
+                "file_dialog_required",
+                "A standard Windows file dialog must be active",
+            )
+        self.hotkey(["ctrl", "l"])
+        self.type_text(path)
+        self.hotkey(["enter"])
+
+    def _foreground_window_class(self) -> str:
+        self._require_windows()
+        user32 = ctypes.windll.user32
+        window = user32.GetForegroundWindow()
+        if not window:
+            return ""
+        buffer = ctypes.create_unicode_buffer(256)
+        if user32.GetClassNameW(window, buffer, len(buffer)) <= 0:
+            return ""
+        return buffer.value
 
     def hotkey(self, keys: list[str]) -> None:
         self._require_windows()

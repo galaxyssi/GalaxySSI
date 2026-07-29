@@ -19880,8 +19880,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             enabled = snapshot.authorized
         ))
         featureContent.addView(desktopControlButtonRow(
-            getString(R.string.desktop_control_alt_tab) to { DesktopRemoteControl.hotkey(device.id, "alt", "tab") },
-            getString(R.string.desktop_control_escape) to { DesktopRemoteControl.hotkey(device.id, "escape") },
+            getString(R.string.desktop_control_next_window) to {
+                DesktopRemoteControl.windowSwitch(device.id)
+            },
+            getString(R.string.desktop_control_previous_window) to {
+                DesktopRemoteControl.windowSwitch(device.id, previous = true)
+            },
             enabled = snapshot.authorized
         ))
         featureContent.addView(featureRow(
@@ -19896,6 +19900,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 showTextSettingDialog(getString(R.string.desktop_control_type_text), "") { text ->
                     if (!DesktopRemoteControl.typeText(device.id, text)) {
                         Toast.makeText(this@MainActivity, getString(R.string.desktop_control_request_failed), Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_select_file),
+            getString(R.string.desktop_control_select_file_subtitle),
+            R.drawable.ic_rich_file,
+            getString(R.string.common_select)
+        ).apply {
+            isEnabled = snapshot.authorized
+            alpha = if (snapshot.authorized) 1f else 0.5f
+            setOnClickListener {
+                showTextSettingDialog(
+                    getString(R.string.desktop_control_select_file),
+                    ""
+                ) { path ->
+                    if (!DesktopRemoteControl.selectFile(device.id, path)) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.desktop_control_request_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             }
@@ -20164,6 +20191,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             DesktopRemoteControl.TYPE_TEXT -> R.string.desktop_control_action_type
             DesktopRemoteControl.HOTKEY -> R.string.desktop_control_action_hotkey
             DesktopRemoteControl.SCROLL -> R.string.desktop_control_action_scroll
+            DesktopRemoteControl.WINDOW_SWITCH -> R.string.desktop_control_action_window_switch
+            DesktopRemoteControl.FILE_SELECT -> R.string.desktop_control_action_file_select
             else -> R.string.status_unknown
         }
     )

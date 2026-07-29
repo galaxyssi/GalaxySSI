@@ -239,10 +239,12 @@
     <string name="desktop_control_actions">控制</string>
     <string name="desktop_control_scroll_up">向上滚动</string>
     <string name="desktop_control_scroll_down">向下滚动</string>
-    <string name="desktop_control_alt_tab">切换窗口</string>
-    <string name="desktop_control_escape">返回</string>
+    <string name="desktop_control_next_window">下一个窗口</string>
+    <string name="desktop_control_previous_window">上一个窗口</string>
     <string name="desktop_control_type_text">输入文字</string>
     <string name="desktop_control_type_text_subtitle">输入到电脑当前焦点位置，请勿用于密码</string>
+    <string name="desktop_control_select_file">选择电脑文件</string>
+    <string name="desktop_control_select_file_subtitle">在当前 Windows 文件选择窗口中选择已有文件</string>
     <string name="desktop_control_authorization">授权记录</string>
     <string name="desktop_control_authorized_apps">已授权 App</string>
     <string name="desktop_control_no_authorized_apps">暂无已授权 App</string>
@@ -269,6 +271,8 @@
     <string name="desktop_control_action_type">输入文字</string>
     <string name="desktop_control_action_hotkey">键盘快捷键</string>
     <string name="desktop_control_action_scroll">滚动</string>
+    <string name="desktop_control_action_window_switch">切换窗口</string>
+    <string name="desktop_control_action_file_select">选择文件</string>
     <string name="desktop_control_this_phone">本机</string>
     <string name="desktop_control_revoke">撤销远程控制授权</string>
     <string name="desktop_control_revoke_subtitle">撤销后必须重新扫描带完整权限的配对二维码才能控制电脑</string>

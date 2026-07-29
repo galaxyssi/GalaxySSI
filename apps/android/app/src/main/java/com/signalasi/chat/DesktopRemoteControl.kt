@@ -396,6 +396,8 @@ object DesktopRemoteControl {
     const val TYPE_TEXT = "desktop.type_text"
     const val HOTKEY = "desktop.hotkey"
     const val SCROLL = "desktop.scroll"
+    const val WINDOW_SWITCH = "desktop.window_switch"
+    const val FILE_SELECT = "desktop.file_select"
 
     private const val PREFS = "signalasi_desktop_control_v2"
     private const val KEY_DESKTOPS = "desktops"
@@ -610,6 +612,18 @@ object DesktopRemoteControl {
     fun scroll(desktopId: String, delta: Int): Boolean {
         if (delta == 0 || delta !in -2_400..2_400) return false
         return requestAction(desktopId, SCROLL, JSONObject().put("delta", delta))
+    }
+
+    fun windowSwitch(desktopId: String, previous: Boolean = false): Boolean =
+        requestAction(
+            desktopId,
+            WINDOW_SWITCH,
+            JSONObject().put("direction", if (previous) "previous" else "next")
+        )
+
+    fun selectFile(desktopId: String, path: String): Boolean {
+        if (path.isBlank() || path.length > 32_767) return false
+        return requestAction(desktopId, FILE_SELECT, JSONObject().put("path", path))
     }
 
     fun revoke(desktopId: String, authorizationId: String): Boolean =
