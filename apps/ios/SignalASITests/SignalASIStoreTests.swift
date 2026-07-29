@@ -15,6 +15,30 @@ private final class TestAgentActionExecutor: AgentActionExecutor {
   }
 }
 
+private extension AgentRuntimePackCatalogEntry {
+  func with(
+    version: String? = nil,
+    downloadUrl: String? = nil,
+    minimumHostVersionCode: Int64? = nil,
+    guestApiVersion: Int? = nil
+  ) -> AgentRuntimePackCatalogEntry {
+    var copy = self
+    if let version {
+      copy.version = version
+    }
+    if let downloadUrl {
+      copy.downloadUrl = downloadUrl
+    }
+    if let minimumHostVersionCode {
+      copy.minimumHostVersionCode = minimumHostVersionCode
+    }
+    if let guestApiVersion {
+      copy.guestApiVersion = guestApiVersion
+    }
+    return copy
+  }
+}
+
 @MainActor
 final class SignalASIStoreTests: XCTestCase {
   func testInitialStoreContainsAndroidParityContacts() {
@@ -402,6 +426,222 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(cloudDecision.limit, .cloud)
     XCTAssertFalse(networkDecision.allowed)
     XCTAssertEqual(networkDecision.limit, .network)
+  }
+
+  func testGlobalBackgroundExecutionBudgetDefersForPowerAndBattery() {
+    let now: Int64 = 10_000
+    let settings = GlobalAgentSettings.default
+    let power = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .cognition,
+      environment: AgentTaskBudgetEnvironment(
+        powerSaveMode: true,
+        networkAvailable: true,
+        networkValidated: true
+      ),
+      settings: settings,
+      nowMillis: now
+    )
+    let critical = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .autonomousWork,
+      environment: AgentTaskBudgetEnvironment(
+        batteryPercent: 14,
+        networkAvailable: true,
+        networkValidated: true
+      ),
+      settings: settings,
+      nowMillis: now
+    )
+    let lowReasoning = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .cognition,
+      environment: AgentTaskBudgetEnvironment(
+        batteryPercent: 20,
+        networkAvailable: true,
+        networkValidated: true
+      ),
+      settings: settings,
+      nowMillis: now
+    )
+    let lowResearch = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .research,
+      environment: AgentTaskBudgetEnvironment(
+        batteryPercent: 20,
+        networkAvailable: true,
+        networkValidated: true
+      ),
+      settings: settings,
+      nowMillis: now
+    )
+    let charging = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .research,
+      environment: AgentTaskBudgetEnvironment(
+        batteryPercent: 10,
+        charging: true,
+        networkAvailable: true,
+        networkValidated: true
+      ),
+      settings: settings,
+      nowMillis: now
+    )
+    let override = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .cognition,
+      environment: AgentTaskBudgetEnvironment(powerSaveMode: true),
+      settings: settings,
+      nowMillis: now,
+      explicitUserOverride: true
+    )
+
+    XCTAssertFalse(power.allowed)
+    XCTAssertEqual(power.reason, .powerSave)
+    XCTAssertEqual(power.nextEligibleAtMillis, now + GlobalBackgroundExecutionBudgetPolicy.powerSaveRetryMillis)
+    XCTAssertFalse(critical.allowed)
+    XCTAssertEqual(critical.reason, .criticalBattery)
+    XCTAssertEqual(
+      critical.nextEligibleAtMillis,
+      now + GlobalBackgroundExecutionBudgetPolicy.criticalBatteryRetryMillis
+    )
+    XCTAssertFalse(lowReasoning.allowed)
+    XCTAssertEqual(lowReasoning.reason, .lowBattery)
+    XCTAssertEqual(
+      lowReasoning.nextEligibleAtMillis,
+      now + GlobalBackgroundExecutionBudgetPolicy.lowBatteryReasoningRetryMillis
+    )
+    XCTAssertFalse(lowResearch.allowed)
+    XCTAssertEqual(lowResearch.reason, .lowBattery)
+    XCTAssertEqual(
+      lowResearch.nextEligibleAtMillis,
+      now + GlobalBackgroundExecutionBudgetPolicy.lowBatteryResearchRetryMillis
+    )
+    XCTAssertTrue(charging.allowed)
+    XCTAssertEqual(charging.reason, .none)
+    XCTAssertTrue(override.allowed)
+    XCTAssertEqual(override.nextEligibleAtMillis, now)
+  }
+
+  func testGlobalBackgroundExecutionBudgetHandlesResearchNetworkGates() {
+    let now: Int64 = 20_000
+    let settings = GlobalAgentSettings.default
+    let unavailable = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .research,
+      environment: AgentTaskBudgetEnvironment(networkAvailable: false),
+      settings: settings,
+      nowMillis: now
+    )
+    let unvalidated = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .research,
+      environment: AgentTaskBudgetEnvironment(networkAvailable: true, networkValidated: false),
+      settings: settings,
+      nowMillis: now
+    )
+    let metered = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .research,
+      environment: AgentTaskBudgetEnvironment(
+        networkAvailable: true,
+        networkValidated: true,
+        networkMetered: true
+      ),
+      settings: settings,
+      nowMillis: now
+    )
+    let allowedMetered = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .research,
+      environment: AgentTaskBudgetEnvironment(
+        networkAvailable: true,
+        networkValidated: true,
+        networkMetered: true
+      ),
+      settings: GlobalAgentSettings(allowMeteredBackgroundResearch: true),
+      nowMillis: now
+    )
+    let autonomousOffline = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .autonomousWork,
+      environment: AgentTaskBudgetEnvironment(networkAvailable: false, networkValidated: false),
+      settings: settings,
+      nowMillis: now
+    )
+    let noBatteryProtection = GlobalBackgroundExecutionBudgetPolicy.decide(
+      kind: .cognition,
+      environment: AgentTaskBudgetEnvironment(batteryPercent: 5),
+      settings: GlobalAgentSettings(protectBatteryForBackgroundWork: false),
+      nowMillis: now
+    )
+
+    XCTAssertFalse(unavailable.allowed)
+    XCTAssertEqual(unavailable.reason, .networkUnavailable)
+    XCTAssertEqual(
+      unavailable.nextEligibleAtMillis,
+      now + GlobalBackgroundExecutionBudgetPolicy.networkRecoveryRetryMillis
+    )
+    XCTAssertFalse(unvalidated.allowed)
+    XCTAssertEqual(unvalidated.reason, .networkUnvalidated)
+    XCTAssertFalse(metered.allowed)
+    XCTAssertEqual(metered.reason, .meteredNetwork)
+    XCTAssertEqual(
+      metered.nextEligibleAtMillis,
+      now + GlobalBackgroundExecutionBudgetPolicy.meteredNetworkRetryMillis
+    )
+    XCTAssertTrue(allowedMetered.allowed)
+    XCTAssertTrue(autonomousOffline.allowed)
+    XCTAssertTrue(noBatteryProtection.allowed)
+  }
+
+  func testGlobalBackgroundExecutionBudgetModelsUseAndroidWireNames() throws {
+    let decodedSettings = try JSONDecoder.signalASI.decode(
+      GlobalAgentSettings.self,
+      from: Data(
+        """
+        {
+          "protect_battery_for_background_work": false,
+          "allow_metered_background_research": true,
+          "daily_background_model_call_budget": 9999,
+          "max_concurrent_background_model_calls": 0,
+          "daily_background_token_budget": -10,
+          "discovery_interval_millis": 1
+        }
+        """.utf8
+      )
+    )
+    let workKind = try JSONDecoder.signalASI.decode(
+      GlobalBackgroundWorkKind.self,
+      from: Data(#""autonomous-work""#.utf8)
+    )
+    let fallbackWorkKind = try JSONDecoder.signalASI.decode(
+      GlobalBackgroundWorkKind.self,
+      from: Data(#""future""#.utf8)
+    )
+    let reason = try JSONDecoder.signalASI.decode(
+      GlobalBackgroundDeferralReason.self,
+      from: Data(#""network_unvalidated""#.utf8)
+    )
+    let fallbackReason = try JSONDecoder.signalASI.decode(
+      GlobalBackgroundDeferralReason.self,
+      from: Data(#""future""#.utf8)
+    )
+    let encodedDecision = String(decoding: try JSONEncoder.signalASI.encode(
+      GlobalBackgroundExecutionDecision(
+        allowed: false,
+        nextEligibleAtMillis: 9_999,
+        reason: .lowBattery
+      )
+    ), as: UTF8.self)
+    let powerConstrained = AgentTaskBudgetEnvironment(powerSaveMode: true)
+    let lowBatteryConstrained = AgentTaskBudgetEnvironment(batteryPercent: 19)
+    let chargingLowBattery = AgentTaskBudgetEnvironment(batteryPercent: 19, charging: true)
+
+    XCTAssertFalse(decodedSettings.protectBatteryForBackgroundWork)
+    XCTAssertTrue(decodedSettings.allowMeteredBackgroundResearch)
+    XCTAssertEqual(decodedSettings.dailyBackgroundModelCallBudget, 1_000)
+    XCTAssertEqual(decodedSettings.maxConcurrentBackgroundModelCalls, 1)
+    XCTAssertEqual(decodedSettings.dailyBackgroundTokenBudget, 0)
+    XCTAssertEqual(decodedSettings.discoveryIntervalMillis, 60_000)
+    XCTAssertEqual(workKind, .autonomousWork)
+    XCTAssertEqual(fallbackWorkKind, .cognition)
+    XCTAssertEqual(reason, .networkUnvalidated)
+    XCTAssertEqual(fallbackReason, .none)
+    XCTAssertTrue(encodedDecision.contains(#""next_eligible_at_millis":9999"#))
+    XCTAssertTrue(encodedDecision.contains(#""reason":"LOW_BATTERY""#))
+    XCTAssertTrue(powerConstrained.energyConstrained)
+    XCTAssertTrue(lowBatteryConstrained.energyConstrained)
+    XCTAssertFalse(chargingLowBattery.energyConstrained)
   }
 
   func testGlobalModelCallBudgetAcquisitionIdempotencyAndConcurrency() {
@@ -1236,6 +1476,163 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(capability, .appNavigation)
   }
 
+  func testAgentNativeToolResultModelsUseAndroidWireNames() throws {
+    let result = nativeToolResult(
+      invocationId: "invoke-1",
+      idempotencyKey: "native-replay-key",
+      verification: AgentNativeToolVerification(
+        status: .passed,
+        evidence: ["receipt": .string("verified")]
+      )
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any]
+    )
+    let receipt = try XCTUnwrap(object["receipt"] as? [String: Any])
+    let provenance = try XCTUnwrap(object["provenance"] as? [String: Any])
+    let verification = try XCTUnwrap(object["verification"] as? [String: Any])
+    let decodedStatus = try JSONDecoder().decode(
+      AgentNativeToolResultStatus.self,
+      from: Data(#""unknown_status""#.utf8)
+    )
+    let decodedVerification = try JSONDecoder().decode(
+      AgentNativeVerificationStatus.self,
+      from: Data(#""unknown_verification""#.utf8)
+    )
+    let roundTripped = try XCTUnwrap(AgentNativeToolResult.fromJSONObject(result.toJSONObject()))
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(object["status"] as? String, "succeeded")
+    XCTAssertNotNil(object["output"] as? [String: Any])
+    XCTAssertEqual(receipt["invocation_id"] as? String, "invoke-1")
+    XCTAssertEqual(receipt["idempotency_key"] as? String, "native-replay-key")
+    XCTAssertEqual(receipt["started_at_epoch_ms"] as? Int, 1_000)
+    XCTAssertEqual(receipt["finished_at_epoch_ms"] as? Int, 1_050)
+    XCTAssertEqual(receipt["duration_ms"] as? Int, 50)
+    XCTAssertEqual(receipt["input_sha256"] as? String, String(repeating: "a", count: 64))
+    XCTAssertEqual(receipt["output_sha256"] as? String, String(repeating: "b", count: 64))
+    XCTAssertEqual(receipt["replayed"] as? Bool, false)
+    XCTAssertEqual(provenance["tool_id"] as? String, "signalasi.test.native")
+    XCTAssertEqual(provenance["tool_version"] as? String, "1.0.0")
+    XCTAssertEqual(provenance["executor_id"] as? String, "ios-native")
+    XCTAssertEqual(provenance["contract_version"] as? String, "signalasi.native-tool/1.0")
+    XCTAssertEqual(verification["status"] as? String, "passed")
+    XCTAssertEqual(decodedStatus, .failed)
+    XCTAssertEqual(decodedVerification, .skipped)
+    XCTAssertEqual(roundTripped, result)
+  }
+
+  func testAgentNativeToolReplayStoreEvictsOldestAndClears() throws {
+    let store = InMemoryAgentNativeToolReplayStore()
+    let firstKey = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.first",
+      toolVersion: "1.0.0",
+      idempotencyKey: "first"
+    )
+    try store.put(firstKey, result: nativeToolResult(invocationId: "first", idempotencyKey: "first"))
+
+    for index in 1...InMemoryAgentNativeToolReplayStore.maxEntries {
+      let key = AgentNativeToolReplayKey(
+        toolId: "signalasi.test.\(index)",
+        toolVersion: "1.0.0",
+        idempotencyKey: "key-\(index)"
+      )
+      try store.put(key, result: nativeToolResult(invocationId: "invoke-\(index)", idempotencyKey: key.idempotencyKey))
+    }
+
+    let retainedKey = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.1",
+      toolVersion: "1.0.0",
+      idempotencyKey: "key-1"
+    )
+    let lastKey = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.\(InMemoryAgentNativeToolReplayStore.maxEntries)",
+      toolVersion: "1.0.0",
+      idempotencyKey: "key-\(InMemoryAgentNativeToolReplayStore.maxEntries)"
+    )
+
+    XCTAssertNil(store.get(firstKey))
+    XCTAssertEqual(store.get(retainedKey)?.receipt.invocationId, "invoke-1")
+    XCTAssertEqual(store.get(lastKey)?.receipt.invocationId, "invoke-\(InMemoryAgentNativeToolReplayStore.maxEntries)")
+
+    store.clear()
+
+    XCTAssertNil(store.get(retainedKey))
+    XCTAssertNil(store.get(lastKey))
+  }
+
+  func testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults() throws {
+    var now: Int64 = 1_000
+    let key = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.native",
+      toolVersion: "1.0.0",
+      idempotencyKey: "replay-once"
+    )
+    let store = AgentNativeToolReplaySnapshotStore(nowMillis: { now })
+
+    try store.put(key, result: nativeToolResult(invocationId: "fresh", idempotencyKey: "replay-once"))
+
+    let serialized = store.serializedSnapshot()
+    let entries = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(serialized.utf8)) as? [[String: Any]])
+    let first = try XCTUnwrap(entries.first)
+    let restored = AgentNativeToolReplaySnapshotStore(serializedEntries: serialized, nowMillis: { now })
+    let replayed = try XCTUnwrap(restored.get(key))
+
+    XCTAssertEqual(first["tool_id"] as? String, "signalasi.test.native")
+    XCTAssertEqual(first["tool_version"] as? String, "1.0.0")
+    XCTAssertEqual(first["idempotency_key"] as? String, "replay-once")
+    XCTAssertEqual(first["saved_at_millis"] as? Int, 1_000)
+    XCTAssertNotNil(first["result"] as? [String: Any])
+    XCTAssertEqual(replayed.receipt.invocationId, "fresh")
+    XCTAssertThrowsError(
+      try restored.put(
+        AgentNativeToolReplayKey(toolId: "signalasi.test.native", toolVersion: "1.0.0", idempotencyKey: "failed"),
+        result: nativeToolResult(status: .failed, invocationId: "failed", idempotencyKey: "failed")
+      )
+    ) { error in
+      XCTAssertEqual(error as? AgentNativeToolReplayError, .unsuccessfulResult)
+    }
+
+    now += AgentNativeToolReplaySnapshotStore.retentionMillis + 1
+
+    XCTAssertNil(restored.get(key))
+    XCTAssertEqual(restored.serializedSnapshot(), "[]")
+  }
+
+  func testAgentNativeToolReplayJsonCodecSkipsMalformedEntries() throws {
+    let key = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.native",
+      toolVersion: "1.0.0",
+      idempotencyKey: "valid"
+    )
+    let valid = AgentNativeToolReplayEntry(
+      key: key,
+      result: nativeToolResult(invocationId: "valid", idempotencyKey: "valid"),
+      savedAtMillis: 2_000
+    )
+    let raw = AgentMcpJSONCodec.stringify(.array([
+      .string("ignored"),
+      .object([
+        "tool_id": .string(""),
+        "tool_version": .string("1.0.0"),
+        "idempotency_key": .string("blank"),
+        "saved_at_millis": .int(1_000),
+        "result": valid.result.toJsonValue()
+      ]),
+      .object([
+        "tool_id": .string(valid.key.toolId),
+        "tool_version": .string(valid.key.toolVersion),
+        "idempotency_key": .string(valid.key.idempotencyKey),
+        "saved_at_millis": .int(valid.savedAtMillis),
+        "result": valid.result.toJsonValue()
+      ])
+    ]))
+    let decoded = AgentNativeToolReplayJsonCodec.decode(raw)
+
+    XCTAssertEqual(decoded, [valid])
+    XCTAssertTrue(AgentNativeToolReplayJsonCodec.decode("{broken").isEmpty)
+  }
+
   func testAgentCapabilityCatalogIdsAreStableAndUnique() {
     let mcp = AgentDefaultCapabilityCatalog.mcpEntries
     let skills = AgentDefaultCapabilityCatalog.skillEntries
@@ -1426,6 +1823,217 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(try AgentMcpEndpointPolicy.normalize(" https://example.com/mcp "), "https://example.com/mcp")
     XCTAssertThrowsError(try AgentMcpEndpointPolicy.normalize("https://user:password@example.com/mcp"))
     XCTAssertThrowsError(try AgentMcpEndpointPolicy.normalize("file:///tmp/server"))
+  }
+
+  func testGlobalCapabilityObservationExtractorAuthorizationAndSafetyUseLocalOnlyProjection() {
+    let authorizationEvents = GlobalCapabilityObservationExtractor.authorizationMutations(
+      before: ["location"],
+      after: ["location", "microphone"],
+      timestampMillis: 42
+    )
+    let revokedEvents = GlobalCapabilityObservationExtractor.authorizationMutations(
+      before: ["downloads"],
+      after: [],
+      timestampMillis: 43
+    )
+    let safety = GlobalCapabilityObservationExtractor.safetyPolicyMutation(
+      before: .default,
+      after: AgentSafetySettings(
+        taskExecutionMode: .planOnly,
+        permissionMode: .autoLowRisk,
+        highRiskGuard: true,
+        memoryCapture: false,
+        screenObservationAllowed: false,
+        localActionsAllowed: true,
+        connectorCallsAllowed: false,
+        deviceControlAllowed: false,
+        executionPaused: true
+      ),
+      timestampMillis: 44
+    )
+
+    XCTAssertEqual(authorizationEvents.count, 1)
+    XCTAssertEqual(authorizationEvents[0].type, .authorizationGranted)
+    XCTAssertTrue(authorizationEvents[0].type.isCapabilityLifecycleEvent)
+    XCTAssertEqual(authorizationEvents[0].conversationId, "global-capabilities")
+    XCTAssertEqual(authorizationEvents[0].conversationTitle, "Local authorization")
+    XCTAssertEqual(authorizationEvents[0].metadata["origin"], "confirmation_consent")
+    XCTAssertEqual(authorizationEvents[0].metadata["authorization_scope"], "microphone use")
+    XCTAssertEqual(authorizationEvents[0].metadata["authorization_state"], "granted")
+    XCTAssertEqual(authorizationEvents[0].metadata["context_visibility"], "LOCAL_ONLY")
+    XCTAssertEqual(authorizationEvents[0].metadata["projection"], "replace")
+    XCTAssertEqual(revokedEvents.first?.type, .authorizationRevoked)
+    XCTAssertEqual(revokedEvents.first?.metadata["authorization_state"], "revoked")
+    XCTAssertNotNil(safety)
+    XCTAssertEqual(safety?.type, .authorizationPolicyChanged)
+    XCTAssertEqual(safety?.contentRef, "encrypted://agent-authorization/safety-policy")
+    XCTAssertEqual(safety?.metadata["task_execution_mode"], "plan_only")
+    XCTAssertEqual(safety?.metadata["permission_mode"], "auto_low_risk")
+    XCTAssertEqual(safety?.metadata["screen_observation_allowed"], "false")
+    XCTAssertEqual(safety?.metadata["connector_calls_allowed"], "false")
+    XCTAssertEqual(safety?.metadata["execution_paused"], "true")
+    XCTAssertEqual(safety?.metadata["identity_kind"], "DECISION")
+    XCTAssertEqual(safety?.metadata["identity_layer"], "USER")
+    XCTAssertNil(GlobalCapabilityObservationExtractor.safetyPolicyMutation(before: .default, after: .default))
+  }
+
+  func testGlobalCapabilityObservationExtractorMcpAgentAndHealthAreRedacted() throws {
+    let endpoint = "https://secret.example/mcp"
+    let connection = AgentMcpConnection(
+      id: "github",
+      catalogId: "signalasi.mcp.github",
+      displayName: "  GitHub   MCP  ",
+      endpoint: endpoint,
+      distribution: .remote,
+      transport: .streamableHTTP,
+      authProfile: try AgentMcpAuthProfile(.none),
+      authState: .notRequired,
+      state: .connected,
+      toolIds: ["issues.search", "repo.read", "repo.read"]
+    )
+    let mcp = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.mcpMutations(
+        before: [],
+        after: [connection],
+        timestampMillis: 100
+      ).first
+    )
+    let agent = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.agentMutations(
+        before: [],
+        after: [
+          networkRegistration(
+            agentId: "desktop-agent",
+            displayName: "Desktop Agent",
+            location: .trustedDesktop,
+            status: .online,
+            capabilities: [.chat, .code],
+            activeRuns: 4,
+            maxParallelRuns: 4
+          )
+        ],
+        timestampMillis: 101
+      ).first
+    )
+    let resourceId = "target:https://secret.example/runtime"
+    let health = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.resourceHealthTransition(
+        resourceId: resourceId,
+        before: AgentResourceHealth(),
+        after: AgentResourceHealth(failures: 3, consecutiveFailures: 3, circuitOpenUntil: 2_000),
+        timestampMillis: 102
+      )
+    )
+
+    XCTAssertEqual(mcp.type, .resourceRegistered)
+    XCTAssertEqual(mcp.metadata["resource_kind"], "mcp")
+    XCTAssertEqual(mcp.metadata["resource_state"], "available")
+    XCTAssertEqual(mcp.metadata["auth_state"], "not_required")
+    XCTAssertEqual(mcp.metadata["connection_state"], "connected")
+    XCTAssertEqual(mcp.metadata["tool_count"], "2")
+    assertGlobalCapabilityEventDoesNotExpose(mcp, secrets: [endpoint, "secret.example"])
+    XCTAssertEqual(agent.metadata["resource_kind"], "agent")
+    XCTAssertEqual(agent.metadata["resource_state"], "busy")
+    XCTAssertEqual(agent.metadata["endpoint_state"], "online")
+    XCTAssertEqual(agent.metadata["capability_count"], "2")
+    XCTAssertEqual(agent.metadata["at_capacity"], "true")
+    XCTAssertEqual(health.type, .resourceStateChanged)
+    XCTAssertEqual(health.metadata["origin"], "resource_health")
+    XCTAssertEqual(health.metadata["resource_kind"], "health")
+    XCTAssertEqual(health.metadata["resource_state"], "unavailable")
+    XCTAssertEqual(health.metadata["consecutive_failures"], "3")
+    XCTAssertEqual(health.metadata["reliability_percent"], "0")
+    assertGlobalCapabilityEventDoesNotExpose(health, secrets: [resourceId, "secret.example/runtime"])
+  }
+
+  func testGlobalCapabilityObservationExtractorDeviceResourcesAreRedacted() throws {
+    let home = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.homeAssistantMutations(
+        before: .default,
+        after: HomeAssistantSettings(
+          enabled: true,
+          baseUrl: "https://home.secret.local",
+          accessToken: "ha-token-secret",
+          defaultEntityId: "light.private_room"
+        ),
+        timestampMillis: 200
+      ).first
+    )
+    let device = try XCTUnwrap(
+      GlobalCapabilityObservationExtractor.customDeviceMutations(
+        before: [],
+        after: [
+          CustomDeviceConnector(
+            id: "door-lock",
+            name: "Door Lock",
+            transport: .mqtt,
+            endpoint: "mqtt://device.secret.local",
+            commandTarget: "locks/private-door",
+            username: "private-user",
+            authToken: "device-token-secret",
+            risk: .high,
+            enabled: true
+          )
+        ],
+        timestampMillis: 201
+      ).first
+    )
+
+    XCTAssertEqual(home.metadata["resource_kind"], "home_assistant")
+    XCTAssertEqual(home.metadata["resource_state"], "ready")
+    XCTAssertEqual(home.metadata["credentials_configured"], "true")
+    XCTAssertEqual(home.metadata["default_target_configured"], "true")
+    XCTAssertEqual(device.metadata["resource_kind"], "custom_device")
+    XCTAssertEqual(device.metadata["resource_state"], "ready")
+    XCTAssertEqual(device.metadata["transport"], "mqtt")
+    XCTAssertEqual(device.metadata["risk"], "high")
+    XCTAssertEqual(device.metadata["configured"], "true")
+    assertGlobalCapabilityEventDoesNotExpose(
+      home,
+      secrets: ["home.secret.local", "ha-token-secret", "light.private_room"]
+    )
+    assertGlobalCapabilityEventDoesNotExpose(
+      device,
+      secrets: ["device.secret.local", "locks/private-door", "private-user", "device-token-secret"]
+    )
+  }
+
+  func testGlobalCapabilityObservationModelsUseAndroidWireNames() throws {
+    let reset = GlobalCapabilityObservationExtractor.snapshotReset(timestampMillis: 300)
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(reset)) as? [String: Any]
+    )
+    let health = AgentResourceHealth(
+      successes: 3,
+      failures: 1,
+      consecutiveFailures: 0,
+      averageLatencyMs: 250,
+      circuitOpenUntil: 0,
+      lastUpdatedAt: 123
+    )
+    let healthObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(health)) as? [String: Any]
+    )
+
+    XCTAssertEqual(object["type"] as? String, "CAPABILITY_SNAPSHOT_RESET")
+    XCTAssertEqual(object["conversation_id"] as? String, "global-capabilities")
+    XCTAssertEqual(object["timestamp_millis"] as? Int, 300)
+    XCTAssertNotNil(object["message_id"])
+    XCTAssertNotNil(object["content_ref"])
+    XCTAssertNotNil(object["conversation_title"])
+    XCTAssertNotNil(object["topic_hints"])
+    XCTAssertNotNil(object["causal_event_ids"])
+    XCTAssertNotNil(object["retracted_event_ids"])
+    XCTAssertEqual(object["actor"] as? String, "SYSTEM")
+    XCTAssertEqual(object["sensitivity"] as? String, "PERSONAL")
+    XCTAssertEqual((object["metadata"] as? [String: Any])?["context_visibility"] as? String, "LOCAL_ONLY")
+    XCTAssertEqual(healthObject["consecutive_failures"] as? Int, 0)
+    XCTAssertEqual(healthObject["average_latency_ms"] as? Int, 250)
+    XCTAssertEqual(healthObject["circuit_open_until"] as? Int, 0)
+    XCTAssertEqual(healthObject["last_updated_at"] as? Int, 123)
+    XCTAssertEqual(health.reliabilityPercent, 75)
+    XCTAssertTrue(GlobalConversationEventType.resourceRegistered.isCapabilityLifecycleEvent)
+    XCTAssertFalse(GlobalConversationEventType.messageCreated.isCapabilityLifecycleEvent)
   }
 
   func testAgentConfirmationPolicyMatchesAndroidTiersAndConsentKeys() throws {
@@ -5296,6 +5904,168 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(unstable.evidence.contains("decision=CHANGED_BUT_UNSTABLE"))
   }
 
+  func testAgentObservationContextStoreObservesDedupesAndFiltersConversationScope() throws {
+    var now: Int64 = 1_000
+    var nextId = 0
+    let store = InMemoryAgentObservationContextStore(
+      clock: { now },
+      idFactory: {
+        defer { nextId += 1 }
+        return "observation-\(nextId)"
+      }
+    )
+
+    let first = try XCTUnwrap(store.observe(
+      targetId: " codex ",
+      text: " Needs review ",
+      conversationId: " conversation-a ",
+      taskId: " task-a "
+    ))
+    now = 2_000
+    let duplicate = try XCTUnwrap(store.observe(
+      targetId: "codex",
+      text: "Needs review",
+      conversationId: "conversation-a",
+      taskId: "task-a"
+    ))
+    _ = store.observe(targetId: "codex", text: "Global hint")
+    _ = store.observe(targetId: "codex", text: "Other conversation", conversationId: "conversation-b")
+
+    let scoped = store.peek(targetId: " codex ", conversationId: "conversation-a")
+    let unscoped = store.peek(targetId: "codex")
+
+    XCTAssertEqual(first.id, "observation-0")
+    XCTAssertEqual(duplicate.id, "observation-1")
+    XCTAssertEqual(duplicate.targetId, "codex")
+    XCTAssertEqual(duplicate.text, "Needs review")
+    XCTAssertEqual(duplicate.conversationId, "conversation-a")
+    XCTAssertEqual(duplicate.taskId, "task-a")
+    XCTAssertEqual(duplicate.createdAtMillis, 2_000)
+    XCTAssertEqual(duplicate.expiresAtMillis, 2_000 + AgentObservedContext.defaultTTLMillis)
+    XCTAssertEqual(scoped.map(\.id), ["observation-1", "observation-2"])
+    XCTAssertEqual(unscoped.map(\.id), ["observation-1", "observation-2", "observation-3"])
+    XCTAssertNil(store.observe(targetId: " ", text: "ignored"))
+    XCTAssertNil(store.observe(targetId: "codex", text: " "))
+  }
+
+  func testAgentObservationContextStoreExpiresAcknowledgesClearsAndBoundsEntries() throws {
+    var now: Int64 = 10_000
+    let valid = AgentObservedContext(
+      id: "valid",
+      targetId: "codex",
+      text: "Fresh context",
+      conversationId: "conversation",
+      taskId: "task",
+      createdAtMillis: 9_000,
+      expiresAtMillis: 20_000
+    )
+    let expired = AgentObservedContext(
+      id: "expired",
+      targetId: "codex",
+      text: "Old context",
+      createdAtMillis: 1_000,
+      expiresAtMillis: 9_999
+    )
+    let invalid = AgentObservedContext(
+      id: "invalid",
+      targetId: "",
+      text: "Missing target",
+      createdAtMillis: 9_000,
+      expiresAtMillis: 20_000
+    )
+    let store = InMemoryAgentObservationContextStore(
+      serialized: AgentObservationContextJsonCodec.encode([expired, invalid, valid]),
+      clock: { now },
+      idFactory: { "new" }
+    )
+
+    XCTAssertEqual(store.peek(targetId: "codex").map(\.id), ["valid"])
+    XCTAssertEqual(store.acknowledge(entryIds: ["missing"]), 0)
+    XCTAssertEqual(store.acknowledge(entryIds: ["valid"]), 1)
+    XCTAssertTrue(store.peek(targetId: "codex").isEmpty)
+
+    _ = store.observe(targetId: "codex", text: "A")
+    _ = store.observe(targetId: "other", text: "B")
+    XCTAssertEqual(store.clearTarget(" codex "), 1)
+    XCTAssertEqual(store.peek(targetId: "other").map(\.text), ["B"])
+    store.clear()
+    XCTAssertEqual(AgentObservationContextJsonCodec.decode(store.serializedSnapshot(), nowMillis: now), [])
+
+    now = 1_000
+    var boundedSeed = 0
+    let bounded = InMemoryAgentObservationContextStore(
+      clock: { now },
+      idFactory: {
+        defer { boundedSeed += 1 }
+        return "bounded-\(boundedSeed)"
+      }
+    )
+    for index in 0..<18 {
+      now = Int64(1_000 + index)
+      _ = bounded.observe(targetId: "codex", text: "target-entry-\(index)")
+    }
+    XCTAssertEqual(bounded.peek(targetId: "codex").count, 16)
+    XCTAssertEqual(bounded.peek(targetId: "codex").first?.text, "target-entry-2")
+
+    var totalSeed = 0
+    let total = InMemoryAgentObservationContextStore(
+      clock: { now },
+      idFactory: {
+        defer { totalSeed += 1 }
+        return "total-\(totalSeed)"
+      }
+    )
+    for index in 0..<130 {
+      now = Int64(2_000 + index)
+      _ = total.observe(targetId: "target-\(index)", text: "total-entry-\(index)")
+    }
+    let decoded = AgentObservationContextJsonCodec.decode(total.serializedSnapshot(), nowMillis: now)
+    XCTAssertEqual(decoded.count, 128)
+    XCTAssertFalse(decoded.contains { $0.targetId == "target-0" })
+    XCTAssertEqual(decoded.first?.targetId, "target-2")
+    XCTAssertEqual(decoded.last?.targetId, "target-129")
+  }
+
+  func testAgentObservationContextCodecUsesAndroidWireNamesAndBoundsPayloads() throws {
+    let longText = String(repeating: "x", count: 8_050)
+    let context = AgentObservedContext(
+      id: "context",
+      targetId: String(repeating: "t", count: 200),
+      text: longText,
+      conversationId: String(repeating: "c", count: 200),
+      taskId: "task",
+      createdAtMillis: 1_000,
+      expiresAtMillis: 2_000
+    )
+    let encoded = AgentObservationContextJsonCodec.encode([context])
+    let object = try XCTUnwrap(
+      (JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])?.first
+    )
+    let decoded = AgentObservationContextJsonCodec.decode(
+      """
+      [
+        "ignored",
+        {"id":"blank","target_id":"","text":"ignored","created_at_millis":1,"expires_at_millis":9999},
+        {"id":"expired","target_id":"codex","text":"old","created_at_millis":1,"expires_at_millis":999},
+        \(encoded.dropFirst().dropLast())
+      ]
+      """,
+      nowMillis: 1_500
+    )
+
+    XCTAssertEqual(object["id"] as? String, "context")
+    XCTAssertEqual((object["target_id"] as? String)?.count, 160)
+    XCTAssertEqual((object["text"] as? String)?.count, 8_000)
+    XCTAssertEqual((object["conversation_id"] as? String)?.count, 160)
+    XCTAssertEqual(object["task_id"] as? String, "task")
+    XCTAssertEqual((object["created_at_millis"] as? NSNumber)?.int64Value, Int64(1_000))
+    XCTAssertEqual((object["expires_at_millis"] as? NSNumber)?.int64Value, Int64(2_000))
+    XCTAssertEqual(decoded, [context])
+    XCTAssertTrue(context.isExpired(nowMillis: 2_000))
+    XCTAssertFalse(context.isExpired(nowMillis: 1_999))
+    XCTAssertEqual(AgentObservationContextJsonCodec.decode("not-json", nowMillis: 1_500), [])
+  }
+
   func testPhoneExecutionAuthorityAnnotatesConcurrentReadsWithoutSerialization() {
     let action = phoneAuthorityAction(
       id: "read-1",
@@ -5793,6 +6563,171 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encoded.contains(#""timestamp_millis":14"#))
   }
 
+  func testAgentExecutionContinuityCreatesRollbackCheckpointAndAndroidDigest() throws {
+    let screen = AgentScreenContext(
+      foregroundApp: "SignalASI",
+      activityName: "MainActivity",
+      pageTitle: "Agent",
+      visibleTextCount: 2,
+      clickableNodeCount: 4,
+      inputFieldCount: 1,
+      visibleTexts: ["Inbox", "Compose"]
+    )
+    let changedScreen = AgentScreenContext(
+      foregroundApp: "SignalASI",
+      activityName: "MainActivity",
+      pageTitle: "Agent",
+      visibleTextCount: 2,
+      clickableNodeCount: 4,
+      inputFieldCount: 1,
+      visibleTexts: ["Inbox", "Changed"]
+    )
+    let action = AgentAction(
+      id: "open",
+      kind: .openURL,
+      target: "https://example.com",
+      risk: .medium,
+      status: .running,
+      description: "Open docs"
+    )
+
+    let checkpoint = AgentExecutionContinuity.checkpointBefore(
+      action: action,
+      screen: screen,
+      planRevision: 7,
+      id: "checkpoint-1",
+      nowMillis: 1_234
+    )
+
+    XCTAssertEqual(AgentExecutionContinuity.screenDigest(screen), "806208482")
+    XCTAssertEqual(AgentExecutionContinuity.screenDigest(changedScreen), "-1027068")
+    XCTAssertEqual(checkpoint.id, "checkpoint-1")
+    XCTAssertEqual(checkpoint.actionId, "open")
+    XCTAssertEqual(checkpoint.planRevision, 7)
+    XCTAssertEqual(checkpoint.foregroundApp, "SignalASI")
+    XCTAssertEqual(checkpoint.activityName, "MainActivity")
+    XCTAssertEqual(checkpoint.pageTitle, "Agent")
+    XCTAssertEqual(checkpoint.screenDigest, "806208482")
+    XCTAssertEqual(checkpoint.status, .active)
+    XCTAssertEqual(checkpoint.createdAtMillis, 1_234)
+    XCTAssertEqual(checkpoint.rollbackAction?.id, "rollback-open")
+    XCTAssertEqual(checkpoint.rollbackAction?.kind, .back)
+    XCTAssertEqual(checkpoint.rollbackAction?.status, .pendingConfirmation)
+    XCTAssertTrue(checkpoint.rollbackAction?.requiresConfirmation == true)
+
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: try JSONEncoder().encode(checkpoint)) as? [String: Any]
+    )
+    XCTAssertEqual(object["plan_revision"] as? Int, 7)
+    XCTAssertEqual(object["foreground_app"] as? String, "SignalASI")
+    XCTAssertEqual(object["screen_digest"] as? String, "806208482")
+    XCTAssertEqual((object["created_at_millis"] as? NSNumber)?.int64Value, Int64(1_234))
+    XCTAssertNotNil(object["rollback_action"])
+  }
+
+  func testAgentExecutionContinuityReversesSwipeAndRestoresInterruptedActions() {
+    let running = AgentAction(
+      id: "swipe",
+      kind: .swipe,
+      target: "screen",
+      risk: .low,
+      status: .running,
+      description: "Swipe up",
+      parameters: [
+        "from_x": "10",
+        "from_y": "90",
+        "to_x": "10",
+        "to_y": "10"
+      ]
+    )
+    let pending = AgentAction(
+      id: "pending",
+      kind: .tap,
+      target: "button",
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Tap"
+    )
+    let plan = lifecyclePlan(running, pending)
+    let checkpoint = AgentExecutionContinuity.checkpointBefore(
+      action: running,
+      screen: plan.screen,
+      planRevision: plan.revision,
+      id: "checkpoint-swipe",
+      nowMillis: 2_000
+    )
+    let rollback = checkpoint.rollbackAction
+    let recovered = plan.addCheckpoint(checkpoint).recoverInterruptedExecution()
+
+    XCTAssertEqual(rollback?.kind, .swipe)
+    XCTAssertEqual(rollback?.description, "Reverse the previous swipe")
+    XCTAssertEqual(rollback?.parameters["from_x"], "10")
+    XCTAssertEqual(rollback?.parameters["from_y"], "10")
+    XCTAssertEqual(rollback?.parameters["to_x"], "10")
+    XCTAssertEqual(rollback?.parameters["to_y"], "90")
+    XCTAssertEqual(recovered.checkpoints.count, 1)
+    XCTAssertEqual(recovered.checkpoints.first?.id, "checkpoint-swipe")
+    XCTAssertEqual(recovered.actions[0].status, .pendingConfirmation)
+    XCTAssertEqual(recovered.actions[0].result, "Execution was interrupted before verification")
+    XCTAssertEqual(recovered.actions[0].evidence, "interrupted")
+    XCTAssertEqual(recovered.actions[1].status, .pendingConfirmation)
+    let marked = recovered.markCheckpoint("checkpoint-swipe", status: .restored)
+    XCTAssertEqual(marked.checkpoints.first?.status, .restored)
+  }
+
+  func testAgentExecutionContinuityHistoryAndCheckpointCodecStayBackwardCompatible() throws {
+    let history = (0..<45).map { index in
+      AgentAction(
+        id: "history-\(index)",
+        kind: .callConnector,
+        target: "Codex",
+        risk: .low,
+        status: .completed,
+        description: "Historical action"
+      )
+    }
+    let blocked = AgentAction(
+      id: "blocked",
+      kind: .callNativeTool,
+      target: "tool",
+      risk: .medium,
+      status: .blocked,
+      description: "Blocked"
+    )
+    let running = AgentAction(
+      id: "running",
+      kind: .callNativeTool,
+      target: "tool",
+      risk: .medium,
+      status: .running,
+      description: "Running"
+    )
+    var plan = lifecyclePlan(blocked, running)
+    plan.actionHistory = history
+
+    let retained = plan.historyForReplan()
+    let legacy = try JSONDecoder().decode(
+      AgentExecutionCheckpoint.self,
+      from: Data(#"{"action_id":"connector","summary":"checkpoint","timestamp_millis":13}"#.utf8)
+    )
+    let fallback = try JSONDecoder().decode(
+      AgentCheckpointStatus.self,
+      from: Data(#""future""#.utf8)
+    )
+
+    XCTAssertEqual(retained.count, 40)
+    XCTAssertEqual(retained.first?.id, "history-6")
+    XCTAssertEqual(retained.last?.id, "blocked")
+    XCTAssertFalse(retained.contains { $0.id == "running" })
+    XCTAssertEqual(legacy.id, "checkpoint-connector-13")
+    XCTAssertEqual(legacy.actionId, "connector")
+    XCTAssertEqual(legacy.summary, "checkpoint")
+    XCTAssertEqual(legacy.createdAtMillis, 13)
+    XCTAssertEqual(legacy.timestampMillis, 13)
+    XCTAssertEqual(legacy.status, .active)
+    XCTAssertEqual(fallback, .active)
+  }
+
   func testAgentExecutionLoopTimelinePolicyProjectsCanonicalPhases() {
     let plan = AgentExecutionLoopTimelinePolicy.project(loopEvent(.plan))
     let act = AgentExecutionLoopTimelinePolicy.project(
@@ -6080,6 +7015,170 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encodedSnapshot.contains(#""last_sequence":4"#))
     XCTAssertTrue(encodedRegistration.contains(#""connection_kind":"SIGNALASI_LINK""#))
     XCTAssertTrue(encodedRun.contains(#""task_thread_id":"task""#))
+  }
+
+  func testAgentRunStartReceiptStoreReservesAndReplaysIdempotentRequests() throws {
+    var now: Int64 = 1_000
+    let registration = networkRegistration(agentId: "codex", displayName: "Codex")
+    let store = InMemoryAgentRunStartReceiptStore(clock: { now })
+    let request = runStartRequest(requiredCapabilities: [.code, .chat])
+
+    let reserved = try store.reserve(registration: registration, request: request)
+    now = 2_000
+    let replay = try store.reserve(
+      registration: registration,
+      request: runStartRequest(runId: "run-replayed", requiredCapabilities: [.chat, .code])
+    )
+
+    XCTAssertEqual(reserved, replay)
+    XCTAssertEqual(reserved.status, .reserved)
+    XCTAssertEqual(reserved.createdAtMillis, 1_000)
+    XCTAssertEqual(reserved.updatedAtMillis, 1_000)
+    XCTAssertEqual(reserved.runId, "run")
+    XCTAssertEqual(reserved.taskId, "task")
+    XCTAssertEqual(
+      reserved.requestDigest,
+      "2c83a56ff6e923a40ce01a63d26f37f6bc2e7b78ff367da21217b92ef586b719"
+    )
+    XCTAssertEqual(store.find(agentId: " codex ", idempotencyKey: " key ")?.idempotencyKey, "key")
+
+    XCTAssertThrowsError(
+      try store.reserve(
+        registration: registration,
+        request: runStartRequest(goal: "different request content", requiredCapabilities: [.chat, .code])
+      )
+    ) { error in
+      XCTAssertTrue((error as? AgentRunStartReceiptError)?.message.contains("different request content") == true)
+    }
+  }
+
+  func testAgentRunStartReceiptStoreAcceptsPersistsAndRejectsMismatchedHandles() throws {
+    var now: Int64 = 1_000
+    let registration = networkRegistration(agentId: "codex", displayName: "Codex")
+    let store = InMemoryAgentRunStartReceiptStore(clock: { now })
+    let request = runStartRequest()
+    _ = try store.reserve(registration: registration, request: request)
+    now = 2_000
+
+    XCTAssertThrowsError(
+      try store.accept(
+        agentId: "codex",
+        idempotencyKey: "key",
+        handle: AgentRunHandle(runId: "wrong", taskId: "task", agentId: "codex", remoteRunId: "remote")
+      )
+    ) { error in
+      XCTAssertTrue((error as? AgentRunStartReceiptError)?.message.contains("different Run") == true)
+    }
+
+    let handle = AgentRunHandle(
+      runId: "run",
+      taskId: "task",
+      agentId: "codex",
+      remoteRunId: "remote-1",
+      acceptedAtMillis: 1_950
+    )
+    let accepted = try store.accept(agentId: "codex", idempotencyKey: "key", handle: handle)
+    let recreated = InMemoryAgentRunStartReceiptStore(serialized: store.serializedSnapshot(), clock: { 3_000 })
+
+    XCTAssertEqual(accepted.status, .accepted)
+    XCTAssertEqual(accepted.handle, handle)
+    XCTAssertEqual(accepted.error, "")
+    XCTAssertEqual(accepted.updatedAtMillis, 2_000)
+    XCTAssertEqual(recreated.list().count, 1)
+    XCTAssertEqual(recreated.list().first?.handle?.remoteRunId, "remote-1")
+    XCTAssertEqual(recreated.list().first?.status, .accepted)
+
+    let ignored = recreated.markOutcomeUnknown(agentId: "codex", idempotencyKey: "key", error: "connection_lost")
+    XCTAssertEqual(ignored?.status, .accepted)
+    XCTAssertEqual(recreated.markCancelledByRun(agentId: "codex", runId: "run"), 1)
+    XCTAssertEqual(recreated.list().first?.status, .cancelled)
+  }
+
+  func testAgentRunStartReceiptStoreTracksUnknownOutcomeAndBoundsSerializedReceipts() throws {
+    var now: Int64 = 1_000
+    let registration = networkRegistration(agentId: "codex", displayName: "Codex")
+    let store = InMemoryAgentRunStartReceiptStore(clock: { now })
+    _ = try store.reserve(registration: registration, request: runStartRequest(runId: "run-a", idempotencyKey: "key-a"))
+    now = 2_000
+    let unknown = store.markOutcomeUnknown(
+      agentId: "codex",
+      idempotencyKey: "key-a",
+      error: " connection_lost "
+    )
+    now = 3_000
+    let accepted = try store.accept(
+      agentId: "codex",
+      idempotencyKey: "key-a",
+      handle: AgentRunHandle(runId: "run-a", taskId: "task", agentId: "codex", remoteRunId: "remote-a")
+    )
+
+    XCTAssertEqual(unknown?.status, .outcomeUnknown)
+    XCTAssertEqual(unknown?.error, "connection_lost")
+    XCTAssertEqual(unknown?.updatedAtMillis, 2_000)
+    XCTAssertEqual(accepted.status, .accepted)
+    XCTAssertEqual(accepted.updatedAtMillis, 3_000)
+
+    let bulk = (0..<4_005).map { index in
+      AgentRunStartReceipt(
+        agentId: "codex",
+        installationId: "installation-codex",
+        idempotencyKey: "bulk-key-\(index)",
+        requestDigest: String(repeating: "b", count: 64),
+        runId: "bulk-\(index)",
+        taskId: "task-\(index)",
+        status: .reserved,
+        createdAtMillis: Int64(index),
+        updatedAtMillis: Int64(index)
+      )
+    }
+    let bulkStore = InMemoryAgentRunStartReceiptStore(
+      serialized: AgentRunStartReceiptJsonCodec.encode(bulk),
+      clock: { 9_000 }
+    )
+    XCTAssertEqual(bulkStore.markCancelledByRun(agentId: "codex", runId: "bulk-4004"), 1)
+    let receipts = bulkStore.list()
+    XCTAssertEqual(receipts.count, 4_000)
+    XCTAssertFalse(receipts.contains { $0.idempotencyKey == "bulk-key-0" })
+    XCTAssertEqual(receipts.first?.idempotencyKey, "bulk-key-4004")
+    XCTAssertEqual(receipts.last?.idempotencyKey, "bulk-key-5")
+  }
+
+  func testAgentRunStartReceiptCodecUsesAndroidWireNamesAndSkipsInvalidRecords() throws {
+    let valid = AgentRunStartReceipt(
+      agentId: "codex",
+      installationId: "installation-codex",
+      idempotencyKey: "key",
+      requestDigest: String(repeating: "a", count: 64),
+      runId: "run",
+      taskId: "task",
+      status: .accepted,
+      handle: AgentRunHandle(runId: "run", taskId: "task", agentId: "codex", remoteRunId: "remote", acceptedAtMillis: 123),
+      createdAtMillis: 1,
+      updatedAtMillis: 2
+    )
+    let encoded = AgentRunStartReceiptJsonCodec.encode([valid])
+    let object = try XCTUnwrap(
+      (JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])?.first
+    )
+    let decoded = AgentRunStartReceiptJsonCodec.decode(
+      """
+      [
+        {"agent_id":"bad","idempotency_key":"bad","status":"FUTURE"},
+        \(encoded.dropFirst().dropLast())
+      ]
+      """
+    )
+
+    XCTAssertEqual(object["agent_id"] as? String, "codex")
+    XCTAssertEqual(object["installation_id"] as? String, "installation-codex")
+    XCTAssertEqual(object["idempotency_key"] as? String, "key")
+    XCTAssertEqual(object["request_digest"] as? String, String(repeating: "a", count: 64))
+    XCTAssertEqual(object["run_id"] as? String, "run")
+    XCTAssertEqual(object["task_id"] as? String, "task")
+    XCTAssertEqual(object["status"] as? String, "ACCEPTED")
+    XCTAssertEqual((object["handle"] as? [String: Any])?["remote_run_id"] as? String, "remote")
+    XCTAssertEqual(decoded, [valid])
+    XCTAssertEqual(AgentRunStartReceiptJsonCodec.decode("not-json"), [])
   }
 
   func testAgentExplicitToolHandleIsOpaqueScopedAndDoesNotExposeResource() throws {
@@ -6782,6 +7881,148 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(decoded.action.argumentsJson, #"{"limit":2,"path":"/tmp/report.txt"}"#)
     XCTAssertEqual(decoded.policy.misfire, .catchUp)
     XCTAssertEqual(fallback, .fireOnce)
+  }
+
+  func testGlobalProactiveInboxProjectsDeliveredFindingsAndDigests() {
+    let items = GlobalProactiveInboxPolicy.project(
+      messages: [
+        globalProactiveMessage("current"),
+        globalProactiveMessage("topic", target: .newConversation)
+      ],
+      feedback: []
+    )
+    let digest = GlobalProactiveInboxPolicy.project(
+      messages: [
+        globalProactiveMessage("digest-a", target: .globalDigest, deliveryGroupId: "daily"),
+        globalProactiveMessage(
+          "digest-b",
+          target: .globalDigest,
+          content: "A second material change is ready.",
+          topic: "Release risk",
+          deliveryGroupId: "daily"
+        )
+      ],
+      feedback: []
+    )
+
+    XCTAssertEqual(items.count, 2)
+    XCTAssertEqual(GlobalProactiveInboxPolicy.newCount(items), 2)
+    XCTAssertTrue(items.allSatisfy(\.isNew))
+    XCTAssertEqual(Set(items.map(\.destinationConversationId)), Set(["destination"]))
+    XCTAssertEqual(digest.count, 1)
+    XCTAssertEqual(digest.first?.key, "global-agent-digest:daily")
+    XCTAssertEqual(digest.first?.messageIds, Set(["digest-a", "digest-b"]))
+    XCTAssertTrue(digest.first?.content.contains("Release risk") == true)
+  }
+
+  func testGlobalProactiveInboxFiltersStatusesAndFeedback() {
+    let pending = globalProactiveMessage("pending", status: .pending)
+    let dismissed = globalProactiveMessage("dismissed", status: .dismissed)
+    let helpful = globalProactiveMessage("helpful")
+    let irrelevant = globalProactiveMessage("irrelevant")
+    let frequent = globalProactiveMessage("frequent")
+
+    let statusItems = GlobalProactiveInboxPolicy.project(messages: [pending, dismissed], feedback: [])
+    let helpfulItem = GlobalProactiveInboxPolicy.project(
+      messages: [helpful],
+      feedback: [globalAgentFeedback(messageId: helpful.id, kind: .helpful)]
+    ).first
+    let negativeItems = GlobalProactiveInboxPolicy.project(
+      messages: [irrelevant, frequent],
+      feedback: [
+        globalAgentFeedback(messageId: irrelevant.id, kind: .notRelevant),
+        globalAgentFeedback(messageId: frequent.id, kind: .tooFrequent)
+      ]
+    )
+
+    XCTAssertTrue(statusItems.isEmpty)
+    XCTAssertFalse(helpfulItem?.isNew ?? true)
+    XCTAssertEqual(helpfulItem?.feedbackKind, .helpful)
+    XCTAssertTrue(negativeItems.isEmpty)
+  }
+
+  func testGlobalProactiveInboxMarksOnlySelectedDeliveredMessagesViewed() {
+    let delivered = globalProactiveMessage("delivered")
+    let untouched = globalProactiveMessage("untouched")
+    let pending = globalProactiveMessage("pending", status: .pending)
+
+    let updated = Dictionary(
+      uniqueKeysWithValues: GlobalProactiveInboxPolicy.markViewed(
+        messages: [delivered, untouched, pending],
+        messageIds: Set(["delivered", "pending"]),
+        nowMillis: 9_000
+      ).map { ($0.id, $0) }
+    )
+
+    XCTAssertEqual(updated["delivered"]?.viewedAtMillis, 9_000)
+    XCTAssertEqual(updated["untouched"]?.viewedAtMillis, 0)
+    XCTAssertEqual(updated["pending"]?.viewedAtMillis, 0)
+  }
+
+  func testGlobalProactiveInboxModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder().decode(
+      GlobalProactiveMessage.self,
+      from: Data(
+        #"""
+        {
+          "id": "wire",
+          "source_event_id": "event-wire",
+          "source_conversation_id": "source",
+          "target": "global-digest",
+          "title": "Signal digest",
+          "content": "Digest ready",
+          "topic": "Release risk",
+          "urgent": true,
+          "causal_event_ids": ["event-a", "event-b"],
+          "status": "delivered",
+          "delivered_at_millis": 5,
+          "delivered_conversation_id": "destination",
+          "delivery_group_id": "daily"
+        }
+        """#.utf8
+      )
+    )
+    let feedback = try JSONDecoder().decode(
+      GlobalAgentFeedback.self,
+      from: Data(
+        #"""
+        {
+          "proactive_message_id": "wire",
+          "delivery_group_id": "daily",
+          "conversation_id": "destination",
+          "topic": "Release risk",
+          "target": "CURRENT_CONVERSATION",
+          "kind": "too-frequent",
+          "created_at_millis": 6
+        }
+        """#.utf8
+      )
+    )
+    let fallbackTarget = try JSONDecoder().decode(
+      GlobalProactiveTarget.self,
+      from: Data(#""future""#.utf8)
+    )
+    let fallbackStatus = try JSONDecoder().decode(
+      GlobalProactiveMessageStatus.self,
+      from: Data(#""future""#.utf8)
+    )
+    let legacy = GlobalProactiveInboxPolicy.project(
+      messages: [globalProactiveMessage("legacy", title: "Signal \u{5efa}\u{8bae}")],
+      feedback: []
+    ).first
+    let projected = try XCTUnwrap(GlobalProactiveInboxPolicy.project(messages: [decoded], feedback: []).first)
+    let encoded = String(decoding: try JSONEncoder().encode(projected), as: UTF8.self)
+
+    XCTAssertEqual(decoded.target, .globalDigest)
+    XCTAssertEqual(decoded.status, .delivered)
+    XCTAssertEqual(decoded.causalEventIds, Set(["event-a", "event-b"]))
+    XCTAssertEqual(feedback.kind, .tooFrequent)
+    XCTAssertEqual(fallbackTarget, .currentConversation)
+    XCTAssertEqual(fallbackStatus, .pending)
+    XCTAssertEqual(legacy?.title, "SignalASI \u{5efa}\u{8bae}")
+    XCTAssertEqual(GlobalAgentText.productTitle("Signal Protocol"), "Signal Protocol")
+    XCTAssertTrue(encoded.contains(#""message_ids""#))
+    XCTAssertTrue(encoded.contains(#""destination_conversation_id":"destination""#))
   }
 
   func testAgentTranscriptScrollPolicyMatchesAndroidAutoFollowAndPagination() {
@@ -8292,6 +9533,169 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(object["task_intent_confidence"] as? Int ?? 0, 55)
   }
 
+  func testAgentRuntimePackCatalogSigningPayloadCodecAndWireNamesMatchAndroid() throws {
+    let now: Int64 = 1_750_000_000_000
+    let first = runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    let second = runtimeCatalogEntry(
+      packId: "python-uv",
+      architecture: "arm64-v8a",
+      dependencies: ["linux-base"]
+    )
+    let forward = runtimeCatalog(now: now, entries: [first, second])
+    let reversed = runtimeCatalog(now: now, entries: [second, first])
+
+    XCTAssertEqual(forward.signingPayload(), reversed.signingPayload())
+    XCTAssertFalse(first.canonicalValue().contains("|"))
+
+    let encoded = try JSONEncoder().encode(forward)
+    let decoded = try JSONDecoder().decode(AgentRuntimePackCatalog.self, from: encoded)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let entries = try XCTUnwrap(object["entries"] as? [[String: Any]])
+
+    XCTAssertEqual(decoded, forward)
+    XCTAssertEqual(object["format_version"] as? Int, 1)
+    XCTAssertEqual(object["catalog_version"] as? String, "1.0.0")
+    XCTAssertEqual(object["signature_key_id"] as? String, String(repeating: "a", count: 64))
+    XCTAssertEqual(entries.first?["pack_id"] as? String, "linux-base")
+    XCTAssertEqual(entries.first?["archive_sha256"] as? String, String(repeating: "b", count: 64))
+    XCTAssertEqual((entries.first?["archive_size_bytes"] as? NSNumber)?.int64Value, Int64(1_024))
+
+    let manifest = AgentRuntimePackManifest(
+      id: "python-uv",
+      version: "1.0.0",
+      architecture: "arm64-v8a",
+      imageFile: "python.img",
+      imageSha256: String(repeating: "c", count: 64),
+      capabilities: ["uv.sync", "python.execute"],
+      dependencies: ["linux-base"],
+      installedSizeBytes: 2_048,
+      license: "Apache-2.0",
+      signatureKeyId: String(repeating: "d", count: 64),
+      signature: "signed",
+      archiveSizeBytes: 1_024
+    )
+    let status = AgentRuntimePackStatus(id: "python-uv", state: .ready, manifest: manifest)
+    let install = AgentRuntimePackInstallResult(
+      packId: "python-uv",
+      version: "1.0.0",
+      state: .ready,
+      installedBytes: 2_048,
+      replacedExisting: true
+    )
+    let progress = AgentRuntimePackInstallProgress(stage: .verifying, processedBytes: 128, totalBytes: 256)
+    let installObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: try JSONEncoder().encode(install)) as? [String: Any]
+    )
+
+    XCTAssertFalse(manifest.signingPayload().isEmpty)
+    XCTAssertEqual(status.manifest, Optional(manifest))
+    XCTAssertEqual(installObject["pack_id"] as? String, "python-uv")
+    XCTAssertEqual((installObject["installed_bytes"] as? NSNumber)?.int64Value, Int64(2_048))
+    XCTAssertEqual(installObject["replaced_existing"] as? Bool, true)
+    XCTAssertEqual(installObject["state"] as? String, "ready")
+    XCTAssertEqual(progress.stage.rawValue, "VERIFYING")
+    XCTAssertEqual(AgentRuntimePackState.fromWireValue("NOT-INSTALLED"), .notInstalled)
+    XCTAssertEqual(AgentRuntimeLanguage.typescript.requiredPack, "node-js")
+    XCTAssertTrue(AgentRuntimePackCatalogPolicy.requiredPacks.contains("browser-automation"))
+    XCTAssertEqual(
+      AgentRuntimePackCatalogPolicy.requiredPackCapabilities["ffmpeg"] ?? [],
+      Set(["ffmpeg.execute", "ffprobe.inspect"])
+    )
+  }
+
+  func testAgentRuntimePackCatalogPolicyRejectsDuplicateInsecureExpiredAndUntrustedCatalogs() throws {
+    let now: Int64 = 1_750_000_000_000
+    let valid = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    ])
+    let trusted: (AgentRuntimePackCatalog) -> Bool = { _ in true }
+
+    XCTAssertEqual(try AgentRuntimePackCatalogPolicy.validate(valid, nowMillis: now, verifier: trusted), valid)
+
+    var duplicate = valid
+    duplicate.entries = [
+      valid.entries[0],
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a").with(version: "1.0.1")
+    ]
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(duplicate, nowMillis: now, verifier: trusted))
+
+    var insecure = valid
+    insecure.entries = [valid.entries[0].with(downloadUrl: "http://example.com/runtime.sarpack")]
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(insecure, nowMillis: now, verifier: trusted))
+
+    var expired = valid
+    expired.expiresAtMillis = now - 1
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(expired, nowMillis: now, verifier: trusted))
+
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(valid, nowMillis: now, verifier: { _ in false }))
+
+    let missingDependency = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "python-uv", architecture: "arm64-v8a", dependencies: ["linux-base"])
+    ])
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(missingDependency, nowMillis: now, verifier: trusted))
+
+    let dependencyCycle = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a", dependencies: ["python-uv"]),
+      runtimeCatalogEntry(packId: "python-uv", architecture: "arm64-v8a", dependencies: ["linux-base"])
+    ])
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validate(dependencyCycle, nowMillis: now, verifier: trusted))
+  }
+
+  func testAgentRuntimePackCatalogPolicyChecksReplacementAndCompatibility() throws {
+    let now: Int64 = 1_750_000_000_000
+    let previous = runtimeCatalog(now: now, entries: [
+      runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    ])
+
+    var rollback = previous
+    rollback.generatedAtMillis = previous.generatedAtMillis - 1
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: rollback))
+
+    var reusedGeneration = previous
+    reusedGeneration.entries = [previous.entries[0].with(version: "1.0.1")]
+    XCTAssertThrowsError(try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: reusedGeneration))
+
+    try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: previous)
+    var newer = previous
+    newer.generatedAtMillis = previous.generatedAtMillis + 1
+    try AgentRuntimePackCatalogPolicy.validateReplacement(previous: previous, candidate: newer)
+
+    let compatible = runtimeCatalogEntry(packId: "linux-base", architecture: "arm64-v8a")
+    let wrongArchitecture = runtimeCatalogEntry(packId: "python-uv", architecture: "x86_64")
+    let futureHost = runtimeCatalogEntry(packId: "node-js", architecture: "arm64-v8a")
+      .with(minimumHostVersionCode: 99)
+    let wrongGuest = runtimeCatalogEntry(packId: "go", architecture: "arm64-v8a")
+      .with(guestApiVersion: AgentRuntimeGuestProtocol.version + 1)
+    let catalog = runtimeCatalog(now: now, entries: [compatible, wrongArchitecture, futureHost, wrongGuest])
+
+    XCTAssertEqual(
+      AgentRuntimePackCatalogPolicy.compatibleEntries(
+        in: catalog,
+        supportedArchitectures: ["arm64-v8a"],
+        hostVersionCode: 1
+      ),
+      [compatible]
+    )
+  }
+
+  func testAgentRuntimeDistributionSourcesMatchAndroidAcceleratorPolicy() {
+    let official = AgentRuntimeDistributionSources.githubCatalogURL
+
+    XCTAssertEqual(AgentRuntimeDistributionSources.catalogCandidates(languageTag: "en-US"), [official])
+
+    let chinese = AgentRuntimeDistributionSources.catalogCandidates(languageTag: "zh-CN")
+    XCTAssertEqual(chinese.count, 4)
+    XCTAssertEqual(chinese.last ?? "", official)
+    XCTAssertTrue(chinese.prefix(3).allSatisfy { $0.hasSuffix(official) })
+    XCTAssertEqual(
+      AgentRuntimeDistributionSources.downloadCandidates(
+        url: "https://downloads.example.com/tool.sarpack",
+        languageTag: "zh-CN"
+      ),
+      ["https://downloads.example.com/tool.sarpack"]
+    )
+  }
+
   func testAgentMcpToolSecurityPolicyMatchesAndroidRiskAndPermissions() {
     let read = AgentMcpToolSecurityPolicy.assess(
       tool: mcpTool("get_weather", readOnly: true),
@@ -9640,6 +11044,64 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  private func assertGlobalCapabilityEventDoesNotExpose(
+    _ event: GlobalConversationEvent,
+    secrets: [String],
+    file: StaticString = #filePath,
+    line: UInt = #line
+  ) {
+    let metadata = event.metadata
+      .sorted { $0.key < $1.key }
+      .map { "\($0.key)=\($0.value)" }
+      .joined(separator: "\n")
+    let publicText = [
+      event.id,
+      event.messageId,
+      event.content,
+      event.contentRef,
+      event.conversationTitle,
+      event.topicHints.sorted().joined(separator: "\n"),
+      metadata
+    ].joined(separator: "\n")
+
+    for secret in secrets where !secret.isEmpty {
+      XCTAssertFalse(
+        publicText.contains(secret),
+        "Capability observation exposed secret: \(secret)",
+        file: file,
+        line: line
+      )
+    }
+  }
+
+  private func runStartRequest(
+    conversationId: String = "conversation",
+    messageId: String = "message",
+    taskId: String = "task",
+    runId: String = "run",
+    parentRunId: String = "",
+    goal: String = "execute once",
+    deliveryMode: AgentDeliveryMode = .respond,
+    requiredCapabilities: Set<AgentCapability> = [.chat, .code],
+    context: AgentMcpJSONObject = ["z": .int(2), "a": .string("x")],
+    idempotencyKey: String = "key",
+    createdAtMillis: Int64 = 0
+  ) -> AgentRunRequest {
+    AgentRunRequest(
+      conversationId: conversationId,
+      messageId: messageId,
+      taskId: taskId,
+      runId: runId,
+      parentRunId: parentRunId,
+      goal: goal,
+      deliveryMode: deliveryMode,
+      requiredCapabilities: requiredCapabilities,
+      context: context,
+      idempotencyKey: idempotencyKey,
+      createdAtMillis: createdAtMillis
+    )
+  }
+
   private func teamBridgePlan(_ actions: AgentAction...) -> AgentPlan {
     teamBridgePlan(goal: "Research and synthesize a verified answer", actions)
   }
@@ -10090,6 +11552,49 @@ final class SignalASIStoreTests: XCTestCase {
     }
   }
 
+  private func nativeToolResult(
+    status: AgentNativeToolResultStatus = .succeeded,
+    invocationId: String,
+    idempotencyKey: String?,
+    replayed: Bool = false,
+    verification: AgentNativeToolVerification? = nil
+  ) -> AgentNativeToolResult {
+    AgentNativeToolResult(
+      status: status,
+      output: [
+        "ok": .bool(status == .succeeded),
+        "invocation_id": .string(invocationId)
+      ],
+      message: status == .succeeded ? "Done" : "Failed",
+      metadata: ["platform": .string("ios")],
+      error: status == .succeeded ? nil : AgentNativeToolError(
+        code: "test_failure",
+        message: "Failed",
+        retryable: false
+      ),
+      verification: verification,
+      receipt: AgentNativeToolReceipt(
+        invocationId: invocationId,
+        idempotencyKey: idempotencyKey,
+        startedAtEpochMillis: 1_000,
+        finishedAtEpochMillis: 1_050,
+        durationMillis: 50,
+        status: status,
+        inputSha256: String(repeating: "a", count: 64),
+        outputSha256: String(repeating: "b", count: 64),
+        replayed: replayed
+      ),
+      provenance: AgentNativeToolProvenance(
+        toolId: "signalasi.test.native",
+        toolVersion: "1.0.0",
+        location: .application,
+        executorId: "ios-native",
+        contractVersion: "signalasi.native-tool/1.0",
+        metadata: ["platform": "ios"]
+      )
+    )
+  }
+
   private func agentObservation(
     _ decision: AgentObservationDecision,
     sampleCount: Int = 1,
@@ -10146,6 +11651,40 @@ final class SignalASIStoreTests: XCTestCase {
       absoluteTimeoutMillis: 1_000,
       watchdogIntervalMillis: 60_000,
       heartbeatWriteThrottleMillis: 0
+    )
+  }
+
+  private func runtimeCatalog(
+    now: Int64,
+    entries: [AgentRuntimePackCatalogEntry]
+  ) -> AgentRuntimePackCatalog {
+    AgentRuntimePackCatalog(
+      catalogVersion: "1.0.0",
+      generatedAtMillis: now - 1_000,
+      expiresAtMillis: now + 60_000,
+      entries: entries,
+      signatureKeyId: String(repeating: "a", count: 64),
+      signature: "signed"
+    )
+  }
+
+  private func runtimeCatalogEntry(
+    packId: String,
+    architecture: String,
+    dependencies: [String] = []
+  ) -> AgentRuntimePackCatalogEntry {
+    AgentRuntimePackCatalogEntry(
+      packId: packId,
+      version: "1.0.0",
+      architecture: architecture,
+      downloadUrl: "https://downloads.example.com/\(packId).sarpack",
+      archiveSha256: String(repeating: "b", count: 64),
+      archiveSizeBytes: 1_024,
+      installedSizeBytes: 2_048,
+      dependencies: dependencies,
+      license: "Apache-2.0",
+      minimumHostVersionCode: 1,
+      guestApiVersion: AgentRuntimeGuestProtocol.version
     )
   }
 
@@ -10429,6 +11968,53 @@ final class SignalASIStoreTests: XCTestCase {
       nextRunAtMillis: nextRunAtMillis,
       runCount: runCount,
       consecutiveFailures: consecutiveFailures
+    )
+  }
+
+  private func globalProactiveMessage(
+    _ id: String,
+    target: GlobalProactiveTarget = .currentConversation,
+    status: GlobalProactiveMessageStatus = .delivered,
+    title: String = "SignalASI insight",
+    content: String = "A material result is ready.",
+    topic: String = "SignalASI autonomy",
+    urgent: Bool = false,
+    deliveredAtMillis: Int64 = 2_000,
+    deliveredConversationId: String = "destination",
+    deliveryGroupId: String? = nil,
+    viewedAtMillis: Int64 = 0
+  ) -> GlobalProactiveMessage {
+    GlobalProactiveMessage(
+      id: id,
+      sourceEventId: "event-\(id)",
+      sourceConversationId: "source",
+      target: target,
+      title: title,
+      content: content,
+      topic: topic,
+      urgent: urgent,
+      status: status,
+      createdAtMillis: 1_000,
+      deliveredAtMillis: deliveredAtMillis,
+      deliveredConversationId: deliveredConversationId,
+      deliveryGroupId: deliveryGroupId ?? id,
+      viewedAtMillis: viewedAtMillis
+    )
+  }
+
+  private func globalAgentFeedback(
+    messageId: String,
+    kind: GlobalAgentFeedbackKind,
+    createdAtMillis: Int64 = 3_000
+  ) -> GlobalAgentFeedback {
+    GlobalAgentFeedback(
+      proactiveMessageId: messageId,
+      deliveryGroupId: messageId,
+      conversationId: "destination",
+      topic: "SignalASI autonomy",
+      target: .currentConversation,
+      kind: kind,
+      createdAtMillis: createdAtMillis
     )
   }
 
