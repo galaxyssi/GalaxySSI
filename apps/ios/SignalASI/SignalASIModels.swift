@@ -1329,6 +1329,625 @@ enum AgentPhase: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentExecutionLoopPhase: String, Codable, CaseIterable, Identifiable {
+  case plan = "PLAN"
+  case act = "ACT"
+  case observe = "OBSERVE"
+  case replan = "REPLAN"
+  case verify = "VERIFY"
+  case finalize = "FINALIZE"
+  case learn = "LEARN"
+  case waitingConfirmation = "WAITING_CONFIRMATION"
+  case waitingResponse = "WAITING_RESPONSE"
+  case paused = "PAUSED"
+  case blocked = "BLOCKED"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+  case completed = "COMPLETED"
+
+  var id: String { rawValue }
+
+  var isActive: Bool {
+    [.plan, .act, .observe, .replan, .verify, .finalize, .learn].contains(self)
+  }
+
+  var isTerminal: Bool {
+    [.blocked, .failed, .cancelled, .completed].contains(self)
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentExecutionLoopPhase {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .plan
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentExecutionLoopUsage: Codable, Equatable {
+  var iterations: Int
+  var actions: Int
+  var replans: Int
+  var toolCalls: Int
+  var retries: Int
+  var activeDurationMillis: Int64
+  var activeSinceMillis: Int64
+
+  init(
+    iterations: Int = 0,
+    actions: Int = 0,
+    replans: Int = 0,
+    toolCalls: Int = 0,
+    retries: Int = 0,
+    activeDurationMillis: Int64 = 0,
+    activeSinceMillis: Int64 = 0
+  ) {
+    self.iterations = iterations
+    self.actions = actions
+    self.replans = replans
+    self.toolCalls = toolCalls
+    self.retries = retries
+    self.activeDurationMillis = activeDurationMillis
+    self.activeSinceMillis = activeSinceMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case iterations
+    case actions
+    case replans
+    case toolCalls = "tool_calls"
+    case retries
+    case activeDurationMillis = "active_duration_millis"
+    case activeSinceMillis = "active_since_millis"
+  }
+
+  func elapsedActiveMillis(nowMillis: Int64, phase: AgentExecutionLoopPhase) -> Int64 {
+    activeDurationMillis + (phase.isActive && activeSinceMillis > 0 ? max(nowMillis - activeSinceMillis, 0) : 0)
+  }
+}
+
+struct AgentExecutionLoopSnapshot: Codable, Equatable {
+  var taskId: String
+  var phase: AgentExecutionLoopPhase
+  var usage: AgentExecutionLoopUsage
+  var resumePhase: AgentExecutionLoopPhase
+  var lastActionId: String
+  var lastReason: String
+  var budgetFailure: String
+  var startedAtMillis: Int64
+  var updatedAtMillis: Int64
+  var revision: Int64
+
+  init(
+    taskId: String,
+    phase: AgentExecutionLoopPhase,
+    usage: AgentExecutionLoopUsage = AgentExecutionLoopUsage(),
+    resumePhase: AgentExecutionLoopPhase = .plan,
+    lastActionId: String = "",
+    lastReason: String = "",
+    budgetFailure: String = "",
+    startedAtMillis: Int64 = 0,
+    updatedAtMillis: Int64 = 0,
+    revision: Int64 = 1
+  ) {
+    self.taskId = taskId
+    self.phase = phase
+    self.usage = usage
+    self.resumePhase = resumePhase
+    self.lastActionId = lastActionId
+    self.lastReason = lastReason
+    self.budgetFailure = budgetFailure
+    self.startedAtMillis = startedAtMillis
+    self.updatedAtMillis = updatedAtMillis
+    self.revision = revision
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case taskId = "task_id"
+    case phase
+    case usage
+    case resumePhase = "resume_phase"
+    case lastActionId = "last_action_id"
+    case lastReason = "last_reason"
+    case budgetFailure = "budget_failure"
+    case startedAtMillis = "started_at_millis"
+    case updatedAtMillis = "updated_at_millis"
+    case revision
+  }
+}
+
+struct AgentExecutionLoopEvent: Codable, Equatable {
+  var previousPhase: AgentExecutionLoopPhase?
+  var phase: AgentExecutionLoopPhase
+  var reason: String
+  var snapshot: AgentExecutionLoopSnapshot
+  var toolCall: Bool
+  var retry: Bool
+
+  init(
+    previousPhase: AgentExecutionLoopPhase? = nil,
+    phase: AgentExecutionLoopPhase,
+    reason: String = "",
+    snapshot: AgentExecutionLoopSnapshot,
+    toolCall: Bool = false,
+    retry: Bool = false
+  ) {
+    self.previousPhase = previousPhase
+    self.phase = phase
+    self.reason = reason
+    self.snapshot = snapshot
+    self.toolCall = toolCall
+    self.retry = retry
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case previousPhase = "previous_phase"
+    case phase
+    case reason
+    case snapshot
+    case toolCall = "tool_call"
+    case retry
+  }
+}
+
+enum AgentRunControlEventType: String, Codable, CaseIterable, Identifiable {
+  case runCreated = "RUN_CREATED"
+  case runQueued = "RUN_QUEUED"
+  case runStarted = "RUN_STARTED"
+  case planning = "PLANNING"
+  case thinking = "THINKING"
+  case agentConnected = "AGENT_CONNECTED"
+  case stepStarted = "STEP_STARTED"
+  case toolPermissionRequired = "TOOL_PERMISSION_REQUIRED"
+  case permissionRevoked = "PERMISSION_REVOKED"
+  case toolStarted = "TOOL_STARTED"
+  case toolProgress = "TOOL_PROGRESS"
+  case toolCompleted = "TOOL_COMPLETED"
+  case waitingForUser = "WAITING_FOR_USER"
+  case waitingForDevice = "WAITING_FOR_DEVICE"
+  case paused = "PAUSED"
+  case retrying = "RETRYING"
+  case handoff = "HANDOFF"
+  case stepCompleted = "STEP_COMPLETED"
+  case runCompleted = "RUN_COMPLETED"
+  case runFailed = "RUN_FAILED"
+  case runCancelled = "RUN_CANCELLED"
+  case runRecovered = "RUN_RECOVERED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRunControlEventType {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .runFailed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRunControlPayloadValue: Codable, Equatable {
+  case string(String)
+  case int(Int64)
+  case bool(Bool)
+
+  var stringValue: String? {
+    switch self {
+    case .string(let value):
+      return value
+    case .int(let value):
+      return String(value)
+    case .bool(let value):
+      return value ? "true" : "false"
+    }
+  }
+
+  var intValue: Int64? {
+    switch self {
+    case .int(let value):
+      return value
+    case .string(let value):
+      return Int64(value)
+    case .bool:
+      return nil
+    }
+  }
+
+  var boolValue: Bool? {
+    switch self {
+    case .bool(let value):
+      return value
+    case .string(let value):
+      return Bool(value)
+    case .int:
+      return nil
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if let value = try? container.decode(Bool.self) {
+      self = .bool(value)
+    } else if let value = try? container.decode(Int64.self) {
+      self = .int(value)
+    } else {
+      self = .string((try? container.decode(String.self)) ?? "")
+    }
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .string(let value):
+      try container.encode(value)
+    case .int(let value):
+      try container.encode(value)
+    case .bool(let value):
+      try container.encode(value)
+    }
+  }
+}
+
+typealias AgentRunControlPayload = [String: AgentRunControlPayloadValue]
+
+struct AgentRunControlEvent: Codable, Equatable {
+  var eventId: String
+  var conversationId: String
+  var messageId: String
+  var taskId: String
+  var runId: String
+  var stepId: String
+  var toolCallId: String
+  var agentId: String
+  var deviceId: String
+  var type: AgentRunControlEventType
+  var sequence: Int64
+  var timestampMillis: Int64
+  var payload: AgentRunControlPayload
+
+  init(
+    eventId: String = UUID().uuidString,
+    conversationId: String,
+    messageId: String,
+    taskId: String,
+    runId: String,
+    stepId: String = "",
+    toolCallId: String = "",
+    agentId: String,
+    deviceId: String,
+    type: AgentRunControlEventType,
+    sequence: Int64,
+    timestampMillis: Int64 = 0,
+    payload: AgentRunControlPayload = [:]
+  ) {
+    self.eventId = eventId
+    self.conversationId = conversationId
+    self.messageId = messageId
+    self.taskId = taskId
+    self.runId = runId
+    self.stepId = stepId
+    self.toolCallId = toolCallId
+    self.agentId = agentId
+    self.deviceId = deviceId
+    self.type = type
+    self.sequence = sequence
+    self.timestampMillis = timestampMillis
+    self.payload = payload
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case eventId = "event_id"
+    case conversationId = "conversation_id"
+    case messageId = "message_id"
+    case taskId = "task_id"
+    case runId = "run_id"
+    case stepId = "step_id"
+    case toolCallId = "tool_call_id"
+    case agentId = "agent_id"
+    case deviceId = "device_id"
+    case type
+    case sequence
+    case timestampMillis = "timestamp_millis"
+    case payload
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    eventId = try container.decodeIfPresent(String.self, forKey: .eventId) ?? UUID().uuidString
+    conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId) ?? ""
+    messageId = try container.decodeIfPresent(String.self, forKey: .messageId) ?? ""
+    taskId = try container.decodeIfPresent(String.self, forKey: .taskId) ?? ""
+    runId = try container.decodeIfPresent(String.self, forKey: .runId) ?? ""
+    stepId = try container.decodeIfPresent(String.self, forKey: .stepId) ?? ""
+    toolCallId = try container.decodeIfPresent(String.self, forKey: .toolCallId) ?? ""
+    agentId = try container.decodeIfPresent(String.self, forKey: .agentId) ?? ""
+    deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? ""
+    type = try container.decodeIfPresent(AgentRunControlEventType.self, forKey: .type) ?? .runFailed
+    sequence = try container.decodeIfPresent(Int64.self, forKey: .sequence) ?? 0
+    timestampMillis = try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ?? 0
+    payload = try container.decodeIfPresent(AgentRunControlPayload.self, forKey: .payload) ?? [:]
+  }
+}
+
+enum AgentExecutionLoopTimelineLabel: String, Codable, CaseIterable, Identifiable {
+  case plan = "PLAN"
+  case act = "ACT"
+  case observe = "OBSERVE"
+  case replan = "REPLAN"
+  case verify = "VERIFY"
+  case finalize = "FINALIZE"
+  case learn = "LEARN"
+  case waitingConfirmation = "WAITING_CONFIRMATION"
+  case waitingResponse = "WAITING_RESPONSE"
+  case paused = "PAUSED"
+  case blocked = "BLOCKED"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+
+  var id: String { rawValue }
+
+  init?(phase: AgentExecutionLoopPhase) {
+    guard phase != .completed else {
+      return nil
+    }
+    self.init(rawValue: phase.rawValue)
+  }
+}
+
+enum AgentExecutionLoopTimelineAction: String, Codable, CaseIterable, Identifiable {
+  case pause = "PAUSE"
+  case resume = "RESUME"
+  case retry = "RETRY"
+  case replan = "REPLAN"
+  case cancel = "CANCEL"
+
+  var id: String { rawValue }
+}
+
+struct AgentExecutionLoopTimelineProjection: Codable, Equatable {
+  var controlEventType: AgentRunControlEventType
+  var label: AgentExecutionLoopTimelineLabel?
+  var stepId: String
+  var toolCallId: String
+  var payload: AgentRunControlPayload
+
+  enum CodingKeys: String, CodingKey {
+    case controlEventType = "control_event_type"
+    case label
+    case stepId = "step_id"
+    case toolCallId = "tool_call_id"
+    case payload
+  }
+}
+
+enum AgentRunTimelineKind: String, Codable, CaseIterable, Identifiable {
+  case plan = "PLAN"
+  case tool = "TOOL"
+  case result = "RESULT"
+  case failure = "FAILURE"
+  case retry = "RETRY"
+  case act = "ACT"
+  case observe = "OBSERVE"
+  case verify = "VERIFY"
+  case learn = "LEARN"
+  case other = "OTHER"
+
+  var id: String { rawValue }
+
+  var payloadValue: String {
+    rawValue.lowercased()
+  }
+
+  static func fromPayload(_ value: String?) -> AgentRunTimelineKind? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+}
+
+struct AgentRunTimelineCoverage: Codable, Equatable {
+  var hasPlan: Bool
+  var toolEventCount: Int
+  var hasResult: Bool
+  var hasFailure: Bool
+  var retryEventCount: Int
+
+  var terminal: Bool {
+    hasResult || hasFailure
+  }
+
+  var complete: Bool {
+    hasPlan && terminal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case hasPlan = "has_plan"
+    case toolEventCount = "tool_event_count"
+    case hasResult = "has_result"
+    case hasFailure = "has_failure"
+    case retryEventCount = "retry_event_count"
+  }
+}
+
+enum AgentRunTimelineContract {
+  static let version = "signalasi.run-timeline/1.0"
+
+  static func kind(_ event: AgentRunControlEvent) -> AgentRunTimelineKind {
+    if let declared = AgentRunTimelineKind.fromPayload(event.payload["timeline_kind"]?.stringValue) {
+      return declared
+    }
+    switch event.type {
+    case .planning:
+      return .plan
+    case .toolStarted, .toolProgress, .toolCompleted, .toolPermissionRequired:
+      return .tool
+    case .retrying, .runRecovered:
+      return .retry
+    case .runCompleted:
+      return .result
+    case .runFailed, .runCancelled:
+      return .failure
+    default:
+      return .other
+    }
+  }
+
+  static func coverage(_ events: [AgentRunControlEvent]) -> AgentRunTimelineCoverage {
+    let kinds = events.map(kind)
+    return AgentRunTimelineCoverage(
+      hasPlan: kinds.contains(.plan),
+      toolEventCount: kinds.filter { $0 == .tool }.count,
+      hasResult: kinds.contains(.result),
+      hasFailure: kinds.contains(.failure),
+      retryEventCount: kinds.filter { $0 == .retry }.count
+    )
+  }
+}
+
+enum AgentExecutionLoopTimelinePolicy {
+  static func actionsForPhase(_ phase: AgentPhase) -> [AgentExecutionLoopTimelineAction] {
+    switch phase {
+    case .planning, .waitingConfirmation, .executing, .verifying:
+      return [.pause, .cancel]
+    case .observing, .waitingResponse:
+      return [.cancel]
+    case .paused:
+      return [.resume, .cancel]
+    case .blocked:
+      return [.replan, .cancel]
+    case .failed:
+      return [.retry, .replan]
+    case .cancelled, .completed:
+      return []
+    }
+  }
+
+  static func project(_ event: AgentExecutionLoopEvent) -> AgentExecutionLoopTimelineProjection {
+    let recovered = event.previousPhase.map { [.blocked, .failed].contains($0) } == true && event.phase.isActive
+    let phaseType: AgentRunControlEventType
+    switch event.phase {
+    case .plan:
+      phaseType = .planning
+    case .act:
+      phaseType = event.toolCall ? .toolStarted : .stepStarted
+    case .observe:
+      phaseType = .toolProgress
+    case .replan:
+      phaseType = .retrying
+    case .verify:
+      phaseType = .toolProgress
+    case .finalize, .learn:
+      phaseType = .stepCompleted
+    case .waitingConfirmation:
+      phaseType = .waitingForUser
+    case .waitingResponse:
+      phaseType = .waitingForDevice
+    case .paused:
+      phaseType = .paused
+    case .blocked, .failed:
+      phaseType = .runFailed
+    case .cancelled:
+      phaseType = .runCancelled
+    case .completed:
+      phaseType = .runCompleted
+    }
+    let timelineKind: AgentRunTimelineKind
+    switch event.phase {
+    case .plan:
+      timelineKind = .plan
+    case .act:
+      timelineKind = event.toolCall ? .tool : .act
+    case .observe:
+      timelineKind = .observe
+    case .replan:
+      timelineKind = .retry
+    case .verify:
+      timelineKind = .verify
+    case .finalize, .completed:
+      timelineKind = .result
+    case .learn:
+      timelineKind = .learn
+    case .blocked, .failed, .cancelled:
+      timelineKind = .failure
+    case .waitingConfirmation, .waitingResponse, .paused:
+      timelineKind = .other
+    }
+    let actionId = event.snapshot.lastActionId
+    return AgentExecutionLoopTimelineProjection(
+      controlEventType: recovered ? .runRecovered : phaseType,
+      label: AgentExecutionLoopTimelineLabel(phase: event.phase),
+      stepId: actionId,
+      toolCallId: event.toolCall ? actionId : "",
+      payload: [
+        "timeline_contract": .string(AgentRunTimelineContract.version),
+        "timeline_kind": .string(timelineKind.payloadValue),
+        "loop_phase": .string(event.phase.rawValue.lowercased()),
+        "previous_loop_phase": .string(event.previousPhase?.rawValue.lowercased() ?? ""),
+        "loop_revision": .int(event.snapshot.revision),
+        "loop_reason": .string(event.reason),
+        "loop_task_id": .string(event.snapshot.taskId),
+        "loop_action_id": .string(actionId),
+        "loop_retry": .bool(event.retry),
+        "loop_tool_call": .bool(event.toolCall),
+        "loop_iterations": .int(Int64(event.snapshot.usage.iterations)),
+        "loop_actions": .int(Int64(event.snapshot.usage.actions)),
+        "loop_replans": .int(Int64(event.snapshot.usage.replans)),
+        "loop_tool_calls": .int(Int64(event.snapshot.usage.toolCalls)),
+        "loop_retries": .int(Int64(event.snapshot.usage.retries)),
+        "loop_active_ms": .int(event.snapshot.usage.activeDurationMillis),
+        "loop_budget_failure": .string(event.snapshot.budgetFailure)
+      ]
+    )
+  }
+
+  static func isSameRevision(event: AgentRunControlEvent?, revision: Int64) -> Bool {
+    event?.payload["loop_revision"]?.intValue == revision
+  }
+
+  static func transcriptDedupeKey(turnId: String, event: AgentExecutionLoopEvent) -> String {
+    "agent-loop:\(turnId):\(event.phase.rawValue):\(event.snapshot.revision)"
+  }
+
+  static func phaseFromTranscriptDedupeKey(_ value: String) -> AgentExecutionLoopPhase? {
+    guard value.hasPrefix("agent-loop:") else {
+      return nil
+    }
+    let parts = value.split(separator: ":").map(String.init)
+    guard parts.count > 2 else {
+      return nil
+    }
+    let phaseName = parts[2].trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    return AgentExecutionLoopPhase.allCases.first { $0.rawValue == phaseName }
+  }
+
+  static func suppressSupersededPlaceholders(_ entries: [AgentTranscriptEntry]) -> [AgentTranscriptEntry] {
+    let hasToolStart = entries.contains { $0.dedupeKey.contains(":TOOL_STARTED:") }
+    let hasToolCompletion = entries.contains { $0.dedupeKey.contains(":TOOL_COMPLETED:") }
+    return entries.filter { entry in
+      let phase = phaseFromTranscriptDedupeKey(entry.dedupeKey)
+      if phase == .act {
+        return !hasToolStart
+      }
+      if phase == .observe {
+        return !hasToolCompletion
+      }
+      return true
+    }
+  }
+}
+
 enum AgentWorkspaceStatus: String, Codable, CaseIterable, Identifiable {
   case created = "CREATED"
   case queued = "QUEUED"
