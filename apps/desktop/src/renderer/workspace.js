@@ -1459,6 +1459,62 @@ function formatControlTime(value) {
   }).format(new Date(timestamp));
 }
 
+function desktopControlToolLabel(toolId) {
+  return t({
+    "desktop.screenshot": "View screen",
+    "desktop.click_xy": "Click",
+    "desktop.type_text": "Type text",
+    "desktop.hotkey": "Keyboard shortcut",
+    "desktop.scroll": "Scroll"
+  }[toolId] || "Desktop action");
+}
+
+function receiptDigest(value) {
+  const digest = String(value || "");
+  return digest ? `${digest.slice(0, 12)}...${digest.slice(-8)}` : t("None");
+}
+
+function renderDesktopActionReceipt(receipt) {
+  const controllerName = receipt.controller_name || t("SignalASI App");
+  const controllerPlatform = receipt.controller_platform || t("Unknown");
+  const controllerFingerprint = receipt.controller_fingerprint || "";
+  const status = receipt.status === "succeeded" ? t("Succeeded") : t("Failed");
+  const details = [
+    [t("Who"), `${controllerName} / ${controllerPlatform}`],
+    [t("Identity"), receiptDigest(controllerFingerprint)],
+    [t("Action"), desktopControlToolLabel(receipt.tool_id)],
+    [t("Started"), formatControlTime(receipt.started_at)],
+    [t("Completed"), formatControlTime(receipt.completed_at)],
+    [t("Duration"), formatDuration(receipt.duration_ms)],
+    [t("Result"), `${status} / ${receipt.summary || ""}`],
+    [t("Receipt ID"), receiptDigest(receipt.receipt_id)],
+    [t("Request digest"), receiptDigest(receipt.request_sha256)],
+    [t("Input digest"), receiptDigest(receipt.input_sha256)],
+    [t("Output digest"), receiptDigest(receipt.output_sha256)]
+  ];
+  if (receipt.evidence_sha256) {
+    details.push([t("Visual evidence"), receiptDigest(receipt.evidence_sha256)]);
+  }
+  if (receipt.error_code) {
+    details.push([
+      t("Failure category"),
+      `${receipt.error_code} / ${receipt.error_retryable ? t("Retryable") : t("Final")}`
+    ]);
+  }
+  return `<details class="control-receipt-row">
+    <summary>
+      <span>
+        <strong>${escapeHtml(receipt.summary || desktopControlToolLabel(receipt.tool_id))}</strong>
+        <small>${escapeHtml(`${formatControlTime(receipt.completed_at)} · ${t("Verified receipt")} ${String(receipt.receipt_id || "").slice(0, 8)} · ${status}`)}</small>
+      </span>
+      <span class="receipt-verified">${escapeHtml(t("Verified"))}</span>
+    </summary>
+    <div class="control-receipt-details">
+      ${details.map(([label, value]) => `<div><small>${escapeHtml(label)}</small><span>${escapeHtml(value)}</span></div>`).join("")}
+    </div>
+  </details>`;
+}
+
 function renderDesktopControl() {
   const control = state.desktopControl || { recent_audit: [] };
   const authorizations = Array.isArray(control.authorizations)
@@ -1508,7 +1564,7 @@ function renderDesktopControl() {
       .slice(0, Math.max(0, 20 - receipts.length))
     : [];
   const activity = [
-    ...receipts.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.tool_id || "")}</strong><small>${escapeHtml(`${formatControlTime(row.completed_at)} · ${t("Verified receipt")} ${String(row.receipt_id || "").slice(0, 8)} · ${row.status || ""}`)}</small></article>`),
+    ...receipts.map(renderDesktopActionReceipt),
     ...audit.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.event_type || "")}</strong><small>${escapeHtml(`${formatControlTime(row.created_at)} · ${row.status || ""}`)}</small></article>`)
   ];
   $("#desktopControlAuditList").innerHTML = activity.length

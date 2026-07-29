@@ -19975,7 +19975,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ),
                     R.drawable.ic_security_shield,
                     desktopControlStatusLabel(receipt.status)
-                ))
+                ).apply {
+                    setOnClickListener {
+                        showDesktopActionReceiptPage(device, receipt)
+                    }
+                })
             }
             snapshot.recentAudit
                 .filter { it.eventType != "desktop_action" }
@@ -20148,19 +20152,169 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun desktopControlAllowedActions(tools: List<String>): String {
-        val labels = tools.map { tool ->
-            getString(
-                when (tool) {
-                    DesktopRemoteControl.SCREENSHOT -> R.string.desktop_control_action_view_screen
-                    DesktopRemoteControl.CLICK_XY -> R.string.desktop_control_action_click
-                    DesktopRemoteControl.TYPE_TEXT -> R.string.desktop_control_action_type
-                    DesktopRemoteControl.HOTKEY -> R.string.desktop_control_action_hotkey
-                    DesktopRemoteControl.SCROLL -> R.string.desktop_control_action_scroll
-                    else -> R.string.status_unknown
-                }
-            )
-        }.distinct()
+        val labels = tools.map(::desktopControlActionLabel).distinct()
         return labels.joinToString(" · ").ifBlank { getString(R.string.status_unknown) }
+    }
+
+    private fun desktopControlActionLabel(tool: String): String = getString(
+        when (tool) {
+            DesktopRemoteControl.SCREENSHOT -> R.string.desktop_control_action_view_screen
+            DesktopRemoteControl.CLICK_XY -> R.string.desktop_control_action_click
+            DesktopRemoteControl.TYPE_TEXT -> R.string.desktop_control_action_type
+            DesktopRemoteControl.HOTKEY -> R.string.desktop_control_action_hotkey
+            DesktopRemoteControl.SCROLL -> R.string.desktop_control_action_scroll
+            else -> R.string.status_unknown
+        }
+    )
+
+    private fun showDesktopActionReceiptPage(
+        device: DesktopSecuritySummary,
+        receipt: DesktopControlReceipt
+    ) {
+        showFeaturePage(getString(R.string.desktop_control_receipt_detail))
+        activeDesktopControlId = device.id
+        setFeatureBackAction { showDesktopRemoteControlPage(device) }
+        val succeeded = receipt.status == "succeeded"
+        featureContent.addView(featureHeroCard(
+            receipt.summary.ifBlank { desktopControlActionLabel(receipt.toolId) },
+            getString(
+                R.string.desktop_control_receipt_verified_by,
+                receipt.signerId
+            ),
+            R.drawable.ic_security_shield,
+            if (succeeded) "#14C66A" else "#D45454",
+            desktopControlStatusLabel(receipt.status)
+        ))
+
+        addSectionTitle(getString(R.string.desktop_control_receipt_who))
+        featureContent.addView(featureRow(
+            receipt.controllerName.ifBlank { getString(R.string.desktop_control_this_phone) },
+            listOf(
+                receipt.controllerPlatform,
+                formatFingerprint(receipt.controllerFingerprint)
+            ).filter { it.isNotBlank() }.joinToString(" · "),
+            R.drawable.signalasi_mark,
+            getString(R.string.desktop_control_receipt_verified)
+        ).apply {
+            isEnabled = receipt.controllerFingerprint.isNotBlank()
+            setOnClickListener {
+                copyText(
+                    receipt.controllerFingerprint,
+                    getString(R.string.security_copied_phone_fingerprint)
+                )
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_app_instance_id),
+            receipt.controllerAppInstanceId,
+            R.drawable.ic_protocol_link,
+            getString(R.string.common_copy)
+        ).apply {
+            isEnabled = receipt.controllerAppInstanceId.isNotBlank()
+            setOnClickListener {
+                copyText(
+                    receipt.controllerAppInstanceId,
+                    getString(R.string.desktop_control_copied_app_instance_id)
+                )
+            }
+        })
+
+        addSectionTitle(getString(R.string.desktop_control_receipt_what))
+        featureContent.addView(featureRow(
+            desktopControlActionLabel(receipt.toolId),
+            receipt.summary,
+            R.drawable.ic_agent_control,
+            desktopControlStatusLabel(receipt.status)
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_receipt_task),
+            listOf(receipt.taskId, receipt.actionId)
+                .filter { it.isNotBlank() }
+                .joinToString("\n"),
+            R.drawable.ic_agent_history,
+            ""
+        ))
+
+        addSectionTitle(getString(R.string.desktop_control_receipt_when))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_receipt_started),
+            securityTime(receipt.startedAt),
+            R.drawable.ic_agent_history,
+            ""
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_receipt_completed),
+            securityTime(receipt.completedAt),
+            R.drawable.ic_agent_history,
+            agentTraceDuration(receipt.durationMillis)
+        ))
+
+        addSectionTitle(getString(R.string.desktop_control_receipt_result))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_receipt_outcome),
+            receipt.summary,
+            if (succeeded) R.drawable.ic_security_shield else R.drawable.ic_info_outline,
+            desktopControlStatusLabel(receipt.status)
+        ))
+        if (receipt.errorCode.isNotBlank()) {
+            featureContent.addView(featureRow(
+                getString(R.string.desktop_control_receipt_error),
+                receipt.errorCode,
+                R.drawable.ic_info_outline,
+                getString(
+                    if (receipt.errorRetryable) {
+                        R.string.desktop_control_receipt_retryable
+                    } else {
+                        R.string.desktop_control_receipt_not_retryable
+                    }
+                )
+            ))
+        }
+
+        addSectionTitle(getString(R.string.desktop_control_receipt_evidence))
+        desktopControlReceiptDigestRow(
+            getString(R.string.desktop_control_receipt_id),
+            receipt.receiptId,
+            getString(R.string.desktop_control_copied_receipt_id)
+        )
+        desktopControlReceiptDigestRow(
+            getString(R.string.desktop_control_receipt_request_digest),
+            receipt.requestSha256,
+            getString(R.string.desktop_control_copied_request_digest)
+        )
+        desktopControlReceiptDigestRow(
+            getString(R.string.desktop_control_receipt_input_digest),
+            receipt.inputSha256,
+            getString(R.string.desktop_control_copied_input_digest)
+        )
+        desktopControlReceiptDigestRow(
+            getString(R.string.desktop_control_receipt_output_digest),
+            receipt.outputSha256,
+            getString(R.string.desktop_control_copied_output_digest)
+        )
+        if (receipt.evidenceSha256.isNotBlank()) {
+            desktopControlReceiptDigestRow(
+                getString(R.string.desktop_control_receipt_visual_evidence),
+                receipt.evidenceSha256,
+                getString(R.string.desktop_control_copied_evidence_digest)
+            )
+        }
+    }
+
+    private fun desktopControlReceiptDigestRow(
+        title: String,
+        digest: String,
+        copiedMessage: String
+    ) {
+        featureContent.addView(featureRow(
+            title,
+            formatFingerprint(digest),
+            R.drawable.ic_security_shield,
+            getString(R.string.common_copy)
+        ).apply {
+            isEnabled = digest.isNotBlank()
+            setOnClickListener { copyText(digest, copiedMessage) }
+        })
     }
 
     private fun desktopControlButtonRow(

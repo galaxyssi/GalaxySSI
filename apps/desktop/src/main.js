@@ -722,7 +722,29 @@ async function runUiSmoke() {
               status: "revoked"
             }
           ],
-          recent_receipts: [],
+          recent_receipts: [
+            {
+              receipt_version: 4,
+              receipt_id: "${"c".repeat(64)}",
+              task_id: "smoke-task",
+              action_id: "smoke-action",
+              authorization_id: "smoke-active-authorization",
+              tool_id: "desktop.click_xy",
+              status: "succeeded",
+              summary: "Executed click at 120, 240",
+              request_sha256: "${"d".repeat(64)}",
+              input_sha256: "${"e".repeat(64)}",
+              output_sha256: "${"f".repeat(64)}",
+              evidence_sha256: "${"1".repeat(64)}",
+              controller_app_instance_id: "signalasi:smoke-phone",
+              controller_name: "SignalASI Phone",
+              controller_platform: "android",
+              controller_fingerprint: "${"a".repeat(64)}",
+              started_at: Date.now() - 800,
+              completed_at: Date.now() - 300,
+              duration_ms: 500
+            }
+          ],
           recent_audit: []
         };
         state.desktopControl = smokeDesktopControl;
@@ -739,11 +761,15 @@ async function runUiSmoke() {
         if (history) history.open = true;
         const authorizedApps = document.querySelector(".gateway-authorized-apps");
         if (authorizedApps) authorizedApps.open = true;
+        const actionReceipt = document.querySelector(".control-receipt-row");
+        if (actionReceipt) actionReceipt.open = true;
         return {
           active: document.querySelector("#gatewayPanel")?.classList.contains("active") || false,
           accessHistory: document.querySelector("#desktopControlAuditList")?.children.length || 0,
           authorizedApps: document.querySelectorAll("#authorizedAppList .authorized-app-row").length,
           revokeActions: document.querySelectorAll("#authorizedAppList [data-revoke-authorization]").length,
+          actionReceipts: document.querySelectorAll(".control-receipt-row").length,
+          receiptDetails: document.querySelectorAll(".control-receipt-details > div").length,
           pairingExecutor: Boolean(document.querySelector("#pairingDesktopExecutorEnabled")),
           computerPanel: Boolean(document.querySelector("#computerPanel")),
           desktopToolList: Boolean(document.querySelector("#desktopToolList"))
@@ -755,6 +781,8 @@ async function runUiSmoke() {
       || gatewayControlState.accessHistory < 1
       || gatewayControlState.authorizedApps !== 2
       || gatewayControlState.revokeActions !== 1
+      || gatewayControlState.actionReceipts !== 1
+      || gatewayControlState.receiptDetails < 10
       || !gatewayControlState.pairingExecutor
       || gatewayControlState.computerPanel
       || gatewayControlState.desktopToolList

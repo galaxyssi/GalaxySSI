@@ -800,6 +800,18 @@ button:disabled { cursor: default; opacity: 0.48; }
 .control-audit-row strong, .control-audit-row small { display: block; }
 .control-audit-row strong { font-size: 8px; }
 .control-audit-row small { margin-top: 2px; color: var(--muted); font-size: 7px; line-height: 1.4; }
+.control-receipt-row { padding: 6px 2px; border-bottom: 1px solid var(--line); }
+.control-receipt-row > summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.control-receipt-row > summary::-webkit-details-marker { display: none; }
+.control-receipt-row > summary strong,
+.control-receipt-row > summary small { display: block; }
+.control-receipt-row > summary strong { font-size: 8px; }
+.control-receipt-row > summary small { margin-top: 2px; color: var(--muted); font-size: 7px; line-height: 1.4; }
+.receipt-verified { color: var(--accent); font-size: 7px; }
+.control-receipt-details { display: grid; gap: 5px; margin-top: 7px; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-muted); }
+.control-receipt-details > div { display: grid; grid-template-columns: 82px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.control-receipt-details small { color: var(--muted); font-size: 7px; }
+.control-receipt-details span { color: var(--ink); font-size: 7px; overflow-wrap: anywhere; }
 .tool-output { max-height: 220px; margin: 9px 0; padding: 10px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: #f1f3f5; color: #34404a; font: 8px/1.55 Consolas, monospace; white-space: pre-wrap; }
 
 .command-summary {
