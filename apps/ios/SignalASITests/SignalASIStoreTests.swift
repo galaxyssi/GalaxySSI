@@ -1222,6 +1222,50 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encoded.contains(#""tracking_paused":true"#))
   }
 
+  func testAgentConversationContextTransportKeepsAttachmentReferenceWithoutPrivateBytes() throws {
+    let richOutput = """
+    {"version":1,"blocks":[{"id":"image-1","type":"image","title":"homework.jpg","uri":"content://signalasi/private/homework.jpg","data_b64":"private-image-bytes","mime_type":"image/jpeg","metadata":{"size_bytes":"245760"}}]}
+    """
+    let context = AgentConversationContext(
+      conversationId: "conversation-1",
+      summary: "",
+      turns: [
+        AgentTranscriptEntry(
+          id: "entry-1",
+          role: .user,
+          text: "Please review this",
+          timestampMillis: 1,
+          dedupeKey: "",
+          conversationId: "conversation-1",
+          turnId: "turn-1",
+          taskId: "turn-1",
+          richOutputJson: richOutput
+        )
+      ],
+      privateMode: false
+    )
+
+    let transport = context.asTransportBlock()
+    let json = transport
+      .replacingOccurrences(of: "\(AgentConversationContext.transportHeader)\n", with: "")
+      .replacingOccurrences(of: "\n\(AgentConversationContext.transportFooter)", with: "")
+    let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+    let attachmentIndex = try XCTUnwrap(payload["attachment_index"] as? [[String: Any]])
+    let turns = try XCTUnwrap(payload["turns"] as? [[String: Any]])
+    let turnAttachments = try XCTUnwrap(turns.first?["attachments"] as? [[String: Any]])
+
+    XCTAssertTrue(context.hasAttachments)
+    XCTAssertTrue(context.asPromptBlock().contains("Attachments: homework.jpg (image/jpeg)"))
+    XCTAssertEqual(attachmentIndex.first?["name"] as? String, "homework.jpg")
+    XCTAssertEqual(attachmentIndex.first?["mime_type"] as? String, "image/jpeg")
+    XCTAssertEqual((attachmentIndex.first?["size_bytes"] as? NSNumber)?.intValue, 245_760)
+    XCTAssertEqual(attachmentIndex.first?["turn_id"] as? String, "turn-1")
+    XCTAssertEqual(turnAttachments.first?["artifact_id"] as? String, "image-1")
+    XCTAssertFalse(transport.contains("content://signalasi/private"))
+    XCTAssertFalse(transport.contains("private-image-bytes"))
+    XCTAssertFalse(transport.contains("data_b64"))
+  }
+
   func testAgentFinalResponseIdentityCoalescesCanonicalDuplicates() {
     let canonical = finalTranscriptEntry(
       id: "canonical",
