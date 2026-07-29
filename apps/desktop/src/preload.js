@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("signalasi", {
   startDesktopTask: (payload) => ipcRenderer.invoke("desktop-tasks:start", payload),
   cancelDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:cancel", taskId),
   retryDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:retry", taskId),
+  recoverDesktopTask: (taskId, action, agentId = "") =>
+    ipcRenderer.invoke("desktop-tasks:recover", taskId, action, agentId),
   deleteDesktopConversation: (conversationId) => ipcRenderer.invoke("desktop-conversations:delete", conversationId),
   listEvolutionTasks: (limit) => ipcRenderer.invoke("evolution-tasks:list", limit),
   getEvolutionTask: (taskId) => ipcRenderer.invoke("evolution-tasks:get", taskId),

@@ -370,6 +370,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var encryptedAgentRegistry: EncryptedAgentRegistry
     @Volatile private var lastAgentRegistrySyncAtMillis = 0L
     private val agentTurnGoals = ConcurrentHashMap<String, String>()
+    private val agentRecoveryActionsInFlight = linkedSetOf<String>()
     private lateinit var agentMcpRegistry: AgentMcpRegistry
     private lateinit var remoteSelfEvolutionStore: EncryptedAgentRemoteSelfEvolutionStore
     private lateinit var agentMcpPackageRepository: AgentMcpPackageRepository
@@ -1932,6 +1933,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             turnId = turnId,
             taskId = taskId
         )
+        if (status in setOf("failed", "timed_out", "not_found")) {
+            syncAgentFailureRecoveryCard(
+                envelope = envelope,
+                conversationId = conversationId,
+                turnId = turnId,
+                taskId = taskId,
+                agentId = executorId.ifBlank { envelope.optString("agent_id") },
+                statusLabel = statusLabel
+            )
+        } else if (status == "completed") {
+            deleteAgentTranscriptByDedupeKey(
+                conversationId,
+                agentFailureRecoveryDedupeKey(taskId)
+            )
+        }
         syncRemoteTaskEvents(
             envelope = envelope,
             conversationId = conversationId,
@@ -1987,6 +2003,99 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         traceTaskEvent("render_state")
         return true
     }
+
+    private fun syncAgentFailureRecoveryCard(
+        envelope: JSONObject,
+        conversationId: String,
+        turnId: String,
+        taskId: String,
+        agentId: String,
+        statusLabel: String
+    ) {
+        if (taskId.isBlank() || conversationId.isBlank()) return
+        val failure = envelope.optString("error").trim().ifBlank { statusLabel }
+        val originalGoal = agentTurnGoals[turnId].orEmpty().ifBlank {
+            agentTranscriptStore.entriesForTurn(turnId)
+                .lastOrNull { it.role == AgentTranscriptRole.USER }
+                ?.text
+                .orEmpty()
+        }
+        val advertised = envelope.optJSONArray("recovery_actions")
+        val advertisedByAction = buildMap<String, JSONObject> {
+            if (advertised != null) {
+                for (index in 0 until advertised.length()) {
+                    advertised.optJSONObject(index)?.let { item ->
+                        item.optString("action").takeIf(String::isNotBlank)?.let { put(it, item) }
+                    }
+                }
+            }
+        }
+        val recommended = advertisedByAction.values
+            .firstOrNull { it.optBoolean("enabled", true) && it.optBoolean("recommended") }
+            ?.optString("action")
+            ?.let(AgentFailureRecoveryAction::fromWireValue)
+            ?: AgentFailureRecoveryPolicy.recommended(
+                envelope.optString("task_status"),
+                failure
+            )
+        val actions = AgentFailureRecoveryAction.entries.mapNotNull { action ->
+            val advertisedAction = advertisedByAction[action.wireValue]
+            if (advertisedAction?.optBoolean("enabled", true) == false) return@mapNotNull null
+            val payload = AgentFailureRecoveryPayload(
+                action = action,
+                taskId = taskId,
+                conversationId = conversationId,
+                turnId = turnId,
+                agentId = agentId,
+                originalGoal = originalGoal,
+                failure = failure
+            )
+            AgentRichAction(
+                id = "recovery-${action.wireValue}",
+                label = getString(
+                    when (action) {
+                        AgentFailureRecoveryAction.RETRY -> R.string.agent_recovery_retry
+                        AgentFailureRecoveryAction.SWITCH_AGENT -> R.string.agent_recovery_switch_agent
+                        AgentFailureRecoveryAction.DEGRADE -> R.string.agent_recovery_degrade
+                        AgentFailureRecoveryAction.DIAGNOSTICS -> R.string.agent_recovery_diagnostics
+                    }
+                ),
+                verb = "recover_agent_task",
+                value = payload.encode(),
+                style = if (action == recommended) "primary" else "default"
+            )
+        }
+        if (actions.isEmpty()) return
+        val richOutput = AgentRichContentCodec.encode(
+            listOf(
+                AgentRichBlock(
+                    id = "recovery-$taskId",
+                    type = AgentRichBlockType.ACTIONS,
+                    title = getString(R.string.agent_recovery_title),
+                    text = getString(R.string.agent_recovery_message),
+                    fallbackText = getString(R.string.agent_recovery_title),
+                    actions = actions,
+                    metadata = mapOf(
+                        "task_id" to taskId,
+                        "recommended_action" to recommended.wireValue
+                    )
+                )
+            )
+        )
+        agentTranscriptStore.upsert(
+            role = AgentTranscriptRole.ASSISTANT,
+            text = getString(R.string.agent_recovery_title),
+            dedupeKey = agentFailureRecoveryDedupeKey(taskId),
+            timestampMillis = envelope.optLong("updated_at", System.currentTimeMillis()),
+            conversationId = conversationId,
+            turnId = turnId,
+            taskId = taskId,
+            richOutputJson = richOutput
+        )
+    }
+
+    private fun agentFailureRecoveryDedupeKey(taskId: String): String =
+        "agent-recovery:$taskId"
 
     private fun persistRemoteAgentTaskAsync(
         envelope: JSONObject,
@@ -3733,13 +3842,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         conversationId: String,
         turnId: String,
         forcedAction: AgentAction? = null,
-        originalGoal: String = goal
+        originalGoal: String = goal,
+        executionModeOverride: AgentTaskExecutionMode? = null
     ) {
         val routingStartedAt = SystemClock.elapsedRealtime()
-        val taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
-            originalGoal.ifBlank { goal },
-            mobileNativeAgent.safetySettings().taskExecutionMode
-        ).mode
+        val taskExecutionMode = executionModeOverride
+            ?: AgentTaskExecutionModePolicy.resolve(
+                originalGoal.ifBlank { goal },
+                mobileNativeAgent.safetySettings().taskExecutionMode
+            ).mode
         if (
             taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
             handleAgentSkillCommand(goal, conversationId, turnId)
@@ -13185,10 +13296,125 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 action,
                 approved = action.verb == "approve_remote_task"
             )
+            "recover_agent_task" -> runAgentFailureRecovery(entry, action)
             "preview_runtime_artifact" -> previewRuntimeArtifact(action.value)
             "save_runtime_artifact" -> saveRuntimeArtifact(action.value)
             else -> Toast.makeText(this, action.label, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    private fun runAgentFailureRecovery(
+        entry: AgentTranscriptEntry,
+        action: AgentRichAction
+    ) {
+        val payload = AgentFailureRecoveryPayload.decode(action.value)
+        if (
+            payload == null ||
+            payload.taskId.isBlank() ||
+            payload.taskId != entry.taskId ||
+            payload.conversationId != entry.conversationId
+        ) {
+            Toast.makeText(
+                this,
+                R.string.agent_recovery_unavailable,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val dispatchKey = "${payload.taskId}:${payload.action.wireValue}"
+        if (!agentRecoveryActionsInFlight.add(dispatchKey)) {
+            Toast.makeText(
+                this,
+                R.string.agent_recovery_already_started,
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        while (agentRecoveryActionsInFlight.size > 200) {
+            agentRecoveryActionsInFlight.firstOrNull()?.let(agentRecoveryActionsInFlight::remove)
+        }
+        if (agentTranscriptStore.activeConversation().id != payload.conversationId) {
+            openAgentConversation(payload.conversationId)
+        }
+        val chinese = LanguagePolicySettings.resolvedResponseLanguage(this)
+            .startsWith("zh", ignoreCase = true)
+        val instruction = AgentFailureRecoveryPolicy.instruction(payload, chinese)
+        val turnId = UUID.randomUUID().toString()
+        val displayText = when (payload.action) {
+            AgentFailureRecoveryAction.RETRY -> getString(R.string.agent_recovery_retry)
+            AgentFailureRecoveryAction.SWITCH_AGENT -> getString(R.string.agent_recovery_switch_agent)
+            AgentFailureRecoveryAction.DEGRADE -> getString(R.string.agent_recovery_degrade)
+            AgentFailureRecoveryAction.DIAGNOSTICS -> getString(R.string.agent_recovery_diagnostics)
+        }
+        val forcedAction = agentFailureRecoveryConnectorAction(payload, instruction, turnId)
+        agentTurnGoals[turnId] = instruction
+        agentSubmissionExecutor.execute {
+            agentTranscriptStore.append(
+                role = AgentTranscriptRole.USER,
+                text = displayText,
+                conversationId = payload.conversationId,
+                turnId = turnId,
+                taskId = turnId
+            )
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                deleteAgentTranscriptByDedupeKey(
+                    payload.conversationId,
+                    agentFailureRecoveryDedupeKey(payload.taskId)
+                )
+                refreshAgentConversationHeader()
+                refreshAgentTranscriptWindow(payload.conversationId)
+                continueAgentGoalSubmission(
+                    goal = instruction,
+                    conversationId = payload.conversationId,
+                    turnId = turnId,
+                    forcedAction = forcedAction,
+                    originalGoal = instruction,
+                    executionModeOverride = AgentFailureRecoveryPolicy.executionMode(
+                        payload.action
+                    )
+                )
+            }
+        }
+    }
+
+    private fun agentFailureRecoveryConnectorAction(
+        payload: AgentFailureRecoveryPayload,
+        prompt: String,
+        turnId: String
+    ): AgentAction? {
+        val targets = AppStoreAgentConnectorRegistry(this).availableTargets()
+            .filter { it.status == AgentConnectorStatus.AVAILABLE }
+        fun canonical(value: String): String = value
+            .substringAfterLast(':')
+            .lowercase(Locale.ROOT)
+            .replace("-", "")
+        val current = canonical(payload.agentId)
+        val target = when (payload.action) {
+            AgentFailureRecoveryAction.SWITCH_AGENT -> targets.firstOrNull {
+                canonical(it.id) != current
+            }
+            AgentFailureRecoveryAction.RETRY,
+            AgentFailureRecoveryAction.DEGRADE,
+            AgentFailureRecoveryAction.DIAGNOSTICS -> targets.firstOrNull {
+                canonical(it.id) == current
+            }
+        } ?: return null
+        return AgentAction(
+            id = "recovery-${payload.action.wireValue}-$turnId",
+            kind = AgentActionKind.CALL_CONNECTOR,
+            target = target.title,
+            risk = AgentRisk.LOW,
+            status = AgentActionStatus.PENDING_CONFIRMATION,
+            description = "Continue a failed task with ${target.title}",
+            parameters = mapOf(
+                "connector_id" to target.id,
+                "prompt" to prompt,
+                "recovery_of_task_id" to payload.taskId,
+                "recovery_action" to payload.action.wireValue
+            ),
+            requiresConfirmation = false
+        )
     }
 
     private fun previewRuntimeArtifact(rawPayload: String) {

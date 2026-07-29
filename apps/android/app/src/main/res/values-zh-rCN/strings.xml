@@ -1889,4 +1889,12 @@
     <string name="agent_plan_only_intro">下面是建议方案，尚未执行任何操作。</string>
     <string name="agent_plan_only_step">%1$d. %2$s</string>
     <string name="agent_plan_only_risk">风险等级：%1$s。开始执行后仍会遵循正常的动作授权策略。</string>
+    <string name="agent_recovery_title">选择继续方式</string>
+    <string name="agent_recovery_message">任务已停止，没有得到经过验证的结果。</string>
+    <string name="agent_recovery_retry">重试</string>
+    <string name="agent_recovery_switch_agent">更换 Agent</string>
+    <string name="agent_recovery_degrade">安全降级</string>
+    <string name="agent_recovery_diagnostics">仅返回诊断</string>
+    <string name="agent_recovery_unavailable">该恢复操作已不可用。</string>
+    <string name="agent_recovery_already_started">该恢复操作已经启动。</string>
 </resources>
