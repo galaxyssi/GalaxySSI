@@ -2386,6 +2386,20 @@ enum AgentResourceLatency: String, Codable, CaseIterable, Comparable, Identifiab
   }
 }
 
+enum AgentResourceQuality: String, Codable, CaseIterable, Comparable, Identifiable {
+  case basic = "BASIC"
+  case standard = "STANDARD"
+  case strong = "STRONG"
+  case frontier = "FRONTIER"
+
+  var id: String { rawValue }
+  var rank: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+
+  static func < (lhs: AgentResourceQuality, rhs: AgentResourceQuality) -> Bool {
+    lhs.rank < rhs.rank
+  }
+}
+
 enum AgentResourceTrust: String, Codable, CaseIterable, Identifiable {
   case phoneSystem = "PHONE_SYSTEM"
   case verifiedPaired = "VERIFIED_PAIRED"
@@ -2525,6 +2539,823 @@ struct AgentRegistration: Codable, Equatable, Identifiable {
     case independentlyUpgradeable = "independently_upgradeable"
     case lastHeartbeatMillis = "last_heartbeat_millis"
     case updatedAtMillis = "updated_at_millis"
+  }
+}
+
+enum ProviderProfileKind: String, Codable, CaseIterable, Identifiable {
+  case agent = "AGENT"
+  case cloudModel = "CLOUD_MODEL"
+  case localModel = "LOCAL_MODEL"
+
+  var id: String { rawValue }
+}
+
+struct ProviderPricingProfile: Codable, Equatable {
+  var tier: AgentResourceCost
+  var inputMicrosPerMillionTokens: Int64?
+  var outputMicrosPerMillionTokens: Int64?
+  var currency: String
+  var source: String
+
+  init(
+    tier: AgentResourceCost,
+    inputMicrosPerMillionTokens: Int64? = nil,
+    outputMicrosPerMillionTokens: Int64? = nil,
+    currency: String = "USD",
+    source: String = "catalog_tier"
+  ) {
+    self.tier = tier
+    self.inputMicrosPerMillionTokens = inputMicrosPerMillionTokens
+    self.outputMicrosPerMillionTokens = outputMicrosPerMillionTokens
+    self.currency = currency.isEmpty ? "USD" : currency
+    self.source = source.isEmpty ? "catalog_tier" : source
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case tier
+    case inputMicrosPerMillionTokens = "input_micros_per_million_tokens"
+    case outputMicrosPerMillionTokens = "output_micros_per_million_tokens"
+    case currency
+    case source
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      tier: ProviderProfileCatalog.cost(
+        try container.decodeIfPresent(String.self, forKey: .tier),
+        fallback: .free
+      ),
+      inputMicrosPerMillionTokens: try container.decodeIfPresent(Int64.self, forKey: .inputMicrosPerMillionTokens),
+      outputMicrosPerMillionTokens: try container.decodeIfPresent(Int64.self, forKey: .outputMicrosPerMillionTokens),
+      currency: try container.decodeIfPresent(String.self, forKey: .currency) ?? "USD",
+      source: try container.decodeIfPresent(String.self, forKey: .source) ?? "catalog_tier"
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(tier.rawValue.lowercased(), forKey: .tier)
+    try container.encodeIfPresent(inputMicrosPerMillionTokens, forKey: .inputMicrosPerMillionTokens)
+    try container.encodeIfPresent(outputMicrosPerMillionTokens, forKey: .outputMicrosPerMillionTokens)
+    try container.encode(currency, forKey: .currency)
+    try container.encode(source, forKey: .source)
+  }
+}
+
+struct ProviderPerformanceProfile: Codable, Equatable {
+  var attempts: Int
+  var successes: Int
+  var failures: Int
+  var consecutiveFailures: Int
+  var failureRate: Double
+  var ewmaLatencyMs: Double
+  var lastObservedAtMillis: Int64
+
+  init(
+    attempts: Int = 0,
+    successes: Int = 0,
+    failures: Int = 0,
+    consecutiveFailures: Int = 0,
+    failureRate: Double = 0,
+    ewmaLatencyMs: Double = 0,
+    lastObservedAtMillis: Int64 = 0
+  ) {
+    self.attempts = max(0, attempts)
+    self.successes = max(0, successes)
+    self.failures = max(0, failures)
+    self.consecutiveFailures = max(0, consecutiveFailures)
+    self.failureRate = min(max(failureRate, 0), 1)
+    self.ewmaLatencyMs = max(0, ewmaLatencyMs)
+    self.lastObservedAtMillis = max(0, lastObservedAtMillis)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case attempts
+    case successes
+    case failures
+    case consecutiveFailures = "consecutive_failures"
+    case failureRate = "failure_rate"
+    case ewmaLatencyMs = "ewma_latency_ms"
+    case lastObservedAtMillis = "last_observed_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      attempts: try container.decodeIfPresent(Int.self, forKey: .attempts) ?? 0,
+      successes: try container.decodeIfPresent(Int.self, forKey: .successes) ?? 0,
+      failures: try container.decodeIfPresent(Int.self, forKey: .failures) ?? 0,
+      consecutiveFailures: try container.decodeIfPresent(Int.self, forKey: .consecutiveFailures) ?? 0,
+      failureRate: try container.decodeIfPresent(Double.self, forKey: .failureRate) ?? 0,
+      ewmaLatencyMs: try container.decodeIfPresent(Double.self, forKey: .ewmaLatencyMs) ?? 0,
+      lastObservedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .lastObservedAtMillis) ?? 0
+    )
+  }
+}
+
+struct ProviderProfile: Codable, Equatable, Identifiable {
+  static let schemaVersion = 1
+
+  var profileId: String
+  var resourceId: String
+  var providerId: String
+  var productId: String
+  var displayName: String
+  var kind: ProviderProfileKind
+  var location: AgentResourceLocation
+  var status: AgentConnectorStatus
+  var protocolFamily: String
+  var adapterType: String
+  var modelId: String
+  var capabilities: Set<AgentCapability>
+  var toolIds: Set<String>
+  var contextWindowTokens: Int
+  var maxOutputTokens: Int
+  var maxParallelRuns: Int
+  var supportsTools: Bool
+  var supportsStreaming: Bool
+  var supportsBackground: Bool
+  var latency: AgentResourceLatency
+  var quality: AgentResourceQuality
+  var trust: AgentResourceTrust
+  var failureDomain: String
+  var endpointConfigured: Bool
+  var credentialConfigured: Bool
+  var pricing: ProviderPricingProfile
+  var performance: ProviderPerformanceProfile
+  var schemaVersion: Int
+  var metadata: [String: String]
+
+  var id: String { profileId }
+
+  init(
+    profileId: String,
+    resourceId: String,
+    providerId: String,
+    productId: String,
+    displayName: String,
+    kind: ProviderProfileKind,
+    location: AgentResourceLocation,
+    status: AgentConnectorStatus,
+    protocolFamily: String,
+    adapterType: String,
+    modelId: String = "",
+    capabilities: Set<AgentCapability> = [],
+    toolIds: Set<String> = [],
+    contextWindowTokens: Int = 8_192,
+    maxOutputTokens: Int = 4_096,
+    maxParallelRuns: Int = 1,
+    supportsTools: Bool = false,
+    supportsStreaming: Bool = false,
+    supportsBackground: Bool = false,
+    latency: AgentResourceLatency = .normal,
+    quality: AgentResourceQuality = .standard,
+    trust: AgentResourceTrust = .unknown,
+    failureDomain: String = "",
+    endpointConfigured: Bool = false,
+    credentialConfigured: Bool = false,
+    pricing: ProviderPricingProfile = ProviderPricingProfile(tier: .free),
+    performance: ProviderPerformanceProfile = ProviderPerformanceProfile(),
+    schemaVersion: Int = ProviderProfile.schemaVersion,
+    metadata: [String: String] = [:]
+  ) {
+    self.profileId = profileId
+    self.resourceId = resourceId
+    self.providerId = providerId
+    self.productId = productId
+    self.displayName = displayName
+    self.kind = kind
+    self.location = location
+    self.status = status
+    self.protocolFamily = protocolFamily
+    self.adapterType = adapterType
+    self.modelId = modelId
+    self.capabilities = capabilities
+    self.toolIds = toolIds
+    self.contextWindowTokens = max(0, contextWindowTokens)
+    self.maxOutputTokens = max(0, maxOutputTokens)
+    self.maxParallelRuns = max(1, maxParallelRuns)
+    self.supportsTools = supportsTools
+    self.supportsStreaming = supportsStreaming
+    self.supportsBackground = supportsBackground
+    self.latency = latency
+    self.quality = quality
+    self.trust = trust
+    self.failureDomain = failureDomain
+    self.endpointConfigured = endpointConfigured
+    self.credentialConfigured = credentialConfigured
+    self.pricing = pricing
+    self.performance = performance
+    self.schemaVersion = schemaVersion
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case schemaVersion = "schema_version"
+    case profileId = "profile_id"
+    case resourceId = "resource_id"
+    case providerId = "provider_id"
+    case productId = "product_id"
+    case displayName = "display_name"
+    case kind
+    case location
+    case status
+    case protocolFamily = "protocol_family"
+    case adapterType = "adapter_type"
+    case modelId = "model_id"
+    case capabilities
+    case toolIds = "tool_ids"
+    case contextWindowTokens = "context_window_tokens"
+    case maxOutputTokens = "max_output_tokens"
+    case maxParallelRuns = "max_parallel_runs"
+    case supportsTools = "supports_tools"
+    case supportsStreaming = "supports_streaming"
+    case supportsBackground = "supports_background"
+    case latency = "latency_tier"
+    case quality = "quality_tier"
+    case trust
+    case failureDomain = "failure_domain"
+    case endpointConfigured = "endpoint_configured"
+    case credentialConfigured = "credential_configured"
+    case pricing
+    case performance
+    case metadata
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let schema = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 0
+    guard schema == Self.schemaVersion else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .schemaVersion,
+        in: container,
+        debugDescription: "Unsupported provider profile schema"
+      )
+    }
+    self.init(
+      profileId: try container.decodeIfPresent(String.self, forKey: .profileId) ?? "",
+      resourceId: try container.decodeIfPresent(String.self, forKey: .resourceId) ?? "",
+      providerId: try container.decodeIfPresent(String.self, forKey: .providerId) ?? "",
+      productId: try container.decodeIfPresent(String.self, forKey: .productId) ?? "",
+      displayName: try container.decodeIfPresent(String.self, forKey: .displayName) ?? "",
+      kind: ProviderProfileCatalog.kind(
+        try container.decodeIfPresent(String.self, forKey: .kind),
+        fallback: .agent
+      ),
+      location: AgentResourceLocation.fromWireValue(try container.decodeIfPresent(String.self, forKey: .location)),
+      status: ProviderProfileCatalog.connectorStatus(try container.decodeIfPresent(String.self, forKey: .status)),
+      protocolFamily: try container.decodeIfPresent(String.self, forKey: .protocolFamily) ?? "",
+      adapterType: try container.decodeIfPresent(String.self, forKey: .adapterType) ?? "",
+      modelId: try container.decodeIfPresent(String.self, forKey: .modelId) ?? "",
+      capabilities: ProviderProfileCatalog.capabilities(
+        try container.decodeIfPresent([String].self, forKey: .capabilities)
+      ),
+      toolIds: Set(try container.decodeIfPresent([String].self, forKey: .toolIds) ?? []),
+      contextWindowTokens: try container.decodeIfPresent(Int.self, forKey: .contextWindowTokens) ?? 8_192,
+      maxOutputTokens: try container.decodeIfPresent(Int.self, forKey: .maxOutputTokens) ?? 4_096,
+      maxParallelRuns: try container.decodeIfPresent(Int.self, forKey: .maxParallelRuns) ?? 1,
+      supportsTools: try container.decodeIfPresent(Bool.self, forKey: .supportsTools) ?? false,
+      supportsStreaming: try container.decodeIfPresent(Bool.self, forKey: .supportsStreaming) ?? false,
+      supportsBackground: try container.decodeIfPresent(Bool.self, forKey: .supportsBackground) ?? false,
+      latency: ProviderProfileCatalog.latency(
+        try container.decodeIfPresent(String.self, forKey: .latency),
+        fallback: .normal
+      ),
+      quality: ProviderProfileCatalog.quality(
+        try container.decodeIfPresent(String.self, forKey: .quality),
+        fallback: .standard
+      ),
+      trust: ProviderProfileCatalog.trust(
+        try container.decodeIfPresent(String.self, forKey: .trust),
+        fallback: .unknown
+      ),
+      failureDomain: try container.decodeIfPresent(String.self, forKey: .failureDomain) ?? "",
+      endpointConfigured: try container.decodeIfPresent(Bool.self, forKey: .endpointConfigured) ?? false,
+      credentialConfigured: try container.decodeIfPresent(Bool.self, forKey: .credentialConfigured) ?? false,
+      pricing: try container.decodeIfPresent(ProviderPricingProfile.self, forKey: .pricing) ??
+        ProviderPricingProfile(tier: .free),
+      performance: try container.decodeIfPresent(ProviderPerformanceProfile.self, forKey: .performance) ??
+        ProviderPerformanceProfile(),
+      schemaVersion: schema,
+      metadata: try container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(schemaVersion, forKey: .schemaVersion)
+    try container.encode(profileId, forKey: .profileId)
+    try container.encode(resourceId, forKey: .resourceId)
+    try container.encode(providerId, forKey: .providerId)
+    try container.encode(productId, forKey: .productId)
+    try container.encode(displayName, forKey: .displayName)
+    try container.encode(kind.rawValue.lowercased(), forKey: .kind)
+    try container.encode(location.rawValue.lowercased(), forKey: .location)
+    try container.encode(status.rawValue.lowercased(), forKey: .status)
+    try container.encode(protocolFamily, forKey: .protocolFamily)
+    try container.encode(adapterType, forKey: .adapterType)
+    try container.encode(modelId, forKey: .modelId)
+    try container.encode(capabilities.map(\.wireValue).sorted(), forKey: .capabilities)
+    try container.encode(toolIds.sorted(), forKey: .toolIds)
+    try container.encode(contextWindowTokens, forKey: .contextWindowTokens)
+    try container.encode(maxOutputTokens, forKey: .maxOutputTokens)
+    try container.encode(maxParallelRuns, forKey: .maxParallelRuns)
+    try container.encode(supportsTools, forKey: .supportsTools)
+    try container.encode(supportsStreaming, forKey: .supportsStreaming)
+    try container.encode(supportsBackground, forKey: .supportsBackground)
+    try container.encode(latency.rawValue.lowercased(), forKey: .latency)
+    try container.encode(quality.rawValue.lowercased(), forKey: .quality)
+    try container.encode(trust.rawValue.lowercased(), forKey: .trust)
+    try container.encode(failureDomain, forKey: .failureDomain)
+    try container.encode(endpointConfigured, forKey: .endpointConfigured)
+    try container.encode(credentialConfigured, forKey: .credentialConfigured)
+    try container.encode(pricing, forKey: .pricing)
+    try container.encode(performance, forKey: .performance)
+    try container.encode(metadata, forKey: .metadata)
+  }
+}
+
+struct ModelProviderProfileDefinition: Equatable, Identifiable {
+  var providerId: String
+  var displayName: String
+  var protocolFamily: String
+  var location: AgentResourceLocation
+  var cost: AgentResourceCost
+  var latency: AgentResourceLatency
+  var quality: AgentResourceQuality
+  var contextWindowTokens: Int
+  var supportsTools: Bool
+  var supportsStreaming: Bool
+
+  var id: String { providerId }
+}
+
+enum ProviderProfileCatalog {
+  static let modelProviders: [ModelProviderProfileDefinition] = [
+    ModelProviderProfileDefinition(
+      providerId: "openai",
+      displayName: "OpenAI",
+      protocolFamily: "openai",
+      location: .cloud,
+      cost: .medium,
+      latency: .normal,
+      quality: .frontier,
+      contextWindowTokens: 128_000,
+      supportsTools: true,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "anthropic",
+      displayName: "Claude",
+      protocolFamily: "anthropic",
+      location: .cloud,
+      cost: .medium,
+      latency: .normal,
+      quality: .frontier,
+      contextWindowTokens: 200_000,
+      supportsTools: true,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "gemini",
+      displayName: "Gemini",
+      protocolFamily: "gemini",
+      location: .cloud,
+      cost: .medium,
+      latency: .fast,
+      quality: .frontier,
+      contextWindowTokens: 1_000_000,
+      supportsTools: true,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "deepseek",
+      displayName: "DeepSeek",
+      protocolFamily: "openai",
+      location: .cloud,
+      cost: .low,
+      latency: .normal,
+      quality: .frontier,
+      contextWindowTokens: 128_000,
+      supportsTools: true,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "qwen",
+      displayName: "Qwen",
+      protocolFamily: "openai",
+      location: .cloud,
+      cost: .low,
+      latency: .normal,
+      quality: .strong,
+      contextWindowTokens: 131_072,
+      supportsTools: true,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "ollama",
+      displayName: "Ollama",
+      protocolFamily: "ollama",
+      location: .privateNetwork,
+      cost: .free,
+      latency: .fast,
+      quality: .standard,
+      contextWindowTokens: 32_768,
+      supportsTools: false,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "lm-studio",
+      displayName: "LM Studio",
+      protocolFamily: "openai",
+      location: .privateNetwork,
+      cost: .free,
+      latency: .fast,
+      quality: .standard,
+      contextWindowTokens: 32_768,
+      supportsTools: false,
+      supportsStreaming: true
+    ),
+    ModelProviderProfileDefinition(
+      providerId: "openrouter",
+      displayName: "OpenRouter",
+      protocolFamily: "openai",
+      location: .cloud,
+      cost: .medium,
+      latency: .normal,
+      quality: .frontier,
+      contextWindowTokens: 128_000,
+      supportsTools: true,
+      supportsStreaming: true
+    )
+  ]
+
+  static func fromCloudContact(
+    _ contact: SignalASIContact,
+    apiKey: String? = nil,
+    status: AgentConnectorStatus = .available,
+    performance: ProviderPerformanceProfile = ProviderPerformanceProfile()
+  ) -> ProviderProfile {
+    let model = contact.selectedCloudModel ?? CloudModelConfig(
+      id: contact.id,
+      displayName: contact.cloudProvider,
+      provider: contact.cloudProvider,
+      modelId: "",
+      endpoint: "",
+      apiStyle: .openAICompatible,
+      keychainAccount: "",
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
+    return fromCloudModel(
+      resourceId: contact.id,
+      provider: contact.cloudProvider,
+      displayName: contact.cloudProvider.isEmpty ? contact.displayTitle : contact.cloudProvider,
+      model: model,
+      apiKey: apiKey,
+      status: status,
+      performance: performance
+    )
+  }
+
+  static func fromCloudModel(
+    resourceId: String,
+    provider: String,
+    displayName: String = "",
+    model: CloudModelConfig,
+    apiKey: String? = nil,
+    status: AgentConnectorStatus = .available,
+    performance: ProviderPerformanceProfile = ProviderPerformanceProfile()
+  ) -> ProviderProfile {
+    let providerId = normalizeProviderId(provider.isEmpty ? model.provider : provider)
+    let definition = definition(providerId)
+    let endpoint = model.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    let local = isLocalEndpoint(endpoint) || definition.location == .privateNetwork
+    var capabilities: Set<AgentCapability> = [.chat, .reasoning]
+    if definition.supportsTools {
+      capabilities.formUnion([.toolUse, .liveData])
+    }
+    if local {
+      capabilities.insert(.localInference)
+    }
+    let profileName = displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? definition.displayName
+      : displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let protocolFamily = model.apiStyle.rawValue.isEmpty ? definition.protocolFamily : model.apiStyle.rawValue
+    return ProviderProfile(
+      profileId: "model:\(providerId)",
+      resourceId: resourceId.isEmpty ? "cloud:\(providerId)" : resourceId,
+      providerId: providerId,
+      productId: providerId,
+      displayName: profileName,
+      kind: local ? .localModel : .cloudModel,
+      location: local ? .privateNetwork : definition.location,
+      status: status,
+      protocolFamily: protocolFamily,
+      adapterType: "\(definition.protocolFamily)-model-api",
+      modelId: model.modelId,
+      capabilities: capabilities,
+      contextWindowTokens: max(4_096, contextWindowTokens(for: model, fallback: definition.contextWindowTokens)),
+      maxOutputTokens: max(512, maxOutputTokens(for: model)),
+      maxParallelRuns: local ? 2 : 4,
+      supportsTools: definition.supportsTools,
+      supportsStreaming: definition.supportsStreaming,
+      supportsBackground: true,
+      latency: definition.latency,
+      quality: definition.quality,
+      trust: local ? .privateConfigured : .cloudConfigured,
+      failureDomain: local ? "private-model:\(providerId)" : "cloud-model:\(providerId)",
+      endpointConfigured: !endpoint.isEmpty,
+      credentialConfigured: local || CloudModelCredentialPolicy.isStoredCredential(apiKey),
+      pricing: ProviderPricingProfile(tier: definition.cost),
+      performance: performance,
+      metadata: ["native_product_identity": providerId]
+    )
+  }
+
+  static func fromRegistration(
+    _ registration: AgentRegistration,
+    existing: ProviderProfile? = nil
+  ) -> ProviderProfile {
+    let base = existing ?? agentProfile(
+      resourceId: registration.agentId,
+      displayName: registration.displayName,
+      providerId: registration.providerId.isEmpty ? registration.agentId : registration.providerId,
+      adapterType: registration.adapterType,
+      location: registration.location,
+      status: registration.status.toConnectorStatus(),
+      capabilities: registration.capabilities,
+      toolIds: registration.toolIds,
+      cost: registration.cost,
+      latency: registration.latency,
+      trust: registration.trust,
+      failureDomain: registration.failureDomain,
+      maxParallelRuns: registration.maxParallelRuns
+    )
+    return ProviderProfile(
+      profileId: base.profileId,
+      resourceId: registration.agentId,
+      providerId: registration.providerId.isEmpty ? base.providerId : registration.providerId,
+      productId: base.productId,
+      displayName: registration.displayName,
+      kind: .agent,
+      location: registration.location,
+      status: registration.status.toConnectorStatus(),
+      protocolFamily: base.protocolFamily,
+      adapterType: registration.adapterType.isEmpty ? base.adapterType : registration.adapterType,
+      modelId: base.modelId,
+      capabilities: registration.capabilities,
+      toolIds: registration.toolIds,
+      contextWindowTokens: base.contextWindowTokens,
+      maxOutputTokens: base.maxOutputTokens,
+      maxParallelRuns: max(1, registration.maxParallelRuns),
+      supportsTools: base.supportsTools,
+      supportsStreaming: base.supportsStreaming,
+      supportsBackground: base.supportsBackground,
+      latency: registration.latency,
+      quality: base.quality,
+      trust: registration.trust,
+      failureDomain: registration.failureDomain.isEmpty ? base.failureDomain : registration.failureDomain,
+      endpointConfigured: true,
+      credentialConfigured: true,
+      pricing: ProviderPricingProfile(
+        tier: registration.cost,
+        inputMicrosPerMillionTokens: base.pricing.inputMicrosPerMillionTokens,
+        outputMicrosPerMillionTokens: base.pricing.outputMicrosPerMillionTokens,
+        currency: base.pricing.currency,
+        source: base.pricing.source
+      ),
+      performance: base.performance,
+      metadata: base.metadata
+    )
+  }
+
+  static func fromTarget(_ target: AgentCallableTarget) -> ProviderProfile {
+    if let providerProfile = target.providerProfile {
+      return providerProfile
+    }
+    if target.kind == .model {
+      let providerId = providerIdForTarget(target)
+      let definition = definition(providerId)
+      let local = target.capabilities.contains(.localInference) || definition.location == .privateNetwork
+      return ProviderProfile(
+        profileId: "model:\(providerId)",
+        resourceId: target.id,
+        providerId: providerId,
+        productId: providerId,
+        displayName: target.title,
+        kind: local ? .localModel : .cloudModel,
+        location: local ? .privateNetwork : definition.location,
+        status: target.status,
+        protocolFamily: definition.protocolFamily,
+        adapterType: target.adapterType.isEmpty ? "model-api" : target.adapterType,
+        capabilities: Set(target.capabilities),
+        contextWindowTokens: definition.contextWindowTokens,
+        maxOutputTokens: 4_096,
+        maxParallelRuns: local ? 2 : 4,
+        supportsTools: definition.supportsTools,
+        supportsStreaming: definition.supportsStreaming,
+        supportsBackground: true,
+        latency: definition.latency,
+        quality: definition.quality,
+        trust: local ? .privateConfigured : .cloudConfigured,
+        failureDomain: target.failureDomain.isEmpty ? "model:\(providerId)" : target.failureDomain,
+        endpointConfigured: false,
+        credentialConfigured: local,
+        pricing: ProviderPricingProfile(tier: definition.cost),
+        metadata: ["native_product_identity": providerId]
+      )
+    }
+    return agentProfile(
+      resourceId: target.id,
+      displayName: target.title,
+      providerId: providerIdForTarget(target),
+      adapterType: target.adapterType,
+      location: target.kind == .agent || target.failureDomain.hasPrefix("desktop") ? .trustedDesktop : .cloud,
+      status: target.status,
+      capabilities: Set(target.capabilities),
+      failureDomain: target.failureDomain,
+      maxParallelRuns: 1
+    )
+  }
+
+  static func normalizeProviderId(_ value: String) -> String {
+    let normalized = value
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "_", with: "-")
+      .replacingOccurrences(of: " ", with: "-")
+    switch normalized {
+    case "claude", "anthropic-claude":
+      return "anthropic"
+    case "google", "google-gemini":
+      return "gemini"
+    case "lmstudio":
+      return "lm-studio"
+    case "open-router":
+      return "openrouter"
+    case "dashscope":
+      return "qwen"
+    default:
+      return normalized.isEmpty ? "custom" : normalized
+    }
+  }
+
+  static func kind(_ value: String?, fallback: ProviderProfileKind) -> ProviderProfileKind {
+    ProviderProfileKind.allCases.first { $0.rawValue == token(value) } ?? fallback
+  }
+
+  static func cost(_ value: String?, fallback: AgentResourceCost) -> AgentResourceCost {
+    AgentResourceCost.allCases.first { $0.rawValue == token(value) } ?? fallback
+  }
+
+  static func latency(_ value: String?, fallback: AgentResourceLatency) -> AgentResourceLatency {
+    AgentResourceLatency.allCases.first { $0.rawValue == token(value) } ?? fallback
+  }
+
+  static func quality(_ value: String?, fallback: AgentResourceQuality) -> AgentResourceQuality {
+    AgentResourceQuality.allCases.first { $0.rawValue == token(value) } ?? fallback
+  }
+
+  static func trust(_ value: String?, fallback: AgentResourceTrust) -> AgentResourceTrust {
+    AgentResourceTrust.allCases.first { $0.rawValue == token(value) } ?? fallback
+  }
+
+  static func capabilities(_ values: [String]?) -> Set<AgentCapability> {
+    Set((values ?? []).compactMap(AgentCapability.fromWireValue))
+  }
+
+  static func connectorStatus(_ value: String?) -> AgentConnectorStatus {
+    switch token(value) {
+    case "READY", "CONFIGURED", "ONLINE", "AVAILABLE", "BUSY", "IDLE", "DEGRADED":
+      return .available
+    case "NEEDS_SETUP", "NOT_CONFIGURED", "PERMISSION_REQUIRED", "UPDATING":
+      return .needsSetup
+    default:
+      return .disconnected
+    }
+  }
+
+  private static func agentProfile(
+    resourceId: String,
+    displayName: String,
+    providerId: String,
+    adapterType: String,
+    location: AgentResourceLocation,
+    status: AgentConnectorStatus,
+    capabilities: Set<AgentCapability>,
+    toolIds: Set<String> = [],
+    cost: AgentResourceCost = .free,
+    latency: AgentResourceLatency = .normal,
+    trust: AgentResourceTrust = .verifiedPaired,
+    failureDomain: String,
+    maxParallelRuns: Int
+  ) -> ProviderProfile {
+    let productId = normalizeProductId(resourceId)
+    return ProviderProfile(
+      profileId: "agent:\(resourceId)",
+      resourceId: resourceId,
+      providerId: providerId.isEmpty ? productId : providerId,
+      productId: productId,
+      displayName: displayName,
+      kind: .agent,
+      location: location,
+      status: status,
+      protocolFamily: "signalasi-agent-adapter",
+      adapterType: adapterType.isEmpty ? "\(productId)-native-adapter" : adapterType,
+      capabilities: capabilities,
+      toolIds: toolIds,
+      contextWindowTokens: 64_000,
+      maxOutputTokens: 16_000,
+      maxParallelRuns: max(1, maxParallelRuns),
+      supportsTools: !capabilities.isDisjoint(with: [.toolUse, .code, .taskExecution]),
+      supportsStreaming: true,
+      supportsBackground: capabilities.contains(.taskExecution),
+      latency: latency,
+      quality: .strong,
+      trust: trust,
+      failureDomain: failureDomain.isEmpty ? "agent:\(resourceId)" : failureDomain,
+      endpointConfigured: true,
+      credentialConfigured: true,
+      pricing: ProviderPricingProfile(tier: cost),
+      metadata: ["native_product_identity": productId]
+    )
+  }
+
+  private static func providerIdForTarget(_ target: AgentCallableTarget) -> String {
+    let identity = "\(target.id) \(target.title)".lowercased()
+    if identity.contains("openrouter") { return "openrouter" }
+    if identity.contains("deepseek") { return "deepseek" }
+    if identity.contains("qwen") { return "qwen" }
+    if identity.contains("gemini") { return "gemini" }
+    if identity.contains("claude") || identity.contains("anthropic") { return "anthropic" }
+    if identity.contains("ollama") { return "ollama" }
+    if identity.contains("lm studio") || identity.contains("lm-studio") { return "lm-studio" }
+    if identity.contains("openai") || target.id == "cloud-models" { return "openai" }
+    return normalizeProductId(target.id)
+  }
+
+  private static func normalizeProductId(_ resourceId: String) -> String {
+    let id = resourceId
+      .split(separator: ":")
+      .last
+      .map(String.init)?
+      .lowercased() ?? resourceId.lowercased()
+    return id == "claude-code" ? "claude" : id
+  }
+
+  private static func definition(_ providerId: String) -> ModelProviderProfileDefinition {
+    modelProviders.first { $0.providerId == providerId } ?? ModelProviderProfileDefinition(
+      providerId: providerId.isEmpty ? "custom" : providerId,
+      displayName: providerId.isEmpty ? "Custom" : providerId,
+      protocolFamily: "openai",
+      location: .cloud,
+      cost: .medium,
+      latency: .normal,
+      quality: .strong,
+      contextWindowTokens: 64_000,
+      supportsTools: true,
+      supportsStreaming: true
+    )
+  }
+
+  private static func isLocalEndpoint(_ endpoint: String) -> Bool {
+    let value = endpoint.lowercased()
+    return ["127.0.0.1", "localhost", "192.168.", "10.", "172.16."].contains { value.contains($0) }
+  }
+
+  private static func contextWindowTokens(for model: CloudModelConfig, fallback: Int) -> Int {
+    let lower = model.modelId.lowercased()
+    if lower.contains("gemini") { return max(fallback, 1_000_000) }
+    if lower.contains("claude") { return max(fallback, 200_000) }
+    if lower.contains("qwen") { return max(fallback, 131_072) }
+    return fallback
+  }
+
+  private static func maxOutputTokens(for model: CloudModelConfig) -> Int {
+    let lower = model.modelId.lowercased()
+    if lower.contains("mini") || lower.contains("flash") { return 8_192 }
+    return 4_096
+  }
+
+  private static func token(_ value: String?) -> String {
+    value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+  }
+}
+
+private extension AgentEndpointStatus {
+  func toConnectorStatus() -> AgentConnectorStatus {
+    switch self {
+    case .online, .idle, .busy:
+      return .available
+    case .permissionRequired, .updating:
+      return .needsSetup
+    case .offline, .degraded, .unreachable:
+      return .disconnected
+    }
   }
 }
 
@@ -8815,6 +9646,7 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
   var adapterType: String
   var independentlyUpgradeable: Bool
   var desktopAccessProfile: String
+  var providerProfile: ProviderProfile?
 
   init(
     id: String,
@@ -8826,7 +9658,8 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
     runtimeFailureDomain: String = "",
     adapterType: String = "",
     independentlyUpgradeable: Bool = true,
-    desktopAccessProfile: String = ""
+    desktopAccessProfile: String = "",
+    providerProfile: ProviderProfile? = nil
   ) {
     self.id = id
     self.title = title
@@ -8838,6 +9671,7 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
     self.adapterType = adapterType
     self.independentlyUpgradeable = independentlyUpgradeable
     self.desktopAccessProfile = desktopAccessProfile
+    self.providerProfile = providerProfile
   }
 
   enum CodingKeys: String, CodingKey {
@@ -8851,6 +9685,7 @@ struct AgentCallableTarget: Codable, Equatable, Identifiable {
     case adapterType = "adapter_type"
     case independentlyUpgradeable = "independently_upgradeable"
     case desktopAccessProfile = "desktop_access_profile"
+    case providerProfile = "provider_profile"
   }
 }
 

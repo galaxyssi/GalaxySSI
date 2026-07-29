@@ -3043,6 +3043,200 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(pageObject["totalMatches"])
   }
 
+  func testProviderProfileCatalogContainsAndroidModelProviders() {
+    XCTAssertEqual(
+      Set(ProviderProfileCatalog.modelProviders.map(\.providerId)),
+      Set(["openai", "anthropic", "gemini", "deepseek", "qwen", "ollama", "lm-studio", "openrouter"])
+    )
+    XCTAssertTrue(ProviderProfileCatalog.modelProviders.allSatisfy { $0.contextWindowTokens > 0 })
+    XCTAssertEqual(ProviderProfileCatalog.normalizeProviderId("Claude"), "anthropic")
+    XCTAssertEqual(ProviderProfileCatalog.normalizeProviderId("Google Gemini"), "gemini")
+    XCTAssertEqual(ProviderProfileCatalog.normalizeProviderId("dashscope"), "qwen")
+    XCTAssertEqual(ProviderProfileCatalog.normalizeProviderId("Open Router"), "openrouter")
+  }
+
+  func testProviderProfileCatalogBuildsCloudAndLocalModelProfiles() {
+    let deepseek = ProviderProfileCatalog.fromCloudModel(
+      resourceId: "cloud:deepseek",
+      provider: "DeepSeek",
+      displayName: "DeepSeek V4",
+      model: providerCloudModel(
+        provider: "DeepSeek",
+        modelId: "deepseek-v4-pro",
+        endpoint: "https://api.deepseek.com/chat/completions"
+      ),
+      apiKey: "stored-key",
+      status: .available,
+      performance: ProviderPerformanceProfile(
+        attempts: 10,
+        successes: 8,
+        failures: 2,
+        failureRate: 0.2,
+        ewmaLatencyMs: 1_100
+      )
+    )
+
+    XCTAssertEqual(deepseek.profileId, "model:deepseek")
+    XCTAssertEqual(deepseek.kind, .cloudModel)
+    XCTAssertEqual(deepseek.location, .cloud)
+    XCTAssertEqual(deepseek.modelId, "deepseek-v4-pro")
+    XCTAssertEqual(deepseek.contextWindowTokens, 128_000)
+    XCTAssertEqual(deepseek.maxParallelRuns, 4)
+    XCTAssertEqual(deepseek.quality, .frontier)
+    XCTAssertEqual(deepseek.pricing.tier, .low)
+    XCTAssertTrue(deepseek.credentialConfigured)
+    XCTAssertTrue(deepseek.supportsTools)
+    XCTAssertTrue(deepseek.supportsStreaming)
+    XCTAssertTrue(deepseek.supportsBackground)
+    XCTAssertTrue(deepseek.capabilities.isSuperset(of: Set([.chat, .reasoning, .toolUse, .liveData])))
+    XCTAssertEqual(deepseek.performance.failures, 2)
+
+    let ollama = ProviderProfileCatalog.fromCloudModel(
+      resourceId: "cloud:ollama",
+      provider: "Ollama",
+      model: providerCloudModel(
+        provider: "Ollama",
+        modelId: "llama3",
+        endpoint: "http://localhost:11434/v1/chat/completions"
+      )
+    )
+
+    XCTAssertEqual(ollama.displayName, "Ollama")
+    XCTAssertEqual(ollama.kind, .localModel)
+    XCTAssertEqual(ollama.location, .privateNetwork)
+    XCTAssertEqual(ollama.trust, .privateConfigured)
+    XCTAssertEqual(ollama.maxParallelRuns, 2)
+    XCTAssertEqual(ollama.pricing.tier, .free)
+    XCTAssertTrue(ollama.credentialConfigured)
+    XCTAssertTrue(ollama.capabilities.contains(.localInference))
+    XCTAssertFalse(ollama.supportsTools)
+  }
+
+  func testProviderProfileModelsRoundTripAndroidWireNamesAndNoCredentials() throws {
+    var profile = ProviderProfileCatalog.fromCloudModel(
+      resourceId: "cloud:openai",
+      provider: "OpenAI",
+      model: providerCloudModel(
+        provider: "OpenAI",
+        modelId: "gpt-5.4-mini",
+        endpoint: "https://api.openai.com/v1/chat/completions"
+      ),
+      apiKey: "private-secret",
+      performance: ProviderPerformanceProfile(attempts: 3, successes: 2, failures: 1, ewmaLatencyMs: 940)
+    )
+    profile.pricing = ProviderPricingProfile(
+      tier: profile.pricing.tier,
+      inputMicrosPerMillionTokens: 200_000,
+      outputMicrosPerMillionTokens: 600_000,
+      source: "catalog_estimate"
+    )
+    let encoded = try JSONEncoder().encode(profile)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let pricing = try XCTUnwrap(object["pricing"] as? [String: Any])
+    let performance = try XCTUnwrap(object["performance"] as? [String: Any])
+    let capabilities = try XCTUnwrap(object["capabilities"] as? [String])
+    let json = try XCTUnwrap(String(data: encoded, encoding: .utf8))
+    let restored = try JSONDecoder().decode(ProviderProfile.self, from: encoded)
+
+    XCTAssertEqual(object["schema_version"] as? Int, ProviderProfile.schemaVersion)
+    XCTAssertEqual(object["profile_id"] as? String, "model:openai")
+    XCTAssertEqual(object["resource_id"] as? String, "cloud:openai")
+    XCTAssertEqual(object["kind"] as? String, "cloud_model")
+    XCTAssertEqual(object["location"] as? String, "cloud")
+    XCTAssertEqual(object["status"] as? String, "available")
+    XCTAssertEqual(object["quality_tier"] as? String, "frontier")
+    XCTAssertEqual(object["protocol_family"] as? String, "openai")
+    XCTAssertEqual(object["credential_configured"] as? Bool, true)
+    XCTAssertNil(object["profileId"])
+    XCTAssertEqual(pricing["tier"] as? String, "medium")
+    XCTAssertEqual(pricing["input_micros_per_million_tokens"] as? Int, 200_000)
+    XCTAssertEqual(pricing["output_micros_per_million_tokens"] as? Int, 600_000)
+    XCTAssertNotNil(performance["ewma_latency_ms"])
+    XCTAssertTrue(capabilities.contains("live_data"))
+    XCTAssertFalse(json.contains("private-secret"))
+    XCTAssertEqual(restored, profile)
+
+    let minimal = try JSONDecoder().decode(
+      ProviderProfile.self,
+      from: Data(
+        #"{"schema_version":1,"profile_id":"model:future","resource_id":"cloud:future","provider_id":"future","product_id":"future","display_name":"Future","kind":"future","location":"private_network","status":"ready","pricing":{"tier":"medium"},"performance":{"attempts":2}}"#.utf8
+      )
+    )
+
+    XCTAssertEqual(minimal.kind, .agent)
+    XCTAssertEqual(minimal.status, .available)
+    XCTAssertEqual(minimal.location, .privateNetwork)
+    XCTAssertEqual(minimal.pricing.tier, .medium)
+    XCTAssertEqual(minimal.performance.attempts, 2)
+    XCTAssertEqual(minimal.performance.failures, 0)
+  }
+
+  func testProviderProfileCatalogBuildsAgentAndTargetProfiles() throws {
+    let registration = networkRegistration(
+      agentId: "desktop_a:codex",
+      displayName: "Codex Workstation",
+      providerId: "desktop_a",
+      capabilities: [.chat, .code, .taskExecution, .toolUse],
+      cost: .low,
+      latency: .fast,
+      failureDomain: "desktop_a",
+      adapterType: "codex-app-server"
+    )
+    let profile = ProviderProfileCatalog.fromRegistration(registration)
+
+    XCTAssertEqual(profile.profileId, "agent:desktop_a:codex")
+    XCTAssertEqual(profile.productId, "codex")
+    XCTAssertEqual(profile.providerId, "desktop_a")
+    XCTAssertEqual(profile.kind, .agent)
+    XCTAssertEqual(profile.location, .trustedDesktop)
+    XCTAssertEqual(profile.status, .available)
+    XCTAssertEqual(profile.adapterType, "codex-app-server")
+    XCTAssertEqual(profile.pricing.tier, .low)
+    XCTAssertTrue(profile.supportsTools)
+    XCTAssertTrue(profile.supportsBackground)
+
+    let embedded = ProviderProfileCatalog.fromCloudModel(
+      resourceId: "cloud:qwen",
+      provider: "Qwen",
+      model: providerCloudModel(
+        provider: "Qwen",
+        modelId: "qwen3.7-max",
+        endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+      ),
+      apiKey: "stored-key"
+    )
+    let target = AgentCallableTarget(
+      id: "cloud:qwen",
+      title: "Qwen",
+      kind: .model,
+      status: .available,
+      capabilities: Array(embedded.capabilities),
+      providerProfile: embedded
+    )
+    let inferred = ProviderProfileCatalog.fromTarget(
+      AgentCallableTarget(
+        id: "codex",
+        title: "Codex",
+        kind: .agent,
+        status: .available,
+        capabilities: [.chat, .taskExecution],
+        failureDomain: "desktop_a",
+        adapterType: "codex-app-server"
+      )
+    )
+    let targetObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(target)) as? [String: Any]
+    )
+
+    XCTAssertEqual(ProviderProfileCatalog.fromTarget(target), embedded)
+    XCTAssertNotNil(targetObject["provider_profile"])
+    XCTAssertNil(targetObject["providerProfile"])
+    XCTAssertEqual(inferred.kind, .agent)
+    XCTAssertEqual(inferred.location, .trustedDesktop)
+    XCTAssertEqual(inferred.trust, .verifiedPaired)
+    XCTAssertTrue(inferred.supportsBackground)
+  }
+
   func testAgentDynamicTeamCompilerBuildsVerifiedDagFromComplementaryAgents() throws {
     let result = AgentDynamicTeamCompiler().compile(
       request: AgentDynamicTeamRequest(
@@ -9086,6 +9280,24 @@ final class SignalASIStoreTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suite)!
     defaults.removePersistentDomain(forName: suite)
     return SignalASIStore(defaults: defaults, secrets: secrets)
+  }
+
+  private func providerCloudModel(
+    provider: String,
+    modelId: String,
+    endpoint: String,
+    apiStyle: SignalASICloudAPIStyle = .openAICompatible
+  ) -> CloudModelConfig {
+    CloudModelConfig(
+      id: "\(provider)-\(modelId)",
+      displayName: modelId,
+      provider: provider,
+      modelId: modelId,
+      endpoint: endpoint,
+      apiStyle: apiStyle,
+      keychainAccount: "cloud.\(provider).\(modelId)",
+      updatedAt: Date(timeIntervalSince1970: 0)
+    )
   }
 
   private func permissionGrant(
