@@ -35,6 +35,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style agent plan lifecycle policy for stale runtime draft cleanup and completed connector restoration
 - Android-style agent execution loop timeline policy for run-control events, recovery actions, and progress placeholders
 - Android-style agent run recovery policy for terminal run-state reduction, local wait restore, and durable desktop reconnects
+- Android-style explicit tool handle registry for opaque scoped stateful tool references, TTLs, releases, and resource revocation
 - Android-style agent failure recovery payloads, recommended recovery actions, plan-only fallbacks, and retry instructions
 - Android-style agent task liveness policy for progress watchdog warnings, timeouts, and terminal reply suppression
 - Android-style agent action recovery controller for timed-out low-risk navigation retries and manual handoff for unsafe failures
@@ -47,6 +48,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style final response self-check for empty, echo, acknowledgement-only, attachment, and identity mismatch repair signals
 - Android-style Codex response policy for concise final prompts, rich-output input artifact filtering, and tool-noise sanitization
 - Android-style agent task budget settings with Adaptive/Fast/Economy/Private/Custom profiles, per-task limits, and resource access policies
+- Android-style global model call budget policy for rolling daily calls, leases, Token usage, reported cost, and concurrency caps
 - Android-style custom device connector configuration for HTTP REST, MQTT, WebSocket, TCP, UDP, MCP, SignalASI Agent, BLE, and Matter/Thread targets
 - Android-style MCP tool security policy for risk assessment, permission decisions, and parameter redaction
 - Android-style Home Assistant configuration with enabled state, local server URL, Keychain access token storage, and default entity target
