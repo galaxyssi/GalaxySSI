@@ -1536,6 +1536,23 @@ function memoryNamespaceLabel(value) {
   return scope ? `${label} · ${scope}` : label;
 }
 
+function memoryGraphNodeKindLabel(value) {
+  const labels = {
+    user: "User",
+    device: "Device",
+    application: "Application",
+    feature: "Feature",
+    setting: "Setting",
+    agent: "Agent",
+    model: "Model",
+    tool: "Tool",
+    project: "Project",
+    concept: "Concept",
+    state: "State"
+  };
+  return t(labels[value] || value || "Concept");
+}
+
 function memoryActionLabel(value) {
   const labels = {
     create: "Create",
@@ -1562,6 +1579,8 @@ function memoryFindingLabel(value) {
     unresolved_conflict: "Unresolved memory conflict",
     stale_candidate: "Candidate waiting too long",
     low_confidence_reused: "Low-confidence memory reused",
+    expired: "Expired memory retired",
+    duplicate: "Equivalent memory consolidated",
     missing_evidence: "Memory has no evidence reference",
     broken_supersession_chain: "Supersession evidence chain is incomplete"
   };
@@ -1719,6 +1738,9 @@ function renderMemory() {
 
   if (state.memory.view === "overview") {
     const health = evolution.health || {};
+    const critic = evolution.critic || stats.critic || {};
+    const latestCritic = critic.latest || {};
+    const graph = evolution.graph || stats.graph || {};
     const findings = Array.isArray(health.findings) ? health.findings : [];
     const recent = Array.isArray(evolution.recent_evolution)
       ? evolution.recent_evolution.slice(0, 6)
@@ -1747,9 +1769,22 @@ function renderMemory() {
       </section>
       <section class="memory-health ${health.status === "attention" ? "attention" : "healthy"}">
         <div>
-          <strong>${escapeHtml(t("Memory health"))}</strong>
-          <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
+          <div class="memory-health-heading">
+            <strong>${escapeHtml(t("Memory health"))}</strong>
+            <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
+          </div>
+          <button class="memory-audit-button" data-run-memory-critic>
+            ${escapeHtml(t("Run audit"))}
+          </button>
         </div>
+        <p>${escapeHtml(
+          critic.last_run_at
+            ? t("Last audit {time} - {actions} safe actions", {
+              time: memoryTime(critic.last_run_at),
+              actions: Number(latestCritic.action_count || 0)
+            })
+            : t("Memory audit has not run yet.")
+        )}</p>
         ${findings.length ? findings.map((finding) => `
           <p><b>${escapeHtml(String(finding.count || 0))}</b> ${escapeHtml(memoryFindingLabel(finding.kind))}</p>
         `).join("") : `<p>${escapeHtml(t("No stale, conflicting, or unsupported memory was found."))}</p>`}
@@ -1763,6 +1798,22 @@ function renderMemory() {
           ${Object.entries(evolution.namespace_counts || {}).map(([namespace, count]) => `
             <div><span>${escapeHtml(memoryNamespaceLabel(namespace))}</span><strong>${escapeHtml(String(count))}</strong></div>
           `).join("") || `<p>${escapeHtml(t("No durable memory yet."))}</p>`}
+        </div>
+      </section>
+      <section class="memory-overview-section">
+        <div class="memory-section-heading">
+          <strong>${escapeHtml(t("Relationship graph"))}</strong>
+          <span>${escapeHtml(t("{nodes} entities · {relations} relationships", {
+            nodes: Number(graph.node_count || 0),
+            relations: Number(graph.relation_count || 0)
+          }))}</span>
+        </div>
+        <div class="memory-namespace-grid">
+          ${Object.entries(graph.node_kinds || {})
+            .filter(([, count]) => Number(count) > 0)
+            .map(([kind, count]) => `
+              <div><span>${escapeHtml(memoryGraphNodeKindLabel(kind))}</span><strong>${escapeHtml(String(count))}</strong></div>
+            `).join("") || `<p>${escapeHtml(t("No entity relationships yet."))}</p>`}
         </div>
       </section>
       <section class="memory-overview-section">
@@ -3413,10 +3464,19 @@ function bindEvents() {
   });
   $("#addMemoryButton").addEventListener("click", () => addMemory().catch((error) => showToast(error.message || String(error))));
   $("#memoryList").addEventListener("click", async (event) => {
+    const runCritic = event.target.closest("[data-run-memory-critic]");
     const overviewRoute = event.target.closest("[data-memory-overview-route]");
     const forget = event.target.closest("[data-forget-memory]");
     const approve = event.target.closest("[data-approve-memory-candidate]");
     const reject = event.target.closest("[data-reject-memory-candidate]");
+    if (runCritic) {
+      const result = await window.signalasi.runDesktopMemoryCritic();
+      showToast(t("Memory audit completed with {count} safe actions.", {
+        count: Number(result?.run?.action_count || 0)
+      }));
+      await refreshMemory($("#memorySearch").value.trim());
+      return;
+    }
     if (overviewRoute) {
       selectMemoryView(overviewRoute.dataset.memoryOverviewRoute);
       return;

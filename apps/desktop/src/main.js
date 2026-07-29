@@ -331,12 +331,15 @@ async function runUiSmoke() {
           importance: 0.8,
           namespace: "device"
         });
+        const criticRun = await window.signalasi.runDesktopMemoryCritic();
         await refreshMemory("");
         document.querySelector('[data-capability-tab="memory"]')?.click();
         document.querySelector('[data-memory-view="overview"]')?.click();
         const overviewState = {
           metrics: document.querySelectorAll(".memory-metric").length,
           health: document.querySelector(".memory-health")?.textContent || "",
+          auditAction: Boolean(document.querySelector("[data-run-memory-critic]")),
+          criticRun: criticRun?.run?.status || "",
           recent: document.querySelectorAll(".memory-evolution-list > div").length
         };
         document.querySelector('[data-memory-view="planned"]')?.click();
@@ -373,6 +376,8 @@ async function runUiSmoke() {
       || capabilitiesState.approveActions !== 1
       || capabilitiesState.overviewState.metrics !== 4
       || !capabilitiesState.overviewState.health.trim()
+      || !capabilitiesState.overviewState.auditAction
+      || capabilitiesState.overviewState.criticRun !== "completed"
       || capabilitiesState.overviewState.recent < 2
       || !capabilitiesState.plannedState.active
       || capabilitiesState.plannedState.count !== 1
@@ -1643,6 +1648,11 @@ async function getDesktopMemoryEvolution(limit = 100) {
   return fetchJson(`/api/desktop-memory/evolution?limit=${encodeURIComponent(limit || 100)}`);
 }
 
+async function runDesktopMemoryCritic() {
+  await startBackend();
+  return fetchJson("/api/desktop-memory/critic/run", { method: "POST" });
+}
+
 async function proposeDesktopMemory(payload = {}) {
   await startBackend();
   return fetchJson("/api/desktop-memory/inbox", {
@@ -1902,6 +1912,7 @@ ipcMain.handle("desktop-control:get", getDesktopControl);
 ipcMain.handle("desktop-memory:list", (_event, query, limit, status) => getDesktopMemory(query, limit, status));
 ipcMain.handle("desktop-memory:inbox", (_event, limit) => getDesktopMemoryInbox(limit));
 ipcMain.handle("desktop-memory:evolution", (_event, limit) => getDesktopMemoryEvolution(limit));
+ipcMain.handle("desktop-memory:critic-run", runDesktopMemoryCritic);
 ipcMain.handle("desktop-memory:propose", (_event, payload) => proposeDesktopMemory(payload));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));

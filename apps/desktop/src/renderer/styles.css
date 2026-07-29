@@ -655,6 +655,9 @@ button:disabled { cursor: default; opacity: 0.48; }
 .memory-health.attention { border-left-color: #c3953c; }
 .memory-health > div,
 .memory-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.memory-health-heading { display: grid; gap: 2px; }
+.memory-audit-button { min-height: 25px; padding: 4px 8px; border: 1px solid #cbd7d2; border-radius: 5px; background: #f7fbf9; color: #347b60; font-size: 7px; }
+.memory-audit-button:hover { border-color: #8ab9a6; background: #edf7f2; }
 .memory-health strong,
 .memory-section-heading strong { color: #30373d; font-size: 9px; }
 .memory-health > div span,
