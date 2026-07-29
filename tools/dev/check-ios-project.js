@@ -8,11 +8,13 @@ const requiredFiles = [
   "apps/ios/SignalASI.xcodeproj/project.pbxproj",
   "apps/ios/SignalASI.xcodeproj/xcshareddata/xcschemes/SignalASI.xcscheme",
   "apps/ios/SignalASI/SignalASIModels.swift",
+  "apps/ios/SignalASI/SignalASIAttachments.swift",
   "apps/ios/SignalASI/SignalASILinkProtocol.swift",
   "apps/ios/SignalASI/SignalASILinkReliability.swift",
   "apps/ios/SignalASI/SignalASIStore.swift",
   "apps/ios/SignalASI/SignalASIServices.swift",
   "apps/ios/SignalASI/SignalASIViews.swift",
+  "apps/ios/SignalASITests/SignalASIAttachmentTests.swift",
   "apps/ios/SignalASITests/SignalASILinkProtocolTests.swift",
   "apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift",
   "apps/ios/SignalASITests/SignalASIStoreTests.swift",
@@ -33,11 +35,13 @@ for (const relativePath of requiredFiles) {
 const project = read("apps/ios/SignalASI.xcodeproj/project.pbxproj");
 const readme = read("apps/ios/README.md");
 const models = read("apps/ios/SignalASI/SignalASIModels.swift");
+const attachments = read("apps/ios/SignalASI/SignalASIAttachments.swift");
 const linkProtocol = read("apps/ios/SignalASI/SignalASILinkProtocol.swift");
 const linkReliability = read("apps/ios/SignalASI/SignalASILinkReliability.swift");
 const services = read("apps/ios/SignalASI/SignalASIServices.swift");
 const views = read("apps/ios/SignalASI/SignalASIViews.swift");
 const tests = [
+  read("apps/ios/SignalASITests/SignalASIAttachmentTests.swift"),
   read("apps/ios/SignalASITests/SignalASILinkProtocolTests.swift"),
   read("apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift"),
   read("apps/ios/SignalASITests/SignalASIStoreTests.swift"),
@@ -49,12 +53,16 @@ const requiredProjectSnippets = [
   "INFOPLIST_KEY_NSCameraUsageDescription",
   "INFOPLIST_KEY_NSMicrophoneUsageDescription",
   "INFOPLIST_KEY_NSSpeechRecognitionUsageDescription",
+  "SignalASIAttachments.swift in Sources",
+  "SignalASIAttachmentTests.swift in Sources",
   "SignalASITests.xctest",
 ];
 
 const requiredSourceSnippets = [
   [readme, "iOS 15"],
   [models, "static let androidParity"],
+  [attachments, "data_b64"],
+  [attachments, "maximumInlineBytes = 320 * 1024"],
   [linkProtocol, "signalasi_pairing_ciphertext"],
   [linkProtocol, "signalasi.pairing-access/1.0"],
   [linkReliability, "SignalASIMqttWireChunking"],
@@ -64,7 +72,10 @@ const requiredSourceSnippets = [
   [services, "scheduleOutboxFlush"],
   [services, "UNUserNotificationCenter"],
   [services, "SFSpeechRecognizer"],
+  [views, "PhotoLibraryPickerView"],
+  [views, "fileImporter"],
   [views, "AVCaptureMetadataOutput"],
+  [tests, "testAttachmentDescriptorsMatchAndroidWireNames"],
   [tests, "testValidatesAndroidCompatiblePairingQRCode"],
   [tests, "testChunkingRoundTripsLargeWirePayload"],
   [tests, "testCloudModelContactsAreGroupedByProvider"],

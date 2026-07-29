@@ -1,6 +1,8 @@
 import AVFoundation
+import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 @main
 struct SignalASIApp: App {
@@ -87,6 +89,10 @@ struct ConversationView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @State private var draft = ""
+  @State private var attachments: [SignalASIDraftAttachment] = []
+  @State private var fileImporterPresented = false
+  @State private var photoPickerPresented = false
+  @State private var attachmentError = ""
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -112,23 +118,86 @@ struct ConversationView: View {
         }
       }
       Divider()
-      HStack(spacing: 10) {
-        TextField("Message", text: $draft)
-          .textFieldStyle(.roundedBorder)
-        Button {
-          let text = draft
-          draft = ""
-          Task { await coordinator.send(text, to: contact) }
-        } label: {
-          Image(systemName: "arrow.up.circle.fill")
-            .font(.system(size: 30))
+      VStack(spacing: 8) {
+        if !attachments.isEmpty {
+          AttachmentPreviewStrip(attachments: attachments) { attachment in
+            attachments.removeAll { $0.id == attachment.id }
+          }
         }
-        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        if !attachmentError.isEmpty {
+          Text(attachmentError)
+            .font(.caption)
+            .foregroundColor(.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        HStack(spacing: 10) {
+          Button {
+            fileImporterPresented = true
+          } label: {
+            Image(systemName: "paperclip")
+              .font(.system(size: 22))
+          }
+          Button {
+            photoPickerPresented = true
+          } label: {
+            Image(systemName: "photo")
+              .font(.system(size: 22))
+          }
+          TextField("Message", text: $draft)
+            .textFieldStyle(.roundedBorder)
+          Button {
+            let text = draft
+            let outgoingAttachments = attachments
+            draft = ""
+            attachments.removeAll()
+            attachmentError = ""
+            Task { await coordinator.send(text, to: contact, attachments: outgoingAttachments) }
+          } label: {
+            Image(systemName: "arrow.up.circle.fill")
+              .font(.system(size: 30))
+          }
+          .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
+        }
       }
       .padding()
     }
     .navigationTitle(contact.displayName)
     .navigationBarTitleDisplayMode(.inline)
+    .fileImporter(
+      isPresented: $fileImporterPresented,
+      allowedContentTypes: [.item],
+      allowsMultipleSelection: true
+    ) { result in
+      switch result {
+      case .success(let urls):
+        urls.forEach(addAttachment)
+      case .failure(let error):
+        attachmentError = error.localizedDescription
+      }
+    }
+    .sheet(isPresented: $photoPickerPresented) {
+      PhotoLibraryPickerView { attachment in
+        appendAttachment(attachment)
+      }
+    }
+  }
+
+  private func addAttachment(url: URL) {
+    do {
+      let attachment = try SignalASIAttachmentPayloadBuilder.makeAttachment(from: url)
+      appendAttachment(attachment)
+    } catch {
+      attachmentError = error.localizedDescription
+    }
+  }
+
+  private func appendAttachment(_ attachment: SignalASIDraftAttachment) {
+    guard SignalASIAttachmentPayloadBuilder.accepted(attachment, existing: attachments) else {
+      attachmentError = "Attachment limit reached or file is too large."
+      return
+    }
+    attachments.append(attachment)
+    attachmentError = ""
   }
 }
 
@@ -468,6 +537,115 @@ struct AvatarView: View {
     case .cloudAPI: return .purple
     case .link: return .green
     case .local: return .gray
+    }
+  }
+}
+
+struct AttachmentPreviewStrip: View {
+  var attachments: [SignalASIDraftAttachment]
+  var onRemove: (SignalASIDraftAttachment) -> Void
+
+  var body: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        ForEach(attachments) { attachment in
+          AttachmentPreviewChip(attachment: attachment) {
+            onRemove(attachment)
+          }
+        }
+      }
+      .padding(.vertical, 2)
+    }
+  }
+}
+
+struct AttachmentPreviewChip: View {
+  var attachment: SignalASIDraftAttachment
+  var onRemove: () -> Void
+
+  var body: some View {
+    HStack(spacing: 8) {
+      thumbnail
+      VStack(alignment: .leading, spacing: 2) {
+        Text(attachment.displayName)
+          .font(.caption)
+          .lineLimit(1)
+        Text(attachment.humanSize)
+          .font(.caption2)
+          .foregroundColor(.secondary)
+      }
+      Button(action: onRemove) {
+        Image(systemName: "xmark.circle.fill")
+          .foregroundColor(.secondary)
+      }
+    }
+    .padding(8)
+    .background(Color(.secondarySystemBackground))
+    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+  }
+
+  @ViewBuilder
+  private var thumbnail: some View {
+    if attachment.isImage,
+       let image = UIImage(data: attachment.data) {
+      Image(uiImage: image)
+        .resizable()
+        .scaledToFill()
+        .frame(width: 34, height: 34)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    } else {
+      Image(systemName: "doc")
+        .frame(width: 34, height: 34)
+        .background(Color(.tertiarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+  }
+}
+
+struct PhotoLibraryPickerView: UIViewControllerRepresentable {
+  var onAttachment: (SignalASIDraftAttachment) -> Void
+
+  func makeUIViewController(context: Context) -> PHPickerViewController {
+    var configuration = PHPickerConfiguration(photoLibrary: .shared())
+    configuration.filter = .images
+    configuration.selectionLimit = SignalASIAttachmentPayloadBuilder.maximumAttachmentCount
+    let controller = PHPickerViewController(configuration: configuration)
+    controller.delegate = context.coordinator
+    return controller
+  }
+
+  func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(onAttachment: onAttachment)
+  }
+
+  final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+    private let onAttachment: (SignalASIDraftAttachment) -> Void
+
+    init(onAttachment: @escaping (SignalASIDraftAttachment) -> Void) {
+      self.onAttachment = onAttachment
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+      picker.dismiss(animated: true)
+      results.forEach { result in
+        let provider = result.itemProvider
+        let typeIdentifier = provider.registeredTypeIdentifiers.first { identifier in
+          UTType(identifier)?.conforms(to: .image) == true
+        } ?? UTType.image.identifier
+        provider.loadDataRepresentation(forTypeIdentifier: typeIdentifier) { data, _ in
+          guard let data else { return }
+          let name = provider.suggestedName.map { "\($0).jpg" } ?? "photo.jpg"
+          let attachment = SignalASIAttachmentPayloadBuilder.makePhotoAttachment(
+            data: data,
+            suggestedName: name
+          )
+          DispatchQueue.main.async {
+            self.onAttachment(attachment)
+          }
+        }
+      }
     }
   }
 }

@@ -16,6 +16,8 @@
     A10000000000000000000007 /* SignalASIStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* SignalASIStoreTests.swift */; };
     A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* SignalASILinkReliability.swift */; };
     A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */; };
+    A10000000000000000000010 /* SignalASIAttachments.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* SignalASIAttachments.swift */; };
+    A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* SignalASIAttachmentTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -30,6 +32,8 @@
     A20000000000000000000009 /* SignalASITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SignalASITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
     A20000000000000000000010 /* SignalASILinkReliability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkReliability.swift; sourceTree = "<group>"; };
     A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkReliabilityTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000012 /* SignalASIAttachments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachments.swift; sourceTree = "<group>"; };
+    A20000000000000000000013 /* SignalASIAttachmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASIAttachmentTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -51,6 +55,7 @@
       isa = PBXGroup;
       children = (
         A20000000000000000000001 /* SignalASIModels.swift */,
+        A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
         A20000000000000000000010 /* SignalASILinkReliability.swift */,
         A20000000000000000000003 /* SignalASIStore.swift */,
@@ -63,6 +68,7 @@
     A40000000000000000000003 /* SignalASITests */ = {
       isa = PBXGroup;
       children = (
+        A20000000000000000000013 /* SignalASIAttachmentTests.swift */,
         A20000000000000000000006 /* SignalASILinkProtocolTests.swift */,
         A20000000000000000000011 /* SignalASILinkReliabilityTests.swift */,
         A20000000000000000000007 /* SignalASIStoreTests.swift */,
@@ -163,6 +169,7 @@
       buildActionMask = 2147483647;
       files = (
         A10000000000000000000001 /* SignalASIModels.swift in Sources */,
+        A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
         A10000000000000000000008 /* SignalASILinkReliability.swift in Sources */,
         A10000000000000000000003 /* SignalASIStore.swift in Sources */,
@@ -175,6 +182,7 @@
       isa = PBXSourcesBuildPhase;
       buildActionMask = 2147483647;
       files = (
+        A10000000000000000000011 /* SignalASIAttachmentTests.swift in Sources */,
         A10000000000000000000006 /* SignalASILinkProtocolTests.swift in Sources */,
         A10000000000000000000009 /* SignalASILinkReliabilityTests.swift in Sources */,
         A10000000000000000000007 /* SignalASIStoreTests.swift in Sources */,
