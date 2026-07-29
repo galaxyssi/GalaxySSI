@@ -1682,6 +1682,323 @@ struct AgentRunControlEvent: Codable, Equatable {
   }
 }
 
+enum AgentRunControlState: String, Codable, CaseIterable, Identifiable {
+  case created = "CREATED"
+  case queued = "QUEUED"
+  case running = "RUNNING"
+  case waitingForUser = "WAITING_FOR_USER"
+  case waitingForDevice = "WAITING_FOR_DEVICE"
+  case paused = "PAUSED"
+  case completed = "COMPLETED"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+
+  var id: String { rawValue }
+
+  var isTerminal: Bool {
+    [.completed, .failed, .cancelled].contains(self)
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentRunControlState {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .failed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentRunControlSnapshot: Codable, Equatable {
+  var runId: String
+  var taskId: String
+  var state: AgentRunControlState
+  var agentId: String
+  var deviceId: String
+  var lastSequence: Int64
+  var lastEvent: AgentRunControlEvent
+
+  enum CodingKeys: String, CodingKey {
+    case runId = "run_id"
+    case taskId = "task_id"
+    case state
+    case agentId = "agent_id"
+    case deviceId = "device_id"
+    case lastSequence = "last_sequence"
+    case lastEvent = "last_event"
+  }
+}
+
+enum AgentConnectionKind: String, Codable, CaseIterable, Identifiable {
+  case inProcess = "IN_PROCESS"
+  case binder = "BINDER"
+  case signalasiLink = "SIGNALASI_LINK"
+  case cliJson = "CLI_JSON"
+  case stdio = "STDIO"
+  case http = "HTTP"
+  case websocket = "WEBSOCKET"
+  case mcp = "MCP"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentConnectionKind {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .http
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentResourceLocation: String, Codable, CaseIterable, Identifiable {
+  case phone = "PHONE"
+  case trustedDesktop = "TRUSTED_DESKTOP"
+  case privateNetwork = "PRIVATE_NETWORK"
+  case cloud = "CLOUD"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentResourceLocation {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .cloud
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRecordedRunStatus: String, Codable, CaseIterable, Identifiable {
+  case running = "RUNNING"
+  case completed = "COMPLETED"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRecordedRunStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .failed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentRecordedRun: Codable, Equatable, Identifiable {
+  var runId: String
+  var conversationId: String
+  var taskThreadId: String
+  var originalRequest: String
+  var status: AgentRecordedRunStatus
+  var createdAtMillis: Int64
+  var completedAtMillis: Int64
+
+  var id: String { runId }
+
+  init(
+    runId: String,
+    conversationId: String,
+    taskThreadId: String,
+    originalRequest: String,
+    status: AgentRecordedRunStatus = .running,
+    createdAtMillis: Int64 = 0,
+    completedAtMillis: Int64 = 0
+  ) {
+    self.runId = runId
+    self.conversationId = conversationId
+    self.taskThreadId = taskThreadId
+    self.originalRequest = originalRequest
+    self.status = status
+    self.createdAtMillis = createdAtMillis
+    self.completedAtMillis = completedAtMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case runId = "run_id"
+    case conversationId = "conversation_id"
+    case taskThreadId = "task_thread_id"
+    case originalRequest = "original_request"
+    case status
+    case createdAtMillis = "created_at_millis"
+    case completedAtMillis = "completed_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      runId: try container.decodeIfPresent(String.self, forKey: .runId) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      taskThreadId: try container.decodeIfPresent(String.self, forKey: .taskThreadId) ?? "",
+      originalRequest: try container.decodeIfPresent(String.self, forKey: .originalRequest) ?? "",
+      status: try container.decodeIfPresent(AgentRecordedRunStatus.self, forKey: .status) ?? .running,
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
+    )
+  }
+}
+
+struct AgentRunRecoveryRegistration: Codable, Equatable {
+  var agentId: String
+  var location: AgentResourceLocation
+  var connectionKind: AgentConnectionKind
+
+  init(
+    agentId: String,
+    location: AgentResourceLocation,
+    connectionKind: AgentConnectionKind
+  ) {
+    self.agentId = agentId
+    self.location = location
+    self.connectionKind = connectionKind
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case location
+    case connectionKind = "connection_kind"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      agentId: try container.decodeIfPresent(String.self, forKey: .agentId) ?? "",
+      location: try container.decodeIfPresent(AgentResourceLocation.self, forKey: .location) ?? .cloud,
+      connectionKind: try container.decodeIfPresent(AgentConnectionKind.self, forKey: .connectionKind) ?? .http
+    )
+  }
+}
+
+enum AgentRunRecoveryDisposition: String, Codable, CaseIterable, Identifiable {
+  case restoreLocalWait = "RESTORE_LOCAL_WAIT"
+  case reconnectDurableRemote = "RECONNECT_DURABLE_REMOTE"
+  case failNonReplayable = "FAIL_NON_REPLAYABLE"
+  case ignoreTerminal = "IGNORE_TERMINAL"
+
+  var id: String { rawValue }
+}
+
+struct AgentRunRecoveryDecision: Codable, Equatable {
+  var disposition: AgentRunRecoveryDisposition
+  var reason: String
+}
+
+enum AgentRunEventStore {
+  static func reduce(
+    current: AgentRunControlState,
+    event: AgentRunControlEventType
+  ) -> AgentRunControlState {
+    let next: AgentRunControlState
+    switch event {
+    case .runCreated:
+      next = .created
+    case .runQueued:
+      next = .queued
+    case .runStarted,
+         .planning,
+         .thinking,
+         .agentConnected,
+         .stepStarted,
+         .toolStarted,
+         .toolProgress,
+         .toolCompleted,
+         .retrying,
+         .handoff,
+         .stepCompleted,
+         .runRecovered:
+      next = .running
+    case .toolPermissionRequired,
+         .waitingForUser:
+      next = .waitingForUser
+    case .permissionRevoked,
+         .paused:
+      next = .paused
+    case .waitingForDevice:
+      next = .waitingForDevice
+    case .runCompleted:
+      next = .completed
+    case .runFailed:
+      next = .failed
+    case .runCancelled:
+      next = .cancelled
+    }
+    if current.isTerminal && event != .runRecovered {
+      return current
+    }
+    return next
+  }
+
+  static func recoverableRuns(_ snapshots: [AgentRunControlSnapshot]) -> [AgentRunControlSnapshot] {
+    snapshots.filter { !$0.state.isTerminal }
+  }
+}
+
+enum AgentRunRecoveryPolicy {
+  static func decide(
+    snapshot: AgentRunControlSnapshot,
+    recordedRun: AgentRecordedRun?,
+    registration: AgentRunRecoveryRegistration?
+  ) -> AgentRunRecoveryDecision {
+    if let recordedRun, recordedRun.status != .running {
+      return AgentRunRecoveryDecision(
+        disposition: .ignoreTerminal,
+        reason: "recorded_run_is_terminal"
+      )
+    }
+    if snapshot.state == .waitingForUser || snapshot.state == .paused {
+      return AgentRunRecoveryDecision(
+        disposition: .restoreLocalWait,
+        reason: "user_resumable_checkpoint"
+      )
+    }
+    if let registration,
+      registration.location == .trustedDesktop,
+      durableRemoteConnectionKinds.contains(registration.connectionKind) {
+      return AgentRunRecoveryDecision(
+        disposition: .reconnectDurableRemote,
+        reason: "durable_remote_run_can_reconnect"
+      )
+    }
+    return AgentRunRecoveryDecision(
+      disposition: .failNonReplayable,
+      reason: "interrupted_run_cannot_be_replayed_safely"
+    )
+  }
+
+  private static let durableRemoteConnectionKinds: Set<AgentConnectionKind> = [
+    .signalasiLink,
+    .websocket,
+    .cliJson,
+    .stdio
+  ]
+}
+
 enum AgentExecutionLoopTimelineLabel: String, Codable, CaseIterable, Identifiable {
   case plan = "PLAN"
   case act = "ACT"
