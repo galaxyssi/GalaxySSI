@@ -172,6 +172,14 @@ cannot accidentally activate the `run` tool-evidence path.
 
 The prompt compiler emits only selected shareable evidence. It separates current, historical, and conflicted facts, adds an explicit unresolved-conflict warning, preserves a strict character budget, and labels all memory as untrusted evidence rather than instructions.
 
+Desktop compiles retrieved evidence into current, planned, user-context, historical, and
+relationship sections. Every value is quoted and prefixed as `DATA`; prompt-like text inside
+memory therefore remains evidence rather than executable instruction. Semantically identical
+entries and graph edges are deduplicated, relationship queries reserve budget for graph
+evidence, and the compiler records the exact memory and relation IDs that fit. Only those
+included memories receive an access-count update. Character limits are hard bounds, omitted
+evidence is counted, and callers are no longer constrained to a fixed recent-message window.
+
 Compiled entries carry bounded evidence counts and opaque memory references. Planned state has its own section, and historical or deprecated facts are excluded unless the query plan explicitly needs history or completed-goal context.
 
 ## Memory Critic
