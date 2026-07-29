@@ -31,6 +31,7 @@ const required = [
   "core/signalasi-link/backend/evolution_v2/manager.py",
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "core/signalasi-link/backend/agent_collaboration_channels.py",
+  "core/signalasi-link/backend/agent_file_access_ledger.py",
   "core/signalasi-link/backend/provider_profiles.py",
   "core/signalasi-link/backend/response_self_check.py",
   "core/signalasi-link/backend/run_timeline.py",
@@ -127,6 +128,7 @@ const backendLinkDelivery = fs.readFileSync(path.join(backendDir, "link_delivery
 const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_client.py"), "utf8");
 const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_reputation_ledger.py"), "utf8");
 const backendAgentCollaboration = fs.readFileSync(path.join(backendDir, "agent_collaboration_channels.py"), "utf8");
+const backendAgentFileAccess = fs.readFileSync(path.join(backendDir, "agent_file_access_ledger.py"), "utf8");
 const backendProviderProfiles = fs.readFileSync(path.join(backendDir, "provider_profiles.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
 const backendTaskManager = fs.readFileSync(path.join(backendDir, "agent_task_manager.py"), "utf8");
@@ -751,6 +753,21 @@ for (const collaborationContract of [
 ]) {
   if (!collaborationContract[0].includes(collaborationContract[1])) {
     throw new Error(`Desktop Agent collaboration contract is incomplete: ${collaborationContract[1]}`);
+  }
+}
+
+for (const fileAccessContract of [
+  [backendAgentFileAccess, "class AgentFileAccessLedger"],
+  [backendAgentFileAccess, "read_sets"],
+  [backendAgentFileAccess, "write_sets"],
+  [backendAgentFileAccess, "conflict_notifications"],
+  [backendDesktopNativeTools, "_record_exact_file_access"],
+  [backendGateway, "file_conflict_context"],
+  [backendMain, "/api/agent-runtime/file-access"],
+  [backendMain, "/api/agent-runtime/file-conflicts"]
+]) {
+  if (!fileAccessContract[0].includes(fileAccessContract[1])) {
+    throw new Error(`Desktop Agent file access contract is incomplete: ${fileAccessContract[1]}`);
   }
 }
 

@@ -16,6 +16,14 @@ The connector matrix tracks readiness, local proof, mobile delivery, and the nex
 
 Protocol: SignalASI Link Protocol v1.0.3
 
+## Collaborative File Safety
+
+Desktop records task-scoped Agent read sets and write sets. A write that changes
+a file observed by another Agent creates a durable conflict notice. The affected
+Agent receives bounded, untrusted conflict context and must refresh the file
+before continuing. Route, conversation, task, repository, and workspace scopes
+remain isolated, and only relative file paths are persisted.
+
 ## Checks
 
 ```bash
