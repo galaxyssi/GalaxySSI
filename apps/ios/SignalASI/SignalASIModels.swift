@@ -13297,6 +13297,12 @@ enum AgentPhoneNativeToolCatalog {
     definitions(capabilityStatuses: capabilityStatuses).map(\.descriptor)
   }
 
+  static func workspaceExecutableDefinitions(
+    store: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor()
+  ) -> [AgentNativeToolExecutableDefinition] {
+    workspaceDefinitions().map(store.executableDefinition)
+  }
+
   static func actionExecutableDefinitions(
     delegate: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
@@ -13584,51 +13590,220 @@ enum AgentPhoneNativeToolCatalog {
       "workspace_id": .object(stringSchema(minLength: 1, maxLength: 64))
     ]
     var required: [String] = ["workspace_id"]
+    if id == workspaceInitialize {
+      return objectSchema(properties: properties, required: required)
+    }
+    if id == workspaceList {
+      properties["path"] = .object(stringSchema(maxLength: 1_024))
+      properties["recursive"] = .object(boolSchema())
+      properties["max_entries"] = .object(integerSchema(minimum: 1))
+      return objectSchema(properties: properties, required: required)
+    }
+    if [workspaceMove, workspaceCopy].contains(id) {
+      properties["source_path"] = .object(stringSchema(maxLength: 1_024))
+      properties["destination_path"] = .object(stringSchema(maxLength: 1_024))
+      properties["overwrite"] = .object(boolSchema())
+      properties["create_parents"] = .object(boolSchema())
+      return objectSchema(properties: properties, required: ["workspace_id", "source_path", "destination_path"])
+    }
+    if id == workspaceZipCreate {
+      properties["archive_path"] = .object(stringSchema(maxLength: 1_024))
+      properties["source_paths"] = .object(arraySchema(items: stringSchema(maxLength: 1_024), minItems: 1, maxItems: 2_048))
+      properties["overwrite"] = .object(boolSchema())
+      properties["create_parents"] = .object(boolSchema())
+      return objectSchema(properties: properties, required: ["workspace_id", "archive_path", "source_paths"])
+    }
+    if id == workspaceZipList {
+      properties["archive_path"] = .object(stringSchema(maxLength: 1_024))
+      return objectSchema(properties: properties, required: ["workspace_id", "archive_path"])
+    }
+    if id == workspaceZipExtract {
+      properties["archive_path"] = .object(stringSchema(maxLength: 1_024))
+      properties["destination_path"] = .object(stringSchema(maxLength: 1_024))
+      properties["overwrite"] = .object(boolSchema())
+      return objectSchema(properties: properties, required: ["workspace_id", "archive_path", "destination_path"])
+    }
     if id != workspaceInitialize {
       properties["path"] = .object(stringSchema(maxLength: 1_024))
       required.append("path")
+    }
+    if [workspaceMkdir, workspaceDelete].contains(id) {
+      properties["recursive"] = .object(boolSchema())
+    }
+    if [workspaceReadText, workspaceReadBytes].contains(id) {
+      properties["max_bytes"] = .object(integerSchema(minimum: 1))
     }
     if [workspaceWriteText, workspaceCreateText, workspaceAppendText].contains(id) {
       properties["text"] = .object(stringSchema(maxLength: 1_048_576))
       required.append("text")
     }
+    if [workspaceWriteText, workspaceCreateText].contains(id) {
+      properties["create_parents"] = .object(boolSchema())
+    }
     if [workspaceWriteBytes, workspaceCreateBytes, workspaceAppendBytes].contains(id) {
       properties["base64"] = .object(stringSchema(maxLength: 22_369_624))
       required.append("base64")
     }
-    if [workspaceMove, workspaceCopy].contains(id) {
-      properties.removeValue(forKey: "path")
-      properties["source_path"] = .object(stringSchema(maxLength: 1_024))
-      properties["destination_path"] = .object(stringSchema(maxLength: 1_024))
-      required = ["workspace_id", "source_path", "destination_path"]
+    if [workspaceWriteBytes, workspaceCreateBytes].contains(id) {
+      properties["create_parents"] = .object(boolSchema())
     }
     if id == workspaceSearchText {
       properties["query"] = .object(stringSchema(minLength: 1, maxLength: 4_096))
+      properties["case_sensitive"] = .object(boolSchema())
+      properties["max_results"] = .object(integerSchema(minimum: 1))
       required.append("query")
+    }
+    if id == workspaceApplyExactPatch {
+      properties["expected_text"] = .object(stringSchema(minLength: 1, maxLength: 1_048_576))
+      properties["replacement_text"] = .object(stringSchema(maxLength: 1_048_576))
+      properties["expected_occurrences"] = .object(integerSchema(minimum: 1))
+      required.append(contentsOf: ["expected_text", "replacement_text"])
+    }
+    if id == workspaceDiffSummary {
+      properties["proposed_text"] = .object(stringSchema(maxLength: 1_048_576))
+      required.append("proposed_text")
     }
     return objectSchema(properties: properties, required: required)
   }
 
   private static func workspaceOutputSchema(_ id: String) -> AgentMcpJSONObject {
+    if id == workspaceList {
+      return directoryListingSchema()
+    }
+    if id == workspaceStat {
+      return workspaceMetadataSchema()
+    }
     if id == workspaceReadText {
-      return objectSchema(properties: [
-        "path": .object(stringSchema(maxLength: 4_096)),
-        "text": .object(stringSchema(maxLength: 1_048_576)),
-        "sha256": .object(stringSchema(minLength: 64, maxLength: 64))
-      ], required: ["path", "text", "sha256"])
+      return textReadSchema()
     }
     if id == workspaceReadBytes {
-      return objectSchema(properties: [
-        "path": .object(stringSchema(maxLength: 4_096)),
-        "base64": .object(stringSchema(maxLength: 11_184_812)),
-        "sha256": .object(stringSchema(minLength: 64, maxLength: 64))
-      ], required: ["path", "base64", "sha256"])
+      return bytesReadSchema()
     }
-    return objectSchema(properties: [
+    if id == workspaceSearchText {
+      return searchResultSchema()
+    }
+    if id == workspaceApplyExactPatch {
+      return patchResultSchema()
+    }
+    if id == workspaceDiffSummary {
+      return diffSummarySchema()
+    }
+    if id == workspaceSha256 {
+      return digestSchema()
+    }
+    if [workspaceZipCreate, workspaceZipList].contains(id) {
+      return zipListingSchema()
+    }
+    if id == workspaceZipExtract {
+      return zipExtractionSchema()
+    }
+    return mutationSchema()
+  }
+
+  private static func workspaceMetadataSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
       "path": .object(stringSchema(maxLength: 4_096)),
+      "type": .object(enumStringSchema(["file", "directory"])),
+      "size_bytes": .object(integerSchema(minimum: 0)),
+      "last_modified_epoch_ms": .object(integerSchema(minimum: 0))
+    ], required: ["path", "type", "size_bytes", "last_modified_epoch_ms"])
+  }
+
+  private static func mutationSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
       "kind": .object(stringSchema(maxLength: 64)),
-      "affected_entries": .object(integerSchema(minimum: 0))
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "source_path": .object(stringSchema(maxLength: 4_096)),
+      "affected_entries": .object(integerSchema(minimum: 0)),
+      "affected_bytes": .object(integerSchema(minimum: 0)),
+      "metadata": .object(workspaceMetadataSchema())
+    ], required: ["kind", "path", "source_path", "affected_entries", "affected_bytes"])
+  }
+
+  private static func directoryListingSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "recursive": .object(boolSchema()),
+      "entries": .object(arraySchema(items: workspaceMetadataSchema(), maxItems: 10_000))
+    ], required: ["path", "recursive", "entries"])
+  }
+
+  private static func textReadSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "text": .object(stringSchema(maxLength: 1_048_576)),
+      "size_bytes": .object(integerSchema(minimum: 0)),
+      "sha256": .object(stringSchema(minLength: 64, maxLength: 64))
+    ], required: ["path", "text", "size_bytes", "sha256"])
+  }
+
+  private static func bytesReadSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "base64": .object(stringSchema(maxLength: 11_184_812)),
+      "metadata": .object(workspaceMetadataSchema()),
+      "sha256": .object(stringSchema(minLength: 64, maxLength: 64))
+    ], required: ["path", "base64", "metadata", "sha256"])
+  }
+
+  private static func searchResultSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "query": .object(stringSchema(maxLength: 4_096)),
+      "matches": .object(arraySchema(items: objectSchema(properties: [
+        "path": .object(stringSchema(maxLength: 4_096)),
+        "line": .object(integerSchema(minimum: 1)),
+        "column": .object(integerSchema(minimum: 1)),
+        "excerpt": .object(stringSchema(maxLength: 512))
+      ], required: ["path", "line", "column", "excerpt"]), maxItems: 500)),
+      "scanned_files": .object(integerSchema(minimum: 0)),
+      "skipped_files": .object(integerSchema(minimum: 0)),
+      "scanned_bytes": .object(integerSchema(minimum: 0)),
+      "truncated": .object(boolSchema())
+    ], required: ["query", "matches", "scanned_files", "skipped_files", "scanned_bytes", "truncated"])
+  }
+
+  private static func diffSummarySchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "before_sha256": .object(stringSchema(minLength: 64, maxLength: 64)),
+      "after_sha256": .object(stringSchema(minLength: 64, maxLength: 64)),
+      "before_bytes": .object(integerSchema(minimum: 0)),
+      "after_bytes": .object(integerSchema(minimum: 0)),
+      "before_lines": .object(integerSchema(minimum: 0)),
+      "after_lines": .object(integerSchema(minimum: 0)),
+      "added_lines": .object(integerSchema(minimum: 0)),
+      "deleted_lines": .object(integerSchema(minimum: 0)),
+      "changed_line_pairs": .object(integerSchema(minimum: 0)),
+      "first_changed_line": .object(integerSchema(minimum: 1))
+    ], required: [
+      "before_sha256", "after_sha256", "before_bytes", "after_bytes",
+      "before_lines", "after_lines", "added_lines", "deleted_lines", "changed_line_pairs"
     ])
+  }
+
+  private static func patchResultSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "replacements": .object(integerSchema(minimum: 1)),
+      "diff": .object(diffSummarySchema()),
+      "metadata": .object(workspaceMetadataSchema())
+    ], required: ["path", "replacements", "diff", "metadata"])
+  }
+
+  private static func digestSchema() -> AgentMcpJSONObject {
+    objectSchema(properties: [
+      "path": .object(stringSchema(maxLength: 4_096)),
+      "algorithm": .object(enumStringSchema(["SHA-256"])),
+      "hex": .object(stringSchema(minLength: 64, maxLength: 64)),
+      "size_bytes": .object(integerSchema(minimum: 0))
+    ], required: ["path", "algorithm", "hex", "size_bytes"])
+  }
+
+  private static func zipListingSchema() -> AgentMcpJSONObject {
+    objectSchema(additionalProperties: true)
+  }
+
+  private static func zipExtractionSchema() -> AgentMcpJSONObject {
+    objectSchema(additionalProperties: true)
   }
 
   private static func actionInputSchema(_ kind: AgentActionKind) -> AgentMcpJSONObject {
@@ -13684,6 +13859,30 @@ enum AgentPhoneNativeToolCatalog {
   private static func integerSchema(minimum: Int64? = nil) -> AgentMcpJSONObject {
     var schema: AgentMcpJSONObject = ["type": .string("integer")]
     if let minimum { schema["minimum"] = .int(minimum) }
+    return schema
+  }
+
+  private static func boolSchema() -> AgentMcpJSONObject {
+    ["type": .string("boolean")]
+  }
+
+  private static func enumStringSchema(_ values: [String]) -> AgentMcpJSONObject {
+    var schema = stringSchema()
+    schema["enum"] = .array(values.map(AgentMcpJSONValue.string))
+    return schema
+  }
+
+  private static func arraySchema(
+    items: AgentMcpJSONObject,
+    minItems: Int64? = nil,
+    maxItems: Int64? = nil
+  ) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = [
+      "type": .string("array"),
+      "items": .object(items)
+    ]
+    if let minItems { schema["minItems"] = .int(minItems) }
+    if let maxItems { schema["maxItems"] = .int(maxItems) }
     return schema
   }
 
@@ -19316,6 +19515,741 @@ enum AgentWorkspacePatchPolicy {
   }
 
   private static func sha256Hex(_ data: Data) -> String {
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+  }
+}
+
+final class AgentWorkspaceNativeToolExecutor {
+  private struct Entry: Equatable {
+    var type: AgentWorkspaceEntryType
+    var data: Data
+    var modifiedAtMillis: Int64
+  }
+
+  private var workspaces: [String: [String: Entry]] = [:]
+  private let policy: AgentWorkspaceFilePolicy
+  private let nowMillis: () -> Int64
+
+  init(
+    policy: AgentWorkspaceFilePolicy = AgentWorkspaceFilePolicy(),
+    nowMillis: @escaping () -> Int64 = {
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    }
+  ) {
+    self.policy = policy
+    self.nowMillis = nowMillis
+  }
+
+  func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
+    AgentNativeToolExecutableDefinition(
+      definition: definition,
+      executor: { invocation in
+        try invocation.checkpoint()
+        let result = self.execute(toolId: invocation.descriptor.id, input: invocation.input)
+        try invocation.checkpoint()
+        return result
+      }
+    )
+  }
+
+  private func execute(toolId: String, input: AgentMcpJSONObject) -> AgentNativeToolExecutionResult {
+    switch run(toolId: toolId, input: input) {
+    case .success(let output):
+      return .success(output: output)
+    case .failure(let error):
+      return AgentNativeToolExecutionResult.failure(
+        code: "workspace_file_error",
+        message: error.message,
+        details: ["workspace_error": .object(errorObject(error))]
+      )
+    }
+  }
+
+  private func run(toolId: String, input: AgentMcpJSONObject) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    let workspaceId = canonicalWorkspaceId(string(input, "workspace_id")) ?? string(input, "workspace_id")
+    switch toolId {
+    case AgentPhoneNativeToolCatalog.workspaceInitialize:
+      return initialize(workspaceId)
+    case AgentPhoneNativeToolCatalog.workspaceMkdir:
+      return mkdir(workspaceId, string(input, "path"), recursive: bool(input, "recursive", true))
+    case AgentPhoneNativeToolCatalog.workspaceList:
+      return list(
+        workspaceId,
+        string(input, "path", ""),
+        recursive: bool(input, "recursive", false),
+        maxEntries: int(input, "max_entries", policy.maxListEntries)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceStat:
+      return stat(workspaceId, string(input, "path"))
+    case AgentPhoneNativeToolCatalog.workspaceReadText:
+      return readText(workspaceId, string(input, "path"), maxBytes: int64(input, "max_bytes", policy.maxTextReadBytes))
+    case AgentPhoneNativeToolCatalog.workspaceReadBytes:
+      return readBytes(workspaceId, string(input, "path"), maxBytes: int64(input, "max_bytes", policy.maxBytesReadBytes))
+    case AgentPhoneNativeToolCatalog.workspaceWriteText:
+      return writeData(
+        workspaceId,
+        string(input, "path"),
+        Data(string(input, "text").utf8),
+        kind: .write,
+        overwrite: true,
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceCreateText:
+      return writeData(
+        workspaceId,
+        string(input, "path"),
+        Data(string(input, "text").utf8),
+        kind: .create,
+        overwrite: false,
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceAppendText:
+      return appendData(workspaceId, string(input, "path"), Data(string(input, "text").utf8))
+    case AgentPhoneNativeToolCatalog.workspaceWriteBytes:
+      return writeData(
+        workspaceId,
+        string(input, "path"),
+        decodedBase64(input),
+        kind: .write,
+        overwrite: true,
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceCreateBytes:
+      return writeData(
+        workspaceId,
+        string(input, "path"),
+        decodedBase64(input),
+        kind: .create,
+        overwrite: false,
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceAppendBytes:
+      return appendData(workspaceId, string(input, "path"), decodedBase64(input))
+    case AgentPhoneNativeToolCatalog.workspaceMove:
+      return moveOrCopy(
+        workspaceId,
+        sourcePath: string(input, "source_path"),
+        destinationPath: string(input, "destination_path"),
+        kind: .move,
+        overwrite: bool(input, "overwrite", false),
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceCopy:
+      return moveOrCopy(
+        workspaceId,
+        sourcePath: string(input, "source_path"),
+        destinationPath: string(input, "destination_path"),
+        kind: .copy,
+        overwrite: bool(input, "overwrite", false),
+        createParents: bool(input, "create_parents", false)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceDelete:
+      return delete(workspaceId, string(input, "path"), recursive: bool(input, "recursive", false))
+    case AgentPhoneNativeToolCatalog.workspaceSearchText:
+      return searchText(
+        workspaceId,
+        string(input, "path"),
+        query: string(input, "query"),
+        caseSensitive: bool(input, "case_sensitive", false),
+        maxResults: int(input, "max_results", policy.maxSearchResults)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceApplyExactPatch:
+      return applyExactPatch(
+        workspaceId,
+        string(input, "path"),
+        expected: string(input, "expected_text"),
+        replacement: string(input, "replacement_text"),
+        expectedOccurrences: int(input, "expected_occurrences", 1)
+      )
+    case AgentPhoneNativeToolCatalog.workspaceDiffSummary:
+      return diffSummary(workspaceId, string(input, "path"), proposedText: string(input, "proposed_text"))
+    case AgentPhoneNativeToolCatalog.workspaceSha256:
+      return sha256(workspaceId, string(input, "path"))
+    default:
+      return failure(.unsupportedFileType, "execute", toolId, "Workspace tool is not implemented on iOS yet")
+    }
+  }
+
+  private func initialize(_ workspaceId: String) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard case .success(let cleanId) = AgentWorkspaceFilePathPolicy.workspaceDirectoryName(workspaceId) else {
+      return failure(.invalidWorkspace, "initialize", workspaceId, "Workspace ID is invalid")
+    }
+    let existed = workspaces[cleanId] != nil
+    if !existed {
+      workspaces[cleanId] = ["": Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())]
+    }
+    return .success(mutationObject(
+      kind: .initialize,
+      path: "",
+      affectedEntries: existed ? 0 : 1,
+      metadata: metadata(workspaceId: cleanId, path: "")
+    ))
+  }
+
+  private func mkdir(
+    _ workspaceId: String,
+    _ path: String,
+    recursive: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: "mkdir") else {
+      return failure(.invalidWorkspace, "mkdir", workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: "mkdir", allowRoot: true) else {
+      return failure(.pathEscape, "mkdir", path, "Workspace path escaped the workspace")
+    }
+    let segments = pathSegments(normalized)
+    var affected = 0
+    var cursor = ""
+    for segment in segments {
+      cursor = cursor.isEmpty ? segment : "\(cursor)/\(segment)"
+      if let existing = workspace[cursor] {
+        guard existing.type == .directory else {
+          return failure(.notADirectory, "mkdir", cursor, "Workspace entry is not a directory")
+        }
+      } else {
+        if !recursive && cursor != normalized {
+          return failure(.notFound, "mkdir", parentPath(normalized), "Parent directory does not exist")
+        }
+        workspace[cursor] = Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())
+        affected += 1
+      }
+    }
+    workspaces[cleanWorkspaceId] = workspace
+    return .success(mutationObject(
+      kind: .mkdir,
+      path: normalized,
+      affectedEntries: affected,
+      metadata: metadata(workspaceId: cleanWorkspaceId, path: normalized)
+    ))
+  }
+
+  private func list(
+    _ workspaceId: String,
+    _ path: String,
+    recursive: Bool,
+    maxEntries: Int
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          let workspace = workspace(cleanWorkspaceId, operation: "list") else {
+      return failure(.invalidWorkspace, "list", workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: "list", allowRoot: true) else {
+      return failure(.pathEscape, "list", path, "Workspace path escaped the workspace")
+    }
+    guard workspace[normalized] != nil else {
+      return failure(.notFound, "list", normalized, "Workspace entry was not found")
+    }
+    guard workspace[normalized]?.type == .directory else {
+      return failure(.notADirectory, "list", normalized, "Workspace entry is not a directory")
+    }
+    let limited = max(1, min(maxEntries, policy.maxListEntries))
+    let prefix = normalized.isEmpty ? "" : "\(normalized)/"
+    let entries = workspace.keys
+      .filter { !$0.isEmpty && $0.hasPrefix(prefix) }
+      .filter { recursive || parentPath($0) == normalized }
+      .sorted()
+      .prefix(limited)
+      .compactMap { metadataObject(metadata(workspaceId: cleanWorkspaceId, path: $0)) }
+    return .success([
+      "path": .string(normalized),
+      "recursive": .bool(recursive),
+      "entries": .array(entries.map { .object($0) })
+    ])
+  }
+
+  private func stat(_ workspaceId: String, _ path: String) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          workspace(cleanWorkspaceId, operation: "stat") != nil else {
+      return failure(.invalidWorkspace, "stat", workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: "stat", allowRoot: true) else {
+      return failure(.pathEscape, "stat", path, "Workspace path escaped the workspace")
+    }
+    guard let value = metadata(workspaceId: cleanWorkspaceId, path: normalized) else {
+      return failure(.notFound, "stat", normalized, "Workspace entry was not found")
+    }
+    return .success(metadataObject(value))
+  }
+
+  private func readText(
+    _ workspaceId: String,
+    _ path: String,
+    maxBytes: Int64
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let read = readFile(workspaceId, path, operation: "read_text", maxBytes: min(maxBytes, policy.maxTextReadBytes)) else {
+      return failure(.notFound, "read_text", path, "Workspace file was not found")
+    }
+    guard let text = String(data: read.data, encoding: .utf8) else {
+      return failure(.invalidText, "read_text", read.path, "Workspace file is not valid UTF-8")
+    }
+    return .success([
+      "path": .string(read.path),
+      "text": .string(text),
+      "size_bytes": .int(Int64(read.data.count)),
+      "sha256": .string(sha256Hex(read.data))
+    ])
+  }
+
+  private func readBytes(
+    _ workspaceId: String,
+    _ path: String,
+    maxBytes: Int64
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let read = readFile(workspaceId, path, operation: "read_bytes", maxBytes: min(maxBytes, policy.maxBytesReadBytes)) else {
+      return failure(.notFound, "read_bytes", path, "Workspace file was not found")
+    }
+    return .success([
+      "path": .string(read.path),
+      "base64": .string(read.data.base64EncodedString()),
+      "metadata": .object(metadataObject(read.metadata)),
+      "sha256": .string(sha256Hex(read.data))
+    ])
+  }
+
+  private func writeData(
+    _ workspaceId: String,
+    _ path: String,
+    _ data: Data,
+    kind: AgentWorkspaceMutationKind,
+    overwrite: Bool,
+    createParents: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard Int64(data.count) <= policy.maxWriteBytes else {
+      return failure(.limitExceeded, kind.rawValue.lowercased(), path, "Workspace write exceeds the configured limit")
+    }
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: kind.rawValue.lowercased()) else {
+      return failure(.invalidWorkspace, kind.rawValue.lowercased(), workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: kind.rawValue.lowercased(), allowRoot: false) else {
+      return failure(.pathEscape, kind.rawValue.lowercased(), path, "Workspace path escaped the workspace")
+    }
+    if !ensureParent(&workspace, path: normalized, createParents: createParents) {
+      return failure(.notFound, kind.rawValue.lowercased(), parentPath(normalized), "Parent directory does not exist")
+    }
+    if let existing = workspace[normalized], existing.type == .directory {
+      return failure(.notAFile, kind.rawValue.lowercased(), normalized, "Workspace entry is not a file")
+    }
+    if !overwrite && workspace[normalized] != nil {
+      return failure(.alreadyExists, kind.rawValue.lowercased(), normalized, "Workspace file already exists")
+    }
+    workspace[normalized] = Entry(type: .file, data: data, modifiedAtMillis: nowMillis())
+    workspaces[cleanWorkspaceId] = workspace
+    return .success(mutationObject(
+      kind: kind,
+      path: normalized,
+      affectedEntries: 1,
+      affectedBytes: Int64(data.count),
+      metadata: metadata(workspaceId: cleanWorkspaceId, path: normalized)
+    ))
+  }
+
+  private func appendData(
+    _ workspaceId: String,
+    _ path: String,
+    _ data: Data
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard Int64(data.count) <= policy.maxWriteBytes else {
+      return failure(.limitExceeded, "append", path, "Workspace append exceeds the configured limit")
+    }
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: "append") else {
+      return failure(.invalidWorkspace, "append", workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: "append", allowRoot: false) else {
+      return failure(.pathEscape, "append", path, "Workspace path escaped the workspace")
+    }
+    guard var existing = workspace[normalized] else {
+      return failure(.notFound, "append", normalized, "Workspace file was not found")
+    }
+    guard existing.type == .file else {
+      return failure(.notAFile, "append", normalized, "Workspace entry is not a file")
+    }
+    existing.data.append(data)
+    existing.modifiedAtMillis = nowMillis()
+    workspace[normalized] = existing
+    workspaces[cleanWorkspaceId] = workspace
+    return .success(mutationObject(
+      kind: .append,
+      path: normalized,
+      affectedEntries: 1,
+      affectedBytes: Int64(data.count),
+      metadata: metadata(workspaceId: cleanWorkspaceId, path: normalized)
+    ))
+  }
+
+  private func moveOrCopy(
+    _ workspaceId: String,
+    sourcePath: String,
+    destinationPath: String,
+    kind: AgentWorkspaceMutationKind,
+    overwrite: Bool,
+    createParents: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: kind.rawValue.lowercased()) else {
+      return failure(.invalidWorkspace, kind.rawValue.lowercased(), workspaceId, "Workspace ID is invalid")
+    }
+    guard let source = normalizedPath(sourcePath, operation: kind.rawValue.lowercased(), allowRoot: false),
+          let destination = normalizedPath(destinationPath, operation: kind.rawValue.lowercased(), allowRoot: false) else {
+      return failure(.pathEscape, kind.rawValue.lowercased(), sourcePath, "Workspace path escaped the workspace")
+    }
+    guard workspace[source] != nil else {
+      return failure(.notFound, kind.rawValue.lowercased(), source, "Workspace source entry was not found")
+    }
+    if !ensureParent(&workspace, path: destination, createParents: createParents) {
+      return failure(.notFound, kind.rawValue.lowercased(), parentPath(destination), "Parent directory does not exist")
+    }
+    if workspace[destination] != nil && !overwrite {
+      return failure(.alreadyExists, kind.rawValue.lowercased(), destination, "Destination already exists")
+    }
+    let affectedPaths = subtreePaths(in: workspace, root: source)
+    var affectedBytes: Int64 = 0
+    for oldPath in affectedPaths {
+      guard let entry = workspace[oldPath] else { continue }
+      let suffix = oldPath == source ? "" : String(oldPath.dropFirst(source.count + 1))
+      let newPath = suffix.isEmpty ? destination : "\(destination)/\(suffix)"
+      var next = entry
+      next.modifiedAtMillis = nowMillis()
+      workspace[newPath] = next
+      if entry.type == .file {
+        affectedBytes += Int64(entry.data.count)
+      }
+    }
+    if kind == .move {
+      for oldPath in affectedPaths.sorted(by: { $0.count > $1.count }) {
+        workspace.removeValue(forKey: oldPath)
+      }
+    }
+    workspaces[cleanWorkspaceId] = workspace
+    return .success(mutationObject(
+      kind: kind,
+      path: destination,
+      sourcePath: source,
+      affectedEntries: affectedPaths.count,
+      affectedBytes: affectedBytes,
+      metadata: metadata(workspaceId: cleanWorkspaceId, path: destination)
+    ))
+  }
+
+  private func delete(
+    _ workspaceId: String,
+    _ path: String,
+    recursive: Bool
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          var workspace = workspace(cleanWorkspaceId, operation: "delete") else {
+      return failure(.invalidWorkspace, "delete", workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: "delete", allowRoot: false) else {
+      return failure(.pathEscape, "delete", path, "Workspace path escaped the workspace")
+    }
+    guard workspace[normalized] != nil else {
+      return failure(.notFound, "delete", normalized, "Workspace entry was not found")
+    }
+    let paths = subtreePaths(in: workspace, root: normalized)
+    if paths.count > 1 && !recursive {
+      return failure(.directoryNotEmpty, "delete", normalized, "Directory is not empty")
+    }
+    var bytes: Int64 = 0
+    for item in paths {
+      if workspace[item]?.type == .file {
+        bytes += Int64(workspace[item]?.data.count ?? 0)
+      }
+      workspace.removeValue(forKey: item)
+    }
+    workspaces[cleanWorkspaceId] = workspace
+    return .success(mutationObject(kind: .delete, path: normalized, affectedEntries: paths.count, affectedBytes: bytes))
+  }
+
+  private func searchText(
+    _ workspaceId: String,
+    _ path: String,
+    query: String,
+    caseSensitive: Bool,
+    maxResults: Int
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let cleanWorkspaceId = canonicalWorkspaceId(workspaceId),
+          let workspace = workspace(cleanWorkspaceId, operation: "search_text") else {
+      return failure(.invalidWorkspace, "search_text", workspaceId, "Workspace ID is invalid")
+    }
+    guard let normalized = normalizedPath(path, operation: "search_text", allowRoot: true) else {
+      return failure(.pathEscape, "search_text", path, "Workspace path escaped the workspace")
+    }
+    guard workspace[normalized] != nil else {
+      return failure(.notFound, "search_text", normalized, "Workspace entry was not found")
+    }
+    let candidates = subtreePaths(in: workspace, root: normalized).filter { workspace[$0]?.type == .file }.sorted()
+    let needle = caseSensitive ? query : query.lowercased()
+    var matches: [AgentMcpJSONValue] = []
+    var scannedFiles = 0
+    var skippedFiles = 0
+    var scannedBytes: Int64 = 0
+    let cap = max(1, min(maxResults, policy.maxSearchResults))
+    for candidate in candidates {
+      guard let entry = workspace[candidate] else { continue }
+      if Int64(entry.data.count) > policy.maxSearchFileBytes {
+        skippedFiles += 1
+        continue
+      }
+      guard let text = String(data: entry.data, encoding: .utf8) else {
+        skippedFiles += 1
+        continue
+      }
+      scannedFiles += 1
+      scannedBytes += Int64(entry.data.count)
+      let lines = text.components(separatedBy: "\n")
+      for (lineIndex, line) in lines.enumerated() {
+        let haystack = caseSensitive ? line : line.lowercased()
+        if let range = haystack.range(of: needle), matches.count < cap {
+          matches.append(.object([
+            "path": .string(candidate),
+            "line": .int(Int64(lineIndex + 1)),
+            "column": .int(Int64(haystack.distance(from: haystack.startIndex, to: range.lowerBound) + 1)),
+            "excerpt": .string(String(line.prefix(512)))
+          ]))
+        }
+      }
+    }
+    return .success([
+      "query": .string(query),
+      "matches": .array(matches),
+      "scanned_files": .int(Int64(scannedFiles)),
+      "skipped_files": .int(Int64(skippedFiles)),
+      "scanned_bytes": .int(scannedBytes),
+      "truncated": .bool(matches.count >= cap)
+    ])
+  }
+
+  private func applyExactPatch(
+    _ workspaceId: String,
+    _ path: String,
+    expected: String,
+    replacement: String,
+    expectedOccurrences: Int
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    let read = readText(workspaceId, path, maxBytes: policy.maxPatchBytes)
+    guard case .success(let object) = read, let current = object["text"]?.strictStringValue else {
+      return read
+    }
+    let occurrences = AgentWorkspacePatchPolicy.countOccurrences(text: current, expected: expected)
+    guard occurrences == expectedOccurrences else {
+      return failure(.patchMismatch, "patch_exact", path, "Expected \(expectedOccurrences) occurrence(s), found \(occurrences)")
+    }
+    let updated = AgentWorkspacePatchPolicy.replaceOccurrences(text: current, expected: expected, replacement: replacement)
+    guard case .success = writeData(workspaceId, path, Data(updated.utf8), kind: .write, overwrite: true, createParents: false) else {
+      return failure(.ioError, "patch_exact", path, "Unable to write patched text")
+    }
+    let normalized = AgentWorkspaceFilePathPolicy.displayPath(path)
+    let diff = AgentWorkspacePatchPolicy.summarizeDiff(before: current, after: updated)
+    return .success([
+      "path": .string(normalized),
+      "replacements": .int(Int64(occurrences)),
+      "diff": .object(diffObject(diff)),
+      "metadata": .object(metadataObject(metadata(workspaceId: workspaceId, path: normalized)))
+    ])
+  }
+
+  private func diffSummary(
+    _ workspaceId: String,
+    _ path: String,
+    proposedText: String
+  ) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    let read = readText(workspaceId, path, maxBytes: policy.maxPatchBytes)
+    guard case .success(let object) = read, let current = object["text"]?.strictStringValue else {
+      return read
+    }
+    return .success(diffObject(AgentWorkspacePatchPolicy.summarizeDiff(before: current, after: proposedText)))
+  }
+
+  private func sha256(_ workspaceId: String, _ path: String) -> AgentWorkspaceFileResult<AgentMcpJSONObject> {
+    guard let read = readFile(workspaceId, path, operation: "sha256", maxBytes: policy.maxHashBytes) else {
+      return failure(.notFound, "sha256", path, "Workspace file was not found")
+    }
+    return .success([
+      "path": .string(read.path),
+      "algorithm": .string("SHA-256"),
+      "hex": .string(sha256Hex(read.data)),
+      "size_bytes": .int(Int64(read.data.count))
+    ])
+  }
+
+  private func readFile(
+    _ workspaceId: String,
+    _ path: String,
+    operation: String,
+    maxBytes: Int64
+  ) -> (path: String, data: Data, metadata: AgentWorkspaceFileMetadata)? {
+    guard let workspace = workspace(workspaceId, operation: operation),
+          let normalized = normalizedPath(path, operation: operation, allowRoot: false),
+          let entry = workspace[normalized],
+          entry.type == .file,
+          Int64(entry.data.count) <= maxBytes,
+          let metadata = metadata(workspaceId: workspaceId, path: normalized) else {
+      return nil
+    }
+    return (normalized, entry.data, metadata)
+  }
+
+  private func workspace(_ workspaceId: String, operation: String) -> [String: Entry]? {
+    guard let cleanId = canonicalWorkspaceId(workspaceId) else {
+      return nil
+    }
+    if workspaces[cleanId] == nil {
+      workspaces[cleanId] = ["": Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())]
+    }
+    return workspaces[cleanId]
+  }
+
+  private func canonicalWorkspaceId(_ workspaceId: String) -> String? {
+    guard case .success(let cleanId) = AgentWorkspaceFilePathPolicy.workspaceDirectoryName(workspaceId) else {
+      return nil
+    }
+    return cleanId
+  }
+
+  private func normalizedPath(_ path: String, operation: String, allowRoot: Bool) -> String? {
+    guard case .success(let segments) = AgentWorkspaceFilePathPolicy.normalizeRelativePath(path, allowRoot: allowRoot) else {
+      return nil
+    }
+    return segments.joined(separator: "/")
+  }
+
+  private func ensureParent(_ workspace: inout [String: Entry], path: String, createParents: Bool) -> Bool {
+    let parent = parentPath(path)
+    if workspace[parent]?.type == .directory {
+      return true
+    }
+    guard createParents else {
+      return false
+    }
+    var cursor = ""
+    for segment in pathSegments(parent) {
+      cursor = cursor.isEmpty ? segment : "\(cursor)/\(segment)"
+      if workspace[cursor] == nil {
+        workspace[cursor] = Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())
+      }
+      if workspace[cursor]?.type != .directory {
+        return false
+      }
+    }
+    return true
+  }
+
+  private func metadata(workspaceId: String, path: String) -> AgentWorkspaceFileMetadata? {
+    guard let entry = workspaces[workspaceId]?[path] else { return nil }
+    return AgentWorkspaceFileMetadata(
+      path: path,
+      type: entry.type,
+      sizeBytes: entry.type == .file ? Int64(entry.data.count) : 0,
+      lastModifiedMillis: entry.modifiedAtMillis
+    )
+  }
+
+  private func metadataObject(_ metadata: AgentWorkspaceFileMetadata?) -> AgentMcpJSONObject {
+    guard let metadata else { return [:] }
+    return [
+      "path": .string(metadata.path),
+      "type": .string(metadata.type.rawValue.lowercased()),
+      "size_bytes": .int(metadata.sizeBytes),
+      "last_modified_epoch_ms": .int(metadata.lastModifiedMillis)
+    ]
+  }
+
+  private func mutationObject(
+    kind: AgentWorkspaceMutationKind,
+    path: String,
+    sourcePath: String = "",
+    affectedEntries: Int = 1,
+    affectedBytes: Int64 = 0,
+    metadata: AgentWorkspaceFileMetadata? = nil
+  ) -> AgentMcpJSONObject {
+    var object: AgentMcpJSONObject = [
+      "kind": .string(kind.rawValue.lowercased()),
+      "path": .string(path),
+      "source_path": .string(sourcePath),
+      "affected_entries": .int(Int64(max(0, affectedEntries))),
+      "affected_bytes": .int(max(0, affectedBytes))
+    ]
+    if let metadata {
+      object["metadata"] = .object(metadataObject(metadata))
+    }
+    return object
+  }
+
+  private func diffObject(_ diff: AgentWorkspaceDiffSummary) -> AgentMcpJSONObject {
+    var object: AgentMcpJSONObject = [
+      "before_sha256": .string(diff.beforeSha256),
+      "after_sha256": .string(diff.afterSha256),
+      "before_bytes": .int(diff.beforeBytes),
+      "after_bytes": .int(diff.afterBytes),
+      "before_lines": .int(Int64(diff.beforeLines)),
+      "after_lines": .int(Int64(diff.afterLines)),
+      "added_lines": .int(Int64(diff.addedLines)),
+      "deleted_lines": .int(Int64(diff.deletedLines)),
+      "changed_line_pairs": .int(Int64(diff.changedLinePairs))
+    ]
+    if let line = diff.firstChangedLine {
+      object["first_changed_line"] = .int(Int64(line))
+    }
+    return object
+  }
+
+  private func errorObject(_ error: AgentWorkspaceFileError) -> AgentMcpJSONObject {
+    [
+      "code": .string(error.code.rawValue),
+      "operation": .string(error.operation),
+      "path": .string(error.path),
+      "message": .string(error.message)
+    ]
+  }
+
+  private func subtreePaths(in workspace: [String: Entry], root: String) -> [String] {
+    let prefix = "\(root)/"
+    return workspace.keys.filter { $0 == root || $0.hasPrefix(prefix) }.sorted()
+  }
+
+  private func parentPath(_ path: String) -> String {
+    let segments = pathSegments(path)
+    guard segments.count > 1 else { return "" }
+    return segments.dropLast().joined(separator: "/")
+  }
+
+  private func pathSegments(_ path: String) -> [String] {
+    path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+  }
+
+  private func decodedBase64(_ input: AgentMcpJSONObject) -> Data {
+    Data(base64Encoded: string(input, "base64")) ?? Data()
+  }
+
+  private func string(_ input: AgentMcpJSONObject, _ key: String, _ defaultValue: String? = nil) -> String {
+    input[key]?.strictStringValue ?? defaultValue ?? ""
+  }
+
+  private func bool(_ input: AgentMcpJSONObject, _ key: String, _ defaultValue: Bool) -> Bool {
+    input[key]?.boolValue ?? defaultValue
+  }
+
+  private func int(_ input: AgentMcpJSONObject, _ key: String, _ defaultValue: Int) -> Int {
+    input[key]?.integerForSchema ?? defaultValue
+  }
+
+  private func int64(_ input: AgentMcpJSONObject, _ key: String, _ defaultValue: Int64) -> Int64 {
+    input[key]?.intValue ?? defaultValue
+  }
+
+  private func failure<T: Equatable>(
+    _ code: AgentWorkspaceFileErrorCode,
+    _ operation: String,
+    _ path: String,
+    _ message: String
+  ) -> AgentWorkspaceFileResult<T> {
+    .failure(AgentWorkspaceFileError(code: code, operation: operation, path: path, message: message))
+  }
+
+  private func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
 }
