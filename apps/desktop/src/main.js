@@ -71,6 +71,7 @@ async function runUiSmoke() {
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
   const mcpGovernancePath = path.join(outDir, "desktop-mcp-governance.png");
+  const mcpImportPath = path.join(outDir, "desktop-mcp-import.png");
   const mcpTaskPath = path.join(outDir, "desktop-mcp-task-transparency.png");
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
@@ -451,6 +452,98 @@ async function runUiSmoke() {
       throw new Error(`MCP governance did not render safely: ${JSON.stringify(mcpGovernanceState)}`);
     }
     await captureSmokeScreenshot(mcpGovernancePath);
+    const mcpImportState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        document.querySelector("#mcpEditor").open = false;
+        state.mcpImport = {
+          sources: [
+            { source: "claude", path: "C:/Users/smoke/AppData/Roaming/Claude/claude_desktop_config.json", file_name: "claude_desktop_config.json" },
+            { source: "codex", path: "C:/Users/smoke/.codex/config.toml", file_name: "config.toml" },
+            { source: "openclaw", path: "C:/Users/smoke/.openclaw/openclaw.json", file_name: "openclaw.json" },
+            { source: "hermes", path: "C:/Users/smoke/.hermes/config.yaml", file_name: "config.yaml" }
+          ],
+          fileName: "openclaw.json",
+          content: "{mcp:{servers:{docs:{command:'npx'}}}}",
+          sourceHint: "openclaw",
+          preview: {
+            source: "openclaw",
+            digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            candidates: [
+              {
+                id: "context7",
+                name: "Context7",
+                source: "openclaw",
+                transport: "local_stdio",
+                command: "npx -y @upstash/context7-mcp",
+                endpoint: "",
+                enabled: true,
+                permission_mode: "ask_for_changes",
+                importable: true,
+                conflict: false,
+                warnings: [],
+                missing_environment: [],
+                credential_references: 0
+              },
+              {
+                id: "figma",
+                name: "Figma",
+                source: "openclaw",
+                transport: "streamable_http",
+                command: "",
+                endpoint: "https://mcp.figma.com/mcp",
+                enabled: true,
+                permission_mode: "ask_for_changes",
+                importable: true,
+                conflict: true,
+                warnings: ["Set the listed environment variables before testing this connection."],
+                missing_environment: ["FIGMA_OAUTH_TOKEN"],
+                credential_references: 1
+              },
+              {
+                id: "legacy-sse",
+                name: "Legacy SSE",
+                source: "openclaw",
+                transport: "streamable_http",
+                command: "",
+                endpoint: "https://legacy.example.test/sse",
+                enabled: true,
+                permission_mode: "ask_for_changes",
+                importable: false,
+                conflict: false,
+                warnings: ["Legacy SSE transport needs a Streamable HTTP endpoint before it can be enabled."],
+                missing_environment: [],
+                credential_references: 0
+              }
+            ]
+          }
+        };
+        renderMcpImporter();
+        const importer = document.querySelector("#mcpImporter");
+        if (importer) importer.open = true;
+        const panel = document.querySelector("#capabilitiesPanel");
+        if (panel && importer) panel.scrollTop = Math.max(0, importer.offsetTop - 80);
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const text = document.querySelector("#mcpImporter")?.textContent || "";
+        return {
+          open: Boolean(importer?.open),
+          sources: document.querySelectorAll("[data-mcp-import-path]").length,
+          candidates: document.querySelectorAll(".mcp-import-candidate").length,
+          selectable: document.querySelectorAll("[data-mcp-import-id]:not(:disabled)").length,
+          blocked: document.querySelectorAll(".mcp-import-candidate.blocked").length,
+          commit: !document.querySelector("#commitMcpImportButton")?.hidden,
+          text,
+          leaked: text.includes("smoke-secret-value")
+        };
+      })()
+    `);
+    if (!mcpImportState.open || mcpImportState.sources !== 4
+        || mcpImportState.candidates !== 3 || mcpImportState.selectable !== 2
+        || mcpImportState.blocked !== 1 || !mcpImportState.commit
+        || !mcpImportState.text.includes("FIGMA_OAUTH_TOKEN")
+        || mcpImportState.leaked) {
+      throw new Error(`MCP import preview did not render safely: ${JSON.stringify(mcpImportState)}`);
+    }
+    await captureSmokeScreenshot(mcpImportPath);
     const capabilityCatalogState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         document.querySelector('[data-capability-tab="automation"]')?.click();
@@ -734,6 +827,7 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpGovernancePath}`);
+    console.log(`[ui-smoke] screenshot: ${mcpImportPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpTaskPath}`);
     console.log(`[ui-smoke] screenshot: ${capabilitiesPath}`);
     console.log(`[ui-smoke] screenshot: ${settingsPath}`);
@@ -957,7 +1051,7 @@ async function runtimeDiagnostics(refresh = false) {
   const python = findPython();
   const pythonVersion = await runCommand(python, ["--version"], 5000);
   const pythonDeps = pythonVersion.ok
-    ? await runCommand(python, ["-c", "import fastapi, uvicorn, paho.mqtt.client, sqlalchemy, pydantic; print('backend deps ok')"], 8000)
+    ? await runCommand(python, ["-c", "import fastapi, json5, uvicorn, paho.mqtt.client, sqlalchemy, pydantic, yaml; print('backend deps ok')"], 8000)
     : { ok: false, code: 1, output: "Python not found" };
   const sidecarRuntime = path.join(BACKEND_DIR, "signal_sidecar", "build", "install", "signalasi-link-sidecar", "bin", "signalasi-link-sidecar.bat");
   const packaged = Boolean(app.isPackaged);
@@ -1489,8 +1583,66 @@ async function getDesktopMcp() {
 }
 
 async function saveDesktopMcp(payload = {}) {
+    await startBackend();
+    return fetchJson("/api/desktop-mcp", { method: "POST", body: JSON.stringify(payload) });
+}
+
+async function getDesktopMcpImportSources() {
   await startBackend();
-  return fetchJson("/api/desktop-mcp", { method: "POST", body: JSON.stringify(payload) });
+  return fetchJson("/api/desktop-mcp-import/sources");
+}
+
+function readMcpConfigFile(filePath) {
+  const resolved = path.resolve(String(filePath || ""));
+  const stat = fs.statSync(resolved);
+  if (!stat.isFile() || stat.size <= 0 || stat.size > 1_048_576) {
+    throw new Error("MCP configuration must be a file smaller than 1 MiB.");
+  }
+  return {
+    fileName: path.basename(resolved),
+    baseDirectory: path.dirname(resolved),
+    content: fs.readFileSync(resolved, "utf8").replace(/^\uFEFF/, "")
+  };
+}
+
+async function chooseMcpConfig() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Import MCP configuration",
+    buttonLabel: "Preview",
+    properties: ["openFile"],
+    filters: [
+      { name: "MCP configuration", extensions: ["json", "json5", "toml", "yaml", "yml"] },
+      { name: "All files", extensions: ["*"] }
+    ]
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return readMcpConfigFile(result.filePaths[0]);
+}
+
+async function readDiscoveredMcpConfig(filePath) {
+  const discovered = await getDesktopMcpImportSources();
+  const requested = path.resolve(String(filePath || "")).toLowerCase();
+  const allowed = (discovered.sources || []).some(
+    (source) => path.resolve(String(source.path || "")).toLowerCase() === requested
+  );
+  if (!allowed) throw new Error("MCP configuration source is not available.");
+  return readMcpConfigFile(filePath);
+}
+
+async function previewDesktopMcpImport(payload = {}) {
+  await startBackend();
+  return fetchJson("/api/desktop-mcp-import/preview", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+async function commitDesktopMcpImport(payload = {}) {
+  await startBackend();
+  return fetchJson("/api/desktop-mcp-import/commit", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
 }
 
 async function probeDesktopMcp(connectionId) {
@@ -1604,6 +1756,11 @@ ipcMain.handle("desktop-skills:enabled", (_event, skillId, enabled) => setDeskto
 ipcMain.handle("desktop-skills:delete", (_event, skillId) => deleteDesktopSkill(skillId));
 ipcMain.handle("desktop-mcp:list", getDesktopMcp);
 ipcMain.handle("desktop-mcp:save", (_event, payload) => saveDesktopMcp(payload));
+ipcMain.handle("desktop-mcp-import:sources", getDesktopMcpImportSources);
+ipcMain.handle("desktop-mcp-import:choose", chooseMcpConfig);
+ipcMain.handle("desktop-mcp-import:read", (_event, filePath) => readDiscoveredMcpConfig(filePath));
+ipcMain.handle("desktop-mcp-import:preview", (_event, payload) => previewDesktopMcpImport(payload));
+ipcMain.handle("desktop-mcp-import:commit", (_event, payload) => commitDesktopMcpImport(payload));
 ipcMain.handle("desktop-mcp:probe", (_event, connectionId) => probeDesktopMcp(connectionId));
 ipcMain.handle("desktop-mcp:delete", (_event, connectionId) => deleteDesktopMcp(connectionId));
 ipcMain.handle("files:choose", chooseAttachments);

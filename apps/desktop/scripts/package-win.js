@@ -174,7 +174,7 @@ function pythonCanImportBackendDeps(pythonExe) {
   try {
     execFileSync(
       pythonExe,
-      ["-c", "import fastapi, multipart, uvicorn, sqlalchemy, websockets, paho.mqtt.client, qrcode; print('backend deps ok')"],
+      ["-c", "import fastapi, json5, multipart, uvicorn, sqlalchemy, websockets, paho.mqtt.client, qrcode, yaml; print('backend deps ok')"],
       { stdio: "ignore", windowsHide: true }
     );
     return true;

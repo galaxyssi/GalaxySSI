@@ -37,6 +37,8 @@ class McpClientConfig:
     timeout_seconds: float = 20.0
     protocol_version: str = DEFAULT_PROTOCOL_VERSION
     command: str = ""
+    command_argv: tuple[str, ...] = ()
+    process_environment: dict[str, str] = field(default_factory=dict)
     working_directory: str = ""
     stdio_framing: str = "newline"
     endpoint: str = ""
@@ -49,8 +51,19 @@ class McpClientConfig:
             raise ValueError(f"Unsupported MCP protocol version: {self.protocol_version}")
         if not 3 <= float(self.timeout_seconds) <= 300:
             raise ValueError("MCP timeout must be between 3 and 300 seconds")
-        if self.transport == "local_stdio" and not self.command.strip():
+        if (
+            self.transport == "local_stdio"
+            and not self.command.strip()
+            and not self.command_argv
+        ):
             raise ValueError("Local MCP requires a server command")
+        if any(not str(value) or "\x00" in str(value) for value in self.command_argv):
+            raise ValueError("Local MCP command arguments are invalid")
+        if any(
+            not str(key) or "\x00" in str(key) or "\x00" in str(value)
+            for key, value in self.process_environment.items()
+        ):
+            raise ValueError("Local MCP process environment is invalid")
         if self.transport == "streamable_http" and not self.endpoint.strip():
             raise ValueError("Remote MCP requires an endpoint")
         if self.stdio_framing not in {"newline", "content_length"}:
@@ -171,11 +184,16 @@ class _StdioSession(_McpSession):
         self._write_lock = threading.Lock()
 
     def open(self) -> None:
-        environment = os.environ.copy()
         cwd = self.config.working_directory.strip() or None
+        imported_argv = list(self.config.command_argv)
+        environment = (
+            _restricted_process_environment(self.config.process_environment)
+            if imported_argv
+            else os.environ.copy()
+        )
         self.process = subprocess.Popen(
-            self.config.command,
-            shell=True,
+            imported_argv or self.config.command,
+            shell=not bool(imported_argv),
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE,
@@ -335,6 +353,44 @@ class _StdioSession(_McpSession):
                         stream.close()
                     except Exception:
                         pass
+
+
+def _restricted_process_environment(configured: dict[str, str]) -> dict[str, str]:
+    allowed = {
+        "appdata",
+        "comspec",
+        "home",
+        "homedrive",
+        "homepath",
+        "lang",
+        "lc_all",
+        "localappdata",
+        "number_of_processors",
+        "path",
+        "pathext",
+        "processor_architecture",
+        "programdata",
+        "systemdrive",
+        "systemroot",
+        "temp",
+        "term",
+        "tmp",
+        "tmpdir",
+        "userprofile",
+        "windir",
+    }
+    environment = {
+        str(key): str(value)
+        for key, value in os.environ.items()
+        if str(key).casefold() in allowed
+    }
+    environment.update(
+        {
+            str(key): str(value)
+            for key, value in configured.items()
+        }
+    )
+    return environment
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
