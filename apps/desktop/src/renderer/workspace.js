@@ -1445,19 +1445,44 @@ function renderMcp() {
     trusted: "Trusted",
     disabled: "Disabled"
   };
+  const transportLabels = {
+    local_stdio: "Local process (stdio)",
+    streamable_http: "Remote server (Streamable HTTP)"
+  };
+  const stateLabels = {
+    configured: "Configured",
+    connecting: "Connecting",
+    ready: "Ready",
+    error: "Needs attention",
+    disabled: "Disabled"
+  };
   $("#mcpSummary").textContent = t("{count} configured connections", { count: state.mcp.length });
-  $("#mcpList").innerHTML = state.mcp.length ? state.mcp.map((connection) => `
-    <article class="capability-item">
-      <div><strong>${escapeHtml(connection.name || connection.id)}</strong><small>${escapeHtml(connection.default_tool || t("Automatic tool selection"))}${connection.auto_invoke ? ` · ${escapeHtml(t("Auto"))}` : ""} · ${escapeHtml(t(permissionLabels[connection.permission_mode] || "Ask before changes"))}</small></div>
+  $("#mcpList").innerHTML = state.mcp.length ? state.mcp.map((connection) => {
+    const toolCount = Array.isArray(connection.tool_ids) ? connection.tool_ids.length : 0;
+    const server = [connection.server_name, connection.server_version].filter(Boolean).join(" ");
+    const details = [
+      t(transportLabels[connection.transport] || "Local process (stdio)"),
+      t(stateLabels[connection.state] || "Configured"),
+      toolCount ? t("{count} tools", { count: toolCount }) : "",
+      server,
+      connection.last_latency_ms ? `${Number(connection.last_latency_ms)} ms` : "",
+      connection.auto_invoke ? t("Auto") : "",
+      t(permissionLabels[connection.permission_mode] || "Ask before changes")
+    ].filter(Boolean).join(" · ");
+    return `
+    <article class="capability-item ${connection.state === "error" ? "has-error" : ""}">
+      <div><strong>${escapeHtml(connection.name || connection.id)}</strong><small>${escapeHtml(details)}</small>${connection.last_error ? `<small class="capability-error">${escapeHtml(connection.last_error)}</small>` : ""}</div>
       <div class="capability-item-actions">
         <select class="mcp-policy-select" data-mcp-permission="${escapeHtml(connection.id)}" aria-label="${escapeHtml(t("Permission policy"))}">
           ${Object.entries(permissionLabels).map(([value, label]) => `<option value="${escapeHtml(value)}" ${connection.permission_mode === value ? "selected" : ""}>${escapeHtml(t(label))}</option>`).join("")}
         </select>
+        <button data-edit-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Edit"))}</button>
         <button data-probe-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Test"))}</button>
         <button class="primary" data-chat-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Chat"))}</button>
         <button data-delete-mcp="${escapeHtml(connection.id)}">${escapeHtml(t("Delete"))}</button>
       </div>
-    </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No MCP connections configured."))}</div>`;
+    </article>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t("No MCP connections configured."))}</div>`;
   const audit = Array.isArray(state.mcpAudit) ? state.mcpAudit : [];
   $("#mcpAuditList").innerHTML = audit.length ? audit.slice(0, 40).map((entry) => {
     const parameters = entry.parameter_preview && Object.keys(entry.parameter_preview).length
@@ -1976,24 +2001,100 @@ async function saveSkill() {
 }
 
 async function saveMcp() {
+  const transport = $("#mcpTransport").value;
   const payload = {
     id: $("#mcpId").value.trim().toLowerCase(),
     name: $("#mcpName").value.trim(),
+    transport,
     command: $("#mcpCommand").value.trim(),
+    endpoint: $("#mcpEndpoint").value.trim(),
+    working_directory: $("#mcpWorkingDirectory").value.trim(),
+    header_env: parseMcpHeaderEnvironment($("#mcpHeaderEnv").value),
+    protocol_version: $("#mcpProtocolVersion").value,
+    stdio_framing: "newline",
+    allow_insecure_http: $("#mcpAllowInsecureHttp").checked,
     default_tool: $("#mcpTool").value.trim(),
     triggers: parsePhrases($("#mcpTriggers").value),
     enabled: true,
     auto_invoke: $("#mcpAutoInvoke").checked,
     permission_mode: $("#mcpPermissionMode").value,
-    timeout_seconds: 20
+    timeout_seconds: Number($("#mcpTimeout").value || 20)
   };
-  if (!payload.id || !payload.name || !payload.command) return showToast(t("Complete the MCP ID, name, and server command."));
+  const targetComplete = transport === "local_stdio" ? payload.command : payload.endpoint;
+  if (!payload.id || !payload.name || !targetComplete) {
+    return showToast(t("Complete the MCP ID, name, and transport target."));
+  }
   await window.signalasi.saveDesktopMcp(payload);
-  for (const id of ["#mcpId", "#mcpName", "#mcpCommand", "#mcpTool", "#mcpTriggers"]) $(id).value = "";
+  resetMcpEditor();
   $("#mcpAutoInvoke").checked = false;
   $("#mcpPermissionMode").value = "ask_for_changes";
-  showToast(t("MCP connection added."));
+  showToast(t("MCP connection saved."));
   await refreshCapabilities();
+}
+
+function parseMcpHeaderEnvironment(value) {
+  const result = {};
+  String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).forEach((line) => {
+    const separator = line.indexOf("=");
+    if (separator <= 0 || separator === line.length - 1) {
+      throw new Error(t("Use one Header=ENVIRONMENT_VARIABLE mapping per line."));
+    }
+    result[line.slice(0, separator).trim()] = line.slice(separator + 1).trim();
+  });
+  return result;
+}
+
+function syncMcpTransportFields() {
+  const remote = $("#mcpTransport").value === "streamable_http";
+  $("#mcpCommandField").hidden = remote;
+  $("#mcpWorkingDirectoryField").hidden = remote;
+  $("#mcpEndpointField").hidden = !remote;
+  $("#mcpHeaderEnvField").hidden = !remote;
+  $("#mcpInsecureHttpField").hidden = !remote;
+}
+
+function resetMcpEditor() {
+  for (const id of [
+    "#mcpId",
+    "#mcpName",
+    "#mcpCommand",
+    "#mcpEndpoint",
+    "#mcpWorkingDirectory",
+    "#mcpHeaderEnv",
+    "#mcpTool",
+    "#mcpTriggers"
+  ]) $(id).value = "";
+  $("#mcpTransport").value = "local_stdio";
+  $("#mcpProtocolVersion").value = "2025-11-25";
+  $("#mcpTimeout").value = "20";
+  $("#mcpAllowInsecureHttp").checked = false;
+  $("#mcpAutoInvoke").checked = false;
+  $("#mcpPermissionMode").value = "ask_for_changes";
+  $("#mcpId").disabled = false;
+  syncMcpTransportFields();
+}
+
+function editMcp(connection) {
+  $("#mcpId").value = connection.id || "";
+  $("#mcpId").disabled = true;
+  $("#mcpName").value = connection.name || "";
+  $("#mcpTransport").value = connection.transport || "local_stdio";
+  $("#mcpCommand").value = connection.command || "";
+  $("#mcpEndpoint").value = connection.endpoint || "";
+  $("#mcpWorkingDirectory").value = connection.working_directory || "";
+  $("#mcpHeaderEnv").value = Object.entries(connection.header_env || {})
+    .map(([header, environment]) => `${header}=${environment}`)
+    .join("\n");
+  $("#mcpProtocolVersion").value = connection.protocol_version || "2025-11-25";
+  $("#mcpTool").value = connection.default_tool || "";
+  $("#mcpTriggers").value = (connection.triggers || []).join(", ");
+  $("#mcpTimeout").value = String(connection.timeout_seconds || 20);
+  $("#mcpAllowInsecureHttp").checked = Boolean(connection.allow_insecure_http);
+  $("#mcpAutoInvoke").checked = Boolean(connection.auto_invoke);
+  $("#mcpPermissionMode").value = connection.permission_mode || "ask_for_changes";
+  syncMcpTransportFields();
+  $("#mcpEditor").open = true;
+  $("#mcpEditor").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function selectCapabilityTab(name) {
@@ -2603,9 +2704,11 @@ function bindEvents() {
     if (toggle || remove) await refreshCapabilities();
   });
   $("#saveMcpButton").addEventListener("click", () => saveMcp().catch((error) => showToast(error.message || String(error))));
+  $("#mcpTransport").addEventListener("change", syncMcpTransportFields);
   $("#mcpList").addEventListener("click", async (event) => {
     const probe = event.target.closest("[data-probe-mcp]");
     const chat = event.target.closest("[data-chat-mcp]");
+    const edit = event.target.closest("[data-edit-mcp]");
     const remove = event.target.closest("[data-delete-mcp]");
     if (probe) {
       const result = await window.signalasi.probeDesktopMcp(probe.dataset.probeMcp);
@@ -2617,8 +2720,13 @@ function bindEvents() {
       newTask(`mcp:${chat.dataset.chatMcp}`, connection?.name || chat.dataset.chatMcp);
       closePanel();
     }
+    if (edit) {
+      const connection = state.mcp.find((item) => item.id === edit.dataset.editMcp);
+      if (connection) editMcp(connection);
+    }
     if (remove && window.confirm(t("Delete this MCP connection?"))) {
       await window.signalasi.deleteDesktopMcp(remove.dataset.deleteMcp);
+      resetMcpEditor();
       await refreshCapabilities();
     }
   });

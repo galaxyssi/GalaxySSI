@@ -201,22 +201,37 @@
           </div>
           <div id="mcpAuditList" class="mcp-audit-list"></div>
         </section>
-        <details class="drawer-details">
-          <summary data-i18n="Add local MCP">Add local MCP</summary>
+        <details id="mcpEditor" class="drawer-details">
+          <summary data-i18n="Add MCP connection">Add MCP connection</summary>
           <div class="form-stack">
             <label><span data-i18n="Connection ID">Connection ID</span><input id="mcpId" maxlength="64" placeholder="home-relay"></label>
             <label><span data-i18n="Name">Name</span><input id="mcpName" maxlength="80" placeholder="Home Relay"></label>
-            <label><span data-i18n="Server command">Server command</span><input id="mcpCommand" maxlength="4000" placeholder="python server.py"></label>
+            <label><span data-i18n="Transport">Transport</span><select id="mcpTransport">
+              <option value="local_stdio" data-i18n="Local process (stdio)">Local process (stdio)</option>
+              <option value="streamable_http" data-i18n="Remote server (Streamable HTTP)">Remote server (Streamable HTTP)</option>
+            </select></label>
+            <label id="mcpCommandField"><span data-i18n="Server command">Server command</span><input id="mcpCommand" maxlength="4000" placeholder="python server.py"></label>
+            <label id="mcpWorkingDirectoryField"><span data-i18n="Working directory">Working directory</span><input id="mcpWorkingDirectory" maxlength="1000" data-i18n-placeholder="Optional local working directory" placeholder="Optional local working directory"></label>
+            <label id="mcpEndpointField" hidden><span data-i18n="MCP endpoint">MCP endpoint</span><input id="mcpEndpoint" maxlength="2000" placeholder="https://example.com/mcp"></label>
+            <label id="mcpHeaderEnvField" hidden><span data-i18n="Header environment variables">Header environment variables</span><textarea id="mcpHeaderEnv" rows="3" maxlength="4000" placeholder="Authorization=SIGNALASI_MCP_TOKEN"></textarea><small data-i18n="One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.">One Header=ENVIRONMENT_VARIABLE mapping per line. Secret values stay outside SignalASI.</small></label>
+            <label><span data-i18n="Protocol version">Protocol version</span><select id="mcpProtocolVersion">
+              <option value="2025-11-25">2025-11-25</option>
+              <option value="2025-06-18">2025-06-18</option>
+              <option value="2025-03-26">2025-03-26</option>
+              <option value="2024-11-05">2024-11-05</option>
+            </select></label>
             <label><span data-i18n="Default tool">Default tool</span><input id="mcpTool" maxlength="160" placeholder="control_relay"></label>
             <label><span data-i18n="Triggers">Triggers</span><input id="mcpTriggers" data-i18n-placeholder="Comma-separated phrases" placeholder="Comma-separated phrases"></label>
+            <label><span data-i18n="Timeout">Timeout</span><input id="mcpTimeout" type="number" min="3" max="300" step="1" value="20"></label>
             <label><span data-i18n="Permission policy">Permission policy</span><select id="mcpPermissionMode">
               <option value="ask_for_changes" data-i18n="Ask before changes">Ask before changes</option>
               <option value="read_only" data-i18n="Read only">Read only</option>
               <option value="trusted" data-i18n="Trusted">Trusted</option>
               <option value="disabled" data-i18n="Disabled">Disabled</option>
             </select></label>
+            <label id="mcpInsecureHttpField" class="check-row" hidden><input id="mcpAllowInsecureHttp" type="checkbox"><span><strong data-i18n="Allow insecure LAN HTTP">Allow insecure LAN HTTP</strong><small data-i18n="HTTPS remains required outside this explicitly trusted network.">HTTPS remains required outside this explicitly trusted network.</small></span></label>
             <label class="check-row"><input id="mcpAutoInvoke" type="checkbox"><span><strong data-i18n="Allow automatic use">Allow automatic use</strong><small data-i18n="Use this MCP when a trigger matches">Use this MCP when a trigger matches</small></span></label>
-            <button id="saveMcpButton" class="primary-button" data-i18n="Add MCP">Add MCP</button>
+            <button id="saveMcpButton" class="primary-button" data-i18n="Save MCP connection">Save MCP connection</button>
           </div>
         </details>
       </div>

@@ -506,6 +506,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .drawer-details summary { padding: 13px 2px 8px; color: #394149; font-size: 9px; font-weight: 650; cursor: pointer; }
 .form-stack { display: grid; gap: 9px; padding-top: 4px; }
 .form-stack label { display: grid; gap: 5px; color: #626b74; font-size: 8px; }
+.form-stack > [hidden] { display: none !important; }
 .form-stack input,
 .form-stack textarea,
 .form-stack select,

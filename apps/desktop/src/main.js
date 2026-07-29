@@ -312,6 +312,15 @@ async function runUiSmoke() {
         state.mcp = [{
           id: "smoke-vault",
           name: "Smoke Vault",
+          transport: "streamable_http",
+          endpoint: "https://mcp.example.test/mcp",
+          header_env: { Authorization: "SIGNALASI_SMOKE_MCP_TOKEN" },
+          protocol_version: "2025-11-25",
+          state: "ready",
+          server_name: "Smoke MCP",
+          server_version: "1.0",
+          tool_ids: ["read_secret_metadata"],
+          last_latency_ms: 18,
           default_tool: "read_secret_metadata",
           enabled: true,
           auto_invoke: false,
@@ -337,10 +346,23 @@ async function runUiSmoke() {
         document.querySelector('[data-capability-tab="mcp"]')?.click();
         await new Promise((resolve) => setTimeout(resolve, 250));
         const auditText = document.querySelector("#mcpAuditList")?.textContent || "";
+        const initialAddPolicy = document.querySelector("#mcpPermissionMode")?.value || "";
+        document.querySelector("[data-edit-mcp]")?.click();
         return {
           active: document.querySelector("#mcpCapability")?.classList.contains("active") || false,
           policy: document.querySelector("[data-mcp-permission]")?.value || "",
-          addPolicy: document.querySelector("#mcpPermissionMode")?.value || "",
+          initialAddPolicy,
+          editorPolicy: document.querySelector("#mcpPermissionMode")?.value || "",
+          transportText: document.querySelector("#mcpList .capability-item small")?.textContent || "",
+          transportOptions: document.querySelectorAll("#mcpTransport option").length,
+          endpointAvailable: Boolean(document.querySelector("#mcpEndpoint")),
+          editAvailable: Boolean(document.querySelector("[data-edit-mcp]")),
+          editorTransport: document.querySelector("#mcpTransport")?.value || "",
+          editorEndpoint: document.querySelector("#mcpEndpoint")?.value || "",
+          endpointVisible: !document.querySelector("#mcpEndpointField")?.hidden,
+          commandHidden: Boolean(document.querySelector("#mcpCommandField")?.hidden),
+          idLocked: Boolean(document.querySelector("#mcpId")?.disabled),
+          headerMapping: document.querySelector("#mcpHeaderEnv")?.value || "",
           auditRows: document.querySelectorAll("#mcpAuditList .mcp-audit-row").length,
           auditText,
           redacted: auditText.includes("[REDACTED]"),
@@ -351,7 +373,19 @@ async function runUiSmoke() {
     if (
       !mcpGovernanceState.active
       || mcpGovernanceState.policy !== "read_only"
-      || mcpGovernanceState.addPolicy !== "ask_for_changes"
+      || mcpGovernanceState.initialAddPolicy !== "ask_for_changes"
+      || mcpGovernanceState.editorPolicy !== "read_only"
+      || mcpGovernanceState.transportOptions !== 2
+      || !mcpGovernanceState.endpointAvailable
+      || !mcpGovernanceState.editAvailable
+      || !mcpGovernanceState.transportText.includes("Streamable HTTP")
+      || !mcpGovernanceState.transportText.includes("Smoke MCP")
+      || mcpGovernanceState.editorTransport !== "streamable_http"
+      || mcpGovernanceState.editorEndpoint !== "https://mcp.example.test/mcp"
+      || !mcpGovernanceState.endpointVisible
+      || !mcpGovernanceState.commandHidden
+      || !mcpGovernanceState.idLocked
+      || !mcpGovernanceState.headerMapping.includes("Authorization=SIGNALASI_SMOKE_MCP_TOKEN")
       || mcpGovernanceState.auditRows !== 1
       || !mcpGovernanceState.redacted
       || mcpGovernanceState.leaked

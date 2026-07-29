@@ -153,6 +153,7 @@ const backendEvolutionV2Manager = fs.readFileSync(path.join(backendDir, "evoluti
 const backendEvolutionV2Api = fs.readFileSync(path.join(backendDir, "evolution_v2", "api.py"), "utf8");
 const backendEvolutionV2Scheduler = fs.readFileSync(path.join(backendDir, "evolution_v2", "scheduler.py"), "utf8");
 const backendMcpWrapper = fs.readFileSync(path.join(backendDir, "mcp_agent_wrapper.py"), "utf8");
+const backendMcpTransport = fs.readFileSync(path.join(backendDir, "mcp_transport.py"), "utf8");
 const backendTaskWorkspace = fs.readFileSync(path.join(backendDir, "task_workspace.py"), "utf8");
 const backendPushAuth = fs.readFileSync(path.join(backendDir, "push_auth.py"), "utf8");
 const backendSignalasiNotify = fs.readFileSync(path.join(backendDir, "signalasi_notify.py"), "utf8");
@@ -790,7 +791,12 @@ if (!backendAgentConfig.includes('"name": "Local LLM"')) {
   throw new Error("Agent config must persist Local model display name");
 }
 
-if (!backendCustomAgent.includes("def read_prompt") || !backendMcpWrapper.includes("tools/call")) {
+if (
+  !backendCustomAgent.includes("def read_prompt")
+  || !backendMcpWrapper.includes("call_mcp_tool")
+  || !backendMcpTransport.includes('"tools/call"')
+  || !backendMcpTransport.includes("streamable_http")
+) {
   throw new Error("Backend must include runnable Custom Agent and MCP wrapper scripts");
 }
 
