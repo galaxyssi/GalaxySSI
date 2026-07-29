@@ -108,8 +108,11 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
     def authorize(self) -> dict:
         self.manager.update_settings(enabled=True)
         offer = self.manager.create_offer("pair-token")
-        pending = self.manager.accept_pairing_offer(offer["token"], "pair-token", self.client)
-        return self.manager.approve(pending["authorization_id"])
+        return self.manager.accept_pairing_offer(
+            offer["token"],
+            "pair-token",
+            self.client,
+        )
 
     @staticmethod
     def envelope(target: str = "desktop-test") -> dict:
@@ -120,13 +123,14 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
         }
 
     @staticmethod
-    def request(authorization_id: str) -> dict:
+    def request(authorization: dict) -> dict:
         now = int(time.time() * 1000)
         return {
             "type": mqtt_bridge.DESKTOP_EXECUTOR_REQUEST_TYPE,
             "task_id": str(uuid.uuid4()),
             "action_id": str(uuid.uuid4()),
-            "authorization_id": authorization_id,
+            "authorization_id": authorization["authorization_id"],
+            "desktop_session_id": authorization["desktop_session_id"],
             "tool_id": desktop_control.CLICK_XY,
             "input": {"x": 100, "y": 200, "button": "left"},
             "sent_at": now,
@@ -139,7 +143,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             object(),
             self.client,
             self.envelope(),
-            self.request(authorization["authorization_id"]),
+            self.request(authorization),
             "control",
         )
 
@@ -150,16 +154,20 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             [item["type"] for item in self.published],
         )
         self.assertEqual("succeeded", self.published[-1]["status"])
-        self.assertEqual(2, self.published[-1]["receipt_version"])
+        self.assertEqual(3, self.published[-1]["receipt_version"])
         self.assertTrue(self.published[-1]["signature"])
 
     def test_unapproved_phone_receives_failure_without_execution(self) -> None:
         self.manager.update_settings(enabled=True)
+        unknown = {
+            "authorization_id": str(uuid.uuid4()),
+            "desktop_session_id": str(uuid.uuid4()),
+        }
         mqtt_bridge._route_desktop_control_payload(
             object(),
             self.client,
             self.envelope(),
-            self.request(str(uuid.uuid4())),
+            self.request(unknown),
             "control",
         )
 
@@ -179,7 +187,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             object(),
             restricted_client,
             self.envelope(),
-            self.request(authorization["authorization_id"]),
+            self.request(authorization),
             "control",
         )
 
@@ -189,7 +197,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
 
     def test_non_control_channel_and_wrong_target_are_not_executed(self) -> None:
         authorization = self.authorize()
-        request = self.request(authorization["authorization_id"])
+        request = self.request(authorization)
         self.assertTrue(mqtt_bridge._route_desktop_control_payload(
             object(), self.client, self.envelope(), request, "up"
         ))
