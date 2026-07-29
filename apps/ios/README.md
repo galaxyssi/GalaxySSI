@@ -21,6 +21,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style Agent confirmation policy for Direct, Confirm Once, and Confirm Always action gating
 - Android-style execution presentation policy for phone, desktop, cloud, and connected-device task locations
 - Android-style cron expression parser for workflow schedules with time-zone aware next/previous matching
+- Android-style inline Markdown parsing for bold, italic, strike, code, and link segments
 - Android-style transcript scroll policy for auto-follow and older-history pagination thresholds
 - Android-style final response identity keys and duplicate transcript coalescing
 - Android-style agent clarification policy for deciding when to execute, ask locally, or ask with model context
