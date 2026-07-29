@@ -47,6 +47,9 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var deleted: Bool
   var createdAt: Date
   var updatedAt: Date
+  var mqttTopic: String? = nil
+  var mqttInboxTopic: String? = nil
+  var signalBundleRef: String? = nil
 
   var selectedCloudModel: CloudModelConfig? {
     cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first
@@ -102,6 +105,120 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
       createdAt: Date(),
       updatedAt: Date()
     )
+  }
+}
+
+enum SignalASIFriendRequestStatus: String, Codable, CaseIterable {
+  case pending
+  case approved
+  case rejected
+}
+
+struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
+  var id: String
+  var signalASIId: String
+  var name: String
+  var type: String
+  var identityPublicKey: String
+  var identityFingerprint: String
+  var mqttTopic: String
+  var mqttInboxTopic: String
+  var signalBundleRef: String
+  var source: String
+  var status: SignalASIFriendRequestStatus
+  var createdAt: Date
+  var approvedAt: Date?
+  var rejectedAt: Date?
+  var previouslyDeleted: Bool
+  var readdRequired: Bool
+
+  init(
+    id: String,
+    signalASIId: String,
+    name: String,
+    type: String,
+    identityPublicKey: String,
+    identityFingerprint: String,
+    mqttTopic: String,
+    mqttInboxTopic: String,
+    signalBundleRef: String = "",
+    source: String = "qr",
+    status: SignalASIFriendRequestStatus = .pending,
+    createdAt: Date = Date(),
+    approvedAt: Date? = nil,
+    rejectedAt: Date? = nil,
+    previouslyDeleted: Bool = false,
+    readdRequired: Bool = false
+  ) {
+    self.id = id
+    self.signalASIId = signalASIId
+    self.name = name
+    self.type = type
+    self.identityPublicKey = identityPublicKey
+    self.identityFingerprint = identityFingerprint
+    self.mqttTopic = mqttTopic
+    self.mqttInboxTopic = mqttInboxTopic
+    self.signalBundleRef = signalBundleRef
+    self.source = source
+    self.status = status
+    self.createdAt = createdAt
+    self.approvedAt = approvedAt
+    self.rejectedAt = rejectedAt
+    self.previouslyDeleted = previouslyDeleted
+    self.readdRequired = readdRequired
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case signalASIId = "signalasi_id"
+    case name
+    case type
+    case identityPublicKey = "identity_public_key"
+    case identityFingerprint = "identity_fingerprint"
+    case mqttTopic = "mqtt_topic"
+    case mqttInboxTopic = "mqtt_inbox_topic"
+    case signalBundleRef = "signal_bundle_ref"
+    case source
+    case status
+    case createdAt = "created_at"
+    case approvedAt = "approved_at"
+    case rejectedAt = "rejected_at"
+    case previouslyDeleted = "previously_deleted"
+    case readdRequired = "readd_required"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+    signalASIId = try container.decodeIfPresent(String.self, forKey: .signalASIId) ?? ""
+    name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Friend"
+    type = try container.decodeIfPresent(String.self, forKey: .type) ?? "person"
+    identityPublicKey = try container.decodeIfPresent(String.self, forKey: .identityPublicKey) ?? ""
+    identityFingerprint = try container.decodeIfPresent(String.self, forKey: .identityFingerprint) ?? ""
+    mqttTopic = try container.decodeIfPresent(String.self, forKey: .mqttTopic) ?? ""
+    mqttInboxTopic = try container.decodeIfPresent(String.self, forKey: .mqttInboxTopic) ?? mqttTopic
+    signalBundleRef = try container.decodeIfPresent(String.self, forKey: .signalBundleRef) ?? ""
+    source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
+    status = try container.decodeIfPresent(SignalASIFriendRequestStatus.self, forKey: .status) ?? .pending
+    createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()
+    approvedAt = Self.decodeDate(container, key: .approvedAt)
+    rejectedAt = Self.decodeDate(container, key: .rejectedAt)
+    previouslyDeleted = try container.decodeIfPresent(Bool.self, forKey: .previouslyDeleted) ?? false
+    readdRequired = try container.decodeIfPresent(Bool.self, forKey: .readdRequired) ?? previouslyDeleted
+  }
+
+  private static func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Date? {
+    if let date = try? container.decode(Date.self, forKey: key) {
+      return date
+    }
+    if let milliseconds = try? container.decode(Double.self, forKey: key), milliseconds > 0 {
+      return Date(timeIntervalSince1970: (milliseconds < 10_000_000_000 ? milliseconds * 1000 : milliseconds) / 1000)
+    }
+    if let value = try? container.decode(String.self, forKey: key),
+       let milliseconds = Double(value), milliseconds > 0 {
+      return Date(timeIntervalSince1970: (milliseconds < 10_000_000_000 ? milliseconds * 1000 : milliseconds) / 1000)
+    }
+    return nil
   }
 }
 

@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -229,15 +230,70 @@ struct MessageBubble: View {
 
 struct ContactsView: View {
   @EnvironmentObject private var store: SignalASIStore
+  @State private var myQRCodePresented = false
+  @State private var contactScannerPresented = false
+  @State private var contactImportStatus = ""
+  @State private var contactImportIsError = false
 
   var body: some View {
     NavigationView {
       List {
-        ForEach(store.contacts.filter { !$0.deleted }) { contact in
-          ContactRow(contact: contact, latestMessage: store.messages(for: contact.id).last)
+        if !store.pendingFriendRequests.isEmpty {
+          Section("New Friends") {
+            ForEach(store.pendingFriendRequests) { request in
+              NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
+                FriendRequestRow(request: request)
+              }
+            }
+          }
+        }
+        Section("Contacts") {
+          ForEach(store.contacts.filter { !$0.deleted }) { contact in
+            ContactRow(contact: contact, latestMessage: store.messages(for: contact.id).last)
+          }
+        }
+        if !contactImportStatus.isEmpty {
+          Section("Status") {
+            Text(contactImportStatus)
+              .foregroundColor(contactImportIsError ? .red : .secondary)
+          }
         }
       }
       .navigationTitle("Contacts")
+      .toolbar {
+        ToolbarItemGroup(placement: .navigationBarTrailing) {
+          Button {
+            myQRCodePresented = true
+          } label: {
+            Image(systemName: "qrcode")
+          }
+          Button {
+            contactScannerPresented = true
+          } label: {
+            Image(systemName: "qrcode.viewfinder")
+          }
+        }
+      }
+      .sheet(isPresented: $myQRCodePresented) {
+        MyContactQRCodeView()
+      }
+      .sheet(isPresented: $contactScannerPresented) {
+        QRCodeScannerView { value in
+          contactScannerPresented = false
+          importContactQR(value)
+        }
+      }
+    }
+  }
+
+  private func importContactQR(_ value: String) {
+    do {
+      let request = try store.importContactQRCodeAsFriendRequest(value)
+      contactImportStatus = "Friend request added for \(request.name)."
+      contactImportIsError = false
+    } catch {
+      contactImportStatus = error.localizedDescription
+      contactImportIsError = true
     }
   }
 }
@@ -652,6 +708,152 @@ struct AvatarView: View {
     case .link: return .green
     case .local: return .gray
     }
+  }
+}
+
+struct FriendRequestRow: View {
+  var request: SignalASIFriendRequest
+
+  var body: some View {
+    HStack(spacing: 12) {
+      ZStack {
+        Circle()
+          .fill(Color.green)
+        Image(systemName: "person.badge.plus")
+          .foregroundColor(.white)
+      }
+      .frame(width: 42, height: 42)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(request.name)
+          .font(.headline)
+        Text(request.signalASIId)
+          .lineLimit(1)
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Spacer()
+      Text(request.status.rawValue)
+        .font(.caption)
+        .foregroundColor(.secondary)
+    }
+    .padding(.vertical, 4)
+  }
+}
+
+struct FriendRequestDetailView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: SignalASIStore
+  var requestId: String
+
+  private var request: SignalASIFriendRequest? {
+    store.friendRequest(id: requestId)
+  }
+
+  var body: some View {
+    Form {
+      if let request {
+        Section("Identity") {
+          Text(request.signalASIId)
+            .font(.system(.caption, design: .monospaced))
+          Text(request.identityFingerprint.chunkedFingerprint)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundColor(.secondary)
+        }
+        if !request.mqttInboxTopic.isEmpty {
+          Section("Messaging") {
+            Text(request.mqttInboxTopic)
+              .font(.system(.caption, design: .monospaced))
+          }
+        }
+        Section {
+          Button {
+            _ = store.approveFriendRequest(id: request.id)
+            dismiss()
+          } label: {
+            Label("Approve", systemImage: "checkmark.circle")
+          }
+          Button(role: .destructive) {
+            _ = store.rejectFriendRequest(id: request.id)
+            dismiss()
+          } label: {
+            Label("Reject", systemImage: "xmark.circle")
+          }
+        }
+        .disabled(request.status != .pending)
+      } else {
+        Text("Request not found.")
+          .foregroundColor(.secondary)
+      }
+    }
+    .navigationTitle(request?.name ?? "Friend Request")
+  }
+}
+
+struct MyContactQRCodeView: View {
+  @Environment(\.dismiss) private var dismiss
+  @EnvironmentObject private var store: SignalASIStore
+  @State private var copied = false
+  @State private var qrText = ""
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section("QR") {
+          HStack {
+            Spacer()
+            if let image = SignalASIQRCodeImageRenderer.image(from: qrText) {
+              Image(uiImage: image)
+                .interpolation(.none)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 220, height: 220)
+                .padding(.vertical, 8)
+            }
+            Spacer()
+          }
+        }
+        Section("Identity") {
+          Text(store.profile.signalASIId)
+            .font(.system(.caption, design: .monospaced))
+          Text(store.profile.identityFingerprint.chunkedFingerprint)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundColor(.secondary)
+        }
+        Section("Payload") {
+          Text(qrText)
+            .font(.system(.caption, design: .monospaced))
+            .lineLimit(6)
+          Button {
+            UIPasteboard.general.string = qrText
+            copied = true
+          } label: {
+            Label(copied ? "Copied" : "Copy Payload", systemImage: "doc.on.doc")
+          }
+        }
+      }
+      .navigationTitle("My QR")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") { dismiss() }
+        }
+      }
+      .onAppear {
+        if qrText.isEmpty {
+          qrText = (try? store.myContactQRText()) ?? "{}"
+        }
+      }
+    }
+  }
+}
+
+enum SignalASIQRCodeImageRenderer {
+  static func image(from text: String) -> UIImage? {
+    let data = Data(text.utf8)
+    guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+    filter.setValue(data, forKey: "inputMessage")
+    filter.setValue("M", forKey: "inputCorrectionLevel")
+    guard let output = filter.outputImage else { return nil }
+    return UIImage(ciImage: output.transformed(by: CGAffineTransform(scaleX: 10, y: 10)))
   }
 }
 

@@ -86,7 +86,7 @@ struct SignalASIBackupPayload: Codable, Equatable {
   var privacyManifest: SignalASIBackupPrivacyManifest
   var agentData: SignalASIBackupAgentData
   var contacts: [SignalASIContact]
-  var friendRequests: [[String: String]]
+  var friendRequests: [SignalASIFriendRequest]
   var messagesByContact: [String: [ChatMessage]]
 
   init(
@@ -100,7 +100,7 @@ struct SignalASIBackupPayload: Codable, Equatable {
     privacyManifest: SignalASIBackupPrivacyManifest,
     agentData: SignalASIBackupAgentData,
     contacts: [SignalASIContact],
-    friendRequests: [[String: String]] = [],
+    friendRequests: [SignalASIFriendRequest] = [],
     messagesByContact: [String: [ChatMessage]]
   ) {
     self.platform = platform
