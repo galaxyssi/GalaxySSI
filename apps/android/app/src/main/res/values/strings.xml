@@ -1452,6 +1452,7 @@
     <string name="agent_trace_remote_file">Updating files</string>
     <string name="agent_trace_remote_network">Searching the web</string>
     <string name="agent_trace_remote_mcp">Calling MCP</string>
+    <string name="agent_trace_mcp_tool_details">MCP · %1$s\nSource: %2$s\nRisk: %3$s\nPermissions: %4$s\nParameters: %5$s</string>
     <string name="agent_trace_remote_provider">Calling %1$s</string>
     <string name="agent_trace_remote_tool">Running a tool</string>
     <string name="agent_trace_recovery_started">Recovering from an interrupted step</string>

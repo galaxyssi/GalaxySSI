@@ -747,4 +747,7 @@
 , "Complete the MCP ID, name, and transport target.": "请填写 MCP ID、名称和传输目标。"
 , "Use one Header=ENVIRONMENT_VARIABLE mapping per line.": "每行请填写一项“请求头=环境变量”。"
 , "MCP connection saved.": "MCP 连接已保存。"
+, "Source": "来源"
+, "Parameters": "参数"
+, "MCP tool": "MCP 工具"
 }

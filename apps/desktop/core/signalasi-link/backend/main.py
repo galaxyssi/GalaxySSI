@@ -2272,6 +2272,25 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                             "task_id": task.task_id,
                             "conversation_id": conversation_id,
                         },
+                        tool_call_callback=lambda event: agent_task_manager.add_event(
+                            task.task_id,
+                            "mcp",
+                            (
+                                f"{event.get('connection_name') or label} · "
+                                f"{event.get('tool_name') or 'unknown'}"
+                            ),
+                            event_id=(
+                                f"mcp-tool:{event.get('invocation_id') or attempt}"
+                            ),
+                            status=(
+                                "completed"
+                                if event.get("status") == "succeeded"
+                                else "failed"
+                                if event.get("status") in {"failed", "denied"}
+                                else "running"
+                            ),
+                            metadata=event,
+                        ),
                     )
                     reply = str(result.get("result") or "").strip()
                     if not reply:

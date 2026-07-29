@@ -549,6 +549,45 @@ function renderRecoveryActions(task) {
   </div>`;
 }
 
+function renderTaskEvent(event = {}) {
+  const metadata = event.metadata && typeof event.metadata === "object"
+    ? event.metadata
+    : {};
+  if (event.kind === "mcp" && metadata.kind === "mcp_tool_call") {
+    const permissions = Array.isArray(metadata.permissions) && metadata.permissions.length
+      ? metadata.permissions.join(" · ")
+      : t("No additional permissions");
+    const parameters = metadata.parameter_preview
+      && typeof metadata.parameter_preview === "object"
+      && Object.keys(metadata.parameter_preview).length
+      ? JSON.stringify(metadata.parameter_preview)
+      : t("No parameters");
+    const risk = String(metadata.risk || "medium");
+    const status = event.status === "completed"
+      ? "Succeeded"
+      : event.status === "failed"
+        ? (metadata.status === "denied" ? "Denied" : "Failed")
+        : "Running";
+    return `<div class="event-row mcp-tool-event ${escapeHtml(event.status || "")}">
+      <span></span>
+      <div class="mcp-tool-event-body">
+        <div class="mcp-tool-event-heading">
+          <strong>${escapeHtml(event.title || t("MCP tool"))}</strong>
+          <span class="mcp-risk ${escapeHtml(risk)}">${escapeHtml(t(risk.replace(/^./, (value) => value.toUpperCase())))}</span>
+        </div>
+        <small>${escapeHtml(t(status))} · ${escapeHtml(t("Source"))}: ${escapeHtml(metadata.source || "")}</small>
+        <small>${escapeHtml(t("Permissions"))}: ${escapeHtml(permissions)}</small>
+        <small>${escapeHtml(t("Parameters"))}</small>
+        <code>${escapeHtml(parameters)}</code>
+      </div>
+    </div>`;
+  }
+  return `<div class="event-row ${escapeHtml(event.status || "")}">
+    <span></span>
+    <div><strong>${escapeHtml(t(event.title || "Task step"))}</strong>${event.detail ? `<small>${escapeHtml(event.detail)}</small>` : ""}</div>
+  </div>`;
+}
+
 function renderTurn(task) {
   const statusClass = task.status === "completed" ? "completed" : (TERMINAL_STATES.has(task.status) ? "failed" : "");
   const isEvolution = task.task_kind === "self_evolution";
@@ -568,7 +607,7 @@ function renderTurn(task) {
     : (Array.isArray(task.events) ? task.events : []);
   const latencySummary = renderLatencySummary(task);
   const detail = events.length
-    ? `<div class="event-list">${events.map((event) => `<div class="event-row ${escapeHtml(event.status || "")}"><span></span><div><strong>${escapeHtml(t(event.title || "Task step"))}</strong>${event.detail ? `<small>${escapeHtml(event.detail)}</small>` : ""}</div></div>`).join("")}</div>`
+    ? `<div class="event-list">${events.map(renderTaskEvent).join("")}</div>`
     : escapeHtml(task.current_step ? t(task.current_step) : `${agentName(task.agent_id)} · ${statusLabel(task.status)}`);
   const attachments = Array.isArray(task.attachments) ? task.attachments : [];
   const attachmentRows = attachments.length

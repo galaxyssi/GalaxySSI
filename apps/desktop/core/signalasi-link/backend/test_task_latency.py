@@ -226,6 +226,48 @@ class TaskLatencyTests(unittest.TestCase):
         self.assertEqual("narration-16", payload["events"][0]["event_id"])
         self.assertEqual("narration-79", payload["events"][-1]["event_id"])
 
+    def test_readable_progress_replay_preserves_redacted_mcp_call_context(self):
+        metadata = {
+            "kind": "mcp_tool_call",
+            "connection_id": "vault",
+            "connection_name": "Vault",
+            "tool_name": "search",
+            "source": "desktop-mcp:vault",
+            "risk": "low",
+            "permissions": ["mcp.data.read", "mcp.network.connect"],
+            "parameter_preview": {"query": "release notes"},
+            "permission_mode": "read_only",
+            "permission_decision": "allowed_read_only",
+            "allowed": True,
+            "status": "succeeded",
+            "duration_ms": 28,
+            "internal_secret": "must-not-cross-the-wire",
+        }
+        payload = _agent_task_payload(
+            {
+                "task_id": "task-mcp",
+                "status": "completed",
+                "events": [{
+                    "event_id": "mcp-tool:1",
+                    "kind": "mcp",
+                    "status": "completed",
+                    "title": "Vault · search",
+                    "metadata": metadata,
+                }],
+            },
+            [],
+            resolved_desktop_id="desktop-1",
+            resolved_desktop_name="Desktop",
+            resolved_connector_agents=[],
+            include_progress_replay=True,
+        )
+
+        self.assertEqual("mcp", payload["events"][0]["kind"])
+        self.assertEqual("mcp_tool", payload["events"][0]["code"])
+        self.assertEqual("desktop-mcp:vault", payload["events"][0]["metadata"]["source"])
+        self.assertEqual({"query": "release notes"}, payload["events"][0]["metadata"]["parameter_preview"])
+        self.assertNotIn("internal_secret", payload["events"][0]["metadata"])
+
     def test_terminal_failure_is_not_throttled(self):
         gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)
 

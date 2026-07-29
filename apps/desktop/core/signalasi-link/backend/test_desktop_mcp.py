@@ -209,8 +209,20 @@ class DesktopMcpRegistryTest(unittest.TestCase):
                 "default_tool": "relay",
                 "permission_mode": "read_only",
             })
+            denied_events: list[dict] = []
             with self.assertRaises(McpPermissionDenied):
-                registry.invoke_prompt("governed", "turn on", explicit_user_selection=True)
+                registry.invoke_prompt(
+                    "governed",
+                    "turn on",
+                    explicit_user_selection=True,
+                    tool_call_callback=denied_events.append,
+                )
+            self.assertEqual(["denied", "denied"], [event["status"] for event in denied_events])
+            self.assertFalse(denied_events[-1]["allowed"])
+            self.assertEqual(
+                "change_permission_mode",
+                denied_events[-1]["required_user_action"],
+            )
 
             registry.upsert({
                 "id": "governed",
@@ -231,6 +243,40 @@ class DesktopMcpRegistryTest(unittest.TestCase):
                 [entry["status"] for entry in registry.audit("governed")],
                 ["succeeded", "denied", "denied", "succeeded"],
             )
+
+    def test_tool_call_callback_exposes_only_redacted_live_security_context(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            server = root / "fake_mcp.py"
+            server.write_text(textwrap.dedent(FAKE_SERVER), encoding="utf-8")
+            registry = DesktopMcpRegistry(root / "mcp.json")
+            registry.upsert({
+                "id": "visible-tool",
+                "name": "Visible Tool",
+                "command": f'"{sys.executable}" "{server}"',
+                "default_tool": "relay",
+                "permission_mode": "trusted",
+            })
+            events: list[dict] = []
+
+            result = registry.invoke_prompt(
+                "visible-tool",
+                "token=private-value",
+                explicit_user_selection=True,
+                tool_call_callback=events.append,
+            )
+
+            self.assertEqual("MCP_OK:token=private-value", result["result"])
+            self.assertEqual(["running", "succeeded"], [event["status"] for event in events])
+            self.assertEqual(1, len({event["invocation_id"] for event in events}))
+            final = events[-1]
+            self.assertEqual("desktop-mcp:visible-tool", final["source"])
+            self.assertEqual("medium", final["risk"])
+            self.assertIn("mcp.data.write", final["permissions"])
+            self.assertTrue(final["allowed"])
+            self.assertEqual("token=[REDACTED]", final["parameter_preview"]["prompt"])
+            self.assertNotIn("private-value", json.dumps(events))
+            self.assertNotIn("command", final)
 
     def test_permission_mode_persists_and_deleted_connection_clears_audit(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -2270,7 +2270,12 @@ def _readable_progress_replay(events: list[dict]) -> list[dict]:
         kind = str(event.get("kind") or "").strip().lower()
         detail = str(event.get("detail") or "").strip()
         title = str(event.get("title") or "").strip()
-        if kind not in {"narration", "reasoning", "plan"}:
+        metadata = event.get("metadata") if isinstance(event.get("metadata"), dict) else {}
+        is_mcp_tool_call = (
+            kind == "mcp"
+            and str(metadata.get("kind") or "") == "mcp_tool_call"
+        )
+        if kind not in {"narration", "reasoning", "plan"} and not is_mcp_tool_call:
             continue
         if kind in {"reasoning", "plan"} and not detail:
             continue
@@ -2281,16 +2286,39 @@ def _readable_progress_replay(events: list[dict]) -> list[dict]:
             break
         bounded_detail = detail[:remaining_characters]
         bounded_title = title[: min(240, remaining_characters)]
-        replay.append({
+        replay_event = {
             "event_id": str(event.get("event_id") or ""),
-            "kind": "narration",
-            "code": str(event.get("code") or kind),
+            "kind": "mcp" if is_mcp_tool_call else "narration",
+            "code": "mcp_tool" if is_mcp_tool_call else str(event.get("code") or kind),
             "title": bounded_title,
             "status": str(event.get("status") or "completed"),
             "detail": bounded_detail,
             "created_at": int(event.get("created_at") or 0),
             "updated_at": int(event.get("updated_at") or event.get("created_at") or 0),
-        })
+        }
+        if is_mcp_tool_call:
+            replay_event["metadata"] = {
+                key: metadata.get(key)
+                for key in (
+                    "kind",
+                    "connection_id",
+                    "connection_name",
+                    "tool_name",
+                    "transport",
+                    "source",
+                    "risk",
+                    "permissions",
+                    "parameter_preview",
+                    "permission_mode",
+                    "permission_decision",
+                    "allowed",
+                    "required_user_action",
+                    "status",
+                    "duration_ms",
+                )
+                if key in metadata
+            }
+        replay.append(replay_event)
         remaining_characters -= len(bounded_detail or bounded_title)
         if len(replay) >= MAX_READABLE_PROGRESS_REPLAY_EVENTS or remaining_characters <= 0:
             break

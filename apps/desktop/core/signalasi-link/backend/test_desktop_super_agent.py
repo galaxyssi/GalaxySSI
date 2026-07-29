@@ -74,6 +74,28 @@ class MatchingMcp:
         return connection.name.casefold() in prompt.casefold()
 
     def invoke_prompt(self, connection_id, prompt, process_callback=None, **kwargs):
+        callback = kwargs.get("tool_call_callback")
+        event = {
+            "kind": "mcp_tool_call",
+            "invocation_id": "relay-invocation",
+            "connection_id": connection_id,
+            "connection_name": "Relay MCP",
+            "tool_name": "relay",
+            "transport": "local_stdio",
+            "source": "desktop-mcp:relay",
+            "risk": "medium",
+            "permissions": ["mcp.data.read", "mcp.data.write", "mcp.process.execute"],
+            "parameter_preview": {"prompt": prompt},
+            "permission_mode": "trusted",
+            "permission_decision": "allowed_trusted",
+            "allowed": True,
+            "required_user_action": "",
+            "status": "running",
+            "duration_ms": 0,
+        }
+        if callback:
+            callback(dict(event))
+            callback({**event, "status": "succeeded", "duration_ms": 17})
         return {"result": "Relay is on.", "duration_ms": 17}
 
 
@@ -298,6 +320,16 @@ class DesktopSuperAgentTest(unittest.TestCase):
             event["kind"] == "agent_loop" and (event.get("metadata") or {}).get("phase") == "verify"
             for event in manager.events
         ))
+        mcp_events = [event for event in manager.events if event["kind"] == "mcp"]
+        self.assertEqual(["running", "completed"], [event["status"] for event in mcp_events])
+        self.assertEqual(
+            "desktop-mcp:relay",
+            mcp_events[-1]["metadata"]["source"],
+        )
+        self.assertEqual(
+            ["mcp.data.read", "mcp.data.write", "mcp.process.execute"],
+            mcp_events[-1]["metadata"]["permissions"],
+        )
 
     def test_reads_system_status_without_external_agent(self):
         manager = FakeTaskManager()

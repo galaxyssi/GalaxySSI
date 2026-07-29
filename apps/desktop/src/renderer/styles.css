@@ -382,6 +382,21 @@ button:disabled { cursor: default; opacity: 0.48; }
 .event-row small { display: block; }
 .event-row strong { color: #414a52; font-size: 8px; font-weight: 600; }
 .event-row small { margin-top: 1px; color: var(--muted); font-size: 7px; }
+.mcp-tool-event-body { min-width: 0; display: grid; gap: 2px; }
+.mcp-tool-event-heading { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.mcp-tool-event-heading strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-tool-event code {
+  max-height: 72px;
+  margin-top: 2px;
+  padding: 5px 6px;
+  overflow: auto;
+  border-radius: 5px;
+  background: #f1f3f5;
+  color: #4d5861;
+  font: 7px/1.45 Consolas, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
 
 .assistant-answer { color: #2f363c; font-size: 10px; line-height: 1.65; }
 .assistant-answer h2,

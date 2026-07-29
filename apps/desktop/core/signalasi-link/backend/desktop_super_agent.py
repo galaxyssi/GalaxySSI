@@ -195,6 +195,7 @@ class DesktopSuperAgent:
         if mcp_connection is not None:
             mcp_reply, observation = self._execute_mcp(
                 task_id=task_id,
+                conversation_id=conversation_id,
                 prompt=prompt,
                 connection=mcp_connection,
                 trace=trace,
@@ -439,6 +440,7 @@ class DesktopSuperAgent:
         self,
         *,
         task_id: str,
+        conversation_id: str,
         prompt: str,
         connection,
         trace: AgentLoopTrace,
@@ -476,7 +478,12 @@ class DesktopSuperAgent:
                 audit_context={
                     "caller_id": "signalasi.desktop.agent_loop",
                     "task_id": task_id,
+                    "conversation_id": conversation_id,
                 },
+                tool_call_callback=lambda event: self._publish_mcp_tool_call(
+                    task_id,
+                    event,
+                ),
             )
             reply = str(result.get("result") or "").strip()
             self._execution_harness.account_usage(
@@ -547,6 +554,30 @@ class DesktopSuperAgent:
             metadata={"actor_id": actor_id, "verified": observation.verified},
         )
         return reply, observation
+
+    def _publish_mcp_tool_call(self, task_id: str, event: dict) -> None:
+        status = str(event.get("status") or "running")
+        event_status = (
+            "completed"
+            if status == "succeeded"
+            else "failed"
+            if status in {"failed", "denied"}
+            else "running"
+        )
+        connection_name = str(
+            event.get("connection_name")
+            or event.get("connection_id")
+            or "MCP"
+        )
+        tool_name = str(event.get("tool_name") or "unknown")
+        self.task_manager.add_event(
+            task_id,
+            "mcp",
+            f"{connection_name} · {tool_name}",
+            event_id=f"mcp-tool:{event.get('invocation_id') or tool_name}",
+            status=event_status,
+            metadata=event,
+        )
 
     def _execute_tool(
         self,
