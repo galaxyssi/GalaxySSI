@@ -90,6 +90,11 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             patch.object(desktop_control, "desktop_control_manager", return_value=self.manager),
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
             patch.object(mqtt_bridge, "desktop_name", return_value="Test Desktop"),
+            patch.object(
+                mqtt_bridge,
+                "get_signal_bundle",
+                return_value={"identityKeySha256": signature_key_id},
+            ),
             patch.object(mqtt_bridge.threading, "Thread", ImmediateThread),
             patch.object(
                 mqtt_bridge,
@@ -108,8 +113,11 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
     def authorize(self) -> dict:
         self.manager.update_settings(enabled=True)
         offer = self.manager.create_offer("pair-token")
-        pending = self.manager.accept_pairing_offer(offer["token"], "pair-token", self.client)
-        return self.manager.approve(pending["authorization_id"])
+        return self.manager.accept_pairing_offer(
+            offer["token"],
+            "pair-token",
+            self.client,
+        )
 
     @staticmethod
     def envelope(target: str = "desktop-test") -> dict:
@@ -120,13 +128,14 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
         }
 
     @staticmethod
-    def request(authorization_id: str) -> dict:
+    def request(authorization: dict) -> dict:
         now = int(time.time() * 1000)
         return {
             "type": mqtt_bridge.DESKTOP_EXECUTOR_REQUEST_TYPE,
             "task_id": str(uuid.uuid4()),
             "action_id": str(uuid.uuid4()),
-            "authorization_id": authorization_id,
+            "authorization_id": authorization["authorization_id"],
+            "desktop_session_id": authorization["desktop_session_id"],
             "tool_id": desktop_control.CLICK_XY,
             "input": {"x": 100, "y": 200, "button": "left"},
             "sent_at": now,
@@ -139,7 +148,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             object(),
             self.client,
             self.envelope(),
-            self.request(authorization["authorization_id"]),
+            self.request(authorization),
             "control",
         )
 
@@ -150,16 +159,20 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             [item["type"] for item in self.published],
         )
         self.assertEqual("succeeded", self.published[-1]["status"])
-        self.assertEqual(2, self.published[-1]["receipt_version"])
+        self.assertEqual(3, self.published[-1]["receipt_version"])
         self.assertTrue(self.published[-1]["signature"])
 
     def test_unapproved_phone_receives_failure_without_execution(self) -> None:
         self.manager.update_settings(enabled=True)
+        unknown = {
+            "authorization_id": str(uuid.uuid4()),
+            "desktop_session_id": str(uuid.uuid4()),
+        }
         mqtt_bridge._route_desktop_control_payload(
             object(),
             self.client,
             self.envelope(),
-            self.request(str(uuid.uuid4())),
+            self.request(unknown),
             "control",
         )
 
@@ -179,7 +192,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             object(),
             restricted_client,
             self.envelope(),
-            self.request(authorization["authorization_id"]),
+            self.request(authorization),
             "control",
         )
 
@@ -189,7 +202,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
 
     def test_non_control_channel_and_wrong_target_are_not_executed(self) -> None:
         authorization = self.authorize()
-        request = self.request(authorization["authorization_id"])
+        request = self.request(authorization)
         self.assertTrue(mqtt_bridge._route_desktop_control_payload(
             object(), self.client, self.envelope(), request, "up"
         ))
@@ -198,6 +211,62 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
         ))
         self.assertEqual([], self.input.calls)
         self.assertEqual([], self.published)
+
+    def test_authorized_app_status_is_isolated_to_the_requesting_phone(self) -> None:
+        first = self.authorize()
+        second_client = {
+            **self.client,
+            "client_route_id": "client-route-b",
+            "identity_fingerprint": "b" * 64,
+            "signal_name": "signalasi:phone-b",
+            "display_name": "Phone B",
+            "access": grant_for_executor(True, issued_at_millis=2),
+        }
+        offer = self.manager.create_offer("pair-token-b")
+        second = self.manager.accept_pairing_offer(
+            offer["token"],
+            "pair-token-b",
+            second_client,
+        )
+
+        first_payload = mqtt_bridge._desktop_control_status_payload(
+            self.client,
+            "requested_by_phone",
+        )
+        second_payload = mqtt_bridge._desktop_control_status_payload(
+            second_client,
+            "requested_by_phone",
+        )
+
+        self.assertEqual(
+            [first["authorization_id"]],
+            [row["authorization_id"] for row in first_payload["items"]],
+        )
+        self.assertEqual(
+            [second["authorization_id"]],
+            [row["authorization_id"] for row in second_payload["items"]],
+        )
+        self.assertEqual(
+            "signalasi.authorized-app/1.0",
+            first_payload["authorized_app_contract"],
+        )
+
+    def test_phone_can_view_its_revoked_record_without_receiving_an_active_handle(self) -> None:
+        authorization = self.authorize()
+        self.manager.revoke_by_client(
+            authorization["authorization_id"],
+            self.client,
+        )
+
+        payload = mqtt_bridge._desktop_control_status_payload(
+            self.client,
+            "requested_by_phone",
+        )
+
+        self.assertEqual(1, len(payload["items"]))
+        self.assertEqual("revoked", payload["items"][0]["status"])
+        self.assertIsNone(payload["current_authorization"])
+        self.assertEqual("", payload["items"][0]["desktop_session_id"])
 
 
 if __name__ == "__main__":

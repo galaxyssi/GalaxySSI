@@ -103,4 +103,95 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertEqual(attachment.mimeType, "image/gif")
     XCTAssertEqual(attachment.data[10], 8)
   }
+
+  func testAgentWorkspaceScopeMatchesAndroidStableIdsAndToolBinding() {
+    let workspaceId = AgentWorkspaceScope.id(conversationId: "conversation-1")
+    let scopedInput = AgentWorkspaceScope.bindToolInput(
+      toolId: "signalasi.workspace.file.read_text",
+      input: ["path": "note.txt"],
+      workspaceId: workspaceId
+    )
+    let untouchedInput = AgentWorkspaceScope.bindToolInput(
+      toolId: "signalasi.other.tool",
+      input: ["path": "note.txt"],
+      workspaceId: workspaceId
+    )
+
+    XCTAssertEqual(workspaceId, "b2fba169-5c07-35d8-b801-003335d67dc7")
+    XCTAssertEqual(AgentWorkspaceScope.id(conversationId: " ", sessionId: "session-1"), AgentWorkspaceScope.id(conversationId: "session-1"))
+    XCTAssertEqual(scopedInput["workspace_id"] as? String, workspaceId)
+    XCTAssertEqual(scopedInput["path"] as? String, "note.txt")
+    XCTAssertNil(untouchedInput["workspace_id"])
+  }
+
+  func testAgentAttachmentWorkspaceStagerWritesMetadataAndFiles() throws {
+    let root = temporaryAttachmentRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let first = SignalASIDraftAttachment(
+      displayName: " ..bad/name?.txt ",
+      mimeType: "text/plain",
+      data: Data("hello".utf8)
+    )
+    let second = SignalASIDraftAttachment(
+      displayName: " ..bad/name?.txt ",
+      mimeType: "text/plain",
+      data: Data("world".utf8)
+    )
+
+    let staged = try AgentAttachmentWorkspaceStager.stage(
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      attachments: [first, second],
+      projectRoot: root
+    )
+    let workspace = root.appendingPathComponent(AgentWorkspaceScope.id(conversationId: "conversation-1"), isDirectory: true)
+    let inputDirectory = workspace
+      .appendingPathComponent("inputs", isDirectory: true)
+      .appendingPathComponent("turn-1", isDirectory: true)
+    let firstUrl = inputDirectory.appendingPathComponent("bad_name_.txt")
+    let secondUrl = inputDirectory.appendingPathComponent("bad_name_-2.txt")
+    let encoded = try JSONEncoder().encode(staged[0])
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+    XCTAssertEqual(staged.count, 2)
+    XCTAssertEqual(staged[0].name, " ..bad/name?.txt ")
+    XCTAssertEqual(staged[0].relativePath, "inputs/turn-1/bad_name_.txt")
+    XCTAssertEqual(staged[0].mimeType, "text/plain")
+    XCTAssertEqual(staged[0].sizeBytes, 5)
+    XCTAssertEqual(staged[0].sha256, SignalASIAttachmentPayloadBuilder.sha256(first.data))
+    XCTAssertEqual(staged[1].relativePath, "inputs/turn-1/bad_name_-2.txt")
+    XCTAssertEqual(try Data(contentsOf: firstUrl), first.data)
+    XCTAssertEqual(try Data(contentsOf: secondUrl), second.data)
+    XCTAssertEqual(object["relative_path"] as? String, "inputs/turn-1/bad_name_.txt")
+    XCTAssertEqual(object["mime_type"] as? String, "text/plain")
+    XCTAssertEqual((object["size_bytes"] as? NSNumber)?.int64Value, 5)
+  }
+
+  func testAgentAttachmentWorkspaceStagerRejectsUnsafeTurnIds() throws {
+    let root = temporaryAttachmentRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let attachment = SignalASIDraftAttachment(
+      displayName: "note.txt",
+      mimeType: "text/plain",
+      data: Data("hello".utf8)
+    )
+
+    XCTAssertThrowsError(
+      try AgentAttachmentWorkspaceStager.stage(
+        conversationId: "conversation-1",
+        turnId: "../turn",
+        attachments: [attachment],
+        projectRoot: root
+      )
+    ) { error in
+      XCTAssertEqual(error as? AgentAttachmentWorkspaceStagingError, .invalidTurnId)
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
+  }
+
+  private func temporaryAttachmentRoot() -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIAttachmentTests-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("agent-native-workspaces", isDirectory: true)
+  }
 }

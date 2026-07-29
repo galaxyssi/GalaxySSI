@@ -70,6 +70,9 @@ async function runUiSmoke() {
   const matrixPath = path.join(outDir, "desktop-status-matrix.png");
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const memoryOverviewPath = path.join(outDir, "desktop-memory-overview.png");
+  const memoryTimelinePath = path.join(outDir, "desktop-memory-timeline.png");
+  const memoryGraphPath = path.join(outDir, "desktop-memory-graph.png");
+  const memoryEvidencePath = path.join(outDir, "desktop-memory-evidence.png");
   const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
   const memoryConflictsPath = path.join(outDir, "desktop-memory-conflicts.png");
   const mcpGovernancePath = path.join(outDir, "desktop-mcp-governance.png");
@@ -331,14 +334,37 @@ async function runUiSmoke() {
           importance: 0.8,
           namespace: "device"
         });
+        const criticRun = await window.signalasi.runDesktopMemoryCritic();
         await refreshMemory("");
         document.querySelector('[data-capability-tab="memory"]')?.click();
         document.querySelector('[data-memory-view="overview"]')?.click();
         const overviewState = {
           metrics: document.querySelectorAll(".memory-metric").length,
           health: document.querySelector(".memory-health")?.textContent || "",
+          auditAction: Boolean(document.querySelector("[data-run-memory-critic]")),
+          criticRun: criticRun?.run?.status || "",
+          visualizationTabs: document.querySelectorAll("[data-memory-visualization-view]").length,
           recent: document.querySelectorAll(".memory-evolution-list > div").length
         };
+        document.querySelector('[data-memory-visualization-view="timeline"]')?.click();
+        overviewState.timelineEvents = document.querySelectorAll(".memory-timeline-event").length;
+        document.querySelector('[data-memory-visualization-view="graph"]')?.click();
+        overviewState.graphNodes = document.querySelectorAll(".memory-graph-node").length;
+        overviewState.graphRelations = document.querySelectorAll(".memory-graph-edges line").length;
+        const graphTargets = Array.from(document.querySelectorAll(".memory-graph-node"));
+        const graphTargetId = graphTargets.at(1)?.dataset.memoryGraphNode || "";
+        graphTargets.at(1)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        overviewState.graphSelection = graphTargetId
+          && document.querySelector(".memory-graph-node.selected")?.dataset.memoryGraphNode === graphTargetId;
+        document.querySelector('[data-memory-visualization-view="evidence"]')?.click();
+        overviewState.evidenceChains = document.querySelectorAll(".memory-evidence-index button").length;
+        overviewState.evidenceVersions = document.querySelectorAll(".memory-version-chain > div").length;
+        const evidenceTargets = Array.from(document.querySelectorAll(".memory-evidence-index button"));
+        const evidenceTargetId = evidenceTargets.at(1)?.dataset.memoryEvidenceChain || "";
+        evidenceTargets.at(1)?.click();
+        overviewState.evidenceSelection = evidenceTargetId
+          && document.querySelector(".memory-evidence-index button.active")?.dataset.memoryEvidenceChain === evidenceTargetId;
+        document.querySelector('[data-memory-visualization-view="state"]')?.click();
         document.querySelector('[data-memory-view="planned"]')?.click();
         const plannedState = {
           active: document.querySelector('[data-memory-view="planned"]')?.classList.contains("active") || false,
@@ -373,6 +399,16 @@ async function runUiSmoke() {
       || capabilitiesState.approveActions !== 1
       || capabilitiesState.overviewState.metrics !== 4
       || !capabilitiesState.overviewState.health.trim()
+      || !capabilitiesState.overviewState.auditAction
+      || capabilitiesState.overviewState.criticRun !== "completed"
+      || capabilitiesState.overviewState.visualizationTabs !== 4
+      || capabilitiesState.overviewState.timelineEvents < 3
+      || capabilitiesState.overviewState.graphNodes < 2
+      || capabilitiesState.overviewState.graphRelations < 1
+      || !capabilitiesState.overviewState.graphSelection
+      || capabilitiesState.overviewState.evidenceChains < 2
+      || capabilitiesState.overviewState.evidenceVersions < 1
+      || !capabilitiesState.overviewState.evidenceSelection
       || capabilitiesState.overviewState.recent < 2
       || !capabilitiesState.plannedState.active
       || capabilitiesState.plannedState.count !== 1
@@ -422,6 +458,21 @@ async function runUiSmoke() {
       document.querySelector('[data-memory-view="overview"]')?.click()
     `);
     await captureSmokeScreenshot(memoryOverviewPath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="timeline"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryTimelinePath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="graph"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryGraphPath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="evidence"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryEvidencePath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="state"]')?.click()
+    `);
     const mcpGovernanceState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         state.mcp = [{
@@ -646,16 +697,79 @@ async function runUiSmoke() {
     await captureSmokeScreenshot(marketplacePath);
     const gatewayControlState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
+        const smokeDesktopControl = {
+          authorizations: [
+            {
+              authorization_id: "smoke-active-authorization",
+              app_name: "SignalASI Phone",
+              app_platform: "android",
+              app_identity_fingerprint: "${"a".repeat(64)}",
+              access_profile: "desktop_executor",
+              granted_at: Date.now() - 3600000,
+              last_used_at: Date.now() - 60000,
+              updated_at: Date.now(),
+              status: "active"
+            },
+            {
+              authorization_id: "smoke-revoked-authorization",
+              app_name: "Previous Phone",
+              app_platform: "android",
+              app_identity_fingerprint: "${"b".repeat(64)}",
+              access_profile: "desktop_executor",
+              granted_at: Date.now() - 86400000,
+              last_used_at: 0,
+              updated_at: Date.now() - 1000,
+              status: "revoked"
+            }
+          ],
+          recent_receipts: [
+            {
+              receipt_version: 4,
+              receipt_id: "${"c".repeat(64)}",
+              task_id: "smoke-task",
+              action_id: "smoke-action",
+              authorization_id: "smoke-active-authorization",
+              tool_id: "desktop.click_xy",
+              status: "succeeded",
+              summary: "Executed click at 120, 240",
+              request_sha256: "${"d".repeat(64)}",
+              input_sha256: "${"e".repeat(64)}",
+              output_sha256: "${"f".repeat(64)}",
+              evidence_sha256: "${"1".repeat(64)}",
+              controller_app_instance_id: "signalasi:smoke-phone",
+              controller_name: "SignalASI Phone",
+              controller_platform: "android",
+              controller_fingerprint: "${"a".repeat(64)}",
+              started_at: Date.now() - 800,
+              completed_at: Date.now() - 300,
+              duration_ms: 500
+            }
+          ],
+          recent_audit: []
+        };
+        state.desktopControl = smokeDesktopControl;
+        renderDesktopControl();
         document.querySelector('[data-open-panel="gateway"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        state.desktopControl = smokeDesktopControl;
+        renderDesktopControl();
         for (let attempt = 0; attempt < 30; attempt += 1) {
           if (document.querySelector("#desktopControlAuditList")?.children.length > 0) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
         const history = document.querySelector(".gateway-access-history");
         if (history) history.open = true;
+        const authorizedApps = document.querySelector(".gateway-authorized-apps");
+        if (authorizedApps) authorizedApps.open = true;
+        const actionReceipt = document.querySelector(".control-receipt-row");
+        if (actionReceipt) actionReceipt.open = true;
         return {
           active: document.querySelector("#gatewayPanel")?.classList.contains("active") || false,
           accessHistory: document.querySelector("#desktopControlAuditList")?.children.length || 0,
+          authorizedApps: document.querySelectorAll("#authorizedAppList .authorized-app-row").length,
+          revokeActions: document.querySelectorAll("#authorizedAppList [data-revoke-authorization]").length,
+          actionReceipts: document.querySelectorAll(".control-receipt-row").length,
+          receiptDetails: document.querySelectorAll(".control-receipt-details > div").length,
           pairingExecutor: Boolean(document.querySelector("#pairingDesktopExecutorEnabled")),
           computerPanel: Boolean(document.querySelector("#computerPanel")),
           desktopToolList: Boolean(document.querySelector("#desktopToolList"))
@@ -665,6 +779,10 @@ async function runUiSmoke() {
     if (
       !gatewayControlState.active
       || gatewayControlState.accessHistory < 1
+      || gatewayControlState.authorizedApps !== 2
+      || gatewayControlState.revokeActions !== 1
+      || gatewayControlState.actionReceipts !== 1
+      || gatewayControlState.receiptDetails < 10
       || !gatewayControlState.pairingExecutor
       || gatewayControlState.computerPanel
       || gatewayControlState.desktopToolList
@@ -903,6 +1021,9 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${matrixPath}`);
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryOverviewPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryTimelinePath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryGraphPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryEvidencePath}`);
     console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryConflictsPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpGovernancePath}`);
@@ -1624,6 +1745,14 @@ async function getDesktopControl() {
   return fetchJson("/api/desktop-control");
 }
 
+async function revokeDesktopAuthorization(authorizationId) {
+  await startBackend();
+  return fetchJson(
+    `/api/desktop-control/authorizations/${encodeURIComponent(authorizationId)}/revoke`,
+    { method: "POST" }
+  );
+}
+
 async function getDesktopMemory(query = "", limit = 100, status = "active") {
   await startBackend();
   return fetchJson(
@@ -1641,6 +1770,18 @@ async function getDesktopMemoryInbox(limit = 100) {
 async function getDesktopMemoryEvolution(limit = 100) {
   await startBackend();
   return fetchJson(`/api/desktop-memory/evolution?limit=${encodeURIComponent(limit || 100)}`);
+}
+
+async function runDesktopMemoryCritic() {
+  await startBackend();
+  return fetchJson("/api/desktop-memory/critic/run", { method: "POST" });
+}
+
+async function getDesktopMemoryVisualization(limit = 100) {
+  await startBackend();
+  return fetchJson(
+    `/api/desktop-memory/visualization?limit=${encodeURIComponent(limit || 100)}`
+  );
 }
 
 async function proposeDesktopMemory(payload = {}) {
@@ -1899,9 +2040,14 @@ ipcMain.handle("proactive-tasks:trigger", (_event, taskId) => triggerProactiveTa
 ipcMain.handle("proactive-runs:list", (_event, taskId, limit) => listProactiveRuns(taskId, limit));
 ipcMain.handle("proactive-runs:cancel", (_event, runId) => cancelProactiveRun(runId));
 ipcMain.handle("desktop-control:get", getDesktopControl);
+ipcMain.handle("desktop-control:revoke", (_event, authorizationId) =>
+  revokeDesktopAuthorization(authorizationId));
 ipcMain.handle("desktop-memory:list", (_event, query, limit, status) => getDesktopMemory(query, limit, status));
 ipcMain.handle("desktop-memory:inbox", (_event, limit) => getDesktopMemoryInbox(limit));
 ipcMain.handle("desktop-memory:evolution", (_event, limit) => getDesktopMemoryEvolution(limit));
+ipcMain.handle("desktop-memory:critic-run", runDesktopMemoryCritic);
+ipcMain.handle("desktop-memory:visualization", (_event, limit) =>
+  getDesktopMemoryVisualization(limit));
 ipcMain.handle("desktop-memory:propose", (_event, payload) => proposeDesktopMemory(payload));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));
