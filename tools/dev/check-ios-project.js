@@ -9,10 +9,12 @@ const requiredFiles = [
   "apps/ios/SignalASI.xcodeproj/xcshareddata/xcschemes/SignalASI.xcscheme",
   "apps/ios/SignalASI/SignalASIModels.swift",
   "apps/ios/SignalASI/SignalASILinkProtocol.swift",
+  "apps/ios/SignalASI/SignalASILinkReliability.swift",
   "apps/ios/SignalASI/SignalASIStore.swift",
   "apps/ios/SignalASI/SignalASIServices.swift",
   "apps/ios/SignalASI/SignalASIViews.swift",
   "apps/ios/SignalASITests/SignalASILinkProtocolTests.swift",
+  "apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift",
   "apps/ios/SignalASITests/SignalASIStoreTests.swift",
 ];
 
@@ -32,10 +34,12 @@ const project = read("apps/ios/SignalASI.xcodeproj/project.pbxproj");
 const readme = read("apps/ios/README.md");
 const models = read("apps/ios/SignalASI/SignalASIModels.swift");
 const linkProtocol = read("apps/ios/SignalASI/SignalASILinkProtocol.swift");
+const linkReliability = read("apps/ios/SignalASI/SignalASILinkReliability.swift");
 const services = read("apps/ios/SignalASI/SignalASIServices.swift");
 const views = read("apps/ios/SignalASI/SignalASIViews.swift");
 const tests = [
   read("apps/ios/SignalASITests/SignalASILinkProtocolTests.swift"),
+  read("apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift"),
   read("apps/ios/SignalASITests/SignalASIStoreTests.swift"),
 ].join("\n");
 
@@ -53,11 +57,16 @@ const requiredSourceSnippets = [
   [models, "static let androidParity"],
   [linkProtocol, "signalasi_pairing_ciphertext"],
   [linkProtocol, "signalasi.pairing-access/1.0"],
+  [linkReliability, "SignalASIMqttWireChunking"],
+  [linkReliability, "SignalASILinkDeliveryStore"],
+  [linkReliability, "SignalASILinkDeliveryAckPolicy"],
   [services, "broker.emqx.io"],
+  [services, "scheduleOutboxFlush"],
   [services, "UNUserNotificationCenter"],
   [services, "SFSpeechRecognizer"],
   [views, "AVCaptureMetadataOutput"],
   [tests, "testValidatesAndroidCompatiblePairingQRCode"],
+  [tests, "testChunkingRoundTripsLargeWirePayload"],
   [tests, "testCloudModelContactsAreGroupedByProvider"],
 ];
 

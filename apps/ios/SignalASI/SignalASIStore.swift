@@ -213,6 +213,20 @@ final class SignalASIStore: ObservableObject {
     save()
   }
 
+  func markMessage(_ messageId: UUID, status: ChatDeliveryStatus, detail: String = "") {
+    for contactId in messagesByContact.keys {
+      guard var messages = messagesByContact[contactId],
+            let index = messages.firstIndex(where: { $0.id == messageId }) else {
+        continue
+      }
+      messages[index].deliveryStatus = status
+      messages[index].deliveryTrace.append(DeliveryTraceEvent(stage: status.rawValue, detail: detail))
+      messagesByContact[contactId] = messages
+      save()
+      return
+    }
+  }
+
   @discardableResult
   func addCloudModelContact(
     displayName: String,
