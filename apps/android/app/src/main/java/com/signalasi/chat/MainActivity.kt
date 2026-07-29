@@ -1131,7 +1131,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             richOutputJson = response.richOutputJson,
                             conversationId = response.conversationId,
                             turnId = response.turnId,
-                            taskId = response.taskId
+                            taskId = response.taskId,
+                            inputTokens = response.inputTokens,
+                            outputTokens = response.outputTokens,
+                            costMicros = response.costMicros,
+                            networkBytes = (
+                                response.content.toByteArray(Charsets.UTF_8).size +
+                                    response.richOutputJson.toByteArray(Charsets.UTF_8).size
+                                ).toLong()
                         ) ?: runtime.snapshot()
                     } catch (failure: Throwable) {
                         agentConnectorResponsesInFlight.remove(responseKey)
@@ -1208,7 +1215,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 richOutputJson = response.richOutputJson,
                 conversationId = response.conversationId,
                 turnId = response.turnId,
-                taskId = response.taskId
+                taskId = response.taskId,
+                inputTokens = response.inputTokens,
+                outputTokens = response.outputTokens,
+                costMicros = response.costMicros,
+                networkBytes = (
+                    response.content.toByteArray(Charsets.UTF_8).size +
+                        response.richOutputJson.toByteArray(Charsets.UTF_8).size
+                    ).toLong()
             ) ?: runtime.snapshot()
             if (turnId.isNotBlank()) {
                 state = finalizeAgentExecutionLoop(runtime, turnId, state)
@@ -7027,6 +7041,36 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "profile.recovery" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.DATA_BACKUP))
             "agent.execution_policy" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.EXECUTION_POLICY))
             "agent.task_execution_mode" -> openExistingControlCenterPage { showPermissionModeSettingsPage() }
+            "agent.task_budget" -> openExistingControlCenterPage { showTaskBudgetSettingsPage() }
+            "agent.task_budget.time" -> editTaskBudgetTime()
+            "agent.task_budget.cost" -> editTaskBudgetCost()
+            "agent.task_budget.input_tokens" -> editTaskBudgetLong(
+                R.string.cc_task_budget_input_tokens_title,
+                AgentTaskBudgetStore(this).load().maxInputTokens
+            ) { budget, value -> budget.copy(maxInputTokens = value) }
+            "agent.task_budget.output_tokens" -> editTaskBudgetLong(
+                R.string.cc_task_budget_output_tokens_title,
+                AgentTaskBudgetStore(this).load().maxOutputTokens
+            ) { budget, value -> budget.copy(maxOutputTokens = value) }
+            "agent.task_budget.network" -> editTaskBudgetMib(
+                R.string.cc_task_budget_network_title,
+                AgentTaskBudgetStore(this).load().maxNetworkBytes
+            ) { budget, value -> budget.copy(maxNetworkBytes = value) }
+            "agent.task_budget.battery" -> editTaskBudgetLong(
+                R.string.cc_task_budget_battery_title,
+                AgentTaskBudgetStore(this).load().minimumBatteryPercent.toLong()
+            ) { budget, value -> budget.copy(minimumBatteryPercent = value.toInt().coerceIn(0, 100)) }
+            "agent.task_budget.memory" -> editTaskBudgetMib(
+                R.string.cc_task_budget_memory_title,
+                AgentTaskBudgetStore(this).load().maxMemoryBytes
+            ) { budget, value -> budget.copy(maxMemoryBytes = value) }
+            "agent.task_budget.network_policy" -> showTaskBudgetNetworkPolicyDialog()
+            "agent.task_budget.toggle_cloud" -> updateTaskBudget {
+                it.copy(allowCloud = !it.allowCloud)
+            }
+            "agent.task_budget.toggle_paid" -> updateTaskBudget {
+                it.copy(allowPaidProviders = !it.allowPaidProviders)
+            }
             "agent.permission_mode" -> openExistingControlCenterPage { showPermissionModeSettingsPage() }
             "agent.toggle_pause" -> {
                 val next = !mobileNativeAgent.safetySettings().executionPaused
@@ -7202,6 +7246,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     val mode = AgentTaskExecutionMode.fromWireValue(actionId.substringAfter(':'))
                     mobileNativeAgent.updateTaskExecutionMode(mode)
                     showPermissionModeSettingsPage()
+                }
+                actionId.startsWith("agent.task_budget.profile:") -> {
+                    val profile = AgentTaskBudgetProfile.fromWireValue(actionId.substringAfterLast(':'))
+                    val store = AgentTaskBudgetStore(this)
+                    if (profile == AgentTaskBudgetProfile.CUSTOM) {
+                        store.save(store.load().copy(profile = profile))
+                    } else {
+                        store.select(profile)
+                    }
+                    showTaskBudgetSettingsPage()
                 }
                 actionId.startsWith("agent.permission_mode:") -> {
                     val mode = runCatching {
@@ -10308,6 +10362,301 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     )
 
+    private fun showTaskBudgetSettingsPage() {
+        val budget = AgentTaskBudgetStore(this).load()
+        showControlCenterFeature(
+            getString(R.string.cc_task_budget_title),
+            ControlCenterPageSpec(
+                banner = ControlCenterBannerSpec(
+                    getString(R.string.cc_task_budget_banner_title),
+                    getString(R.string.cc_task_budget_banner_subtitle),
+                    R.drawable.ic_agent_history,
+                    ControlCenterTone.VIOLET
+                ),
+                sections = listOf(
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_task_budget_profile_section),
+                        AgentTaskBudgetProfile.entries.map { profile ->
+                            val selected = profile == budget.profile
+                            ControlCenterRowSpec(
+                                actionId = if (selected) "" else {
+                                    "agent.task_budget.profile:${profile.wireValue}"
+                                },
+                                title = taskBudgetProfileLabel(profile),
+                                subtitle = taskBudgetProfileDescription(profile),
+                                iconRes = R.drawable.ic_agent_control,
+                                status = if (selected) {
+                                    getString(R.string.settings_language_selected)
+                                } else {
+                                    ""
+                                },
+                                tone = if (selected) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL,
+                                showChevron = false
+                            )
+                        }
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_task_budget_limits_section),
+                        listOf(
+                            ControlCenterRowSpec(
+                                "agent.task_budget.time",
+                                getString(R.string.cc_task_budget_time_title),
+                                getString(R.string.cc_task_budget_time_subtitle),
+                                R.drawable.ic_agent_history,
+                                taskBudgetTimeValue(budget.maxElapsedSeconds),
+                                ControlCenterTone.BLUE
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.cost",
+                                getString(R.string.cc_task_budget_cost_title),
+                                getString(R.string.cc_task_budget_cost_subtitle),
+                                R.drawable.ic_protocol_link,
+                                taskBudgetCostValue(budget.maxCostMicros),
+                                ControlCenterTone.GREEN
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.input_tokens",
+                                getString(R.string.cc_task_budget_input_tokens_title),
+                                getString(R.string.cc_task_budget_input_tokens_subtitle),
+                                R.drawable.ic_agent_control,
+                                taskBudgetCountValue(budget.maxInputTokens),
+                                ControlCenterTone.BLUE
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.output_tokens",
+                                getString(R.string.cc_task_budget_output_tokens_title),
+                                getString(R.string.cc_task_budget_output_tokens_subtitle),
+                                R.drawable.ic_agent_control,
+                                taskBudgetCountValue(budget.maxOutputTokens),
+                                ControlCenterTone.BLUE
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.network",
+                                getString(R.string.cc_task_budget_network_title),
+                                getString(R.string.cc_task_budget_network_subtitle),
+                                R.drawable.ic_protocol_link,
+                                taskBudgetNetworkBytesValue(budget.maxNetworkBytes),
+                                ControlCenterTone.VIOLET
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.battery",
+                                getString(R.string.cc_task_budget_battery_title),
+                                getString(R.string.cc_task_budget_battery_subtitle),
+                                R.drawable.ic_resource_battery,
+                                getString(
+                                    R.string.cc_task_budget_battery_value,
+                                    budget.minimumBatteryPercent
+                                ),
+                                ControlCenterTone.AMBER
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.memory",
+                                getString(R.string.cc_task_budget_memory_title),
+                                getString(R.string.cc_task_budget_memory_subtitle),
+                                R.drawable.ic_agent_node,
+                                taskBudgetMemoryBytesValue(budget.maxMemoryBytes),
+                                ControlCenterTone.BLUE
+                            )
+                        )
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_task_budget_resource_section),
+                        listOf(
+                            ControlCenterRowSpec(
+                                "agent.task_budget.network_policy",
+                                getString(R.string.cc_task_budget_network_policy_title),
+                                getString(R.string.cc_task_budget_network_policy_subtitle),
+                                R.drawable.ic_protocol_link,
+                                taskBudgetNetworkPolicyLabel(budget.networkPolicy),
+                                ControlCenterTone.VIOLET
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.toggle_cloud",
+                                getString(R.string.cc_task_budget_cloud_title),
+                                getString(R.string.cc_task_budget_cloud_subtitle),
+                                R.drawable.ic_agent_node,
+                                switchValue = budget.allowCloud,
+                                showChevron = false
+                            ),
+                            ControlCenterRowSpec(
+                                "agent.task_budget.toggle_paid",
+                                getString(R.string.cc_task_budget_paid_title),
+                                getString(R.string.cc_task_budget_paid_subtitle),
+                                R.drawable.ic_protocol_link,
+                                switchValue = budget.allowPaidProviders,
+                                showChevron = false
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    private fun updateTaskBudget(transform: (AgentTaskBudget) -> AgentTaskBudget) {
+        val store = AgentTaskBudgetStore(this)
+        store.save(
+            transform(store.load())
+                .copy(profile = AgentTaskBudgetProfile.CUSTOM)
+                .normalized()
+        )
+        showTaskBudgetSettingsPage()
+    }
+
+    private fun editTaskBudgetTime() {
+        val budget = AgentTaskBudgetStore(this).load()
+        val minutes = if (budget.maxElapsedSeconds == 0L) {
+            "0"
+        } else {
+            String.format(Locale.US, "%.2f", budget.maxElapsedSeconds / 60.0)
+                .trimEnd('0')
+                .trimEnd('.')
+        }
+        showTextSettingDialog(getString(R.string.cc_task_budget_time_dialog), minutes) { raw ->
+            val value = raw.trim().toDoubleOrNull()
+            if (value == null || value < 0.0) {
+                Toast.makeText(this, R.string.cc_task_budget_invalid_value, Toast.LENGTH_SHORT).show()
+            } else {
+                updateTaskBudget {
+                    it.copy(maxElapsedSeconds = (value * 60.0).toLong())
+                }
+            }
+        }
+    }
+
+    private fun editTaskBudgetCost() {
+        val budget = AgentTaskBudgetStore(this).load()
+        val dollars = if (budget.maxCostMicros == 0L) {
+            "0"
+        } else {
+            String.format(Locale.US, "%.6f", budget.maxCostMicros / 1_000_000.0)
+                .trimEnd('0')
+                .trimEnd('.')
+        }
+        showTextSettingDialog(getString(R.string.cc_task_budget_cost_dialog), dollars) { raw ->
+            val value = raw.trim().toDoubleOrNull()
+            if (value == null || value < 0.0) {
+                Toast.makeText(this, R.string.cc_task_budget_invalid_value, Toast.LENGTH_SHORT).show()
+            } else {
+                updateTaskBudget {
+                    it.copy(maxCostMicros = (value * 1_000_000.0).toLong())
+                }
+            }
+        }
+    }
+
+    private fun editTaskBudgetLong(
+        titleRes: Int,
+        current: Long,
+        transform: (AgentTaskBudget, Long) -> AgentTaskBudget
+    ) {
+        showTextSettingDialog(getString(titleRes), current.toString()) { raw ->
+            val value = raw.trim().toLongOrNull()
+            if (value == null || value < 0L) {
+                Toast.makeText(this, R.string.cc_task_budget_invalid_value, Toast.LENGTH_SHORT).show()
+            } else {
+                updateTaskBudget { transform(it, value) }
+            }
+        }
+    }
+
+    private fun editTaskBudgetMib(
+        titleRes: Int,
+        currentBytes: Long,
+        transform: (AgentTaskBudget, Long) -> AgentTaskBudget
+    ) {
+        val currentMib = if (currentBytes <= 0L) 0L else currentBytes / AgentTaskBudget.MIB
+        showTextSettingDialog(getString(titleRes), currentMib.toString()) { raw ->
+            val value = raw.trim().toLongOrNull()
+            if (value == null || value < 0L) {
+                Toast.makeText(this, R.string.cc_task_budget_invalid_value, Toast.LENGTH_SHORT).show()
+            } else {
+                updateTaskBudget {
+                    transform(
+                        it,
+                        if (value > Long.MAX_VALUE / AgentTaskBudget.MIB) {
+                            Long.MAX_VALUE
+                        } else {
+                            value * AgentTaskBudget.MIB
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showTaskBudgetNetworkPolicyDialog() {
+        val current = AgentTaskBudgetStore(this).load().networkPolicy
+        val policies = AgentTaskNetworkPolicy.entries
+        val labels = policies.map(::taskBudgetNetworkPolicyLabel)
+        showChoiceDialog(
+            getString(R.string.cc_task_budget_network_policy_title),
+            labels,
+            taskBudgetNetworkPolicyLabel(current)
+        ) { selected ->
+            policies.getOrNull(labels.indexOf(selected))?.let { policy ->
+                updateTaskBudget { it.copy(networkPolicy = policy) }
+            }
+        }
+    }
+
+    private fun taskBudgetProfileLabel(profile: AgentTaskBudgetProfile): String = getString(
+        when (profile) {
+            AgentTaskBudgetProfile.ADAPTIVE -> R.string.cc_task_budget_profile_adaptive
+            AgentTaskBudgetProfile.FAST -> R.string.cc_task_budget_profile_fast
+            AgentTaskBudgetProfile.ECONOMY -> R.string.cc_task_budget_profile_economy
+            AgentTaskBudgetProfile.PRIVATE -> R.string.cc_task_budget_profile_private
+            AgentTaskBudgetProfile.CUSTOM -> R.string.cc_task_budget_profile_custom
+        }
+    )
+
+    private fun taskBudgetProfileDescription(profile: AgentTaskBudgetProfile): String = getString(
+        when (profile) {
+            AgentTaskBudgetProfile.ADAPTIVE -> R.string.cc_task_budget_profile_adaptive_subtitle
+            AgentTaskBudgetProfile.FAST -> R.string.cc_task_budget_profile_fast_subtitle
+            AgentTaskBudgetProfile.ECONOMY -> R.string.cc_task_budget_profile_economy_subtitle
+            AgentTaskBudgetProfile.PRIVATE -> R.string.cc_task_budget_profile_private_subtitle
+            AgentTaskBudgetProfile.CUSTOM -> R.string.cc_task_budget_profile_custom_subtitle
+        }
+    )
+
+    private fun taskBudgetNetworkPolicyLabel(policy: AgentTaskNetworkPolicy): String = getString(
+        when (policy) {
+            AgentTaskNetworkPolicy.ANY -> R.string.cc_task_budget_network_any
+            AgentTaskNetworkPolicy.UNMETERED_ONLY -> R.string.cc_task_budget_network_unmetered
+            AgentTaskNetworkPolicy.TRUSTED_ONLY -> R.string.cc_task_budget_network_trusted
+            AgentTaskNetworkPolicy.OFFLINE_ONLY -> R.string.cc_task_budget_network_offline
+        }
+    )
+
+    private fun taskBudgetTimeValue(seconds: Long): String = when {
+        seconds <= 0L -> getString(R.string.cc_task_budget_unlimited)
+        seconds % 3_600L == 0L -> getString(
+            R.string.cc_task_budget_hours_value,
+            seconds / 3_600L
+        )
+        else -> getString(R.string.cc_task_budget_minutes_value, (seconds + 59L) / 60L)
+    }
+
+    private fun taskBudgetCostValue(micros: Long): String =
+        if (micros <= 0L) {
+            getString(R.string.cc_task_budget_unlimited)
+        } else {
+            String.format(Locale.US, "$%.2f", micros / 1_000_000.0)
+        }
+
+    private fun taskBudgetCountValue(value: Long): String =
+        if (value <= 0L) getString(R.string.cc_task_budget_unlimited)
+        else String.format(Locale.US, "%,d", value)
+
+    private fun taskBudgetNetworkBytesValue(value: Long): String =
+        if (value <= 0L) getString(R.string.cc_task_budget_unlimited)
+        else formatBytes(value)
+
+    private fun taskBudgetMemoryBytesValue(value: Long): String =
+        if (value <= 0L) getString(R.string.cc_task_budget_system_managed)
+        else formatBytes(value)
+
     private fun permissionModeDescription(mode: PermissionMode): String = getString(
         when (mode) {
             PermissionMode.OBSERVE_ONLY -> R.string.cc_permission_observe_subtitle
@@ -10389,6 +10738,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderControlCenterExecutionPolicyPage() {
         val safety = mobileNativeAgent.safetySettings()
+        val taskBudget = AgentTaskBudgetStore(this).load()
         val planner = mobileNativeAgent.modelPlannerSettings()
         val privacyProtected = !planner.shareScreenText && !planner.shareAgentOutputsWithPlanner
         val notificationsEnabled = appNotificationsEnabled()
@@ -10401,6 +10751,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         listOf(
                             ControlCenterRowSpec("agent.permission_mode", getString(R.string.on_device_agent_permission_mode), getString(R.string.on_device_agent_permission_mode_subtitle), R.drawable.ic_security_shield, permissionModeLabel(safety.permissionMode), ControlCenterTone.BLUE),
                             ControlCenterRowSpec("agent.task_execution_mode", getString(R.string.cc_task_execution_mode_title), getString(R.string.cc_task_execution_mode_subtitle), R.drawable.ic_agent_control, taskExecutionModeLabel(safety.taskExecutionMode), ControlCenterTone.GREEN),
+                            ControlCenterRowSpec("agent.task_budget", getString(R.string.cc_task_budget_title), getString(R.string.cc_task_budget_subtitle), R.drawable.ic_agent_history, taskBudgetProfileLabel(taskBudget.profile), ControlCenterTone.VIOLET),
                             ControlCenterRowSpec("security.toggle_guard", getString(R.string.on_device_agent_high_risk_guard), getString(R.string.on_device_agent_high_risk_guard_subtitle), R.drawable.ic_security_shield, switchValue = safety.highRiskGuard, showChevron = false)
                         )
                     ),

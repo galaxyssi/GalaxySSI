@@ -12,6 +12,7 @@ from agent_execution_harness import (
     AgentExecutionPolicy,
     AgentExecutionHarness,
     AgentTaskKind,
+    estimate_text_tokens,
     execution_contract,
     finalize_task_artifacts,
     looks_failed_reply,
@@ -313,6 +314,10 @@ class DesktopSuperAgent:
                 observations=trace.observations,
             )
             try:
+                self._execution_harness.account_usage(
+                    input_tokens=estimate_text_tokens(delegated_prompt),
+                    estimated=True,
+                )
                 result = self.deliver(
                     delegate,
                     delegated_prompt,
@@ -325,6 +330,10 @@ class DesktopSuperAgent:
                     execution_policy=self._execution_harness.policy.public(),
                 )
                 reply = str(result.get("reply") or "").strip()
+                self._execution_harness.account_usage(
+                    output_tokens=estimate_text_tokens(reply),
+                    estimated=True,
+                )
                 if not reply or looks_failed_reply(reply):
                     raise RuntimeError(f"{label} returned no result")
                 observation = AgentLoopObservation(
@@ -454,6 +463,10 @@ class DesktopSuperAgent:
         )
         reply = ""
         try:
+            self._execution_harness.account_usage(
+                input_tokens=estimate_text_tokens(prompt),
+                estimated=True,
+            )
             result = self.mcp.invoke_prompt(
                 connection.id,
                 prompt,
@@ -465,6 +478,10 @@ class DesktopSuperAgent:
                 },
             )
             reply = str(result.get("result") or "").strip()
+            self._execution_harness.account_usage(
+                output_tokens=estimate_text_tokens(reply),
+                estimated=True,
+            )
             if not reply:
                 raise RuntimeError(f"{connection.name} returned no result")
             observation = AgentLoopObservation(
@@ -569,6 +586,24 @@ class DesktopSuperAgent:
                     "conversation_id": conversation_id,
                     "caller_id": "signalasi.desktop.super-agent",
                 },
+            )
+            serialized_result = json.dumps(
+                result,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                default=str,
+            )
+            network_tool = tool_id in {WEB_FETCH, BROWSER_OPEN}
+            self._execution_harness.account_usage(
+                input_tokens=estimate_text_tokens(json.dumps(arguments, default=str)),
+                output_tokens=estimate_text_tokens(serialized_result),
+                network_bytes=(
+                    len(serialized_result.encode("utf-8"))
+                    if network_tool else 0
+                ),
+                estimated=True,
+                network_required=network_tool,
+                trusted_network_target=False,
             )
             error = dict(result.get("error") or {})
             verification = dict(result.get("verification") or {})
@@ -1163,6 +1198,10 @@ class DesktopSuperAgent:
                 ),
                 "absolute_timeout_seconds": None,
                 "execution_mode": self._execution_harness.policy.execution_mode.value,
+                "task_budget": self._execution_harness.policy.task_budget.public(),
+                "task_budget_usage": (
+                    self._execution_harness.checkpoint.task_budget_usage.public()
+                ),
             }
         self.task_manager.add_event(
             task_id,

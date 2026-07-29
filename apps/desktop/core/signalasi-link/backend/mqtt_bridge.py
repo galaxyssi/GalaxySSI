@@ -2847,6 +2847,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             payload.get("execution_mode")
             or AgentExecutionMode.AUTO_COMPLETE.value
         ),
+        requested_task_budget=(
+            payload.get("task_budget")
+            if isinstance(payload.get("task_budget"), dict)
+            else None
+        ),
     )
     plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     if plan_only:
@@ -3741,6 +3746,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         elapsed_seconds=elapsed_seconds,
                         approval_policy=codex_approval_policy,
                         sandbox=codex_sandbox,
+                        execution_policy=execution_policy,
                     )
                     bind_codex_stall_recovery(server)
                     add_task_trace("codex_turn_reconnected", task.turn_id)

@@ -519,6 +519,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         AgentExecutionPolicy,
         execution_contract,
         execution_policy_for,
+        estimate_text_tokens,
         finalize_task_artifacts,
         looks_failed_reply,
         replan_instruction,
@@ -584,13 +585,35 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         attempt = harness.begin_attempt()
         add_phase("act", f"Running {spec.name if spec else agent_id}", status="running")
         attempt_request = replace(request, prompt=current_prompt)
+        cloud_provider = spec is not None and spec.id == "cloud-model"
+        prompt_bytes = len(current_prompt.encode("utf-8")) if cloud_provider else 0
+        harness.account_usage(
+            input_tokens=estimate_text_tokens(current_prompt),
+            network_bytes=prompt_bytes,
+            estimated=True,
+            network_required=cloud_provider,
+            trusted_network_target=False,
+            cloud_provider=cloud_provider,
+            paid_provider=cloud_provider,
+        )
+        attempt_spec = (
+            replace(
+                spec,
+                timeout=max(1, int(harness.effective_timeout(spec.timeout))),
+            )
+            if spec is not None else None
+        )
         if spec is not None and spec.id == "local-llm":
             with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
                 messages = _stateless_model_messages(attempt_request, spec.id)
-                raw_reply = ask_local_model(current_prompt, timeout=spec.timeout, messages=messages)
+                raw_reply = ask_local_model(
+                    current_prompt,
+                    timeout=attempt_spec.timeout,
+                    messages=messages,
+                )
         elif spec is not None and spec.id == "cloud-model":
             with agent_conversation_sessions().conversation_lock(spec.id, request.conversation_id):
-                raw_reply = _ask_cloud_model_for_request(attempt_request, spec)
+                raw_reply = _ask_cloud_model_for_request(attempt_request, attempt_spec)
         else:
             prompt = (
                 current_prompt
@@ -600,7 +623,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             raw_reply = _ask_agent_sync_inner(
                 agent_id,
                 prompt,
-                spec,
+                attempt_spec,
                 task_id=request.run_id,
                 conversation_id=request.conversation_id,
                 response_language=preferred_language,
@@ -609,6 +632,18 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 ),
                 plan_only=plan_only,
             )
+        harness.account_usage(
+            output_tokens=estimate_text_tokens(str(raw_reply or "")),
+            network_bytes=(
+                len(str(raw_reply or "").encode("utf-8"))
+                if cloud_provider else 0
+            ),
+            estimated=True,
+            network_required=cloud_provider,
+            trusted_network_target=False,
+            cloud_provider=cloud_provider,
+            paid_provider=cloud_provider,
+        )
         reply = sanitize_assistant_response(raw_reply)
         if reply and not _agent_reply_failed(reply) and not looks_failed_reply(reply):
             harness.progress("observe")

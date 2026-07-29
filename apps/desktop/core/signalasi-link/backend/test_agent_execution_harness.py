@@ -14,6 +14,12 @@ from agent_execution_harness import (
     AgentExecutionHarness,
     AgentExecutionPolicy,
     AgentReasoningEffort,
+    AgentTaskBudget,
+    AgentTaskBudgetExceeded,
+    AgentTaskBudgetLimit,
+    AgentTaskBudgetProfile,
+    AgentTaskBudgetUsage,
+    AgentTaskNetworkPolicy,
     AgentTaskIntent,
     AgentTaskKind,
     classify_task_intent,
@@ -229,6 +235,181 @@ class AgentExecutionHarnessTests(unittest.TestCase):
         self.assertEqual(AgentTaskIntent.FILE, policy.task_intent)
         self.assertEqual(AgentReasoningEffort.MEDIUM, policy.reasoning_effort)
         self.assertFalse(policy.requires_artifact)
+
+    def test_task_budget_profiles_are_portable_and_have_no_default_hard_deadline(self):
+        expected = {
+            AgentTaskBudgetProfile.ADAPTIVE: (5_000_000, 1_000_000, 256_000),
+            AgentTaskBudgetProfile.FAST: (2_000_000, 256_000, 64_000),
+            AgentTaskBudgetProfile.ECONOMY: (250_000, 64_000, 16_000),
+            AgentTaskBudgetProfile.PRIVATE: (5_000_000, 128_000, 32_000),
+        }
+
+        for profile, limits in expected.items():
+            with self.subTest(profile=profile.value):
+                budget = AgentTaskBudget.for_profile(profile)
+                restored = AgentTaskBudget.from_public(budget.public())
+                self.assertEqual(budget, restored)
+                self.assertEqual(limits, (
+                    budget.max_cost_micros,
+                    budget.max_input_tokens,
+                    budget.max_output_tokens,
+                ))
+        self.assertEqual(0, AgentTaskBudget.for_profile("adaptive").max_elapsed_seconds)
+        self.assertEqual(300, AgentTaskBudget.for_profile("fast").max_elapsed_seconds)
+        private = AgentTaskBudget.for_profile("private")
+        self.assertFalse(private.allow_cloud)
+        self.assertFalse(private.allow_paid_providers)
+        self.assertEqual(AgentTaskNetworkPolicy.TRUSTED_ONLY, private.network_policy)
+
+    def test_task_budget_rejects_each_resource_limit(self):
+        cases = (
+            (
+                AgentTaskBudget(max_elapsed_seconds=1),
+                AgentTaskBudgetUsage(active_elapsed_seconds=1.1),
+                {},
+                AgentTaskBudgetLimit.TIME,
+            ),
+            (
+                AgentTaskBudget(max_cost_micros=10),
+                AgentTaskBudgetUsage(cost_micros=11),
+                {},
+                AgentTaskBudgetLimit.COST,
+            ),
+            (
+                AgentTaskBudget(max_input_tokens=10),
+                AgentTaskBudgetUsage(input_tokens=11),
+                {},
+                AgentTaskBudgetLimit.INPUT_TOKENS,
+            ),
+            (
+                AgentTaskBudget(max_output_tokens=10),
+                AgentTaskBudgetUsage(output_tokens=11),
+                {},
+                AgentTaskBudgetLimit.OUTPUT_TOKENS,
+            ),
+            (
+                AgentTaskBudget(max_network_bytes=10),
+                AgentTaskBudgetUsage(network_bytes=11),
+                {},
+                AgentTaskBudgetLimit.NETWORK,
+            ),
+            (
+                AgentTaskBudget(max_memory_bytes=10),
+                AgentTaskBudgetUsage(peak_memory_bytes=11),
+                {},
+                AgentTaskBudgetLimit.MEMORY,
+            ),
+            (
+                AgentTaskBudget(minimum_battery_percent=20),
+                AgentTaskBudgetUsage(),
+                {"battery_percent": 19},
+                AgentTaskBudgetLimit.BATTERY,
+            ),
+            (
+                AgentTaskBudget(allow_cloud=False),
+                AgentTaskBudgetUsage(),
+                {"cloud_provider": True},
+                AgentTaskBudgetLimit.CLOUD,
+            ),
+            (
+                AgentTaskBudget(allow_paid_providers=False),
+                AgentTaskBudgetUsage(),
+                {"paid_provider": True},
+                AgentTaskBudgetLimit.PAID_PROVIDER,
+            ),
+        )
+
+        for budget, usage, environment, expected in cases:
+            with self.subTest(limit=expected.value):
+                decision = budget.evaluate(usage, **environment)
+                self.assertFalse(decision.allowed)
+                self.assertEqual(expected, decision.limit)
+
+    def test_task_budget_network_and_battery_policies_are_context_aware(self):
+        charging = AgentTaskBudget(minimum_battery_percent=90).evaluate(
+            AgentTaskBudgetUsage(),
+            battery_percent=5,
+            charging=True,
+        )
+        trusted = AgentTaskBudget(
+            network_policy=AgentTaskNetworkPolicy.TRUSTED_ONLY,
+        ).evaluate(
+            AgentTaskBudgetUsage(),
+            network_required=True,
+            trusted_network_target=True,
+        )
+        untrusted = AgentTaskBudget(
+            network_policy=AgentTaskNetworkPolicy.TRUSTED_ONLY,
+        ).evaluate(
+            AgentTaskBudgetUsage(),
+            network_required=True,
+            trusted_network_target=False,
+        )
+        offline = AgentTaskBudget(
+            network_policy=AgentTaskNetworkPolicy.OFFLINE_ONLY,
+        ).evaluate(
+            AgentTaskBudgetUsage(),
+            network_required=True,
+        )
+
+        self.assertTrue(charging.allowed)
+        self.assertTrue(trusted.allowed)
+        self.assertEqual(AgentTaskBudgetLimit.NETWORK, untrusted.limit)
+        self.assertEqual(AgentTaskBudgetLimit.NETWORK, offline.limit)
+
+    def test_task_budget_boolean_input_is_fail_closed(self):
+        restored = AgentTaskBudget.from_public({
+            "allow_cloud": "false",
+            "allow_paid_providers": "0",
+        })
+
+        self.assertFalse(restored.allow_cloud)
+        self.assertFalse(restored.allow_paid_providers)
+
+    def test_task_budget_usage_persists_without_counting_process_downtime(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.dict(
+            os.environ,
+            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+        ):
+            policy = execution_policy_for(
+                "Build a small program",
+                requested_task_budget={
+                    "profile": "custom",
+                    "max_elapsed_seconds": 30,
+                    "max_input_tokens": 20,
+                    "max_output_tokens": 20,
+                },
+            )
+            harness = AgentExecutionHarness(
+                "task-resource-budget",
+                "codex",
+                "Build a small program",
+                policy=policy,
+            )
+            harness.account_usage(input_tokens=8, output_tokens=3, estimated=True)
+            checkpoint = (
+                task_workspace("task-resource-budget", "codex")
+                / ".signalasi"
+                / "execution-checkpoint.json"
+            )
+            value = json.loads(checkpoint.read_text(encoding="utf-8"))
+            value["active_elapsed_seconds"] = 5
+            value["active_started_at"] = 1
+            checkpoint.write_text(json.dumps(value), encoding="utf-8")
+
+            restored = AgentExecutionHarness(
+                "task-resource-budget",
+                "codex",
+                "Build a small program",
+                policy=policy,
+            )
+            remaining = restored.remaining_active_seconds()
+
+            self.assertGreater(remaining, 24)
+            self.assertEqual(8, restored.checkpoint.task_budget_usage.input_tokens)
+            self.assertEqual(3, restored.checkpoint.task_budget_usage.output_tokens)
+            with self.assertRaises(AgentTaskBudgetExceeded):
+                restored.account_usage(input_tokens=13, estimated=True)
 
     def test_checkpoint_and_same_failure_budget_are_persistent(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(

@@ -1661,6 +1661,7 @@ class DesktopTaskStartReq(BaseModel):
     prompt: str
     agent_id: str = "auto"
     execution_mode: str = "auto_complete"
+    task_budget: dict = Field(default_factory=dict)
     conversation_id: str = ""
     attachments: list[str] = Field(default_factory=list)
     response_language: str = ""
@@ -1788,6 +1789,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
         prompt,
         attachments=attachments,
         requested_execution_mode=req.execution_mode,
+        requested_task_budget=req.task_budget,
     )
     agent_id = _desktop_agent_for(prompt, req.agent_id)
     if (
@@ -1861,6 +1863,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
             from agent_execution_harness import (
                 AgentExecutionHarness,
                 execution_contract,
+                estimate_text_tokens,
                 finalize_task_artifacts,
                 replan_instruction,
             )
@@ -1874,10 +1877,15 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                 agent_id,
                 prompt,
                 attachments=attachments,
+                policy=desktop_execution_policy,
             )
             current_prompt = f"{prompt.rstrip()}\n\n{execution_contract(harness.policy)}"
             while True:
                 attempt = harness.begin_attempt()
+                harness.account_usage(
+                    input_tokens=estimate_text_tokens(current_prompt),
+                    estimated=True,
+                )
                 agent_task_manager.add_event(
                     task.task_id,
                     "act",
@@ -1908,6 +1916,10 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                     reply = str(result.get("result") or "").strip()
                     if not reply:
                         raise RuntimeError(f"{label} returned no result")
+                    harness.account_usage(
+                        output_tokens=estimate_text_tokens(reply),
+                        estimated=True,
+                    )
                     harness.progress("observe")
                     finalization = finalize_task_artifacts(
                         task.task_id,
@@ -2100,6 +2112,10 @@ def api_retry_desktop_task(task_id: str, request: Request):
             execution_mode=str(
                 (task.execution_policy or {}).get("execution_mode")
                 or "auto_complete"
+            ),
+            task_budget=dict(
+                (task.execution_policy or {}).get("task_budget")
+                or {}
             ),
             conversation_id=task.conversation_id,
             attachments=sources,

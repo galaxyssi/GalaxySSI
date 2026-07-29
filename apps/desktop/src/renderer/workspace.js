@@ -32,6 +32,112 @@ const CLOUD_PROVIDER_PRESETS = Object.freeze({
   }
 });
 const LANGUAGE_POLICY_CHOICES = new Set(["auto", "zh-CN", "en-US", "zh-HK", "zh-TW"]);
+const TASK_BUDGET_PROFILES = Object.freeze({
+  adaptive: {
+    profile: "adaptive",
+    max_elapsed_seconds: 0,
+    max_cost_micros: 5_000_000,
+    max_input_tokens: 1_000_000,
+    max_output_tokens: 256_000,
+    max_network_bytes: 256 * 1_048_576,
+    minimum_battery_percent: 5,
+    max_memory_bytes: 0,
+    network_policy: "any",
+    allow_cloud: true,
+    allow_paid_providers: true
+  },
+  fast: {
+    profile: "fast",
+    max_elapsed_seconds: 300,
+    max_cost_micros: 2_000_000,
+    max_input_tokens: 256_000,
+    max_output_tokens: 64_000,
+    max_network_bytes: 128 * 1_048_576,
+    minimum_battery_percent: 10,
+    max_memory_bytes: 1536 * 1_048_576,
+    network_policy: "any",
+    allow_cloud: true,
+    allow_paid_providers: true
+  },
+  economy: {
+    profile: "economy",
+    max_elapsed_seconds: 0,
+    max_cost_micros: 250_000,
+    max_input_tokens: 64_000,
+    max_output_tokens: 16_000,
+    max_network_bytes: 32 * 1_048_576,
+    minimum_battery_percent: 15,
+    max_memory_bytes: 768 * 1_048_576,
+    network_policy: "any",
+    allow_cloud: true,
+    allow_paid_providers: true
+  },
+  private: {
+    profile: "private",
+    max_elapsed_seconds: 0,
+    max_cost_micros: 5_000_000,
+    max_input_tokens: 128_000,
+    max_output_tokens: 32_000,
+    max_network_bytes: 64 * 1_048_576,
+    minimum_battery_percent: 10,
+    max_memory_bytes: 1024 * 1_048_576,
+    network_policy: "trusted_only",
+    allow_cloud: false,
+    allow_paid_providers: false
+  }
+});
+const TASK_BUDGET_NETWORK_POLICIES = new Set([
+  "any",
+  "unmetered_only",
+  "trusted_only",
+  "offline_only"
+]);
+
+function boundedTaskBudgetNumber(value, fallback, maximum, integer = true) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  const bounded = Math.min(maximum, Math.max(0, parsed));
+  return integer ? Math.round(bounded) : bounded;
+}
+
+function taskBudgetPreset(profile) {
+  const normalized = Object.hasOwn(TASK_BUDGET_PROFILES, profile) ? profile : "adaptive";
+  return { version: 1, ...TASK_BUDGET_PROFILES[normalized] };
+}
+
+function normalizeTaskBudget(value = {}) {
+  const requestedProfile = String(value.profile || "adaptive").trim().toLowerCase();
+  const profile = requestedProfile === "custom" || Object.hasOwn(TASK_BUDGET_PROFILES, requestedProfile)
+    ? requestedProfile
+    : "adaptive";
+  const fallback = taskBudgetPreset(profile === "custom" ? "adaptive" : profile);
+  return {
+    version: 1,
+    profile,
+    max_elapsed_seconds: boundedTaskBudgetNumber(value.max_elapsed_seconds, fallback.max_elapsed_seconds, 604800, false),
+    max_cost_micros: boundedTaskBudgetNumber(value.max_cost_micros, fallback.max_cost_micros, 1_000_000_000),
+    max_input_tokens: boundedTaskBudgetNumber(value.max_input_tokens, fallback.max_input_tokens, 10_000_000),
+    max_output_tokens: boundedTaskBudgetNumber(value.max_output_tokens, fallback.max_output_tokens, 10_000_000),
+    max_network_bytes: boundedTaskBudgetNumber(value.max_network_bytes, fallback.max_network_bytes, 10 * 1_073_741_824),
+    minimum_battery_percent: boundedTaskBudgetNumber(value.minimum_battery_percent, fallback.minimum_battery_percent, 100),
+    max_memory_bytes: boundedTaskBudgetNumber(value.max_memory_bytes, fallback.max_memory_bytes, 16 * 1_073_741_824),
+    network_policy: TASK_BUDGET_NETWORK_POLICIES.has(String(value.network_policy || ""))
+      ? String(value.network_policy)
+      : fallback.network_policy,
+    allow_cloud: typeof value.allow_cloud === "boolean" ? value.allow_cloud : fallback.allow_cloud,
+    allow_paid_providers: typeof value.allow_paid_providers === "boolean"
+      ? value.allow_paid_providers
+      : fallback.allow_paid_providers
+  };
+}
+
+function loadTaskBudget() {
+  try {
+    return normalizeTaskBudget(JSON.parse(localStorage.getItem("signalasi-desktop-task-budget") || "{}"));
+  } catch (_error) {
+    return taskBudgetPreset("adaptive");
+  }
+}
 
 function normalizeLanguagePolicy(value) {
   const candidate = String(value || "").trim();
@@ -89,6 +195,7 @@ const state = {
   executionMode: localStorage.getItem("signalasi-desktop-execution-mode") === "plan_only"
     ? "plan_only"
     : "auto_complete",
+  taskBudget: loadTaskBudget(),
   attachments: [],
   renderingSignature: "",
   polling: false,
@@ -114,6 +221,7 @@ const elements = {
   attachments: $("#attachmentTray"),
   selectedAgent: $("#selectedAgentLabel"),
   executionMode: $("#executionModeButton"),
+  taskBudgetProfile: $("#taskBudgetProfileSelect"),
   agentCount: $("#agentCount"),
   capabilityCount: $("#capabilityCount"),
   gatewayCount: $("#gatewayCount"),
@@ -322,6 +430,7 @@ async function setLanguage(language, persist = true) {
   renderEvolutionTasks();
   updateHeaderStatus();
   updateExecutionMode();
+  fillTaskBudgetSettings();
   document.dispatchEvent(new CustomEvent("signalasi:locale-changed", {
     detail: { language: state.language }
   }));
@@ -659,6 +768,7 @@ async function sendTask() {
       conversationId: state.currentConversationId,
       attachments,
       executionMode: state.executionMode,
+      taskBudget: state.taskBudget,
       responseLanguage: resolveLanguagePolicy(
         state.agentConfig?.language_policy?.response_language || "auto"
       )
@@ -705,6 +815,71 @@ function updateExecutionMode() {
   elements.executionMode.textContent = t(planOnly ? "Plan only" : "Auto complete");
   elements.executionMode.classList.toggle("plan-only", planOnly);
   elements.executionMode.setAttribute("aria-pressed", planOnly ? "true" : "false");
+}
+
+function taskBudgetProfileLabel(profile) {
+  const labels = {
+    adaptive: "Adaptive",
+    fast: "Fast",
+    economy: "Economy",
+    private: "Private",
+    custom: "Custom"
+  };
+  return t(labels[profile] || labels.adaptive);
+}
+
+function fillTaskBudgetSettings() {
+  const budget = normalizeTaskBudget(state.taskBudget);
+  state.taskBudget = budget;
+  elements.taskBudgetProfile.value = budget.profile;
+  $("#taskBudgetSettingsProfile").value = budget.profile;
+  $("#taskBudgetSummary").textContent = taskBudgetProfileLabel(budget.profile);
+  $("#taskBudgetTime").value = String(Math.round((budget.max_elapsed_seconds / 60) * 100) / 100);
+  $("#taskBudgetCost").value = String(Math.round((budget.max_cost_micros / 1_000_000) * 100) / 100);
+  $("#taskBudgetInputTokens").value = String(budget.max_input_tokens);
+  $("#taskBudgetOutputTokens").value = String(budget.max_output_tokens);
+  $("#taskBudgetNetwork").value = String(Math.round(budget.max_network_bytes / 1_048_576));
+  $("#taskBudgetMemory").value = String(Math.round(budget.max_memory_bytes / 1_048_576));
+  $("#taskBudgetBattery").value = String(budget.minimum_battery_percent);
+  $("#taskBudgetNetworkPolicy").value = budget.network_policy;
+  $("#taskBudgetAllowCloud").checked = budget.allow_cloud;
+  $("#taskBudgetAllowPaid").checked = budget.allow_paid_providers;
+}
+
+function persistTaskBudget(value, notify = true) {
+  state.taskBudget = normalizeTaskBudget(value);
+  localStorage.setItem("signalasi-desktop-task-budget", JSON.stringify(state.taskBudget));
+  fillTaskBudgetSettings();
+  if (notify) showToast(t("Task budget saved."));
+}
+
+function selectTaskBudgetProfile(profile) {
+  const selected = String(profile || "adaptive");
+  if (selected === "custom") {
+    persistTaskBudget({ ...state.taskBudget, profile: "custom" });
+    return;
+  }
+  persistTaskBudget(taskBudgetPreset(selected));
+}
+
+function readTaskBudgetSettings() {
+  return normalizeTaskBudget({
+    profile: $("#taskBudgetSettingsProfile").value,
+    max_elapsed_seconds: Number($("#taskBudgetTime").value || 0) * 60,
+    max_cost_micros: Number($("#taskBudgetCost").value || 0) * 1_000_000,
+    max_input_tokens: $("#taskBudgetInputTokens").value,
+    max_output_tokens: $("#taskBudgetOutputTokens").value,
+    max_network_bytes: Number($("#taskBudgetNetwork").value || 0) * 1_048_576,
+    minimum_battery_percent: $("#taskBudgetBattery").value,
+    max_memory_bytes: Number($("#taskBudgetMemory").value || 0) * 1_048_576,
+    network_policy: $("#taskBudgetNetworkPolicy").value,
+    allow_cloud: $("#taskBudgetAllowCloud").checked,
+    allow_paid_providers: $("#taskBudgetAllowPaid").checked
+  });
+}
+
+function markTaskBudgetCustom() {
+  $("#taskBudgetSettingsProfile").value = "custom";
 }
 
 async function refreshBackend() {
@@ -767,6 +942,7 @@ function fillAgentSettings() {
   fillLanguagePolicySettings(config);
   fillCloudModelSettings(config.cloud_model || {});
   fillWebSearchSettings(config.web_search || {});
+  fillTaskBudgetSettings();
 }
 
 function fillLanguagePolicySettings(config = state.agentConfig || {}) {
@@ -2167,6 +2343,27 @@ function bindEvents() {
     localStorage.setItem("signalasi-desktop-execution-mode", state.executionMode);
     updateExecutionMode();
   });
+  $("#taskBudgetProfileSelect").addEventListener("change", (event) => {
+    selectTaskBudgetProfile(event.target.value);
+  });
+  $("#taskBudgetSettingsProfile").addEventListener("change", (event) => {
+    selectTaskBudgetProfile(event.target.value);
+  });
+  [
+    "#taskBudgetTime",
+    "#taskBudgetCost",
+    "#taskBudgetInputTokens",
+    "#taskBudgetOutputTokens",
+    "#taskBudgetNetwork",
+    "#taskBudgetMemory",
+    "#taskBudgetBattery",
+    "#taskBudgetNetworkPolicy",
+    "#taskBudgetAllowCloud",
+    "#taskBudgetAllowPaid"
+  ].forEach((selector) => $(selector).addEventListener("input", markTaskBudgetCustom));
+  $("#saveTaskBudgetButton").addEventListener("click", () => {
+    persistTaskBudget(readTaskBudgetSettings());
+  });
   elements.prompt.addEventListener("input", updateSendState);
   elements.prompt.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -2392,6 +2589,7 @@ async function init() {
   updateAgentCounters();
   updateSelectedAgent();
   updateExecutionMode();
+  fillTaskBudgetSettings();
   updateSendState();
   await refreshBackend();
   await Promise.all([refreshAgents(), refreshGateway(), refreshDesktopControl(), refreshCapabilities(), refreshTasks(true)]);
