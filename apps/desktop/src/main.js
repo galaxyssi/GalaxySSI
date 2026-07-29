@@ -1217,6 +1217,25 @@ async function getAgentConfig() {
   return fetchJson("/api/agents/config");
 }
 
+async function getAcpRuntime() {
+  await startBackend();
+  return fetchJson("/api/acp-runtime");
+}
+
+async function prewarmAcpAgent(agentId) {
+  await startBackend();
+  return fetchJson(`/api/acp-runtime/${encodeURIComponent(agentId)}/prewarm`, {
+    method: "POST"
+  });
+}
+
+async function restartAcpAgent(agentId) {
+  await startBackend();
+  return fetchJson(`/api/acp-runtime/${encodeURIComponent(agentId)}/restart`, {
+    method: "POST"
+  });
+}
+
 async function getAgentDiagnostics() {
   await startBackend();
   return fetchJson("/api/agents/diagnostics");
@@ -1711,6 +1730,9 @@ ipcMain.handle("commands:runs", (_event, limit) => getCommandRuns(limit));
 ipcMain.handle("agents:self-test", (_event, options) => runAgentSelfTest(options));
 ipcMain.handle("agents:config:get", getAgentConfig);
 ipcMain.handle("agents:config:save", (_event, config) => saveAgentConfig(config));
+ipcMain.handle("acp-runtime:get", getAcpRuntime);
+ipcMain.handle("acp-runtime:prewarm", (_event, agentId) => prewarmAcpAgent(agentId));
+ipcMain.handle("acp-runtime:restart", (_event, agentId) => restartAcpAgent(agentId));
 ipcMain.handle("agents:test", (_event, agentId, prompt) => testAgent(agentId, prompt));
 ipcMain.handle("mobile:test-message", (_event, contactId, content) => sendMobileTestMessage(contactId, content));
 ipcMain.handle("mobile:sync-status", syncMobileStatus);

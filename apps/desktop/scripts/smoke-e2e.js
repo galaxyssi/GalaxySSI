@@ -302,7 +302,7 @@ function startFakeModelServer() {
 async function main() {
   log("checking syntax before e2e");
   run(process.execPath, ["--check", path.join(root, "scripts", "smoke-e2e.js")]);
-  run(findBackendPython(), ["-m", "py_compile", "agent_gateway.py", "agent_config.py", "main.py", "custom_agent_stdio.py", "mcp_agent_wrapper.py"], { cwd: backendDir });
+  run(findBackendPython(), ["-m", "py_compile", "acp_runtime.py", "agent_gateway.py", "agent_config.py", "main.py", "custom_agent_stdio.py", "mcp_agent_wrapper.py"], { cwd: backendDir });
 
   log("starting or reusing backend");
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "signalasi-e2e-"));
