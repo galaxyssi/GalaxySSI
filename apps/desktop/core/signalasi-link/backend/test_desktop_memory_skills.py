@@ -89,6 +89,46 @@ class DesktopMemoryTest(unittest.TestCase):
             self.assertEqual(memory["temporal_state"], "current")
             self.assertEqual(memory["evidence"][0]["task_id"], "task-1")
 
+    def test_auto_merge_rolls_back_queue_and_memory_when_promotion_fails(self):
+        class FailingPromotionStore(DesktopMemoryStore):
+            def _before_candidate_promotion(self, _connection, _candidate_id):
+                raise RuntimeError("simulated promotion failure")
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FailingPromotionStore(Path(directory) / "memory.db", now=lambda: 225.0)
+
+            with self.assertRaisesRegex(RuntimeError, "simulated promotion failure"):
+                store.propose(
+                    "SignalASI release verification is passing",
+                    kind="project_state",
+                    key="project:release-verification",
+                )
+
+            snapshot = store.stats()
+            self.assertEqual(snapshot["total"], 0)
+            self.assertEqual(sum(snapshot["candidate_counts"].values()), 0)
+
+    def test_pending_candidate_is_excluded_from_context_until_atomic_approval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: 230.0)
+            candidate = store.propose(
+                "Prefer compact release status summaries",
+                kind="preference",
+                key="user:release-status-style",
+            )
+
+            self.assertEqual(candidate["status"], "pending_review")
+            self.assertNotIn(
+                "compact release status",
+                store.compile_context("release status summary").casefold(),
+            )
+            approved = store.approve_candidate(candidate["id"])
+            self.assertEqual(approved["status"], "approved")
+            self.assertIn(
+                "compact release status",
+                store.compile_context("release status summary").casefold(),
+            )
+
     def test_matching_evidence_is_reported_as_strengthening_current_memory(self):
         with tempfile.TemporaryDirectory() as directory:
             store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: 250.0)

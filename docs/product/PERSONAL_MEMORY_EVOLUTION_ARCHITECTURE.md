@@ -59,6 +59,14 @@ Each proposed durable change is classified as a fact, preference, identity, deci
 - Identity, preference, and safety changes wait in the encrypted memory inbox.
 - Contradictions wait in the inbox unless the event contains an explicit replacement signal.
 - Private data is rejected and its raw payload is discarded.
+- Every proposal enters the candidate queue before it can change accepted memory.
+- Pending, conflicted, and rejected candidate evidence is excluded from world items,
+  conversation links, topic nodes and relations, and entity nodes and relations.
+- A commit-time isolation guard fails closed and rolls back the event if any unresolved
+  candidate evidence reaches an accepted projection.
+- Replayed candidate events are no-ops rooted in the already accepted world; they cannot
+  reuse an ungated reducer result.
+- Model-produced cognition uses the same candidate gate as user and tool events.
 - Approval writes the world item and its relationship-graph projection.
 - Approval resolves `PENDING` or `CONFLICTED` temporal state into `CURRENT`, `PLANNED`, `HISTORICAL`, or `DEPRECATED`; approved memory can therefore enter retrieval immediately without bypassing review.
 - Rejection records the decision without changing the accepted world model.
@@ -128,6 +136,10 @@ while Desktop acts as a super agent:
 
 - every learned value first becomes a durable candidate;
 - low-risk facts and task evidence may merge automatically;
+- candidate insertion and low-risk promotion commit in one SQLite transaction;
+- reviewed approval and its resulting memory commit in one SQLite transaction;
+- a failure between queueing and promotion rolls back both records, leaving no partial
+  accepted memory or stranded internal queue state;
 - identity, preference, and security candidates require review;
 - unresolved contradictions remain in the inbox until approved or rejected;
 - private candidate payloads are discarded before persistence;

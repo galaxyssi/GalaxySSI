@@ -269,6 +269,97 @@ class DesktopMemoryStore:
             if name not in existing:
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
+    def _remember_with_connection(
+        self,
+        connection: sqlite3.Connection,
+        content: str,
+        *,
+        kind: str,
+        confidence: float,
+        importance: float,
+        conversation_id: str,
+        task_id: str,
+        tags: list[str],
+        key: str,
+        namespace: str,
+        temporal_state: str,
+        evidence_rows: list[dict[str, Any]],
+        now_ms: int,
+    ) -> sqlite3.Row:
+        memory_id = hashlib.sha256(f"{key}:{content}:{now_ms}".encode("utf-8")).hexdigest()[:32]
+        supersedes_id = ""
+        previous = connection.execute(
+            "SELECT * FROM memories WHERE namespace = ? AND memory_key = ? "
+            "AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
+            (namespace, key),
+        ).fetchone()
+        if previous and _clean(previous["content"]).casefold() == content.casefold():
+            merged_evidence = (
+                _json_list(previous["evidence_json"]) + evidence_rows
+            )[-100:]
+            connection.execute(
+                "UPDATE memories SET confidence = ?, importance = ?, updated_at = ?, "
+                "use_count = use_count + 1, evidence_json = ? WHERE id = ?",
+                (
+                    max(float(previous["confidence"]), confidence),
+                    max(float(previous["importance"]), importance),
+                    now_ms,
+                    json.dumps(merged_evidence, ensure_ascii=False),
+                    previous["id"],
+                ),
+            )
+            return connection.execute(
+                "SELECT * FROM memories WHERE id = ?",
+                (previous["id"],),
+            ).fetchone()
+        if previous:
+            supersedes_id = str(previous["id"])
+            connection.execute(
+                "UPDATE memories SET status = 'superseded', temporal_state = 'deprecated', "
+                "valid_until_at = ?, updated_at = ? WHERE id = ?",
+                (now_ms, now_ms, supersedes_id),
+            )
+        connection.execute(
+            """
+            INSERT INTO memories (
+                id, memory_key, namespace, kind, content, status, temporal_state,
+                confidence, importance, source_conversation_id, source_task_id,
+                tags_json, evidence_json, created_at, updated_at, last_accessed_at,
+                use_count, supersedes_id, valid_from_at, valid_until_at
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)
+            """,
+            (
+                memory_id,
+                key,
+                namespace,
+                kind,
+                content,
+                temporal_state,
+                max(0.0, min(1.0, confidence)),
+                max(0.0, min(1.0, importance)),
+                str(conversation_id)[:160],
+                str(task_id)[:160],
+                json.dumps(sorted(set(tags))[:24], ensure_ascii=False),
+                json.dumps(evidence_rows[-100:], ensure_ascii=False),
+                now_ms,
+                now_ms,
+                now_ms,
+                supersedes_id,
+                now_ms,
+            ),
+        )
+        return connection.execute(
+            "SELECT * FROM memories WHERE id = ?",
+            (memory_id,),
+        ).fetchone()
+
+    def _before_candidate_promotion(
+        self,
+        _connection: sqlite3.Connection,
+        _candidate_id: str,
+    ) -> None:
+        return None
+
     @_synchronized
     def remember(
         self,
@@ -300,8 +391,6 @@ class DesktopMemoryStore:
             temporal_state = "current"
         key = str(key or _memory_key(content, kind))[:160]
         now_ms = int(self.now() * 1_000)
-        memory_id = hashlib.sha256(f"{key}:{content}:{now_ms}".encode("utf-8")).hexdigest()[:32]
-        supersedes_id = ""
         evidence_rows = list(evidence or [])
         if conversation_id or task_id:
             source_evidence = {
@@ -317,64 +406,22 @@ class DesktopMemoryStore:
             ):
                 evidence_rows.append(source_evidence)
         with self._lock, self._connect() as connection:
-            previous = connection.execute(
-                "SELECT * FROM memories WHERE namespace = ? AND memory_key = ? "
-                "AND status = 'active' ORDER BY updated_at DESC LIMIT 1",
-                (namespace, key),
-            ).fetchone()
-            if previous and _clean(previous["content"]).casefold() == content.casefold():
-                merged_evidence = (
-                    _json_list(previous["evidence_json"]) + evidence_rows
-                )[-100:]
-                connection.execute(
-                    "UPDATE memories SET confidence = ?, importance = ?, updated_at = ?, "
-                    "use_count = use_count + 1, evidence_json = ? WHERE id = ?",
-                    (
-                        max(float(previous["confidence"]), confidence),
-                        max(float(previous["importance"]), importance),
-                        now_ms,
-                        json.dumps(merged_evidence, ensure_ascii=False),
-                        previous["id"],
-                    ),
-                )
-                return self.get(str(previous["id"]))
-            if previous:
-                supersedes_id = str(previous["id"])
-                connection.execute(
-                    "UPDATE memories SET status = 'superseded', temporal_state = 'deprecated', "
-                    "valid_until_at = ?, updated_at = ? WHERE id = ?",
-                    (now_ms, now_ms, supersedes_id),
-                )
-            connection.execute(
-                """
-                INSERT INTO memories (
-                    id, memory_key, namespace, kind, content, status, temporal_state,
-                    confidence, importance, source_conversation_id, source_task_id,
-                    tags_json, evidence_json, created_at, updated_at, last_accessed_at,
-                    use_count, supersedes_id, valid_from_at, valid_until_at
-                ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)
-                """,
-                (
-                    memory_id,
-                    key,
-                    namespace,
-                    kind,
-                    content,
-                    temporal_state,
-                    max(0.0, min(1.0, confidence)),
-                    max(0.0, min(1.0, importance)),
-                    str(conversation_id)[:160],
-                    str(task_id)[:160],
-                    json.dumps(sorted(set(tags or []))[:24], ensure_ascii=False),
-                    json.dumps(evidence_rows[-100:], ensure_ascii=False),
-                    now_ms,
-                    now_ms,
-                    now_ms,
-                    supersedes_id,
-                    now_ms,
-                ),
+            row = self._remember_with_connection(
+                connection,
+                content,
+                kind=kind,
+                confidence=confidence,
+                importance=importance,
+                conversation_id=conversation_id,
+                task_id=task_id,
+                tags=list(tags or []),
+                key=key,
+                namespace=namespace,
+                temporal_state=temporal_state,
+                evidence_rows=evidence_rows,
+                now_ms=now_ms,
             )
-        return self.get(memory_id)
+            return self._public(row)
 
     @_synchronized
     def propose(
@@ -448,48 +495,46 @@ class DesktopMemoryStore:
                 "AND status = 'active' ORDER BY updated_at DESC",
                 (namespace, key),
             ).fetchall()
+            conflicts = [
+                str(row["id"])
+                for row in current_rows
+                if _clean(row["content"]).casefold() != content.casefold()
+            ]
+            matching = [
+                str(row["id"])
+                for row in current_rows
+                if _clean(row["content"]).casefold() == content.casefold()
+            ]
+            protected = kind in REVIEW_KINDS
+            replacement = bool(conflicts and REPLACEMENT_PATTERN.search(content))
+            if conflicts and not replacement:
+                evolution_action = "review_conflict"
+                target_memory_ids = conflicts
+            elif conflicts:
+                evolution_action = "supersede"
+                target_memory_ids = conflicts
+            elif matching:
+                evolution_action = "strengthen"
+                target_memory_ids = matching
+            else:
+                evolution_action = "create"
+                target_memory_ids = []
+            if protected:
+                final_status = "pending_review"
+                risk = "review_required"
+                temporal_state = "pending"
+            elif conflicts and not replacement:
+                final_status = "conflicted"
+                risk = "review_required"
+                temporal_state = "conflicted"
+            else:
+                final_status = "auto_merged"
+                risk = "low"
+                temporal_state = intended_temporal_state
 
-        conflicts = [
-            str(row["id"])
-            for row in current_rows
-            if _clean(row["content"]).casefold() != content.casefold()
-        ]
-        matching = [
-            str(row["id"])
-            for row in current_rows
-            if _clean(row["content"]).casefold() == content.casefold()
-        ]
-        protected = kind in REVIEW_KINDS
-        replacement = bool(conflicts and REPLACEMENT_PATTERN.search(content))
-        if conflicts and not replacement:
-            evolution_action = "review_conflict"
-            target_memory_ids = conflicts
-        elif conflicts:
-            evolution_action = "supersede"
-            target_memory_ids = conflicts
-        elif matching:
-            evolution_action = "strengthen"
-            target_memory_ids = matching
-        else:
-            evolution_action = "create"
-            target_memory_ids = []
-        if protected:
-            status = "pending_review"
-            risk = "review_required"
-            temporal_state = "pending"
-        elif conflicts and not replacement:
-            status = "conflicted"
-            risk = "review_required"
-            temporal_state = "conflicted"
-        else:
-            status = "auto_merged"
-            risk = "low"
-            temporal_state = intended_temporal_state
-
-        candidate_id = hashlib.sha256(
-            f"{namespace}:{key}:{content}:{now_ms}".encode("utf-8")
-        ).hexdigest()[:32]
-        with self._lock, self._connect() as connection:
+            candidate_id = hashlib.sha256(
+                f"{namespace}:{key}:{content}:{now_ms}".encode("utf-8")
+            ).hexdigest()[:32]
             connection.execute(
                 """
                 INSERT INTO memory_candidates (
@@ -507,9 +552,9 @@ class DesktopMemoryStore:
                     namespace,
                     kind,
                     content,
-                    status,
+                    "queued",
                     risk,
-                    temporal_state,
+                    "pending",
                     intended_temporal_state,
                     max(0.0, min(1.0, confidence)),
                     max(0.0, min(1.0, importance)),
@@ -523,28 +568,46 @@ class DesktopMemoryStore:
                     now_ms,
                 ),
             )
-
-        if status == "auto_merged":
-            memory = self.remember(
-                content,
-                kind=kind,
-                confidence=confidence,
-                importance=importance,
-                conversation_id=conversation_id,
-                task_id=task_id,
-                tags=tags,
-                key=key,
-                namespace=namespace,
-                temporal_state=intended_temporal_state,
-                evidence=evidence_rows,
-            )
-            with self._lock, self._connect() as connection:
-                connection.execute(
-                    "UPDATE memory_candidates SET resulting_memory_id = ?, reviewed_at = ?, "
-                    "review_note = 'low_risk_auto_merge' WHERE id = ?",
-                    (str(memory["id"]) if memory else "", now_ms, candidate_id),
+            resulting_memory_id = ""
+            review_note = ""
+            reviewed_at = 0
+            if final_status == "auto_merged":
+                self._before_candidate_promotion(connection, candidate_id)
+                memory_row = self._remember_with_connection(
+                    connection,
+                    content,
+                    kind=kind,
+                    confidence=confidence,
+                    importance=importance,
+                    conversation_id=conversation_id,
+                    task_id=task_id,
+                    tags=list(tags or []),
+                    key=key,
+                    namespace=namespace,
+                    temporal_state=intended_temporal_state,
+                    evidence_rows=evidence_rows,
+                    now_ms=now_ms,
                 )
-        return self.get_candidate(candidate_id)
+                resulting_memory_id = str(memory_row["id"])
+                reviewed_at = now_ms
+                review_note = "low_risk_auto_merge"
+            connection.execute(
+                "UPDATE memory_candidates SET status = ?, temporal_state = ?, "
+                "resulting_memory_id = ?, reviewed_at = ?, review_note = ? WHERE id = ?",
+                (
+                    final_status,
+                    temporal_state,
+                    resulting_memory_id,
+                    reviewed_at,
+                    review_note,
+                    candidate_id,
+                ),
+            )
+            candidate_row = connection.execute(
+                "SELECT * FROM memory_candidates WHERE id = ?",
+                (candidate_id,),
+            ).fetchone()
+            return self._candidate_public(candidate_row)
 
     def list_candidates(
         self,
@@ -580,36 +643,49 @@ class DesktopMemoryStore:
 
     @_synchronized
     def approve_candidate(self, candidate_id: str) -> dict[str, Any] | None:
-        candidate = self.get_candidate(candidate_id)
-        if not candidate or candidate["status"] not in {"pending_review", "conflicted"}:
-            return None
-        memory = self.remember(
-            candidate["content"],
-            kind=candidate["kind"],
-            confidence=candidate["confidence"],
-            importance=candidate["importance"],
-            conversation_id=candidate["conversation_id"],
-            task_id=candidate["task_id"],
-            tags=candidate["tags"],
-            key=candidate["memory_key"],
-            namespace=candidate["namespace"],
-            temporal_state=candidate["intended_temporal_state"],
-            evidence=candidate["evidence"],
-        )
         now_ms = int(self.now() * 1_000)
         with self._lock, self._connect() as connection:
-            connection.execute(
+            candidate_row = connection.execute(
+                "SELECT * FROM memory_candidates WHERE id = ? "
+                "AND status IN ('pending_review', 'conflicted')",
+                (str(candidate_id),),
+            ).fetchone()
+            if not candidate_row:
+                return None
+            candidate = self._candidate_public(candidate_row)
+            memory_row = self._remember_with_connection(
+                connection,
+                candidate["content"],
+                kind=candidate["kind"],
+                confidence=candidate["confidence"],
+                importance=candidate["importance"],
+                conversation_id=candidate["conversation_id"],
+                task_id=candidate["task_id"],
+                tags=candidate["tags"],
+                key=candidate["memory_key"],
+                namespace=candidate["namespace"],
+                temporal_state=candidate["intended_temporal_state"],
+                evidence_rows=candidate["evidence"],
+                now_ms=now_ms,
+            )
+            cursor = connection.execute(
                 "UPDATE memory_candidates SET status = 'approved', temporal_state = ?, "
                 "resulting_memory_id = ?, reviewed_at = ?, review_note = 'user_approved' "
                 "WHERE id = ? AND status IN ('pending_review', 'conflicted')",
                 (
                     candidate["intended_temporal_state"],
-                    str(memory["id"]) if memory else "",
+                    str(memory_row["id"]),
                     now_ms,
                     str(candidate_id),
                 ),
             )
-        return self.get_candidate(candidate_id)
+            if cursor.rowcount != 1:
+                raise RuntimeError("Memory candidate approval lost its transaction")
+            updated_row = connection.execute(
+                "SELECT * FROM memory_candidates WHERE id = ?",
+                (str(candidate_id),),
+            ).fetchone()
+            return self._candidate_public(updated_row)
 
     @_synchronized
     def reject_candidate(self, candidate_id: str) -> dict[str, Any] | None:

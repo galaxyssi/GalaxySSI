@@ -255,6 +255,111 @@ class GlobalMemoryEvolutionTest {
     }
 
     @Test
+    fun duplicatePendingEventCannotReplayUngatedReduction() {
+        val event = event("pending-replay", "Prefer concise release summaries")
+        val preference = item(
+            "pending-preference",
+            GlobalWorldItemKind.PREFERENCE,
+            layer = GlobalWorldLayer.USER,
+            topic = "Release summary style",
+            value = event.content,
+            eventId = event.id
+        )
+        val first = GlobalMemoryEvolutionPolicy.evolve(
+            PersonalWorldModel(),
+            reduction(event, preference),
+            GlobalMemoryInbox(),
+            event,
+            understanding(event, preference.topic)
+        )
+        val replay = GlobalMemoryEvolutionPolicy.evolve(
+            worldBefore = first.reduction.world,
+            reduction = reduction(event, preference),
+            inbox = first.inbox,
+            event = event,
+            understanding = understanding(event, preference.topic)
+        )
+
+        assertTrue(replay.reduction.world.items.isEmpty())
+        assertTrue(replay.reduction.changedItems.isEmpty())
+        assertTrue(replay.reduction.conflicts.isEmpty())
+    }
+
+    @Test
+    fun inboxIsolationDetectsPendingEvidenceAcrossEveryAcceptedProjection() {
+        val event = event("pending-leak", "Prefer compact project updates")
+        val preference = item(
+            "pending-item",
+            GlobalWorldItemKind.PREFERENCE,
+            layer = GlobalWorldLayer.USER,
+            topic = "Project update style",
+            value = event.content,
+            eventId = event.id
+        )
+        val evolved = GlobalMemoryEvolutionPolicy.evolve(
+            PersonalWorldModel(),
+            reduction(event, preference),
+            GlobalMemoryInbox(),
+            event,
+            understanding(event, preference.topic)
+        )
+        val evidence = GlobalEvidenceRef(event.id, setOf(event.id), event.conversationId, event.timestampMillis)
+        val report = GlobalMemoryInboxIsolationPolicy.inspect(
+            world = PersonalWorldModel(
+                items = listOf(preference),
+                links = listOf(
+                    GlobalConversationLink(
+                        id = "leaked-link",
+                        leftConversationId = "left",
+                        rightConversationId = "right",
+                        topic = preference.topic,
+                        strength = 0.8,
+                        evidenceProvenance = listOf(evidence)
+                    )
+                )
+            ),
+            topicGraph = GlobalTopicProjectGraph(
+                nodes = listOf(
+                    GlobalTopicNode(
+                        id = "leaked-topic",
+                        stableKey = "topic:leaked",
+                        name = preference.topic,
+                        worldItemIds = setOf(preference.id),
+                        evidenceEventIds = listOf(event.id),
+                        evidenceProvenance = listOf(evidence)
+                    )
+                )
+            ),
+            entityGraph = GlobalEntityMemoryGraph(
+                nodes = listOf(
+                    GlobalEntityNode(
+                        id = "leaked-entity",
+                        stableKey = "entity:leaked",
+                        label = preference.topic,
+                        kind = GlobalEntityNodeKind.CONCEPT,
+                        evidence = listOf(evidence)
+                    )
+                )
+            ),
+            inbox = evolved.inbox
+        )
+
+        assertFalse(report.isSafe)
+        assertTrue(report.violations.any { it == "world_item:${preference.id}" })
+        assertTrue(report.violations.any { it == "world_link:leaked-link" })
+        assertTrue(report.violations.any { it == "topic_node:leaked-topic" })
+        assertTrue(report.violations.any { it == "entity_node:leaked-entity" })
+        assertTrue(
+            GlobalMemoryInboxIsolationPolicy.inspect(
+                PersonalWorldModel(),
+                GlobalTopicProjectGraph(),
+                GlobalEntityMemoryGraph(),
+                evolved.inbox
+            ).isSafe
+        )
+    }
+
+    @Test
     fun semanticallyEquivalentEvidenceStrengthensAcceptedMemory() {
         val previous = item(
             "linux-old",
