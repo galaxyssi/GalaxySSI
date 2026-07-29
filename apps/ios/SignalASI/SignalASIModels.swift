@@ -2001,6 +2001,367 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentConversationStatus: String, Codable, CaseIterable, Identifiable {
+  case active = "ACTIVE"
+  case archived = "ARCHIVED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentConversationStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .active
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentConversation: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var createdAt: Int64
+  var updatedAt: Int64
+  var selectedModelOrAgent: String
+  var contextPolicy: String
+  var summary: String
+  var status: AgentConversationStatus
+  var pinned: Bool
+  var privateMode: Bool
+  var inputTokens: Int64
+  var outputTokens: Int64
+  var costMicros: Int64
+  var createdByAgent: Bool
+  var parentConversationId: String
+  var trackingPaused: Bool
+  var globalTopicKey: String
+  var mergedIntoConversationId: String
+  var mergedAtMillis: Int64
+  var contextCompactedThroughMillis: Int64
+  var contextCompactedThroughEntryId: String
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case title
+    case createdAt = "created_at"
+    case updatedAt = "updated_at"
+    case selectedModelOrAgent = "selected_model_or_agent"
+    case contextPolicy = "context_policy"
+    case summary
+    case status
+    case pinned
+    case privateMode = "private_mode"
+    case inputTokens = "input_tokens"
+    case outputTokens = "output_tokens"
+    case costMicros = "cost_micros"
+    case createdByAgent = "created_by_agent"
+    case parentConversationId = "parent_conversation_id"
+    case trackingPaused = "tracking_paused"
+    case globalTopicKey = "global_topic_key"
+    case mergedIntoConversationId = "merged_into_conversation_id"
+    case mergedAtMillis = "merged_at_millis"
+    case contextCompactedThroughMillis = "context_compacted_through_millis"
+    case contextCompactedThroughEntryId = "context_compacted_through_entry_id"
+  }
+
+  init(
+    id: String,
+    title: String,
+    createdAt: Int64,
+    updatedAt: Int64,
+    selectedModelOrAgent: String = "Automatic",
+    contextPolicy: String = "balanced",
+    summary: String = "",
+    status: AgentConversationStatus = .active,
+    pinned: Bool = false,
+    privateMode: Bool = false,
+    inputTokens: Int64 = 0,
+    outputTokens: Int64 = 0,
+    costMicros: Int64 = 0,
+    createdByAgent: Bool = false,
+    parentConversationId: String = "",
+    trackingPaused: Bool = false,
+    globalTopicKey: String = "",
+    mergedIntoConversationId: String = "",
+    mergedAtMillis: Int64 = 0,
+    contextCompactedThroughMillis: Int64 = 0,
+    contextCompactedThroughEntryId: String = ""
+  ) {
+    self.id = id
+    self.title = title
+    self.createdAt = max(createdAt, 0)
+    self.updatedAt = max(updatedAt, 0)
+    self.selectedModelOrAgent = selectedModelOrAgent.ifBlank("Automatic")
+    self.contextPolicy = contextPolicy.ifBlank("balanced")
+    self.summary = summary
+    self.status = status
+    self.pinned = pinned
+    self.privateMode = privateMode
+    self.inputTokens = max(inputTokens, 0)
+    self.outputTokens = max(outputTokens, 0)
+    self.costMicros = max(costMicros, 0)
+    self.createdByAgent = createdByAgent
+    self.parentConversationId = parentConversationId
+    self.trackingPaused = trackingPaused
+    self.globalTopicKey = globalTopicKey
+    self.mergedIntoConversationId = mergedIntoConversationId
+    self.mergedAtMillis = max(mergedAtMillis, 0)
+    self.contextCompactedThroughMillis = max(contextCompactedThroughMillis, 0)
+    self.contextCompactedThroughEntryId = contextCompactedThroughEntryId
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      createdAt: try container.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0,
+      updatedAt: try container.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? 0,
+      selectedModelOrAgent: try container.decodeIfPresent(String.self, forKey: .selectedModelOrAgent) ?? "Automatic",
+      contextPolicy: try container.decodeIfPresent(String.self, forKey: .contextPolicy) ?? "balanced",
+      summary: try container.decodeIfPresent(String.self, forKey: .summary) ?? "",
+      status: try container.decodeIfPresent(AgentConversationStatus.self, forKey: .status) ?? .active,
+      pinned: try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false,
+      privateMode: try container.decodeIfPresent(Bool.self, forKey: .privateMode) ?? false,
+      inputTokens: try container.decodeIfPresent(Int64.self, forKey: .inputTokens) ?? 0,
+      outputTokens: try container.decodeIfPresent(Int64.self, forKey: .outputTokens) ?? 0,
+      costMicros: try container.decodeIfPresent(Int64.self, forKey: .costMicros) ?? 0,
+      createdByAgent: try container.decodeIfPresent(Bool.self, forKey: .createdByAgent) ?? false,
+      parentConversationId: try container.decodeIfPresent(String.self, forKey: .parentConversationId) ?? "",
+      trackingPaused: try container.decodeIfPresent(Bool.self, forKey: .trackingPaused) ?? false,
+      globalTopicKey: try container.decodeIfPresent(String.self, forKey: .globalTopicKey) ?? "",
+      mergedIntoConversationId: try container.decodeIfPresent(String.self, forKey: .mergedIntoConversationId) ?? "",
+      mergedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .mergedAtMillis) ?? 0,
+      contextCompactedThroughMillis: try container.decodeIfPresent(Int64.self, forKey: .contextCompactedThroughMillis) ?? 0,
+      contextCompactedThroughEntryId: try container.decodeIfPresent(String.self, forKey: .contextCompactedThroughEntryId) ?? ""
+    )
+  }
+}
+
+enum AgentConversationMergeFailure: String, Codable, CaseIterable, Identifiable {
+  case none = "NONE"
+  case sourceNotFound = "SOURCE_NOT_FOUND"
+  case targetNotFound = "TARGET_NOT_FOUND"
+  case notAgentCreated = "NOT_AGENT_CREATED"
+  case alreadyMerged = "ALREADY_MERGED"
+  case sameConversation = "SAME_CONVERSATION"
+  case privacyMismatch = "PRIVACY_MISMATCH"
+
+  var id: String { rawValue }
+}
+
+struct AgentConversationMergeResult: Codable, Equatable {
+  var merged: Bool
+  var sourceConversation: AgentConversation?
+  var targetConversation: AgentConversation?
+  var copiedEntryCount: Int
+  var skippedEntryCount: Int
+  var failure: AgentConversationMergeFailure
+
+  enum CodingKeys: String, CodingKey {
+    case merged
+    case sourceConversation = "source_conversation"
+    case targetConversation = "target_conversation"
+    case copiedEntryCount = "copied_entry_count"
+    case skippedEntryCount = "skipped_entry_count"
+    case failure
+  }
+}
+
+struct AgentConversationMergeMutation: Codable, Equatable {
+  var result: AgentConversationMergeResult
+  var conversations: [AgentConversation]
+  var entries: [AgentTranscriptEntry]
+}
+
+enum AgentConversationMergePolicy {
+  static func mergeIntoParent(
+    conversations: [AgentConversation],
+    entries: [AgentTranscriptEntry],
+    sourceConversationId: String,
+    nowMillis: Int64
+  ) -> AgentConversationMergeMutation {
+    guard let source = conversations.first(where: { $0.id == sourceConversationId }) else {
+      return failure(.sourceNotFound, conversations: conversations, entries: entries)
+    }
+    guard source.createdByAgent else {
+      return failure(.notAgentCreated, conversations: conversations, entries: entries, source: source)
+    }
+    guard source.mergedIntoConversationId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return failure(.alreadyMerged, conversations: conversations, entries: entries, source: source)
+    }
+    guard let target = conversations.first(where: { $0.id == source.parentConversationId }) else {
+      return failure(.targetNotFound, conversations: conversations, entries: entries, source: source)
+    }
+    guard source.id != target.id else {
+      return failure(.sameConversation, conversations: conversations, entries: entries, source: source, target: target)
+    }
+    guard source.privateMode == target.privateMode else {
+      return failure(.privacyMismatch, conversations: conversations, entries: entries, source: source, target: target)
+    }
+
+    var targetProvenance = Set(
+      entries
+        .filter { $0.conversationId == target.id && !$0.sourceEntryId.isEmpty }
+        .map { "\($0.sourceConversationId):\($0.sourceEntryId)" }
+    )
+    var targetGlobalDedupeKeys = Set(
+      entries
+        .filter { $0.conversationId == target.id }
+        .map(\.dedupeKey)
+        .filter { $0.hasPrefix("global-agent:") || $0.hasPrefix("global-agent-digest:") }
+    )
+    var copied = 0
+    var skipped = 0
+    var copiedEntries: [AgentTranscriptEntry] = []
+    let sourceEntries = entries
+      .filter { $0.conversationId == source.id && $0.role != .process }
+      .sorted {
+        if $0.timestampMillis == $1.timestampMillis {
+          return $0.id < $1.id
+        }
+        return $0.timestampMillis < $1.timestampMillis
+      }
+
+    for entry in sourceEntries {
+      let originConversationId = entry.sourceConversationId.ifBlank(source.id)
+      let originConversationTitle = entry.sourceConversationTitle.ifBlank(source.title)
+      let originEntryId = entry.sourceEntryId.ifBlank(entry.id)
+      let provenanceKey = "\(originConversationId):\(originEntryId)"
+      let duplicateGlobalDelivery = !entry.dedupeKey.isEmpty && targetGlobalDedupeKeys.contains(entry.dedupeKey)
+      if !targetProvenance.insert(provenanceKey).inserted || duplicateGlobalDelivery {
+        skipped += 1
+        continue
+      }
+      if entry.dedupeKey.hasPrefix("global-agent") {
+        targetGlobalDedupeKeys.insert(entry.dedupeKey)
+      }
+      copied += 1
+      copiedEntries.append(
+        AgentTranscriptEntry(
+          id: stableMergedEntryId(targetId: target.id, sourceId: originConversationId, entryId: originEntryId),
+          role: entry.role,
+          text: entry.text,
+          timestampMillis: entry.timestampMillis,
+          dedupeKey: mergedDedupeKey(entry: entry, sourceConversationId: originConversationId, sourceEntryId: originEntryId),
+          conversationId: target.id,
+          turnId: entry.turnId,
+          taskId: entry.taskId,
+          richOutputJson: entry.richOutputJson,
+          sourceConversationId: originConversationId,
+          sourceConversationTitle: originConversationTitle,
+          sourceEntryId: originEntryId
+        )
+      )
+    }
+
+    let mergedSummary = mergeSummary(target: target, source: source)
+    let updatedConversations = conversations.map { conversation -> AgentConversation in
+      if conversation.id == source.id {
+        var updated = conversation
+        updated.status = .archived
+        updated.trackingPaused = true
+        updated.mergedIntoConversationId = target.id
+        updated.mergedAtMillis = max(nowMillis, 0)
+        updated.updatedAt = max(nowMillis, 0)
+        return updated
+      }
+      if conversation.id == target.id {
+        var updated = conversation
+        updated.status = .active
+        updated.summary = mergedSummary
+        updated.inputTokens = saturatingAdd(target.inputTokens, source.inputTokens)
+        updated.outputTokens = saturatingAdd(target.outputTokens, source.outputTokens)
+        updated.costMicros = saturatingAdd(target.costMicros, source.costMicros)
+        updated.updatedAt = max(target.updatedAt, source.updatedAt, nowMillis)
+        return updated
+      }
+      return conversation
+    }
+    let updatedTarget = updatedConversations.first { $0.id == target.id }
+    let updatedSource = updatedConversations.first { $0.id == source.id }
+    return AgentConversationMergeMutation(
+      result: AgentConversationMergeResult(
+        merged: true,
+        sourceConversation: updatedSource,
+        targetConversation: updatedTarget,
+        copiedEntryCount: copied,
+        skippedEntryCount: skipped,
+        failure: .none
+      ),
+      conversations: updatedConversations,
+      entries: entries + copiedEntries
+    )
+  }
+
+  private static func failure(
+    _ failure: AgentConversationMergeFailure,
+    conversations: [AgentConversation],
+    entries: [AgentTranscriptEntry],
+    source: AgentConversation? = nil,
+    target: AgentConversation? = nil
+  ) -> AgentConversationMergeMutation {
+    AgentConversationMergeMutation(
+      result: AgentConversationMergeResult(
+        merged: false,
+        sourceConversation: source,
+        targetConversation: target,
+        copiedEntryCount: 0,
+        skippedEntryCount: 0,
+        failure: failure
+      ),
+      conversations: conversations,
+      entries: entries
+    )
+  }
+
+  private static func stableMergedEntryId(targetId: String, sourceId: String, entryId: String) -> String {
+    let seed = "signalasi-conversation-merge:\(targetId):\(sourceId):\(entryId)"
+    var bytes = Array(Insecure.MD5.hash(data: Data(seed.utf8)))
+    bytes[6] = (bytes[6] & 0x0f) | 0x30
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    let uuid = UUID(uuid: (
+      bytes[0], bytes[1], bytes[2], bytes[3],
+      bytes[4], bytes[5], bytes[6], bytes[7],
+      bytes[8], bytes[9], bytes[10], bytes[11],
+      bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
+    return uuid.uuidString.lowercased()
+  }
+
+  private static func mergedDedupeKey(
+    entry: AgentTranscriptEntry,
+    sourceConversationId: String,
+    sourceEntryId: String
+  ) -> String {
+    if entry.dedupeKey.hasPrefix("global-agent:") || entry.dedupeKey.hasPrefix("global-agent-digest:") {
+      return String(entry.dedupeKey.prefix(240))
+    }
+    return String("merged:\(sourceConversationId):\(sourceEntryId)".prefix(240))
+  }
+
+  private static func mergeSummary(target: AgentConversation, source: AgentConversation) -> String {
+    guard !source.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return target.summary
+    }
+    let addition = "Merged topic \(source.title):\n\(source.summary)"
+    let parts = [target.summary, addition].filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    return String(parts.joined(separator: "\n\n").prefix(12_000))
+  }
+
+  private static func saturatingAdd(_ left: Int64, _ right: Int64) -> Int64 {
+    let safeLeft = max(left, 0)
+    let safeRight = max(right, 0)
+    return Int64.max - safeLeft < safeRight ? Int64.max : safeLeft + safeRight
+  }
+}
+
 private struct AgentContextArtifact: Equatable {
   var id: String
   var kind: String

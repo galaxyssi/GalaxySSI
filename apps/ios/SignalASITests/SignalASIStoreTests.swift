@@ -1373,6 +1373,127 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(transport.contains("data_b64"))
   }
 
+  func testAgentConversationMergePolicyMergesDialogueOnceAndArchivesChild() {
+    let parent = agentConversation(id: "parent", title: "Main topic", summary: "Parent summary")
+    let child = agentConversation(
+      id: "child",
+      title: "Agent research",
+      summary: "Runtime is ready",
+      createdByAgent: true,
+      parentConversationId: parent.id,
+      inputTokens: 20,
+      outputTokens: 30
+    )
+    let entries = [
+      agentMergeEntry(id: "user", role: .user, conversationId: child.id, text: "Investigate the runtime"),
+      agentMergeEntry(id: "process", role: .process, conversationId: child.id, text: "Ran a tool"),
+      agentMergeEntry(
+        id: "assistant",
+        role: .assistant,
+        conversationId: child.id,
+        text: "The runtime is ready",
+        richOutputJson: #"{"version":1,"blocks":[{"id":"result","type":"markdown","text":"ready"}]}"#
+      )
+    ]
+
+    let mutation = AgentConversationMergePolicy.mergeIntoParent(
+      conversations: [parent, child],
+      entries: entries,
+      sourceConversationId: child.id,
+      nowMillis: 1_000
+    )
+
+    XCTAssertTrue(mutation.result.merged)
+    XCTAssertEqual(mutation.result.copiedEntryCount, 2)
+    XCTAssertEqual(mutation.result.skippedEntryCount, 0)
+    let copied = mutation.entries.filter { $0.conversationId == parent.id }
+    XCTAssertEqual(copied.map(\.role), [.user, .assistant])
+    XCTAssertTrue(copied.allSatisfy { $0.sourceConversationId == child.id })
+    XCTAssertTrue(copied.allSatisfy { $0.sourceConversationTitle == child.title })
+    XCTAssertEqual(copied.last?.richOutputJson, entries.last?.richOutputJson)
+    XCTAssertTrue(copied.allSatisfy { $0.dedupeKey.hasPrefix("merged:child:") })
+
+    let mergedChild = mutation.conversations.first { $0.id == child.id }
+    XCTAssertEqual(mergedChild?.status, .archived)
+    XCTAssertEqual(mergedChild?.trackingPaused, true)
+    XCTAssertEqual(mergedChild?.mergedIntoConversationId, parent.id)
+    XCTAssertEqual(mergedChild?.mergedAtMillis, 1_000)
+    XCTAssertEqual(mutation.result.targetConversation?.status, .active)
+    XCTAssertEqual(mutation.result.targetConversation?.inputTokens, 20)
+    XCTAssertEqual(mutation.result.targetConversation?.outputTokens, 30)
+    XCTAssertTrue(mutation.result.targetConversation?.summary.contains("Merged topic Agent research:") == true)
+
+    let repeated = AgentConversationMergePolicy.mergeIntoParent(
+      conversations: mutation.conversations,
+      entries: mutation.entries,
+      sourceConversationId: child.id,
+      nowMillis: 2_000
+    )
+    XCTAssertFalse(repeated.result.merged)
+    XCTAssertEqual(repeated.result.failure, .alreadyMerged)
+  }
+
+  func testAgentConversationMergePolicyRefusesPrivacyMismatch() {
+    let parent = agentConversation(id: "parent", title: "Main topic")
+    let child = agentConversation(
+      id: "child",
+      title: "Private research",
+      createdByAgent: true,
+      parentConversationId: parent.id,
+      privateMode: true
+    )
+
+    let mutation = AgentConversationMergePolicy.mergeIntoParent(
+      conversations: [parent, child],
+      entries: [],
+      sourceConversationId: child.id,
+      nowMillis: 1_000
+    )
+
+    XCTAssertFalse(mutation.result.merged)
+    XCTAssertEqual(mutation.result.failure, .privacyMismatch)
+    XCTAssertEqual(mutation.conversations, [parent, child])
+  }
+
+  func testAgentConversationMergePolicySkipsGlobalDeliveryDuplicates() {
+    let parent = agentConversation(id: "parent", title: "Main topic")
+    let child = agentConversation(
+      id: "child",
+      title: "Agent research",
+      createdByAgent: true,
+      parentConversationId: parent.id
+    )
+    let parentInsight = agentMergeEntry(
+      id: "parent-insight",
+      role: .assistant,
+      conversationId: parent.id,
+      text: "Shared result",
+      dedupeKey: "global-agent:insight"
+    )
+    let childInsight = agentMergeEntry(
+      id: "child-insight",
+      role: .assistant,
+      conversationId: child.id,
+      text: "Shared result",
+      dedupeKey: "global-agent:insight"
+    )
+
+    let mutation = AgentConversationMergePolicy.mergeIntoParent(
+      conversations: [parent, child],
+      entries: [parentInsight, childInsight],
+      sourceConversationId: child.id,
+      nowMillis: 1_000
+    )
+
+    XCTAssertTrue(mutation.result.merged)
+    XCTAssertEqual(mutation.result.copiedEntryCount, 0)
+    XCTAssertEqual(mutation.result.skippedEntryCount, 1)
+    XCTAssertEqual(
+      mutation.entries.filter { $0.conversationId == parent.id && $0.dedupeKey == "global-agent:insight" }.count,
+      1
+    )
+  }
+
   func testAgentFinalResponseIdentityCoalescesCanonicalDuplicates() {
     let canonical = finalTranscriptEntry(
       id: "canonical",
@@ -2366,6 +2487,55 @@ final class SignalASIStoreTests: XCTestCase {
       screenChanged: changed,
       screenStable: stable,
       evidence: "decision=\(decision.rawValue); samples=\(sampleCount)"
+    )
+  }
+
+  private func agentConversation(
+    id: String,
+    title: String,
+    summary: String = "",
+    status: AgentConversationStatus = .active,
+    createdByAgent: Bool = false,
+    parentConversationId: String = "",
+    privateMode: Bool = false,
+    inputTokens: Int64 = 0,
+    outputTokens: Int64 = 0,
+    costMicros: Int64 = 0
+  ) -> AgentConversation {
+    AgentConversation(
+      id: id,
+      title: title,
+      createdAt: 1,
+      updatedAt: 1,
+      summary: summary,
+      status: status,
+      privateMode: privateMode,
+      inputTokens: inputTokens,
+      outputTokens: outputTokens,
+      costMicros: costMicros,
+      createdByAgent: createdByAgent,
+      parentConversationId: parentConversationId
+    )
+  }
+
+  private func agentMergeEntry(
+    id: String,
+    role: AgentTranscriptRole,
+    conversationId: String,
+    text: String,
+    dedupeKey: String = "",
+    richOutputJson: String = ""
+  ) -> AgentTranscriptEntry {
+    AgentTranscriptEntry(
+      id: id,
+      role: role,
+      text: text,
+      timestampMillis: Int64(id.count),
+      dedupeKey: dedupeKey,
+      conversationId: conversationId,
+      turnId: "turn",
+      taskId: "task",
+      richOutputJson: richOutputJson
     )
   }
 
