@@ -88,6 +88,7 @@ struct SignalASIBackupPayload: Codable, Equatable {
   var contacts: [SignalASIContact]
   var friendRequests: [SignalASIFriendRequest]
   var messagesByContact: [String: [ChatMessage]]
+  var readAtByContact: [String: Date]
 
   init(
     platform: String = "ios",
@@ -101,7 +102,8 @@ struct SignalASIBackupPayload: Codable, Equatable {
     agentData: SignalASIBackupAgentData,
     contacts: [SignalASIContact],
     friendRequests: [SignalASIFriendRequest] = [],
-    messagesByContact: [String: [ChatMessage]]
+    messagesByContact: [String: [ChatMessage]],
+    readAtByContact: [String: Date] = [:]
   ) {
     self.platform = platform
     self.exportedAt = exportedAt
@@ -115,6 +117,7 @@ struct SignalASIBackupPayload: Codable, Equatable {
     self.contacts = contacts
     self.friendRequests = friendRequests
     self.messagesByContact = messagesByContact
+    self.readAtByContact = readAtByContact
   }
 
   enum CodingKeys: String, CodingKey {
@@ -130,6 +133,24 @@ struct SignalASIBackupPayload: Codable, Equatable {
     case contacts
     case friendRequests = "friend_requests"
     case messagesByContact = "messages"
+    case readAtByContact = "read_at_by_contact"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    platform = try container.decode(String.self, forKey: .platform)
+    exportedAt = try container.decode(Int64.self, forKey: .exportedAt)
+    identity = try container.decodeIfPresent(SignalASIBackupIdentity.self, forKey: .identity)
+    profile = try container.decode(SignalASIProfile.self, forKey: .profile)
+    includesContacts = try container.decode(Bool.self, forKey: .includesContacts)
+    includesMessages = try container.decode(Bool.self, forKey: .includesMessages)
+    includesAgentData = try container.decodeIfPresent(Bool.self, forKey: .includesAgentData) ?? true
+    privacyManifest = try container.decode(SignalASIBackupPrivacyManifest.self, forKey: .privacyManifest)
+    agentData = try container.decode(SignalASIBackupAgentData.self, forKey: .agentData)
+    contacts = try container.decode([SignalASIContact].self, forKey: .contacts)
+    friendRequests = try container.decodeIfPresent([SignalASIFriendRequest].self, forKey: .friendRequests) ?? []
+    messagesByContact = try container.decode([String: [ChatMessage]].self, forKey: .messagesByContact)
+    readAtByContact = try container.decodeIfPresent([String: Date].self, forKey: .readAtByContact) ?? [:]
   }
 }
 
