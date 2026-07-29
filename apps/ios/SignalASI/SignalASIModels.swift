@@ -336,6 +336,41 @@ struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
     self.detail = detail
     self.createdAt = createdAt
   }
+
+  var displayTitle: String {
+    switch stage {
+    case "created": return "Created"
+    case "persisted": return "Persisted"
+    case "queued": return "Queued"
+    case "sent": return "Sent"
+    case "delivered": return "Delivered"
+    case "failed": return "Failed"
+    case "mqtt_published": return "Published to MQTT"
+    case "publish_failed": return "Publish failed"
+    case "delivered_local_estimate": return "Delivery estimated"
+    case "desktop_received": return "Desktop received"
+    case "desktop_plain": return "Desktop plaintext debug"
+    case "desktop_decrypted": return "Desktop decrypted"
+    case "agent_started": return "Agent started"
+    case "agent_first_output": return "First Agent output"
+    case "agent_replied": return "Agent replied"
+    case "desktop_reply_publish_queued": return "Desktop reply queued"
+    case "desktop_reply_broker_ack": return "Desktop reply Broker ACK"
+    case "desktop_broker_ack": return "Broker confirmed"
+    case "desktop_mobile_test_queued": return "Desktop test queued"
+    case "desktop_agent_push_queued": return "Agent Push queued"
+    case "desktop_connector_status": return "Connector status synced"
+    case "desktop_pairing_confirmed": return "Pairing confirmed"
+    case "desktop_pairing_revocation_queued": return "Pairing revocation queued"
+    case "received": return "Received"
+    case "decrypted": return "Decrypted"
+    case "cloud_request": return "Model request"
+    case "cloud_reply": return "Model replied"
+    case "cloud_reply_received": return "Model reply received"
+    case "cloud_error": return "Model error"
+    default: return stage
+    }
+  }
 }
 
 struct ChatMessage: Codable, Identifiable, Equatable {

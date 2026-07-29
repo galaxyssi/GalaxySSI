@@ -95,6 +95,7 @@ struct ConversationView: View {
   @State private var photoPickerPresented = false
   @State private var attachmentError = ""
   @State private var showingDeleteChatConfirmation = false
+  @State private var selectedMessageForDetails: ChatMessage?
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -110,6 +111,11 @@ struct ConversationView: View {
               MessageBubble(message: message)
                 .id(message.id)
                 .contextMenu {
+                  Button {
+                    selectedMessageForDetails = message
+                  } label: {
+                    Label("Details", systemImage: "info.circle")
+                  }
                   Button {
                     UIPasteboard.general.string = message.content
                   } label: {
@@ -212,6 +218,9 @@ struct ConversationView: View {
         appendAttachment(attachment)
       }
     }
+    .sheet(item: $selectedMessageForDetails) { message in
+      MessageDetailView(message: message, contact: contact)
+    }
   }
 
   private func addAttachment(url: URL) {
@@ -230,6 +239,101 @@ struct ConversationView: View {
     }
     attachments.append(attachment)
     attachmentError = ""
+  }
+}
+
+struct MessageDetailView: View {
+  @Environment(\.dismiss) private var dismiss
+  var message: ChatMessage
+  var contact: SignalASIContact
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section("Message") {
+          Text(message.isMine ? "Sent by me" : contact.displayName)
+          Text(message.content)
+            .textSelection(.enabled)
+          detailRow("Sent Time", message.createdAt.formatted(date: .abbreviated, time: .standard))
+          detailRow("Status", message.deliveryStatus.rawValue)
+        }
+        Section("Security Status") {
+          Text(securityStatusText)
+            .foregroundColor(.secondary)
+        }
+        Section("Delivery Trace") {
+          if message.deliveryTrace.isEmpty {
+            Text("No trace yet")
+              .foregroundColor(.secondary)
+          } else {
+            ForEach(message.deliveryTrace) { event in
+              VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                  Text(event.displayTitle)
+                  Spacer()
+                  Text(event.createdAt, style: .time)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+                if !event.detail.isEmpty {
+                  Text(event.detail)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                }
+              }
+            }
+          }
+        }
+        if hasIdentifiers {
+          Section("Identifiers") {
+            if !message.conversationId.isEmpty {
+              detailRow("Conversation", message.conversationId)
+            }
+            if !message.turnId.isEmpty {
+              detailRow("Turn", message.turnId)
+            }
+            if !message.remoteMessageId.isEmpty {
+              detailRow("Remote Message", message.remoteMessageId)
+            }
+          }
+        }
+      }
+      .navigationTitle("Message Actions")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done") {
+            dismiss()
+          }
+        }
+      }
+    }
+  }
+
+  private var securityStatusText: String {
+    switch contact.deliveryMode {
+    case .link:
+      return "Protected by the SignalASI Link end-to-end session"
+    case .cloudAPI:
+      return "Protected locally; cloud model requests use the configured provider endpoint"
+    case .local:
+      return "Stored locally on this device"
+    }
+  }
+
+  private var hasIdentifiers: Bool {
+    !message.conversationId.isEmpty || !message.turnId.isEmpty || !message.remoteMessageId.isEmpty
+  }
+
+  private func detailRow(_ title: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title)
+        .font(.caption)
+        .foregroundColor(.secondary)
+      Text(value)
+        .font(.system(.caption, design: .monospaced))
+        .textSelection(.enabled)
+    }
   }
 }
 
