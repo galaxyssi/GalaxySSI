@@ -98,6 +98,57 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     XCTAssertEqual(digest.count, 64)
   }
 
+  func testMqttPublishGuardCapturesPublishBackpressure() throws {
+    let success = MqttPublishGuard.attempt { 42 }
+    let failure = MqttPublishGuard.attempt { () -> Int in
+      throw SignalASIError.invalidPayload("max in-flight")
+    }
+
+    XCTAssertEqual(try success.get(), 42)
+    XCTAssertThrowsError(try failure.get())
+  }
+
+  func testMqttOutboxDispatchPolicyKeepsOfflineAndBackpressureAccepted() {
+    let offline = MqttOutboxDispatchPolicy.result(connected: false, published: false)
+    let backpressure = MqttOutboxDispatchPolicy.result(connected: true, published: false)
+    let immediate = MqttOutboxDispatchPolicy.result(connected: true, published: true)
+
+    XCTAssertEqual(offline, .queued)
+    XCTAssertEqual(backpressure, .queued)
+    XCTAssertEqual(immediate, .published)
+    XCTAssertTrue(offline.accepted)
+    XCTAssertTrue(backpressure.accepted)
+    XCTAssertTrue(immediate.accepted)
+    XCTAssertFalse(MqttPublishResult.failed.accepted)
+  }
+
+  func testMqttConnectionRetryBacksOffCapsAndResets() {
+    let policy = MqttConnectionRetryPolicy(delaysMillis: [2, 5, 10])
+
+    XCTAssertEqual(policy.nextDelayMillis(), 2)
+    XCTAssertEqual(policy.nextDelayMillis(), 5)
+    XCTAssertEqual(policy.nextDelayMillis(), 10)
+    XCTAssertEqual(policy.nextDelayMillis(), 10)
+    policy.reset()
+    XCTAssertEqual(policy.nextDelayMillis(), 2)
+  }
+
+  func testMqttSubscriptionRecoveryWaitsForAllResultsAndIgnoresStaleGenerations() {
+    let state = MqttSubscriptionRecoveryState()
+    let firstGeneration = state.begin(subscriptionCount: 2)
+
+    XCTAssertEqual(state.complete(generation: firstGeneration, succeeded: true), .pending)
+    XCTAssertEqual(state.complete(generation: firstGeneration, succeeded: true), .ready)
+
+    let retryGeneration = state.begin(subscriptionCount: 2)
+    XCTAssertEqual(state.complete(generation: retryGeneration, succeeded: false), .pending)
+    XCTAssertEqual(state.complete(generation: retryGeneration, succeeded: true), .retry)
+
+    let staleGeneration = state.begin(subscriptionCount: 1)
+    state.invalidate()
+    XCTAssertEqual(state.complete(generation: staleGeneration, succeeded: true), .stale)
+  }
+
   private func makeDeliveryStore() -> SignalASILinkDeliveryStore {
     let suite = "SignalASILinkReliabilityTests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
