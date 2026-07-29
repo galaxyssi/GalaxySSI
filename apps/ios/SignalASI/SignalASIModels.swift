@@ -1073,6 +1073,231 @@ enum AgentRisk: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentObservationDecision: String, Codable, CaseIterable, Identifiable {
+  case actionFailed = "ACTION_FAILED"
+  case noChangeRequired = "NO_CHANGE_REQUIRED"
+  case changedAndStable = "CHANGED_AND_STABLE"
+  case changedButUnstable = "CHANGED_BUT_UNSTABLE"
+  case timedOut = "TIMED_OUT"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentObservationDecision {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .actionFailed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRecoveryDecision: String, Codable, CaseIterable, Identifiable {
+  case notNeeded = "NOT_NEEDED"
+  case retrySucceeded = "RETRY_SUCCEEDED"
+  case retryFailed = "RETRY_FAILED"
+  case manualRequired = "MANUAL_REQUIRED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRecoveryDecision {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .manualRequired
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentScreenContext: Codable, Equatable {
+  var foregroundApp: String
+  var activityName: String
+  var pageTitle: String
+  var visibleTextCount: Int
+  var clickableNodeCount: Int
+  var inputFieldCount: Int
+  var scrollableRegionCount: Int
+  var sensitiveFlagCount: Int
+  var selectedText: String
+  var isAccessibilityEnabled: Bool
+  var snapshotAgeMillis: Int64
+
+  init(
+    foregroundApp: String,
+    activityName: String = "",
+    pageTitle: String = "",
+    visibleTextCount: Int = 0,
+    clickableNodeCount: Int = 0,
+    inputFieldCount: Int = 0,
+    scrollableRegionCount: Int = 0,
+    sensitiveFlagCount: Int = 0,
+    selectedText: String = "",
+    isAccessibilityEnabled: Bool = false,
+    snapshotAgeMillis: Int64 = 0
+  ) {
+    self.foregroundApp = foregroundApp
+    self.activityName = activityName
+    self.pageTitle = pageTitle
+    self.visibleTextCount = max(visibleTextCount, 0)
+    self.clickableNodeCount = max(clickableNodeCount, 0)
+    self.inputFieldCount = max(inputFieldCount, 0)
+    self.scrollableRegionCount = max(scrollableRegionCount, 0)
+    self.sensitiveFlagCount = max(sensitiveFlagCount, 0)
+    self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
+    self.isAccessibilityEnabled = isAccessibilityEnabled
+    self.snapshotAgeMillis = max(snapshotAgeMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case foregroundApp = "foreground_app"
+    case activityName = "activity_name"
+    case pageTitle = "page_title"
+    case visibleTextCount = "visible_text_count"
+    case clickableNodeCount = "clickable_node_count"
+    case inputFieldCount = "input_field_count"
+    case scrollableRegionCount = "scrollable_region_count"
+    case sensitiveFlagCount = "sensitive_flag_count"
+    case selectedText = "selected_text"
+    case isAccessibilityEnabled = "is_accessibility_enabled"
+    case snapshotAgeMillis = "snapshot_age_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      foregroundApp: try container.decodeIfPresent(String.self, forKey: .foregroundApp) ?? "",
+      activityName: try container.decodeIfPresent(String.self, forKey: .activityName) ?? "",
+      pageTitle: try container.decodeIfPresent(String.self, forKey: .pageTitle) ?? "",
+      visibleTextCount: try container.decodeIfPresent(Int.self, forKey: .visibleTextCount) ?? 0,
+      clickableNodeCount: try container.decodeIfPresent(Int.self, forKey: .clickableNodeCount) ?? 0,
+      inputFieldCount: try container.decodeIfPresent(Int.self, forKey: .inputFieldCount) ?? 0,
+      scrollableRegionCount: try container.decodeIfPresent(Int.self, forKey: .scrollableRegionCount) ?? 0,
+      sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
+      selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
+      isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,
+      snapshotAgeMillis: try container.decodeIfPresent(Int64.self, forKey: .snapshotAgeMillis) ?? 0
+    )
+  }
+
+  private static let maximumSelectedTextLength = 1_000
+}
+
+struct AgentObservationOutcome: Codable, Equatable {
+  var screen: AgentScreenContext
+  var decision: AgentObservationDecision
+  var sampleCount: Int
+  var durationMillis: Int64
+  var screenChanged: Bool
+  var screenStable: Bool
+  var evidence: String
+
+  init(
+    screen: AgentScreenContext,
+    decision: AgentObservationDecision,
+    sampleCount: Int,
+    durationMillis: Int64,
+    screenChanged: Bool,
+    screenStable: Bool,
+    evidence: String = ""
+  ) {
+    self.screen = screen
+    self.decision = decision
+    self.sampleCount = max(sampleCount, 0)
+    self.durationMillis = max(durationMillis, 0)
+    self.screenChanged = screenChanged
+    self.screenStable = screenStable
+    self.evidence = String(evidence.prefix(Self.maximumEvidenceLength))
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case screen
+    case decision
+    case sampleCount = "sample_count"
+    case durationMillis = "duration_millis"
+    case screenChanged = "screen_changed"
+    case screenStable = "screen_stable"
+    case evidence
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      screen: try container.decodeIfPresent(AgentScreenContext.self, forKey: .screen) ?? AgentScreenContext(foregroundApp: ""),
+      decision: try container.decodeIfPresent(AgentObservationDecision.self, forKey: .decision) ?? .actionFailed,
+      sampleCount: try container.decodeIfPresent(Int.self, forKey: .sampleCount) ?? 0,
+      durationMillis: try container.decodeIfPresent(Int64.self, forKey: .durationMillis) ?? 0,
+      screenChanged: try container.decodeIfPresent(Bool.self, forKey: .screenChanged) ?? false,
+      screenStable: try container.decodeIfPresent(Bool.self, forKey: .screenStable) ?? false,
+      evidence: try container.decodeIfPresent(String.self, forKey: .evidence) ?? ""
+    )
+  }
+
+  private static let maximumEvidenceLength = 2_000
+}
+
+struct AgentActionResult: Codable, Equatable {
+  var actionId: String
+  var success: Bool
+  var message: String
+  var metadata: [String: String]
+
+  init(
+    actionId: String,
+    success: Bool,
+    message: String,
+    metadata: [String: String] = [:]
+  ) {
+    self.actionId = actionId
+    self.success = success
+    self.message = String(message.prefix(Self.maximumMessageLength))
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "action_id"
+    case success
+    case message
+    case metadata
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      actionId: try container.decodeIfPresent(String.self, forKey: .actionId) ?? "",
+      success: try container.decodeIfPresent(Bool.self, forKey: .success) ?? false,
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      metadata: try container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
+    )
+  }
+
+  private static let maximumMessageLength = 2_000
+}
+
+struct AgentRecoveryAttempt: Equatable {
+  var result: AgentActionResult?
+  var observation: AgentObservationOutcome
+}
+
+struct AgentRecoveryOutcome: Equatable {
+  var result: AgentActionResult?
+  var observation: AgentObservationOutcome
+  var decision: AgentRecoveryDecision
+  var attemptCount: Int
+}
+
 enum AgentPhase: String, Codable, CaseIterable, Identifiable {
   case observing = "OBSERVING"
   case planning = "PLANNING"
@@ -3609,6 +3834,47 @@ struct AgentAction: Codable, Equatable, Identifiable {
       evidence: try container.decodeIfPresent(String.self, forKey: .evidence) ?? ""
     )
   }
+}
+
+struct AgentActionRecoveryController {
+  func recover(
+    action: AgentAction,
+    failedResult: AgentActionResult?,
+    failedObservation: AgentObservationOutcome,
+    retry: () -> AgentRecoveryAttempt
+  ) -> AgentRecoveryOutcome {
+    guard failedResult?.success == false else {
+      return AgentRecoveryOutcome(
+        result: failedResult,
+        observation: failedObservation,
+        decision: .notNeeded,
+        attemptCount: 0
+      )
+    }
+    guard supportsAutomaticRecovery(action),
+      failedObservation.decision == .timedOut else {
+      return AgentRecoveryOutcome(
+        result: failedResult,
+        observation: failedObservation,
+        decision: .manualRequired,
+        attemptCount: 0
+      )
+    }
+
+    let attempt = retry()
+    return AgentRecoveryOutcome(
+      result: attempt.result,
+      observation: attempt.observation,
+      decision: attempt.result?.success == true ? .retrySucceeded : .retryFailed,
+      attemptCount: 1
+    )
+  }
+
+  private func supportsAutomaticRecovery(_ action: AgentAction) -> Bool {
+    action.risk == .low && Self.safeRetryActions.contains(action.kind)
+  }
+
+  private static let safeRetryActions: Set<AgentActionKind> = [.openApp, .home, .recents]
 }
 
 enum AgentConfirmationPolicy {
