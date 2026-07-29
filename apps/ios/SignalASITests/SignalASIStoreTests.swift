@@ -845,6 +845,90 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertThrowsError(try AgentCronExpression.parseZone("Not/AZone"))
   }
 
+  func testAgentTranscriptScrollPolicyMatchesAndroidAutoFollowAndPagination() {
+    XCTAssertTrue(
+      AgentTranscriptScrollPolicy.nextAutoFollow(
+        current: true,
+        userScrollActive: false,
+        itemCount: 3,
+        lastVisiblePosition: 2,
+        remainingPx: 600,
+        thresholdPx: 56
+      )
+    )
+    XCTAssertFalse(
+      AgentTranscriptScrollPolicy.nextAutoFollow(
+        current: true,
+        userScrollActive: true,
+        itemCount: 3,
+        lastVisiblePosition: 1,
+        remainingPx: Int.max,
+        thresholdPx: 56
+      )
+    )
+    XCTAssertTrue(
+      AgentTranscriptScrollPolicy.nextAutoFollow(
+        current: false,
+        userScrollActive: true,
+        itemCount: 3,
+        lastVisiblePosition: 2,
+        remainingPx: 20,
+        thresholdPx: 56
+      )
+    )
+    XCTAssertTrue(
+      AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(
+        dy: -8,
+        firstVisiblePosition: 1,
+        hydrationPending: false
+      )
+    )
+    XCTAssertTrue(
+      AgentTranscriptScrollPolicy.shouldLoadOlderFromPull(
+        downY: 200,
+        currentY: 240,
+        canScrollUp: false,
+        hydrationPending: false,
+        thresholdPx: 24
+      )
+    )
+  }
+
+  func testAgentTranscriptScrollPolicyBlocksOrdinaryScrollAndHydration() {
+    XCTAssertFalse(
+      AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(
+        dy: 12,
+        firstVisiblePosition: 0,
+        hydrationPending: false
+      )
+    )
+    XCTAssertFalse(
+      AgentTranscriptScrollPolicy.shouldLoadOlderFromPull(
+        downY: 200,
+        currentY: 240,
+        canScrollUp: true,
+        hydrationPending: false,
+        thresholdPx: 24
+      )
+    )
+    XCTAssertFalse(
+      AgentTranscriptScrollPolicy.shouldLoadOlderFromScroll(
+        dy: -8,
+        firstVisiblePosition: 0,
+        hydrationPending: true
+      )
+    )
+    XCTAssertFalse(
+      AgentTranscriptScrollPolicy.shouldLoadOlderFromPull(
+        downY: 200,
+        currentY: 240,
+        canScrollUp: false,
+        hydrationPending: true,
+        thresholdPx: 24
+      )
+    )
+  }
+
   func testAgentClarificationPolicyAsksTargetedQuestionsForMissingDetails() {
     let cases: [(String, AgentClarificationQuestion)] = [
       ("Help me", .taskGoal),
