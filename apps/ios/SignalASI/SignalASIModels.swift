@@ -1188,6 +1188,99 @@ enum AgentTaskBudgetPolicy {
   }
 }
 
+struct HomeAssistantSettings: Codable, Equatable {
+  static let maximumBaseURLLength = 2_000
+  static let maximumAccessTokenLength = 8_000
+  static let maximumEntityIdLength = 240
+
+  var enabled: Bool
+  var baseUrl: String
+  var accessToken: String
+  var defaultEntityId: String
+
+  init(
+    enabled: Bool = false,
+    baseUrl: String = "",
+    accessToken: String = "",
+    defaultEntityId: String = ""
+  ) {
+    self.enabled = enabled
+    var cleanBaseURL = baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+    while cleanBaseURL.hasSuffix("/") {
+      cleanBaseURL.removeLast()
+    }
+    self.baseUrl = String(cleanBaseURL.prefix(Self.maximumBaseURLLength))
+    self.accessToken = String(
+      accessToken.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumAccessTokenLength)
+    )
+    self.defaultEntityId = String(
+      defaultEntityId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumEntityIdLength)
+    )
+  }
+
+  static let `default` = HomeAssistantSettings()
+
+  var credentialsConfigured: Bool {
+    !baseUrl.isEmpty && !accessToken.isEmpty
+  }
+
+  var configured: Bool {
+    enabled && credentialsConfigured
+  }
+
+  var normalized: HomeAssistantSettings {
+    HomeAssistantSettings(
+      enabled: enabled,
+      baseUrl: baseUrl,
+      accessToken: accessToken,
+      defaultEntityId: defaultEntityId
+    )
+  }
+
+  var withoutAccessToken: HomeAssistantSettings {
+    HomeAssistantSettings(
+      enabled: enabled,
+      baseUrl: baseUrl,
+      accessToken: "",
+      defaultEntityId: defaultEntityId
+    )
+  }
+
+  var maskedAccessToken: String {
+    guard !accessToken.isEmpty else { return "" }
+    if accessToken.count <= 8 { return "********" }
+    return "\(accessToken.prefix(4))...\(accessToken.suffix(4))"
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case version
+    case enabled
+    case baseUrl = "base_url"
+    case accessToken = "access_token"
+    case defaultEntityId = "default_entity_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false,
+      baseUrl: try container.decodeIfPresent(String.self, forKey: .baseUrl) ?? "",
+      accessToken: try container.decodeIfPresent(String.self, forKey: .accessToken) ?? "",
+      defaultEntityId: try container.decodeIfPresent(String.self, forKey: .defaultEntityId) ?? ""
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    let value = normalized
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(1, forKey: .version)
+    try container.encode(value.enabled, forKey: .enabled)
+    try container.encode(value.baseUrl, forKey: .baseUrl)
+    try container.encode(value.accessToken, forKey: .accessToken)
+    try container.encode(value.defaultEntityId, forKey: .defaultEntityId)
+  }
+}
+
 struct AgentModelPlannerSettings: Codable, Equatable {
   static let maximumCloudContactIdLength = 120
   static let maximumActions = 12

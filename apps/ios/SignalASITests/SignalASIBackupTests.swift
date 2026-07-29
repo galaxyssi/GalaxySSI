@@ -78,6 +78,12 @@ final class SignalASIBackupTests: XCTestCase {
       $0.networkPolicy = .offlineOnly
       $0.allowPaidProviders = false
     }
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = "http://homeassistant.local:8123/"
+      $0.accessToken = "ha-token"
+      $0.defaultEntityId = "light.office"
+    }
     store.updateModelPlannerSettings {
       $0.enabled = true
       $0.cloudContactId = "cloud:openai"
@@ -104,6 +110,7 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertTrue(payload.privacyManifest.includesDisplaySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentSafetySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentTaskBudget)
+    XCTAssertTrue(payload.privacyManifest.includesHomeAssistantSettings)
     XCTAssertTrue(payload.privacyManifest.includesModelPlannerSettings)
     let restored = makeStore()
     try restored.restoreBackupPayload(payload)
@@ -123,6 +130,10 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.agentTaskBudget.maxInputTokens, 42_000)
     XCTAssertEqual(restored.agentTaskBudget.networkPolicy, .offlineOnly)
     XCTAssertFalse(restored.agentTaskBudget.allowPaidProviders)
+    XCTAssertTrue(restored.homeAssistantSettings.configured)
+    XCTAssertEqual(restored.homeAssistantSettings.baseUrl, "http://homeassistant.local:8123")
+    XCTAssertEqual(restored.homeAssistantSettings.accessToken, "ha-token")
+    XCTAssertEqual(restored.homeAssistantSettings.defaultEntityId, "light.office")
     XCTAssertTrue(restored.modelPlannerSettings.enabled)
     XCTAssertEqual(restored.modelPlannerSettings.cloudContactId, "cloud:openai")
     XCTAssertFalse(restored.modelPlannerSettings.dynamicReplanning)

@@ -954,6 +954,16 @@ struct SettingsView: View {
             }
           }
         }
+        Section("Home Assistant") {
+          NavigationLink(destination: HomeAssistantSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Smart Home")
+              Text(homeAssistantSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -1134,6 +1144,13 @@ struct SettingsView: View {
     let settings = store.modelPlannerSettings
     guard settings.enabled else { return "Local deterministic planner" }
     return "Model planning / \(settings.maxActions) actions / \(settings.maxReplans) replans"
+  }
+
+  private var homeAssistantSummary: String {
+    let settings = store.homeAssistantSettings
+    if settings.configured { return "Configured and enabled" }
+    if settings.credentialsConfigured { return "Configured, disabled" }
+    return "Not configured"
   }
 }
 
@@ -1416,6 +1433,66 @@ private extension AgentTaskBudget {
   }
 }
 
+struct HomeAssistantSettingsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Connection") {
+        Toggle("Enable Home Assistant", isOn: boolBinding(\.enabled))
+        TextField("Server URL", text: stringBinding(\.baseUrl))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+          .keyboardType(.URL)
+        SecureField("Access Token", text: stringBinding(\.accessToken))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        if !store.homeAssistantSettings.maskedAccessToken.isEmpty {
+          Text("Stored token: \(store.homeAssistantSettings.maskedAccessToken)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+      }
+      Section("Default Target") {
+        TextField("Default Entity", text: stringBinding(\.defaultEntityId))
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
+        Text("Example: light.living_room")
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Section("Status") {
+        if store.homeAssistantSettings.configured {
+          Label("Configured", systemImage: "checkmark.circle")
+            .foregroundColor(.green)
+        } else if store.homeAssistantSettings.credentialsConfigured {
+          Label("Configured, disabled", systemImage: "pause.circle")
+            .foregroundColor(.orange)
+        } else {
+          Label("Not configured", systemImage: "exclamationmark.triangle")
+            .foregroundColor(.secondary)
+        }
+      }
+    }
+    .navigationTitle("Home Assistant")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<HomeAssistantSettings, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { store.homeAssistantSettings[keyPath: keyPath] },
+      set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+
+  private func stringBinding(_ keyPath: WritableKeyPath<HomeAssistantSettings, String>) -> Binding<String> {
+    Binding(
+      get: { store.homeAssistantSettings[keyPath: keyPath] },
+      set: { value in store.updateHomeAssistantSettings { $0[keyPath: keyPath] = value } }
+    )
+  }
+}
+
 struct AgentModelPlannerSettingsView: View {
   @EnvironmentObject private var store: SignalASIStore
 
@@ -1561,7 +1638,7 @@ struct ResetPrivateDataView: View {
     NavigationView {
       Form {
         Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, model planner settings, and saved model keys on this device.")
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, Home Assistant configuration, model planner settings, and saved model keys on this device.")
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)
