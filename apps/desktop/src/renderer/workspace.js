@@ -188,6 +188,11 @@ const state = {
   skills: [],
   mcp: [],
   mcpAudit: [],
+  marketplace: {
+    items: [],
+    summary: {},
+    kind: ""
+  },
   mcpImport: {
     sources: [],
     fileName: "",
@@ -1608,6 +1613,63 @@ function renderSkills() {
     </article>`).join("") : `<div class="history-empty">${escapeHtml(t("No skills installed."))}</div>`;
 }
 
+function marketplaceKindLabel(kind) {
+  return {
+    native_tool: t("Tool"),
+    mcp: "MCP",
+    automation: t("Automation")
+  }[kind] || t("Tool");
+}
+
+function marketplaceStateLabel(stateName) {
+  return {
+    built_in: t("Built in"),
+    available: t("Available"),
+    installed: t("Installed"),
+    needs_setup: t("Needs setup"),
+    unavailable: t("Unavailable")
+  }[stateName] || stateName;
+}
+
+function renderMarketplace() {
+  const allItems = Array.isArray(state.marketplace.items) ? state.marketplace.items : [];
+  const items = state.marketplace.kind
+    ? allItems.filter((item) => item.kind === state.marketplace.kind)
+    : allItems;
+  const summary = state.marketplace.summary || {};
+  $("#marketplaceSummary").textContent = t("{installed} installed of {total}", {
+    installed: Number(summary.installed || 0),
+    total: Number(summary.total || allItems.length)
+  });
+  $$("[data-marketplace-kind]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.marketplaceKind === state.marketplace.kind);
+  });
+  $("#marketplaceList").innerHTML = items.length ? items.map((item) => {
+    const dependencies = Array.isArray(item.dependencies) ? item.dependencies : [];
+    const endpointRequired = item.kind === "mcp" && dependencies.includes("endpoint");
+    const canInstall = item.install_state === "available" && !endpointRequired;
+    const needsSetup = item.install_state === "needs_setup" || endpointRequired;
+    const detail = [
+      item.publisher,
+      `v${item.version || "1.0.0"}`,
+      item.status_detail
+    ].filter(Boolean).join(" \u00b7 ");
+    return `
+      <article class="capability-item">
+        <div>
+          <strong><em class="marketplace-kind">${escapeHtml(marketplaceKindLabel(item.kind))}</em>${escapeHtml(item.name || item.id)}</strong>
+          <small>${escapeHtml(item.summary || "")}</small>
+          <small>${escapeHtml(detail)}</small>
+        </div>
+        <div class="capability-item-actions">
+          <span class="marketplace-state">${escapeHtml(marketplaceStateLabel(item.install_state))}</span>
+          ${canInstall ? `<button class="primary" data-install-marketplace="${escapeHtml(item.id)}">${escapeHtml(t("Install"))}</button>` : ""}
+          ${needsSetup ? `<button data-setup-marketplace="${escapeHtml(item.id)}" data-marketplace-item-kind="${escapeHtml(item.kind)}">${escapeHtml(t("Set up"))}</button>` : ""}
+        </div>
+      </article>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t("No marketplace items matched this filter."))}</div>`;
+}
+
 function renderMcp() {
   const permissionLabels = {
     ask_for_changes: "Ask before changes",
@@ -1831,10 +1893,11 @@ async function refreshMemory(query = "") {
 
 async function refreshCapabilities() {
   try {
-    const [memory, memoryHistory, memoryInbox, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
+    const [memory, memoryHistory, memoryInbox, marketplace, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
       window.signalasi.getDesktopMemory("", 100, "active"),
       window.signalasi.getDesktopMemory("", 100, "history"),
       window.signalasi.getDesktopMemoryInbox(100),
+      window.signalasi.getToolMarketplace(),
       window.signalasi.getDesktopSkills(),
       window.signalasi.getDesktopMcp(),
       window.signalasi.getDesktopMcpImportSources(),
@@ -1849,6 +1912,11 @@ async function refreshCapabilities() {
       stats: memory.stats || memoryInbox.stats || {},
       query: ""
     };
+    state.marketplace = {
+      ...state.marketplace,
+      items: Array.isArray(marketplace.items) ? marketplace.items : [],
+      summary: marketplace.summary || {}
+    };
     state.skills = Array.isArray(skills.skills) ? skills.skills : [];
     state.mcp = Array.isArray(mcp.connections) ? mcp.connections : [];
     state.mcpAudit = Array.isArray(mcp.audit) ? mcp.audit : [];
@@ -1857,6 +1925,7 @@ async function refreshCapabilities() {
       : [];
     state.proactiveTasks = Array.isArray(proactive.tasks) ? proactive.tasks : [];
     state.proactiveRuns = Array.isArray(proactiveRuns.runs) ? proactiveRuns.runs : [];
+    renderMarketplace();
     renderMemory();
     renderSkills();
     renderMcp();
@@ -2976,6 +3045,37 @@ function bindEvents() {
     await refreshDesktopControl();
   });
   $$('[data-capability-tab]').forEach((button) => button.addEventListener("click", () => selectCapabilityTab(button.dataset.capabilityTab)));
+  $$("[data-marketplace-kind]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.marketplace.kind = button.dataset.marketplaceKind || "";
+      renderMarketplace();
+    });
+  });
+  $("#refreshMarketplaceButton").addEventListener("click", () =>
+    refreshCapabilities().catch((error) => showToast(error.message || String(error))));
+  $("#marketplaceList").addEventListener("click", async (event) => {
+    const install = event.target.closest("[data-install-marketplace]");
+    const setup = event.target.closest("[data-setup-marketplace]");
+    if (install) {
+      try {
+        await window.signalasi.installToolMarketplaceItem(
+          install.dataset.installMarketplace,
+          {}
+        );
+        showToast(t("Marketplace item installed."));
+        await refreshCapabilities();
+      } catch (error) {
+        showToast(error.message || String(error));
+      }
+      return;
+    }
+    if (setup) {
+      selectCapabilityTab(setup.dataset.marketplaceItemKind === "mcp" ? "mcp" : "automation");
+      if (setup.dataset.marketplaceItemKind === "mcp") {
+        $("#mcpEditor").open = true;
+      }
+    }
+  });
   $$("[data-memory-view]").forEach((button) => {
     button.addEventListener("click", () => selectMemoryView(button.dataset.memoryView));
   });

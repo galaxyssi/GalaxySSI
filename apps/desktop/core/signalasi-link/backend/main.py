@@ -732,6 +732,10 @@ class DesktopSkillEnabledReq(BaseModel):
     enabled: bool = True
 
 
+class ToolMarketplaceInstallReq(BaseModel):
+    configuration: dict[str, Any] = Field(default_factory=dict)
+
+
 class DesktopMcpReq(BaseModel):
     id: str
     name: str
@@ -1924,6 +1928,59 @@ def api_forget_desktop_memory(memory_id: str, request: Request):
     from desktop_memory import desktop_memory_store
 
     return {"id": memory_id, "forgotten": desktop_memory_store().forget(memory_id)}
+
+
+@app.get("/api/tool-marketplace")
+def api_tool_marketplace(request: Request, kind: str = Query("")):
+    require_loopback(request)
+    from tool_marketplace import ToolMarketplaceError, tool_marketplace
+
+    try:
+        return tool_marketplace().catalog(kind)
+    except ToolMarketplaceError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error(exc.code, str(exc)),
+        ) from exc
+
+
+@app.post("/api/tool-marketplace/{item_id}/install")
+def api_install_tool_marketplace_item(
+    item_id: str,
+    req: ToolMarketplaceInstallReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    from tool_marketplace import ToolMarketplaceError, tool_marketplace
+
+    try:
+        return tool_marketplace().install(item_id, req.configuration)
+    except ToolMarketplaceError as exc:
+        status = 404 if exc.code == "item_not_found" else 409
+        raise HTTPException(
+            status_code=status,
+            detail=api_error(exc.code, str(exc)),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("marketplace_install_invalid", str(exc)),
+        ) from exc
+
+
+@app.delete("/api/tool-marketplace/{item_id}")
+def api_uninstall_tool_marketplace_item(item_id: str, request: Request):
+    require_desktop_api_token(request)
+    from tool_marketplace import ToolMarketplaceError, tool_marketplace
+
+    try:
+        return tool_marketplace().uninstall(item_id)
+    except ToolMarketplaceError as exc:
+        status = 404 if exc.code == "item_not_found" else 409
+        raise HTTPException(
+            status_code=status,
+            detail=api_error(exc.code, str(exc)),
+        ) from exc
 
 
 @app.get("/api/desktop-skills")
