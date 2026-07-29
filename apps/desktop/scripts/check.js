@@ -17,6 +17,7 @@ const required = [
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
   "core/signalasi-link/backend/desktop_control.py",
+  "core/signalasi-link/backend/acp_runtime.py",
   "core/signalasi-link/backend/pairing_access.py",
   "core/signalasi-link/backend/desktop_agent_loop.py",
   "core/signalasi-link/backend/desktop_super_agent.py",
@@ -132,6 +133,7 @@ const backendAgentCollaboration = fs.readFileSync(path.join(backendDir, "agent_c
 const backendAgentFileAccess = fs.readFileSync(path.join(backendDir, "agent_file_access_ledger.py"), "utf8");
 const backendProviderProfiles = fs.readFileSync(path.join(backendDir, "provider_profiles.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
+const backendAcpRuntime = fs.readFileSync(path.join(backendDir, "acp_runtime.py"), "utf8");
 const backendTaskManager = fs.readFileSync(path.join(backendDir, "agent_task_manager.py"), "utf8");
 const backendExecutionHarness = fs.readFileSync(path.join(backendDir, "agent_execution_harness.py"), "utf8");
 const backendAgentConfig = fs.readFileSync(path.join(backendDir, "agent_config.py"), "utf8");
@@ -804,6 +806,21 @@ if (
 for (const capability of ["model_display_names", "local_model_endpoint_probe", "mobile_cloud_models", "mcp_stdio_wrapper", "multiple_custom_agents", "agent_execution_log", "api_response_codes", "agent_diagnostics_codes"]) {
   if (!backendMain.includes("/api/agents/diagnostics") || !backendGateway.includes(capability)) {
     throw new Error(`Backend diagnostics must advertise capability: ${capability}`);
+  }
+}
+
+for (const acpContract of [
+  [backendAcpRuntime, "class AcpRuntime"],
+  [backendAcpRuntime, "spawn_agent_process"],
+  [backendAcpRuntime, "request_permission"],
+  [backendAcpRuntime, "load_session"],
+  [backendGateway, "managed_acp_runtime"],
+  [backendMain, "/api/acp-runtime"],
+  [workspaceRenderer, "saveAcpRuntimeSettings"],
+  [html, 'id="acpRuntimeList"']
+]) {
+  if (!acpContract[0].includes(acpContract[1])) {
+    throw new Error(`Desktop ACP runtime contract is incomplete: ${acpContract[1]}`);
   }
 }
 

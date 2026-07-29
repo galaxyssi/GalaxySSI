@@ -549,6 +549,10 @@ class ClaudeCodeAgentAdapter(DesktopAgentAdapter):
     adapter_type = "claude-code-cli"
 
 
+class GeminiAgentAdapter(DesktopAgentAdapter):
+    adapter_type = "gemini-cli"
+
+
 class OpenClawAgentAdapter(DesktopAgentAdapter):
     adapter_type = "openclaw-cli"
 
@@ -577,6 +581,7 @@ ADAPTER_CLASSES: dict[str, type[DesktopAgentAdapter]] = {
     "hermes": HermesAgentAdapter,
     "codex": CodexAgentAdapter,
     "claude": ClaudeCodeAgentAdapter,
+    "gemini": GeminiAgentAdapter,
     "openclaw": OpenClawAgentAdapter,
     "local-llm": LocalModelAgentAdapter,
     "cloud-model": CloudModelAgentAdapter,
@@ -612,12 +617,17 @@ class DesktopAgentProvider:
                 if current is not None and type(current) is adapter_class and current.descriptor == descriptor:
                     retained[agent_id] = current
                     continue
+                adapter_type = (
+                    descriptor.adapter_type
+                    if descriptor.adapter_type == "acp"
+                    else adapter_class.adapter_type
+                )
                 retained[agent_id] = adapter_class(
                     descriptor=AgentAdapterDescriptor(
                         agent_id=descriptor.agent_id,
                         name=descriptor.name,
                         kind=descriptor.kind,
-                        adapter_type=adapter_class.adapter_type,
+                        adapter_type=adapter_type,
                         timeout_seconds=descriptor.timeout_seconds,
                         capabilities=descriptor.capabilities,
                         protocols=descriptor.protocols,

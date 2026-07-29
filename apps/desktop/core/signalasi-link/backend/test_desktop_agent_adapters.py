@@ -50,6 +50,7 @@ class DesktopAgentAdaptersTest(unittest.TestCase):
             descriptor("hermes"),
             descriptor("codex"),
             descriptor("claude"),
+            descriptor("gemini"),
             descriptor("openclaw"),
             descriptor("local-llm"),
             descriptor("cloud-model"),
@@ -62,11 +63,26 @@ class DesktopAgentAdaptersTest(unittest.TestCase):
         self.assertEqual("hermes-cli", adapters["hermes"])
         self.assertEqual("codex-app-server-or-cli", adapters["codex"])
         self.assertEqual("claude-code-cli", adapters["claude"])
+        self.assertEqual("gemini-cli", adapters["gemini"])
         self.assertEqual("openclaw-cli", adapters["openclaw"])
         self.assertEqual("local-model-api", adapters["local-llm"])
         self.assertEqual("cloud-model-api", adapters["cloud-model"])
         self.assertEqual("windows-host-tools", adapters["windows"])
         self.assertEqual("android-device-tools", adapters["android"])
+
+    def test_acp_descriptor_reports_the_live_transport(self):
+        acp_descriptor = AgentAdapterDescriptor(
+            agent_id="hermes",
+            name="Hermes",
+            kind="local-cli",
+            adapter_type="acp",
+            timeout_seconds=2,
+            capabilities=("conversation", "tasks"),
+        )
+
+        adapter = self.provider(acp_descriptor).enumerate()[0]
+
+        self.assertEqual("acp", adapter["adapter_type"])
 
     def test_respond_receipt_survives_provider_recreation(self):
         request = AgentAdapterRequest(

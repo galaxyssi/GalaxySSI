@@ -2,6 +2,7 @@ import os
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -67,6 +68,33 @@ class AgentCliExecutionTest(unittest.TestCase):
                 reply = agent_gateway.ask_agent_sync("claude", "test prompt")
 
         self.assertTrue(reply.startswith("CLAUDE_SMOKE_OK:"))
+
+    def test_full_agent_call_prefers_acp_without_invoking_legacy_cli(self):
+        class FakeAcpRuntime:
+            def supports(self, _agent_id):
+                return True
+
+            def execute(self, _agent_id, _prompt, **_kwargs):
+                return "Done."
+
+            def agent_health(self, agent_id):
+                return {"agent_id": agent_id, "status": "running"}
+
+        with (
+            patch("acp_runtime.acp_runtime", return_value=FakeAcpRuntime()),
+            patch.object(
+                agent_gateway,
+                "_ask_agent_sync_inner",
+                side_effect=AssertionError("legacy CLI must not run"),
+            ),
+        ):
+            reply = agent_gateway.ask_agent_sync(
+                "hermes",
+                "Reply with exactly Done.",
+                task_id=str(uuid.uuid4()),
+            )
+
+        self.assertEqual("Done.", reply)
 
     def test_saved_quoted_windows_command_preserves_executable_and_script_paths(self):
         with tempfile.TemporaryDirectory() as directory:

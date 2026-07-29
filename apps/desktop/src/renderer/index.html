@@ -428,6 +428,26 @@
       </div>
       <div class="settings-group">
         <div class="settings-group-heading">
+          <h3 data-i18n="ACP Agent Runtime">ACP Agent Runtime</h3>
+          <button id="refreshAcpRuntimeButton" class="secondary-button compact-button" data-i18n="Refresh">Refresh</button>
+        </div>
+        <label class="check-row">
+          <input id="acpRuntimeEnabled" type="checkbox">
+          <span>
+            <strong data-i18n="Use persistent ACP sessions">Use persistent ACP sessions</strong>
+            <small data-i18n="Prefer live Agent sessions and fall back to existing CLI connectors when ACP is unavailable.">Prefer live Agent sessions and fall back to existing CLI connectors when ACP is unavailable.</small>
+          </span>
+        </label>
+        <div class="cloud-settings-grid">
+          <label><span data-i18n="Maximum Agent processes">Maximum Agent processes</span><input id="acpMaxProcesses" type="number" min="1" max="16" step="1"></label>
+          <label><span data-i18n="Idle release (seconds)">Idle release (seconds)</span><input id="acpIdleTimeout" type="number" min="30" max="86400" step="30"></label>
+        </div>
+        <div id="acpRuntimeSummary" class="runtime-manager-summary" data-i18n="ACP runtime has not been checked.">ACP runtime has not been checked.</div>
+        <div id="acpRuntimeList" class="acp-runtime-list"></div>
+        <button id="saveAcpRuntimeButton" class="primary-button" data-i18n="Save ACP runtime">Save ACP runtime</button>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-heading">
           <h3 data-i18n="Self-evolution">Self-evolution</h3>
           <span id="evolutionSummaryBadge" class="state-badge" data-i18n="No candidates">No candidates</span>
         </div>
@@ -457,6 +477,7 @@
           <label><span>Hermes</span><input id="cmdHermes" spellcheck="false"></label>
           <label><span>Codex</span><input id="cmdCodex" spellcheck="false"></label>
           <label><span>Claude Code</span><input id="cmdClaude" spellcheck="false"></label>
+          <label><span>Gemini CLI</span><input id="cmdGemini" spellcheck="false"></label>
           <label><span>OpenClaw</span><input id="cmdOpenClaw" spellcheck="false"></label>
           <button id="saveAgentCommandsButton" class="primary-button" data-i18n="Save commands">Save commands</button>
         </div>

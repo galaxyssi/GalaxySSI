@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Iterable
 
 from agent_config import (
+    acp_runtime_config,
     cli_agent_runtime_config,
     cli_runtime_config,
     cloud_model_config,
@@ -225,6 +226,16 @@ BASE_AGENTS: dict[str, AgentSpec] = {
         note="Claude Code CLI wrapped by SignalASI Desktop",
         capabilities=("conversation", "code", "terminal", "files", "tasks"),
     ),
+    "gemini": AgentSpec(
+        id="gemini",
+        name="Gemini CLI",
+        kind="local-cli",
+        command=["gemini", "-p"],
+        timeout=120,
+        env_key="SIGNALASI_GEMINI_CMD",
+        note="Gemini CLI wrapped by SignalASI Desktop",
+        capabilities=("conversation", "research", "code", "terminal", "files", "web", "tasks"),
+    ),
     "openclaw": AgentSpec(
         id="openclaw",
         name="OpenClaw",
@@ -284,6 +295,11 @@ SETUP_GUIDES: dict[str, dict] = {
         "pairing": "Pair Hermes once. Claude Code is exposed as a connector-managed contact over the verified PC tunnel.",
         "setup": "Install Claude Code CLI or set a custom command in SignalASI Desktop. Example: claude -p",
     },
+    "gemini": {
+        "mobile_contact_id": "gemini",
+        "pairing": "Pair once. Gemini CLI is exposed as a connector-managed contact over the verified PC tunnel.",
+        "setup": "Install Gemini CLI. SignalASI prefers gemini --acp and falls back to gemini -p.",
+    },
     "openclaw": {
         "mobile_contact_id": "openclaw",
         "pairing": "Pair once. OpenClaw is exposed as a connector-managed contact over the verified PC tunnel.",
@@ -320,6 +336,7 @@ def _setup_code(spec: AgentSpec) -> str:
         "hermes": "setup_hermes_cli",
         "codex": "setup_codex_cli",
         "claude": "setup_claude_code",
+        "gemini": "setup_gemini_cli",
         "openclaw": "setup_openclaw_cli",
         "local-llm": "setup_local_model",
         "custom-agent": "setup_custom_agent",
@@ -500,12 +517,19 @@ def _adapter_display_name(spec: AgentSpec) -> str:
 
 
 def _agent_adapter_descriptors() -> list[AgentAdapterDescriptor]:
+    from acp_runtime import acp_runtime
+
+    acp = acp_runtime()
     return [
         AgentAdapterDescriptor(
             agent_id=spec.id,
             name=_adapter_display_name(spec),
             kind=spec.kind,
-            adapter_type="pending-selection",
+            adapter_type=(
+                "acp"
+                if spec.kind == "local-cli" and acp.supports(spec.id)
+                else "pending-selection"
+            ),
             timeout_seconds=max(1, spec.timeout),
             capabilities=spec.capabilities,
         )
@@ -706,24 +730,69 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 if request.conversation_id
                 else apply_response_policy(current_prompt, preferred_language)
             )
-            raw_reply = _ask_agent_sync_inner(
-                agent_id,
-                prompt,
-                attempt_spec,
-                task_id=request.run_id,
-                conversation_id=request.conversation_id,
-                response_language=preferred_language,
-                restricted_workspace=(
-                    str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
-                ),
-                plan_only=plan_only,
-                working_directory=working_directory,
-                file_access_context={
-                    "scope": file_access_scope,
-                    "actor_id": collaboration_actor_id,
-                    "collaboration_channel_ids": collaboration_channel_ids,
-                },
-            )
+            raw_reply = None
+            if spec is not None and spec.kind == "local-cli" and not plan_only:
+                from acp_runtime import acp_runtime
+
+                def acp_event(
+                    kind: str,
+                    title: str,
+                    *,
+                    event_id: str,
+                    status: str = "running",
+                    detail: str = "",
+                    metadata: dict | None = None,
+                ) -> None:
+                    if not request.run_id:
+                        return
+                    agent_task_manager.add_event(
+                        request.run_id,
+                        kind,
+                        title,
+                        event_id=(
+                            f"execution-harness:acp:{attempt}:"
+                            f"{str(event_id or 'event')[:120]}"
+                        ),
+                        status=status,
+                        detail=detail,
+                        metadata=metadata,
+                    )
+
+                raw_reply = acp_runtime().execute(
+                    spec.id,
+                    prompt,
+                    run_id=request.run_id,
+                    client_route_id=str(
+                        request.checkpoint.get("client_route_id") or "desktop-local"
+                    ),
+                    conversation_id=request.conversation_id,
+                    working_directory=working_directory,
+                    access_profile=str(
+                        request.checkpoint.get("desktop_access_profile")
+                        or "desktop_executor"
+                    ),
+                    timeout_seconds=attempt_spec.timeout,
+                    event_sink=acp_event,
+                )
+            if raw_reply is None:
+                raw_reply = _ask_agent_sync_inner(
+                    agent_id,
+                    prompt,
+                    attempt_spec,
+                    task_id=request.run_id,
+                    conversation_id=request.conversation_id,
+                    response_language=preferred_language,
+                    restricted_workspace=(
+                        str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
+                    ),
+                    plan_only=plan_only,
+                    working_directory=working_directory,
+                    file_access_context={
+                        "scope": file_access_scope,
+                        "actor_id": collaboration_actor_id,
+                        "collaboration_channel_ids": collaboration_channel_ids,
+                    },
+                )
         harness.account_usage(
             output_tokens=estimate_text_tokens(str(raw_reply or "")),
             network_bytes=(
@@ -1075,6 +1144,12 @@ def _refine_stateless_context_summary(
 
 def _cancel_agent_adapter_run(run_id: str) -> None:
     try:
+        from acp_runtime import acp_runtime
+
+        acp_runtime().cancel(run_id)
+    except Exception:
+        pass
+    try:
         external_cli_process_pool().cancel(run_id)
     except Exception:
         pass
@@ -1186,6 +1261,27 @@ def shutdown_external_cli_process_pool() -> None:
         pool.shutdown()
 
 
+def shutdown_acp_agent_runtime() -> None:
+    from acp_runtime import shutdown_acp_runtime
+
+    shutdown_acp_runtime()
+
+
+def prewarm_acp_agents() -> dict:
+    from acp_runtime import acp_runtime
+
+    runtime = acp_runtime()
+    config = acp_runtime_config()
+    warmed = {}
+    for agent_id, item in config.get("agents", {}).items():
+        if item.get("enabled") and item.get("prewarm"):
+            warmed[agent_id] = runtime.prewarm(agent_id)
+    return {
+        "warmed": warmed,
+        "health": runtime.health(),
+    }
+
+
 def prewarm_external_cli_agents() -> dict:
     config = cli_runtime_config()
     warmed: dict[str, int] = {}
@@ -1236,6 +1332,12 @@ def external_cli_runtime_manifest() -> dict:
         "agents": agents,
         "pool": external_cli_process_pool().health(),
     }
+
+
+def acp_runtime_manifest() -> dict:
+    from acp_runtime import acp_runtime
+
+    return acp_runtime().health()
 
 
 def list_agents(quick: bool = False) -> list[dict]:
@@ -1296,6 +1398,10 @@ def connector_diagnostics(quick: bool = False) -> dict:
             "durable_agent_run_receipts",
             "agent_protocol_negotiation",
             "desktop_agent_runtime_server",
+            "managed_acp_runtime",
+            "acp_session_persistence",
+            "acp_streaming_progress",
+            "acp_permission_policy",
             "external_cli_keepalive_pool",
             "provider_profile_v1",
             "provider_performance_observations_v1",
@@ -1305,6 +1411,7 @@ def connector_diagnostics(quick: bool = False) -> dict:
             "recoverable_runs": [item.public() for item in desktop_agent_provider().recover()],
         },
         "agent_runtime_server": desktop_agent_runtime_server().health(),
+        "acp_runtime": acp_runtime_manifest(),
         "external_cli_runtime": external_cli_runtime_manifest(),
         "ready": ready,
         "needs_setup": needs_setup,
@@ -1338,8 +1445,13 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
         command = _command_for(spec)
         ok, detail = _command_available(command[0]) if command else (False, "No command")
     else:
-        command = _command_for(spec)
-        ok, detail = _command_available(command[0]) if command else (False, "No command")
+        from acp_runtime import acp_runtime
+
+        if spec.kind == "local-cli" and acp_runtime().supports(spec.id):
+            ok, detail = True, "ACP command detected"
+        else:
+            command = _command_for(spec)
+            ok, detail = _command_available(command[0]) if command else (False, "No command")
     runtime = _agent_runtime_snapshot(spec.id)
     runtime_status = str(runtime.get("status") or "")
     if ok and runtime_status == "unavailable":
@@ -1358,6 +1470,13 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
         ),
         {},
     )
+    from acp_runtime import acp_runtime
+
+    acp_status = (
+        acp_runtime().agent_health(spec.id)
+        if spec.kind == "local-cli"
+        else {}
+    )
     return {
         "id": spec.id,
         "name": display_name,
@@ -1372,6 +1491,7 @@ def agent_status(spec: AgentSpec, quick: bool = False) -> dict:
         "runtime_updated_at": int(float(runtime.get("updated_at") or 0) * 1000),
         "active_tasks": int(runtime.get("active_tasks") or 0),
         "adapter": adapter_descriptor,
+        "acp": acp_status,
     }
 
 
@@ -1382,6 +1502,11 @@ def _quick_agent_available(spec: AgentSpec) -> tuple[bool, str]:
         cfg = cloud_model_config()
         ready = bool(cfg["url"] and cfg["api_key"] and cfg["model"])
         return (True, f"Configured: {cfg['model']}") if ready else (False, "Set cloud endpoint, API key, and model")
+    if spec.kind == "local-cli":
+        from acp_runtime import acp_runtime
+
+        if acp_runtime().supports(spec.id):
+            return True, "ACP command detected"
     command = _command_for(spec)
     if not command:
         return False, "No command"
@@ -1484,6 +1609,7 @@ def _normalize_command(agent_id: str, command: list[str] | None) -> list[str] | 
         return None
     preferred = {
         "claude": "claude.cmd",
+        "gemini": "gemini.cmd",
         "openclaw": "openclaw.cmd",
     }.get(agent_id)
     if preferred and command[0].lower() == preferred.removesuffix(".cmd"):
@@ -1987,7 +2113,12 @@ def evolution_agent_candidates(
             "selected": False,
         })
 
-    order = {agent_id: index for index, agent_id in enumerate(("codex", "claude", "hermes", "openclaw"))}
+    order = {
+        agent_id: index
+        for index, agent_id in enumerate(
+            ("codex", "claude", "hermes", "gemini", "openclaw")
+        )
+    }
     rows.sort(key=lambda row: (
         0 if row["id"] == preferred and preferred != "auto" else 1,
         order.get(row["id"], len(order)),
