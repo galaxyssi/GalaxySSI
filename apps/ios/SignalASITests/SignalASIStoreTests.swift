@@ -1266,6 +1266,59 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(decoded.isComplete)
   }
 
+  func testAgentTaskIntentClassifierMatchesAndroidCanonicalIntents() {
+    let cases: [(String, AgentTaskIntent)] = [
+      ("Hello, how are you?", .chat),
+      ("Build an Android app and run unit tests", .code),
+      ("Turn on the flashlight on my phone", .phoneControl),
+      ("Open the browser on my computer", .desktopControl),
+      ("Research today's AI news and cite sources", .research),
+      ("Extract text from this PDF", .file),
+      ("Remember that I prefer concise replies", .memory),
+      ("Run this health check every hour", .automation)
+    ]
+
+    for (goal, expected) in cases {
+      let result = AgentTaskIntentClassifier.classify(goal: goal)
+
+      XCTAssertEqual(result.intent, expected, goal)
+      XCTAssertGreaterThanOrEqual(result.confidence, 55, goal)
+    }
+  }
+
+  func testAgentTaskIntentClassifierHandlesAttachmentsAndChineseSignals() {
+    let attachment = AgentTaskIntentClassifier.classify(goal: "", hasAttachments: true)
+    XCTAssertEqual(attachment.intent, .file)
+    XCTAssertTrue(attachment.matchedSignals.contains("attachment"))
+
+    let cases: [(String, AgentTaskIntent)] = [
+      ("\u{4f60}\u{597d}", .chat),
+      ("\u{7f16}\u{8bd1}\u{8fd9}\u{4e2a}\u{9879}\u{76ee}", .code),
+      ("\u{6253}\u{5f00}\u{624b}\u{673a}\u{624b}\u{7535}\u{7b52}", .phoneControl),
+      ("\u{63a7}\u{5236}\u{7535}\u{8111}\u{6253}\u{5f00}\u{6d4f}\u{89c8}\u{5668}", .desktopControl),
+      ("\u{641c}\u{7d22}\u{4eca}\u{5929}\u{7684}\u{65b0}\u{95fb}", .research),
+      ("\u{63d0}\u{53d6}\u{8fd9}\u{4e2a} PDF \u{6587}\u{4ef6}\u{7684}\u{6587}\u{5b57}", .file),
+      ("\u{8bb0}\u{4f4f}\u{6211}\u{7684}\u{504f}\u{597d}", .memory),
+      ("\u{6bcf}\u{5929}\u{76d1}\u{63a7}\u{8fd9}\u{4e2a}\u{670d}\u{52a1}", .automation)
+    ]
+
+    for (goal, expected) in cases {
+      XCTAssertEqual(AgentTaskIntentClassifier.classify(goal: goal).intent, expected, goal)
+    }
+  }
+
+  func testAgentTaskIntentClassifierPrioritizesAutomationAndAvoidsGenericPhoneControl() {
+    let automation = AgentTaskIntentClassifier.classify(
+      goal: "Turn on the phone flashlight every day at 8"
+    )
+    let generic = AgentTaskIntentClassifier.classify(
+      goal: "Open the app and show me its status"
+    )
+
+    XCTAssertEqual(automation.intent, .automation)
+    XCTAssertEqual(generic.intent, .chat)
+  }
+
   func testAgentClarificationPolicyAsksTargetedQuestionsForMissingDetails() {
     let cases: [(String, AgentClarificationQuestion)] = [
       ("Help me", .taskGoal),
