@@ -4508,6 +4508,170 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encodedRun.contains(#""task_thread_id":"task""#))
   }
 
+  func testAgentRunStartReceiptStoreReservesAndReplaysIdempotentRequests() throws {
+    var now: Int64 = 1_000
+    let registration = networkRegistration(agentId: "codex", displayName: "Codex")
+    let store = InMemoryAgentRunStartReceiptStore(clock: { now })
+    let request = runStartRequest(requiredCapabilities: [.code, .chat])
+
+    let reserved = try store.reserve(registration: registration, request: request)
+    now = 2_000
+    let replay = try store.reserve(
+      registration: registration,
+      request: runStartRequest(runId: "run-replayed", requiredCapabilities: [.chat, .code])
+    )
+
+    XCTAssertEqual(reserved, replay)
+    XCTAssertEqual(reserved.status, .reserved)
+    XCTAssertEqual(reserved.createdAtMillis, 1_000)
+    XCTAssertEqual(reserved.updatedAtMillis, 1_000)
+    XCTAssertEqual(reserved.runId, "run")
+    XCTAssertEqual(reserved.taskId, "task")
+    XCTAssertEqual(
+      reserved.requestDigest,
+      "2c83a56ff6e923a40ce01a63d26f37f6bc2e7b78ff367da21217b92ef586b719"
+    )
+    XCTAssertEqual(store.find(agentId: " codex ", idempotencyKey: " key ")?.idempotencyKey, "key")
+
+    XCTAssertThrowsError(
+      try store.reserve(
+        registration: registration,
+        request: runStartRequest(goal: "different request content", requiredCapabilities: [.chat, .code])
+      )
+    ) { error in
+      XCTAssertTrue((error as? AgentRunStartReceiptError)?.message.contains("different request content") == true)
+    }
+  }
+
+  func testAgentRunStartReceiptStoreAcceptsPersistsAndRejectsMismatchedHandles() throws {
+    var now: Int64 = 1_000
+    let registration = networkRegistration(agentId: "codex", displayName: "Codex")
+    let store = InMemoryAgentRunStartReceiptStore(clock: { now })
+    let request = runStartRequest()
+    _ = try store.reserve(registration: registration, request: request)
+    now = 2_000
+
+    XCTAssertThrowsError(
+      try store.accept(
+        agentId: "codex",
+        idempotencyKey: "key",
+        handle: AgentRunHandle(runId: "wrong", taskId: "task", agentId: "codex", remoteRunId: "remote")
+      )
+    ) { error in
+      XCTAssertTrue((error as? AgentRunStartReceiptError)?.message.contains("different Run") == true)
+    }
+
+    let handle = AgentRunHandle(
+      runId: "run",
+      taskId: "task",
+      agentId: "codex",
+      remoteRunId: "remote-1",
+      acceptedAtMillis: 1_950
+    )
+    let accepted = try store.accept(agentId: "codex", idempotencyKey: "key", handle: handle)
+    let recreated = InMemoryAgentRunStartReceiptStore(serialized: store.serializedSnapshot(), clock: { 3_000 })
+
+    XCTAssertEqual(accepted.status, .accepted)
+    XCTAssertEqual(accepted.handle, handle)
+    XCTAssertEqual(accepted.error, "")
+    XCTAssertEqual(accepted.updatedAtMillis, 2_000)
+    XCTAssertEqual(recreated.list().count, 1)
+    XCTAssertEqual(recreated.list().first?.handle?.remoteRunId, "remote-1")
+    XCTAssertEqual(recreated.list().first?.status, .accepted)
+
+    let ignored = recreated.markOutcomeUnknown(agentId: "codex", idempotencyKey: "key", error: "connection_lost")
+    XCTAssertEqual(ignored?.status, .accepted)
+    XCTAssertEqual(recreated.markCancelledByRun(agentId: "codex", runId: "run"), 1)
+    XCTAssertEqual(recreated.list().first?.status, .cancelled)
+  }
+
+  func testAgentRunStartReceiptStoreTracksUnknownOutcomeAndBoundsSerializedReceipts() throws {
+    var now: Int64 = 1_000
+    let registration = networkRegistration(agentId: "codex", displayName: "Codex")
+    let store = InMemoryAgentRunStartReceiptStore(clock: { now })
+    _ = try store.reserve(registration: registration, request: runStartRequest(runId: "run-a", idempotencyKey: "key-a"))
+    now = 2_000
+    let unknown = store.markOutcomeUnknown(
+      agentId: "codex",
+      idempotencyKey: "key-a",
+      error: " connection_lost "
+    )
+    now = 3_000
+    let accepted = try store.accept(
+      agentId: "codex",
+      idempotencyKey: "key-a",
+      handle: AgentRunHandle(runId: "run-a", taskId: "task", agentId: "codex", remoteRunId: "remote-a")
+    )
+
+    XCTAssertEqual(unknown?.status, .outcomeUnknown)
+    XCTAssertEqual(unknown?.error, "connection_lost")
+    XCTAssertEqual(unknown?.updatedAtMillis, 2_000)
+    XCTAssertEqual(accepted.status, .accepted)
+    XCTAssertEqual(accepted.updatedAtMillis, 3_000)
+
+    let bulk = (0..<4_005).map { index in
+      AgentRunStartReceipt(
+        agentId: "codex",
+        installationId: "installation-codex",
+        idempotencyKey: "bulk-key-\(index)",
+        requestDigest: String(repeating: "b", count: 64),
+        runId: "bulk-\(index)",
+        taskId: "task-\(index)",
+        status: .reserved,
+        createdAtMillis: Int64(index),
+        updatedAtMillis: Int64(index)
+      )
+    }
+    let bulkStore = InMemoryAgentRunStartReceiptStore(
+      serialized: AgentRunStartReceiptJsonCodec.encode(bulk),
+      clock: { 9_000 }
+    )
+    XCTAssertEqual(bulkStore.markCancelledByRun(agentId: "codex", runId: "bulk-4004"), 1)
+    let receipts = bulkStore.list()
+    XCTAssertEqual(receipts.count, 4_000)
+    XCTAssertFalse(receipts.contains { $0.idempotencyKey == "bulk-key-0" })
+    XCTAssertEqual(receipts.first?.idempotencyKey, "bulk-key-4004")
+    XCTAssertEqual(receipts.last?.idempotencyKey, "bulk-key-5")
+  }
+
+  func testAgentRunStartReceiptCodecUsesAndroidWireNamesAndSkipsInvalidRecords() throws {
+    let valid = AgentRunStartReceipt(
+      agentId: "codex",
+      installationId: "installation-codex",
+      idempotencyKey: "key",
+      requestDigest: String(repeating: "a", count: 64),
+      runId: "run",
+      taskId: "task",
+      status: .accepted,
+      handle: AgentRunHandle(runId: "run", taskId: "task", agentId: "codex", remoteRunId: "remote", acceptedAtMillis: 123),
+      createdAtMillis: 1,
+      updatedAtMillis: 2
+    )
+    let encoded = AgentRunStartReceiptJsonCodec.encode([valid])
+    let object = try XCTUnwrap(
+      (JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])?.first
+    )
+    let decoded = AgentRunStartReceiptJsonCodec.decode(
+      """
+      [
+        {"agent_id":"bad","idempotency_key":"bad","status":"FUTURE"},
+        \(encoded.dropFirst().dropLast())
+      ]
+      """
+    )
+
+    XCTAssertEqual(object["agent_id"] as? String, "codex")
+    XCTAssertEqual(object["installation_id"] as? String, "installation-codex")
+    XCTAssertEqual(object["idempotency_key"] as? String, "key")
+    XCTAssertEqual(object["request_digest"] as? String, String(repeating: "a", count: 64))
+    XCTAssertEqual(object["run_id"] as? String, "run")
+    XCTAssertEqual(object["task_id"] as? String, "task")
+    XCTAssertEqual(object["status"] as? String, "ACCEPTED")
+    XCTAssertEqual((object["handle"] as? [String: Any])?["remote_run_id"] as? String, "remote")
+    XCTAssertEqual(decoded, [valid])
+    XCTAssertEqual(AgentRunStartReceiptJsonCodec.decode("not-json"), [])
+  }
+
   func testAgentExplicitToolHandleIsOpaqueScopedAndDoesNotExposeResource() throws {
     var now: Int64 = 1_000
     let registry = AgentExplicitToolHandleRegistry(nowMillis: { now })
@@ -7934,6 +8098,34 @@ final class SignalASIStoreTests: XCTestCase {
       runtimeFailureDomain: runtimeFailureDomain,
       adapterType: adapterType,
       lastHeartbeatMillis: lastHeartbeatMillis
+    )
+  }
+
+  private func runStartRequest(
+    conversationId: String = "conversation",
+    messageId: String = "message",
+    taskId: String = "task",
+    runId: String = "run",
+    parentRunId: String = "",
+    goal: String = "execute once",
+    deliveryMode: AgentDeliveryMode = .respond,
+    requiredCapabilities: Set<AgentCapability> = [.chat, .code],
+    context: AgentMcpJSONObject = ["z": .int(2), "a": .string("x")],
+    idempotencyKey: String = "key",
+    createdAtMillis: Int64 = 0
+  ) -> AgentRunRequest {
+    AgentRunRequest(
+      conversationId: conversationId,
+      messageId: messageId,
+      taskId: taskId,
+      runId: runId,
+      parentRunId: parentRunId,
+      goal: goal,
+      deliveryMode: deliveryMode,
+      requiredCapabilities: requiredCapabilities,
+      context: context,
+      idempotencyKey: idempotencyKey,
+      createdAtMillis: createdAtMillis
     )
   }
 
