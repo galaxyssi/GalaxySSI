@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from models import init_db, get_session, Contact, Message, ContactType, MessageType, SenderType
 from agent_gateway import (
+    acp_runtime_manifest,
     ask_agent_sync,
     connector_diagnostics,
     connector_self_test,
@@ -27,10 +28,12 @@ from agent_gateway import (
     external_cli_process_pool,
     external_cli_runtime_manifest,
     list_agents,
+    prewarm_acp_agents,
     prewarm_external_cli_agents,
     provider_profile_catalog,
     recent_agent_execution_log,
     reset_inactive_agent_runtime,
+    shutdown_acp_agent_runtime,
     shutdown_desktop_agent_runtime_server,
     shutdown_external_cli_process_pool,
 )
@@ -177,6 +180,11 @@ async def lifespan(app: FastAPI):
         log.info("External CLI Runtime ready (prewarmed=%s)", prewarm.get("warmed", {}))
     except Exception as exc:
         log.warning("External CLI Runtime start failed: %s", exc)
+    try:
+        prewarm = prewarm_acp_agents()
+        log.info("ACP Runtime ready (prewarmed=%s)", prewarm.get("warmed", {}))
+    except Exception as exc:
+        log.warning("ACP Runtime start failed: %s", exc)
     if external_services_enabled:
         # Start the local Signal Protocol sidecar.
         signal_sidecar_ready = False
@@ -251,6 +259,7 @@ async def lifespan(app: FastAPI):
     finally:
         if runtime_server is not None:
             shutdown_desktop_agent_runtime_server(wait=False)
+        shutdown_acp_agent_runtime()
         shutdown_external_cli_process_pool()
         if reputation_subscription_id:
             agent_task_manager.unsubscribe(reputation_subscription_id)
@@ -520,13 +529,16 @@ class AgentConfigReq(BaseModel):
     custom_agent: dict[str, str] = {}
     custom_agents: list[dict[str, Any]] = []
     cli_runtime: dict[str, Any] = {}
+    acp_runtime: dict[str, Any] = {}
 
 @app.post("/api/agents/config")
 def api_save_agent_config(req: AgentConfigReq):
     saved = save_config(req.dict())
     reset_inactive_agent_runtime()
+    shutdown_acp_agent_runtime()
     shutdown_external_cli_process_pool()
     saved["cli_runtime_status"] = prewarm_external_cli_agents()
+    saved["acp_runtime_status"] = prewarm_acp_agents()
     try:
         from mqtt_bridge import publish_connector_status
 
@@ -1173,8 +1185,31 @@ def api_agent_runtime(request: Request):
         **desktop_agent_runtime_server().health(),
         "collaboration": agent_collaboration_bus().health(),
         "file_access": agent_file_access_ledger().health(),
+        "acp_runtime": acp_runtime_manifest(),
         "external_cli_runtime": external_cli_runtime_manifest(),
     }
+
+
+@app.get("/api/acp-runtime")
+def api_acp_runtime(request: Request):
+    require_loopback(request)
+    return acp_runtime_manifest()
+
+
+@app.post("/api/acp-runtime/{agent_id}/prewarm")
+def api_prewarm_acp_runtime(agent_id: str, request: Request):
+    require_loopback(request)
+    from acp_runtime import acp_runtime
+
+    return acp_runtime().prewarm(agent_id)
+
+
+@app.post("/api/acp-runtime/{agent_id}/restart")
+def api_restart_acp_runtime(agent_id: str, request: Request):
+    require_loopback(request)
+    from acp_runtime import acp_runtime
+
+    return acp_runtime().restart(agent_id)
 
 
 @app.get("/api/agent-runtime/cli-pool")

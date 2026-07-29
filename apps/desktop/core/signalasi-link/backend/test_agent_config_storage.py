@@ -168,6 +168,37 @@ class AgentConfigStorageTest(unittest.TestCase):
         self.assertTrue(runtime["enabled"])
         self.assertEqual("signalasi-jsonl-v1", runtime["mode"])
 
+    def test_acp_runtime_normalizes_hermes_and_capacity_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_dir = Path(directory) / "state"
+            with patch.dict(
+                os.environ,
+                {"SIGNALASI_STATE_DIR": str(state_dir), "SIGNALASI_CONFIG_PATH": ""},
+                clear=False,
+            ):
+                agent_config.save_config({
+                    "acp_runtime": {
+                        "enabled": True,
+                        "max_processes": 99,
+                        "idle_timeout_seconds": 5,
+                        "agents": {
+                            "hermes": {
+                                "enabled": True,
+                                "command": "hermes acp --profile mobile",
+                                "prewarm": True,
+                            }
+                        },
+                    }
+                })
+                runtime = agent_config.acp_runtime_config()
+                hermes = agent_config.acp_agent_runtime_config("hermes")
+
+        self.assertEqual(16, runtime["max_processes"])
+        self.assertEqual(30, runtime["idle_timeout_seconds"])
+        self.assertEqual("hermes acp --profile mobile", hermes["command"])
+        self.assertTrue(hermes["enabled"])
+        self.assertTrue(hermes["prewarm"])
+
 
 if __name__ == "__main__":
     unittest.main()

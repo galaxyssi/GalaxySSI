@@ -6,9 +6,17 @@ const DEFAULT_AGENT_CONTACTS = [
   ["codex", "Codex", "local-cli"],
   ["hermes", "Hermes", "local-cli"],
   ["claude", "Claude Code", "local-cli"],
+  ["gemini", "Gemini CLI", "local-cli"],
   ["openclaw", "OpenClaw", "local-cli"],
   ["local-llm", "Local LLM", "local-model"]
 ].map(([id, name, kind]) => ({ id, name, kind, status: "checking", detail: "Checking" }));
+const ACP_AGENT_NAMES = Object.freeze({
+  hermes: "Hermes",
+  codex: "Codex",
+  claude: "Claude Code",
+  gemini: "Gemini CLI",
+  openclaw: "OpenClaw"
+});
 const CLOUD_PROVIDER_PRESETS = Object.freeze({
   openai: {
     name: "OpenAI",
@@ -165,6 +173,7 @@ const state = {
   backend: null,
   agents: DEFAULT_AGENT_CONTACTS,
   agentConfig: null,
+  acpRuntime: null,
   pairing: null,
   pairingGrantDesktopExecutor: false,
   desktopControl: null,
@@ -1012,6 +1021,7 @@ async function refreshAgents() {
       renderAgentContacts();
       updateAgentCounters();
       fillAgentSettings();
+      await refreshAcpRuntime();
     } catch (error) {
       $("#agentContactList").innerHTML = `<div class="history-empty">${escapeHtml(error.message || String(error))}</div>`;
     } finally {
@@ -1027,11 +1037,123 @@ function fillAgentSettings() {
   $("#cmdHermes").value = commands.hermes || "";
   $("#cmdCodex").value = commands.codex || "";
   $("#cmdClaude").value = commands.claude || "";
+  $("#cmdGemini").value = commands.gemini || "";
   $("#cmdOpenClaw").value = commands.openclaw || "";
+  fillAcpRuntimeSettings(config.acp_runtime || {});
   fillLanguagePolicySettings(config);
   fillCloudModelSettings(config.cloud_model || {});
   fillWebSearchSettings(config.web_search || {});
   fillTaskBudgetSettings();
+}
+
+function acpRuntimeConfig(config = state.agentConfig || {}) {
+  const runtime = config.acp_runtime || {};
+  return {
+    enabled: runtime.enabled !== false,
+    max_processes: Number(runtime.max_processes) || 5,
+    idle_timeout_seconds: Number(runtime.idle_timeout_seconds) || 600,
+    agents: runtime.agents || {}
+  };
+}
+
+function fillAcpRuntimeSettings(runtime = {}) {
+  const config = acpRuntimeConfig({ acp_runtime: runtime });
+  $("#acpRuntimeEnabled").checked = config.enabled;
+  $("#acpMaxProcesses").value = String(config.max_processes);
+  $("#acpIdleTimeout").value = String(config.idle_timeout_seconds);
+  renderAcpRuntime();
+}
+
+function acpRuntimeStatusLabel(status) {
+  const labels = {
+    running: "Running",
+    ready: "Ready",
+    backoff: "Needs attention",
+    disabled: "Disabled",
+    needs_setup: "Setup",
+    unchecked: "Not checked"
+  };
+  return t(labels[status] || status || "Not checked");
+}
+
+function renderAcpRuntime() {
+  const config = acpRuntimeConfig();
+  const healthRows = new Map(
+    (state.acpRuntime?.processes || []).map((item) => [item.agent_id, item])
+  );
+  const target = $("#acpRuntimeList");
+  target.innerHTML = Object.entries(ACP_AGENT_NAMES).map(([agentId, name]) => {
+    const saved = config.agents[agentId] || {};
+    const health = healthRows.get(agentId) || {};
+    const status = String(health.status || "unchecked");
+    const enabled = saved.enabled !== false;
+    const command = String(saved.command || "");
+    const action = status === "running" ? "restart" : "prewarm";
+    const actionLabel = action === "restart" ? "Restart" : "Start";
+    return `<article class="acp-runtime-item" data-acp-agent="${escapeHtml(agentId)}">
+      <div class="acp-runtime-heading">
+        <label class="check-row"><input data-acp-enabled type="checkbox" ${enabled ? "checked" : ""}><span><strong>${escapeHtml(name)}</strong><small>ACP</small></span></label>
+        <span class="state-badge ${status === "running" ? "ok" : (status === "backoff" ? "bad" : "pending")}">${escapeHtml(acpRuntimeStatusLabel(status))}</span>
+      </div>
+      <label><span>${escapeHtml(t("ACP command"))}</span><input data-acp-command spellcheck="false" value="${escapeHtml(command)}"></label>
+      <div class="acp-runtime-actions">
+        <label class="check-row"><input data-acp-prewarm type="checkbox" ${saved.prewarm ? "checked" : ""}><span><strong>${escapeHtml(t("Prewarm on startup"))}</strong></span></label>
+        <button class="secondary-button compact-button" data-acp-action="${action}">${escapeHtml(t(actionLabel))}</button>
+      </div>
+    </article>`;
+  }).join("");
+  const running = [...healthRows.values()].filter((item) => item.status === "running").length;
+  const ready = [...healthRows.values()].filter((item) => ["ready", "running"].includes(item.status)).length;
+  $("#acpRuntimeSummary").textContent = state.acpRuntime
+    ? t("ACP runtime summary").replace("{running}", String(running)).replace("{ready}", String(ready))
+    : t("ACP runtime has not been checked.");
+}
+
+async function refreshAcpRuntime() {
+  try {
+    state.acpRuntime = await window.signalasi.getAcpRuntime();
+  } catch (error) {
+    state.acpRuntime = null;
+    $("#acpRuntimeSummary").textContent = error.message || String(error);
+  }
+  renderAcpRuntime();
+}
+
+async function saveAcpRuntimeSettings() {
+  const config = state.agentConfig || await window.signalasi.getAgentConfig();
+  const previous = acpRuntimeConfig(config);
+  const agents = {};
+  $$("#acpRuntimeList [data-acp-agent]").forEach((row) => {
+    const agentId = row.dataset.acpAgent;
+    agents[agentId] = {
+      enabled: Boolean(row.querySelector("[data-acp-enabled]")?.checked),
+      command: row.querySelector("[data-acp-command]")?.value.trim() || "",
+      prewarm: Boolean(row.querySelector("[data-acp-prewarm]")?.checked)
+    };
+  });
+  config.acp_runtime = {
+    ...previous,
+    enabled: $("#acpRuntimeEnabled").checked,
+    max_processes: boundedInteger("#acpMaxProcesses", 5, 1, 16),
+    idle_timeout_seconds: boundedInteger("#acpIdleTimeout", 600, 30, 86400),
+    agents
+  };
+  state.agentConfig = await window.signalasi.saveAgentConfig(config);
+  fillAcpRuntimeSettings(state.agentConfig.acp_runtime || config.acp_runtime);
+  await refreshAcpRuntime();
+  showToast(t("ACP runtime settings saved."));
+}
+
+async function runAcpRuntimeAction(agentId, action) {
+  const result = action === "restart"
+    ? await window.signalasi.restartAcpAgent(agentId)
+    : await window.signalasi.prewarmAcpAgent(agentId);
+  await refreshAcpRuntime();
+  if (result.status === "needs_setup") {
+    showToast(result.last_error || t("ACP command is not installed."));
+  } else {
+    showToast(t(action === "restart" ? "ACP Agent restarted." : "ACP Agent started."));
+  }
 }
 
 function fillLanguagePolicySettings(config = state.agentConfig || {}) {
@@ -1224,6 +1346,7 @@ async function saveAgentCommands() {
     hermes: $("#cmdHermes").value.trim(),
     codex: $("#cmdCodex").value.trim(),
     claude: $("#cmdClaude").value.trim(),
+    gemini: $("#cmdGemini").value.trim(),
     openclaw: $("#cmdOpenClaw").value.trim()
   };
   state.agentConfig = await window.signalasi.saveAgentConfig(config);
@@ -2817,6 +2940,15 @@ function bindEvents() {
   });
   $("#saveCustomAgentButton").addEventListener("click", saveCustomAgent);
   $("#saveAgentCommandsButton").addEventListener("click", saveAgentCommands);
+  $("#saveAcpRuntimeButton").addEventListener("click", () => saveAcpRuntimeSettings().catch((error) => showToast(error.message || String(error))));
+  $("#refreshAcpRuntimeButton").addEventListener("click", () => refreshAcpRuntime().catch((error) => showToast(error.message || String(error))));
+  $("#acpRuntimeList").addEventListener("click", (event) => {
+    const action = event.target.closest("[data-acp-action]");
+    if (!action) return;
+    const row = action.closest("[data-acp-agent]");
+    runAcpRuntimeAction(row.dataset.acpAgent, action.dataset.acpAction)
+      .catch((error) => showToast(error.message || String(error)));
+  });
   $("#cloudProvider").addEventListener("change", applyCloudProviderPreset);
   $("#saveCloudModelButton").addEventListener("click", () => saveCloudModelSettings(false));
   $("#testCloudModelButton").addEventListener("click", () => saveCloudModelSettings(true));

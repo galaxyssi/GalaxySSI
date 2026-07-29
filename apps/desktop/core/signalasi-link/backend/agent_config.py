@@ -23,6 +23,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "hermes": "hermes chat -q",
         "codex": "codex exec --skip-git-repo-check --ephemeral --model gpt-5.6-sol -c model_reasoning_effort=\"low\" -",
         "claude": "claude -p",
+        "gemini": "gemini -p",
         "openclaw": "openclaw agent --agent main --message {prompt} --json",
         "custom-agent": "",
     },
@@ -76,6 +77,38 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "hermes": {"mode": "native-session", "prewarm": False},
             "claude": {"mode": "native-session", "prewarm": False},
             "openclaw": {"mode": "native-session", "prewarm": False},
+        },
+    },
+    "acp_runtime": {
+        "enabled": True,
+        "max_processes": 5,
+        "idle_timeout_seconds": 600,
+        "agents": {
+            "hermes": {
+                "enabled": True,
+                "command": "hermes acp",
+                "prewarm": False,
+            },
+            "codex": {
+                "enabled": True,
+                "command": "codex-acp",
+                "prewarm": False,
+            },
+            "claude": {
+                "enabled": True,
+                "command": "claude-agent-acp",
+                "prewarm": False,
+            },
+            "gemini": {
+                "enabled": True,
+                "command": "gemini --acp",
+                "prewarm": False,
+            },
+            "openclaw": {
+                "enabled": True,
+                "command": "openclaw acp",
+                "prewarm": False,
+            },
         },
     },
 }
@@ -228,7 +261,16 @@ def custom_agent_configs(config: dict[str, Any] | None = None) -> list[dict[str,
         return []
     agents: list[dict[str, Any]] = []
     seen: set[str] = set()
-    reserved = {"hermes", "codex", "claude", "openclaw", "local-llm", "cloud-model", "custom-agent"}
+    reserved = {
+        "hermes",
+        "codex",
+        "claude",
+        "gemini",
+        "openclaw",
+        "local-llm",
+        "cloud-model",
+        "custom-agent",
+    }
     for item in data[:12]:
         if not isinstance(item, dict):
             continue
@@ -316,6 +358,55 @@ def cli_agent_runtime_config(
         "mode": _normalize_cli_transport(item.get("mode")),
         "pool_size": _bounded_int(item.get("pool_size"), 1, 1, 8),
         "prewarm": _as_bool(item.get("prewarm"), False),
+    }
+
+
+def acp_runtime_config(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    data = (config or load_config()).get("acp_runtime", {})
+    if not isinstance(data, dict):
+        data = {}
+    configured_agents = data.get("agents", {})
+    if not isinstance(configured_agents, dict):
+        configured_agents = {}
+    defaults = DEFAULT_CONFIG["acp_runtime"]["agents"]
+    agents: dict[str, dict[str, Any]] = {}
+    for agent_id, default in defaults.items():
+        incoming = configured_agents.get(agent_id, {})
+        if not isinstance(incoming, dict):
+            incoming = {}
+        command = str(incoming.get("command", default["command"])).strip()
+        agents[agent_id] = {
+            "enabled": _as_bool(incoming.get("enabled"), bool(default["enabled"])),
+            "command": command[:2_000],
+            "prewarm": _as_bool(incoming.get("prewarm"), bool(default["prewarm"])),
+        }
+    return {
+        "enabled": _as_bool(data.get("enabled"), True),
+        "max_processes": _bounded_int(data.get("max_processes"), 5, 1, 16),
+        "idle_timeout_seconds": _bounded_int(
+            data.get("idle_timeout_seconds"),
+            600,
+            30,
+            86_400,
+        ),
+        "agents": agents,
+    }
+
+
+def acp_agent_runtime_config(
+    agent_id: str,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    runtime = acp_runtime_config(config)
+    normalized_id = _normalize_agent_id(agent_id)
+    item = dict(runtime["agents"].get(normalized_id, {}))
+    return {
+        "runtime_enabled": bool(runtime["enabled"]),
+        "enabled": bool(item.get("enabled")),
+        "command": str(item.get("command") or "").strip(),
+        "prewarm": bool(item.get("prewarm")),
+        "max_processes": int(runtime["max_processes"]),
+        "idle_timeout_seconds": int(runtime["idle_timeout_seconds"]),
     }
 
 
