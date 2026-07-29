@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import threading
 import time
@@ -11,8 +12,9 @@ from typing import Any, Callable, Iterable
 
 
 PROFILE_SCHEMA_VERSION = 1
-METRICS_SCHEMA_VERSION = 1
+METRICS_SCHEMA_VERSION = 2
 EWMA_ALPHA = 0.25
+LATENCY_SAMPLE_LIMIT = 128
 ROUTABLE_PROVIDER_STATUSES = frozenset({"configured", "ready", "busy", "degraded"})
 
 
@@ -106,7 +108,33 @@ class ProviderPerformance:
     failures: int = 0
     consecutive_failures: int = 0
     failure_rate: float = 0.0
+    latency_observations: int = 0
+    last_latency_ms: float = 0.0
+    average_latency_ms: float = 0.0
     ewma_latency_ms: float = 0.0
+    min_latency_ms: float = 0.0
+    max_latency_ms: float = 0.0
+    p50_latency_ms: float = 0.0
+    p95_latency_ms: float = 0.0
+    usage_observations: int = 0
+    estimated_usage_observations: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    average_input_tokens: float = 0.0
+    average_output_tokens: float = 0.0
+    max_input_tokens: int = 0
+    max_context_utilization: float = 0.0
+    priced_attempts: int = 0
+    unpriced_attempts: int = 0
+    total_cost_micros: int = 0
+    average_cost_micros: float = 0.0
+    last_cost_micros: int | None = None
+    cost_currency: str = "USD"
+    tool_observations: int = 0
+    tool_calls: int = 0
+    tool_failures: int = 0
+    tool_failure_rate: float = 0.0
     last_observed_at_millis: int = 0
 
 
@@ -172,31 +200,171 @@ class ProviderMetricsStore:
         attempts = max(0, int(raw.get("attempts") or 0))
         failures = max(0, int(raw.get("failures") or 0))
         successes = max(0, int(raw.get("successes") or 0))
+        latency_observations = max(0, int(raw.get("latency_observations") or 0))
+        latency_total = _nonnegative_float(raw.get("latency_total_ms"))
+        latency_samples = _latency_samples(raw.get("latency_samples"))
+        usage_observations = max(0, int(raw.get("usage_observations") or 0))
+        input_tokens = _nonnegative_int(raw.get("input_tokens"))
+        output_tokens = _nonnegative_int(raw.get("output_tokens"))
+        priced_attempts = max(0, int(raw.get("priced_attempts") or 0))
+        total_cost_micros = _nonnegative_int(raw.get("total_cost_micros"))
+        tool_calls = _nonnegative_int(raw.get("tool_calls"))
+        tool_failures = min(tool_calls, _nonnegative_int(raw.get("tool_failures")))
         return ProviderPerformance(
             attempts=attempts,
             successes=successes,
             failures=failures,
             consecutive_failures=max(0, int(raw.get("consecutive_failures") or 0)),
             failure_rate=round(failures / attempts, 6) if attempts else 0.0,
-            ewma_latency_ms=round(max(0.0, float(raw.get("ewma_latency_ms") or 0.0)), 3),
+            latency_observations=latency_observations,
+            last_latency_ms=round(_nonnegative_float(raw.get("last_latency_ms")), 3),
+            average_latency_ms=round(
+                latency_total / latency_observations if latency_observations else 0.0,
+                3,
+            ),
+            ewma_latency_ms=round(_nonnegative_float(raw.get("ewma_latency_ms")), 3),
+            min_latency_ms=round(_nonnegative_float(raw.get("min_latency_ms")), 3),
+            max_latency_ms=round(_nonnegative_float(raw.get("max_latency_ms")), 3),
+            p50_latency_ms=round(_percentile(latency_samples, 0.50), 3),
+            p95_latency_ms=round(_percentile(latency_samples, 0.95), 3),
+            usage_observations=usage_observations,
+            estimated_usage_observations=max(
+                0,
+                int(raw.get("estimated_usage_observations") or 0),
+            ),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+            average_input_tokens=round(
+                input_tokens / usage_observations if usage_observations else 0.0,
+                3,
+            ),
+            average_output_tokens=round(
+                output_tokens / usage_observations if usage_observations else 0.0,
+                3,
+            ),
+            max_input_tokens=_nonnegative_int(raw.get("max_input_tokens")),
+            max_context_utilization=round(
+                _nonnegative_float(raw.get("max_context_utilization")),
+                6,
+            ),
+            priced_attempts=priced_attempts,
+            unpriced_attempts=max(0, int(raw.get("unpriced_attempts") or 0)),
+            total_cost_micros=total_cost_micros,
+            average_cost_micros=round(
+                total_cost_micros / priced_attempts if priced_attempts else 0.0,
+                3,
+            ),
+            last_cost_micros=(
+                _nonnegative_int(raw.get("last_cost_micros"))
+                if raw.get("last_cost_micros") is not None
+                else None
+            ),
+            cost_currency=_currency(raw.get("cost_currency")),
+            tool_observations=max(0, int(raw.get("tool_observations") or 0)),
+            tool_calls=tool_calls,
+            tool_failures=tool_failures,
+            tool_failure_rate=round(tool_failures / tool_calls, 6) if tool_calls else 0.0,
             last_observed_at_millis=max(0, int(raw.get("last_observed_at_millis") or 0)),
         )
 
-    def record(self, resource_id: str, *, success: bool, latency_ms: int | float) -> ProviderPerformance:
+    def record(
+        self,
+        resource_id: str,
+        *,
+        success: bool,
+        latency_ms: int | float,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        cost_micros: int | None = None,
+        cost_currency: str = "USD",
+        usage_estimated: bool = False,
+        context_window_tokens: int | None = None,
+        tool_calls: int | None = None,
+        tool_failures: int | None = None,
+    ) -> ProviderPerformance:
         key = str(resource_id or "").strip()
         if not key:
             return ProviderPerformance()
-        latency = max(0.0, float(latency_ms or 0))
+        latency = _nonnegative_float(latency_ms)
+        observed_input_tokens = (
+            _nonnegative_int(input_tokens) if input_tokens is not None else None
+        )
+        observed_output_tokens = (
+            _nonnegative_int(output_tokens) if output_tokens is not None else None
+        )
+        observed_cost_micros = (
+            _nonnegative_int(cost_micros) if cost_micros is not None else None
+        )
+        observed_tool_calls = (
+            _nonnegative_int(tool_calls) if tool_calls is not None else None
+        )
+        observed_tool_failures = (
+            min(
+                observed_tool_calls or 0,
+                _nonnegative_int(tool_failures),
+            )
+            if tool_calls is not None
+            else None
+        )
         with self._lock:
             self._load_locked()
             current = dict(self._metrics.get(key) or {})
             attempts = max(0, int(current.get("attempts") or 0)) + 1
             successes = max(0, int(current.get("successes") or 0)) + int(success)
             failures = max(0, int(current.get("failures") or 0)) + int(not success)
-            previous_latency = max(0.0, float(current.get("ewma_latency_ms") or 0.0))
-            ewma_latency = latency if attempts == 1 else (
+            latency_observations = max(0, int(current.get("latency_observations") or 0)) + 1
+            previous_latency = _nonnegative_float(current.get("ewma_latency_ms"))
+            ewma_latency = latency if latency_observations == 1 else (
                 previous_latency * (1.0 - EWMA_ALPHA) + latency * EWMA_ALPHA
             )
+            latency_samples = _latency_samples(current.get("latency_samples"))
+            latency_samples.append(latency)
+            latency_samples = latency_samples[-LATENCY_SAMPLE_LIMIT:]
+            usage_observed = input_tokens is not None or output_tokens is not None
+            usage_observations = max(0, int(current.get("usage_observations") or 0))
+            estimated_usage_observations = max(
+                0,
+                int(current.get("estimated_usage_observations") or 0),
+            )
+            input_total = _nonnegative_int(current.get("input_tokens"))
+            output_total = _nonnegative_int(current.get("output_tokens"))
+            max_input_tokens = _nonnegative_int(current.get("max_input_tokens"))
+            max_context_utilization = _nonnegative_float(
+                current.get("max_context_utilization")
+            )
+            if usage_observed:
+                usage_observations += 1
+                input_total += observed_input_tokens or 0
+                output_total += observed_output_tokens or 0
+                max_input_tokens = max(max_input_tokens, observed_input_tokens or 0)
+                estimated_usage_observations += int(usage_estimated)
+                context_window = _nonnegative_int(context_window_tokens)
+                if context_window > 0 and observed_input_tokens is not None:
+                    max_context_utilization = max(
+                        max_context_utilization,
+                        min(10.0, observed_input_tokens / context_window),
+                    )
+            priced_attempts = max(0, int(current.get("priced_attempts") or 0))
+            unpriced_attempts = max(0, int(current.get("unpriced_attempts") or 0))
+            total_cost_micros = _nonnegative_int(current.get("total_cost_micros"))
+            current_currency = _currency(current.get("cost_currency"))
+            observed_currency = _currency(cost_currency)
+            if observed_cost_micros is None:
+                unpriced_attempts += 1
+            else:
+                if priced_attempts > 0 and current_currency != observed_currency:
+                    priced_attempts = 0
+                    total_cost_micros = 0
+                priced_attempts += 1
+                total_cost_micros += observed_cost_micros
+            tool_observations = max(0, int(current.get("tool_observations") or 0))
+            tool_call_total = _nonnegative_int(current.get("tool_calls"))
+            tool_failure_total = _nonnegative_int(current.get("tool_failures"))
+            if observed_tool_calls is not None:
+                tool_observations += 1
+                tool_call_total += observed_tool_calls
+                tool_failure_total += observed_tool_failures or 0
             self._metrics[key] = {
                 "attempts": attempts,
                 "successes": successes,
@@ -204,7 +372,39 @@ class ProviderMetricsStore:
                 "consecutive_failures": 0 if success else max(
                     0, int(current.get("consecutive_failures") or 0)
                 ) + 1,
+                "latency_observations": latency_observations,
+                "last_latency_ms": latency,
+                "latency_total_ms": (
+                    _nonnegative_float(current.get("latency_total_ms")) + latency
+                ),
                 "ewma_latency_ms": ewma_latency,
+                "min_latency_ms": (
+                    latency
+                    if latency_observations == 1
+                    else min(_nonnegative_float(current.get("min_latency_ms")), latency)
+                ),
+                "max_latency_ms": max(
+                    _nonnegative_float(current.get("max_latency_ms")),
+                    latency,
+                ),
+                "latency_samples": latency_samples,
+                "usage_observations": usage_observations,
+                "estimated_usage_observations": estimated_usage_observations,
+                "input_tokens": input_total,
+                "output_tokens": output_total,
+                "max_input_tokens": max_input_tokens,
+                "max_context_utilization": max_context_utilization,
+                "priced_attempts": priced_attempts,
+                "unpriced_attempts": unpriced_attempts,
+                "total_cost_micros": total_cost_micros,
+                "last_cost_micros": observed_cost_micros,
+                "cost_currency": (
+                    observed_currency if observed_cost_micros is not None
+                    else current_currency
+                ),
+                "tool_observations": tool_observations,
+                "tool_calls": tool_call_total,
+                "tool_failures": min(tool_call_total, tool_failure_total),
                 "last_observed_at_millis": int(self.clock()),
             }
             self._persist_locked()
@@ -294,6 +494,7 @@ def build_provider_profile_catalog(
             else f"catalog:{definition.provider_id}"
         )
         selected = local_config if configured and is_local else cloud_config if configured else {}
+        metrics_key = f"model:{definition.provider_id}"
         configured_status = (
             agent_statuses.get(resource_id, "configured")
             if configured else "not_configured"
@@ -337,11 +538,12 @@ def build_provider_profile_catalog(
                 True if is_local and not str(selected.get("api_key") or "").strip()
                 else bool(str(selected.get("api_key") or "").strip())
             ),
-            pricing=ProviderPricing(tier=definition.cost_tier),
-            performance=store.snapshot(resource_id),
+            pricing=_provider_pricing(selected, definition.cost_tier),
+            performance=store.snapshot(metrics_key),
             metadata={
                 "endpoint_hint": definition.endpoint_hint,
                 "configuration_role": "local_model" if is_local else "cloud_model",
+                "metrics_key": metrics_key,
             },
         )
         profiles.append(profile)
@@ -356,6 +558,7 @@ def build_provider_profile_catalog(
             if str(value).strip()
         }))
         adapter = agent.get("adapter") if isinstance(agent.get("adapter"), dict) else {}
+        metrics_key = f"agent:{resource_id}"
         profiles.append(ProviderProfile(
             profile_id=f"agent:{resource_id}",
             resource_id=resource_id,
@@ -383,10 +586,11 @@ def build_provider_profile_catalog(
             endpoint_configured=True,
             credential_configured=True,
             pricing=ProviderPricing(tier="free"),
-            performance=store.snapshot(resource_id),
+            performance=store.snapshot(metrics_key),
             metadata={
                 "native_product_identity": resource_id,
                 "independently_upgradeable": bool(adapter.get("independently_upgradeable", True)),
+                "metrics_key": metrics_key,
             },
         ))
 
@@ -429,3 +633,82 @@ def _positive_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         parsed = default
     return max(0, parsed)
+
+
+def _provider_pricing(config: dict[str, Any], default_tier: str) -> ProviderPricing:
+    input_price = _optional_nonnegative_int(config.get("input_micros_per_million_tokens"))
+    output_price = _optional_nonnegative_int(config.get("output_micros_per_million_tokens"))
+    configured = input_price is not None or output_price is not None
+    return ProviderPricing(
+        tier=default_tier,
+        input_micros_per_million_tokens=input_price,
+        output_micros_per_million_tokens=output_price,
+        currency=_currency(config.get("pricing_currency")),
+        source="configured" if configured else "catalog_tier",
+    )
+
+
+def estimate_provider_cost_micros(
+    input_tokens: int,
+    output_tokens: int,
+    pricing: ProviderPricing,
+) -> int | None:
+    if (
+        pricing.input_micros_per_million_tokens is None
+        or pricing.output_micros_per_million_tokens is None
+    ):
+        return None
+    numerator = (
+        _nonnegative_int(input_tokens) * pricing.input_micros_per_million_tokens
+        + _nonnegative_int(output_tokens) * pricing.output_micros_per_million_tokens
+    )
+    return max(0, int(round(numerator / 1_000_000)))
+
+
+def _latency_samples(value: Any) -> list[float]:
+    if not isinstance(value, list):
+        return []
+    return [
+        _nonnegative_float(item)
+        for item in value[-LATENCY_SAMPLE_LIMIT:]
+        if _finite_number(item)
+    ]
+
+
+def _percentile(samples: list[float], quantile: float) -> float:
+    if not samples:
+        return 0.0
+    ordered = sorted(samples)
+    rank = max(0, min(len(ordered) - 1, math.ceil(quantile * len(ordered)) - 1))
+    return ordered[rank]
+
+
+def _finite_number(value: Any) -> bool:
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _nonnegative_float(value: Any) -> float:
+    if not _finite_number(value):
+        return 0.0
+    return max(0.0, float(value))
+
+
+def _nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
+def _optional_nonnegative_int(value: Any) -> int | None:
+    if value is None or str(value).strip() == "":
+        return None
+    return _nonnegative_int(value)
+
+
+def _currency(value: Any) -> str:
+    normalized = str(value or "USD").strip().upper()
+    return normalized if len(normalized) == 3 and normalized.isalpha() else "USD"

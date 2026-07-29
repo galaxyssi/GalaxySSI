@@ -361,6 +361,10 @@
               <label><span data-i18n="Context window">Context window</span><input id="cloudContextWindow" type="number" min="4096" max="1000000" step="1024" value="64000"></label>
               <label><span data-i18n="Reserved output">Reserved output</span><input id="cloudOutputReserve" type="number" min="512" max="128000" step="512" value="4096"></label>
             </div>
+            <div class="cloud-settings-grid">
+              <label><span data-i18n="Input price / 1M tokens (USD)">Input price / 1M tokens (USD)</span><input id="cloudInputPrice" type="number" min="0" max="1000000" step="0.000001" inputmode="decimal" placeholder="Optional"></label>
+              <label><span data-i18n="Output price / 1M tokens (USD)">Output price / 1M tokens (USD)</span><input id="cloudOutputPrice" type="number" min="0" max="1000000" step="0.000001" inputmode="decimal" placeholder="Optional"></label>
+            </div>
             <label class="check-row"><input id="cloudModelSummary" type="checkbox" checked><span><strong data-i18n="Model-assisted context summary">Model-assisted context summary</strong><small data-i18n="Compact older context by token pressure; never by a fixed message count">Compact older context by token pressure; never by a fixed message count</small></span></label>
             <p id="cloudModelTestResult" class="cloud-test-result" aria-live="polite" hidden></p>
             <div class="cloud-settings-actions">
