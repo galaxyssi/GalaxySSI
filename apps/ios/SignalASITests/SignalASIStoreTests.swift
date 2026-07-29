@@ -1441,6 +1441,218 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encodedRun.contains(#""task_thread_id":"task""#))
   }
 
+  func testAgentExplicitToolHandleIsOpaqueScopedAndDoesNotExposeResource() throws {
+    var now: Int64 = 1_000
+    let registry = AgentExplicitToolHandleRegistry(nowMillis: { now })
+    let opened = try registry.create(
+      kind: "browser_session",
+      resourceId: "internal-browser-resource",
+      scope: AgentExplicitToolHandleScope(ownerId: "owner-1", contextId: "conversation-1"),
+      capabilities: ["browser.navigate"],
+      resource: AgentExplicitToolHandleResource(
+        resourceId: "internal-browser-resource",
+        payload: ["url": .string("")]
+      ),
+      metadata: ["mode": .string(" isolated ")]
+    )
+
+    let handleId = opened.handleId
+    let publicJSON = String(decoding: try JSONEncoder.signalASI.encode(opened), as: UTF8.self)
+    now = 1_250
+    let resolved = try registry.resolve(
+      handleId: handleId,
+      kind: "browser_session",
+      scope: AgentExplicitToolHandleScope(ownerId: "owner-1", contextId: "conversation-1"),
+      requiredCapability: "browser.navigate"
+    )
+
+    XCTAssertTrue(handleId.hasPrefix("sth_browsers_"))
+    XCTAssertFalse(publicJSON.contains("resource_id"))
+    XCTAssertFalse(publicJSON.contains("internal-browser-resource"))
+    XCTAssertEqual(opened.contract, AgentExplicitToolHandleContract.version)
+    XCTAssertEqual(opened.metadata["mode"]?.stringValue, "isolated")
+    XCTAssertEqual(resolved.resourceId, "internal-browser-resource")
+    XCTAssertEqual(resolved.resource.payload["url"]?.stringValue, "")
+    XCTAssertEqual(resolved.useCount, 1)
+    XCTAssertEqual(registry.status().activeCount, 1)
+
+    assertToolHandleError("tool_handle_context_mismatch") {
+      _ = try registry.resolve(
+        handleId: handleId,
+        kind: "browser_session",
+        scope: AgentExplicitToolHandleScope(ownerId: "owner-1", contextId: "conversation-2"),
+        requiredCapability: "browser.navigate"
+      )
+    }
+  }
+
+  func testAgentExplicitToolHandleEnforcesOwnerKindAndCapabilities() throws {
+    let registry = AgentExplicitToolHandleRegistry(nowMillis: { 2_000 })
+    let opened = try registry.create(
+      kind: "browser",
+      resourceId: "browser-resource",
+      scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+      capabilities: ["browser.navigate"]
+    )
+
+    assertToolHandleError("tool_handle_owner_mismatch") {
+      _ = try registry.resolve(
+        handleId: opened.handleId,
+        kind: "browser",
+        scope: AgentExplicitToolHandleScope(ownerId: "phone-b", contextId: "conversation-a"),
+        requiredCapability: "browser.navigate"
+      )
+    }
+    assertToolHandleError("tool_handle_kind_mismatch") {
+      _ = try registry.resolve(
+        handleId: opened.handleId,
+        kind: "desktop_session",
+        scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+        requiredCapability: "browser.navigate"
+      )
+    }
+    assertToolHandleError("tool_handle_capability_denied") {
+      _ = try registry.resolve(
+        handleId: opened.handleId,
+        kind: "browser",
+        scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+        requiredCapability: "browser.download"
+      )
+    }
+  }
+
+  func testAgentExplicitToolHandleExpiresReleasesAndRevokesResources() throws {
+    var now: Int64 = 2_000
+    let registry = AgentExplicitToolHandleRegistry(nowMillis: { now })
+    let opened = try registry.create(
+      kind: "browser_session",
+      resourceId: "browser-1",
+      scope: AgentExplicitToolHandleScope(ownerId: "owner"),
+      capabilities: ["browser.close"],
+      ttlMillis: 100,
+      idleTimeoutMillis: 0
+    )
+    now = 2_100
+
+    assertToolHandleError("tool_handle_expired", retryable: true) {
+      _ = try registry.resolve(
+        handleId: opened.handleId,
+        kind: "browser_session",
+        scope: AgentExplicitToolHandleScope(ownerId: "owner"),
+        requiredCapability: "browser.close"
+      )
+    }
+
+    let first = try registry.create(
+      kind: "browser_session",
+      resourceId: "browser-2",
+      scope: AgentExplicitToolHandleScope(ownerId: "owner"),
+      capabilities: ["browser.close"]
+    )
+    let second = try registry.create(
+      kind: "browser_session",
+      resourceId: "browser-3",
+      scope: AgentExplicitToolHandleScope(ownerId: "owner"),
+      capabilities: ["browser.close"]
+    )
+
+    XCTAssertTrue(try registry.release(handleId: first.handleId, scope: AgentExplicitToolHandleScope(ownerId: "owner")))
+    XCTAssertFalse(try registry.release(handleId: first.handleId, scope: AgentExplicitToolHandleScope(ownerId: "owner")))
+    XCTAssertEqual(try registry.revokeResource(kind: "browser_session", resourceId: "browser-3"), 1)
+    XCTAssertEqual(second.kind, "browser_session")
+    XCTAssertEqual(registry.status().activeCount, 0)
+  }
+
+  func testAgentExplicitToolHandleCapacityEvictsLeastRecentlyUsed() throws {
+    var now: Int64 = 3_000
+    let registry = AgentExplicitToolHandleRegistry(nowMillis: { now }, maxHandles: 2)
+    let first = try registry.create(
+      kind: "browser",
+      resourceId: "resource-1",
+      scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+      capabilities: ["browser.navigate"]
+    )
+    now += 1
+    let second = try registry.create(
+      kind: "browser",
+      resourceId: "resource-2",
+      scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+      capabilities: ["browser.navigate"]
+    )
+    now += 1
+    _ = try registry.resolve(
+      handleId: first.handleId,
+      kind: "browser",
+      scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+      requiredCapability: "browser.navigate"
+    )
+    now += 1
+    let third = try registry.create(
+      kind: "browser",
+      resourceId: "resource-3",
+      scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+      capabilities: ["browser.navigate"]
+    )
+
+    XCTAssertEqual(registry.status().activeCount, 2)
+    XCTAssertEqual(registry.status().byKind["browser"], 2)
+    XCTAssertEqual(third.kind, "browser")
+    XCTAssertEqual(
+      try registry.resolve(
+        handleId: first.handleId,
+        kind: "browser",
+        scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+        requiredCapability: "browser.navigate"
+      ).resourceId,
+      "resource-1"
+    )
+    assertToolHandleError("tool_handle_not_found", retryable: true) {
+      _ = try registry.resolve(
+        handleId: second.handleId,
+        kind: "browser",
+        scope: AgentExplicitToolHandleScope(ownerId: "phone-a", contextId: "conversation-a"),
+        requiredCapability: "browser.navigate"
+      )
+    }
+  }
+
+  func testAgentExplicitToolHandleModelsUseAndroidWireNames() throws {
+    let scope = try JSONDecoder.signalASI.decode(
+      AgentExplicitToolHandleScope.self,
+      from: Data(#"{"owner_id":"owner","context_id":"conversation"}"#.utf8)
+    )
+    let record = AgentExplicitToolHandlePublicRecord(
+      contract: AgentExplicitToolHandleContract.version,
+      handleId: "sth_browser_abc",
+      kind: "browser",
+      capabilities: ["browser.navigate"],
+      ownerId: "owner",
+      contextId: "conversation",
+      metadata: ["reuse": .bool(false), "ttl": .int(60)],
+      createdAtEpochMillis: 1,
+      lastUsedAtEpochMillis: 2,
+      expiresAtEpochMillis: 3,
+      useCount: 4
+    )
+    let status = AgentExplicitToolHandleStatus(
+      contract: AgentExplicitToolHandleContract.version,
+      activeCount: 1,
+      byKind: ["browser": 1]
+    )
+    let recordJSON = String(decoding: try JSONEncoder.signalASI.encode(record), as: UTF8.self)
+    let statusJSON = String(decoding: try JSONEncoder.signalASI.encode(status), as: UTF8.self)
+
+    XCTAssertEqual(scope.ownerId, "owner")
+    XCTAssertEqual(scope.contextId, "conversation")
+    XCTAssertTrue(recordJSON.contains(#""handle_id":"sth_browser_abc""#))
+    XCTAssertTrue(recordJSON.contains(#""created_at_epoch_ms":1"#))
+    XCTAssertTrue(recordJSON.contains(#""expires_at_epoch_ms":3"#))
+    XCTAssertTrue(recordJSON.contains(#""use_count":4"#))
+    XCTAssertFalse(recordJSON.contains("resource_id"))
+    XCTAssertTrue(statusJSON.contains(#""active_count":1"#))
+    XCTAssertTrue(statusJSON.contains(#""by_kind":{"browser":1}"#))
+  }
+
   func testAgentFailoverPolicyMatchesAndroidDesktopFallbackAndTimeoutStages() {
     let primary = AgentFailoverResource(location: .trustedDesktop, failureDomain: "desktop-a")
     let cloud = AgentFailoverResource(location: .cloud, failureDomain: "cloud-openai")
@@ -3877,6 +4089,24 @@ final class SignalASIStoreTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suite)!
     defaults.removePersistentDomain(forName: suite)
     return SignalASIStore(defaults: defaults, secrets: secrets)
+  }
+
+  private func assertToolHandleError(
+    _ code: String,
+    retryable: Bool = false,
+    file: StaticString = #filePath,
+    line: UInt = #line,
+    _ body: () throws -> Void
+  ) {
+    do {
+      try body()
+      XCTFail("Expected AgentExplicitToolHandleError.", file: file, line: line)
+    } catch let error as AgentExplicitToolHandleError {
+      XCTAssertEqual(error.code, code, file: file, line: line)
+      XCTAssertEqual(error.retryable, retryable, file: file, line: line)
+    } catch {
+      XCTFail("Unexpected error: \(error)", file: file, line: line)
+    }
   }
 
   private func agentRecoveryAction(
