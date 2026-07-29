@@ -1236,6 +1236,198 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(capability, .appNavigation)
   }
 
+  func testAgentCapabilityCatalogIdsAreStableAndUnique() {
+    let mcp = AgentDefaultCapabilityCatalog.mcpEntries
+    let skills = AgentDefaultCapabilityCatalog.skillEntries
+
+    XCTAssertGreaterThanOrEqual(mcp.count, 4)
+    XCTAssertGreaterThanOrEqual(skills.count, 5)
+    XCTAssertEqual(Set(mcp.map(\.id)).count, mcp.count)
+    XCTAssertEqual(Set(skills.map(\.id)).count, skills.count)
+    XCTAssertTrue(mcp.contains { $0.requiresPackage })
+    XCTAssertTrue(skills.contains { !$0.requiredMcpCatalogIds.isEmpty })
+  }
+
+  func testAgentCapabilityCatalogMarketplaceUnifiesToolsMcpAndAutomationState() throws {
+    let nativeTool = try nativeToolDescriptor(
+      AgentMcpNativeTools.callTool,
+      risk: .medium,
+      capabilities: ["mcp.call"],
+      requiredConsents: [
+        AgentNativeConsentRequirement(id: "mcp.call.once", title: "MCP call")
+      ]
+    )
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 1_000 })
+
+    let initial = AgentDefaultCapabilityCatalog.marketplaceItems(
+      nativeTools: [nativeTool],
+      installedMcp: registry.list(),
+      installedAutomations: [],
+      nowMillis: 1_000
+    )
+
+    XCTAssertEqual(initial.first { $0.id == AgentMcpNativeTools.callTool }?.installState, .builtIn)
+    let github = try XCTUnwrap(initial.first { $0.id == "signalasi.mcp.github" })
+    XCTAssertEqual(github.installState, .available)
+    XCTAssertTrue(github.permissionDiff.requiresApproval)
+    XCTAssertTrue(github.capabilities.contains("github.repositories"))
+    XCTAssertEqual(initial.first { $0.id == "signalasi.catalog.github-triage" }?.installState, .needsSetup)
+
+    _ = try registry.addRemote(
+      displayName: "GitHub",
+      endpoint: "https://api.githubcopilot.com/mcp/",
+      authProfile: try AgentMcpAuthProfile(.none),
+      catalogId: "signalasi.mcp.github",
+      id: "github"
+    )
+    let ready = AgentDefaultCapabilityCatalog.marketplaceItems(
+      nativeTools: [nativeTool],
+      installedMcp: registry.list(),
+      installedAutomations: [],
+      nowMillis: 1_000
+    )
+
+    XCTAssertEqual(ready.first { $0.id == "signalasi.mcp.github" }?.installState, .installed)
+    XCTAssertTrue(ready.first { $0.id == "signalasi.mcp.github" }?.revocable == true)
+    XCTAssertFalse(ready.first { $0.id == "signalasi.mcp.github" }?.permissionDiff.requiresApproval ?? true)
+    XCTAssertEqual(ready.first { $0.id == "signalasi.catalog.github-triage" }?.installState, .available)
+  }
+
+  func testAgentCapabilityCatalogReportsAutomationRollbackAndPermissionChanges() {
+    let entry = AgentDefaultCapabilityCatalog.skill("signalasi.catalog.device-health")!
+    var previousManifest = entry.manifest
+    previousManifest.version = "0.9.0"
+    previousManifest.permissions = []
+    previousManifest.nativeTools.remove("signalasi.hardware.network.status")
+    let previous = AgentSkillInstallation(manifest: previousManifest, enabled: false)
+    let current = AgentSkillInstallation(manifest: entry.manifest, enabled: true)
+
+    let item = AgentDefaultCapabilityCatalog.marketplaceItems(
+      nativeTools: [],
+      installedMcp: [],
+      installedAutomations: [previous, current],
+      nowMillis: 1_000
+    ).first { $0.id == entry.id }
+
+    XCTAssertEqual(item?.installedVersion, "1.0.0")
+    XCTAssertEqual(item?.rollbackVersions, ["0.9.0"])
+    XCTAssertTrue(item?.revocable == true)
+    XCTAssertFalse(item?.permissionDiff.requiresApproval ?? true)
+  }
+
+  func testAgentMcpRegistryDynamicAuthenticationAdvancesStepsAndExpires() throws {
+    var now: Int64 = 1_000
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { now })
+    let profile = try AgentMcpAuthProfile(
+      .dynamic,
+      accessTokenTtlMillis: 10_000,
+      refreshLeadMillis: 2_000,
+      supportsRefresh: true
+    )
+    let connection = try registry.addRemote(
+      displayName: "Relay",
+      endpoint: "https://relay.example/mcp",
+      authProfile: profile,
+      id: "relay-1"
+    )
+
+    XCTAssertEqual(connection.authState, .notConfigured)
+    XCTAssertEqual(try registry.beginAuthentication(connection.id)?.id, "credentials")
+    XCTAssertThrowsError(try registry.submitAuthenticationStep(connection.id, values: ["username": "operator"]))
+
+    let challenge = try registry.submitAuthenticationStep(
+      connection.id,
+      values: ["username": "operator", "password": "secret"]
+    )
+    XCTAssertEqual(challenge.authState, .challengeRequired)
+    XCTAssertEqual(challenge.currentAuthStep?.id, "verification")
+
+    let authenticated = try registry.submitAuthenticationStep(
+      connection.id,
+      values: ["otp": "123456", "access_token": "session-token"]
+    )
+    XCTAssertEqual(authenticated.authState, .authenticated)
+    let headers = try registry.requestHeaders(connection.id)
+    XCTAssertEqual(headers["Authorization"], "Bearer session-token")
+    XCTAssertTrue(authenticated.isCallable(nowMillis: now))
+
+    now = authenticated.refreshAtMillis
+    XCTAssertEqual(registry.get(connection.id)?.effectiveAuthState(nowMillis: now), .refreshing)
+    XCTAssertTrue(registry.get(connection.id)?.isCallable(nowMillis: now) == true)
+
+    now = authenticated.expiresAtMillis
+    XCTAssertEqual(registry.get(connection.id)?.effectiveAuthState(nowMillis: now), .reauthenticationRequired)
+    XCTAssertFalse(registry.get(connection.id)?.isCallable(nowMillis: now) ?? true)
+  }
+
+  func testAgentMcpConnectionCodecPreservesDynamicExchangeWithoutSecrets() throws {
+    let exchange = try AgentMcpAuthExchangeSpec(
+      method: "POST",
+      pathTemplate: "/api/login",
+      bodyTemplate: #"{"username":{{field.username}}}"#,
+      responseMappings: ["access_token": "$.token"],
+      acceptedStatusCodes: [200, 201]
+    )
+    let step = try AgentMcpAuthStepSpec(
+      id: "login",
+      title: "Sign in",
+      fields: [try AgentMcpAuthFieldSpec(id: "username", label: "Username", type: .text)],
+      exchange: exchange
+    )
+    let connection = AgentMcpConnection(
+      id: "codec-1",
+      displayName: "Codec",
+      endpoint: "https://codec.example/mcp",
+      distribution: .localPackage,
+      transport: .declarativeHTTP,
+      authProfile: try AgentMcpAuthProfile(.dynamic, steps: [step]),
+      authState: .challengeRequired,
+      permissionMode: .readOnly
+    )
+
+    let encoded = AgentMcpConnectionCodec.encode([connection])
+    let decoded = AgentMcpConnectionCodec.decode(encoded).first
+
+    XCTAssertEqual(decoded?.id, connection.id)
+    XCTAssertEqual(decoded?.currentAuthStep?.exchange?.pathTemplate, "/api/login")
+    XCTAssertEqual(decoded?.currentAuthStep?.exchange?.responseMappings["access_token"], "$.token")
+    XCTAssertEqual(decoded?.currentAuthStep?.exchange?.acceptedStatusCodes, Set([200, 201]))
+    XCTAssertEqual(decoded?.permissionMode, .readOnly)
+    XCTAssertFalse(encoded.contains("session-token"))
+  }
+
+  func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
+    let skill = AgentDefaultCapabilityCatalog.skill("signalasi.catalog.github-triage")!
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 1_000 })
+    let missing = AgentCapabilityDependencyResolver.resolve(
+      skill,
+      installedMcp: registry.list(),
+      nativeToolIds: [AgentMcpNativeTools.callTool],
+      nowMillis: 1_000
+    )
+    XCTAssertFalse(missing.available)
+    XCTAssertEqual(missing.missingMcpCatalogIds, ["signalasi.mcp.github"])
+
+    _ = try registry.addRemote(
+      displayName: "GitHub",
+      endpoint: "https://api.githubcopilot.com/mcp/",
+      authProfile: try AgentMcpAuthProfile(.none),
+      catalogId: "signalasi.mcp.github",
+      id: "github"
+    )
+    let ready = AgentCapabilityDependencyResolver.resolve(
+      skill,
+      installedMcp: registry.list(),
+      nativeToolIds: [AgentMcpNativeTools.callTool],
+      nowMillis: 1_000
+    )
+    XCTAssertTrue(ready.available)
+
+    XCTAssertEqual(try AgentMcpEndpointPolicy.normalize(" https://example.com/mcp "), "https://example.com/mcp")
+    XCTAssertThrowsError(try AgentMcpEndpointPolicy.normalize("https://user:password@example.com/mcp"))
+    XCTAssertThrowsError(try AgentMcpEndpointPolicy.normalize("file:///tmp/server"))
+  }
+
   func testAgentConfirmationPolicyMatchesAndroidTiersAndConsentKeys() throws {
     func action(
       id: String,
