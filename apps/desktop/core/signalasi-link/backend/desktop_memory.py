@@ -13,6 +13,26 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from desktop_memory_graph import (
+    clear_memory_graph,
+    initialize_graph_schema,
+    memory_graph_snapshot,
+    project_memory_graph,
+    retract_memory_graph_evidence,
+    search_memory_graph,
+)
+from desktop_memory_critic import (
+    clear_memory_critic,
+    critic_status,
+    initialize_critic_schema,
+    note_memory_mutation,
+    record_failed_memory_critic,
+    run_memory_critic,
+)
+from desktop_memory_prompt_compiler import CompiledMemoryContext, compile_memory_context
+from desktop_memory_query_planner import DesktopMemoryQueryPlan, plan_memory_query
+from desktop_memory_visualization import build_memory_visualization
+
 
 MAX_CONTENT_CHARS = 2_000
 REVIEW_KINDS = {"identity", "preference", "security"}
@@ -136,14 +156,16 @@ def _normalize_namespace(value: str, kind: str, content: str) -> str:
         return "user"
     if kind == "security":
         return "security"
-    if kind in {"device", "device_state"} or re.search(
+    if kind in {"device", "device_state"}:
+        return "device"
+    if kind in {"decision", "goal", "project_state", "episode"}:
+        return "project"
+    if re.search(
         r"(?i)(?:\b(?:phone|desktop|computer|device|android|windows)\b|"
         r"\u624b\u673a|\u7535\u8111|\u8bbe\u5907)",
         content,
     ):
         return "device"
-    if kind in {"decision", "goal", "project_state", "episode"}:
-        return "project"
     return "general"
 
 
@@ -299,6 +321,8 @@ class DesktopMemoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_memory_candidate_status "
                 "ON memory_candidates(status, created_at DESC)"
             )
+            initialize_graph_schema(connection)
+            initialize_critic_schema(connection)
 
     @staticmethod
     def _ensure_columns(
@@ -330,6 +354,7 @@ class DesktopMemoryStore:
         temporal_state: str,
         evidence_rows: list[dict[str, Any]],
         now_ms: int,
+        valid_until_at: int,
     ) -> sqlite3.Row:
         memory_id = hashlib.sha256(f"{key}:{content}:{now_ms}".encode("utf-8")).hexdigest()[:32]
         supersedes_id = ""
@@ -353,10 +378,12 @@ class DesktopMemoryStore:
                     previous["id"],
                 ),
             )
-            return connection.execute(
+            row = connection.execute(
                 "SELECT * FROM memories WHERE id = ?",
                 (previous["id"],),
             ).fetchone()
+            project_memory_graph(connection, row)
+            return row
         if previous:
             supersedes_id = str(previous["id"])
             connection.execute(
@@ -371,7 +398,7 @@ class DesktopMemoryStore:
                 confidence, importance, source_conversation_id, source_task_id,
                 tags_json, evidence_json, created_at, updated_at, last_accessed_at,
                 use_count, supersedes_id, superseded_by_id, valid_from_at, valid_until_at
-            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?, 0)
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?, ?)
             """,
             (
                 memory_id,
@@ -391,12 +418,15 @@ class DesktopMemoryStore:
                 now_ms,
                 supersedes_id,
                 now_ms,
+                max(0, int(valid_until_at or 0)),
             ),
         )
-        return connection.execute(
+        row = connection.execute(
             "SELECT * FROM memories WHERE id = ?",
             (memory_id,),
         ).fetchone()
+        project_memory_graph(connection, row)
+        return row
 
     def _before_candidate_promotion(
         self,
@@ -420,6 +450,7 @@ class DesktopMemoryStore:
         namespace: str = "",
         temporal_state: str = "",
         evidence: list[dict[str, Any]] | None = None,
+        valid_until_at: int = 0,
     ) -> dict[str, Any] | None:
         content = _clean(content)
         if (
@@ -465,7 +496,9 @@ class DesktopMemoryStore:
                 temporal_state=temporal_state,
                 evidence_rows=evidence_rows,
                 now_ms=now_ms,
+                valid_until_at=valid_until_at,
             )
+            note_memory_mutation(connection)
             return self._public(row)
 
     @_synchronized
@@ -632,7 +665,9 @@ class DesktopMemoryStore:
                     temporal_state=intended_temporal_state,
                     evidence_rows=evidence_rows,
                     now_ms=now_ms,
+                    valid_until_at=0,
                 )
+                note_memory_mutation(connection)
                 resulting_memory_id = str(memory_row["id"])
                 reviewed_at = now_ms
                 review_note = "low_risk_auto_merge"
@@ -712,6 +747,7 @@ class DesktopMemoryStore:
                 temporal_state=candidate["intended_temporal_state"],
                 evidence_rows=candidate["evidence"],
                 now_ms=now_ms,
+                valid_until_at=0,
             )
             cursor = connection.execute(
                 "UPDATE memory_candidates SET status = 'approved', temporal_state = ?, "
@@ -726,6 +762,7 @@ class DesktopMemoryStore:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError("Memory candidate approval lost its transaction")
+            note_memory_mutation(connection)
             updated_row = connection.execute(
                 "SELECT * FROM memory_candidates WHERE id = ?",
                 (str(candidate_id),),
@@ -866,18 +903,40 @@ class DesktopMemoryStore:
         limit: int = 8,
         *,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+        query_plan: DesktopMemoryQueryPlan | None = None,
+        record_access: bool = True,
     ) -> list[dict[str, Any]]:
         query_tokens = _tokens(query)
         if not query_tokens:
             return []
+        plan = query_plan or plan_memory_query(query)
+        planned_namespaces = list(plan.namespaces)
+        if planned_namespaces:
+            for fallback_namespace in ("general", "user"):
+                if fallback_namespace not in planned_namespaces:
+                    planned_namespaces.append(fallback_namespace)
+        namespace_values = namespaces if namespaces is not None else planned_namespaces
         requested_namespaces = {
             _normalize_namespace(value, "", "")
-            for value in (namespaces or [])
+            for value in (namespace_values or [])
             if str(value or "").strip()
         }
         with self._lock, self._connect() as connection:
+            if plan.temporal_scope == "history":
+                selection = (
+                    "WHERE status = 'superseded' OR "
+                    "(status = 'active' AND temporal_state IN ('historical', 'deprecated'))"
+                )
+            elif plan.temporal_scope == "current_and_history":
+                selection = "WHERE status IN ('active', 'superseded')"
+            else:
+                selection = (
+                    "WHERE status = 'active' "
+                    "AND temporal_state NOT IN ('historical', 'deprecated')"
+                )
             rows = connection.execute(
-                "SELECT * FROM memories WHERE status = 'active' ORDER BY importance DESC, updated_at DESC LIMIT 500"
+                f"SELECT * FROM memories {selection} "
+                "ORDER BY importance DESC, updated_at DESC LIMIT 500"
             ).fetchall()
             now_ms = int(self.now() * 1_000)
             ranked: list[tuple[float, sqlite3.Row]] = []
@@ -891,10 +950,21 @@ class DesktopMemoryStore:
                 coverage = overlap / max(1, len(query_tokens))
                 age_days = max(0.0, (now_ms - int(row["updated_at"])) / 86_400_000)
                 recency = 1.0 / (1.0 + age_days / 30.0)
-                score = coverage * 0.62 + float(row["importance"]) * 0.25 + recency * 0.13
+                kind_boost = (
+                    0.13
+                    if plan.preferred_kinds and str(row["kind"]) in plan.preferred_kinds
+                    else 0.0
+                )
+                score = coverage * 0.55 + float(row["importance"]) * 0.22 + recency * 0.10 + kind_boost
                 ranked.append((score, row))
-            selected = [row for _score, row in sorted(ranked, key=lambda item: item[0], reverse=True)[:max(1, min(limit, 20))]]
-            if selected:
+            bounded_limit = max(1, min(limit, plan.maximum_memories, 24))
+            selected = [
+                row
+                for _score, row in sorted(ranked, key=lambda item: item[0], reverse=True)[
+                    :bounded_limit
+                ]
+            ]
+            if selected and record_access:
                 connection.executemany(
                     "UPDATE memories SET last_accessed_at = ?, use_count = use_count + 1 WHERE id = ?",
                     [(now_ms, row["id"]) for row in selected],
@@ -905,16 +975,91 @@ class DesktopMemoryStore:
         self,
         query: str,
         *,
-        limit: int = 6,
-        max_chars: int = 5_000,
+        limit: int | None = None,
+        max_chars: int | None = None,
         namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
     ) -> str:
-        rows = self.search(query, limit=limit, namespaces=namespaces)
-        lines = [
-            f"- [{row['namespace']}/{row['kind']}] {row['content']}"
-            for row in rows
-        ]
-        return "\n".join(lines)[:max_chars]
+        return self.compile_context_result(
+            query,
+            limit=limit,
+            max_chars=max_chars,
+            namespaces=namespaces,
+        ).text
+
+    def compile_context_result(
+        self,
+        query: str,
+        *,
+        limit: int | None = None,
+        max_chars: int | None = None,
+        namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+    ) -> CompiledMemoryContext:
+        plan = plan_memory_query(query)
+        effective_limit = min(limit or plan.maximum_memories, plan.maximum_memories)
+        rows = self.search(
+            query,
+            limit=effective_limit,
+            namespaces=namespaces,
+            query_plan=plan,
+            record_access=False,
+        )
+        graph = self.search_graph(
+            query,
+            namespaces=namespaces,
+            limit=plan.maximum_graph_nodes,
+            query_plan=plan,
+        )
+        result = compile_memory_context(
+            query,
+            plan,
+            rows,
+            graph,
+            maximum_characters=max_chars or plan.maximum_characters,
+        )
+        if result.memory_ids:
+            now_ms = int(self.now() * 1_000)
+            with self._lock, self._connect() as connection:
+                connection.executemany(
+                    "UPDATE memories SET last_accessed_at = ?, use_count = use_count + 1 "
+                    "WHERE id = ?",
+                    [(now_ms, memory_id) for memory_id in result.memory_ids],
+                )
+        return result
+
+    def search_graph(
+        self,
+        query: str,
+        *,
+        namespaces: list[str] | tuple[str, ...] | set[str] | None = None,
+        hops: int | None = None,
+        limit: int | None = None,
+        include_historical: bool | None = None,
+        query_plan: DesktopMemoryQueryPlan | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        plan = query_plan or plan_memory_query(query)
+        planned_namespaces = list(plan.namespaces)
+        if planned_namespaces:
+            for fallback_namespace in ("general", "user"):
+                if fallback_namespace not in planned_namespaces:
+                    planned_namespaces.append(fallback_namespace)
+        namespace_values = namespaces if namespaces is not None else planned_namespaces
+        with self._lock, self._connect() as connection:
+            return search_memory_graph(
+                connection,
+                query,
+                namespaces=namespace_values,
+                hops=plan.graph_hops if hops is None else hops,
+                limit=min(limit or plan.maximum_graph_nodes, plan.maximum_graph_nodes),
+                include_historical=plan.include_historical
+                if include_historical is None
+                else include_historical,
+                historical_only=plan.temporal_scope == "history",
+                preferred_relations=plan.preferred_relations,
+            )
+
+    def graph_snapshot(self) -> dict[str, Any]:
+        with self._lock, self._connect() as connection:
+            return memory_graph_snapshot(connection)
 
     def list(self, limit: int = 100, status: str = "active") -> list[dict[str, Any]]:
         statuses = {
@@ -1018,6 +1163,9 @@ class DesktopMemoryStore:
                 "valid_until_at = ?, updated_at = ? WHERE id = ?",
                 (now_ms, now_ms, str(memory_id)),
             )
+            if cursor.rowcount > 0:
+                retract_memory_graph_evidence(connection, str(memory_id), now_ms)
+                note_memory_mutation(connection)
             return cursor.rowcount > 0
 
     def clear(self) -> int:
@@ -1025,7 +1173,57 @@ class DesktopMemoryStore:
             count = int(connection.execute("SELECT COUNT(*) FROM memories").fetchone()[0])
             connection.execute("DELETE FROM memories")
             connection.execute("DELETE FROM memory_candidates")
+            clear_memory_graph(connection)
+            clear_memory_critic(connection)
             return count
+
+    def critic_status(
+        self,
+        history_limit: int = 20,
+        *,
+        now_ms: int | None = None,
+    ) -> dict[str, Any]:
+        effective_now_ms = int(self.now() * 1_000) if now_ms is None else int(now_ms)
+        with self._lock, self._connect() as connection:
+            return critic_status(
+                connection,
+                effective_now_ms,
+                history_limit=history_limit,
+            )
+
+    def run_critic(
+        self,
+        *,
+        force: bool = True,
+        trigger: str = "manual",
+    ) -> dict[str, Any]:
+        now_ms = int(self.now() * 1_000)
+        try:
+            with self._lock, self._connect() as connection:
+                return run_memory_critic(
+                    connection,
+                    now_ms,
+                    trigger=trigger,
+                    force=force,
+                )
+        except Exception as exc:
+            with self._lock, self._connect() as connection:
+                record_failed_memory_critic(
+                    connection,
+                    now_ms,
+                    trigger=trigger,
+                    error=str(exc),
+                )
+            raise
+
+    def visualization_snapshot(self, limit: int = 100) -> dict[str, Any]:
+        now_ms = int(self.now() * 1_000)
+        with self._lock, self._connect() as connection:
+            return build_memory_visualization(
+                connection,
+                now_ms,
+                limit=limit,
+            )
 
     def stats(self) -> dict[str, Any]:
         with self._lock, self._connect() as connection:
@@ -1036,6 +1234,7 @@ class DesktopMemoryStore:
             temporal_rows = connection.execute(
                 "SELECT temporal_state, COUNT(*) AS count FROM memories GROUP BY temporal_state"
             ).fetchall()
+            graph = memory_graph_snapshot(connection)
         counts = {str(row["status"]): int(row["count"]) for row in rows}
         candidate_counts = {str(row["status"]): int(row["count"]) for row in candidate_rows}
         temporal_counts = {str(row["temporal_state"]): int(row["count"]) for row in temporal_rows}
@@ -1048,6 +1247,7 @@ class DesktopMemoryStore:
             "conflicted": candidate_counts.get("conflicted", 0),
             "candidate_counts": candidate_counts,
             "temporal_counts": temporal_counts,
+            "graph": graph,
             "total": sum(counts.values()),
         }
 
@@ -1067,6 +1267,7 @@ class DesktopMemoryStore:
         )
         now_ms = int(self.now() * 1_000)
         stats = self.stats()
+        graph = stats["graph"]
         candidate_by_status = dict(stats["candidate_counts"])
         temporal_counts = {
             state: int(stats["temporal_counts"].get(state, 0))
@@ -1197,6 +1398,22 @@ class DesktopMemoryStore:
             key=lambda candidate: int(candidate["reviewed_at"] or candidate["created_at"]),
             reverse=True,
         )
+        critic = self.critic_status(history_limit=20, now_ms=now_ms)
+        latest_critic = critic.get("latest") or {}
+        existing_finding_kinds = {str(finding["kind"]) for finding in findings}
+        for finding in latest_critic.get("findings") or []:
+            kind = str(finding.get("kind") or "")
+            if not kind or kind in existing_finding_kinds:
+                continue
+            affected_count = len(finding.get("memory_ids") or []) + len(
+                finding.get("candidate_ids") or []
+            )
+            findings.append({
+                "kind": kind,
+                "count": max(1, affected_count),
+                "severity": str(finding.get("severity") or "review"),
+            })
+            existing_finding_kinds.add(kind)
         return {
             "contract_version": 1,
             "generated_at": now_ms,
@@ -1209,14 +1426,25 @@ class DesktopMemoryStore:
                 "conflicted": candidate_by_status.get("conflicted", 0),
                 "evidence": evidence_count,
                 "supersession_edges": len(supersession_edges),
+                "graph_nodes": int(graph["node_count"]),
+                "graph_relations": int(graph["relation_count"]),
             },
             "temporal_counts": temporal_counts,
             "namespace_counts": namespace_counts,
+            "graph": graph,
             "candidate_counts": candidate_by_status,
             "health": {
-                "status": "attention" if findings else "healthy",
+                "status": (
+                    "attention"
+                    if any(
+                        str(finding.get("severity") or "") in {"attention", "review"}
+                        for finding in findings
+                    )
+                    else "healthy"
+                ),
                 "findings": findings,
             },
+            "critic": critic,
             "conflicts": conflicts,
             "supersession": {
                 "edges": supersession_edges[-bounded_limit:],

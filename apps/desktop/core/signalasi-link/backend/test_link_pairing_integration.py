@@ -12,6 +12,7 @@ import link_protocol
 import mqtt_bridge
 import pairing_access
 import pairing_state
+import desktop_control
 
 
 class FakeInfo:
@@ -68,6 +69,9 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         pairing_state._tokens.clear()
         self.mqtt = FakeMqtt()
         self.bundle = {"identityKeySha256": "d" * 64}
+        self.control = desktop_control.DesktopControlManager(
+            Path(self.temp.name) / "desktop-control.json"
+        )
         self.patches = [
             patch.object(mqtt_bridge, "replace_peer_signal_bundle", return_value={"ok": True}),
             patch.object(mqtt_bridge, "get_signal_bundle", return_value=self.bundle),
@@ -75,6 +79,7 @@ class LinkPairingIntegrationTests(unittest.TestCase):
             patch.object(mqtt_bridge, "desktop_name", return_value="Test Desktop"),
             patch.object(mqtt_bridge, "mobile_connector_agents", return_value=[]),
             patch.object(mqtt_bridge.threading, "Timer", _ImmediateTimer),
+            patch.object(desktop_control, "desktop_control_manager", return_value=self.control),
         ]
         for item in self.patches:
             item.start()
@@ -165,6 +170,51 @@ class LinkPairingIntegrationTests(unittest.TestCase):
         stored_executor = pairing_state.get_client(executor_route)
         self.assertEqual(pairing_access.DESKTOP_EXECUTOR, stored_executor["access_profile"])
         self.assertTrue(pairing_access.has_full_executor(stored_executor))
+
+    def test_executor_pairing_activates_control_without_a_second_approval(self):
+        self.control.update_settings(enabled=True)
+        server = pairing_state.server_route_id()
+        route = link_protocol.new_route_id()
+        pairing = pairing_state.new_pairing_session(
+            pairing_access.grant_for_executor(True, issued_at_millis=123_456)
+        )
+        offer = self.control.create_offer(pairing["token"])
+        claim = client_claim(
+            pairing["token"],
+            server,
+            route,
+            b"one-time consent identity",
+            "Trusted phone",
+        )
+        claim["desktop_control_authorization_token"] = offer["token"]
+
+        mqtt_bridge.on_message(
+            self.mqtt,
+            None,
+            FakeMessage(
+                link_protocol.LinkTopics(server).pairing,
+                link_protocol.encrypt_pairing_claim(
+                    claim,
+                    pairing["token"],
+                    pairing["secret"],
+                    server,
+                ),
+            ),
+        )
+
+        status = self.control.status(route)
+        self.assertEqual(1, status["active_count"])
+        self.assertEqual(0, status["pending_count"])
+        self.assertEqual("pairing_qr", status["authorizations"][0]["grant_source"])
+        confirmation = next(
+            item[1]
+            for item in self.mqtt.publishes
+            if item[1].get("type") == "pairing_confirmed"
+        )
+        self.assertEqual(
+            "active",
+            confirmation["desktop_control"]["authorization_status"],
+        )
 
     def test_mqtt_reconnect_publishes_one_recovery_presence(self):
         with (
