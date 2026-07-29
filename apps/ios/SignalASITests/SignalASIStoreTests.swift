@@ -2009,6 +2009,137 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(CloudModelCredentialPolicy.isStoredCredential("sk-live-key"))
   }
 
+  func testAgentConnectorAvailabilityMatchesAndroidDesktopStatusRules() {
+    let now: Int64 = 1_000_000
+
+    XCTAssertTrue(
+      AgentConnectorAvailability.desktopAgentReady(setupStatus: "ready", setupUpdatedAtMillis: now, nowMillis: now)
+    )
+    XCTAssertTrue(
+      AgentConnectorAvailability.desktopAgentReady(setupStatus: "busy", setupUpdatedAtMillis: now, nowMillis: now)
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.desktopAgentReady(setupStatus: "degraded", setupUpdatedAtMillis: now, nowMillis: now)
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.desktopAgentReady(setupStatus: "needs_setup", setupUpdatedAtMillis: now, nowMillis: now)
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.desktopAgentReady(setupStatus: "unavailable", setupUpdatedAtMillis: now, nowMillis: now)
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.desktopAgentReady(
+        setupStatus: "ready",
+        setupUpdatedAtMillis: now - 600_001,
+        nowMillis: now
+      )
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.desktopAgentReady(setupStatus: "ready", setupUpdatedAtMillis: 0, nowMillis: now)
+    )
+    XCTAssertTrue(
+      AgentConnectorAvailability.desktopAgentReady(
+        setupStatus: "ready",
+        setupUpdatedAtMillis: now + 60_000,
+        nowMillis: now
+      )
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.desktopAgentReady(
+        setupStatus: "ready",
+        setupUpdatedAtMillis: now + 60_001,
+        nowMillis: now
+      )
+    )
+
+    var contact = SignalASIContact.hermes()
+    contact.setupStatus = "busy"
+    contact.updatedAt = Date(timeIntervalSince1970: Double(now) / 1_000)
+    XCTAssertTrue(
+      AgentConnectorAvailability.desktopAgentReady(
+        contact: contact,
+        now: Date(timeIntervalSince1970: Double(now) / 1_000)
+      )
+    )
+  }
+
+  func testAgentConnectorAvailabilityMatchesAndroidCloudModelReadiness() {
+    let complete = CloudModelConfig(
+      id: "deepseek-v4",
+      displayName: "DeepSeek V4",
+      provider: "deepseek",
+      modelId: "deepseek-v4",
+      endpoint: "https://api.example.test/v1/chat/completions",
+      apiStyle: .openAICompatible,
+      keychainAccount: "cloud.deepseek.deepseek-v4",
+      updatedAt: Date()
+    )
+
+    XCTAssertTrue(
+      AgentConnectorAvailability.cloudModelReady(
+        model: complete,
+        apiKey: "secret",
+        provider: "deepseek",
+        setupStatus: "ready"
+      )
+    )
+    XCTAssertFalse(AgentConnectorAvailability.cloudModelReady(model: complete, apiKey: "", provider: "deepseek"))
+    XCTAssertFalse(AgentConnectorAvailability.cloudModelReady(model: complete, apiKey: "****-key", provider: "deepseek"))
+    XCTAssertFalse(
+      AgentConnectorAvailability.cloudModelReady(model: complete, apiKey: "sk-signalasi-smoke-key", provider: "deepseek")
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.cloudModelReady(
+        model: CloudModelConfig(
+          id: "blank-model",
+          displayName: "Blank",
+          provider: "deepseek",
+          modelId: "",
+          endpoint: complete.endpoint,
+          apiStyle: .openAICompatible,
+          keychainAccount: "blank",
+          updatedAt: Date()
+        ),
+        apiKey: "secret",
+        provider: "deepseek"
+      )
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.cloudModelReady(
+        model: CloudModelConfig(
+          id: "example-endpoint",
+          displayName: "Example",
+          provider: "deepseek",
+          modelId: "deepseek-v4",
+          endpoint: "https://api.example.com/v1/chat/completions",
+          apiStyle: .openAICompatible,
+          keychainAccount: "example",
+          updatedAt: Date()
+        ),
+        apiKey: "secret",
+        provider: "deepseek"
+      )
+    )
+    XCTAssertFalse(
+      AgentConnectorAvailability.cloudModelReady(
+        model: complete,
+        apiKey: "secret",
+        provider: "deepseek",
+        setupStatus: "needs_setup"
+      )
+    )
+
+    var contact = SignalASIContact.system()
+    contact.deliveryMode = .cloudAPI
+    contact.setupStatus = "ready"
+    contact.cloudProvider = "deepseek"
+    contact.cloudModels = [complete]
+    contact.selectedCloudModelId = "deepseek-v4"
+    XCTAssertTrue(AgentConnectorAvailability.cloudModelReady(contact: contact, apiKey: "secret"))
+    contact.cloudModels = []
+    XCTAssertFalse(AgentConnectorAvailability.cloudModelReady(contact: contact, apiKey: "secret"))
+  }
+
   func testCloudClientRejectsPlaceholderCredentialBeforeNetwork() async throws {
     let secrets = InMemorySecretStore()
     let store = makeStore(secrets: secrets)

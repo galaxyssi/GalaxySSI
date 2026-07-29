@@ -97,12 +97,17 @@ const requiredSourceSnippets = [
   [readme, "Android-style Home Assistant configuration"],
   [readme, "Android-style model planner settings"],
   [readme, "Android-style cloud context overflow detection"],
+  [readme, "Android-style connector availability policy"],
   [readme, "Android-style active turn policy"],
   [models, "static let androidParity"],
   [models, "SignalASIFriendRequest"],
   [models, "mqttInboxTopic"],
   [models, "CloudModelCredentialPolicy"],
   [models, "isAutoRoutableCredential"],
+  [models, "AgentConnectorAvailability"],
+  [models, "desktopAgentReady"],
+  [models, "desktopStatusTtlMillis"],
+  [models, "cloudModelReady"],
   [models, "var displayTitle"],
   [models, "LanguagePolicySettings"],
   [models, "voiceChoices"],
@@ -410,6 +415,8 @@ const requiredSourceSnippets = [
   [tests, "testDeletingSelectedCloudModelRemovesSecretAndFallsBack"],
   [tests, "testDeletingLastCloudModelHidesProviderContact"],
   [tests, "testCloudModelCredentialPolicyRejectsPlaceholders"],
+  [tests, "testAgentConnectorAvailabilityMatchesAndroidDesktopStatusRules"],
+  [tests, "testAgentConnectorAvailabilityMatchesAndroidCloudModelReadiness"],
 ];
 
 for (const snippet of requiredProjectSnippets) {

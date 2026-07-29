@@ -317,6 +317,71 @@ enum CloudModelCredentialPolicy {
   }
 }
 
+enum AgentConnectorAvailability {
+  static func desktopAgentReady(
+    setupStatus: String,
+    setupUpdatedAtMillis: Int64,
+    nowMillis: Int64
+  ) -> Bool {
+    let statusReady = routableDesktopStates.contains(
+      setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    )
+    guard statusReady, setupUpdatedAtMillis > 0 else {
+      return false
+    }
+    let ageMillis = nowMillis - setupUpdatedAtMillis
+    return ageMillis >= -maximumClockSkewMillis && ageMillis <= desktopStatusTtlMillis
+  }
+
+  static func desktopAgentReady(
+    contact: SignalASIContact,
+    now: Date = Date()
+  ) -> Bool {
+    desktopAgentReady(
+      setupStatus: contact.setupStatus,
+      setupUpdatedAtMillis: milliseconds(contact.updatedAt),
+      nowMillis: milliseconds(now)
+    )
+  }
+
+  static func cloudModelReady(
+    model: CloudModelConfig,
+    apiKey: String?,
+    provider: String,
+    setupStatus: String = "ready"
+  ) -> Bool {
+    CloudModelCredentialPolicy.isAutoRoutable(
+      model: model,
+      apiKey: apiKey,
+      provider: provider,
+      setupStatus: setupStatus
+    )
+  }
+
+  static func cloudModelReady(
+    contact: SignalASIContact,
+    apiKey: String?
+  ) -> Bool {
+    guard let model = contact.selectedCloudModel else {
+      return false
+    }
+    return cloudModelReady(
+      model: model,
+      apiKey: apiKey,
+      provider: contact.cloudProvider,
+      setupStatus: contact.setupStatus
+    )
+  }
+
+  private static func milliseconds(_ date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1_000).rounded())
+  }
+
+  private static let routableDesktopStates: Set<String> = ["ready", "busy"]
+  private static let desktopStatusTtlMillis: Int64 = 10 * 60_000
+  private static let maximumClockSkewMillis: Int64 = 60_000
+}
+
 enum ChatDeliveryStatus: String, Codable, Equatable {
   case local
   case queued

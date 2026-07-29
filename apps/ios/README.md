@@ -15,6 +15,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style animated image timing normalization for zero-delay GIF frames
 - Direct cloud model contacts for OpenAI-compatible, Anthropic, and Gemini-style APIs, with provider-level model selection, readiness checks, and API keys stored in Keychain
 - Android-style cloud context overflow detection for cloud model retries and clear request-size failures
+- Android-style connector availability policy for desktop agent heartbeat freshness and auto-routable cloud model readiness
 - Android-style language policy settings for interface preference, model response language, ASR locale, and TTS language
 - Android-style app display text sizing with System, Standard, Comfortable, Large, and Extra Large modes
 - Android-style Agent Safety settings for task execution mode, action permission mode, safety guards, pause state, and allowed action surfaces
