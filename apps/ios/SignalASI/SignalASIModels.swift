@@ -6845,6 +6845,1488 @@ enum AgentMcpTransportKind: String, Codable, CaseIterable, Identifiable {
   var id: String { rawValue }
 }
 
+enum AgentCapabilityCatalogKind: String, Codable, CaseIterable, Identifiable {
+  case nativeTool = "native_tool"
+  case mcp
+  case automation
+
+  var id: String { rawValue }
+}
+
+enum AgentMarketplaceInstallState: String, Codable, CaseIterable, Identifiable {
+  case builtIn = "built_in"
+  case available
+  case installed
+  case needsSetup = "needs_setup"
+  case unavailable
+
+  var id: String { rawValue }
+}
+
+struct AgentMarketplacePermission: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var description: String
+  var scope: String
+  var risk: String
+
+  init(
+    id: String,
+    title: String? = nil,
+    description: String = "",
+    scope: String = "item",
+    risk: String = "medium"
+  ) {
+    let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.id = cleanId
+    self.title = (title ?? cleanId).trimmingCharacters(in: .whitespacesAndNewlines)
+    self.description = description
+    self.scope = scope
+    self.risk = risk
+  }
+}
+
+struct AgentMarketplacePermissionDiff: Codable, Equatable {
+  var added: [AgentMarketplacePermission]
+  var removed: [AgentMarketplacePermission]
+  var unchanged: [AgentMarketplacePermission]
+
+  var requiresApproval: Bool {
+    !added.isEmpty
+  }
+
+  init(
+    added: [AgentMarketplacePermission] = [],
+    removed: [AgentMarketplacePermission] = [],
+    unchanged: [AgentMarketplacePermission] = []
+  ) {
+    self.added = added
+    self.removed = removed
+    self.unchanged = unchanged
+  }
+}
+
+struct AgentMarketplaceItem: Codable, Equatable, Identifiable {
+  var id: String
+  var kind: AgentCapabilityCatalogKind
+  var name: String
+  var summary: String
+  var version: String
+  var publisher: String
+  var installState: AgentMarketplaceInstallState
+  var enabled: Bool
+  var featured: Bool
+  var trusted: Bool
+  var tags: Set<String>
+  var dependencies: Set<String>
+  var requiresLocalPackage: Bool
+  var capabilities: Set<String>
+  var permissions: [AgentMarketplacePermission]
+  var permissionDiff: AgentMarketplacePermissionDiff
+  var installedVersion: String
+  var availableVersion: String
+  var updateAvailable: Bool
+  var rollbackVersions: [String]
+  var revocable: Bool
+  var revoked: Bool
+
+  init(
+    id: String,
+    kind: AgentCapabilityCatalogKind,
+    name: String,
+    summary: String,
+    version: String,
+    publisher: String = "SignalASI",
+    installState: AgentMarketplaceInstallState,
+    enabled: Bool = true,
+    featured: Bool = true,
+    trusted: Bool = true,
+    tags: Set<String> = [],
+    dependencies: Set<String> = [],
+    requiresLocalPackage: Bool = false,
+    capabilities: Set<String> = [],
+    permissions: [AgentMarketplacePermission] = [],
+    permissionDiff: AgentMarketplacePermissionDiff = AgentMarketplacePermissionDiff(),
+    installedVersion: String = "",
+    availableVersion: String? = nil,
+    updateAvailable: Bool = false,
+    rollbackVersions: [String] = [],
+    revocable: Bool = false,
+    revoked: Bool = false
+  ) throws {
+    guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("Marketplace items require stable identity, name, summary, and version")
+    }
+    self.id = id
+    self.kind = kind
+    self.name = name
+    self.summary = summary
+    self.version = version
+    self.publisher = publisher
+    self.installState = installState
+    self.enabled = enabled
+    self.featured = featured
+    self.trusted = trusted
+    self.tags = tags
+    self.dependencies = dependencies
+    self.requiresLocalPackage = requiresLocalPackage
+    self.capabilities = capabilities
+    self.permissions = permissions
+    self.permissionDiff = permissionDiff
+    self.installedVersion = installedVersion
+    self.availableVersion = availableVersion ?? version
+    self.updateAvailable = updateAvailable
+    self.rollbackVersions = rollbackVersions
+    self.revocable = revocable
+    self.revoked = revoked
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case kind
+    case name
+    case summary
+    case version
+    case publisher
+    case installState = "install_state"
+    case enabled
+    case featured
+    case trusted
+    case tags
+    case dependencies
+    case requiresLocalPackage = "requires_local_package"
+    case capabilities
+    case permissions
+    case permissionDiff = "permission_diff"
+    case installedVersion = "installed_version"
+    case availableVersion = "available_version"
+    case updateAvailable = "update_available"
+    case rollbackVersions = "rollback_versions"
+    case revocable
+    case revoked
+  }
+}
+
+enum AgentMcpDistribution: String, Codable, CaseIterable, Identifiable {
+  case remote
+  case localPackage = "local_package"
+
+  var id: String { rawValue }
+}
+
+enum AgentMcpAuthMethod: String, Codable, CaseIterable, Identifiable {
+  case none
+  case bearerToken = "bearer_token"
+  case apiKey = "api_key"
+  case usernamePassword = "username_password"
+  case oauth2
+  case deviceCode = "device_code"
+  case dynamic
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentMcpAuthMethod {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .none
+  }
+}
+
+enum AgentMcpAuthFieldType: String, Codable, CaseIterable, Identifiable {
+  case text
+  case password
+  case apiKey = "api_key"
+  case phone
+  case email
+  case otp
+  case totp
+  case captcha
+  case select
+  case checkbox
+  case url
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentMcpAuthFieldType {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .text
+  }
+}
+
+enum AgentMcpAuthState: String, Codable, CaseIterable, Identifiable {
+  case notRequired = "not_required"
+  case notConfigured = "not_configured"
+  case challengeRequired = "challenge_required"
+  case authenticating
+  case authenticated
+  case refreshing
+  case reauthenticationRequired = "reauthentication_required"
+  case error
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentMcpAuthState {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .notConfigured
+  }
+}
+
+enum AgentMcpConnectionState: String, Codable, CaseIterable, Identifiable {
+  case installed
+  case connecting
+  case connected
+  case needsSetup = "needs_setup"
+  case unavailable
+  case error
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentMcpConnectionState {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .installed
+  }
+}
+
+struct AgentMcpAuthFieldSpec: Codable, Equatable, Identifiable {
+  var id: String
+  var label: String
+  var type: AgentMcpAuthFieldType
+  var required: Bool
+  var secret: Bool
+  var placeholder: String
+  var options: [String]
+
+  init(
+    id: String,
+    label: String,
+    type: AgentMcpAuthFieldType,
+    required: Bool = true,
+    secret: Bool? = nil,
+    placeholder: String = "",
+    options: [String] = []
+  ) throws {
+    guard id.range(of: #"^[a-z][a-z0-9_.-]{0,95}$"#, options: .regularExpression) != nil else {
+      throw AgentRuntimeCapabilityError.invalid("MCP authentication field id is invalid")
+    }
+    guard !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      options.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP authentication field labels and options must not be blank")
+    }
+    self.id = id
+    self.label = label
+    self.type = type
+    self.required = required
+    self.secret = secret ?? [.password, .apiKey, .otp, .totp].contains(type)
+    self.placeholder = placeholder
+    self.options = options
+  }
+}
+
+struct AgentMcpAuthExchangeSpec: Codable, Equatable {
+  var method: String
+  var pathTemplate: String
+  var headerTemplates: [String: String]
+  var bodyTemplate: String
+  var responseMappings: [String: String]
+  var acceptedStatusCodes: Set<Int>
+
+  init(
+    method: String,
+    pathTemplate: String,
+    headerTemplates: [String: String] = [:],
+    bodyTemplate: String = "",
+    responseMappings: [String: String] = [:],
+    acceptedStatusCodes: Set<Int> = [200]
+  ) throws {
+    let normalizedMethod = method.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+    guard ["GET", "POST", "PUT", "PATCH"].contains(normalizedMethod),
+      pathTemplate.hasPrefix("/"),
+      !pathTemplate.contains(".."),
+      !pathTemplate.contains("://"),
+      responseMappings.keys.allSatisfy({ $0.range(of: #"^[a-z][a-z0-9_.-]{0,95}$"#, options: .regularExpression) != nil }),
+      !acceptedStatusCodes.isEmpty,
+      acceptedStatusCodes.allSatisfy({ (200...299).contains($0) }) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP authentication exchange is invalid")
+    }
+    self.method = normalizedMethod
+    self.pathTemplate = pathTemplate
+    self.headerTemplates = headerTemplates
+    self.bodyTemplate = bodyTemplate
+    self.responseMappings = responseMappings
+    self.acceptedStatusCodes = acceptedStatusCodes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case method
+    case pathTemplate = "path"
+    case headerTemplates = "headers"
+    case bodyTemplate = "body_template"
+    case responseMappings = "response_mappings"
+    case acceptedStatusCodes = "accepted_status_codes"
+  }
+}
+
+struct AgentMcpAuthStepSpec: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var description: String
+  var fields: [AgentMcpAuthFieldSpec]
+  var expiresInSeconds: Int64
+  var exchange: AgentMcpAuthExchangeSpec?
+
+  init(
+    id: String,
+    title: String,
+    description: String = "",
+    fields: [AgentMcpAuthFieldSpec],
+    expiresInSeconds: Int64 = 0,
+    exchange: AgentMcpAuthExchangeSpec? = nil
+  ) throws {
+    guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      Set(fields.map(\.id)).count == fields.count,
+      expiresInSeconds >= 0 else {
+      throw AgentRuntimeCapabilityError.invalid("MCP authentication step is invalid")
+    }
+    self.id = id
+    self.title = title
+    self.description = description
+    self.fields = fields
+    self.expiresInSeconds = expiresInSeconds
+    self.exchange = exchange
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case title
+    case description
+    case fields
+    case expiresInSeconds = "expires_in_seconds"
+    case exchange
+  }
+}
+
+struct AgentMcpAuthProfile: Codable, Equatable {
+  var method: AgentMcpAuthMethod
+  var steps: [AgentMcpAuthStepSpec]
+  var accessTokenTtlMillis: Int64
+  var refreshLeadMillis: Int64
+  var supportsRefresh: Bool
+  var refreshExchange: AgentMcpAuthExchangeSpec?
+  var authorizationUrl: String
+  var tokenUrl: String
+  var scopes: [String]
+
+  init(
+    _ method: AgentMcpAuthMethod,
+    steps: [AgentMcpAuthStepSpec]? = nil,
+    accessTokenTtlMillis: Int64 = 0,
+    refreshLeadMillis: Int64 = 5 * 60_000,
+    supportsRefresh: Bool = false,
+    refreshExchange: AgentMcpAuthExchangeSpec? = nil,
+    authorizationUrl: String = "",
+    tokenUrl: String = "",
+    scopes: [String] = []
+  ) throws {
+    let effectiveSteps: [AgentMcpAuthStepSpec]
+    if let steps {
+      effectiveSteps = steps
+    } else {
+      effectiveSteps = try Self.defaultSteps(method)
+    }
+    guard Set(effectiveSteps.map(\.id)).count == effectiveSteps.count,
+      accessTokenTtlMillis >= 0,
+      refreshLeadMillis >= 0 else {
+      throw AgentRuntimeCapabilityError.invalid("MCP authentication profile is invalid")
+    }
+    self.method = method
+    self.steps = effectiveSteps
+    self.accessTokenTtlMillis = accessTokenTtlMillis
+    self.refreshLeadMillis = refreshLeadMillis
+    self.supportsRefresh = supportsRefresh
+    self.refreshExchange = refreshExchange
+    self.authorizationUrl = authorizationUrl
+    self.tokenUrl = tokenUrl
+    self.scopes = scopes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case method
+    case steps
+    case accessTokenTtlMillis = "token_ttl_ms"
+    case refreshLeadMillis = "refresh_lead_ms"
+    case supportsRefresh = "supports_refresh"
+    case refreshExchange = "refresh_exchange"
+    case authorizationUrl = "authorization_url"
+    case tokenUrl = "token_url"
+    case scopes
+  }
+
+  static func defaultSteps(_ method: AgentMcpAuthMethod) throws -> [AgentMcpAuthStepSpec] {
+    switch method {
+    case .none:
+      return []
+    case .bearerToken:
+      return [try AgentMcpAuthStepSpec(
+        id: "token",
+        title: "Access token",
+        fields: [try AgentMcpAuthFieldSpec(id: "access_token", label: "Access token", type: .apiKey)]
+      )]
+    case .apiKey:
+      return [try AgentMcpAuthStepSpec(
+        id: "api_key",
+        title: "API key",
+        fields: [
+          try AgentMcpAuthFieldSpec(id: "api_key", label: "API key", type: .apiKey),
+          try AgentMcpAuthFieldSpec(
+            id: "header_name",
+            label: "Header name",
+            type: .text,
+            required: false,
+            secret: false,
+            placeholder: "X-API-Key"
+          )
+        ]
+      )]
+    case .usernamePassword:
+      return [try AgentMcpAuthStepSpec(
+        id: "credentials",
+        title: "Sign in",
+        fields: [
+          try AgentMcpAuthFieldSpec(id: "username", label: "Username", type: .text, secret: false),
+          try AgentMcpAuthFieldSpec(id: "password", label: "Password", type: .password)
+        ]
+      )]
+    case .oauth2:
+      return [try AgentMcpAuthStepSpec(
+        id: "oauth",
+        title: "Authorize access",
+        fields: [try AgentMcpAuthFieldSpec(id: "access_token", label: "OAuth access token", type: .apiKey)]
+      )]
+    case .deviceCode:
+      return [try AgentMcpAuthStepSpec(
+        id: "device_code",
+        title: "Device authorization",
+        fields: [try AgentMcpAuthFieldSpec(id: "device_code", label: "Device code", type: .otp)]
+      )]
+    case .dynamic:
+      return [
+        try AgentMcpAuthStepSpec(
+          id: "credentials",
+          title: "Sign in",
+          fields: [
+            try AgentMcpAuthFieldSpec(id: "username", label: "Username", type: .text, secret: false),
+            try AgentMcpAuthFieldSpec(id: "password", label: "Password", type: .password)
+          ]
+        ),
+        try AgentMcpAuthStepSpec(
+          id: "verification",
+          title: "Verify sign-in",
+          fields: [try AgentMcpAuthFieldSpec(id: "otp", label: "Verification code", type: .otp)],
+          expiresInSeconds: 300
+        )
+      ]
+    }
+  }
+}
+
+struct AgentMcpCatalogEntry: Codable, Equatable, Identifiable {
+  var id: String
+  var name: String
+  var summary: String
+  var distribution: AgentMcpDistribution
+  var transport: AgentMcpTransportKind
+  var defaultEndpoint: String
+  var authProfiles: [AgentMcpAuthProfile]
+  var version: String
+  var toolHints: [String]
+  var tags: Set<String>
+  var featured: Bool
+  var requiresPackage: Bool
+
+  init(
+    id: String,
+    name: String,
+    summary: String,
+    distribution: AgentMcpDistribution,
+    transport: AgentMcpTransportKind = .streamableHTTP,
+    defaultEndpoint: String = "",
+    authProfiles: [AgentMcpAuthProfile]? = nil,
+    version: String = "1.0.0",
+    toolHints: [String] = [],
+    tags: Set<String> = [],
+    featured: Bool = true,
+    requiresPackage: Bool = false
+  ) throws {
+    guard id.range(of: #"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+$"#, options: .regularExpression) != nil,
+      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("MCP catalog entry is invalid")
+    }
+    let profiles: [AgentMcpAuthProfile]
+    if let authProfiles {
+      profiles = authProfiles
+    } else {
+      profiles = [try AgentMcpAuthProfile(.none)]
+    }
+    guard !profiles.isEmpty, Set(profiles.map(\.method)).count == profiles.count else {
+      throw AgentRuntimeCapabilityError.invalid("MCP catalog authentication profiles must be unique")
+    }
+    self.id = id
+    self.name = name
+    self.summary = summary
+    self.distribution = distribution
+    self.transport = transport
+    self.defaultEndpoint = defaultEndpoint
+    self.authProfiles = profiles
+    self.version = version
+    self.toolHints = toolHints
+    self.tags = tags
+    self.featured = featured
+    self.requiresPackage = requiresPackage
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case summary
+    case distribution
+    case transport
+    case defaultEndpoint = "default_endpoint"
+    case authProfiles = "auth_profiles"
+    case version
+    case toolHints = "tool_hints"
+    case tags
+    case featured
+    case requiresPackage = "requires_package"
+  }
+}
+
+struct AgentSkillManifest: Codable, Equatable {
+  var id: String
+  var name: String
+  var version: String
+  var summary: String
+  var nativeTools: Set<String>
+  var permissions: Set<String>
+  var mcpCatalogIds: Set<String>
+
+  init(
+    id: String,
+    name: String,
+    version: String,
+    summary: String,
+    nativeTools: Set<String> = [],
+    permissions: Set<String> = [],
+    mcpCatalogIds: Set<String> = []
+  ) {
+    self.id = id
+    self.name = name
+    self.version = version
+    self.summary = summary
+    self.nativeTools = nativeTools
+    self.permissions = permissions
+    self.mcpCatalogIds = mcpCatalogIds
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case version
+    case summary
+    case nativeTools = "native_tools"
+    case permissions
+    case mcpCatalogIds = "mcp_catalog_ids"
+  }
+}
+
+struct AgentSkillCatalogEntry: Codable, Equatable, Identifiable {
+  var id: String
+  var name: String
+  var summary: String
+  var requiredNativeTools: Set<String>
+  var requiredMcpCatalogIds: Set<String>
+  var featured: Bool
+  var manifest: AgentSkillManifest
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case name
+    case summary
+    case requiredNativeTools = "required_native_tools"
+    case requiredMcpCatalogIds = "required_mcp_catalog_ids"
+    case featured
+    case manifest
+  }
+}
+
+struct AgentSkillInstallation: Codable, Equatable, Identifiable {
+  var manifest: AgentSkillManifest
+  var enabled: Bool
+
+  var id: String { manifest.id }
+  var version: String { manifest.version }
+}
+
+struct AgentMcpConnection: Codable, Equatable, Identifiable {
+  var id: String
+  var catalogId: String
+  var displayName: String
+  var endpoint: String
+  var distribution: AgentMcpDistribution
+  var transport: AgentMcpTransportKind
+  var authProfile: AgentMcpAuthProfile
+  var authState: AgentMcpAuthState
+  var authStepIndex: Int
+  var state: AgentMcpConnectionState
+  var enabled: Bool
+  var permissionMode: AgentMcpPermissionMode
+  var installedAtMillis: Int64
+  var updatedAtMillis: Int64
+  var expiresAtMillis: Int64
+  var refreshAtMillis: Int64
+  var lastValidatedAtMillis: Int64
+  var lastError: String
+  var toolIds: [String]
+  var packageVersion: String
+  var packageSha256: String
+
+  var currentAuthStep: AgentMcpAuthStepSpec? {
+    authProfile.steps.indices.contains(authStepIndex) ? authProfile.steps[authStepIndex] : nil
+  }
+
+  init(
+    id: String,
+    catalogId: String = "",
+    displayName: String,
+    endpoint: String,
+    distribution: AgentMcpDistribution,
+    transport: AgentMcpTransportKind,
+    authProfile: AgentMcpAuthProfile,
+    authState: AgentMcpAuthState,
+    authStepIndex: Int = 0,
+    state: AgentMcpConnectionState = .installed,
+    enabled: Bool = true,
+    permissionMode: AgentMcpPermissionMode = .askForChanges,
+    installedAtMillis: Int64 = 0,
+    updatedAtMillis: Int64? = nil,
+    expiresAtMillis: Int64 = 0,
+    refreshAtMillis: Int64 = 0,
+    lastValidatedAtMillis: Int64 = 0,
+    lastError: String = "",
+    toolIds: [String] = [],
+    packageVersion: String = "",
+    packageSha256: String = ""
+  ) {
+    self.id = id
+    self.catalogId = catalogId
+    self.displayName = displayName
+    self.endpoint = endpoint
+    self.distribution = distribution
+    self.transport = transport
+    self.authProfile = authProfile
+    self.authState = authState
+    self.authStepIndex = authStepIndex
+    self.state = state
+    self.enabled = enabled
+    self.permissionMode = permissionMode
+    self.installedAtMillis = installedAtMillis
+    self.updatedAtMillis = updatedAtMillis ?? installedAtMillis
+    self.expiresAtMillis = expiresAtMillis
+    self.refreshAtMillis = refreshAtMillis
+    self.lastValidatedAtMillis = lastValidatedAtMillis
+    self.lastError = lastError
+    self.toolIds = toolIds
+    self.packageVersion = packageVersion
+    self.packageSha256 = packageSha256
+  }
+
+  func effectiveAuthState(nowMillis: Int64) -> AgentMcpAuthState {
+    if authProfile.method == .none {
+      return .notRequired
+    }
+    if authState == .authenticated, expiresAtMillis > 0, nowMillis >= expiresAtMillis {
+      return .reauthenticationRequired
+    }
+    if authState == .authenticated, refreshAtMillis > 0, nowMillis >= refreshAtMillis {
+      return .refreshing
+    }
+    return authState
+  }
+
+  func isCallable(nowMillis: Int64) -> Bool {
+    let auth = effectiveAuthState(nowMillis: nowMillis)
+    return enabled &&
+      !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      state != .error &&
+      [.notRequired, .authenticated, .refreshing].contains(auth)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case catalogId = "catalog_id"
+    case displayName = "display_name"
+    case endpoint
+    case distribution
+    case transport
+    case authProfile = "auth_profile"
+    case authState = "auth_state"
+    case authStepIndex = "auth_step_index"
+    case state
+    case enabled
+    case permissionMode = "permission_mode"
+    case installedAtMillis = "installed_at"
+    case updatedAtMillis = "updated_at"
+    case expiresAtMillis = "expires_at"
+    case refreshAtMillis = "refresh_at"
+    case lastValidatedAtMillis = "last_validated_at"
+    case lastError = "last_error"
+    case toolIds = "tool_ids"
+    case packageVersion = "package_version"
+    case packageSha256 = "package_sha256"
+  }
+}
+
+protocol AgentMcpStore {
+  func list() -> [AgentMcpConnection]
+  func upsert(_ connection: AgentMcpConnection)
+  func delete(id: String) -> Bool
+  func readSecrets(id: String) -> [String: String]
+  func writeSecrets(id: String, values: [String: String])
+  func clearSecrets(id: String)
+  func clear()
+}
+
+final class InMemoryAgentMcpStore: AgentMcpStore {
+  private let lock = NSRecursiveLock()
+  private var connections: [String: AgentMcpConnection]
+  private var secrets: [String: [String: String]] = [:]
+
+  init(_ initialConnections: [AgentMcpConnection] = []) {
+    self.connections = Dictionary(uniqueKeysWithValues: initialConnections.map { ($0.id, $0) })
+  }
+
+  func list() -> [AgentMcpConnection] {
+    synchronized {
+      connections.values.sorted {
+        let left = $0.displayName.lowercased()
+        let right = $1.displayName.lowercased()
+        if left == right { return $0.id < $1.id }
+        return left < right
+      }
+    }
+  }
+
+  func upsert(_ connection: AgentMcpConnection) {
+    synchronized {
+      connections[connection.id] = connection
+    }
+  }
+
+  func delete(id: String) -> Bool {
+    synchronized {
+      secrets.removeValue(forKey: id)
+      return connections.removeValue(forKey: id) != nil
+    }
+  }
+
+  func readSecrets(id: String) -> [String: String] {
+    synchronized { secrets[id] ?? [:] }
+  }
+
+  func writeSecrets(id: String, values: [String: String]) {
+    synchronized {
+      secrets[id] = values
+    }
+  }
+
+  func clearSecrets(id: String) {
+    synchronized {
+      secrets.removeValue(forKey: id)
+    }
+  }
+
+  func clear() {
+    synchronized {
+      connections.removeAll()
+      secrets.removeAll()
+    }
+  }
+
+  private func synchronized<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+}
+
+enum AgentMcpConnectionCodec {
+  static func emptyDocument() -> String {
+    #"{"version":1,"connections":[]}"#
+  }
+
+  static func emptySecretsDocument() -> String {
+    #"{"version":1,"values":{}}"#
+  }
+
+  static func encode(_ connections: [AgentMcpConnection]) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let document = AgentMcpConnectionDocument(
+      version: 1,
+      connections: connections.sorted { $0.id < $1.id }
+    )
+    guard let data = try? encoder.encode(document) else {
+      return emptyDocument()
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func decode(_ document: String) -> [AgentMcpConnection] {
+    guard let data = document.data(using: .utf8),
+      let decoded = try? JSONDecoder().decode(AgentMcpConnectionDocument.self, from: data) else {
+      return []
+    }
+    return decoded.connections.filter {
+      !$0.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !$0.displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+  }
+
+  static func encodeSecrets(_ values: [String: String]) -> String {
+    AgentMcpJSONCodec.stringify([
+      "version": .int(1),
+      "values": .object(values.reduce(into: AgentMcpJSONObject()) { result, item in
+        result[item.key] = .string(item.value)
+      })
+    ])
+  }
+
+  static func decodeSecrets(_ document: String) -> [String: String] {
+    guard let data = document.data(using: .utf8),
+      let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data),
+      let values = object.object("values") else {
+      return [:]
+    }
+    return values.reduce(into: [String: String]()) { result, item in
+      if let value = item.value.stringValue {
+        result[item.key] = value
+      }
+    }
+  }
+
+  private struct AgentMcpConnectionDocument: Codable {
+    var version: Int
+    var connections: [AgentMcpConnection]
+  }
+}
+
+final class AgentMcpRegistry {
+  private let store: AgentMcpStore
+  private let nowMillis: () -> Int64
+
+  init(_ store: AgentMcpStore, nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }) {
+    self.store = store
+    self.nowMillis = nowMillis
+  }
+
+  func list() -> [AgentMcpConnection] {
+    store.list()
+  }
+
+  func get(_ id: String) -> AgentMcpConnection? {
+    list().first { $0.id == id }
+  }
+
+  func readyConnections() -> [AgentMcpConnection] {
+    list().filter { $0.isCallable(nowMillis: nowMillis()) }
+  }
+
+  func addRemote(
+    displayName: String,
+    endpoint: String,
+    authProfile: AgentMcpAuthProfile,
+    catalogId: String = "",
+    id: String = UUID().uuidString
+  ) throws -> AgentMcpConnection {
+    let normalizedName = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalizedName.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("MCP name must not be blank")
+    }
+    let normalizedEndpoint = try AgentMcpEndpointPolicy.normalize(endpoint)
+    let now = nowMillis()
+    let authState: AgentMcpAuthState = authProfile.method == .none ? .notRequired : .notConfigured
+    let connection = AgentMcpConnection(
+      id: id,
+      catalogId: catalogId,
+      displayName: normalizedName,
+      endpoint: normalizedEndpoint,
+      distribution: .remote,
+      transport: .streamableHTTP,
+      authProfile: authProfile,
+      authState: authState,
+      state: authState == .notRequired ? .installed : .needsSetup,
+      installedAtMillis: now,
+      updatedAtMillis: now
+    )
+    store.upsert(connection)
+    return connection
+  }
+
+  func installCatalogEntry(
+    _ entry: AgentMcpCatalogEntry,
+    endpoint: String? = nil,
+    authMethod: AgentMcpAuthMethod? = nil
+  ) throws -> AgentMcpConnection {
+    guard !entry.requiresPackage else {
+      throw AgentRuntimeCapabilityError.invalid("This MCP catalog entry requires a local package")
+    }
+    let selectedMethod = authMethod ?? entry.authProfiles[0].method
+    guard let profile = entry.authProfiles.first(where: { $0.method == selectedMethod }) else {
+      throw AgentRuntimeCapabilityError.invalid("Unsupported authentication method")
+    }
+    if let existing = list().first(where: { $0.catalogId == entry.id }) {
+      return existing
+    }
+    return try addRemote(
+      displayName: entry.name,
+      endpoint: endpoint ?? entry.defaultEndpoint,
+      authProfile: profile,
+      catalogId: entry.id
+    )
+  }
+
+  func beginAuthentication(_ id: String) throws -> AgentMcpAuthStepSpec? {
+    let connection = try requireConnection(id)
+    guard connection.authProfile.method != .none else {
+      return nil
+    }
+    var next = connection
+    next.authState = .challengeRequired
+    next.authStepIndex = 0
+    next.state = .needsSetup
+    next.updatedAtMillis = nowMillis()
+    next.lastError = ""
+    store.clearSecrets(id: id)
+    store.upsert(next)
+    return next.currentAuthStep
+  }
+
+  func submitAuthenticationStep(_ id: String, values: [String: String]) throws -> AgentMcpConnection {
+    let current = try requireConnection(id)
+    guard let step = current.currentAuthStep else {
+      throw AgentRuntimeCapabilityError.invalid("No authentication step is pending")
+    }
+    let normalized = values.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    let missing = step.fields.filter { $0.required && (normalized[$0.id] ?? "").isEmpty }
+    guard missing.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("Missing authentication fields: \(missing.map(\.label).joined(separator: ", "))")
+    }
+    let merged = store.readSecrets(id: id).merging(normalized.filter { !$0.value.isEmpty }) { _, new in new }
+    store.writeSecrets(id: id, values: merged)
+    let nextIndex = current.authStepIndex + 1
+    let now = nowMillis()
+    let finished = nextIndex >= current.authProfile.steps.count
+    let expiresAt = finished && current.authProfile.accessTokenTtlMillis > 0
+      ? now + current.authProfile.accessTokenTtlMillis
+      : 0
+    let refreshAt = expiresAt > 0 && current.authProfile.supportsRefresh
+      ? max(expiresAt - current.authProfile.refreshLeadMillis, now)
+      : 0
+    var next = current
+    next.authState = finished ? .authenticated : .challengeRequired
+    next.authStepIndex = finished ? current.authStepIndex : nextIndex
+    next.state = finished ? .installed : .needsSetup
+    next.expiresAtMillis = expiresAt
+    next.refreshAtMillis = refreshAt
+    next.updatedAtMillis = now
+    next.lastError = ""
+    store.upsert(next)
+    return next
+  }
+
+  func markAuthenticationRefreshed(_ id: String, values: [String: String]) throws -> AgentMcpConnection {
+    var current = try requireConnection(id)
+    let now = nowMillis()
+    store.writeSecrets(
+      id: id,
+      values: store.readSecrets(id: id).merging(values.filter { !$0.value.isEmpty }) { _, new in new }
+    )
+    current.authState = .authenticated
+    current.state = .installed
+    current.expiresAtMillis = current.authProfile.accessTokenTtlMillis > 0 ? now + current.authProfile.accessTokenTtlMillis : 0
+    current.refreshAtMillis = current.expiresAtMillis > 0 && current.authProfile.supportsRefresh
+      ? max(current.expiresAtMillis - current.authProfile.refreshLeadMillis, now)
+      : 0
+    current.updatedAtMillis = now
+    current.lastError = ""
+    store.upsert(current)
+    return current
+  }
+
+  func requestHeaders(_ id: String) throws -> [String: String] {
+    let connection = try requireConnection(id)
+    let secrets = store.readSecrets(id: id)
+    switch connection.authProfile.method {
+    case .none:
+      return [:]
+    case .bearerToken, .oauth2, .deviceCode:
+      return tokenHeader(secrets)
+    case .apiKey:
+      let key = secrets["api_key"] ?? ""
+      let header = (secrets["header_name"] ?? "").isEmpty ? "X-API-Key" : secrets["header_name"] ?? "X-API-Key"
+      return key.isEmpty ? [:] : [header: key]
+    case .usernamePassword:
+      let username = secrets["username"] ?? ""
+      let password = secrets["password"] ?? ""
+      guard !username.isEmpty, !password.isEmpty else {
+        return [:]
+      }
+      let encoded = Data("\(username):\(password)".utf8).base64EncodedString()
+      return ["Authorization": "Basic \(encoded)"]
+    case .dynamic:
+      var headers = tokenHeader(secrets)
+      if let cookie = secrets["session_cookie"], !cookie.isEmpty {
+        headers["Cookie"] = cookie
+      }
+      for (key, value) in secrets where key.hasPrefix("header.") && !value.isEmpty {
+        headers[String(key.dropFirst("header.".count))] = value
+      }
+      return headers
+    }
+  }
+
+  func setEnabled(_ id: String, enabled: Bool) throws -> AgentMcpConnection {
+    try update(id) {
+      var copy = $0
+      copy.enabled = enabled
+      copy.updatedAtMillis = nowMillis()
+      return copy
+    }
+  }
+
+  func setPermissionMode(_ id: String, mode: AgentMcpPermissionMode) throws -> AgentMcpConnection {
+    try update(id) {
+      var copy = $0
+      copy.permissionMode = mode
+      copy.updatedAtMillis = nowMillis()
+      return copy
+    }
+  }
+
+  func delete(_ id: String) -> Bool {
+    store.delete(id: id)
+  }
+
+  func secrets(_ id: String) -> [String: String] {
+    store.readSecrets(id: id)
+  }
+
+  private func tokenHeader(_ secrets: [String: String]) -> [String: String] {
+    let token = (secrets["access_token"] ?? "").isEmpty
+      ? ((secrets["token"] ?? "").isEmpty ? (secrets["device_code"] ?? "") : (secrets["token"] ?? ""))
+      : (secrets["access_token"] ?? "")
+    return token.isEmpty ? [:] : ["Authorization": "Bearer \(token)"]
+  }
+
+  private func requireConnection(_ id: String) throws -> AgentMcpConnection {
+    guard let connection = get(id) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP connection not found: \(id)")
+    }
+    return connection
+  }
+
+  private func update(_ id: String, transform: (AgentMcpConnection) throws -> AgentMcpConnection) throws -> AgentMcpConnection {
+    let next = try transform(try requireConnection(id))
+    store.upsert(next)
+    return next
+  }
+}
+
+enum AgentMcpEndpointPolicy {
+  static func normalize(_ value: String) throws -> String {
+    let endpoint = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard endpoint.count >= 8, endpoint.count <= 2_048,
+      var components = URLComponents(string: endpoint),
+      let scheme = components.scheme?.lowercased(),
+      ["http", "https"].contains(scheme),
+      components.host?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+      components.user == nil,
+      components.password == nil,
+      components.fragment == nil else {
+      throw AgentRuntimeCapabilityError.invalid("MCP endpoint is invalid")
+    }
+    components.scheme = scheme
+    guard let normalized = components.url?.absoluteString else {
+      throw AgentRuntimeCapabilityError.invalid("MCP endpoint is invalid")
+    }
+    return normalized
+  }
+}
+
+struct AgentCapabilityDependencyStatus: Codable, Equatable {
+  var available: Bool
+  var missingNativeTools: Set<String>
+  var missingMcpCatalogIds: Set<String>
+
+  init(
+    available: Bool,
+    missingNativeTools: Set<String> = [],
+    missingMcpCatalogIds: Set<String> = []
+  ) {
+    self.available = available
+    self.missingNativeTools = missingNativeTools
+    self.missingMcpCatalogIds = missingMcpCatalogIds
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case available
+    case missingNativeTools = "missing_native_tools"
+    case missingMcpCatalogIds = "missing_mcp_catalog_ids"
+  }
+}
+
+enum AgentCapabilityDependencyResolver {
+  static func resolve(
+    _ skill: AgentSkillCatalogEntry,
+    installedMcp: [AgentMcpConnection],
+    nativeToolIds: Set<String>,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> AgentCapabilityDependencyStatus {
+    let readyMcpIds = Set(installedMcp.filter { $0.isCallable(nowMillis: nowMillis) }.map(\.catalogId))
+    let missingNative = skill.requiredNativeTools.subtracting(nativeToolIds)
+    let missingMcp = skill.requiredMcpCatalogIds.subtracting(readyMcpIds)
+    return AgentCapabilityDependencyStatus(
+      available: missingNative.isEmpty && missingMcp.isEmpty,
+      missingNativeTools: missingNative,
+      missingMcpCatalogIds: missingMcp
+    )
+  }
+}
+
+enum AgentMcpNativeTools {
+  static let callTool = "signalasi.mcp.call_tool"
+}
+
+enum AgentDefaultCapabilityCatalog {
+  static let mcpEntries: [AgentMcpCatalogEntry] = [
+    try! AgentMcpCatalogEntry(
+      id: "signalasi.mcp.github",
+      name: "GitHub",
+      summary: "Repositories, issues, pull requests, and code workflows",
+      distribution: .remote,
+      defaultEndpoint: "https://api.githubcopilot.com/mcp/",
+      authProfiles: [
+        try! AgentMcpAuthProfile(.oauth2, supportsRefresh: true),
+        try! AgentMcpAuthProfile(.bearerToken)
+      ],
+      toolHints: ["github.repositories", "github.issues", "github.pull_requests"],
+      tags: ["development", "source-control"]
+    ),
+    try! AgentMcpCatalogEntry(
+      id: "signalasi.mcp.notion",
+      name: "Notion",
+      summary: "Search, read, and update Notion workspaces",
+      distribution: .remote,
+      defaultEndpoint: "https://mcp.notion.com/mcp",
+      authProfiles: [try! AgentMcpAuthProfile(.oauth2, supportsRefresh: true)],
+      toolHints: ["notion.search", "notion.pages"],
+      tags: ["knowledge", "documents"]
+    ),
+    try! AgentMcpCatalogEntry(
+      id: "signalasi.mcp.home_assistant",
+      name: "Home Assistant",
+      summary: "Control trusted smart-home entities and automations",
+      distribution: .remote,
+      authProfiles: [
+        try! AgentMcpAuthProfile(.bearerToken),
+        try! AgentMcpAuthProfile(.oauth2, supportsRefresh: true)
+      ],
+      toolHints: ["home_assistant.entities", "home_assistant.services"],
+      tags: ["smart-home", "automation"]
+    ),
+    try! AgentMcpCatalogEntry(
+      id: "signalasi.mcp.relay_controller",
+      name: "Relay Controller",
+      summary: "Install a signed local package for authenticated relay control",
+      distribution: .localPackage,
+      authProfiles: [try! AgentMcpAuthProfile(.dynamic)],
+      toolHints: ["relay.devices", "relay.switch"],
+      tags: ["devices", "automation"],
+      requiresPackage: true
+    )
+  ]
+
+  static let skillEntries: [AgentSkillCatalogEntry] = [
+    skill(
+      id: "signalasi.catalog.deep-research",
+      title: "Deep Research",
+      summary: "Search, compare sources, and produce a cited brief",
+      tools: [
+        "signalasi.web.intelligence.search",
+        "signalasi.web.intelligence.fetch",
+        "signalasi.web.intelligence.research",
+        "signalasi.web.intelligence.diff"
+      ]
+    ),
+    skill(
+      id: "signalasi.catalog.device-health",
+      title: "Device Health",
+      summary: "Summarize battery, storage, power, and network health",
+      tools: [
+        "signalasi.hardware.battery.status",
+        "signalasi.hardware.storage.status",
+        "signalasi.hardware.network.status"
+      ]
+    ),
+    skill(
+      id: "signalasi.catalog.github-triage",
+      title: "GitHub Triage",
+      summary: "Review issues and pull requests using the GitHub MCP",
+      tools: [AgentMcpNativeTools.callTool],
+      requiredMcp: ["signalasi.mcp.github"]
+    ),
+    skill(
+      id: "signalasi.catalog.notion-brief",
+      title: "Notion Brief",
+      summary: "Turn selected workspace pages into a concise brief",
+      tools: [AgentMcpNativeTools.callTool],
+      requiredMcp: ["signalasi.mcp.notion"]
+    ),
+    skill(
+      id: "signalasi.catalog.smart-home-routine",
+      title: "Smart Home Routine",
+      summary: "Run a verified multi-device routine through Home Assistant",
+      tools: [AgentMcpNativeTools.callTool],
+      requiredMcp: ["signalasi.mcp.home_assistant"]
+    )
+  ]
+
+  static func mcp(_ id: String) -> AgentMcpCatalogEntry? {
+    mcpEntries.first { $0.id == id }
+  }
+
+  static func skill(_ id: String) -> AgentSkillCatalogEntry? {
+    skillEntries.first { $0.id == id }
+  }
+
+  static func marketplaceItems(
+    nativeTools: [AgentNativeToolDescriptor],
+    installedMcp: [AgentMcpConnection],
+    installedAutomations: [AgentSkillInstallation],
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [AgentMarketplaceItem] {
+    let native = nativeTools.compactMap { nativeItem($0) }
+    let mcp = mcpEntries.compactMap { entry -> AgentMarketplaceItem? in
+      let connection = installedMcp.first { $0.catalogId == entry.id }
+      let permissions = mcpMarketplacePermissions(entry)
+      let installedVersion: String
+      if let connection {
+        installedVersion = connection.packageVersion.isEmpty ? entry.version : connection.packageVersion
+      } else {
+        installedVersion = ""
+      }
+      return try? AgentMarketplaceItem(
+        id: entry.id,
+        kind: .mcp,
+        name: entry.name,
+        summary: entry.summary,
+        version: entry.version,
+        installState: connection == nil ? .available : (connection?.isCallable(nowMillis: nowMillis) == true ? .installed : .needsSetup),
+        enabled: connection?.enabled ?? false,
+        featured: entry.featured,
+        tags: entry.tags,
+        dependencies: Set(entry.toolHints),
+        requiresLocalPackage: entry.requiresPackage,
+        capabilities: Set(entry.toolHints),
+        permissions: permissions,
+        permissionDiff: connection == nil
+          ? AgentMarketplacePermissionDiff(added: permissions)
+          : AgentMarketplacePermissionDiff(unchanged: permissions),
+        installedVersion: installedVersion,
+        updateAvailable: !installedVersion.isEmpty && compareMarketplaceVersions(entry.version, installedVersion) > 0,
+        revocable: connection != nil,
+        revoked: connection?.enabled == false
+      )
+    }
+    let grouped = Dictionary(grouping: installedAutomations, by: \.id)
+    let automations = skillEntries.compactMap { entry -> AgentMarketplaceItem? in
+      let versions = (grouped[entry.id] ?? []).sorted {
+        compareMarketplaceVersions($0.version, $1.version) > 0
+      }
+      let installation = versions.first(where: \.enabled) ?? versions.first
+      let dependency = AgentCapabilityDependencyResolver.resolve(
+        entry,
+        installedMcp: installedMcp,
+        nativeToolIds: Set(nativeTools.map(\.id)),
+        nowMillis: nowMillis
+      )
+      let availablePermissions = skillMarketplacePermissions(entry.manifest)
+      let installedPermissions = installation.map { skillMarketplacePermissions($0.manifest) } ?? []
+      let availableById = Dictionary(uniqueKeysWithValues: availablePermissions.map { ($0.id, $0) })
+      let installedById = Dictionary(uniqueKeysWithValues: installedPermissions.map { ($0.id, $0) })
+      return try? AgentMarketplaceItem(
+        id: entry.id,
+        kind: .automation,
+        name: entry.name,
+        summary: entry.summary,
+        version: entry.manifest.version,
+        installState: installation != nil ? .installed : (dependency.available ? .available : .needsSetup),
+        enabled: installation?.enabled ?? false,
+        featured: entry.featured,
+        tags: ["automation", "workflow"],
+        dependencies: entry.requiredNativeTools.union(entry.requiredMcpCatalogIds),
+        capabilities: entry.requiredNativeTools.union(entry.requiredMcpCatalogIds),
+        permissions: availablePermissions,
+        permissionDiff: AgentMarketplacePermissionDiff(
+          added: (Set(availableById.keys).subtracting(installedById.keys)).compactMap { availableById[$0] }.sorted { $0.id < $1.id },
+          removed: (Set(installedById.keys).subtracting(availableById.keys)).compactMap { installedById[$0] }.sorted { $0.id < $1.id },
+          unchanged: (Set(availableById.keys).intersection(installedById.keys)).compactMap { availableById[$0] }.sorted { $0.id < $1.id }
+        ),
+        installedVersion: installation?.version ?? "",
+        updateAvailable: installation != nil && compareMarketplaceVersions(entry.manifest.version, installation?.version ?? "") > 0,
+        rollbackVersions: versions
+          .filter { installation != nil && compareMarketplaceVersions($0.version, installation?.version ?? "") < 0 }
+          .map(\.version),
+        revocable: installation != nil,
+        revoked: installation?.enabled == false
+      )
+    }
+    return (native + mcp + automations).sorted {
+      if $0.kind.sortOrder != $1.kind.sortOrder {
+        return $0.kind.sortOrder < $1.kind.sortOrder
+      }
+      if $0.featured != $1.featured {
+        return $0.featured
+      }
+      return $0.name.lowercased() < $1.name.lowercased()
+    }
+  }
+
+  private static func nativeItem(_ tool: AgentNativeToolDescriptor) -> AgentMarketplaceItem? {
+    let permissions = tool.requiredPermissions.map {
+      AgentMarketplacePermission($0.id, title: $0.title, description: $0.description, scope: "ios_permission", risk: tool.risk.rawValue)
+    } + tool.requiredConsents.map {
+      AgentMarketplacePermission($0.id, title: $0.title, description: $0.description, scope: "user_consent", risk: tool.risk.rawValue)
+    }
+    let state: AgentMarketplaceInstallState
+    if tool.risk == .blocked {
+      state = .unavailable
+    } else {
+      switch tool.availability.status {
+      case .available:
+        state = .builtIn
+      case .requiresSetup:
+        state = .needsSetup
+      case .unavailable:
+        state = .unavailable
+      }
+    }
+    return try? AgentMarketplaceItem(
+      id: tool.id,
+      kind: .nativeTool,
+      name: tool.title,
+      summary: tool.description,
+      version: tool.version,
+      installState: state,
+      enabled: tool.risk != .blocked && tool.availability.status == .available,
+      tags: tool.capabilities,
+      dependencies: Set(tool.requiredPermissions.map(\.id)).union(tool.requiredConsents.map(\.id)),
+      capabilities: tool.capabilities,
+      permissions: permissions,
+      permissionDiff: AgentMarketplacePermissionDiff(unchanged: permissions),
+      installedVersion: tool.version
+    )
+  }
+
+  private static func skill(
+    id: String,
+    title: String,
+    summary: String,
+    tools: Set<String>,
+    requiredMcp: Set<String> = []
+  ) -> AgentSkillCatalogEntry {
+    let manifest = AgentSkillManifest(
+      id: id,
+      name: title,
+      version: "1.0.0",
+      summary: summary,
+      nativeTools: tools,
+      permissions: tools,
+      mcpCatalogIds: requiredMcp
+    )
+    return AgentSkillCatalogEntry(
+      id: id,
+      name: title,
+      summary: summary,
+      requiredNativeTools: tools,
+      requiredMcpCatalogIds: requiredMcp,
+      featured: true,
+      manifest: manifest
+    )
+  }
+
+  private static func mcpMarketplacePermissions(_ entry: AgentMcpCatalogEntry) -> [AgentMarketplacePermission] {
+    [AgentMarketplacePermission(
+      "network.\(entry.id)",
+      title: "Connect to \(entry.name)",
+      description: "Exchange requests with the configured MCP server.",
+      scope: "network",
+      risk: "low"
+    )] + entry.toolHints.map { capability in
+      AgentMarketplacePermission(
+        capability,
+        title: capability,
+        description: "Allow the MCP server to expose this capability.",
+        scope: "mcp_tool",
+        risk: capability.contains("write") || capability.contains("control") ? "high" : "medium"
+      )
+    }
+  }
+
+  private static func skillMarketplacePermissions(_ manifest: AgentSkillManifest) -> [AgentMarketplacePermission] {
+    Array(manifest.permissions.union(manifest.nativeTools)).sorted().map { permissionId in
+      AgentMarketplacePermission(
+        permissionId,
+        title: permissionId,
+        description: "Required by this automation workflow.",
+        scope: manifest.nativeTools.contains(permissionId) ? "native_tool" : "skill",
+        risk: "medium"
+      )
+    }
+  }
+
+  private static func compareMarketplaceVersions(_ left: String, _ right: String) -> Int {
+    let leftParts = versionParts(left)
+    let rightParts = versionParts(right)
+    for index in 0..<max(leftParts.count, rightParts.count, 3) {
+      let delta = (index < leftParts.count ? leftParts[index] : 0) - (index < rightParts.count ? rightParts[index] : 0)
+      if delta != 0 {
+        return delta
+      }
+    }
+    return 0
+  }
+
+  private static func versionParts(_ value: String) -> [Int] {
+    value.split(separator: ".").map { part in
+      Int(part.filter(\.isNumber)) ?? 0
+    }
+  }
+}
+
+private extension AgentCapabilityCatalogKind {
+  var sortOrder: Int {
+    switch self {
+    case .nativeTool: return 0
+    case .mcp: return 1
+    case .automation: return 2
+    }
+  }
+}
+
 struct AgentMcpTool: Codable, Equatable {
   var name: String
   var title: String?
