@@ -165,6 +165,7 @@ async def lifespan(app: FastAPI):
     file_server_process = None
     proactive_runtime = None
     evolution_runtime = None
+    memory_critic_runtime = None
     reputation_subscription_id = ""
     runtime_server = None
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
@@ -172,6 +173,14 @@ async def lifespan(app: FastAPI):
     if instance_lock is not None:
         instance_lock.acquire()
     init_db()
+    try:
+        from desktop_memory_critic import desktop_memory_critic_runtime
+
+        memory_critic_runtime = desktop_memory_critic_runtime()
+        memory_critic_runtime.start()
+        log.info("Desktop memory critic runtime started")
+    except Exception as exc:
+        log.warning("Desktop memory critic runtime start failed: %s", exc)
     try:
         runtime_server = desktop_agent_runtime_server()
         log.info(
@@ -262,6 +271,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if memory_critic_runtime is not None:
+            try:
+                memory_critic_runtime.stop()
+            except Exception as exc:
+                log.warning("Desktop memory critic runtime shutdown failed: %s", exc)
         if runtime_server is not None:
             shutdown_desktop_agent_runtime_server(wait=False)
         shutdown_acp_agent_runtime()
@@ -717,6 +731,7 @@ class DesktopMemoryReq(BaseModel):
     kind: str = "fact"
     importance: float = 0.6
     namespace: str = ""
+    valid_until_at: int = 0
 
 
 class DesktopSkillReq(BaseModel):
@@ -1791,47 +1806,27 @@ def api_desktop_control_settings(req: DesktopControlSettingsReq, request: Reques
 
 def _desktop_control_authorization_action(
     authorization_id: str,
-    action: str,
 ) -> dict:
     from desktop_control import DesktopControlError, desktop_control_manager
     from mqtt_bridge import publish_desktop_control_authorization_changed
 
     manager = desktop_control_manager()
     try:
-        if action == "approve":
-            authorization = manager.approve(authorization_id)
-        elif action == "reject":
-            authorization = manager.reject(authorization_id)
-        elif action == "revoke":
-            authorization = manager.revoke(authorization_id)
-        else:
-            raise HTTPException(status_code=400, detail=api_error("desktop_control_action_invalid"))
+        authorization = manager.revoke(authorization_id)
     except DesktopControlError as exc:
         status_code = 404 if exc.code == "authorization_not_found" else 409
         raise HTTPException(
             status_code=status_code,
             detail=api_error(exc.code, message=str(exc)),
         ) from exc
-    publish_desktop_control_authorization_changed(authorization, reason=action)
+    publish_desktop_control_authorization_changed(authorization, reason="revoke")
     return manager.status(include_revoked=True)
-
-
-@app.post("/api/desktop-control/authorizations/{authorization_id}/approve")
-def api_desktop_control_approve(authorization_id: str, request: Request):
-    require_loopback(request)
-    return _desktop_control_authorization_action(authorization_id, "approve")
-
-
-@app.post("/api/desktop-control/authorizations/{authorization_id}/reject")
-def api_desktop_control_reject(authorization_id: str, request: Request):
-    require_loopback(request)
-    return _desktop_control_authorization_action(authorization_id, "reject")
 
 
 @app.post("/api/desktop-control/authorizations/{authorization_id}/revoke")
 def api_desktop_control_revoke(authorization_id: str, request: Request):
     require_loopback(request)
-    return _desktop_control_authorization_action(authorization_id, "revoke")
+    return _desktop_control_authorization_action(authorization_id)
 
 
 @app.get("/api/desktop-memory")
@@ -1843,14 +1838,30 @@ def api_desktop_memory(
 ):
     require_loopback(request)
     from desktop_memory import desktop_memory_store
+    from desktop_memory_query_planner import plan_memory_query
 
     store = desktop_memory_store()
+    plan = plan_memory_query(query) if query.strip() else None
     rows = (
-        store.search(query, limit=limit)
+        store.search(query, limit=limit, query_plan=plan)
         if query.strip() and status == "active"
         else store.list(limit=limit, status=status)
     )
-    return {"memories": rows, "stats": store.stats()}
+    graph = (
+        store.search_graph(
+            query,
+            limit=min(max(limit, 8), 60),
+            query_plan=plan,
+        )
+        if query.strip()
+        else store.graph_snapshot()
+    )
+    return {
+        "memories": rows,
+        "stats": store.stats(),
+        "graph": graph,
+        "query_plan": plan.as_dict() if plan else None,
+    }
 
 
 @app.get("/api/desktop-memory/inbox")
@@ -1871,6 +1882,30 @@ def api_desktop_memory_evolution(request: Request, limit: int = Query(100)):
     from desktop_memory import desktop_memory_store
 
     return desktop_memory_store().evolution_snapshot(limit=limit)
+
+
+@app.get("/api/desktop-memory/critic")
+def api_desktop_memory_critic(request: Request, limit: int = Query(20)):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().critic_status(history_limit=limit)
+
+
+@app.post("/api/desktop-memory/critic/run")
+def api_run_desktop_memory_critic(request: Request):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().run_critic(force=True, trigger="manual")
+
+
+@app.get("/api/desktop-memory/visualization")
+def api_desktop_memory_visualization(request: Request, limit: int = Query(100)):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().visualization_snapshot(limit=limit)
 
 
 @app.post("/api/desktop-memory/inbox")
@@ -1905,6 +1940,7 @@ def api_remember_desktop_memory(req: DesktopMemoryReq, request: Request):
         tags=["manual"],
         namespace=req.namespace,
         evidence=[{"source": "desktop_ui", "kind": "manual_memory"}],
+        valid_until_at=req.valid_until_at,
     )
     if memory is None:
         raise HTTPException(status_code=400, detail=api_error("desktop_memory_rejected"))
