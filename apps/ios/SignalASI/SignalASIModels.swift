@@ -3931,6 +3931,681 @@ private extension String {
   }
 }
 
+struct AgentConnectorResponse: Codable, Equatable {
+  var sourceMessageId: Int64
+  var contactId: String
+  var content: String
+  var conversationId: String
+  var turnId: String
+  var taskId: String
+  var success: Bool
+  var inputTokens: Int64
+  var outputTokens: Int64
+  var costMicros: Int64
+  var richOutputJson: String
+  var receivedAtMillis: Int64
+
+  init(
+    sourceMessageId: Int64,
+    contactId: String = "",
+    content: String = "",
+    conversationId: String = "",
+    turnId: String = "",
+    taskId: String = "",
+    success: Bool = true,
+    inputTokens: Int64 = 0,
+    outputTokens: Int64 = 0,
+    costMicros: Int64 = 0,
+    richOutputJson: String = "",
+    receivedAtMillis: Int64 = 0
+  ) {
+    self.sourceMessageId = max(sourceMessageId, 0)
+    self.contactId = contactId
+    self.content = String(content.prefix(Self.maxContentCharacters))
+    self.conversationId = conversationId
+    self.turnId = turnId
+    self.taskId = taskId
+    self.success = success
+    self.inputTokens = max(inputTokens, 0)
+    self.outputTokens = max(outputTokens, 0)
+    self.costMicros = max(costMicros, 0)
+    self.richOutputJson = String(richOutputJson.prefix(Self.maxRichOutputCharacters))
+    self.receivedAtMillis = max(receivedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case sourceMessageId = "source_message_id"
+    case contactId = "contact_id"
+    case content
+    case conversationId = "conversation_id"
+    case turnId = "turn_id"
+    case taskId = "task_id"
+    case success
+    case inputTokens = "input_tokens"
+    case outputTokens = "output_tokens"
+    case costMicros = "cost_micros"
+    case richOutputJson = "rich_output"
+    case receivedAtMillis = "received_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
+      contactId: try container.decodeIfPresent(String.self, forKey: .contactId) ?? "",
+      content: try container.decodeIfPresent(String.self, forKey: .content) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      success: try container.decodeIfPresent(Bool.self, forKey: .success) ?? true,
+      inputTokens: try container.decodeIfPresent(Int64.self, forKey: .inputTokens) ?? 0,
+      outputTokens: try container.decodeIfPresent(Int64.self, forKey: .outputTokens) ?? 0,
+      costMicros: try container.decodeIfPresent(Int64.self, forKey: .costMicros) ?? 0,
+      richOutputJson: try container.decodeIfPresent(String.self, forKey: .richOutputJson) ?? "",
+      receivedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .receivedAtMillis) ?? 0
+    )
+  }
+
+  static let maxContentCharacters = 24_000
+  static let maxRichOutputCharacters = 48_000
+}
+
+protocol AgentConnectorResponseSink: AnyObject {
+  @discardableResult
+  func publish(_ response: AgentConnectorResponse) -> Bool
+  func pending() -> [AgentConnectorResponse]
+  func clear()
+}
+
+final class InMemoryAgentConnectorResponseStore: AgentConnectorResponseSink {
+  private let lock = NSRecursiveLock()
+  private var responses: [AgentConnectorResponse] = []
+
+  @discardableResult
+  func publish(_ response: AgentConnectorResponse) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    responses.append(response)
+    return true
+  }
+
+  func pending() -> [AgentConnectorResponse] {
+    lock.lock()
+    defer { lock.unlock() }
+    return responses
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    responses.removeAll()
+  }
+}
+
+enum AgentManagedResponseState: String, Codable, CaseIterable, Identifiable {
+  case pending = "PENDING"
+  case completed = "COMPLETED"
+  case applied = "APPLIED"
+
+  var id: String { rawValue }
+}
+
+struct AgentManagedResponseRecord: Codable, Equatable {
+  var ownerRunId: String
+  var supervisorRunId: String
+  var agentId: String
+  var deliveryMode: AgentDeliveryMode
+  var sourceMessageId: Int64
+  var contactId: String
+  var state: AgentManagedResponseState
+  var response: AgentConnectorResponse?
+  var createdAtMillis: Int64
+  var completedAtMillis: Int64
+
+  init(
+    ownerRunId: String,
+    supervisorRunId: String,
+    agentId: String,
+    deliveryMode: AgentDeliveryMode,
+    sourceMessageId: Int64,
+    contactId: String,
+    state: AgentManagedResponseState = .pending,
+    response: AgentConnectorResponse? = nil,
+    createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    completedAtMillis: Int64 = 0
+  ) {
+    self.ownerRunId = ownerRunId
+    self.supervisorRunId = supervisorRunId
+    self.agentId = agentId
+    self.deliveryMode = deliveryMode
+    self.sourceMessageId = max(sourceMessageId, 0)
+    self.contactId = contactId
+    self.state = state
+    self.response = response
+    self.createdAtMillis = max(createdAtMillis, 0)
+    self.completedAtMillis = max(completedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ownerRunId = "owner_run_id"
+    case supervisorRunId = "supervisor_run_id"
+    case agentId = "agent_id"
+    case deliveryMode = "delivery_mode"
+    case sourceMessageId = "source_message_id"
+    case contactId = "contact_id"
+    case state
+    case response
+    case createdAtMillis = "created_at_millis"
+    case completedAtMillis = "completed_at_millis"
+  }
+
+  func correlates(_ response: AgentConnectorResponse) -> Bool {
+    sourceMessageId == response.sourceMessageId &&
+      (contactId.isEmpty || response.contactId.isEmpty || contactId == response.contactId)
+  }
+
+  func isStale(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
+    max(createdAtMillis, completedAtMillis) < nowMillis - Self.maxAgeMillis
+  }
+
+  static let maxAgeMillis: Int64 = 7 * 24 * 60 * 60 * 1_000
+}
+
+protocol AgentManagedResponseLedger: AnyObject {
+  func register(_ record: AgentManagedResponseRecord) throws
+  func complete(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord?
+  func acknowledge(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord?
+  func pendingForSupervisor(_ supervisorRunId: String) -> [AgentManagedResponseRecord]
+  func completedUnapplied() -> [AgentManagedResponseRecord]
+  func markApplied(ownerRunId: String)
+  func removeOwner(_ ownerRunId: String)
+  func clear()
+}
+
+final class InMemoryAgentManagedResponseLedger: AgentManagedResponseLedger {
+  private let lock = NSRecursiveLock()
+  private var records: [String: AgentManagedResponseRecord] = [:]
+
+  func register(_ record: AgentManagedResponseRecord) throws {
+    guard !record.ownerRunId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      record.sourceMessageId > 0 else {
+      throw AgentRuntimeCapabilityError.invalid("Managed response records require owner run id and source message id")
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    records[record.ownerRunId] = record
+  }
+
+  func complete(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let key = records.first(where: { $0.value.correlates(response) })?.key else {
+      return nil
+    }
+    let current = records[key]!
+    guard current.state == .pending else {
+      return current
+    }
+    let completed = AgentManagedResponseRecord(
+      ownerRunId: current.ownerRunId,
+      supervisorRunId: current.supervisorRunId,
+      agentId: current.agentId,
+      deliveryMode: current.deliveryMode,
+      sourceMessageId: current.sourceMessageId,
+      contactId: current.contactId,
+      state: .completed,
+      response: response,
+      createdAtMillis: current.createdAtMillis,
+      completedAtMillis: response.receivedAtMillis
+    )
+    records[key] = completed
+    AgentLateManagedResponseBus.shared.publish(completed)
+    return completed
+  }
+
+  func acknowledge(_ response: AgentConnectorResponse) -> AgentManagedResponseRecord? {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let key = records.first(where: { $0.value.correlates(response) })?.key else {
+      return nil
+    }
+    let current = records[key]!
+    let acknowledged = AgentManagedResponseRecord(
+      ownerRunId: current.ownerRunId,
+      supervisorRunId: current.supervisorRunId,
+      agentId: current.agentId,
+      deliveryMode: current.deliveryMode,
+      sourceMessageId: current.sourceMessageId,
+      contactId: current.contactId,
+      state: .applied,
+      response: response,
+      createdAtMillis: current.createdAtMillis,
+      completedAtMillis: response.receivedAtMillis
+    )
+    records[key] = acknowledged
+    return acknowledged
+  }
+
+  func pendingForSupervisor(_ supervisorRunId: String) -> [AgentManagedResponseRecord] {
+    lock.lock()
+    defer { lock.unlock() }
+    return records.values
+      .filter { $0.supervisorRunId == supervisorRunId && $0.state == .pending }
+      .sorted { $0.createdAtMillis < $1.createdAtMillis }
+  }
+
+  func completedUnapplied() -> [AgentManagedResponseRecord] {
+    lock.lock()
+    defer { lock.unlock() }
+    return records.values
+      .filter { $0.state == .completed && $0.response != nil }
+      .sorted { $0.completedAtMillis < $1.completedAtMillis }
+  }
+
+  func markApplied(ownerRunId: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    guard var record = records[ownerRunId] else {
+      return
+    }
+    record.state = .applied
+    records[ownerRunId] = record
+  }
+
+  func removeOwner(_ ownerRunId: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    records.removeValue(forKey: ownerRunId)
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    records.removeAll()
+  }
+}
+
+final class AgentLateManagedResponseBus {
+  static let shared = AgentLateManagedResponseBus()
+
+  private let lock = NSRecursiveLock()
+  private var listeners: [UUID: (AgentManagedResponseRecord) -> Void] = [:]
+
+  @discardableResult
+  func addListener(_ listener: @escaping (AgentManagedResponseRecord) -> Void) -> UUID {
+    lock.lock()
+    defer { lock.unlock() }
+    let token = UUID()
+    listeners[token] = listener
+    return token
+  }
+
+  func removeListener(_ token: UUID) {
+    lock.lock()
+    defer { lock.unlock() }
+    listeners.removeValue(forKey: token)
+  }
+
+  func publish(_ record: AgentManagedResponseRecord) {
+    let callbacks: [(AgentManagedResponseRecord) -> Void]
+    lock.lock()
+    callbacks = Array(listeners.values)
+    lock.unlock()
+    callbacks.forEach { $0(record) }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    listeners.removeAll()
+  }
+}
+
+enum AgentManagedResponseCodec {
+  static func encode(_ records: [AgentManagedResponseRecord]) -> String {
+    AgentMcpJSONCodec.stringify(.array(records.map(recordObject)))
+  }
+
+  static func decode(_ raw: String) -> [AgentManagedResponseRecord] {
+    guard let data = raw.data(using: .utf8),
+      let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
+      return []
+    }
+    return values.compactMap { value in
+      guard case .object(let object) = value else {
+        return nil
+      }
+      let ownerRunId = object.string("owner_run_id")
+      let sourceMessageId = object.int64("source_message_id")
+      guard !ownerRunId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        sourceMessageId > 0 else {
+        return nil
+      }
+      return AgentManagedResponseRecord(
+        ownerRunId: ownerRunId,
+        supervisorRunId: object.string("supervisor_run_id"),
+        agentId: object.string("agent_id"),
+        deliveryMode: AgentDeliveryMode(rawValue: object.string("delivery_mode")) ?? .observe,
+        sourceMessageId: sourceMessageId,
+        contactId: object.string("contact_id"),
+        state: AgentManagedResponseState(rawValue: object.string("state")) ?? .pending,
+        response: decodeResponse(object.object("response")),
+        createdAtMillis: object.int64("created_at_millis"),
+        completedAtMillis: object.int64("completed_at_millis")
+      )
+    }
+  }
+
+  private static func recordObject(_ record: AgentManagedResponseRecord) -> AgentMcpJSONValue {
+    .object([
+      "owner_run_id": .string(record.ownerRunId),
+      "supervisor_run_id": .string(record.supervisorRunId),
+      "agent_id": .string(record.agentId),
+      "delivery_mode": .string(record.deliveryMode.rawValue),
+      "source_message_id": .int(record.sourceMessageId),
+      "contact_id": .string(record.contactId),
+      "state": .string(record.state.rawValue),
+      "response": record.response.map { .object(responseObject($0)) } ?? .null,
+      "created_at_millis": .int(record.createdAtMillis),
+      "completed_at_millis": .int(record.completedAtMillis)
+    ])
+  }
+
+  private static func responseObject(_ response: AgentConnectorResponse) -> AgentMcpJSONObject {
+    [
+      "source_message_id": .int(response.sourceMessageId),
+      "contact_id": .string(response.contactId),
+      "content": .string(String(response.content.prefix(AgentConnectorResponse.maxContentCharacters))),
+      "conversation_id": .string(response.conversationId),
+      "turn_id": .string(response.turnId),
+      "task_id": .string(response.taskId),
+      "success": .bool(response.success),
+      "input_tokens": .int(response.inputTokens),
+      "output_tokens": .int(response.outputTokens),
+      "cost_micros": .int(response.costMicros),
+      "rich_output": .string(String(response.richOutputJson.prefix(AgentConnectorResponse.maxRichOutputCharacters))),
+      "received_at_millis": .int(response.receivedAtMillis)
+    ]
+  }
+
+  private static func decodeResponse(_ object: AgentMcpJSONObject?) -> AgentConnectorResponse? {
+    guard let object else {
+      return nil
+    }
+    let sourceMessageId = object.int64("source_message_id")
+    let content = object.string("content")
+    let richOutput = object.string("rich_output")
+    guard sourceMessageId > 0,
+      !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !richOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    return AgentConnectorResponse(
+      sourceMessageId: sourceMessageId,
+      contactId: object.string("contact_id"),
+      content: content,
+      conversationId: object.string("conversation_id"),
+      turnId: object.string("turn_id"),
+      taskId: object.string("task_id"),
+      success: object["success"] == nil ? true : object.bool("success"),
+      inputTokens: object.int64("input_tokens"),
+      outputTokens: object.int64("output_tokens"),
+      costMicros: object.int64("cost_micros"),
+      richOutputJson: richOutput,
+      receivedAtMillis: object.int64("received_at_millis")
+    )
+  }
+}
+
+enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
+  case pending = "PENDING"
+  case running = "RUNNING"
+  case succeeded = "SUCCEEDED"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+  case interrupted = "INTERRUPTED"
+
+  var id: String { rawValue }
+}
+
+enum AgentTeamExecutionState: String, Codable, CaseIterable, Identifiable {
+  case created = "CREATED"
+  case running = "RUNNING"
+  case waitingResponse = "WAITING_RESPONSE"
+  case succeeded = "SUCCEEDED"
+  case completedWithFailures = "COMPLETED_WITH_FAILURES"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+  case interrupted = "INTERRUPTED"
+
+  var id: String { rawValue }
+
+  var deliverable: Bool {
+    [.succeeded, .completedWithFailures, .failed, .cancelled].contains(self)
+  }
+}
+
+struct AgentTeamMemberSnapshot: Codable, Equatable {
+  static let maxErrorCharacters = 1_000
+
+  var agentId: String
+  var role: String
+  var deliveryMode: AgentDeliveryMode
+  var status: AgentSubagentStatus
+  var output: String
+  var errorMessage: String
+  var updatedAtMillis: Int64
+
+  init(
+    agentId: String,
+    role: String = "",
+    deliveryMode: AgentDeliveryMode = .observe,
+    status: AgentSubagentStatus = .pending,
+    output: String = "",
+    errorMessage: String = "",
+    updatedAtMillis: Int64 = 0
+  ) {
+    self.agentId = agentId
+    self.role = role
+    self.deliveryMode = deliveryMode
+    self.status = status
+    self.output = String(output.prefix(AgentConnectorResponse.maxContentCharacters))
+    self.errorMessage = String(errorMessage.prefix(Self.maxErrorCharacters))
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case role
+    case deliveryMode = "delivery_mode"
+    case status
+    case output
+    case errorMessage = "error_message"
+    case updatedAtMillis = "updated_at_millis"
+  }
+}
+
+struct AgentTeamExecutionSnapshot: Codable, Equatable {
+  var supervisorRunId: String
+  var teamId: String
+  var conversationId: String
+  var taskId: String
+  var primaryAgentId: String
+  var goal: String
+  var visibilityMode: AgentTeamVisibilityMode
+  var state: AgentTeamExecutionState
+  var members: [AgentTeamMemberSnapshot]
+  var finalOutput: String
+  var updatedAtMillis: Int64
+
+  init(
+    supervisorRunId: String,
+    teamId: String,
+    conversationId: String = "",
+    taskId: String = "",
+    primaryAgentId: String,
+    goal: String = "",
+    visibilityMode: AgentTeamVisibilityMode = .background,
+    state: AgentTeamExecutionState,
+    members: [AgentTeamMemberSnapshot] = [],
+    finalOutput: String = "",
+    updatedAtMillis: Int64 = 0
+  ) {
+    self.supervisorRunId = supervisorRunId
+    self.teamId = teamId
+    self.conversationId = conversationId
+    self.taskId = taskId
+    self.primaryAgentId = primaryAgentId
+    self.goal = goal
+    self.visibilityMode = visibilityMode
+    self.state = state
+    self.members = members
+    self.finalOutput = String(finalOutput.prefix(AgentConnectorResponse.maxContentCharacters))
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case supervisorRunId = "supervisor_run_id"
+    case teamId = "team_id"
+    case conversationId = "conversation_id"
+    case taskId = "task_id"
+    case primaryAgentId = "primary_agent_id"
+    case goal
+    case visibilityMode = "visibility_mode"
+    case state
+    case members
+    case finalOutput = "final_output"
+    case updatedAtMillis = "updated_at_millis"
+  }
+}
+
+protocol AgentTeamCompletionSink: AnyObject {
+  @discardableResult
+  func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool
+  func remove(supervisorRunId: String)
+  func clear()
+}
+
+extension AgentTeamCompletionSink {
+  func remove(supervisorRunId: String) {}
+  func clear() {}
+}
+
+final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
+  static let maxErrorCharacters = AgentTeamMemberSnapshot.maxErrorCharacters
+
+  private let responseStore: AgentConnectorResponseSink
+  private let ledger: AgentTeamCompletionDeliveryLedger
+  private let nowMillis: () -> Int64
+
+  init(
+    responseStore: AgentConnectorResponseSink,
+    ledger: AgentTeamCompletionDeliveryLedger = AgentTeamCompletionDeliveryLedger(),
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.responseStore = responseStore
+    self.ledger = ledger
+    self.nowMillis = nowMillis
+  }
+
+  @discardableResult
+  func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool {
+    guard snapshot.state.deliverable,
+      !ledger.contains(snapshot.supervisorRunId) else {
+      return false
+    }
+    let output = snapshot.finalOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    let successful = !output.isEmpty && [.succeeded, .completedWithFailures].contains(snapshot.state)
+    let content: String
+    if successful {
+      content = output
+    } else if let error = snapshot.members.map(\.errorMessage).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+      content = "Agent team failed: \(String(error.prefix(Self.maxErrorCharacters)))"
+    } else {
+      content = "Agent team failed."
+    }
+    responseStore.publish(AgentConnectorResponse(
+      sourceMessageId: AgentTeamDispatchIds.sourceMessageId(supervisorRunId: snapshot.supervisorRunId),
+      contactId: AgentTeamDispatchIds.responseContactId(teamId: snapshot.teamId),
+      content: content,
+      conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId,
+      taskId: snapshot.taskId,
+      success: successful,
+      receivedAtMillis: max(snapshot.updatedAtMillis, nowMillis())
+    ))
+    ledger.mark(snapshot.supervisorRunId)
+    return true
+  }
+
+  func remove(supervisorRunId: String) {
+    ledger.remove(supervisorRunId)
+  }
+
+  func clear() {
+    ledger.clear()
+  }
+}
+
+final class AgentTeamCompletionDeliveryLedger {
+  private let lock = NSRecursiveLock()
+  private var delivered: [String]
+  private let maximumRecords: Int
+
+  init(delivered: [String] = [], maxRecords: Int = 512) {
+    let limit = Swift.max(maxRecords, 1)
+    self.delivered = delivered
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .stableDistinct()
+      .suffix(limit)
+      .map { $0 }
+    self.maximumRecords = limit
+  }
+
+  func contains(_ supervisorRunId: String) -> Bool {
+    let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+    lock.lock()
+    defer { lock.unlock() }
+    return delivered.contains(clean)
+  }
+
+  func mark(_ supervisorRunId: String) {
+    let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      return
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    delivered = delivered.filter { $0 != clean } + [clean]
+    if delivered.count > maximumRecords {
+      delivered = Array(delivered.suffix(maximumRecords))
+    }
+  }
+
+  func remove(_ supervisorRunId: String) {
+    let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      return
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    delivered.removeAll { $0 == clean }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    delivered.removeAll()
+  }
+
+  func snapshot() -> [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return delivered
+  }
+}
+
 enum AgentReputationWireCodec {
   static func decodeReceipt(_ raw: String) -> AgentSignedExecutionReceipt? {
     guard let data = raw.data(using: .utf8),
