@@ -271,6 +271,23 @@ class DesktopMemoryTest(unittest.TestCase):
                 kind="goal",
                 key="project:next-memory-audit",
             )
+            historical = store.remember(
+                "The first memory audit completed last week",
+                kind="project_state",
+                key="project:first-memory-audit",
+                temporal_state="historical",
+            )
+            deprecated = store.remember(
+                "The retired memory dashboard used a legacy layout",
+                kind="project_state",
+                key="project:legacy-memory-dashboard",
+                temporal_state="deprecated",
+            )
+            pending = store.propose(
+                "My legal name is Memory Test User",
+                kind="identity",
+                key="user:legal-name",
+            )
             conflict = store.propose(
                 "SignalASI memory evolution UI lacks access",
                 kind="project_state",
@@ -283,6 +300,9 @@ class DesktopMemoryTest(unittest.TestCase):
             self.assertEqual(snapshot["contract_version"], 1)
             self.assertEqual(snapshot["summary"]["current"], 1)
             self.assertEqual(snapshot["summary"]["planned"], 1)
+            self.assertEqual(snapshot["summary"]["historical"], 1)
+            self.assertEqual(snapshot["summary"]["deprecated"], 1)
+            self.assertEqual(snapshot["summary"]["pending_review"], 1)
             self.assertEqual(snapshot["summary"]["conflicted"], 1)
             self.assertEqual(snapshot["summary"]["evidence"], 1)
             self.assertEqual(snapshot["health"]["status"], "attention")
@@ -293,6 +313,14 @@ class DesktopMemoryTest(unittest.TestCase):
                 item["id"] == planned["id"]
                 for item in store.list(status="active")
             ))
+            active_by_id = {
+                item["id"]: item["temporal_state"]
+                for item in store.list(status="active")
+            }
+            self.assertEqual(active_by_id[historical["id"]], "historical")
+            self.assertEqual(active_by_id[deprecated["id"]], "deprecated")
+            self.assertEqual(pending["status"], "pending_review")
+            self.assertNotIn(pending["id"], active_by_id)
 
     def test_namespaces_isolate_identical_keys(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -561,7 +561,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .capability-summary strong { display: block; font-size: 10px; }
 .capability-summary p { margin: 3px 12px 0 0; color: var(--muted); font-size: 8px; }
 .capability-summary button { margin-left: auto; }
-.memory-view-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin-bottom: 9px; }
+.memory-view-tabs { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin-bottom: 9px; }
 .memory-view-tabs button { height: 31px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: #69737c; font-size: 8px; }
 .memory-view-tabs button.active { border-color: #b9d8cc; background: #edf7f3; color: var(--green-ink); font-weight: 650; }
 .memory-view-tabs em { min-width: 15px; height: 15px; display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; border-radius: 8px; background: #edf0f2; color: #707981; font-size: 7px; font-style: normal; }

@@ -1632,24 +1632,78 @@ function renderMemoryCandidate(candidate, conflict = false) {
     </article>`;
 }
 
+function renderAcceptedMemoryRows(memories, query, emptyLabel) {
+  const rows = memories.filter((memory) => memoryMatchesQuery(memory, query));
+  return rows.length ? rows.map((memory) => {
+    const stateLabel = memory.status === "active"
+      ? (memory.temporal_state || "current")
+      : memory.status;
+    return `
+      <article class="capability-item">
+        <div class="memory-item-body">
+          <div class="memory-item-heading">
+            <strong>${escapeHtml(memoryKindLabel(memory.kind))}</strong>
+            <span class="memory-status ${escapeHtml(stateLabel)}">${escapeHtml(memoryStateLabel(stateLabel))}</span>
+          </div>
+          <p class="memory-content" title="${escapeHtml(memory.content || "")}">${escapeHtml(String(memory.content || "").slice(0, 500))}</p>
+          <div class="memory-facts">
+            <span>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</span>
+            <span>${escapeHtml(memoryEvidenceLabel(memory))}</span>
+            <span>${escapeHtml(t("{percent}% confidence", { percent: Math.round(Number(memory.confidence || 0) * 100) }))}</span>
+            <span>${escapeHtml(memoryTime(memory.updated_at))}</span>
+          </div>
+        </div>
+        <div class="capability-item-actions"><button data-forget-memory="${escapeHtml(memory.id)}">${escapeHtml(t("Forget"))}</button></div>
+      </article>`;
+  }).join("") : `<div class="history-empty">${escapeHtml(t(emptyLabel))}</div>`;
+}
+
 function renderMemory() {
   const stats = state.memory.stats || {};
-  const current = Array.isArray(state.memory.memories) ? state.memory.memories : [];
+  const accepted = Array.isArray(state.memory.memories) ? state.memory.memories : [];
   const history = Array.isArray(state.memory.history) ? state.memory.history : [];
   const candidates = Array.isArray(state.memory.candidates) ? state.memory.candidates : [];
   const evolution = state.memory.evolution || {};
   const evolutionSummary = evolution.summary || {};
   const conflicts = Array.isArray(evolution.conflicts) ? evolution.conflicts : [];
   const query = String(state.memory.query || "").trim();
+  const current = accepted.filter((memory) => (
+    memory.status === "active"
+    && String(memory.temporal_state || "current") === "current"
+  ));
+  const planned = accepted.filter((memory) => (
+    memory.status === "active"
+    && memory.temporal_state === "planned"
+  ));
+  const acceptedHistorical = accepted.filter((memory) => (
+    memory.status === "active"
+    && memory.temporal_state === "historical"
+  ));
+  const acceptedDeprecated = accepted.filter((memory) => (
+    memory.status === "active"
+    && memory.temporal_state === "deprecated"
+  ));
   const inboxCandidates = candidates.filter((candidate) => candidate.status === "pending_review");
   const pendingCount = Number(evolutionSummary.pending_review || inboxCandidates.length || 0);
-  const historyCount = Number(stats.superseded || 0) + Number(stats.retracted || 0);
+  const currentCount = Number(
+    evolutionSummary.current ?? stats.temporal_counts?.current ?? current.length
+  );
+  const plannedCount = Number(
+    evolutionSummary.planned ?? stats.temporal_counts?.planned ?? planned.length
+  );
+  const historyCount = Number(
+    evolutionSummary.historical ?? stats.temporal_counts?.historical ?? acceptedHistorical.length
+  ) + Number(
+    evolutionSummary.deprecated ?? stats.temporal_counts?.deprecated
+      ?? (acceptedDeprecated.length + history.length)
+  );
   $("#memorySummary").textContent = t("{current} current · {pending} pending · {conflicts} conflicts", {
-    current: Number(evolutionSummary.current || stats.temporal_counts?.current || current.length || 0),
+    current: currentCount,
     pending: pendingCount,
     conflicts: Number(evolutionSummary.conflicted || conflicts.length || 0)
   });
-  $("#memoryCurrentCount").textContent = String(Number(stats.active || current.length || 0));
+  $("#memoryCurrentCount").textContent = String(currentCount);
+  $("#memoryPlannedCount").textContent = String(plannedCount);
   $("#memoryInboxCount").textContent = String(pendingCount);
   $("#memoryConflictCount").textContent = String(Number(evolutionSummary.conflicted || conflicts.length || 0));
   $("#memoryHistoryCount").textContent = String(historyCount);
@@ -1675,7 +1729,13 @@ function renderMemory() {
       <section class="memory-dashboard-grid" aria-label="${escapeHtml(t("Memory state"))}">
         ${stateMetrics.map(([label, value, tone]) => `
           <button class="memory-metric ${tone}" data-memory-overview-route="${
-            tone === "conflicted" ? "conflicts" : tone === "pending" ? "inbox" : "current"
+            tone === "conflicted"
+              ? "conflicts"
+              : tone === "pending"
+                ? "inbox"
+                : tone === "planned"
+                  ? "planned"
+                  : "current"
           }">
             <strong>${escapeHtml(String(value))}</strong>
             <span>${escapeHtml(t(label))}</span>
@@ -1719,6 +1779,16 @@ function renderMemory() {
     return;
   }
 
+  if (state.memory.view === "current") {
+    $("#memoryList").innerHTML = renderAcceptedMemoryRows(current, query, "No current memory.");
+    return;
+  }
+
+  if (state.memory.view === "planned") {
+    $("#memoryList").innerHTML = renderAcceptedMemoryRows(planned, query, "No planned memory.");
+    return;
+  }
+
   if (state.memory.view === "inbox") {
     const rows = inboxCandidates.filter((candidate) => memoryMatchesQuery(candidate, query));
     $("#memoryList").innerHTML = rows.length
@@ -1739,7 +1809,10 @@ function renderMemory() {
     const lifecycle = (Array.isArray(evolution.recent_evolution) ? evolution.recent_evolution : [])
       .filter((item) => !["pending_review", "conflicted"].includes(item.status))
       .filter((item) => memoryMatchesQuery(item, query));
-    const historical = history.filter((memory) => memoryMatchesQuery(memory, query));
+    const historical = Array.from(new Map(
+      [...acceptedHistorical, ...acceptedDeprecated, ...history]
+        .map((memory) => [memory.id, memory])
+    ).values()).filter((memory) => memoryMatchesQuery(memory, query));
     $("#memoryList").innerHTML = lifecycle.length || historical.length ? `
       ${lifecycle.map((item) => `
         <article class="capability-item memory-history-item">
@@ -1762,7 +1835,7 @@ function renderMemory() {
           <div class="memory-item-body">
             <div class="memory-item-heading">
               <strong>${escapeHtml(memoryKindLabel(memory.kind))}</strong>
-              <span class="memory-status ${escapeHtml(memory.status)}">${escapeHtml(memoryStateLabel(memory.status))}</span>
+              <span class="memory-status ${escapeHtml(memory.status === "active" ? memory.temporal_state : memory.status)}">${escapeHtml(memoryStateLabel(memory.status === "active" ? memory.temporal_state : memory.status))}</span>
             </div>
             <p class="memory-content">${escapeHtml(String(memory.content || "").slice(0, 500))}</p>
             <div class="memory-facts">
@@ -1776,27 +1849,7 @@ function renderMemory() {
     return;
   }
 
-  const rows = current.filter((memory) => memoryMatchesQuery(memory, query));
-  $("#memoryList").innerHTML = rows.length ? rows.map((memory) => {
-    const stateLabel = memory.status === "active" ? memory.temporal_state : memory.status;
-    return `
-      <article class="capability-item">
-        <div class="memory-item-body">
-          <div class="memory-item-heading">
-            <strong>${escapeHtml(memoryKindLabel(memory.kind))}</strong>
-            <span class="memory-status ${escapeHtml(stateLabel)}">${escapeHtml(memoryStateLabel(stateLabel))}</span>
-          </div>
-          <p class="memory-content" title="${escapeHtml(memory.content || "")}">${escapeHtml(String(memory.content || "").slice(0, 500))}</p>
-          <div class="memory-facts">
-            <span>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</span>
-            <span>${escapeHtml(memoryEvidenceLabel(memory))}</span>
-            <span>${escapeHtml(t("{percent}% confidence", { percent: Math.round(Number(memory.confidence || 0) * 100) }))}</span>
-            <span>${escapeHtml(memoryTime(memory.updated_at))}</span>
-          </div>
-        </div>
-        <div class="capability-item-actions"><button data-forget-memory="${escapeHtml(memory.id)}">${escapeHtml(t("Forget"))}</button></div>
-      </article>`;
-  }).join("") : `<div class="history-empty">${escapeHtml(t("No matching memory."))}</div>`;
+  $("#memoryList").innerHTML = renderAcceptedMemoryRows(current, query, "No matching memory.");
 }
 
 function renderSkills() {
@@ -2707,7 +2760,7 @@ function selectCapabilityTab(name) {
 }
 
 function selectMemoryView(name) {
-  if (!["overview", "current", "inbox", "conflicts", "history"].includes(name)) return;
+  if (!["overview", "current", "planned", "inbox", "conflicts", "history"].includes(name)) return;
   state.memory.view = name;
   renderMemory();
 }

@@ -7322,6 +7322,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             "memory.manage" -> openExistingControlCenterPage { showAgentMemoryPage() }
             "memory.inbox" -> openExistingControlCenterPage { showGlobalMemoryInboxPage() }
+            "memory.temporal.current" -> openExistingControlCenterPage {
+                showGlobalMemoryTemporalPage(GlobalMemoryTemporalState.CURRENT)
+            }
+            "memory.temporal.planned" -> openExistingControlCenterPage {
+                showGlobalMemoryTemporalPage(GlobalMemoryTemporalState.PLANNED)
+            }
+            "memory.temporal.historical" -> openExistingControlCenterPage {
+                showGlobalMemoryTemporalPage(GlobalMemoryTemporalState.HISTORICAL)
+            }
+            "memory.temporal.deprecated" -> openExistingControlCenterPage {
+                showGlobalMemoryTemporalPage(GlobalMemoryTemporalState.DEPRECATED)
+            }
+            "memory.temporal.pending" -> openExistingControlCenterPage {
+                showGlobalMemoryInboxPage(GlobalMemoryCandidateStatus.PENDING_REVIEW)
+            }
+            "memory.temporal.conflicted" -> openExistingControlCenterPage {
+                showGlobalMemoryInboxPage(GlobalMemoryCandidateStatus.CONFLICTED)
+            }
             "memory.evolution_history" -> openExistingControlCenterPage { showGlobalMemoryEvolutionHistoryPage() }
             "memory.graph" -> openExistingControlCenterPage { showGlobalMemoryGraphPage() }
             "memory.audit" -> openExistingControlCenterPage { showGlobalMemoryAuditPage() }
@@ -9087,29 +9105,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun renderControlCenterMemoryPage() {
         val snapshot = mobileNativeAgent.memorySnapshot()
         val globalMemory = GlobalSuperAgentRuntime.get(this)
-        val pendingCandidates = globalMemory.memoryInboxSnapshot().pending()
+        val memoryInbox = globalMemory.memoryInboxSnapshot()
+        val pendingCandidates = memoryInbox.pending()
         val evolutionRecords = globalMemory.memoryEvolutionRecordsSnapshot()
         val entityGraph = globalMemory.entityMemoryGraphSnapshot()
         val memoryAudit = globalMemory.memoryAuditSnapshot()
         val world = globalMemory.worldSnapshot()
-        val currentCount = world.items.count {
-            it.status == GlobalWorldItemStatus.ACTIVE &&
-                it.temporalState == GlobalMemoryTemporalState.CURRENT
-        }
-        val plannedCount = world.items.count {
-            it.status == GlobalWorldItemStatus.ACTIVE &&
-                it.temporalState == GlobalMemoryTemporalState.PLANNED
-        }
-        val historicalCount = world.items.count {
-            it.temporalState in setOf(
-                GlobalMemoryTemporalState.HISTORICAL,
-                GlobalMemoryTemporalState.DEPRECATED
-            ) || it.status == GlobalWorldItemStatus.SUPERSEDED
-        }
-        val conflictedCount = world.items.count {
-            it.status == GlobalWorldItemStatus.CONFLICTED ||
-                it.temporalState == GlobalMemoryTemporalState.CONFLICTED
-        } + pendingCandidates.count { it.status == GlobalMemoryCandidateStatus.CONFLICTED }
+        val temporal = GlobalMemoryTemporalPolicy.snapshot(world, memoryInbox)
+        val currentCount = temporal.count(GlobalMemoryTemporalState.CURRENT)
+        val plannedCount = temporal.count(GlobalMemoryTemporalState.PLANNED)
+        val historicalCount = temporal.count(GlobalMemoryTemporalState.HISTORICAL)
+        val deprecatedCount = temporal.count(GlobalMemoryTemporalState.DEPRECATED)
+        val pendingCount = temporal.count(GlobalMemoryTemporalState.PENDING)
+        val conflictedCount = temporal.count(GlobalMemoryTemporalState.CONFLICTED)
         val captureEnabled = mobileNativeAgent.safetySettings().memoryCapture
         val countFor: (Set<AgentMemoryKind>) -> Int = { kinds ->
             snapshot.activeItems.count { it.kind in kinds }
@@ -9134,7 +9142,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     metrics = listOf(
                         ControlCenterMetricSpec(currentCount.toString(), getString(R.string.cc_memory_metric_current)),
                         ControlCenterMetricSpec(plannedCount.toString(), getString(R.string.cc_memory_metric_planned)),
-                        ControlCenterMetricSpec(pendingCandidates.size.toString(), getString(R.string.cc_memory_metric_pending))
+                        ControlCenterMetricSpec(pendingCount.toString(), getString(R.string.cc_memory_metric_pending))
                     ),
                     actionId = "memory.manage"
                 ),
@@ -9201,7 +9209,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         getString(R.string.cc_memory_section_lifecycle),
                         listOf(
                             ControlCenterRowSpec(
-                                "memory.manage",
+                                "memory.temporal.current",
                                 getString(R.string.cc_memory_state_current_title),
                                 getString(R.string.cc_memory_state_current_subtitle),
                                 R.drawable.ic_agent_memory,
@@ -9209,7 +9217,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 ControlCenterTone.GREEN
                             ),
                             ControlCenterRowSpec(
-                                "memory.manage",
+                                "memory.temporal.planned",
                                 getString(R.string.cc_memory_state_planned_title),
                                 getString(R.string.cc_memory_state_planned_subtitle),
                                 R.drawable.ic_agent_history,
@@ -9217,20 +9225,36 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 ControlCenterTone.BLUE
                             ),
                             ControlCenterRowSpec(
-                                "memory.evolution_history",
-                                getString(R.string.cc_memory_state_history_title),
-                                getString(R.string.cc_memory_state_history_subtitle),
+                                "memory.temporal.historical",
+                                getString(R.string.cc_memory_state_historical_title),
+                                getString(R.string.cc_memory_state_historical_subtitle),
                                 R.drawable.ic_agent_history,
                                 historicalCount.toString(),
                                 ControlCenterTone.NEUTRAL
                             ),
                             ControlCenterRowSpec(
-                                "memory.inbox",
+                                "memory.temporal.deprecated",
+                                getString(R.string.cc_memory_state_deprecated_title),
+                                getString(R.string.cc_memory_state_deprecated_subtitle),
+                                R.drawable.ic_agent_history,
+                                deprecatedCount.toString(),
+                                ControlCenterTone.NEUTRAL
+                            ),
+                            ControlCenterRowSpec(
+                                "memory.temporal.pending",
                                 getString(R.string.cc_memory_state_review_title),
-                                getString(R.string.cc_memory_state_review_subtitle),
+                                getString(R.string.cc_memory_state_pending_subtitle),
                                 R.drawable.ic_security_shield,
-                                pendingCandidates.size.toString(),
-                                if (pendingCandidates.isEmpty()) ControlCenterTone.GREEN else ControlCenterTone.AMBER
+                                pendingCount.toString(),
+                                if (pendingCount == 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER
+                            ),
+                            ControlCenterRowSpec(
+                                "memory.temporal.conflicted",
+                                getString(R.string.cc_memory_state_conflicted_title),
+                                getString(R.string.cc_memory_state_conflicted_subtitle),
+                                R.drawable.ic_security_shield,
+                                conflictedCount.toString(),
+                                if (conflictedCount == 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER
                             )
                         )
                     ),
@@ -9276,9 +9300,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
     }
 
-    private fun showGlobalMemoryInboxPage() {
+    private fun showGlobalMemoryInboxPage(statusFilter: GlobalMemoryCandidateStatus? = null) {
         val runtime = GlobalSuperAgentRuntime.get(this)
         val pending = runtime.memoryInboxSnapshot().pending()
+            .filter { statusFilter == null || it.status == statusFilter }
         showFeaturePage(getString(R.string.cc_memory_inbox_title))
         featureContent.addView(featureHeroCard(
             getString(R.string.cc_memory_inbox_hero_title),
@@ -9310,12 +9335,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 R.drawable.ic_agent_memory,
                 getString(R.string.agent_memory_review)
             ).apply {
-                setOnClickListener { showGlobalMemoryCandidateDialog(candidate) }
+                setOnClickListener { showGlobalMemoryCandidateDialog(candidate, statusFilter) }
             })
         }
     }
 
-    private fun showGlobalMemoryCandidateDialog(candidate: GlobalMemoryCandidate) {
+    private fun showGlobalMemoryCandidateDialog(
+        candidate: GlobalMemoryCandidate,
+        statusFilter: GlobalMemoryCandidateStatus? = null
+    ) {
         val detail = getString(
             R.string.cc_memory_candidate_dialog_message_detailed,
             memoryCandidateKindLabel(candidate.kind),
@@ -9338,7 +9366,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     getString(if (approved) R.string.cc_memory_candidate_approved else R.string.cc_memory_candidate_unchanged),
                     Toast.LENGTH_SHORT
                 ).show()
-                showGlobalMemoryInboxPage()
+                showGlobalMemoryInboxPage(statusFilter)
             }
             .setNegativeButton(R.string.common_reject) { _, _ ->
                 val rejected = GlobalSuperAgentRuntime.get(this).rejectMemoryCandidate(candidate.id)
@@ -9347,10 +9375,50 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     getString(if (rejected) R.string.cc_memory_candidate_rejected else R.string.cc_memory_candidate_unchanged),
                     Toast.LENGTH_SHORT
                 ).show()
-                showGlobalMemoryInboxPage()
+                showGlobalMemoryInboxPage(statusFilter)
             }
             .setNeutralButton(R.string.common_cancel, null)
             .show()
+    }
+
+    private fun showGlobalMemoryTemporalPage(state: GlobalMemoryTemporalState) {
+        val runtime = GlobalSuperAgentRuntime.get(this)
+        val snapshot = GlobalMemoryTemporalPolicy.snapshot(
+            runtime.worldSnapshot(),
+            runtime.memoryInboxSnapshot()
+        )
+        val items = snapshot.accepted(state)
+        val stateLabel = memoryTemporalStateLabel(state)
+        showFeaturePage(stateLabel)
+        featureContent.addView(featureHeroCard(
+            stateLabel,
+            getString(R.string.cc_memory_temporal_page_subtitle, stateLabel),
+            R.drawable.ic_agent_history,
+            "#2F80ED",
+            items.size.toString()
+        ))
+        addSectionTitle(getString(R.string.cc_memory_temporal_items))
+        if (items.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.cc_memory_temporal_empty, stateLabel),
+                getString(R.string.cc_memory_temporal_empty_subtitle),
+                R.drawable.ic_agent_memory,
+                ""
+            ))
+            return
+        }
+        items.take(200).forEach { item ->
+            featureContent.addView(featureRow(
+                item.topic.ifBlank { item.kind.name.lowercase(Locale.ROOT).replace('_', ' ') },
+                getString(
+                    R.string.cc_memory_temporal_item_subtitle,
+                    memoryTemporalStateLabel(GlobalMemoryTemporalPolicy.classify(item)),
+                    item.evidenceCount
+                ),
+                R.drawable.ic_agent_memory,
+                securityTime(item.lastSeenAtMillis)
+            ))
+        }
     }
 
     private fun showGlobalMemoryGraphPage() {
