@@ -1546,6 +1546,184 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(assistantAppended.appendFromIndex, 2)
   }
 
+  func testAgentTaskLivenessPolicyWarnsBeforeHardTimeout() {
+    let policy = agentLivenessPolicy()
+    let workspace = agentWorkspace(
+      status: .running,
+      events: [agentWorkspaceEvent(1, AgentTaskEventKinds.running, 1_000)]
+    )
+
+    XCTAssertEqual(policy.evaluate(workspace: workspace, nowMillis: 1_099).state, .healthy)
+
+    let stalled = policy.evaluate(workspace: workspace, nowMillis: 1_100)
+    XCTAssertEqual(stalled.state, .stalled)
+    XCTAssertEqual(stalled.reason, "running_progress_stalled")
+    XCTAssertEqual(stalled.idleMillis, 100)
+
+    let timedOut = policy.evaluate(workspace: workspace, nowMillis: 1_200)
+    XCTAssertEqual(timedOut.state, .timedOut)
+    XCTAssertEqual(timedOut.reason, "running_progress_timeout")
+    XCTAssertEqual(timedOut.lifetimeMillis, 200)
+  }
+
+  func testAgentTaskLivenessPolicyClearsUnresolvedWarningAfterProgress() {
+    let policy = agentLivenessPolicy()
+    let stalled = agentWorkspace(
+      status: .running,
+      events: [
+        agentWorkspaceEvent(1, AgentTaskEventKinds.running, 1_000),
+        agentWorkspaceEvent(2, AgentTaskEventKinds.stalled, 1_100)
+      ]
+    )
+    let recovered = agentWorkspace(
+      status: .running,
+      events: stalled.eventJournal + [agentWorkspaceEvent(3, AgentTaskEventKinds.progress, 1_110)]
+    )
+
+    XCTAssertTrue(policy.hasUnresolvedStall(workspace: stalled))
+    XCTAssertFalse(policy.hasUnresolvedStall(workspace: recovered))
+    XCTAssertEqual(policy.evaluate(workspace: recovered, nowMillis: 1_150).state, .healthy)
+    XCTAssertEqual(policy.meaningfulActivityAt(recovered), 1_110)
+  }
+
+  func testAgentTaskLivenessPolicyIgnoresUserControlledAndCancelledTasks() {
+    let policy = agentLivenessPolicy()
+
+    for status in [AgentWorkspaceStatus.waitingConfirmation, .paused, .blocked] {
+      XCTAssertEqual(
+        policy.evaluate(workspace: agentWorkspace(status: status), nowMillis: 10_000).state,
+        .healthy,
+        status.rawValue
+      )
+    }
+    XCTAssertEqual(
+      policy.evaluate(workspace: agentWorkspace(status: .running, cancellationRequested: true), nowMillis: 10_000).state,
+      .healthy
+    )
+    XCTAssertEqual(
+      policy.evaluate(workspace: agentWorkspace(status: .completed), nowMillis: 10_000).state,
+      .healthy
+    )
+  }
+
+  func testAgentTaskLivenessPolicyAppliesAbsoluteDeadlineAndVolatileActivity() {
+    let policy = agentLivenessPolicy()
+    let workspace = agentWorkspace(
+      status: .running,
+      events: [agentWorkspaceEvent(1, AgentTaskEventKinds.progress, 1_950)]
+    )
+    let active = agentWorkspace(
+      status: .running,
+      events: [agentWorkspaceEvent(1, AgentTaskEventKinds.running, 1_000)]
+    )
+    let longRunning = agentWorkspace(
+      status: .running,
+      events: [agentWorkspaceEvent(1, AgentTaskEventKinds.progress, 12 * 60 * 60_000 - 1_000)]
+    )
+
+    let decision = policy.evaluate(workspace: workspace, nowMillis: 2_000)
+    let volatile = policy.evaluate(
+      workspace: active,
+      nowMillis: 1_150,
+      volatileActivityAtMillis: 1_090
+    )
+    let defaultDecision = AgentTaskLivenessPolicy().evaluate(
+      workspace: longRunning,
+      nowMillis: 12 * 60 * 60_000
+    )
+
+    XCTAssertEqual(decision.state, .timedOut)
+    XCTAssertEqual(decision.reason, "absolute_deadline_exceeded")
+    XCTAssertEqual(volatile.state, .healthy)
+    XCTAssertEqual(volatile.idleMillis, 60)
+    XCTAssertEqual(defaultDecision.state, .healthy)
+    XCTAssertGreaterThan(defaultDecision.lifetimeMillis, 2 * 60 * 60_000)
+  }
+
+  func testAgentTaskTerminalReplyPolicyMatchesAndroidDedupePrefixes() {
+    let entries = [
+      terminalReplyTranscript(role: .user, dedupeKey: "", turnId: "turn"),
+      terminalReplyTranscript(role: .process, dedupeKey: "task-watchdog:turn", turnId: "turn"),
+      terminalReplyTranscript(role: .assistant, dedupeKey: "result:plan:action:hash", turnId: "turn"),
+      terminalReplyTranscript(
+        role: .assistant,
+        dedupeKey: "assistant-final:turn:other-turn",
+        turnId: "other-turn",
+        taskId: "turn"
+      )
+    ]
+    let nonTerminal = [
+      terminalReplyTranscript(role: .assistant, dedupeKey: "approval:plan:action", turnId: "turn"),
+      terminalReplyTranscript(role: .assistant, dedupeKey: "task-watchdog-timeout:turn", turnId: "turn")
+    ]
+
+    XCTAssertTrue(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries: entries, turnId: "turn"))
+    XCTAssertTrue(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries: entries, turnId: "other-turn"))
+    XCTAssertFalse(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries: entries, turnId: "unrelated-turn"))
+    XCTAssertFalse(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries: nonTerminal, turnId: "turn"))
+    XCTAssertFalse(AgentTaskTerminalReplyPolicy.hasTerminalReply(entries: entries, turnId: " "))
+  }
+
+  func testAgentWorkspaceLivenessModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder().decode(
+      AgentWorkspace.self,
+      from: Data(
+        #"""
+        {
+          "workspace_id": "workspace",
+          "session_id": "session",
+          "conversation_id": "conversation",
+          "task_id": "task",
+          "goal": "Run task",
+          "status": "WAITING_RESPONSE",
+          "event_sequence": 2,
+          "event_journal": [
+            {
+              "sequence": 2,
+              "kind": "task.progress",
+              "message": "still running",
+              "payload_json": "{\"step\":1}",
+              "timestamp_millis": 1234
+            }
+          ],
+          "cancellation_requested": true,
+          "created_at_millis": 1000,
+          "updated_at_millis": 1234,
+          "revision": 5
+        }
+        """#.utf8
+      )
+    )
+    let fallback = try JSONDecoder().decode(
+      AgentWorkspace.self,
+      from: Data(#"{"workspace_id":"w","session_id":"s","conversation_id":"c","task_id":"t","status":"FUTURE"}"#.utf8)
+    )
+    let encodedSignal = String(
+      decoding: try JSONEncoder().encode(
+        AgentTaskLivenessSignal(
+          kind: .timedOut,
+          workspace: decoded,
+          reason: "running_progress_timeout",
+          observedAtMillis: 2_000
+        )
+      ),
+      as: UTF8.self
+    )
+    let encodedPolicy = String(decoding: try JSONEncoder().encode(AgentTaskLivenessPolicy()), as: UTF8.self)
+
+    XCTAssertEqual(decoded.status, .waitingResponse)
+    XCTAssertEqual(decoded.key, AgentWorkspaceKey(workspaceId: "workspace", sessionId: "session", conversationId: "conversation", taskId: "task"))
+    XCTAssertEqual(decoded.eventJournal.first?.payloadJson, #"{"step":1}"#)
+    XCTAssertTrue(decoded.cancellationRequested)
+    XCTAssertEqual(fallback.status, .created)
+    XCTAssertTrue(AgentWorkspaceStatus.completed.isTerminal)
+    XCTAssertFalse(AgentWorkspaceStatus.running.isTerminal)
+    XCTAssertTrue(encodedSignal.contains(#""observed_at_millis":2000"#))
+    XCTAssertTrue(encodedSignal.contains(#""event_journal":["#))
+    XCTAssertTrue(encodedPolicy.contains(#""queued_warning_millis":15000"#))
+    XCTAssertTrue(encodedPolicy.contains(#""heartbeat_write_throttle_millis":2000"#))
+  }
+
   func testAgentFastLocalResponseAnswersBoundedBinaryArithmeticLocally() {
     let context = AgentConversationContext(conversationId: "test", summary: "", turns: [], privateMode: false)
 
@@ -2919,6 +3097,69 @@ final class SignalASIStoreTests: XCTestCase {
       screenChanged: changed,
       screenStable: stable,
       evidence: "decision=\(decision.rawValue); samples=\(sampleCount)"
+    )
+  }
+
+  private func agentLivenessPolicy() -> AgentTaskLivenessPolicy {
+    AgentTaskLivenessPolicy(
+      queuedWarningMillis: 10,
+      queuedTimeoutMillis: 20,
+      runningWarningMillis: 100,
+      runningTimeoutMillis: 200,
+      waitingResponseWarningMillis: 300,
+      waitingResponseTimeoutMillis: 400,
+      absoluteTimeoutMillis: 1_000,
+      watchdogIntervalMillis: 60_000,
+      heartbeatWriteThrottleMillis: 0
+    )
+  }
+
+  private func agentWorkspace(
+    status: AgentWorkspaceStatus,
+    events: [AgentWorkspaceEvent] = [],
+    cancellationRequested: Bool = false
+  ) -> AgentWorkspace {
+    AgentWorkspace(
+      workspaceId: "workspace",
+      sessionId: "session",
+      conversationId: "conversation",
+      taskId: "task",
+      status: status,
+      eventSequence: events.map(\.sequence).max() ?? 0,
+      eventJournal: events,
+      cancellationRequested: cancellationRequested,
+      createdAtMillis: 1_000,
+      updatedAtMillis: events.map(\.timestampMillis).max() ?? 1_000
+    )
+  }
+
+  private func agentWorkspaceEvent(
+    _ sequence: Int64,
+    _ kind: String,
+    _ timestampMillis: Int64
+  ) -> AgentWorkspaceEvent {
+    AgentWorkspaceEvent(
+      sequence: sequence,
+      kind: kind,
+      timestampMillis: timestampMillis
+    )
+  }
+
+  private func terminalReplyTranscript(
+    role: AgentTranscriptRole,
+    dedupeKey: String,
+    turnId: String,
+    taskId: String? = nil
+  ) -> AgentTranscriptEntry {
+    AgentTranscriptEntry(
+      id: "\(role.rawValue)-\(dedupeKey)",
+      role: role,
+      text: "message",
+      timestampMillis: 1_000,
+      dedupeKey: dedupeKey,
+      conversationId: "conversation",
+      turnId: turnId,
+      taskId: taskId ?? turnId
     )
   }
 
