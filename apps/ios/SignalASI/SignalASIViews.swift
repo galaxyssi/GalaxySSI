@@ -94,6 +94,7 @@ struct ConversationView: View {
   @State private var fileImporterPresented = false
   @State private var photoPickerPresented = false
   @State private var attachmentError = ""
+  @State private var showingDeleteChatConfirmation = false
   var contactId: String
 
   private var contact: SignalASIContact {
@@ -108,6 +109,18 @@ struct ConversationView: View {
             ForEach(store.messages(for: contact.id)) { message in
               MessageBubble(message: message)
                 .id(message.id)
+                .contextMenu {
+                  Button {
+                    UIPasteboard.general.string = message.content
+                  } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                  }
+                  Button(role: .destructive) {
+                    store.deleteMessage(message.id, contactId: contact.id)
+                  } label: {
+                    Label("Delete Message", systemImage: "trash")
+                  }
+                }
             }
           }
           .padding()
@@ -164,6 +177,24 @@ struct ConversationView: View {
     }
     .navigationTitle(contact.displayName)
     .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .navigationBarTrailing) {
+        Button(role: .destructive) {
+          showingDeleteChatConfirmation = true
+        } label: {
+          Image(systemName: "trash")
+        }
+        .disabled(store.messages(for: contact.id).isEmpty)
+      }
+    }
+    .alert("Delete Chat?", isPresented: $showingDeleteChatConfirmation) {
+      Button("Delete", role: .destructive) {
+        store.deleteMessages(for: contact.id)
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Only local chat history is deleted. Contacts are not affected.")
+    }
     .fileImporter(
       isPresented: $fileImporterPresented,
       allowedContentTypes: [.item],
