@@ -1471,6 +1471,92 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertGreaterThanOrEqual(object["task_intent_confidence"] as? Int ?? 0, 55)
   }
 
+  func testAgentFailureRecoveryPayloadRoundTripsAndroidWireNames() throws {
+    let payload = AgentFailureRecoveryPayload(
+      action: .switchAgent,
+      taskId: "task-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      agentId: "codex",
+      originalGoal: "Build the project",
+      failure: "Codex is unavailable"
+    )
+
+    let decoded = try XCTUnwrap(AgentFailureRecoveryPayload.decode(payload.encode()))
+    let encodedObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(payload.encode().utf8)) as? [String: Any]
+    )
+
+    XCTAssertEqual(decoded, payload)
+    XCTAssertNil(AgentFailureRecoveryPayload.decode("{}"))
+    XCTAssertEqual(encodedObject["version"] as? Int, 1)
+    XCTAssertEqual(encodedObject["action"] as? String, "switch_agent")
+    XCTAssertEqual(encodedObject["task_id"] as? String, "task-1")
+    XCTAssertEqual(AgentFailureRecoveryAction.fromWireValue(" SWITCH_AGENT "), .switchAgent)
+  }
+
+  func testAgentFailureRecoveryPayloadBoundsRecoveryContext() throws {
+    let payload = AgentFailureRecoveryPayload(
+      action: .retry,
+      taskId: String(repeating: "t", count: 200),
+      conversationId: String(repeating: "c", count: 200),
+      turnId: String(repeating: "u", count: 200),
+      agentId: String(repeating: "a", count: 200),
+      originalGoal: String(repeating: "g", count: 17_000),
+      failure: String(repeating: "f", count: 2_500)
+    )
+    let decoded = try XCTUnwrap(AgentFailureRecoveryPayload.decode(payload.encode()))
+
+    XCTAssertEqual(decoded.taskId.count, 160)
+    XCTAssertEqual(decoded.conversationId.count, 160)
+    XCTAssertEqual(decoded.turnId.count, 160)
+    XCTAssertEqual(decoded.agentId.count, 160)
+    XCTAssertEqual(decoded.originalGoal.count, 16_000)
+    XCTAssertEqual(decoded.failure.count, 2_000)
+  }
+
+  func testAgentFailureRecoveryPolicyRecommendsAndroidRecoveryPaths() {
+    XCTAssertEqual(
+      AgentFailureRecoveryPolicy.recommended(status: "timed_out", failure: "Execution timed out"),
+      .retry
+    )
+    XCTAssertEqual(
+      AgentFailureRecoveryPolicy.recommended(status: "failed", failure: "Agent unavailable"),
+      .switchAgent
+    )
+    XCTAssertEqual(
+      AgentFailureRecoveryPolicy.recommended(status: "failed", failure: "Verification failed"),
+      .degrade
+    )
+    XCTAssertEqual(
+      AgentFailureRecoveryPolicy.recommended(status: "failed", failure: "Permanent failure"),
+      .diagnostics
+    )
+    XCTAssertEqual(AgentFailureRecoveryPolicy.executionMode(for: .degrade), .planOnly)
+    XCTAssertEqual(AgentFailureRecoveryPolicy.executionMode(for: .diagnostics), .planOnly)
+    XCTAssertNil(AgentFailureRecoveryPolicy.executionMode(for: .retry))
+  }
+
+  func testAgentFailureRecoveryInstructionPreservesGoalFailureAndLanguageHint() {
+    let instruction = AgentFailureRecoveryPolicy.instruction(
+      payload: AgentFailureRecoveryPayload(
+        action: .retry,
+        taskId: "task-1",
+        conversationId: "conversation-1",
+        turnId: "turn-1",
+        agentId: "codex",
+        originalGoal: "Build the app",
+        failure: "Network unavailable"
+      ),
+      chinese: true
+    )
+
+    XCTAssertTrue(instruction.contains("latest safe checkpoint"))
+    XCTAssertTrue(instruction.contains("Respond in Simplified Chinese."))
+    XCTAssertTrue(instruction.contains("Build the app"))
+    XCTAssertTrue(instruction.contains("Network unavailable"))
+  }
+
   func testAgentClarificationPolicyAsksTargetedQuestionsForMissingDetails() {
     let cases: [(String, AgentClarificationQuestion)] = [
       ("Help me", .taskGoal),
