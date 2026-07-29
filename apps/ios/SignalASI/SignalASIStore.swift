@@ -100,6 +100,9 @@ final class SignalASIStore: ObservableObject {
   @Published var languagePolicy: LanguagePolicySettings {
     didSet { save() }
   }
+  @Published var displaySettings: AppDisplaySettings {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -110,6 +113,7 @@ final class SignalASIStore: ObservableObject {
     var serverLinks: [ServerLink]
     var voiceSettings: VoiceSettings
     var languagePolicy: LanguagePolicySettings
+    var displaySettings: AppDisplaySettings
 
     init(
       profile: SignalASIProfile,
@@ -119,7 +123,8 @@ final class SignalASIStore: ObservableObject {
       readAtByContact: [String: Date] = [:],
       serverLinks: [ServerLink],
       voiceSettings: VoiceSettings,
-      languagePolicy: LanguagePolicySettings = .default
+      languagePolicy: LanguagePolicySettings = .default,
+      displaySettings: AppDisplaySettings = .default
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -129,6 +134,7 @@ final class SignalASIStore: ObservableObject {
       self.serverLinks = serverLinks
       self.voiceSettings = voiceSettings
       self.languagePolicy = languagePolicy
+      self.displaySettings = displaySettings
     }
 
     init(from decoder: Decoder) throws {
@@ -141,6 +147,7 @@ final class SignalASIStore: ObservableObject {
       serverLinks = try container.decode([ServerLink].self, forKey: .serverLinks)
       voiceSettings = try container.decode(VoiceSettings.self, forKey: .voiceSettings)
       languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
+      displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
     }
   }
 
@@ -162,6 +169,7 @@ final class SignalASIStore: ObservableObject {
       serverLinks = state.serverLinks
       voiceSettings = state.voiceSettings
       languagePolicy = state.languagePolicy
+      displaySettings = state.displaySettings
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -172,6 +180,7 @@ final class SignalASIStore: ObservableObject {
       serverLinks = []
       voiceSettings = .default
       languagePolicy = .default
+      displaySettings = .default
       save()
     }
   }
@@ -374,6 +383,12 @@ final class SignalASIStore: ObservableObject {
         $0.preferredLocaleIdentifier = next.asrLocaleIdentifier
       }
     }
+  }
+
+  func updateDisplaySettings(_ mutate: (inout AppDisplaySettings) -> Void) {
+    var next = displaySettings
+    mutate(&next)
+    displaySettings = AppDisplaySettings(textScale: next.textScale)
   }
 
   @discardableResult
@@ -671,12 +686,14 @@ final class SignalASIStore: ObservableObject {
         includesMessages: includeMessages,
         includesServerLinks: true,
         includesVoiceSettings: true,
+        includesDisplaySettings: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
       agentData: SignalASIBackupAgentData(
         serverLinks: serverLinks,
         voiceSettings: voiceSettings,
         languagePolicy: languagePolicy,
+        displaySettings: displaySettings,
         cloudAPISecrets: cloudSecrets
       ),
       contacts: includeContacts ? contacts : [],
@@ -706,6 +723,7 @@ final class SignalASIStore: ObservableObject {
       serverLinks = payload.agentData.serverLinks
       voiceSettings = payload.agentData.voiceSettings
       languagePolicy = payload.agentData.languagePolicy
+      displaySettings = payload.agentData.displaySettings
     }
     save()
   }
@@ -818,6 +836,7 @@ final class SignalASIStore: ObservableObject {
     serverLinks = []
     voiceSettings = .default
     languagePolicy = .default
+    displaySettings = .default
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -881,7 +900,8 @@ final class SignalASIStore: ObservableObject {
       readAtByContact: readAtByContact,
       serverLinks: serverLinks,
       voiceSettings: voiceSettings,
-      languagePolicy: languagePolicy
+      languagePolicy: languagePolicy,
+      displaySettings: displaySettings
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)

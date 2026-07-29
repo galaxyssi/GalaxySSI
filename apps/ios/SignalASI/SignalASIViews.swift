@@ -21,6 +21,7 @@ struct SignalASIApp: App {
       RootView()
         .environmentObject(store)
         .environmentObject(coordinator)
+        .signalASITextScale(store.displaySettings)
         .onAppear { coordinator.start() }
     }
   }
@@ -39,6 +40,34 @@ struct RootView: View {
         .tabItem { Label("Voice", systemImage: "mic") }
       SettingsView()
         .tabItem { Label("Settings", systemImage: "gearshape") }
+    }
+  }
+}
+
+private extension View {
+  @ViewBuilder
+  func signalASITextScale(_ settings: AppDisplaySettings) -> some View {
+    if let size = settings.textScale.dynamicTypeSize {
+      dynamicTypeSize(size)
+    } else {
+      self
+    }
+  }
+}
+
+private extension AppTextScaleMode {
+  var dynamicTypeSize: DynamicTypeSize? {
+    switch self {
+    case .system:
+      return nil
+    case .standard:
+      return .large
+    case .comfortable:
+      return .xLarge
+    case .large:
+      return .xxLarge
+    case .extraLarge:
+      return .xxxLarge
     }
   }
 }
@@ -881,6 +910,16 @@ struct SettingsView: View {
             .font(.caption)
             .foregroundColor(.secondary)
         }
+        Section("Display") {
+          Picker("Text Size", selection: displayTextScaleBinding) {
+            ForEach(AppTextScaleMode.allCases) { mode in
+              Text(mode.displayName).tag(mode)
+            }
+          }
+          Text(store.displaySettings.textScale.detail)
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -1047,6 +1086,13 @@ struct SettingsView: View {
     Binding(
       get: { store.languagePolicy[keyPath: keyPath] },
       set: { value in store.updateLanguagePolicy { $0[keyPath: keyPath] = value } }
+    )
+  }
+
+  private var displayTextScaleBinding: Binding<AppTextScaleMode> {
+    Binding(
+      get: { store.displaySettings.textScale },
+      set: { value in store.updateDisplaySettings { $0.textScale = value } }
     )
   }
 }

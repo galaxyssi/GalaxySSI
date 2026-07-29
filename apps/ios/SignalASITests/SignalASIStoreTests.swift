@@ -174,6 +174,28 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.voiceSettings.routingMode, .contact)
   }
 
+  func testDisplaySettingsNormalizeAndroidTextScaleWireValues() throws {
+    let extraLarge = try JSONDecoder.signalASI.decode(
+      AppDisplaySettings.self,
+      from: Data(#"{"text_scale":"EXTRA_LARGE"}"#.utf8)
+    )
+    let fallback = try JSONDecoder.signalASI.decode(
+      AppDisplaySettings.self,
+      from: Data(#"{"text_scale":"not-supported"}"#.utf8)
+    )
+    let store = makeStore()
+
+    XCTAssertEqual(extraLarge.textScale, .extraLarge)
+    XCTAssertEqual(fallback.textScale, .comfortable)
+    XCTAssertEqual(store.displaySettings.textScale, .comfortable)
+
+    store.updateDisplaySettings {
+      $0.textScale = .large
+    }
+
+    XCTAssertEqual(store.displaySettings.textScale, .large)
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -240,6 +262,9 @@ final class SignalASIStoreTests: XCTestCase {
     store.updateVoiceSettings { settings in
       settings.wakeListeningEnabled = true
     }
+    store.updateDisplaySettings {
+      $0.textScale = .extraLarge
+    }
 
     store.destroyAllPrivateData()
 
@@ -252,6 +277,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(store.serverLinks.isEmpty)
     XCTAssertEqual(store.messages(for: "hermes").count, 1)
     XCTAssertEqual(store.voiceSettings, .default)
+    XCTAssertEqual(store.displaySettings, .default)
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {
