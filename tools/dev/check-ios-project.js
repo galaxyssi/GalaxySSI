@@ -11,12 +11,14 @@ const requiredFiles = [
   "apps/ios/SignalASI/SignalASIAttachments.swift",
   "apps/ios/SignalASI/SignalASILinkProtocol.swift",
   "apps/ios/SignalASI/SignalASILinkReliability.swift",
+  "apps/ios/SignalASI/SignalASIBackup.swift",
   "apps/ios/SignalASI/SignalASIStore.swift",
   "apps/ios/SignalASI/SignalASIServices.swift",
   "apps/ios/SignalASI/SignalASIViews.swift",
   "apps/ios/SignalASITests/SignalASIAttachmentTests.swift",
   "apps/ios/SignalASITests/SignalASILinkProtocolTests.swift",
   "apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift",
+  "apps/ios/SignalASITests/SignalASIBackupTests.swift",
   "apps/ios/SignalASITests/SignalASIStoreTests.swift",
 ];
 
@@ -38,12 +40,14 @@ const models = read("apps/ios/SignalASI/SignalASIModels.swift");
 const attachments = read("apps/ios/SignalASI/SignalASIAttachments.swift");
 const linkProtocol = read("apps/ios/SignalASI/SignalASILinkProtocol.swift");
 const linkReliability = read("apps/ios/SignalASI/SignalASILinkReliability.swift");
+const backup = read("apps/ios/SignalASI/SignalASIBackup.swift");
 const services = read("apps/ios/SignalASI/SignalASIServices.swift");
 const views = read("apps/ios/SignalASI/SignalASIViews.swift");
 const tests = [
   read("apps/ios/SignalASITests/SignalASIAttachmentTests.swift"),
   read("apps/ios/SignalASITests/SignalASILinkProtocolTests.swift"),
   read("apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift"),
+  read("apps/ios/SignalASITests/SignalASIBackupTests.swift"),
   read("apps/ios/SignalASITests/SignalASIStoreTests.swift"),
 ].join("\n");
 
@@ -56,6 +60,8 @@ const requiredProjectSnippets = [
   "SignalASIAttachments.swift in Sources",
   "SignalASIAttachmentTests.swift in Sources",
   "SignalASITests.xctest",
+  "SignalASIBackup.swift",
+  "SignalASIBackupTests.swift",
 ];
 
 const requiredSourceSnippets = [
@@ -68,6 +74,10 @@ const requiredSourceSnippets = [
   [linkReliability, "SignalASIMqttWireChunking"],
   [linkReliability, "SignalASILinkDeliveryStore"],
   [linkReliability, "SignalASILinkDeliveryAckPolicy"],
+  [backup, "static let iterations = 180_000"],
+  [backup, "pbkdf2-hmac-sha256"],
+  [backup, "aes-256-gcm"],
+  [backup, "SignalASIBackupDocument"],
   [services, "broker.emqx.io"],
   [services, "scheduleOutboxFlush"],
   [services, "UNUserNotificationCenter"],
@@ -76,8 +86,11 @@ const requiredSourceSnippets = [
   [views, "fileImporter"],
   [views, "AVCaptureMetadataOutput"],
   [tests, "testAttachmentDescriptorsMatchAndroidWireNames"],
+  [views, "fileExporter"],
   [tests, "testValidatesAndroidCompatiblePairingQRCode"],
   [tests, "testChunkingRoundTripsLargeWirePayload"],
+  [tests, "testPBKDF2SHA256MatchesKnownVector"],
+  [tests, "testBackupRestoresCloudAPISecretsAndLocalState"],
   [tests, "testCloudModelContactsAreGroupedByProvider"],
 ];
 

@@ -385,6 +385,13 @@ struct SettingsView: View {
   @EnvironmentObject private var store: SignalASIStore
   @State private var showingAddModel = false
   @State private var notificationsStatus = ""
+  @State private var backupPassword = ""
+  @State private var backupIncludeMessages = true
+  @State private var backupDocument: SignalASIBackupDocument?
+  @State private var backupExportPresented = false
+  @State private var backupImportPresented = false
+  @State private var backupStatus = ""
+  @State private var backupStatusIsError = false
 
   var body: some View {
     NavigationView {
@@ -415,6 +422,31 @@ struct SettingsView: View {
             Label("Add Model", systemImage: "plus.circle")
           }
         }
+        Section("Backup") {
+          SecureField("Password", text: $backupPassword)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+          Toggle("Include Messages", isOn: $backupIncludeMessages)
+          HStack {
+            Button {
+              exportBackup()
+            } label: {
+              Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .disabled(backupPassword.count < SignalASIBackupManager.minimumPasswordLength)
+            Spacer()
+            Button {
+              backupImportPresented = true
+            } label: {
+              Label("Import", systemImage: "square.and.arrow.down")
+            }
+            .disabled(backupPassword.count < SignalASIBackupManager.minimumPasswordLength)
+          }
+          if !backupStatus.isEmpty {
+            Text(backupStatus)
+              .foregroundColor(backupStatusIsError ? .red : .secondary)
+          }
+        }
         Section("Notifications") {
           Button {
             Task {
@@ -433,7 +465,89 @@ struct SettingsView: View {
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
       }
+      .fileExporter(
+        isPresented: $backupExportPresented,
+        document: backupDocument,
+        contentType: .data,
+        defaultFilename: SignalASIBackupManager.defaultFilename()
+      ) { result in
+        switch result {
+        case .success:
+          setBackupStatus("Backup exported.", isError: false)
+        case .failure(let error):
+          setBackupStatus(error.localizedDescription, isError: true)
+        }
+      }
+      .fileImporter(
+        isPresented: $backupImportPresented,
+        allowedContentTypes: [.data],
+        allowsMultipleSelection: false
+      ) { result in
+        do {
+          guard let url = try result.get().first else { return }
+          importBackup(from: url)
+        } catch {
+          setBackupStatus(error.localizedDescription, isError: true)
+        }
+      }
     }
+  }
+
+  private func exportBackup() {
+    do {
+      let password = backupPassword
+      let payload = store.exportBackupPayload(includeContacts: true, includeMessages: backupIncludeMessages)
+      setBackupStatus("Preparing backup...", isError: false)
+      Task {
+        do {
+          let data = try await Task.detached {
+            try SignalASIBackupManager.encryptPayload(payload, password: password)
+          }.value
+          await MainActor.run {
+            backupDocument = SignalASIBackupDocument(data: data)
+            backupExportPresented = true
+            setBackupStatus("Backup ready.", isError: false)
+          }
+        } catch {
+          await MainActor.run {
+            setBackupStatus(error.localizedDescription, isError: true)
+          }
+        }
+      }
+    }
+  }
+
+  private func importBackup(from url: URL) {
+    let password = backupPassword
+    let includeMessages = backupIncludeMessages
+    setBackupStatus("Restoring backup...", isError: false)
+    Task {
+      let didAccess = url.startAccessingSecurityScopedResource()
+      defer {
+        if didAccess {
+          url.stopAccessingSecurityScopedResource()
+        }
+      }
+      do {
+        let data = try Data(contentsOf: url)
+        let payload = try await Task.detached {
+          try SignalASIBackupManager.importBackup(data: data, password: password)
+        }.value
+        try await MainActor.run {
+          try store.restoreBackupPayload(payload, includeMessages: includeMessages)
+          setBackupStatus("Backup restored.", isError: false)
+        }
+      } catch {
+        await MainActor.run {
+          setBackupStatus(error.localizedDescription, isError: true)
+        }
+      }
+    }
+  }
+
+  private func setBackupStatus(_ value: String, isError: Bool) {
+    backupStatus = value
+    backupStatusIsError = isError
   }
 }
 
