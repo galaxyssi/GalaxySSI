@@ -3860,6 +3860,118 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(descriptor["inputSchema"])
   }
 
+  func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
+    let first = planConnectorAction(id: "codex-1", connectorId: "desktop:codex")
+    let duplicate = planConnectorAction(id: "codex-2", connectorId: "desktop:codex")
+    let dependent = AgentAction(
+      id: "finish",
+      kind: .createNotification,
+      target: "phone",
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Notify when complete",
+      parameters: ["depends_on": duplicate.id]
+    )
+
+    let plan = AgentPlanFactory.actions(request: planFactoryRequest(), [first, duplicate, dependent])
+
+    XCTAssertEqual(plan.actions.map(\.id), ["codex-1", "finish"])
+    XCTAssertEqual(plan.actions.last?.parameters["depends_on"], "codex-1")
+    XCTAssertTrue(plan.validation.valid)
+  }
+
+  func testAgentPlanFactoryKeepsDifferentConnectorsIndependent() {
+    let plan = AgentPlanFactory.actions(
+      request: planFactoryRequest(
+        targets: [
+          planFactoryTarget(id: "desktop:codex", title: "Codex"),
+          planFactoryTarget(id: "desktop:hermes", title: "Hermes")
+        ]
+      ),
+      [
+        planConnectorAction(id: "codex", connectorId: "desktop:codex", target: "Codex"),
+        planConnectorAction(id: "hermes", connectorId: "desktop:hermes", target: "Hermes")
+      ]
+    )
+
+    XCTAssertEqual(plan.actions.map(\.id), ["codex", "hermes"])
+    XCTAssertEqual(plan.selectedAgentOrModel, "Multiple Executors")
+    XCTAssertTrue(plan.validation.valid)
+  }
+
+  func testAgentPlanFactoryEmptyPlanFallsBackToAvailableReasoningConnector() {
+    let plan = AgentPlanFactory.actions(request: planFactoryRequest(), [])
+    let action = plan.actions.first
+
+    XCTAssertEqual(plan.actions.count, 1)
+    XCTAssertEqual(action?.kind, .callConnector)
+    XCTAssertEqual(action?.parameters["connector_id"], "desktop:codex")
+    XCTAssertEqual(action?.parameters["planner_fallback"], "empty_action_plan")
+    XCTAssertFalse(plan.actions.contains { $0.target == "local-agent-runtime" })
+    XCTAssertTrue(plan.validation.valid)
+  }
+
+  func testAgentPlanFactoryEmptyPlanWithoutProviderFailsExplicitly() {
+    let plan = AgentPlanFactory.actions(request: planFactoryRequest(targets: []), [])
+    let action = plan.actions.first
+
+    XCTAssertEqual(plan.actions.count, 1)
+    XCTAssertEqual(action?.kind, .callConnector)
+    XCTAssertEqual(action?.parameters["connector_id"], AgentPlanFactory.unavailableReasoningConnectorId)
+    XCTAssertFalse(plan.actions.contains { $0.target == "local-agent-runtime" })
+    XCTAssertTrue(plan.validation.valid)
+  }
+
+  func testAgentPlanFactoryKeepsRecoveringConnectorAuthorizedDuringHeartbeat() {
+    let recovering = planFactoryTarget(
+      id: "desktop:codex",
+      title: "Codex",
+      status: .disconnected,
+      capabilities: [.chat, .reasoning]
+    )
+    let plan = AgentPlanFactory.actions(
+      request: planFactoryRequest(targets: [recovering]),
+      [planConnectorAction(id: "codex", connectorId: recovering.id, target: recovering.title)]
+    )
+
+    XCTAssertEqual(plan.requiredPermissions.single { $0.id == "paired_contact" }?.granted, true)
+    XCTAssertEqual(plan.route.kind, .desktopAgent)
+  }
+
+  func testAgentPlanFactoryDoesNotAuthorizeConnectorThatNeedsSetup() {
+    let unavailable = planFactoryTarget(
+      id: "desktop:codex",
+      title: "Codex",
+      status: .needsSetup,
+      capabilities: [.chat, .reasoning]
+    )
+    let plan = AgentPlanFactory.actions(
+      request: planFactoryRequest(targets: [unavailable]),
+      [planConnectorAction(id: "codex", connectorId: unavailable.id, target: unavailable.title)]
+    )
+
+    XCTAssertEqual(plan.requiredPermissions.single { $0.id == "paired_contact" }?.granted, false)
+    XCTAssertTrue(plan.validation.valid)
+  }
+
+  func testAgentPlanRequestModelsUseAndroidWireNames() throws {
+    let request = AgentPlanRequest(
+      goal: "Convert the file",
+      screen: AgentScreenContext(foregroundApp: "SignalASI"),
+      targets: [planFactoryTarget()],
+      nativeTools: [try nativeToolDescriptor("signalasi.test.native")],
+      contextDigest: "digest"
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+    )
+
+    XCTAssertEqual(object["context_digest"] as? String, "digest")
+    XCTAssertNotNil(object["native_tools"])
+    XCTAssertNil(object["contextDigest"])
+    XCTAssertNil(object["nativeTools"])
+  }
+
   func testAgentDynamicTeamCompilerBuildsVerifiedDagFromComplementaryAgents() throws {
     let result = AgentDynamicTeamCompiler().compile(
       request: AgentDynamicTeamRequest(
@@ -9935,6 +10047,57 @@ final class SignalASIStoreTests: XCTestCase {
       kind: kind,
       status: status,
       capabilities: capabilities
+    )
+  }
+
+  private func planFactoryTarget(
+    id: String = "desktop:codex",
+    title: String = "Codex",
+    kind: AgentConnectorKind = .agent,
+    status: AgentConnectorStatus = .available,
+    capabilities: [AgentCapability] = [.chat, .reasoning]
+  ) -> AgentCallableTarget {
+    AgentCallableTarget(
+      id: id,
+      title: title,
+      kind: kind,
+      status: status,
+      capabilities: capabilities,
+      failureDomain: "desktop",
+      desktopAccessProfile: SignalASILinkProtocol.accessDesktopExecutor
+    )
+  }
+
+  private func planFactoryRequest(
+    targets: [AgentCallableTarget]? = nil,
+    nativeTools: [AgentNativeToolDescriptor] = []
+  ) -> AgentPlanRequest {
+    let resolvedTargets = targets ?? [planFactoryTarget()]
+    return AgentPlanRequest(
+      goal: "Convert the file",
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
+      targets: resolvedTargets,
+      nativeTools: nativeTools,
+      contextDigest: "context"
+    )
+  }
+
+  private func planConnectorAction(
+    id: String,
+    connectorId: String,
+    target: String = "Codex"
+  ) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: .callConnector,
+      target: target,
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Run the task",
+      parameters: [
+        "connector_id": connectorId,
+        "prompt": "Convert the file"
+      ]
     )
   }
 

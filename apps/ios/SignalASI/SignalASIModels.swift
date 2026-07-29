@@ -18336,6 +18336,449 @@ enum AgentPlanValidator {
   }
 }
 
+struct AgentPlanRequest: Codable, Equatable {
+  var goal: String
+  var screen: AgentScreenContext
+  var targets: [AgentCallableTarget]
+  var nativeTools: [AgentNativeToolDescriptor]
+  var contextDigest: String
+
+  init(
+    goal: String,
+    screen: AgentScreenContext,
+    targets: [AgentCallableTarget] = [],
+    nativeTools: [AgentNativeToolDescriptor] = [],
+    contextDigest: String = ""
+  ) {
+    self.goal = goal
+    self.screen = screen
+    self.targets = targets
+    self.nativeTools = nativeTools
+    self.contextDigest = contextDigest
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case goal
+    case screen
+    case targets
+    case nativeTools = "native_tools"
+    case contextDigest = "context_digest"
+  }
+}
+
+enum AgentPlanFactory {
+  static let unavailableReasoningConnectorId = "reasoning-provider-unavailable"
+
+  static func singleAction(request: AgentPlanRequest, action: AgentAction) -> AgentPlan {
+    actions(request: request, [action])
+  }
+
+  static func actions(request: AgentPlanRequest, _ actions: [AgentAction]) -> AgentPlan {
+    let plannedActions = collapseDuplicateConnectorCalls(actions)
+    let resolvedActions = plannedActions.isEmpty ? [emptyPlanFallbackAction(request)] : plannedActions
+    let routeAction = resolvedActions.first {
+      $0.kind == .callConnector || $0.kind == .controlDevice
+    } ?? resolvedActions[0]
+    var plan = AgentPlan(
+      goal: request.goal,
+      screen: request.screen,
+      steps: [
+        AgentStep(order: 1, kind: .observeScreen, status: .done),
+        AgentStep(order: 2, kind: .analyzeGoal, status: .done),
+        AgentStep(order: 3, kind: .buildPlan, status: .done),
+        AgentStep(order: 4, kind: .confirmAndAct, status: .current)
+      ],
+      actions: resolvedActions,
+      selectedAgentOrModel: selectedAgentOrModel(resolvedActions),
+      requiredPermissions: distinctPermissions(resolvedActions.flatMap { permissions(for: $0, request: request) }),
+      confirmationRequired: true,
+      rollbackStrategy: rollbackStrategy(for: resolvedActions),
+      expectedResult: expectedResult(for: resolvedActions),
+      timeoutSeconds: min(resolvedActions.map { timeoutSeconds(for: $0) }.reduce(0, +), 240),
+      plannerProfile: "rule-based-local",
+      contextDigest: resolvedContextDigest(request),
+      routeRationale: routeRationale(for: routeAction, request: request),
+      route: AgentRouteResolver.resolve(action: routeAction, targets: request.targets)
+    )
+    plan.validation = AgentPlanValidator.validate(plan)
+    return plan
+  }
+
+  private static func emptyPlanFallbackAction(_ request: AgentPlanRequest) -> AgentAction {
+    if let target = AgentConnectorRouteSelector.select(targets: request.targets, decision: nil)?.target {
+      return AgentAction(
+        id: "fallback-connector-\(stableSuffix(request.goal))",
+        kind: .callConnector,
+        target: target.title,
+        risk: .low,
+        status: .pendingConfirmation,
+        description: "Ask \(target.title)",
+        parameters: [
+          "connector_id": target.id,
+          "prompt": request.goal,
+          "planner_fallback": "empty_action_plan",
+          "_signalasi_desktop_executor_full":
+            String(target.desktopAccessProfile == SignalASILinkProtocol.accessDesktopExecutor)
+        ],
+        requiresConfirmation: false
+      )
+    }
+    return AgentAction(
+      id: "connector-unavailable-\(stableSuffix(request.goal))",
+      kind: .callConnector,
+      target: "Agent or model",
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Report that no reasoning provider is configured",
+      parameters: [
+        "connector_id": unavailableReasoningConnectorId,
+        "prompt": request.goal,
+        "planner_fallback": "empty_action_plan"
+      ],
+      requiresConfirmation: false
+    )
+  }
+
+  private static func collapseDuplicateConnectorCalls(_ actions: [AgentAction]) -> [AgentAction] {
+    var canonicalIds: [String: String] = [:]
+    let retained = actions.filter { action in
+      guard action.kind == .callConnector, action.id != "knowledge-answer" else {
+        canonicalIds[action.id] = action.id
+        return true
+      }
+      let connector = firstNonBlank(action.parameters["connector_id"] ?? "", action.target)
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+      let key = "\(action.kind.rawValue):\(connector)"
+      if let canonicalId = canonicalIds[key] {
+        canonicalIds[action.id] = canonicalId
+        return false
+      }
+      canonicalIds[key] = action.id
+      canonicalIds[action.id] = action.id
+      return true
+    }
+    var idMap: [String: String] = [:]
+    for action in actions {
+      idMap[action.id] = firstNonBlank(canonicalIds[action.id] ?? "", action.id)
+    }
+    return retained.map { $0.remappingToolGraphIds(idMap: idMap) }
+  }
+
+  private static func selectedAgentOrModel(_ actions: [AgentAction]) -> String {
+    let connectorTargets = actions
+      .filter { $0.kind == .callConnector || $0.kind == .controlDevice }
+      .map { selectedAgentOrModel($0) }
+      .stableDistinct()
+    if connectorTargets.count == 1 {
+      return connectorTargets[0]
+    }
+    let targets = actions.map { selectedAgentOrModel($0) }.stableDistinct()
+    return targets.count == 1 ? targets[0] : "Multiple Executors"
+  }
+
+  private static func selectedAgentOrModel(_ action: AgentAction) -> String {
+    switch action.kind {
+    case .callConnector, .controlDevice:
+      return action.target
+    case .importWebKnowledge:
+      return "Agent Knowledge"
+    default:
+      return "Mobile Executor"
+    }
+  }
+
+  private static func permissions(
+    for action: AgentAction,
+    request: AgentPlanRequest
+  ) -> [AgentPermissionRequirement] {
+    var permissions: [AgentPermissionRequirement] = []
+    switch action.kind {
+    case .readScreen, .saveScreenKnowledge, .copyScreenText, .tap, .longPress, .typeText,
+         .deleteText, .pasteText, .swipe, .back, .home, .recents, .lockScreen:
+      permissions.append(AgentPermissionRequirement(
+        id: "accessibility_service",
+        title: "Screen Agent permission",
+        granted: request.screen.isAccessibilityEnabled
+      ))
+    case .openApp, .openURL, .setAlarm:
+      permissions.append(intentPermission(for: action))
+    case .createNotification:
+      permissions.append(AgentPermissionRequirement(id: "post_notification", title: "Post local notification", granted: true))
+    case .replyNotification:
+      permissions.append(AgentPermissionRequirement(
+        id: "notification_direct_reply",
+        title: "Notification direct reply",
+        granted: false
+      ))
+    case .callNativeTool:
+      if let descriptor = request.nativeTools.first(where: { $0.id == action.parameters["tool_id"] }) {
+        permissions += descriptor.requiredPermissions.map { requirement in
+          AgentPermissionRequirement(
+            id: requirement.id,
+            title: requirement.title,
+            granted: descriptor.availability.status == .available
+          )
+        }
+      }
+    case .callConnector, .controlDevice:
+      let connectorId = action.parameters["connector_id"] ?? ""
+      let target = request.targets.first { target in
+        target.id == connectorId || target.title == action.target
+      }
+      permissions.append(AgentPermissionRequirement(
+        id: "paired_contact",
+        title: "Verified SignalASI contact",
+        granted: AgentConnectorRouteSelector.isDeliverable(target)
+      ))
+    case .draftPlan, .importWebKnowledge:
+      break
+    }
+    if action.kind == .pasteText {
+      permissions.append(AgentPermissionRequirement(id: "clipboard_read", title: "Clipboard read", granted: true))
+    }
+    if action.kind == .copyScreenText {
+      permissions.append(AgentPermissionRequirement(id: "clipboard_write", title: "Clipboard write", granted: true))
+    }
+    return permissions
+  }
+
+  private static func intentPermission(for action: AgentAction) -> AgentPermissionRequirement {
+    let id: String
+    if action.id.contains("notification-listener") {
+      id = "notification_listener_settings"
+    } else if action.id.contains("accessibility") {
+      id = "accessibility_settings"
+    } else if action.id.contains("current-app-settings") {
+      id = "current_app_details_settings"
+    } else if action.id == "open-installed-app" {
+      id = "launch_installed_app"
+    } else if action.id.contains("camera") {
+      id = "camera_app_handoff"
+    } else if action.id.contains("phone") {
+      id = "phone_dialer_handoff"
+    } else if action.id.contains("messages") {
+      id = "messages_app_handoff"
+    } else if action.kind == .setAlarm {
+      id = "alarm_handoff"
+    } else if action.kind == .openURL {
+      id = "external_url_handoff"
+    } else {
+      id = "ios_system_handoff"
+    }
+    return AgentPermissionRequirement(id: id, title: id.replacingOccurrences(of: "_", with: " "), granted: true)
+  }
+
+  private static func rollbackStrategy(for action: AgentAction) -> String {
+    switch action.kind {
+    case .typeText, .deleteText, .pasteText:
+      return "Stop before sending or submitting anything."
+    case .tap, .longPress, .swipe:
+      return "Observe the result and go back if the page changed unexpectedly."
+    case .lockScreen:
+      return "Wake and unlock the phone manually to continue."
+    case .replyNotification:
+      return "The sent reply cannot be recalled; report delivery failure immediately."
+    case .callNativeTool:
+      return "Use the native tool receipt and its verification evidence before retrying."
+    case .callConnector, .controlDevice:
+      return "Keep the task in chat history and report delivery failure."
+    case .importWebKnowledge:
+      return "Remove the imported source if extraction or indexing is incorrect."
+    default:
+      return "Stop execution and ask the user before retrying."
+    }
+  }
+
+  private static func rollbackStrategy(for actions: [AgentAction]) -> String {
+    actions.count == 1 ? rollbackStrategy(for: actions[0]) : "Stop the queue and ask the user before retrying the next action."
+  }
+
+  private static func expectedResult(for action: AgentAction) -> String {
+    switch action.kind {
+    case .openApp:
+      return "The requested iOS app or handoff surface opens."
+    case .openURL:
+      return "The requested URL opens in a browser or matching app."
+    case .setAlarm:
+      return "Alarm setup is opened or handed off."
+    case .lockScreen:
+      return "The phone screen is locked through the approved system path."
+    case .copyScreenText:
+      return "Visible screen text is copied to the clipboard."
+    case .saveScreenKnowledge:
+      return "Current screen is saved into Agent knowledge."
+    case .deleteText:
+      return "Text is cleared from the active input field."
+    case .pasteText:
+      return "Clipboard text is pasted into the active input field."
+    case .createNotification:
+      return "A local iOS notification is created."
+    case .replyNotification:
+      return "The selected SignalASI notification action receives the confirmed reply."
+    case .callNativeTool:
+      return "The selected phone-native tool returns a locally verified receipt."
+    case .callConnector:
+      return "The task is sent to the paired agent contact."
+    case .controlDevice:
+      return "The trusted device connector receives the task."
+    case .importWebKnowledge:
+      return "The web page is extracted and indexed in Agent knowledge."
+    default:
+      return action.description
+    }
+  }
+
+  private static func expectedResult(for actions: [AgentAction]) -> String {
+    actions.count == 1 ? expectedResult(for: actions[0]) : "Run \(actions.count) queued actions in order."
+  }
+
+  private static func timeoutSeconds(for action: AgentAction) -> Int {
+    switch action.kind {
+    case .callConnector, .controlDevice:
+      return 120
+    case .importWebKnowledge:
+      return 45
+    case .openURL, .openApp, .setAlarm, .replyNotification, .callNativeTool:
+      return 30
+    case .createNotification:
+      return 10
+    default:
+      return 20
+    }
+  }
+
+  private static func routeRationale(
+    for action: AgentAction,
+    request: AgentPlanRequest
+  ) -> String {
+    switch action.kind {
+    case .callConnector:
+      let connectorId = action.parameters["connector_id"] ?? ""
+      let target = request.targets.first { $0.id == connectorId || $0.title == action.target }
+      switch target?.kind {
+      case .some(.model):
+        return "Model route selected for reasoning or generation outside the phone UI."
+      case .some(.agent):
+        return "Desktop Agent route selected for specialist work beyond local iOS actions."
+      case .some(.device):
+        return "Device connector route selected for trusted external device control."
+      case .some(.knowledge):
+        return "Knowledge route selected for memory or document retrieval."
+      case nil:
+        return "Connector route selected from the requested target, but the contact is not available yet."
+      }
+    case .controlDevice:
+      return "Device route selected because the goal targets Home Assistant or smart devices."
+    case .callNativeTool:
+      return "Phone-native tool route selected from the locally validated capability catalog."
+    case .importWebKnowledge:
+      return "Knowledge route selected to extract and index a user-approved web page."
+    case .readScreen, .saveScreenKnowledge, .copyScreenText:
+      return "Local perception route selected because the task depends on the current phone screen."
+    case .tap, .typeText, .deleteText, .pasteText, .swipe, .longPress, .back, .home, .recents:
+      return "Mobile executor route selected because the task changes the current iOS UI."
+    case .openApp, .openURL, .setAlarm:
+      return "iOS handoff route selected because the task maps to an app or system surface."
+    case .createNotification:
+      return "Local notification route selected because the task should alert the user on this phone."
+    case .replyNotification:
+      return "Notification reply route selected because a SignalASI notification action is targeted."
+    case .lockScreen:
+      return "Mobile executor route selected for an owner-confirmed screen lock."
+    case .draftPlan:
+      return "Local planning route selected because the task needs clarification or a safe plan first."
+    }
+  }
+
+  private static func distinctPermissions(_ permissions: [AgentPermissionRequirement]) -> [AgentPermissionRequirement] {
+    var seen: Set<String> = []
+    return permissions.filter { permission in
+      seen.insert("\(permission.id):\(permission.title)").inserted
+    }
+  }
+
+  private static func resolvedContextDigest(_ request: AgentPlanRequest) -> String {
+    let clean = request.contextDigest.trimmingCharacters(in: .whitespacesAndNewlines)
+    return clean.isEmpty ? stableSuffix("\(request.goal)\u{001f}\(request.targets.map(\.id).joined(separator: ","))") : clean
+  }
+
+  private static func stableSuffix(_ value: String) -> String {
+    String(agentNameBasedUUID(value).prefix(8))
+  }
+
+  private static func firstNonBlank(_ values: String...) -> String {
+    values
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty } ?? ""
+  }
+}
+
+enum AgentRouteResolver {
+  static func resolve(action: AgentAction, targets: [AgentCallableTarget]) -> AgentRoute {
+    let connectorId = action.parameters["connector_id"] ?? ""
+    let target = targets.first { candidate in
+      candidate.id == connectorId || candidate.title == action.target
+    }
+    let kind: AgentRouteKind
+    switch action.kind {
+    case .callConnector:
+      if connectorId == AgentPlanFactory.unavailableReasoningConnectorId {
+        kind = .localSystem
+      } else {
+        switch target?.kind {
+        case .some(.model):
+          kind = target?.id == "local-llm" ? .localModel : .cloudModel
+        case .some(.agent):
+          kind = .desktopAgent
+        case .some(.device):
+          kind = .deviceConnector
+        case .some(.knowledge):
+          kind = .knowledge
+        case nil:
+          kind = .unknown
+        }
+      }
+    case .controlDevice:
+      kind = .deviceConnector
+    case .callNativeTool, .readScreen, .saveScreenKnowledge, .draftPlan, .tap, .typeText,
+         .deleteText, .pasteText, .swipe, .longPress, .back, .home, .recents, .lockScreen,
+         .openApp, .openURL, .setAlarm, .createNotification, .replyNotification, .copyScreenText:
+      kind = .localSystem
+    case .importWebKnowledge:
+      kind = .knowledge
+    }
+    return AgentRoute(
+      routeId: connectorId.isEmpty ? action.id : connectorId,
+      kind: kind,
+      targetId: target?.id ?? (connectorId.isEmpty ? action.target : connectorId),
+      targetTitle: target?.title ?? action.target,
+      status: target?.status.rawValue ?? AgentConnectorStatus.available.rawValue,
+      deliveryMode: deliveryMode(for: kind),
+      capabilities: target?.capabilities.map(\.rawValue).sorted() ?? []
+    )
+  }
+
+  private static func deliveryMode(for kind: AgentRouteKind) -> String {
+    switch kind {
+    case .localSystem:
+      return "local_system"
+    case .cloudModel:
+      return "mobile_cloud_api"
+    case .localModel:
+      return "local_model"
+    case .desktopAgent:
+      return "pc_connector"
+    case .deviceConnector:
+      return "device_connector"
+    case .knowledge:
+      return "knowledge"
+    case .unknown:
+      return "unknown"
+    }
+  }
+}
+
 enum AgentPlanLifecyclePolicy {
   static func normalize(_ plan: AgentPlan) -> AgentPlanLifecycleNormalization {
     let legacyRuntimeDrafts = !plan.actions.isEmpty &&
