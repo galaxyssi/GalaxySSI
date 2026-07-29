@@ -4446,6 +4446,318 @@ enum AgentConnectorRouteSelector {
   }
 }
 
+enum AgentResourceCatalog {
+  static func build(
+    targets: [AgentCallableTarget],
+    tools: [AgentSystemTool],
+    nativeTools: [AgentNativeToolDescriptor] = []
+  ) -> [AgentResourceDescriptor] {
+    let capabilityMatrix = AgentRuntimeCapabilityMatrix.build(
+      nativeTools: nativeTools,
+      systemTools: tools,
+      targets: targets
+    )
+    let callable = targets.map(fromTarget)
+    let localTools = tools.map { tool in
+      let capability = capabilityMatrix.entry(source: .systemTool, id: tool.id)
+      return AgentResourceDescriptor(
+        id: "tool:\(tool.id)",
+        title: tool.title,
+        type: systemToolType(tool.id),
+        location: .phone,
+        status: connectorStatus(capability),
+        capabilities: Set(tool.capabilities),
+        cost: .free,
+        latency: .instant,
+        quality: .standard,
+        supportsTools: true,
+        trust: .phoneSystem,
+        energy: .minimal,
+        contextWindowTokens: 0,
+        supportsStreaming: false,
+        supportsBackground: false,
+        maxParallelTasks: 4,
+        failureDomain: "phone"
+      )
+    }
+    let registeredNativeTools = nativeTools.map { tool in
+      fromNativeTool(
+        tool,
+        capability: capabilityMatrix.entry(source: .nativeTool, id: tool.id)
+      )
+    }
+    return callable + localTools + registeredNativeTools
+  }
+
+  private static func fromNativeTool(
+    _ tool: AgentNativeToolDescriptor,
+    capability: AgentRuntimeCapabilityEntry?
+  ) -> AgentResourceDescriptor {
+    AgentResourceDescriptor(
+      id: "native:\(tool.id)",
+      title: tool.title,
+      type: nativeToolType(tool.id),
+      location: .phone,
+      status: connectorStatus(capability),
+      capabilities: nativeCapabilities(tool),
+      cost: .free,
+      latency: .instant,
+      quality: .standard,
+      supportsTools: true,
+      trust: .phoneSystem,
+      energy: tool.id.contains("runtime") || tool.id.contains("ffmpeg") ? .high : .minimal,
+      contextWindowTokens: 0,
+      supportsStreaming: false,
+      supportsBackground: tool.location == .application,
+      maxParallelTasks: 4,
+      failureDomain: "phone"
+    )
+  }
+
+  private static func fromTarget(_ target: AgentCallableTarget) -> AgentResourceDescriptor {
+    let lowerId = target.id.lowercased()
+    let providerProfile = [.agent, .model].contains(target.kind) ? ProviderProfileCatalog.fromTarget(target) : nil
+    let type = targetType(target, lowerId: lowerId)
+    let location = location(for: type)
+    let defaults = defaultProfile(for: type)
+    let trust = defaultTrust(for: location)
+    let contextWindow = defaultContextWindow(for: type)
+    let profileFailureDomain = providerProfile?.failureDomain ?? ""
+    let failureDomain = !profileFailureDomain.isEmpty
+      ? profileFailureDomain
+      : target.failureDomain.isEmpty ? defaultFailureDomain(targetId: target.id, location: location) : target.failureDomain
+
+    return AgentResourceDescriptor(
+      id: "target:\(target.id)",
+      title: target.title,
+      type: type,
+      location: location,
+      status: target.status,
+      capabilities: Set(target.capabilities),
+      cost: providerProfile?.pricing.tier ?? defaults.cost,
+      latency: providerProfile?.latency ?? defaults.latency,
+      quality: providerProfile?.quality ?? defaults.quality,
+      supportsTools: providerProfile?.supportsTools ??
+        (target.capabilities.contains(.toolUse) || target.capabilities.contains(.research)),
+      targetId: target.id,
+      trust: providerProfile?.trust ?? trust,
+      energy: energy(for: type),
+      contextWindowTokens: providerProfile?.contextWindowTokens ?? contextWindow,
+      supportsStreaming: providerProfile?.supportsStreaming ?? streamingDefault(for: type),
+      supportsBackground: providerProfile?.supportsBackground ?? backgroundDefault(for: type),
+      maxParallelTasks: providerProfile?.maxParallelRuns ?? maxParallelTasksDefault(for: type),
+      failureDomain: failureDomain,
+      providerProfile: providerProfile
+    )
+  }
+
+  private static func systemToolType(_ id: String) -> AgentResourceType {
+    if id.hasPrefix("workflow:") || id.hasPrefix("template:") {
+      return .localSkill
+    }
+    if id.localizedCaseInsensitiveContains("mcp") {
+      return .localMcp
+    }
+    return .localTool
+  }
+
+  private static func nativeToolType(_ id: String) -> AgentResourceType {
+    if id.contains(".mcp.") || id.hasPrefix("mcp.") {
+      return .localMcp
+    }
+    if id.contains(".skill.") || id.hasPrefix("skill.") {
+      return .localSkill
+    }
+    return .localTool
+  }
+
+  private static func nativeCapabilities(_ tool: AgentNativeToolDescriptor) -> Set<AgentCapability> {
+    let text = ([tool.id] + Array(tool.capabilities)).joined(separator: " ").lowercased()
+    var capabilities: Set<AgentCapability> = [.toolUse]
+    if containsAny(text, ["web", "http", "browser", "network"]) {
+      capabilities.insert(.liveData)
+    }
+    if containsAny(text, ["web", "research", "search"]) {
+      capabilities.insert(.research)
+    }
+    if containsAny(text, ["workspace", "runtime", "python", "node", "compile", "ffmpeg"]) {
+      capabilities.formUnion([.code, .taskExecution])
+    }
+    if text.contains("mcp") {
+      capabilities.insert(.mcp)
+    }
+    if text.contains("skill") {
+      capabilities.insert(.skill)
+    }
+    if text.contains("screen") || text.contains("ocr") {
+      capabilities.insert(.screenReading)
+    }
+    if text.contains("clipboard") {
+      capabilities.insert(.clipboard)
+    }
+    if text.contains("settings") {
+      capabilities.insert(.systemSettings)
+    }
+    if text.contains("app") || text.contains("package") {
+      capabilities.insert(.appNavigation)
+    }
+    if text.contains("alarm") || text.contains("timer") {
+      capabilities.insert(.alarm)
+    }
+    if containsAny(text, [
+      "hardware", "device", "location", "sensor", "bluetooth", "nfc", "wifi",
+      "audio", "telephony", "sms", "contact", "calendar", "battery", "power", "storage"
+    ]) {
+      capabilities.insert(.deviceControl)
+    }
+    return capabilities
+  }
+
+  private static func connectorStatus(_ capability: AgentRuntimeCapabilityEntry?) -> AgentConnectorStatus {
+    switch capability?.state {
+    case .available:
+      return .available
+    case .requiresSetup:
+      return .needsSetup
+    case .unavailable, .blocked, nil:
+      return .disconnected
+    }
+  }
+
+  private static func targetType(_ target: AgentCallableTarget, lowerId: String) -> AgentResourceType {
+    if lowerId == "home-assistant" {
+      return .homeAssistant
+    }
+    if lowerId.hasPrefix("custom-device:") {
+      return .customDevice
+    }
+    if lowerId.contains("mcp") {
+      return .remoteMcp
+    }
+    if lowerId.contains("skill") {
+      return .remoteSkill
+    }
+    if target.kind == .knowledge {
+      return .knowledge
+    }
+    if target.kind == .model && (lowerId == "local-llm" || target.capabilities.contains(.localInference)) {
+      return .remoteLocalModel
+    }
+    if target.kind == .model {
+      return .cloudModel
+    }
+    if target.kind == .agent {
+      return .remoteAgent
+    }
+    return .customDevice
+  }
+
+  private static func location(for type: AgentResourceType) -> AgentResourceLocation {
+    switch type {
+    case .onDeviceModel, .localAgent, .localTool, .localMcp, .localSkill, .knowledge:
+      return .phone
+    case .remoteLocalModel, .remoteAgent, .remoteMcp, .remoteSkill:
+      return .trustedDesktop
+    case .homeAssistant, .customDevice:
+      return .privateNetwork
+    case .cloudModel, .cloudMcp, .cloudSkill:
+      return .cloud
+    }
+  }
+
+  private static func defaultProfile(
+    for type: AgentResourceType
+  ) -> (cost: AgentResourceCost, latency: AgentResourceLatency, quality: AgentResourceQuality) {
+    switch type {
+    case .cloudModel:
+      return (.medium, .normal, .frontier)
+    case .remoteAgent, .remoteMcp, .remoteSkill:
+      return (.low, .slow, .strong)
+    case .remoteLocalModel, .homeAssistant, .customDevice:
+      return (.free, .fast, .standard)
+    default:
+      return (.free, .instant, .standard)
+    }
+  }
+
+  private static func defaultTrust(for location: AgentResourceLocation) -> AgentResourceTrust {
+    switch location {
+    case .phone:
+      return .phoneSystem
+    case .trustedDesktop:
+      return .verifiedPaired
+    case .privateNetwork:
+      return .privateConfigured
+    case .cloud:
+      return .cloudConfigured
+    }
+  }
+
+  private static func energy(for type: AgentResourceType) -> AgentResourceEnergy {
+    switch type {
+    case .onDeviceModel:
+      return .high
+    case .localAgent, .localMcp, .localSkill:
+      return .moderate
+    case .localTool, .knowledge:
+      return .minimal
+    default:
+      return .low
+    }
+  }
+
+  private static func defaultContextWindow(for type: AgentResourceType) -> Int {
+    switch type {
+    case .cloudModel:
+      return 128_000
+    case .remoteAgent:
+      return 64_000
+    case .remoteLocalModel, .onDeviceModel:
+      return 16_000
+    default:
+      return 8_192
+    }
+  }
+
+  private static func streamingDefault(for type: AgentResourceType) -> Bool {
+    type == .cloudModel || type == .remoteAgent || type == .remoteLocalModel
+  }
+
+  private static func backgroundDefault(for type: AgentResourceType) -> Bool {
+    type == .remoteAgent || type == .remoteLocalModel || type == .remoteMcp || type == .remoteSkill
+  }
+
+  private static func maxParallelTasksDefault(for type: AgentResourceType) -> Int {
+    switch type {
+    case .remoteAgent:
+      return 4
+    case .cloudModel:
+      return 3
+    case .remoteLocalModel:
+      return 2
+    default:
+      return 1
+    }
+  }
+
+  private static func defaultFailureDomain(targetId: String, location: AgentResourceLocation) -> String {
+    switch location {
+    case .phone:
+      return "phone"
+    case .cloud:
+      return "cloud:\(targetId)"
+    case .trustedDesktop:
+      return "desktop:\(targetId.split(separator: ":").first.map(String.init) ?? targetId)"
+    case .privateNetwork:
+      return "private:\(targetId)"
+    }
+  }
+
+  private static func containsAny(_ text: String, _ terms: [String]) -> Bool {
+    terms.contains { text.contains($0) }
+  }
+}
+
 enum AgentDynamicTeamOutcome: String, Codable, CaseIterable, Identifiable {
   case singleAgent = "SINGLE_AGENT"
   case team = "TEAM"
