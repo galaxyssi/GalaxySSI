@@ -20,6 +20,12 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
+from pairing_access import (
+    DESKTOP_EXECUTOR,
+    client_grant,
+    grant_binding,
+    has_full_executor,
+)
 from pairing_state import DATA_DIR
 from signalasi_client import get_signal_bundle, sign_signal_identity
 from tool_handle_registry import (
@@ -32,8 +38,9 @@ from tool_handle_registry import (
 
 
 CONTRACT_VERSION = "signalasi.desktop-control/1.2"
+AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
-RECEIPT_VERSION = 3
+RECEIPT_VERSION = 4
 OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
 DESKTOP_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -66,6 +73,9 @@ RECEIPT_SIGNED_FIELDS = (
     "input_sha256",
     "output_sha256",
     "evidence_sha256",
+    "controller_app_instance_id",
+    "controller_name",
+    "controller_platform",
     "controller_fingerprint",
     "started_at",
     "completed_at",
@@ -224,8 +234,6 @@ class DesktopControlManager:
         control_token: str,
         pairing_token: str,
         paired_client: Mapping[str, Any],
-        *,
-        auto_approve: bool = False,
     ) -> dict[str, Any] | None:
         token = str(control_token or "")
         if not token:
@@ -261,6 +269,21 @@ class DesktopControlManager:
             signal_name = str(paired_client.get("signal_name") or "")
             if not route_id or len(fingerprint) != 64 or not signal_name:
                 raise DesktopControlError("authorization_identity_invalid", "Paired phone identity is incomplete")
+            if not has_full_executor(paired_client):
+                self._append_audit_locked(
+                    "authorization_offer_rejected",
+                    client_route_id=route_id,
+                    phone_fingerprint=fingerprint,
+                    status="rejected",
+                    summary="Pairing did not grant Desktop Executor access",
+                )
+                self._save_locked()
+                raise DesktopControlError(
+                    "desktop_executor_scope_required",
+                    "Desktop control requires a pairing QR with Desktop Executor access",
+                )
+            pairing_access = client_grant(paired_client)
+            access_binding = grant_binding(paired_client)
 
             existing = next(
                 (
@@ -276,6 +299,12 @@ class DesktopControlManager:
                 existing["phone_name"] = str(
                     paired_client.get("display_name") or existing.get("phone_name") or "SignalASI Phone"
                 )[:120]
+                existing["grant_source"] = "pairing_qr"
+                existing["access_profile"] = DESKTOP_EXECUTOR
+                existing["access_scopes"] = list(pairing_access["scopes"])
+                existing["pairing_access_sha256"] = access_binding
+                existing["status"] = "active"
+                existing["granted_at"] = int(existing.get("granted_at") or now * 1_000)
                 existing["updated_at"] = int(now * 1_000)
                 self._append_audit_locked(
                     "authorization_rebound",
@@ -289,11 +318,14 @@ class DesktopControlManager:
                 return self._public_authorization(existing)
 
             authorization_id = str(uuid.uuid4())
-            status = "active" if auto_approve else "pending"
-            granted_at = int(now * 1_000) if auto_approve else 0
+            granted_at = int(now * 1_000)
             row = {
                 "authorization_id": authorization_id,
                 "grant_type": "desktop_control",
+                "grant_source": "pairing_qr",
+                "access_profile": DESKTOP_EXECUTOR,
+                "access_scopes": list(pairing_access["scopes"]),
+                "pairing_access_sha256": access_binding,
                 "phone_identity_fingerprint": fingerprint,
                 "phone_signal_name": signal_name,
                 "phone_name": str(paired_client.get("display_name") or "SignalASI Phone")[:120],
@@ -304,46 +336,19 @@ class DesktopControlManager:
                 "last_used_at": 0,
                 "updated_at": int(now * 1_000),
                 "allowed_tools": list(DEFAULT_ALLOWED_TOOLS),
-                "status": status,
+                "status": "active",
             }
             self._state["authorizations"][authorization_id] = row
             self._append_audit_locked(
-                "authorization_approved_at_pairing" if auto_approve else "authorization_requested",
+                "authorization_approved_at_pairing",
                 authorization_id=authorization_id,
                 client_route_id=route_id,
                 phone_fingerprint=fingerprint,
-                status="succeeded" if auto_approve else "pending",
-                summary=(
-                    "Desktop Executor access was approved by the pairing QR"
-                    if auto_approve else
-                    "Phone requested Desktop control authorization"
-                ),
-            )
-            self._save_locked()
-            return self._public_authorization(row)
-
-    def approve(self, authorization_id: str) -> dict[str, Any]:
-        with self._lock:
-            row = self._authorization_locked(authorization_id, include_revoked=True)
-            if row.get("status") not in {"pending", "active"}:
-                raise DesktopControlError("authorization_not_pending", "Authorization is not waiting for approval")
-            now_ms = int(self.now() * 1_000)
-            row["status"] = "active"
-            row["granted_at"] = int(row.get("granted_at") or now_ms)
-            row["updated_at"] = now_ms
-            self._append_audit_locked(
-                "authorization_approved",
-                authorization_id=authorization_id,
-                client_route_id=str(row.get("client_route_id") or ""),
-                phone_fingerprint=str(row.get("phone_identity_fingerprint") or ""),
                 status="succeeded",
-                summary="Desktop user approved this phone",
+                summary="Desktop Executor access was approved by the pairing QR",
             )
             self._save_locked()
             return self._public_authorization(row)
-
-    def reject(self, authorization_id: str) -> dict[str, Any]:
-        return self.revoke(authorization_id, "user_rejected")
 
     def revoke(self, authorization_id: str, reason: str = "user_revoked") -> dict[str, Any]:
         with self._lock:
@@ -426,6 +431,7 @@ class DesktopControlManager:
             ][:MAX_VISIBLE_RECEIPTS]
             return {
                 "contract_version": CONTRACT_VERSION,
+                "authorized_app_contract": AUTHORIZED_APP_CONTRACT,
                 "tool_handle_contract": TOOL_HANDLE_CONTRACT,
                 "enabled": bool(self._state["settings"].get("enabled")),
                 "require_unlocked": bool(self._state["settings"].get("require_unlocked")),
@@ -696,6 +702,7 @@ class DesktopControlManager:
                 fingerprint, str(authorization.get("phone_identity_fingerprint") or "").lower()
             ):
                 raise DesktopControlError("authorization_identity_mismatch", "Phone identity does not match authorization")
+            self._validate_pairing_grant(authorization, paired_client)
             if tool_id not in set(authorization.get("allowed_tools") or []):
                 raise DesktopControlError("tool_not_allowed", "Tool is outside this authorization")
             self._resolve_desktop_session(
@@ -748,6 +755,7 @@ class DesktopControlManager:
                 str(authorization.get("phone_identity_fingerprint") or "").lower(),
             ):
                 raise DesktopControlError("authorization_identity_mismatch", "Phone identity does not match authorization")
+            self._validate_pairing_grant(authorization, paired_client)
             if tool_id not in set(authorization.get("allowed_tools") or []):
                 raise DesktopControlError("tool_not_allowed", "Tool is outside this authorization")
             self._resolve_desktop_session(
@@ -757,6 +765,29 @@ class DesktopControlManager:
                 tool_id,
             )
             return authorization
+
+    @staticmethod
+    def _validate_pairing_grant(
+        authorization: Mapping[str, Any],
+        paired_client: Mapping[str, Any],
+    ) -> None:
+        if not has_full_executor(paired_client):
+            raise DesktopControlError(
+                "desktop_executor_scope_required",
+                "The current pairing does not grant Desktop Executor access",
+            )
+        expected_binding = grant_binding(paired_client)
+        stored_binding = str(authorization.get("pairing_access_sha256") or "")
+        if (
+            authorization.get("grant_source") != "pairing_qr"
+            or authorization.get("access_profile") != DESKTOP_EXECUTOR
+            or len(stored_binding) != 64
+            or not secrets.compare_digest(stored_binding, expected_binding)
+        ):
+            raise DesktopControlError(
+                "pairing_authorization_stale",
+                "Desktop control authorization no longer matches the trusted pairing",
+            )
 
     def _resolve_desktop_session(
         self,
@@ -903,6 +934,15 @@ class DesktopControlManager:
             "input_sha256": input_sha256,
             "output_sha256": output_sha256,
             "evidence_sha256": evidence_sha256,
+            "controller_app_instance_id": str(
+                paired_client.get("signal_name") or ""
+            ),
+            "controller_name": str(
+                paired_client.get("display_name") or "SignalASI App"
+            )[:120],
+            "controller_platform": str(
+                paired_client.get("platform") or "unknown"
+            )[:32],
             "controller_fingerprint": str(paired_client.get("identity_fingerprint") or "").lower(),
             "started_at": int(receipt.get("started_at") or 0),
             "completed_at": int(receipt.get("completed_at") or 0),
@@ -1009,13 +1049,22 @@ class DesktopControlManager:
                 reuse=True,
             )
         return {
+            "record_version": 1,
             "authorization_id": str(row.get("authorization_id") or ""),
             "grant_type": "desktop_control",
+            "app_instance_id": str(row.get("phone_signal_name") or ""),
+            "app_name": str(row.get("phone_name") or "SignalASI Phone"),
+            "app_identity_fingerprint": fingerprint,
+            "app_platform": str(row.get("platform") or "unknown"),
             "phone_name": str(row.get("phone_name") or "SignalASI Phone"),
             "phone_fingerprint": fingerprint,
             "phone_fingerprint_short": fingerprint[:16],
             "client_route_id": str(row.get("client_route_id") or ""),
             "platform": str(row.get("platform") or "unknown"),
+            "grant_source": str(row.get("grant_source") or ""),
+            "access_profile": str(row.get("access_profile") or ""),
+            "access_scopes": list(row.get("access_scopes") or []),
+            "pairing_access_sha256": str(row.get("pairing_access_sha256") or ""),
             "requested_at": int(row.get("requested_at") or 0),
             "granted_at": int(row.get("granted_at") or 0),
             "last_used_at": int(row.get("last_used_at") or 0),

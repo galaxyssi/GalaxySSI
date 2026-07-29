@@ -14,6 +14,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-compatible `signalasi_contact` QR export/import with pending friend requests, approve/reject handling, and verified contact creation
 - Local contact management with Android-style remark rename, soft delete, optional chat deletion, and private data reset
 - Explicit file/photo attachments with Android-compatible descriptors, inline `data_b64` transport for small payloads, metadata-only fallback for larger files, and chat composer previews
+- Android-style attachment workspace staging into app-private agent-native workspaces with safe names, per-turn limits, SHA-256 metadata, and stable workspace IDs
 - Android-style animated image timing normalization for zero-delay GIF frames
 - Direct cloud model contacts for OpenAI-compatible, Anthropic, and Gemini-style APIs, with provider-level model selection, readiness checks, and API keys stored in Keychain
 - Android-style cloud context overflow detection for cloud model retries and clear request-size failures
@@ -37,6 +38,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style connector failover and timing policy for desktop fallback, transport queues, read-only stale execution, and attachment deadlines
 - Android-style cron expression parser for workflow schedules with time-zone aware next/previous matching
 - Android-style proactive task policy for interval/cron misfires, deterministic jitter, goal checkpoints, team validation, and run outcome limits
+- Android-style global proactive inbox for delivered findings, digest grouping, feedback filtering, and viewed-state projection
 - Android-style inline Markdown parsing for bold, italic, strike, code, and link segments
 - Android-style transcript scroll policy for auto-follow and older-history pagination thresholds
 - Android-style transcript lifecycle policy for legacy planner cleanup and stale connector recovery
@@ -44,17 +46,22 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style agent task identity generation and desktop response matching
 - Android-style agent task intent classification for chat, code, phone, desktop, research, file, memory, and automation requests
 - Android-style agent execution profiles for task kind, timeout, artifact, installation, and verification contracts
+- Android-style runtime pack catalog for signed runtime pack metadata, dependency validation, compatibility filtering, install receipts, and China release mirrors
 - Android-style runtime capability matrix for native tools, system tools, connector targets, setup states, and blocked executability
+- Android-style native tool result receipts and replay store for idempotency-key reuse, Android wire-compatible replay snapshots, success-only durable caching, and retention pruning
 - Android-style capability catalog for native tools, MCP connections, automation marketplace state, permission diffs, dynamic authentication, and dependency readiness
 - Android-style agent plan lifecycle policy for stale runtime draft cleanup and completed connector restoration
+- Android-style agent execution continuity for pre-action checkpoints, Android screen digests, rollback actions, interrupted action recovery, and bounded replan history
 - Android-style agent execution loop timeline policy for run-control events, recovery actions, and progress placeholders
 - Android-style agent run recovery policy for terminal run-state reduction, local wait restore, and durable desktop reconnects
+- Android-style agent run start receipts for cross-end idempotency keys, durable accepted handles, unknown outcomes, cancellation marking, and bounded snapshots
 - Android-style workspace file policy for scoped paths, archive entry guards, exact patch replacements, and diff summaries
 - Android-style explicit tool handle registry for opaque scoped stateful tool references, TTLs, releases, and resource revocation
 - Android-style private data inventory for encrypted backup manifests, export eligibility, erase coverage, and identity rotation audits
 - Android-style agent failure recovery payloads, recommended recovery actions, plan-only fallbacks, and retry instructions
 - Android-style agent task liveness policy for progress watchdog warnings, timeouts, and terminal reply suppression
 - Android-style continuous observation controller for post-action screen change and stability sampling
+- Android-style observation context store for bounded, expiring, per-target observed context with conversation scoping, acknowledgement, and cleanup
 - Android-style agent action recovery controller for timed-out low-risk navigation retries and manual handoff for unsafe failures
 - Android-style agent action risk hardener for connector danger terms, custom device and Home Assistant control, and low-confidence visual OCR actions
 - Android-style visual grounding for OCR layout roles, accessibility fusion, and screen element query matching
@@ -71,12 +78,14 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style global model call budget policy for rolling daily calls, leases, Token usage, reported cost, and concurrency caps
 - Android-style provider profile catalog for cloud/local models and desktop Agent routing metadata
 - Android-style connector route selection for reasoning-capable Agent/model targets and routed fallbacks
+- Android-style global background execution budget for power-save, battery, network validation, and metered-research deferrals
 - Android-style custom device connector configuration for HTTP REST, MQTT, WebSocket, TCP, UDP, MCP, SignalASI Agent, BLE, and Matter/Thread targets
 - Android-style MCP tool security policy for risk assessment, permission decisions, and parameter redaction
 - Android-style Home Assistant configuration with enabled state, local server URL, Keychain access token storage, and default entity target
 - Android-style model planner settings for model-driven planning, replanning, coordination, privacy sharing, and task-control limits
 - Android-style agent autonomy guard for tool-call budgets and repeated connector, device, URL, or app loop blocking
 - Android-style active turn policy for interrupting, steering, or separating new user requests while an agent task is in progress
+- Android-style global capability observations for local-only authorization, MCP, agent, Home Assistant, custom-device, and resource-health lifecycle events
 - Android-compatible encrypted `.hcbak` backup envelope with iOS local state, Link peers, voice settings, messages, and cloud API secrets restore
 - QR scanning with AVFoundation
 - Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, and voice routing preferences
