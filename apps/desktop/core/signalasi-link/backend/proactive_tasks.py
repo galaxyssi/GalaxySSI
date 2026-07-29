@@ -30,7 +30,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 PROTOCOL = "signalasi.proactive-task.v1"
 TRIGGER_KINDS = {"manual", "cron", "interval", "goal_checkpoint", "webhook"}
-ACTION_KINDS = {"agent", "subagent_team", "workflow", "native_tool"}
+ACTION_KINDS = {
+    "agent",
+    "headless_swarm",
+    "subagent_team",
+    "workflow",
+    "native_tool",
+}
 TEAM_ROLES = {
     "lead",
     "coordinator",
@@ -197,13 +203,35 @@ class ProactiveAction:
                 "invalid_action",
                 "Coordinator-specialist mode requires one coordinator and at least one specialist",
             )
-        if kind in {"agent", "subagent_team"} and not prompt:
+        if kind == "headless_swarm" and team and (
+            final_responder_count != 1
+            or "coordinator" not in roles
+            or "lead" in roles
+            or "specialist" not in roles
+        ):
             raise ProactiveTaskError(
                 "invalid_action",
-                "Agent and sub-agent team actions require a goal or instructions",
+                "A configured headless swarm requires one coordinator and at least one specialist",
+            )
+        if kind not in {"subagent_team", "headless_swarm"} and team:
+            raise ProactiveTaskError(
+                "invalid_action",
+                "Only team and headless swarm actions accept Agent team members",
+            )
+        if kind in {"agent", "headless_swarm", "subagent_team"} and not prompt:
+            raise ProactiveTaskError(
+                "invalid_action",
+                "Agent actions require a goal or instructions",
             )
         if kind != "subagent_team" and not target_id:
             raise ProactiveTaskError("invalid_action", "Action target_id is required")
+        if kind == "headless_swarm":
+            from headless_swarm import HeadlessSwarmError, HeadlessSwarmSpec
+
+            try:
+                HeadlessSwarmSpec.parse(target_id, prompt, arguments)
+            except HeadlessSwarmError as exc:
+                raise ProactiveTaskError(exc.code, str(exc)) from exc
         delivery = {str(k): str(v) for k, v in dict(raw.get("delivery") or {}).items()}
         delivery_mode = delivery.get("mode", "store").strip().lower()
         if delivery_mode not in {"store", "notify", "mobile"}:
@@ -1068,6 +1096,25 @@ class ProactiveTaskRuntime:
         self._event(cancelled, "cancel", "cancelled", "Cancellation requested")
         return True
 
+    def record_progress(
+        self,
+        run_id: str,
+        kind: str,
+        detail: str,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> bool:
+        run = self.store.run(run_id)
+        if run is None or run.status in TERMINAL_RUN_STATUSES:
+            return False
+        self._event(
+            run,
+            _text(kind, "event.kind", 64),
+            run.status,
+            _text(detail, "event.detail", 4_096),
+            metadata,
+        )
+        return True
+
     def _run_loop(self) -> None:
         while not self._stop.is_set():
             try:
@@ -1219,6 +1266,10 @@ class ProactiveTaskRuntime:
                     retryable = exc.retryable
                 except Exception as exc:
                     last_code, last_error, retryable = "execution_failed", str(exc), True
+                latest = self.store.run(run_id)
+                if cancel.is_set() or (latest and latest.status == "cancelled"):
+                    self._finish_run_handle(run_id)
+                    return
                 self._event(
                     running,
                     "observe",

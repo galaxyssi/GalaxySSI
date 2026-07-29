@@ -1694,7 +1694,7 @@ async function executeCommandFromPanel() {
   }
 }
 
-function parseProactiveTeam(value) {
+function parseProactiveTeam(value, actionKind = "subagent_team") {
   const team = String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
     const separator = line.indexOf(":");
     if (separator < 1) throw new Error(t("Use role:agent-id for every team member."));
@@ -1703,13 +1703,22 @@ function parseProactiveTeam(value) {
       agent_id: line.slice(separator + 1).trim(),
       instructions: ""
     };
-    if (!["lead", "executor", "observer", "verifier"].includes(member.role) || !member.agent_id) {
+    if (!["lead", "coordinator", "executor", "specialist", "observer", "verifier"].includes(member.role) || !member.agent_id) {
       throw new Error(t("Use role:agent-id for every team member."));
     }
     return member;
   });
-  if (team.filter((member) => member.role === "lead").length !== 1) {
-    throw new Error(t("A team requires exactly one lead."));
+  if (actionKind === "headless_swarm" && !team.length) return [];
+  const finalResponders = team.filter((member) => ["lead", "coordinator"].includes(member.role));
+  if (finalResponders.length !== 1) {
+    throw new Error(t("A team requires exactly one lead or coordinator."));
+  }
+  const coordinatorMode = finalResponders[0].role === "coordinator";
+  if (actionKind === "headless_swarm" && (!coordinatorMode || !team.some((member) => member.role === "specialist"))) {
+    throw new Error(t("A headless swarm requires one coordinator and at least one specialist."));
+  }
+  if (coordinatorMode && !team.some((member) => member.role === "specialist")) {
+    throw new Error(t("A coordinator team requires at least one specialist."));
   }
   if (new Set(team.map((member) => member.agent_id)).size !== team.length) {
     throw new Error(t("Each team member must be unique."));
@@ -1796,9 +1805,12 @@ function syncProactiveFormVisibility() {
   $("#proactiveScheduleField").hidden = !["cron", "interval", "goal_checkpoint"].includes(trigger);
   $("#proactiveTimeZoneField").hidden = trigger !== "cron";
   $("#proactiveTargetField").hidden = action === "subagent_team";
-  $("#proactiveTeamField").hidden = action !== "subagent_team";
-  $("#proactiveArgumentsField").hidden = action !== "native_tool";
+  $("#proactiveTeamField").hidden = !["headless_swarm", "subagent_team"].includes(action);
+  $("#proactiveArgumentsField").hidden = !["headless_swarm", "native_tool"].includes(action);
   $("#proactivePromptField").hidden = action === "native_tool";
+  $("#proactiveTarget").placeholder = action === "headless_swarm"
+    ? "pr_review | test_repair | documentation_update"
+    : "codex";
   $("#proactiveSchedule").placeholder = trigger === "cron" ? "0 9 * * *" : "3600";
 }
 
@@ -1811,14 +1823,16 @@ async function createProactiveTask() {
   let team;
   try {
     argumentsValue = JSON.parse($("#proactiveArguments").value.trim() || "{}");
-    team = actionKind === "subagent_team" ? parseProactiveTeam($("#proactiveTeam").value) : [];
+    team = ["headless_swarm", "subagent_team"].includes(actionKind)
+      ? parseProactiveTeam($("#proactiveTeam").value, actionKind)
+      : [];
   } catch (error) {
     return showToast(error.message || String(error));
   }
   const targetId = $("#proactiveTarget").value.trim();
   if (actionKind !== "subagent_team" && !targetId) return showToast(t("Add a target ID."));
   const prompt = $("#proactivePrompt").value.trim();
-  if (["agent", "subagent_team"].includes(actionKind) && !prompt) {
+  if (["agent", "headless_swarm", "subagent_team"].includes(actionKind) && !prompt) {
     return showToast(t("Add a goal or instructions."));
   }
   const editingTask = state.proactiveTasks.find(
