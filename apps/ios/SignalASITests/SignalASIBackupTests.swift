@@ -61,6 +61,9 @@ final class SignalASIBackupTests: XCTestCase {
       $0.asrLanguage = "en-US"
       $0.ttsLanguage = "zh-TW"
     }
+    store.updateDisplaySettings {
+      $0.textScale = .extraLarge
+    }
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
     store.appendIncoming("desktop hello", from: "hermes")
@@ -75,6 +78,7 @@ final class SignalASIBackupTests: XCTestCase {
       iterations: 32
     )
     let payload = try SignalASIBackupManager.importBackup(data: encrypted, password: "password123")
+    XCTAssertTrue(payload.privacyManifest.includesDisplaySettings)
     let restored = makeStore()
     try restored.restoreBackupPayload(payload)
 
@@ -82,6 +86,7 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.voiceSettings.preferredLocaleIdentifier, "en_US")
     XCTAssertEqual(restored.languagePolicy.responseLanguage, "zh-CN")
     XCTAssertEqual(restored.languagePolicy.ttsLanguage, "zh-TW")
+    XCTAssertEqual(restored.displaySettings.textScale, .extraLarge)
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
     XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)
