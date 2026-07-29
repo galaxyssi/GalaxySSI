@@ -14,6 +14,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-compatible `signalasi_contact` QR export/import with pending friend requests, approve/reject handling, and verified contact creation
 - Local contact management with Android-style remark rename, soft delete, optional chat deletion, and private data reset
 - Explicit file/photo attachments with Android-compatible descriptors, inline `data_b64` transport for small payloads, metadata-only fallback for larger files, and chat composer previews
+- Android-style attachment workspace staging into app-private agent-native workspaces with safe names, per-turn limits, SHA-256 metadata, and stable workspace IDs
 - Android-style animated image timing normalization for zero-delay GIF frames
 - Direct cloud model contacts for OpenAI-compatible, Anthropic, and Gemini-style APIs, with provider-level model selection, readiness checks, and API keys stored in Keychain
 - Android-style cloud context overflow detection for cloud model retries and clear request-size failures
@@ -44,17 +45,22 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style agent task identity generation and desktop response matching
 - Android-style agent task intent classification for chat, code, phone, desktop, research, file, memory, and automation requests
 - Android-style agent execution profiles for task kind, timeout, artifact, installation, and verification contracts
+- Android-style runtime pack catalog for signed runtime pack metadata, dependency validation, compatibility filtering, install receipts, and China release mirrors
 - Android-style runtime capability matrix for native tools, system tools, connector targets, setup states, and blocked executability
+- Android-style native tool result receipts and replay store for idempotency-key reuse, Android wire-compatible replay snapshots, success-only durable caching, and retention pruning
 - Android-style capability catalog for native tools, MCP connections, automation marketplace state, permission diffs, dynamic authentication, and dependency readiness
 - Android-style agent plan lifecycle policy for stale runtime draft cleanup and completed connector restoration
+- Android-style agent execution continuity for pre-action checkpoints, Android screen digests, rollback actions, interrupted action recovery, and bounded replan history
 - Android-style agent execution loop timeline policy for run-control events, recovery actions, and progress placeholders
 - Android-style agent run recovery policy for terminal run-state reduction, local wait restore, and durable desktop reconnects
+- Android-style agent run start receipts for cross-end idempotency keys, durable accepted handles, unknown outcomes, cancellation marking, and bounded snapshots
 - Android-style workspace file policy for scoped paths, archive entry guards, exact patch replacements, and diff summaries
 - Android-style explicit tool handle registry for opaque scoped stateful tool references, TTLs, releases, and resource revocation
 - Android-style private data inventory for encrypted backup manifests, export eligibility, erase coverage, and identity rotation audits
 - Android-style agent failure recovery payloads, recommended recovery actions, plan-only fallbacks, and retry instructions
 - Android-style agent task liveness policy for progress watchdog warnings, timeouts, and terminal reply suppression
 - Android-style continuous observation controller for post-action screen change and stability sampling
+- Android-style observation context store for bounded, expiring, per-target observed context with conversation scoping, acknowledgement, and cleanup
 - Android-style agent action recovery controller for timed-out low-risk navigation retries and manual handoff for unsafe failures
 - Android-style agent action risk hardener for connector danger terms, custom device and Home Assistant control, and low-confidence visual OCR actions
 - Android-style visual grounding for OCR layout roles, accessibility fusion, and screen element query matching

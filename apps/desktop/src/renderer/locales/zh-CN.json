@@ -862,4 +862,12 @@
 , "{percent}% confidence": "置信度 {percent}%"
 , "Auto merged": "已自动合并"
 , "Rejected": "已拒绝"
+, "Relationship graph": "关系图"
+, "{nodes} entities · {relations} relationships": "{nodes} 个实体 · {relations} 条关系"
+, "No entity relationships yet.": "还没有实体关系。"
+, "Application": "应用"
+, "Feature": "功能"
+, "Setting": "设置"
+, "Concept": "概念"
+, "State": "状态"
 }

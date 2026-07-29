@@ -6609,6 +6609,454 @@ struct AgentRunRequest: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentRunStartReceiptStatus: String, Codable, CaseIterable, Identifiable {
+  case reserved = "RESERVED"
+  case accepted = "ACCEPTED"
+  case outcomeUnknown = "OUTCOME_UNKNOWN"
+  case cancelled = "CANCELLED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRunStartReceiptStatus? {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    guard let status = Self.fromWireValue(try container.decode(String.self)) else {
+      throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unknown run start receipt status")
+    }
+    self = status
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentRunHandle: Codable, Equatable {
+  var runId: String
+  var taskId: String
+  var agentId: String
+  var remoteRunId: String
+  var acceptedAtMillis: Int64
+
+  init(
+    runId: String,
+    taskId: String,
+    agentId: String,
+    remoteRunId: String,
+    acceptedAtMillis: Int64 = 0
+  ) {
+    self.runId = runId
+    self.taskId = taskId
+    self.agentId = agentId
+    self.remoteRunId = remoteRunId
+    self.acceptedAtMillis = max(acceptedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case runId = "run_id"
+    case taskId = "task_id"
+    case agentId = "agent_id"
+    case remoteRunId = "remote_run_id"
+    case acceptedAtMillis = "accepted_at_millis"
+  }
+}
+
+struct AgentRunStartReceipt: Codable, Equatable, Identifiable {
+  var agentId: String
+  var installationId: String
+  var idempotencyKey: String
+  var requestDigest: String
+  var runId: String
+  var taskId: String
+  var status: AgentRunStartReceiptStatus
+  var handle: AgentRunHandle?
+  var error: String
+  var createdAtMillis: Int64
+  var updatedAtMillis: Int64
+
+  var id: String { "\(agentId)|\(idempotencyKey)" }
+
+  init(
+    agentId: String,
+    installationId: String,
+    idempotencyKey: String,
+    requestDigest: String,
+    runId: String,
+    taskId: String,
+    status: AgentRunStartReceiptStatus,
+    handle: AgentRunHandle? = nil,
+    error: String = "",
+    createdAtMillis: Int64,
+    updatedAtMillis: Int64
+  ) {
+    self.agentId = agentId
+    self.installationId = installationId
+    self.idempotencyKey = idempotencyKey
+    self.requestDigest = requestDigest
+    self.runId = runId
+    self.taskId = taskId
+    self.status = status
+    self.handle = handle
+    self.error = error
+    self.createdAtMillis = max(createdAtMillis, 0)
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case installationId = "installation_id"
+    case idempotencyKey = "idempotency_key"
+    case requestDigest = "request_digest"
+    case runId = "run_id"
+    case taskId = "task_id"
+    case status
+    case handle
+    case error
+    case createdAtMillis = "created_at_millis"
+    case updatedAtMillis = "updated_at_millis"
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(agentId, forKey: .agentId)
+    try container.encode(installationId, forKey: .installationId)
+    try container.encode(idempotencyKey, forKey: .idempotencyKey)
+    try container.encode(requestDigest, forKey: .requestDigest)
+    try container.encode(runId, forKey: .runId)
+    try container.encode(taskId, forKey: .taskId)
+    try container.encode(status, forKey: .status)
+    if let handle {
+      try container.encode(handle, forKey: .handle)
+    } else {
+      try container.encodeNil(forKey: .handle)
+    }
+    try container.encode(error, forKey: .error)
+    try container.encode(createdAtMillis, forKey: .createdAtMillis)
+    try container.encode(updatedAtMillis, forKey: .updatedAtMillis)
+  }
+}
+
+struct AgentRunStartReceiptError: Error, Equatable {
+  var message: String
+}
+
+protocol AgentRunStartReceiptStore: AnyObject {
+  func find(agentId: String, idempotencyKey: String) -> AgentRunStartReceipt?
+  func reserve(registration: AgentRegistration, request: AgentRunRequest) throws -> AgentRunStartReceipt
+  func accept(agentId: String, idempotencyKey: String, handle: AgentRunHandle) throws -> AgentRunStartReceipt
+  func markOutcomeUnknown(agentId: String, idempotencyKey: String, error: String) -> AgentRunStartReceipt?
+  func markCancelledByRun(agentId: String, runId: String) -> Int
+  func list() -> [AgentRunStartReceipt]
+  func clear()
+}
+
+class BaseAgentRunStartReceiptStore: AgentRunStartReceiptStore {
+  private let lock = NSRecursiveLock()
+  private let clock: () -> Int64
+
+  init(clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }) {
+    self.clock = clock
+  }
+
+  func readPersisted() -> [AgentRunStartReceipt] {
+    []
+  }
+
+  func writePersisted(_ receipts: [AgentRunStartReceipt]) {}
+
+  func clearPersisted() {}
+
+  final func find(agentId: String, idempotencyKey: String) -> AgentRunStartReceipt? {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    return readPersisted().first { receipt in
+      receipt.agentId == agentId && receipt.idempotencyKey == idempotencyKey
+    }
+  }
+
+  final func reserve(registration: AgentRegistration, request: AgentRunRequest) throws -> AgentRunStartReceipt {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = try required(registration.agentId, label: "agent id")
+    let installationId = try required(registration.installationId, label: "installation id")
+    let key = try required(request.idempotencyKey, label: "idempotency key")
+    let digest = AgentRunStartIdentity.requestDigest(request)
+    var receipts = readPersisted()
+    if let existing = receipts.first(where: { $0.agentId == agentId && $0.idempotencyKey == key }) {
+      guard existing.installationId == installationId else {
+        throw AgentRunStartReceiptError(message: "Run idempotency key belongs to a different Agent installation")
+      }
+      guard existing.requestDigest == digest else {
+        throw AgentRunStartReceiptError(message: "Run idempotency key was reused with different request content")
+      }
+      return existing
+    }
+    let now = self.now()
+    let receipt = AgentRunStartReceipt(
+      agentId: agentId,
+      installationId: installationId,
+      idempotencyKey: key,
+      requestDigest: digest,
+      runId: try required(request.runId, label: "run id"),
+      taskId: try required(request.taskId, label: "task id"),
+      status: .reserved,
+      createdAtMillis: now,
+      updatedAtMillis: now
+    )
+    receipts.append(receipt)
+    writePersisted(bound(receipts))
+    return receipt
+  }
+
+  final func accept(agentId: String, idempotencyKey: String, handle: AgentRunHandle) throws -> AgentRunStartReceipt {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    var receipts = readPersisted()
+    guard let index = receipts.firstIndex(where: { $0.agentId == agentId && $0.idempotencyKey == idempotencyKey }) else {
+      throw AgentRunStartReceiptError(message: "Run start was not reserved")
+    }
+    let current = receipts[index]
+    guard current.runId == handle.runId && current.taskId == handle.taskId else {
+      throw AgentRunStartReceiptError(message: "Agent returned a handle for a different Run")
+    }
+    guard handle.agentId == current.agentId else {
+      throw AgentRunStartReceiptError(message: "Agent returned a handle for a different identity")
+    }
+    let accepted = AgentRunStartReceipt(
+      agentId: current.agentId,
+      installationId: current.installationId,
+      idempotencyKey: current.idempotencyKey,
+      requestDigest: current.requestDigest,
+      runId: current.runId,
+      taskId: current.taskId,
+      status: .accepted,
+      handle: handle,
+      error: "",
+      createdAtMillis: current.createdAtMillis,
+      updatedAtMillis: now()
+    )
+    receipts[index] = accepted
+    writePersisted(bound(receipts))
+    return accepted
+  }
+
+  final func markOutcomeUnknown(agentId: String, idempotencyKey: String, error: String) -> AgentRunStartReceipt? {
+    update(agentId: agentId, idempotencyKey: idempotencyKey) { current in
+      if current.status == .accepted || current.status == .cancelled {
+        return current
+      }
+      var copy = current
+      copy.status = .outcomeUnknown
+      copy.error = String(error.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxErrorCharacters))
+      copy.updatedAtMillis = now()
+      return copy
+    }
+  }
+
+  final func markCancelledByRun(agentId: String, runId: String) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let runId = runId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let now = self.now()
+    var changed = 0
+    let receipts = readPersisted().map { receipt -> AgentRunStartReceipt in
+      guard receipt.agentId == agentId && receipt.runId == runId && receipt.status != .cancelled else {
+        return receipt
+      }
+      changed += 1
+      var copy = receipt
+      copy.status = .cancelled
+      copy.updatedAtMillis = now
+      return copy
+    }
+    if changed > 0 {
+      writePersisted(bound(receipts))
+    }
+    return changed
+  }
+
+  final func list() -> [AgentRunStartReceipt] {
+    lock.lock()
+    defer { lock.unlock() }
+    return readPersisted().sorted {
+      if $0.updatedAtMillis != $1.updatedAtMillis {
+        return $0.updatedAtMillis > $1.updatedAtMillis
+      }
+      return $0.idempotencyKey < $1.idempotencyKey
+    }
+  }
+
+  final func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    clearPersisted()
+  }
+
+  private func update(
+    agentId: String,
+    idempotencyKey: String,
+    transform: (AgentRunStartReceipt) -> AgentRunStartReceipt
+  ) -> AgentRunStartReceipt? {
+    lock.lock()
+    defer { lock.unlock() }
+    let agentId = agentId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    var receipts = readPersisted()
+    guard let index = receipts.firstIndex(where: { $0.agentId == agentId && $0.idempotencyKey == idempotencyKey }) else {
+      return nil
+    }
+    let updated = transform(receipts[index])
+    receipts[index] = updated
+    writePersisted(bound(receipts))
+    return updated
+  }
+
+  private func required(_ value: String, label: String) throws -> String {
+    let clean = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    guard !clean.isEmpty else {
+      throw AgentRunStartReceiptError(message: "Run \(label) must not be blank")
+    }
+    return clean
+  }
+
+  private func bound(_ receipts: [AgentRunStartReceipt]) -> [AgentRunStartReceipt] {
+    Array(receipts.sorted {
+      if $0.updatedAtMillis != $1.updatedAtMillis {
+        return $0.updatedAtMillis < $1.updatedAtMillis
+      }
+      return $0.idempotencyKey < $1.idempotencyKey
+    }.suffix(Self.maxReceipts))
+  }
+
+  private func now() -> Int64 {
+    max(clock(), 0)
+  }
+
+  private static let maxReceipts = 4_000
+  private static let maxIdCharacters = 512
+  private static let maxErrorCharacters = 2_048
+}
+
+final class InMemoryAgentRunStartReceiptStore: BaseAgentRunStartReceiptStore {
+  private var document: String
+
+  init(
+    serialized: String = "[]",
+    clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.document = serialized
+    super.init(clock: clock)
+  }
+
+  override func readPersisted() -> [AgentRunStartReceipt] {
+    AgentRunStartReceiptJsonCodec.decode(document)
+  }
+
+  override func writePersisted(_ receipts: [AgentRunStartReceipt]) {
+    document = AgentRunStartReceiptJsonCodec.encode(receipts)
+  }
+
+  override func clearPersisted() {
+    document = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    document
+  }
+}
+
+enum AgentRunStartIdentity {
+  static func requestDigest(_ request: AgentRunRequest) -> String {
+    AgentMcpJSONCodec.sha256([
+      "conversation_id": .string(request.conversationId),
+      "message_id": .string(request.messageId),
+      "task_id": .string(request.taskId),
+      "parent_run_id": .string(request.parentRunId),
+      "goal": .string(request.goal),
+      "delivery_mode": .string(request.deliveryMode.rawValue),
+      "required_capabilities": .array(request.requiredCapabilities.map { .string($0.rawValue) }.sortedByStringValue()),
+      "context": .object(request.context),
+      "idempotency_key": .string(request.idempotencyKey)
+    ])
+  }
+}
+
+enum AgentRunStartReceiptJsonCodec {
+  static func encode(_ receipts: [AgentRunStartReceipt]) -> String {
+    guard let data = try? JSONEncoder().encode(receipts) else {
+      return "[]"
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func decode(_ raw: String) -> [AgentRunStartReceipt] {
+    guard let data = raw.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+      return []
+    }
+    return array.compactMap(decodeReceipt)
+  }
+
+  private static func decodeReceipt(_ object: [String: Any]) -> AgentRunStartReceipt? {
+    guard let status = AgentRunStartReceiptStatus.fromWireValue(string(object["status"])) else {
+      return nil
+    }
+    return AgentRunStartReceipt(
+      agentId: string(object["agent_id"]),
+      installationId: string(object["installation_id"]),
+      idempotencyKey: string(object["idempotency_key"]),
+      requestDigest: string(object["request_digest"]),
+      runId: string(object["run_id"]),
+      taskId: string(object["task_id"]),
+      status: status,
+      handle: decodeHandle(object["handle"] as? [String: Any]),
+      error: string(object["error"]),
+      createdAtMillis: int64(object["created_at_millis"]),
+      updatedAtMillis: int64(object["updated_at_millis"])
+    )
+  }
+
+  private static func decodeHandle(_ object: [String: Any]?) -> AgentRunHandle? {
+    guard let object else {
+      return nil
+    }
+    return AgentRunHandle(
+      runId: string(object["run_id"]),
+      taskId: string(object["task_id"]),
+      agentId: string(object["agent_id"]),
+      remoteRunId: string(object["remote_run_id"]),
+      acceptedAtMillis: int64(object["accepted_at_millis"])
+    )
+  }
+
+  private static func string(_ value: Any?) -> String {
+    (value as? String) ?? ""
+  }
+
+  private static func int64(_ value: Any?) -> Int64 {
+    if let value = value as? NSNumber {
+      return value.int64Value
+    }
+    return Int64(value as? String ?? "") ?? 0
+  }
+}
+
+private extension Array where Element == AgentMcpJSONValue {
+  func sortedByStringValue() -> [AgentMcpJSONValue] {
+    sorted { AgentMcpJSONCodec.stringify($0) < AgentMcpJSONCodec.stringify($1) }
+  }
+}
+
 struct AgentCrossTeamDelegationLaunchSpec: Codable, Equatable {
   var definition: AgentTeamDefinition
   var request: AgentRunRequest
@@ -7772,6 +8220,565 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentNativeVerificationStatus: String, Codable, CaseIterable, Identifiable {
+  case passed
+  case failed
+  case skipped
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeVerificationStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .skipped
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolVerification: Codable, Equatable {
+  var status: AgentNativeVerificationStatus
+  var message: String
+  var evidence: AgentMcpJSONObject
+
+  init(
+    status: AgentNativeVerificationStatus,
+    message: String = "",
+    evidence: AgentMcpJSONObject = [:]
+  ) {
+    self.status = status
+    self.message = message
+    self.evidence = evidence
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case message
+    case evidence
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      status: try container.decodeIfPresent(AgentNativeVerificationStatus.self, forKey: .status) ?? .skipped,
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      evidence: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .evidence) ?? [:]
+    )
+  }
+}
+
+struct AgentNativeToolError: Codable, Equatable {
+  var code: String
+  var message: String
+  var retryable: Bool
+  var details: AgentMcpJSONObject
+
+  init(
+    code: String,
+    message: String,
+    retryable: Bool = false,
+    details: AgentMcpJSONObject = [:]
+  ) {
+    self.code = code
+    self.message = message
+    self.retryable = retryable
+    self.details = details
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case code
+    case message
+    case retryable
+    case details
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      code: try container.decodeIfPresent(String.self, forKey: .code) ?? "",
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      retryable: try container.decodeIfPresent(Bool.self, forKey: .retryable) ?? false,
+      details: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .details) ?? [:]
+    )
+  }
+}
+
+struct AgentNativeToolProvenance: Codable, Equatable {
+  var toolId: String
+  var toolVersion: String
+  var location: AgentNativeToolLocation
+  var executorId: String
+  var contractVersion: String
+  var legacyAgentActionId: String?
+  var metadata: [String: String]
+
+  init(
+    toolId: String,
+    toolVersion: String,
+    location: AgentNativeToolLocation,
+    executorId: String,
+    contractVersion: String,
+    legacyAgentActionId: String? = nil,
+    metadata: [String: String] = [:]
+  ) {
+    self.toolId = toolId
+    self.toolVersion = toolVersion
+    self.location = location
+    self.executorId = executorId
+    self.contractVersion = contractVersion
+    self.legacyAgentActionId = legacyAgentActionId
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case location
+    case executorId = "executor_id"
+    case contractVersion = "contract_version"
+    case legacyAgentActionId = "legacy_agent_action_id"
+    case metadata
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      toolId: container.decode(String.self, forKey: .toolId),
+      toolVersion: container.decode(String.self, forKey: .toolVersion),
+      location: container.decodeIfPresent(AgentNativeToolLocation.self, forKey: .location) ?? .unknown,
+      executorId: container.decodeIfPresent(String.self, forKey: .executorId) ?? "",
+      contractVersion: container.decodeIfPresent(String.self, forKey: .contractVersion) ?? "",
+      legacyAgentActionId: container.decodeIfPresent(String.self, forKey: .legacyAgentActionId),
+      metadata: container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
+    )
+  }
+}
+
+enum AgentNativeToolResultStatus: String, Codable, CaseIterable, Identifiable {
+  case succeeded
+  case failed
+  case verificationFailed = "verification_failed"
+  case rejected
+  case unavailable
+  case cancelled
+  case timedOut = "timed_out"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeToolResultStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .failed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolReceipt: Codable, Equatable {
+  var invocationId: String
+  var idempotencyKey: String?
+  var startedAtEpochMillis: Int64
+  var finishedAtEpochMillis: Int64
+  var durationMillis: Int64
+  var status: AgentNativeToolResultStatus
+  var inputSha256: String
+  var outputSha256: String
+  var replayed: Bool
+  var originalInvocationId: String?
+
+  init(
+    invocationId: String,
+    idempotencyKey: String? = nil,
+    startedAtEpochMillis: Int64,
+    finishedAtEpochMillis: Int64,
+    durationMillis: Int64,
+    status: AgentNativeToolResultStatus,
+    inputSha256: String,
+    outputSha256: String,
+    replayed: Bool = false,
+    originalInvocationId: String? = nil
+  ) {
+    self.invocationId = invocationId
+    self.idempotencyKey = idempotencyKey
+    self.startedAtEpochMillis = startedAtEpochMillis
+    self.finishedAtEpochMillis = finishedAtEpochMillis
+    self.durationMillis = durationMillis
+    self.status = status
+    self.inputSha256 = inputSha256
+    self.outputSha256 = outputSha256
+    self.replayed = replayed
+    self.originalInvocationId = originalInvocationId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case invocationId = "invocation_id"
+    case idempotencyKey = "idempotency_key"
+    case startedAtEpochMillis = "started_at_epoch_ms"
+    case finishedAtEpochMillis = "finished_at_epoch_ms"
+    case durationMillis = "duration_ms"
+    case status
+    case inputSha256 = "input_sha256"
+    case outputSha256 = "output_sha256"
+    case replayed
+    case originalInvocationId = "original_invocation_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      invocationId: container.decode(String.self, forKey: .invocationId),
+      idempotencyKey: container.decodeIfPresent(String.self, forKey: .idempotencyKey),
+      startedAtEpochMillis: container.decodeIfPresent(Int64.self, forKey: .startedAtEpochMillis) ?? 0,
+      finishedAtEpochMillis: container.decodeIfPresent(Int64.self, forKey: .finishedAtEpochMillis) ?? 0,
+      durationMillis: container.decodeIfPresent(Int64.self, forKey: .durationMillis) ?? 0,
+      status: container.decodeIfPresent(AgentNativeToolResultStatus.self, forKey: .status) ?? .failed,
+      inputSha256: container.decodeIfPresent(String.self, forKey: .inputSha256) ?? "",
+      outputSha256: container.decodeIfPresent(String.self, forKey: .outputSha256) ?? "",
+      replayed: container.decodeIfPresent(Bool.self, forKey: .replayed) ?? false,
+      originalInvocationId: container.decodeIfPresent(String.self, forKey: .originalInvocationId)
+    )
+  }
+}
+
+struct AgentNativeToolResult: Codable, Equatable {
+  var status: AgentNativeToolResultStatus
+  var output: AgentMcpJSONObject
+  var message: String
+  var metadata: AgentMcpJSONObject
+  var error: AgentNativeToolError?
+  var verification: AgentNativeToolVerification?
+  var receipt: AgentNativeToolReceipt
+  var provenance: AgentNativeToolProvenance
+
+  var isSuccess: Bool { status == .succeeded }
+
+  init(
+    status: AgentNativeToolResultStatus,
+    output: AgentMcpJSONObject,
+    message: String,
+    metadata: AgentMcpJSONObject = [:],
+    error: AgentNativeToolError? = nil,
+    verification: AgentNativeToolVerification? = nil,
+    receipt: AgentNativeToolReceipt,
+    provenance: AgentNativeToolProvenance
+  ) {
+    self.status = status
+    self.output = output
+    self.message = message
+    self.metadata = metadata
+    self.error = error
+    self.verification = verification
+    self.receipt = receipt
+    self.provenance = provenance
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case output
+    case message
+    case metadata
+    case error
+    case verification
+    case receipt
+    case provenance
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      status: container.decodeIfPresent(AgentNativeToolResultStatus.self, forKey: .status) ?? .failed,
+      output: container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .output) ?? [:],
+      message: container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      metadata: container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .metadata) ?? [:],
+      error: container.decodeIfPresent(AgentNativeToolError.self, forKey: .error),
+      verification: container.decodeIfPresent(AgentNativeToolVerification.self, forKey: .verification),
+      receipt: container.decode(AgentNativeToolReceipt.self, forKey: .receipt),
+      provenance: container.decode(AgentNativeToolProvenance.self, forKey: .provenance)
+    )
+  }
+
+  func toJson() -> String {
+    AgentMcpJSONCodec.stringify(toJSONObject())
+  }
+
+  func toJsonValue() -> AgentMcpJSONValue {
+    .object(toJSONObject())
+  }
+
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "output": .object(output),
+      "message": .string(message),
+      "metadata": .object(metadata),
+      "error": error.map { .object($0.toJSONObject()) } ?? .null,
+      "verification": verification.map { .object($0.toJSONObject()) } ?? .null,
+      "receipt": .object(receipt.toJSONObject()),
+      "provenance": .object(provenance.toJSONObject())
+    ]
+  }
+
+  static func fromJSONObject(_ object: AgentMcpJSONObject) -> AgentNativeToolResult? {
+    let raw = AgentMcpJSONCodec.stringify(object)
+    guard let data = raw.data(using: .utf8) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(AgentNativeToolResult.self, from: data)
+  }
+}
+
+private extension AgentNativeToolError {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "code": .string(code),
+      "message": .string(message),
+      "retryable": .bool(retryable),
+      "details": .object(details)
+    ]
+  }
+}
+
+private extension AgentNativeToolVerification {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "message": .string(message),
+      "evidence": .object(evidence)
+    ]
+  }
+}
+
+private extension AgentNativeToolReceipt {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "invocation_id": .string(invocationId),
+      "idempotency_key": idempotencyKey.map(AgentMcpJSONValue.string) ?? .null,
+      "started_at_epoch_ms": .int(startedAtEpochMillis),
+      "finished_at_epoch_ms": .int(finishedAtEpochMillis),
+      "duration_ms": .int(durationMillis),
+      "status": .string(status.rawValue),
+      "input_sha256": .string(inputSha256),
+      "output_sha256": .string(outputSha256),
+      "replayed": .bool(replayed),
+      "original_invocation_id": originalInvocationId.map(AgentMcpJSONValue.string) ?? .null
+    ]
+  }
+}
+
+private extension AgentNativeToolProvenance {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "tool_id": .string(toolId),
+      "tool_version": .string(toolVersion),
+      "location": .string(location.rawValue),
+      "executor_id": .string(executorId),
+      "contract_version": .string(contractVersion),
+      "legacy_agent_action_id": legacyAgentActionId.map(AgentMcpJSONValue.string) ?? .null,
+      "metadata": .object(metadata.reduce(into: AgentMcpJSONObject()) { result, item in
+        result[item.key] = .string(item.value)
+      })
+    ]
+  }
+}
+
+struct AgentNativeToolReplayKey: Codable, Equatable, Hashable {
+  var toolId: String
+  var toolVersion: String
+  var idempotencyKey: String
+
+  init(toolId: String, toolVersion: String, idempotencyKey: String) {
+    self.toolId = toolId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.toolVersion = toolVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var isComplete: Bool {
+    !toolId.isEmpty && !toolVersion.isEmpty && !idempotencyKey.isEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case idempotencyKey = "idempotency_key"
+  }
+}
+
+protocol AgentNativeToolReplayStore: AnyObject {
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult?
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws
+  func clear()
+}
+
+enum AgentNativeToolReplayError: Error, Equatable {
+  case unsuccessfulResult
+}
+
+final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
+  static let maxEntries = 2_000
+
+  private let lock = NSRecursiveLock()
+  private var entries: [AgentNativeToolReplayKey: AgentNativeToolResult] = [:]
+  private var order: [AgentNativeToolReplayKey] = []
+
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    return entries[key]
+  }
+
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    if entries[key] == nil {
+      order.append(key)
+    }
+    entries[key] = result
+    while entries.count > Self.maxEntries, let oldest = order.first {
+      order.removeFirst()
+      entries.removeValue(forKey: oldest)
+    }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeAll()
+    order.removeAll()
+  }
+}
+
+struct AgentNativeToolReplayEntry: Equatable {
+  var key: AgentNativeToolReplayKey
+  var result: AgentNativeToolResult
+  var savedAtMillis: Int64
+}
+
+enum AgentNativeToolReplayJsonCodec {
+  static func stringify(_ entries: [AgentNativeToolReplayEntry]) -> String {
+    AgentMcpJSONCodec.stringify(.array(entries.map(entryObject)))
+  }
+
+  static func decode(_ raw: String) -> [AgentNativeToolReplayEntry] {
+    guard let data = raw.data(using: .utf8),
+          let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
+      return []
+    }
+    return values.compactMap { value in
+      guard let object = value.objectValue,
+            let resultObject = object.object("result"),
+            let result = AgentNativeToolResult.fromJSONObject(resultObject) else {
+        return nil
+      }
+      let key = AgentNativeToolReplayKey(
+        toolId: object.string("tool_id"),
+        toolVersion: object.string("tool_version"),
+        idempotencyKey: object.string("idempotency_key")
+      )
+      guard key.isComplete else {
+        return nil
+      }
+      return AgentNativeToolReplayEntry(
+        key: key,
+        result: result,
+        savedAtMillis: object.int64("saved_at_millis")
+      )
+    }
+  }
+
+  private static func entryObject(_ entry: AgentNativeToolReplayEntry) -> AgentMcpJSONValue {
+    .object([
+      "tool_id": .string(entry.key.toolId),
+      "tool_version": .string(entry.key.toolVersion),
+      "idempotency_key": .string(entry.key.idempotencyKey),
+      "saved_at_millis": .int(entry.savedAtMillis),
+      "result": entry.result.toJsonValue()
+    ])
+  }
+}
+
+final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
+  static let maxEntries = 2_000
+  static let retentionMillis: Int64 = 30 * 24 * 60 * 60 * 1_000
+
+  private let lock = NSRecursiveLock()
+  private var serializedEntries: String
+  private let nowMillis: () -> Int64
+
+  init(
+    serializedEntries: String = "[]",
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.serializedEntries = serializedEntries
+    self.nowMillis = nowMillis
+  }
+
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    let loaded = load()
+    let retained = retainedEntries(loaded, nowMillis: nowMillis())
+    if retained.count != loaded.count {
+      save(retained)
+    }
+    return retained.last { $0.key == key }?.result
+  }
+
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
+    guard result.isSuccess else {
+      throw AgentNativeToolReplayError.unsuccessfulResult
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    let now = nowMillis()
+    var entries = Array(retainedEntries(load(), nowMillis: now)
+      .filter { $0.key != key }
+      .suffix(Self.maxEntries - 1))
+    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: now))
+    save(entries)
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    serializedEntries = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return serializedEntries
+  }
+
+  private func load() -> [AgentNativeToolReplayEntry] {
+    AgentNativeToolReplayJsonCodec.decode(serializedEntries)
+  }
+
+  private func save(_ entries: [AgentNativeToolReplayEntry]) {
+    serializedEntries = AgentNativeToolReplayJsonCodec.stringify(entries)
+  }
+
+  private func retainedEntries(
+    _ entries: [AgentNativeToolReplayEntry],
+    nowMillis: Int64
+  ) -> [AgentNativeToolReplayEntry] {
+    entries.filter { nowMillis - $0.savedAtMillis <= Self.retentionMillis }
+  }
+}
+
 struct AgentSystemTool: Codable, Equatable, Identifiable {
   var id: String
   var title: String
@@ -8204,6 +9211,7 @@ struct AgentScreenContext: Codable, Equatable {
   var inputFieldCount: Int
   var scrollableRegionCount: Int
   var sensitiveFlagCount: Int
+  var visibleTexts: [String]
   var selectedText: String
   var isAccessibilityEnabled: Bool
   var snapshotAgeMillis: Int64
@@ -8217,6 +9225,7 @@ struct AgentScreenContext: Codable, Equatable {
     inputFieldCount: Int = 0,
     scrollableRegionCount: Int = 0,
     sensitiveFlagCount: Int = 0,
+    visibleTexts: [String] = [],
     selectedText: String = "",
     isAccessibilityEnabled: Bool = false,
     snapshotAgeMillis: Int64 = 0
@@ -8229,6 +9238,11 @@ struct AgentScreenContext: Codable, Equatable {
     self.inputFieldCount = max(inputFieldCount, 0)
     self.scrollableRegionCount = max(scrollableRegionCount, 0)
     self.sensitiveFlagCount = max(sensitiveFlagCount, 0)
+    self.visibleTexts = visibleTexts
+      .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maximumVisibleTextLength)) }
+      .filter { !$0.isEmpty }
+      .prefix(Self.maximumVisibleTextItems)
+      .map { $0 }
     self.selectedText = String(selectedText.prefix(Self.maximumSelectedTextLength))
     self.isAccessibilityEnabled = isAccessibilityEnabled
     self.snapshotAgeMillis = max(snapshotAgeMillis, 0)
@@ -8243,6 +9257,7 @@ struct AgentScreenContext: Codable, Equatable {
     case inputFieldCount = "input_field_count"
     case scrollableRegionCount = "scrollable_region_count"
     case sensitiveFlagCount = "sensitive_flag_count"
+    case visibleTexts = "visible_texts"
     case selectedText = "selected_text"
     case isAccessibilityEnabled = "is_accessibility_enabled"
     case snapshotAgeMillis = "snapshot_age_millis"
@@ -8259,12 +9274,15 @@ struct AgentScreenContext: Codable, Equatable {
       inputFieldCount: try container.decodeIfPresent(Int.self, forKey: .inputFieldCount) ?? 0,
       scrollableRegionCount: try container.decodeIfPresent(Int.self, forKey: .scrollableRegionCount) ?? 0,
       sensitiveFlagCount: try container.decodeIfPresent(Int.self, forKey: .sensitiveFlagCount) ?? 0,
+      visibleTexts: try container.decodeIfPresent([String].self, forKey: .visibleTexts) ?? [],
       selectedText: try container.decodeIfPresent(String.self, forKey: .selectedText) ?? "",
       isAccessibilityEnabled: try container.decodeIfPresent(Bool.self, forKey: .isAccessibilityEnabled) ?? false,
       snapshotAgeMillis: try container.decodeIfPresent(Int64.self, forKey: .snapshotAgeMillis) ?? 0
     )
   }
 
+  private static let maximumVisibleTextItems = 80
+  private static let maximumVisibleTextLength = 300
   private static let maximumSelectedTextLength = 1_000
 }
 
@@ -8319,6 +9337,212 @@ struct AgentObservationOutcome: Codable, Equatable {
   }
 
   private static let maximumEvidenceLength = 2_000
+}
+
+struct AgentObservedContext: Codable, Equatable, Identifiable {
+  static let defaultTTLMillis: Int64 = 24 * 60 * 60 * 1_000
+
+  var id: String
+  var targetId: String
+  var text: String
+  var conversationId: String
+  var taskId: String
+  var createdAtMillis: Int64
+  var expiresAtMillis: Int64
+
+  init(
+    id: String = UUID().uuidString,
+    targetId: String,
+    text: String,
+    conversationId: String = "",
+    taskId: String = "",
+    createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    expiresAtMillis: Int64? = nil
+  ) {
+    self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
+    self.targetId = String(targetId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTargetCharacters))
+    self.text = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxEntryCharacters))
+    self.conversationId = String(conversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    self.taskId = String(taskId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    self.createdAtMillis = max(createdAtMillis, 0)
+    self.expiresAtMillis = max(expiresAtMillis ?? (self.createdAtMillis + Self.defaultTTLMillis), 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case targetId = "target_id"
+    case text
+    case conversationId = "conversation_id"
+    case taskId = "task_id"
+    case createdAtMillis = "created_at_millis"
+    case expiresAtMillis = "expires_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      targetId: try container.decodeIfPresent(String.self, forKey: .targetId) ?? "",
+      text: try container.decodeIfPresent(String.self, forKey: .text) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      createdAtMillis: createdAtMillis,
+      expiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .expiresAtMillis)
+    )
+  }
+
+  func isExpired(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
+    expiresAtMillis > 0 && nowMillis >= expiresAtMillis
+  }
+
+  fileprivate var isUsable: Bool {
+    !targetId.isEmpty && !text.isEmpty
+  }
+
+  fileprivate static let maxTotalEntries = 128
+  fileprivate static let maxEntriesPerTarget = 16
+  fileprivate static let maxTargetCharacters = 160
+  fileprivate static let maxIdCharacters = 160
+  fileprivate static let maxEntryCharacters = 8_000
+}
+
+enum AgentObservationContextJsonCodec {
+  static func encode(_ items: [AgentObservedContext]) -> String {
+    guard let data = try? JSONEncoder().encode(items) else {
+      return "[]"
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func decode(
+    _ raw: String,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [AgentObservedContext] {
+    guard let data = raw.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
+      return []
+    }
+    let decoded = array.compactMap { value -> AgentObservedContext? in
+      guard let object = value as? [String: Any],
+            JSONSerialization.isValidJSONObject(object),
+            let data = try? JSONSerialization.data(withJSONObject: object),
+            let item = try? JSONDecoder().decode(AgentObservedContext.self, from: data) else {
+        return nil
+      }
+      return item
+    }
+    return decoded.filter { $0.isUsable && !$0.isExpired(nowMillis: nowMillis) }
+  }
+}
+
+final class InMemoryAgentObservationContextStore {
+  private let lock = NSRecursiveLock()
+  private let clock: () -> Int64
+  private let idFactory: () -> String
+  private var document: String
+
+  init(
+    serialized: String = "[]",
+    clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
+    idFactory: @escaping () -> String = { UUID().uuidString }
+  ) {
+    self.document = serialized
+    self.clock = clock
+    self.idFactory = idFactory
+  }
+
+  func observe(
+    targetId: String,
+    text: String,
+    conversationId: String = "",
+    taskId: String = ""
+  ) -> AgentObservedContext? {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = max(clock(), 0)
+    let entry = AgentObservedContext(
+      id: idFactory(),
+      targetId: targetId,
+      text: text,
+      conversationId: conversationId,
+      taskId: taskId,
+      createdAtMillis: now,
+      expiresAtMillis: now + AgentObservedContext.defaultTTLMillis
+    )
+    guard entry.isUsable else {
+      return nil
+    }
+    let current = load(nowMillis: now).filter { existing in
+      !(existing.targetId == entry.targetId &&
+        existing.text == entry.text &&
+        existing.conversationId == entry.conversationId)
+    }
+    let otherTargets = current.filter { $0.targetId != entry.targetId }
+    let targetEntries = Array((current.filter { $0.targetId == entry.targetId } + [entry]).suffix(AgentObservedContext.maxEntriesPerTarget))
+    let bounded = Array((otherTargets + targetEntries)
+      .sorted { $0.createdAtMillis < $1.createdAtMillis }
+      .suffix(AgentObservedContext.maxTotalEntries))
+    save(bounded)
+    return entry
+  }
+
+  func peek(targetId: String, conversationId: String = "") -> [AgentObservedContext] {
+    lock.lock()
+    defer { lock.unlock() }
+    let targetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let conversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return Array(load(nowMillis: max(clock(), 0)).filter { entry in
+      entry.targetId == targetId &&
+        (conversationId.isEmpty || entry.conversationId.isEmpty || entry.conversationId == conversationId)
+    }.suffix(AgentObservedContext.maxEntriesPerTarget))
+  }
+
+  func acknowledge(entryIds: Set<String>) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !entryIds.isEmpty else {
+      return 0
+    }
+    let current = load(nowMillis: max(clock(), 0))
+    let remaining = current.filter { !entryIds.contains($0.id) }
+    if remaining.count != current.count {
+      save(remaining)
+    }
+    return current.count - remaining.count
+  }
+
+  func clearTarget(_ targetId: String) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    let targetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let current = load(nowMillis: max(clock(), 0))
+    let remaining = current.filter { $0.targetId != targetId }
+    if remaining.count != current.count {
+      save(remaining)
+    }
+    return current.count - remaining.count
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    document = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return document
+  }
+
+  private func load(nowMillis: Int64) -> [AgentObservedContext] {
+    AgentObservationContextJsonCodec.decode(document, nowMillis: nowMillis)
+  }
+
+  private func save(_ items: [AgentObservedContext]) {
+    document = AgentObservationContextJsonCodec.encode(items)
+  }
 }
 
 struct AgentContinuousObservationController {
@@ -13583,25 +14807,238 @@ struct AgentVerificationResult: Codable, Equatable {
   }
 }
 
+enum AgentCheckpointStatus: String, Codable, CaseIterable, Identifiable {
+  case active = "ACTIVE"
+  case restored = "RESTORED"
+  case invalidated = "INVALIDATED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentCheckpointStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .active
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
 struct AgentExecutionCheckpoint: Codable, Equatable {
+  var id: String
   var actionId: String
+  var planRevision: Int
+  var foregroundApp: String
+  var activityName: String
+  var pageTitle: String
+  var screenDigest: String
+  var rollbackAction: AgentAction?
+  var status: AgentCheckpointStatus
+  var createdAtMillis: Int64
   var summary: String
   var timestampMillis: Int64
 
   init(
+    id: String = UUID().uuidString,
     actionId: String,
+    planRevision: Int = 0,
+    foregroundApp: String = "",
+    activityName: String = "",
+    pageTitle: String = "",
+    screenDigest: String = "",
+    rollbackAction: AgentAction? = nil,
+    status: AgentCheckpointStatus = .active,
+    createdAtMillis: Int64 = 0,
     summary: String = "",
-    timestampMillis: Int64 = 0
+    timestampMillis: Int64? = nil
   ) {
+    self.id = id
     self.actionId = actionId
+    self.planRevision = planRevision
+    self.foregroundApp = foregroundApp
+    self.activityName = activityName
+    self.pageTitle = pageTitle
+    self.screenDigest = screenDigest
+    self.rollbackAction = rollbackAction
+    self.status = status
+    self.createdAtMillis = max(createdAtMillis, 0)
     self.summary = summary
-    self.timestampMillis = timestampMillis
+    self.timestampMillis = max(timestampMillis ?? createdAtMillis, 0)
   }
 
   enum CodingKeys: String, CodingKey {
+    case id
     case actionId = "action_id"
+    case planRevision = "plan_revision"
+    case foregroundApp = "foreground_app"
+    case activityName = "activity_name"
+    case pageTitle = "page_title"
+    case screenDigest = "screen_digest"
+    case rollbackAction = "rollback_action"
+    case status
+    case createdAtMillis = "created_at_millis"
     case summary
     case timestampMillis = "timestamp_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let actionId = try container.decodeIfPresent(String.self, forKey: .actionId) ?? ""
+    let createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ?? 0)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ??
+        Self.fallbackId(actionId: actionId, createdAtMillis: createdAtMillis),
+      actionId: actionId,
+      planRevision: try container.decodeIfPresent(Int.self, forKey: .planRevision) ?? 0,
+      foregroundApp: try container.decodeIfPresent(String.self, forKey: .foregroundApp) ?? "",
+      activityName: try container.decodeIfPresent(String.self, forKey: .activityName) ?? "",
+      pageTitle: try container.decodeIfPresent(String.self, forKey: .pageTitle) ?? "",
+      screenDigest: try container.decodeIfPresent(String.self, forKey: .screenDigest) ?? "",
+      rollbackAction: try container.decodeIfPresent(AgentAction.self, forKey: .rollbackAction),
+      status: try container.decodeIfPresent(AgentCheckpointStatus.self, forKey: .status) ?? .active,
+      createdAtMillis: createdAtMillis,
+      summary: try container.decodeIfPresent(String.self, forKey: .summary) ?? "",
+      timestampMillis: try container.decodeIfPresent(Int64.self, forKey: .timestampMillis)
+    )
+  }
+
+  private static func fallbackId(actionId: String, createdAtMillis: Int64) -> String {
+    let suffix = actionId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "unknown" : actionId
+    return "checkpoint-\(suffix)-\(max(createdAtMillis, 0))"
+  }
+}
+
+enum AgentExecutionContinuity {
+  static func checkpointBefore(
+    action: AgentAction,
+    screen: AgentScreenContext,
+    planRevision: Int,
+    id: String = UUID().uuidString,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> AgentExecutionCheckpoint {
+    AgentExecutionCheckpoint(
+      id: id,
+      actionId: action.id,
+      planRevision: planRevision,
+      foregroundApp: screen.foregroundApp,
+      activityName: screen.activityName,
+      pageTitle: screen.pageTitle,
+      screenDigest: screenDigest(screen),
+      rollbackAction: rollbackAction(for: action),
+      status: .active,
+      createdAtMillis: nowMillis
+    )
+  }
+
+  static func screenDigest(_ screen: AgentScreenContext) -> String {
+    let payload = [
+      screen.foregroundApp,
+      screen.activityName,
+      screen.pageTitle,
+      screen.visibleTexts.prefix(40).joined(separator: "\u{001f}"),
+      String(screen.clickableNodeCount),
+      String(screen.inputFieldCount)
+    ].joined(separator: "\u{001e}")
+    return String(javaStringHash(payload))
+  }
+
+  private static func rollbackAction(for action: AgentAction) -> AgentAction? {
+    switch action.kind {
+    case .openApp, .openURL, .recents:
+      return AgentAction(
+        id: "rollback-\(action.id)",
+        kind: .back,
+        target: action.target,
+        risk: .low,
+        status: .pendingConfirmation,
+        description: "Return to the screen before \(action.description)",
+        requiresConfirmation: true
+      )
+    case .swipe:
+      return reverseSwipe(action)
+    default:
+      return nil
+    }
+  }
+
+  private static func reverseSwipe(_ action: AgentAction) -> AgentAction? {
+    guard let fromX = action.parameters["from_x"],
+          let fromY = action.parameters["from_y"],
+          let toX = action.parameters["to_x"],
+          let toY = action.parameters["to_y"] else {
+      return nil
+    }
+    return AgentAction(
+      id: "rollback-\(action.id)",
+      kind: .swipe,
+      target: action.target,
+      risk: .low,
+      status: .pendingConfirmation,
+      description: "Reverse the previous swipe",
+      parameters: [
+        "from_x": toX,
+        "from_y": toY,
+        "to_x": fromX,
+        "to_y": fromY
+      ],
+      requiresConfirmation: true
+    )
+  }
+
+  private static func javaStringHash(_ value: String) -> Int32 {
+    var hash: Int32 = 0
+    for codeUnit in value.utf16 {
+      hash = hash &* 31 &+ Int32(codeUnit)
+    }
+    return hash
+  }
+}
+
+extension AgentPlan {
+  func addCheckpoint(_ checkpoint: AgentExecutionCheckpoint) -> AgentPlan {
+    var copy = self
+    copy.checkpoints = Array((copy.checkpoints + [checkpoint]).suffix(20))
+    return copy
+  }
+
+  func markCheckpoint(_ checkpointId: String, status: AgentCheckpointStatus) -> AgentPlan {
+    var copy = self
+    copy.checkpoints = copy.checkpoints.map { checkpoint in
+      guard checkpoint.id == checkpointId else {
+        return checkpoint
+      }
+      var marked = checkpoint
+      marked.status = status
+      return marked
+    }
+    return copy
+  }
+
+  func recoverInterruptedExecution() -> AgentPlan {
+    var copy = self
+    copy.actions = copy.actions.map { action in
+      guard action.status == .running else {
+        return action
+      }
+      var interrupted = action
+      interrupted.status = .pendingConfirmation
+      interrupted.result = "Execution was interrupted before verification"
+      interrupted.evidence = "interrupted"
+      return interrupted
+    }
+    return copy
+  }
+
+  func historyForReplan() -> [AgentAction] {
+    let terminalStatuses: [AgentActionStatus] = [.completed, .failed, .blocked, .rolledBack]
+    return Array((actionHistory + actions.filter { terminalStatuses.contains($0.status) }).suffix(40))
   }
 }
 
@@ -17875,6 +19312,696 @@ enum AgentExecutionReasoningEffort: String, Codable, CaseIterable, Identifiable 
   case high = "HIGH"
 
   var id: String { rawValue }
+}
+
+enum AgentRuntimeGuestProtocol {
+  static let version = 1
+}
+
+enum AgentRuntimePackState: String, Codable, CaseIterable, Identifiable {
+  case ready = "ready"
+  case notInstalled = "not_installed"
+  case invalid = "invalid"
+  case incompatible = "incompatible"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRuntimePackState {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "-", with: "_")
+    return allCases.first { $0.rawValue == normalized } ?? .notInstalled
+  }
+}
+
+enum AgentRuntimeLanguage: String, Codable, CaseIterable, Identifiable {
+  case shell = "shell"
+  case python = "python"
+  case uv = "uv"
+  case javascript = "javascript"
+  case typescript = "typescript"
+  case go = "go"
+  case rust = "rust"
+  case c = "c"
+  case cpp = "cpp"
+  case java = "java"
+  case browser = "browser"
+  case ffmpeg = "ffmpeg"
+  case ffprobe = "ffprobe"
+
+  var id: String { rawValue }
+
+  var requiredPack: String {
+    switch self {
+    case .shell:
+      return "linux-base"
+    case .python, .uv:
+      return "python-uv"
+    case .javascript, .typescript:
+      return "node-js"
+    case .go:
+      return "go"
+    case .rust:
+      return "rust"
+    case .c, .cpp:
+      return "cpp"
+    case .java:
+      return "java"
+    case .browser:
+      return "browser-automation"
+    case .ffmpeg, .ffprobe:
+      return "ffmpeg"
+    }
+  }
+
+  var requiredCapability: String {
+    switch self {
+    case .shell:
+      return "shell.execute"
+    case .python:
+      return "python.execute"
+    case .uv:
+      return "uv.sync"
+    case .javascript:
+      return "javascript.execute"
+    case .typescript:
+      return "typescript.execute"
+    case .go:
+      return "go.execute"
+    case .rust:
+      return "rust.execute"
+    case .c:
+      return "c.execute"
+    case .cpp:
+      return "cpp.execute"
+    case .java:
+      return "java.execute"
+    case .browser:
+      return "browser.automation.execute"
+    case .ffmpeg:
+      return "ffmpeg.execute"
+    case .ffprobe:
+      return "ffprobe.inspect"
+    }
+  }
+}
+
+struct AgentRuntimePackManifest: Codable, Equatable {
+  var id: String
+  var version: String
+  var architecture: String
+  var imageFile: String
+  var imageSha256: String
+  var capabilities: [String]
+  var dependencies: [String]
+  var installedSizeBytes: Int64
+  var license: String
+  var signatureKeyId: String
+  var signature: String
+  var formatVersion: Int
+  var archiveSizeBytes: Int64
+  var minimumHostVersionCode: Int64
+  var guestApiVersion: Int
+
+  init(
+    id: String,
+    version: String,
+    architecture: String,
+    imageFile: String,
+    imageSha256: String,
+    capabilities: [String],
+    dependencies: [String],
+    installedSizeBytes: Int64,
+    license: String,
+    signatureKeyId: String,
+    signature: String,
+    formatVersion: Int = 1,
+    archiveSizeBytes: Int64 = 0,
+    minimumHostVersionCode: Int64 = 1,
+    guestApiVersion: Int = AgentRuntimeGuestProtocol.version
+  ) {
+    self.id = id
+    self.version = version
+    self.architecture = architecture
+    self.imageFile = imageFile
+    self.imageSha256 = imageSha256
+    self.capabilities = capabilities
+    self.dependencies = dependencies
+    self.installedSizeBytes = installedSizeBytes
+    self.license = license
+    self.signatureKeyId = signatureKeyId
+    self.signature = signature
+    self.formatVersion = formatVersion
+    self.archiveSizeBytes = archiveSizeBytes
+    self.minimumHostVersionCode = minimumHostVersionCode
+    self.guestApiVersion = guestApiVersion
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case version
+    case architecture
+    case imageFile = "image_file"
+    case imageSha256 = "image_sha256"
+    case capabilities
+    case dependencies
+    case installedSizeBytes = "installed_size_bytes"
+    case license
+    case signatureKeyId = "signature_key_id"
+    case signature
+    case formatVersion = "format_version"
+    case archiveSizeBytes = "archive_size_bytes"
+    case minimumHostVersionCode = "minimum_host_version_code"
+    case guestApiVersion = "guest_api_version"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decode(String.self, forKey: .id),
+      version: try container.decode(String.self, forKey: .version),
+      architecture: try container.decode(String.self, forKey: .architecture),
+      imageFile: try container.decode(String.self, forKey: .imageFile),
+      imageSha256: try container.decode(String.self, forKey: .imageSha256),
+      capabilities: try container.decodeIfPresent([String].self, forKey: .capabilities) ?? [],
+      dependencies: try container.decodeIfPresent([String].self, forKey: .dependencies) ?? [],
+      installedSizeBytes: try container.decode(Int64.self, forKey: .installedSizeBytes),
+      license: try container.decode(String.self, forKey: .license),
+      signatureKeyId: try container.decode(String.self, forKey: .signatureKeyId),
+      signature: try container.decode(String.self, forKey: .signature),
+      formatVersion: try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1,
+      archiveSizeBytes: try container.decodeIfPresent(Int64.self, forKey: .archiveSizeBytes) ?? 0,
+      minimumHostVersionCode: try container.decodeIfPresent(Int64.self, forKey: .minimumHostVersionCode) ?? 1,
+      guestApiVersion: try container.decodeIfPresent(Int.self, forKey: .guestApiVersion) ?? 1
+    )
+  }
+
+  func signingPayload() -> Data {
+    let values = [
+      String(formatVersion),
+      id,
+      version,
+      architecture,
+      imageFile,
+      imageSha256.lowercased(),
+      capabilities.sorted().joined(separator: ","),
+      dependencies.sorted().joined(separator: ","),
+      String(installedSizeBytes),
+      String(archiveSizeBytes),
+      String(minimumHostVersionCode),
+      String(guestApiVersion),
+      license,
+      signatureKeyId.lowercased()
+    ]
+    return Data(values.map { "\($0.utf8.count):\($0)" }.joined().utf8)
+  }
+}
+
+struct AgentRuntimePackStatus: Codable, Equatable, Identifiable {
+  var id: String
+  var state: AgentRuntimePackState
+  var reason: String
+  var manifest: AgentRuntimePackManifest?
+
+  init(
+    id: String,
+    state: AgentRuntimePackState,
+    reason: String = "",
+    manifest: AgentRuntimePackManifest? = nil
+  ) {
+    self.id = id
+    self.state = state
+    self.reason = reason
+    self.manifest = manifest
+  }
+}
+
+struct AgentRuntimePackCatalogEntry: Codable, Equatable, Identifiable {
+  var packId: String
+  var version: String
+  var architecture: String
+  var downloadUrl: String
+  var archiveSha256: String
+  var archiveSizeBytes: Int64
+  var installedSizeBytes: Int64
+  var dependencies: [String]
+  var license: String
+  var minimumHostVersionCode: Int64
+  var guestApiVersion: Int
+  var releaseNotes: String
+
+  var id: String { "\(packId)|\(architecture)" }
+
+  init(
+    packId: String,
+    version: String,
+    architecture: String,
+    downloadUrl: String,
+    archiveSha256: String,
+    archiveSizeBytes: Int64,
+    installedSizeBytes: Int64,
+    dependencies: [String],
+    license: String,
+    minimumHostVersionCode: Int64,
+    guestApiVersion: Int,
+    releaseNotes: String = ""
+  ) {
+    self.packId = packId
+    self.version = version
+    self.architecture = architecture
+    self.downloadUrl = downloadUrl
+    self.archiveSha256 = archiveSha256
+    self.archiveSizeBytes = archiveSizeBytes
+    self.installedSizeBytes = installedSizeBytes
+    self.dependencies = dependencies
+    self.license = license
+    self.minimumHostVersionCode = minimumHostVersionCode
+    self.guestApiVersion = guestApiVersion
+    self.releaseNotes = releaseNotes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case packId = "pack_id"
+    case version
+    case architecture
+    case downloadUrl = "download_url"
+    case archiveSha256 = "archive_sha256"
+    case archiveSizeBytes = "archive_size_bytes"
+    case installedSizeBytes = "installed_size_bytes"
+    case dependencies
+    case license
+    case minimumHostVersionCode = "minimum_host_version_code"
+    case guestApiVersion = "guest_api_version"
+    case releaseNotes = "release_notes"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      packId: try container.decode(String.self, forKey: .packId),
+      version: try container.decode(String.self, forKey: .version),
+      architecture: try container.decode(String.self, forKey: .architecture),
+      downloadUrl: try container.decode(String.self, forKey: .downloadUrl),
+      archiveSha256: try container.decode(String.self, forKey: .archiveSha256),
+      archiveSizeBytes: try container.decode(Int64.self, forKey: .archiveSizeBytes),
+      installedSizeBytes: try container.decode(Int64.self, forKey: .installedSizeBytes),
+      dependencies: try container.decodeIfPresent([String].self, forKey: .dependencies) ?? [],
+      license: try container.decode(String.self, forKey: .license),
+      minimumHostVersionCode: try container.decodeIfPresent(Int64.self, forKey: .minimumHostVersionCode) ?? 1,
+      guestApiVersion: try container.decodeIfPresent(Int.self, forKey: .guestApiVersion) ?? 1,
+      releaseNotes: try container.decodeIfPresent(String.self, forKey: .releaseNotes) ?? ""
+    )
+  }
+
+  func canonicalValue() -> String {
+    let values = [
+      packId,
+      version,
+      architecture,
+      downloadUrl,
+      archiveSha256.lowercased(),
+      String(archiveSizeBytes),
+      String(installedSizeBytes),
+      dependencies.sorted().joined(separator: ","),
+      license,
+      String(minimumHostVersionCode),
+      String(guestApiVersion),
+      releaseNotes
+    ]
+    return values.map { "\($0.utf8.count):\($0)" }.joined()
+  }
+}
+
+struct AgentRuntimePackCatalog: Codable, Equatable {
+  var formatVersion: Int
+  var catalogVersion: String
+  var generatedAtMillis: Int64
+  var expiresAtMillis: Int64
+  var entries: [AgentRuntimePackCatalogEntry]
+  var signatureKeyId: String
+  var signature: String
+
+  init(
+    catalogVersion: String,
+    generatedAtMillis: Int64,
+    expiresAtMillis: Int64,
+    entries: [AgentRuntimePackCatalogEntry],
+    signatureKeyId: String,
+    signature: String,
+    formatVersion: Int = 1
+  ) {
+    self.formatVersion = formatVersion
+    self.catalogVersion = catalogVersion
+    self.generatedAtMillis = generatedAtMillis
+    self.expiresAtMillis = expiresAtMillis
+    self.entries = entries
+    self.signatureKeyId = signatureKeyId
+    self.signature = signature
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case formatVersion = "format_version"
+    case catalogVersion = "catalog_version"
+    case generatedAtMillis = "generated_at_millis"
+    case expiresAtMillis = "expires_at_millis"
+    case entries
+    case signatureKeyId = "signature_key_id"
+    case signature
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      catalogVersion: try container.decode(String.self, forKey: .catalogVersion),
+      generatedAtMillis: try container.decode(Int64.self, forKey: .generatedAtMillis),
+      expiresAtMillis: try container.decode(Int64.self, forKey: .expiresAtMillis),
+      entries: try container.decodeIfPresent([AgentRuntimePackCatalogEntry].self, forKey: .entries) ?? [],
+      signatureKeyId: try container.decode(String.self, forKey: .signatureKeyId),
+      signature: try container.decode(String.self, forKey: .signature),
+      formatVersion: try container.decodeIfPresent(Int.self, forKey: .formatVersion) ?? 1
+    )
+  }
+
+  func signingPayload() -> Data {
+    let sortedEntries = entries.sorted {
+      if $0.packId != $1.packId {
+        return $0.packId < $1.packId
+      }
+      if $0.architecture != $1.architecture {
+        return $0.architecture < $1.architecture
+      }
+      return $0.version < $1.version
+    }
+    var payload = "\(formatVersion)\n\(catalogVersion)\n\(generatedAtMillis)\n\(expiresAtMillis)\n"
+    for entry in sortedEntries {
+      payload += entry.canonicalValue()
+      payload += "\n"
+    }
+    payload += signatureKeyId.lowercased()
+    return Data(payload.utf8)
+  }
+}
+
+enum AgentRuntimePackInstallStage: String, Codable, CaseIterable, Identifiable {
+  case preparing = "PREPARING"
+  case copying = "COPYING"
+  case extracting = "EXTRACTING"
+  case verifying = "VERIFYING"
+  case activating = "ACTIVATING"
+  case completed = "COMPLETED"
+
+  var id: String { rawValue }
+}
+
+struct AgentRuntimePackInstallProgress: Codable, Equatable {
+  var stage: AgentRuntimePackInstallStage
+  var processedBytes: Int64
+  var totalBytes: Int64
+
+  init(
+    stage: AgentRuntimePackInstallStage,
+    processedBytes: Int64 = 0,
+    totalBytes: Int64 = -1
+  ) {
+    self.stage = stage
+    self.processedBytes = processedBytes
+    self.totalBytes = totalBytes
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case stage
+    case processedBytes = "processed_bytes"
+    case totalBytes = "total_bytes"
+  }
+}
+
+struct AgentRuntimePackInstallResult: Codable, Equatable {
+  var packId: String
+  var version: String
+  var state: AgentRuntimePackState
+  var installedBytes: Int64
+  var replacedExisting: Bool
+  var reason: String
+
+  init(
+    packId: String,
+    version: String,
+    state: AgentRuntimePackState,
+    installedBytes: Int64,
+    replacedExisting: Bool,
+    reason: String = ""
+  ) {
+    self.packId = packId
+    self.version = version
+    self.state = state
+    self.installedBytes = installedBytes
+    self.replacedExisting = replacedExisting
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case packId = "pack_id"
+    case version
+    case state
+    case installedBytes = "installed_bytes"
+    case replacedExisting = "replaced_existing"
+    case reason
+  }
+}
+
+enum AgentRuntimeDistributionSources {
+  static let githubCatalogURL =
+    "https://github.com/signalasi/SignalASI/releases/download/android-runtime-v1/android-runtime-catalog-v1.json"
+
+  static func catalogCandidates(languageTag: String) -> [String] {
+    downloadCandidates(url: githubCatalogURL, languageTag: languageTag)
+  }
+
+  static func downloadCandidates(url: String, languageTag: String) -> [String] {
+    guard isChinese(languageTag), isSignalAsiGitHubReleaseURL(url) else {
+      return [url]
+    }
+    var seen = Set<String>()
+    return (chinaAcceleratorPrefixes.map { "\($0)\(url)" } + [url]).filter { seen.insert($0).inserted }
+  }
+
+  private static func isChinese(_ languageTag: String) -> Bool {
+    let normalized = languageTag
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: "_", with: "-")
+    return normalized == "zh" || normalized.hasPrefix("zh-")
+  }
+
+  private static func isSignalAsiGitHubReleaseURL(_ value: String) -> Bool {
+    guard let components = URLComponents(string: value) else {
+      return false
+    }
+    return components.scheme?.lowercased() == "https" &&
+      components.host?.lowercased() == "github.com" &&
+      components.path.hasPrefix(signalASIReleasePath)
+  }
+
+  private static let signalASIReleasePath = "/signalasi/SignalASI/releases/download/"
+  private static let chinaAcceleratorPrefixes = [
+    "https://ghfast.top/",
+    "https://ghproxy.net/",
+    "https://gh-proxy.com/"
+  ]
+}
+
+enum AgentRuntimePackCatalogPolicy {
+  static let requiredPacks = [
+    "linux-base",
+    "python-uv",
+    "node-js",
+    "go",
+    "rust",
+    "cpp",
+    "java",
+    "browser-automation",
+    "ffmpeg"
+  ]
+
+  static let requiredPackCapabilities: [String: Set<String>] =
+    Dictionary(grouping: AgentRuntimeLanguage.allCases, by: \.requiredPack)
+      .mapValues { Set($0.map(\.requiredCapability)) }
+
+  static var defaultSupportedArchitectures: [String] {
+    #if arch(arm64)
+      return ["arm64", "arm64-v8a"]
+    #elseif arch(x86_64)
+      return ["x86_64", "x86"]
+    #else
+      return []
+    #endif
+  }
+
+  @discardableResult
+  static func validate(
+    _ catalog: AgentRuntimePackCatalog,
+    nowMillis: Int64,
+    verifier: (AgentRuntimePackCatalog) -> Bool
+  ) throws -> AgentRuntimePackCatalog {
+    try require(catalog.formatVersion == formatVersion, "Runtime catalog format is incompatible")
+    try require(matches(catalog.catalogVersion, versionPattern), "Runtime catalog version is invalid")
+    try require(
+      catalog.generatedAtMillis > 0 && catalog.generatedAtMillis <= nowMillis + clockSkewMillis,
+      "Runtime catalog generation time is invalid"
+    )
+    try require(
+      catalog.expiresAtMillis > catalog.generatedAtMillis && catalog.expiresAtMillis >= nowMillis,
+      "Runtime catalog is expired"
+    )
+    try require((1...maxEntries).contains(catalog.entries.count), "Runtime catalog entry count is invalid")
+    try require(matches(catalog.signatureKeyId, sha256Pattern), "Runtime catalog signing key id is invalid")
+    try require(!catalog.signature.isEmpty, "Runtime catalog signature is missing")
+
+    var identities = Set<String>()
+    for entry in catalog.entries {
+      try validate(entry)
+      try require(
+        identities.insert("\(entry.packId)|\(entry.architecture)").inserted,
+        "Runtime catalog contains duplicate pack entries"
+      )
+    }
+    try validateDependencyGraphs(catalog.entries)
+    try require(verifier(catalog), "Runtime catalog signature is not trusted")
+    return catalog
+  }
+
+  static func compatibleEntries(
+    in catalog: AgentRuntimePackCatalog,
+    supportedArchitectures: [String] = defaultSupportedArchitectures,
+    hostVersionCode: Int64,
+    guestApiVersion: Int = AgentRuntimeGuestProtocol.version
+  ) -> [AgentRuntimePackCatalogEntry] {
+    catalog.entries.filter { entry in
+      supportedArchitectures.contains(entry.architecture) &&
+        entry.minimumHostVersionCode <= hostVersionCode &&
+        entry.guestApiVersion == guestApiVersion
+    }
+  }
+
+  static func validateReplacement(
+    previous: AgentRuntimePackCatalog?,
+    candidate: AgentRuntimePackCatalog
+  ) throws {
+    guard let previous else {
+      return
+    }
+    try require(
+      candidate.generatedAtMillis >= previous.generatedAtMillis,
+      "Runtime catalog rollback was rejected"
+    )
+    if candidate.generatedAtMillis == previous.generatedAtMillis {
+      try require(
+        candidate.signingPayload() == previous.signingPayload(),
+        "Runtime catalog generation was reused with different content"
+      )
+    }
+  }
+
+  private static func validate(_ entry: AgentRuntimePackCatalogEntry) throws {
+    try require(requiredPacks.contains(entry.packId), "Runtime catalog pack id is unsupported")
+    try require(matches(entry.version, versionPattern), "Runtime catalog pack version is invalid")
+    try require(matches(entry.architecture, architecturePattern), "Runtime catalog architecture is invalid")
+    try require(matches(entry.archiveSha256, sha256Pattern), "Runtime catalog archive digest is invalid")
+    try require((1...maxArchiveBytes).contains(entry.archiveSizeBytes), "Runtime catalog archive size is invalid")
+    try require((1...maxInstalledBytes).contains(entry.installedSizeBytes), "Runtime catalog installed size is invalid")
+    try require(
+      Set(entry.dependencies).count == entry.dependencies.count &&
+        entry.dependencies.allSatisfy { requiredPacks.contains($0) && $0 != entry.packId },
+      "Runtime catalog dependencies are invalid"
+    )
+    try require(!entry.license.isEmpty && entry.license.count <= 256, "Runtime catalog license is invalid")
+    try require(
+      entry.minimumHostVersionCode > 0 && entry.guestApiVersion > 0,
+      "Runtime catalog compatibility metadata is invalid"
+    )
+    try require(
+      entry.releaseNotes.count <= maxReleaseNotesCharacters &&
+        !entry.canonicalValue().contains("\n") &&
+        !entry.canonicalValue().contains("\r"),
+      "Runtime catalog text is invalid"
+    )
+    try validateHTTPSURL(entry.downloadUrl)
+  }
+
+  private static func validateDependencyGraphs(_ entries: [AgentRuntimePackCatalogEntry]) throws {
+    let entriesByArchitecture = Dictionary(grouping: entries, by: \.architecture)
+    for (architecture, architectureEntries) in entriesByArchitecture {
+      let entriesById = Dictionary(uniqueKeysWithValues: architectureEntries.map { ($0.packId, $0) })
+      for entry in architectureEntries {
+        try require(
+          entry.dependencies.allSatisfy { entriesById[$0] != nil },
+          "Runtime catalog dependency is missing for \(architecture)"
+        )
+      }
+
+      var visiting = Set<String>()
+      var visited = Set<String>()
+      func visit(_ packId: String) throws {
+        if visited.contains(packId) {
+          return
+        }
+        try require(visiting.insert(packId).inserted, "Runtime catalog contains a dependency cycle")
+        for dependency in entriesById[packId]?.dependencies ?? [] {
+          try visit(dependency)
+        }
+        visiting.remove(packId)
+        visited.insert(packId)
+      }
+      for packId in entriesById.keys {
+        try visit(packId)
+      }
+    }
+  }
+
+  @discardableResult
+  private static func validateHTTPSURL(_ value: String) throws -> URLComponents {
+    try require((1...maxURLCharacters).contains(value.count), "Runtime pack URL is invalid")
+    guard let components = URLComponents(string: value) else {
+      throw AgentRuntimeCapabilityError.invalid("Runtime pack URL is invalid")
+    }
+    let host = components.host?.lowercased() ?? ""
+    try require(
+      components.scheme?.lowercased() == "https" &&
+        !host.isEmpty &&
+        components.user == nil &&
+        components.password == nil &&
+        components.fragment == nil &&
+        (components.port ?? -1) != 0,
+      "Runtime pack URL must be public HTTPS"
+    )
+    try require(
+      host != "localhost" && !host.hasSuffix(".localhost") && !host.hasSuffix(".local"),
+      "Runtime pack URL must not target a local host"
+    )
+    return components
+  }
+
+  private static func matches(_ value: String, _ pattern: String) -> Bool {
+    value.range(of: pattern, options: [.regularExpression]) != nil
+  }
+
+  private static func require(_ condition: @autoclosure () -> Bool, _ message: String) throws {
+    guard condition() else {
+      throw AgentRuntimeCapabilityError.invalid(message)
+    }
+  }
+
+  private static let formatVersion = 1
+  private static let maxEntries = 128
+  private static let maxURLCharacters = 4_096
+  private static let maxReleaseNotesCharacters = 8_192
+  private static let maxArchiveBytes: Int64 = 6 * 1_024 * 1_024 * 1_024
+  private static let maxInstalledBytes: Int64 = 12 * 1_024 * 1_024 * 1_024
+  private static let clockSkewMillis: Int64 = 24 * 60 * 60 * 1_000
+  private static let versionPattern = #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9._-]+)?$"#
+  private static let architecturePattern = #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#
+  private static let sha256Pattern = #"^[a-fA-F0-9]{64}$"#
 }
 
 struct AgentExecutionProfile: Codable, Equatable {
