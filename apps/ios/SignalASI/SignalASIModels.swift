@@ -9764,9 +9764,360 @@ enum AgentRuntimeCapabilityError: LocalizedError, Equatable {
   }
 }
 
+enum AgentNativeToolResultStatus: String, Codable, CaseIterable, Identifiable {
+  case succeeded
+  case failed
+  case verificationFailed = "verification_failed"
+  case rejected
+  case unavailable
+  case cancelled
+  case timedOut = "timed_out"
+
+  var id: String { rawValue }
+}
+
+enum AgentNativeVerificationStatus: String, Codable, CaseIterable, Identifiable {
+  case passed
+  case failed
+  case skipped
+
+  var id: String { rawValue }
+}
+
+struct AgentNativeToolError: Codable, Equatable {
+  var code: String
+  var message: String
+  var retryable: Bool
+  var details: AgentMcpJSONObject
+
+  init(
+    code: String,
+    message: String,
+    retryable: Bool = false,
+    details: AgentMcpJSONObject = [:]
+  ) {
+    self.code = code.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.message = message
+    self.retryable = retryable
+    self.details = details
+  }
+}
+
+struct AgentNativeToolExecutionResult: Codable, Equatable {
+  var output: AgentMcpJSONObject
+  var message: String
+  var metadata: AgentMcpJSONObject
+  var error: AgentNativeToolError?
+
+  var isSuccess: Bool { error == nil }
+
+  init(
+    output: AgentMcpJSONObject = [:],
+    message: String = "",
+    metadata: AgentMcpJSONObject = [:],
+    error: AgentNativeToolError? = nil
+  ) {
+    self.output = output
+    self.message = message
+    self.metadata = metadata
+    self.error = error
+  }
+
+  static func success(
+    output: AgentMcpJSONObject = [:],
+    message: String = "",
+    metadata: AgentMcpJSONObject = [:]
+  ) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult(output: output, message: message, metadata: metadata)
+  }
+
+  static func failure(
+    code: String,
+    message: String,
+    retryable: Bool = false,
+    details: AgentMcpJSONObject = [:]
+  ) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult(
+      message: message,
+      error: AgentNativeToolError(
+        code: code,
+        message: message,
+        retryable: retryable,
+        details: details
+      )
+    )
+  }
+}
+
+struct AgentNativeToolVerification: Codable, Equatable {
+  var status: AgentNativeVerificationStatus
+  var message: String
+  var evidence: AgentMcpJSONObject
+
+  init(
+    status: AgentNativeVerificationStatus,
+    message: String = "",
+    evidence: AgentMcpJSONObject = [:]
+  ) {
+    self.status = status
+    self.message = message
+    self.evidence = evidence
+  }
+}
+
+struct AgentNativeToolReceipt: Codable, Equatable {
+  var invocationId: String
+  var idempotencyKey: String?
+  var startedAtEpochMillis: Int64
+  var finishedAtEpochMillis: Int64
+  var durationMillis: Int64
+  var status: AgentNativeToolResultStatus
+  var inputSha256: String
+  var outputSha256: String
+  var replayed: Bool
+  var originalInvocationId: String?
+
+  enum CodingKeys: String, CodingKey {
+    case invocationId = "invocation_id"
+    case idempotencyKey = "idempotency_key"
+    case startedAtEpochMillis = "started_at_epoch_ms"
+    case finishedAtEpochMillis = "finished_at_epoch_ms"
+    case durationMillis = "duration_ms"
+    case status
+    case inputSha256 = "input_sha256"
+    case outputSha256 = "output_sha256"
+    case replayed
+    case originalInvocationId = "original_invocation_id"
+  }
+}
+
+struct AgentNativeToolProvenance: Codable, Equatable {
+  var toolId: String
+  var toolVersion: String
+  var location: AgentNativeToolLocation
+  var executorId: String
+  var contractVersion: String
+  var legacyAgentActionId: String?
+  var metadata: [String: String]
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case location
+    case executorId = "executor_id"
+    case contractVersion = "contract_version"
+    case legacyAgentActionId = "legacy_agent_action_id"
+    case metadata
+  }
+}
+
+struct AgentNativeToolResult: Codable, Equatable {
+  var status: AgentNativeToolResultStatus
+  var output: AgentMcpJSONObject
+  var message: String
+  var metadata: AgentMcpJSONObject
+  var error: AgentNativeToolError?
+  var verification: AgentNativeToolVerification?
+  var receipt: AgentNativeToolReceipt
+  var provenance: AgentNativeToolProvenance
+
+  var isSuccess: Bool { status == .succeeded }
+
+  func toJsonObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "output": .object(output),
+      "message": .string(message),
+      "metadata": .object(metadata),
+      "error": error.map { .object(Self.errorObject($0)) } ?? .null,
+      "verification": verification.map { .object(Self.verificationObject($0)) } ?? .null,
+      "receipt": .object(Self.receiptObject(receipt)),
+      "provenance": .object(Self.provenanceObject(provenance))
+    ]
+  }
+
+  func toJson() -> String {
+    AgentMcpJSONCodec.stringify(toJsonObject())
+  }
+
+  private static func errorObject(_ error: AgentNativeToolError) -> AgentMcpJSONObject {
+    [
+      "code": .string(error.code),
+      "message": .string(error.message),
+      "retryable": .bool(error.retryable),
+      "details": .object(error.details)
+    ]
+  }
+
+  private static func verificationObject(_ verification: AgentNativeToolVerification) -> AgentMcpJSONObject {
+    [
+      "status": .string(verification.status.rawValue),
+      "message": .string(verification.message),
+      "evidence": .object(verification.evidence)
+    ]
+  }
+
+  private static func receiptObject(_ receipt: AgentNativeToolReceipt) -> AgentMcpJSONObject {
+    [
+      "invocation_id": .string(receipt.invocationId),
+      "idempotency_key": receipt.idempotencyKey.map(AgentMcpJSONValue.string) ?? .null,
+      "started_at_epoch_ms": .int(receipt.startedAtEpochMillis),
+      "finished_at_epoch_ms": .int(receipt.finishedAtEpochMillis),
+      "duration_ms": .int(receipt.durationMillis),
+      "status": .string(receipt.status.rawValue),
+      "input_sha256": .string(receipt.inputSha256),
+      "output_sha256": .string(receipt.outputSha256),
+      "replayed": .bool(receipt.replayed),
+      "original_invocation_id": receipt.originalInvocationId.map(AgentMcpJSONValue.string) ?? .null
+    ]
+  }
+
+  private static func provenanceObject(_ provenance: AgentNativeToolProvenance) -> AgentMcpJSONObject {
+    [
+      "tool_id": .string(provenance.toolId),
+      "tool_version": .string(provenance.toolVersion),
+      "location": .string(provenance.location.rawValue),
+      "executor_id": .string(provenance.executorId),
+      "contract_version": .string(provenance.contractVersion),
+      "legacy_agent_action_id": provenance.legacyAgentActionId.map(AgentMcpJSONValue.string) ?? .null,
+      "metadata": .object(provenance.metadata.reduce(into: AgentMcpJSONObject()) { result, entry in
+        result[entry.key] = .string(entry.value)
+      })
+    ]
+  }
+}
+
+struct AgentNativeToolCall: Codable, Equatable {
+  var toolId: String
+  var input: AgentMcpJSONObject
+  var context: AgentNativeToolInvocationContext
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case input
+    case context
+  }
+}
+
 enum AgentNativeToolAgentActionAdapter {
+  static let legacyActionIdAttribute = "legacy_agent_action_id"
+
   static func defaultToolId(_ kind: AgentActionKind) -> String {
     "signalasi.agent_action.\(kind.rawValue.lowercased().replacingOccurrences(of: "_", with: "."))"
+  }
+
+  static func fromAgentAction(
+    _ action: AgentAction,
+    toolId: String? = nil,
+    context: AgentNativeToolInvocationContext? = nil
+  ) -> AgentNativeToolCall {
+    var mergedContext = context ?? AgentNativeToolInvocationContext(invocationId: action.id)
+    mergedContext.attributes[legacyActionIdAttribute] = action.id
+    return AgentNativeToolCall(
+      toolId: toolId ?? defaultToolId(action.kind),
+      input: [
+        "target": .string(action.target),
+        "description": .string(action.description),
+        "parameters": .object(action.parameters.reduce(into: AgentMcpJSONObject()) { result, entry in
+          result[entry.key] = .string(entry.value)
+        }),
+        "requires_confirmation": .bool(action.requiresConfirmation)
+      ],
+      context: mergedContext
+    )
+  }
+
+  static func toAgentAction(
+    call: AgentNativeToolCall,
+    descriptor: AgentNativeToolDescriptor,
+    kind: AgentActionKind,
+    target: String? = nil,
+    description: String? = nil,
+    parameters: [String: String]? = nil
+  ) -> AgentAction {
+    AgentAction(
+      id: call.context.attributes[legacyActionIdAttribute] ?? call.context.invocationId,
+      kind: kind,
+      target: target ?? call.input["target"]?.stringValue ?? "",
+      risk: descriptor.risk.legacyRisk,
+      status: .running,
+      description: description ?? call.input["description"]?.stringValue ?? descriptor.description,
+      parameters: parameters ?? defaultParameters(call.input),
+      requiresConfirmation: call.input["requires_confirmation"]?.boolValue == true ||
+        descriptor.requiredConsents.contains { $0.required } ||
+        descriptor.risk.weight >= AgentNativeToolRisk.medium.weight
+    )
+  }
+
+  static func fromAgentActionResult(_ result: AgentActionResult) -> AgentNativeToolExecutionResult {
+    let output: AgentMcpJSONObject = [
+      "action_id": .string(result.actionId),
+      "success": .bool(result.success),
+      "message": .string(result.message),
+      "metadata": .object(result.metadata.reduce(into: AgentMcpJSONObject()) { object, entry in
+        object[entry.key] = .string(entry.value)
+      })
+    ]
+    if result.success {
+      return .success(output: output, message: result.message)
+    }
+    return AgentNativeToolExecutionResult(
+      output: output,
+      message: result.message,
+      error: AgentNativeToolError(
+        code: "agent_action_failed",
+        message: result.message.isEmpty ? "Legacy AgentAction execution failed" : result.message
+      )
+    )
+  }
+
+  static func toAgentActionResult(_ result: AgentNativeToolResult, actionId: String) -> AgentActionResult {
+    AgentActionResult(
+      actionId: actionId,
+      success: result.isSuccess,
+      message: result.message.isEmpty ? result.error?.message ?? "" : result.message,
+      metadata: [
+        "native_tool_id": result.provenance.toolId,
+        "native_tool_version": result.provenance.toolVersion,
+        "native_receipt_id": result.receipt.invocationId,
+        "native_status": result.status.rawValue
+      ]
+    )
+  }
+
+  private static func defaultParameters(_ input: AgentMcpJSONObject) -> [String: String] {
+    if case .object(let nested)? = input["parameters"] {
+      return nested.reduce(into: [:]) { result, entry in
+        result[entry.key] = legacyString(entry.value)
+      }
+    }
+    return input.reduce(into: [:]) { result, entry in
+      if entry.key != "target" && entry.key != "description" {
+        result[entry.key] = legacyString(entry.value)
+      }
+    }
+  }
+
+  private static func legacyString(_ value: AgentMcpJSONValue) -> String {
+    if case .string(let string) = value {
+      return string
+    }
+    return AgentMcpJSONCodec.stringify(value)
+  }
+}
+
+private extension AgentNativeToolRisk {
+  var legacyRisk: AgentRisk {
+    switch self {
+    case .low:
+      return .low
+    case .medium:
+      return .medium
+    case .high:
+      return .high
+    case .blocked:
+      return .blocked
+    }
   }
 }
 
@@ -10908,6 +11259,7 @@ enum AgentNativeToolRegistryError: LocalizedError, Equatable {
 
 final class AgentNativeToolRegistry {
   static let contractVersion = "signalasi.phone-native-tools/1.0"
+  static let legacyActionIdAttribute = AgentNativeToolAgentActionAdapter.legacyActionIdAttribute
 
   private var definitionsById: [String: AgentPhoneNativeToolDefinition] = [:]
   private let replayStore: InMemoryAgentNativeToolReplayStore
@@ -11075,6 +11427,82 @@ final class AgentNativeToolRegistry {
     )
   }
 
+  func makeResult(
+    _ id: String,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext = AgentNativeToolInvocationContext(),
+    status: AgentNativeToolResultStatus,
+    output: AgentMcpJSONObject = [:],
+    message: String = "",
+    metadata: AgentMcpJSONObject = [:],
+    error: AgentNativeToolError? = nil,
+    verification: AgentNativeToolVerification? = nil,
+    startedAtEpochMillis: Int64? = nil,
+    finishedAtEpochMillis: Int64? = nil,
+    replayed: Bool = false,
+    originalInvocationId: String? = nil
+  ) -> AgentNativeToolResult {
+    let definition = lookup(id)
+    let descriptor = definition?.descriptor
+    let startedAt = max(0, startedAtEpochMillis ?? context.requestedAtEpochMillis)
+    let finishedAt = max(startedAt, finishedAtEpochMillis ?? startedAt)
+    return AgentNativeToolResult(
+      status: status,
+      output: output,
+      message: message,
+      metadata: metadata,
+      error: error,
+      verification: verification,
+      receipt: AgentNativeToolReceipt(
+        invocationId: context.invocationId,
+        idempotencyKey: context.idempotencyKey,
+        startedAtEpochMillis: startedAt,
+        finishedAtEpochMillis: finishedAt,
+        durationMillis: max(0, finishedAt - startedAt),
+        status: status,
+        inputSha256: AgentMcpJSONCodec.sha256(input),
+        outputSha256: AgentMcpJSONCodec.sha256(output),
+        replayed: replayed,
+        originalInvocationId: originalInvocationId
+      ),
+      provenance: AgentNativeToolProvenance(
+        toolId: descriptor?.id ?? id,
+        toolVersion: descriptor?.version ?? "",
+        location: descriptor?.location ?? .unknown,
+        executorId: definition?.executorId ?? "unknown",
+        contractVersion: Self.contractVersion,
+        legacyAgentActionId: context.attributes[Self.legacyActionIdAttribute],
+        metadata: definition?.provenanceMetadata ?? [:]
+      )
+    )
+  }
+
+  func preflightRejectionResult(
+    _ id: String,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext = AgentNativeToolInvocationContext()
+  ) -> AgentNativeToolResult? {
+    let authorization = authorize(id, input: input, context: context)
+    guard !authorization.allowed else { return nil }
+    let unavailableCodes: Set<String> = ["tool_unavailable", "tool_blocked", "unknown_tool"]
+    let status: AgentNativeToolResultStatus = unavailableCodes.contains(authorization.code)
+      ? .unavailable
+      : .rejected
+    return makeResult(
+      id,
+      input: input,
+      context: context,
+      status: status,
+      message: authorization.message,
+      error: AgentNativeToolError(
+        code: authorization.code,
+        message: authorization.message,
+        retryable: authorization.availability.status == .requiresSetup,
+        details: authorizationDetails(authorization)
+      )
+    )
+  }
+
   func replayDecision(
     _ id: String,
     input: AgentMcpJSONObject,
@@ -11093,6 +11521,29 @@ final class AgentNativeToolRegistry {
       input: input,
       context: context
     )
+  }
+
+  private func authorizationDetails(_ decision: AgentNativeToolAuthorizationDecision) -> AgentMcpJSONObject {
+    var details: AgentMcpJSONObject = [
+      "availability": .string(decision.availability.status.rawValue),
+      "risk": .string(decision.risk.rawValue)
+    ]
+    if !decision.missingPermissions.isEmpty {
+      details["missing_permissions"] = .array(decision.missingPermissions.map { .object(requirementValue($0)) })
+    }
+    if !decision.missingConsents.isEmpty {
+      details["missing_consents"] = .array(decision.missingConsents.map { .object(requirementValue($0)) })
+    }
+    if !decision.validationIssues.isEmpty {
+      details["validation_issues"] = .array(decision.validationIssues.map { issue in
+        .object([
+          "path": .string(issue.path),
+          "code": .string(issue.code),
+          "message": .string(issue.message)
+        ])
+      })
+    }
+    return details
   }
 
   private func decision(

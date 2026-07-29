@@ -3491,6 +3491,198 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(decisionObject["missingPermissions"])
   }
 
+  func testAgentNativeToolAgentActionAdapterCreatesNativeCallsWithLegacyContext() {
+    let action = AgentAction(
+      id: "legacy-9",
+      kind: .tap,
+      target: "Wi-Fi",
+      risk: .medium,
+      status: .proposed,
+      description: "Tap Wi-Fi",
+      parameters: ["bounds": "[0,0][10,10]"],
+      requiresConfirmation: true
+    )
+
+    let call = AgentNativeToolAgentActionAdapter.fromAgentAction(action)
+
+    XCTAssertEqual(call.toolId, AgentNativeToolAgentActionAdapter.defaultToolId(.tap))
+    XCTAssertEqual(call.input["target"], .string("Wi-Fi"))
+    XCTAssertEqual(call.input["description"], .string("Tap Wi-Fi"))
+    XCTAssertEqual(call.input["requires_confirmation"], .bool(true))
+    XCTAssertEqual(call.input["parameters"]?.objectValue?["bounds"], .string("[0,0][10,10]"))
+    XCTAssertEqual(call.context.invocationId, "legacy-9")
+    XCTAssertEqual(call.context.attributes[AgentNativeToolRegistry.legacyActionIdAttribute], "legacy-9")
+  }
+
+  func testAgentNativeToolAgentActionAdapterRehydratesLegacyActions() throws {
+    let descriptor = try nativeToolDescriptor(
+      AgentNativeToolAgentActionAdapter.defaultToolId(.tap),
+      risk: .medium,
+      requiredConsents: [
+        AgentNativeConsentRequirement(id: "tap.once", title: "Tap once")
+      ]
+    )
+    let call = AgentNativeToolCall(
+      toolId: descriptor.id,
+      input: [
+        "target": .string("Wi-Fi"),
+        "description": .string("Tap Wi-Fi"),
+        "parameters": .object(["bounds": .string("[0,0][10,10]")])
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "invoke-9",
+        attributes: [AgentNativeToolRegistry.legacyActionIdAttribute: "legacy-9"]
+      )
+    )
+
+    let action = AgentNativeToolAgentActionAdapter.toAgentAction(
+      call: call,
+      descriptor: descriptor,
+      kind: .tap
+    )
+
+    XCTAssertEqual(action.id, "legacy-9")
+    XCTAssertEqual(action.kind, .tap)
+    XCTAssertEqual(action.target, "Wi-Fi")
+    XCTAssertEqual(action.risk, .medium)
+    XCTAssertEqual(action.status, .running)
+    XCTAssertEqual(action.parameters["bounds"], "[0,0][10,10]")
+    XCTAssertTrue(action.requiresConfirmation)
+  }
+
+  func testAgentNativeToolAgentActionAdapterMapsResultsAndMetadata() throws {
+    let descriptor = try nativeToolDescriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.tap))
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(
+        descriptor: descriptor,
+        executorId: "legacy.agent_action",
+        provenanceMetadata: ["adapter": "AgentActionExecutor"]
+      )
+    ])
+    let action = AgentAction(
+      id: "legacy-9",
+      kind: .tap,
+      target: "Wi-Fi",
+      risk: .low,
+      status: .proposed,
+      description: "Tap Wi-Fi"
+    )
+    let call = AgentNativeToolAgentActionAdapter.fromAgentAction(action)
+    let nativeResult = registry.makeResult(
+      call.toolId,
+      input: call.input,
+      context: call.context,
+      status: .succeeded,
+      output: ["action_id": .string(action.id), "success": .bool(true)],
+      message: "Tapped",
+      startedAtEpochMillis: 1_000,
+      finishedAtEpochMillis: 1_007
+    )
+    let roundTripped = AgentNativeToolAgentActionAdapter.toAgentActionResult(nativeResult, actionId: action.id)
+    let failedExecution = AgentNativeToolAgentActionAdapter.fromAgentActionResult(AgentActionResult(
+      actionId: action.id,
+      success: false,
+      message: "Missed target",
+      metadata: ["screen": "Settings"]
+    ))
+
+    XCTAssertTrue(roundTripped.success)
+    XCTAssertEqual(roundTripped.message, "Tapped")
+    XCTAssertEqual(roundTripped.metadata["native_tool_id"], descriptor.id)
+    XCTAssertEqual(roundTripped.metadata["native_tool_version"], "1.0.0")
+    XCTAssertEqual(roundTripped.metadata["native_receipt_id"], "legacy-9")
+    XCTAssertEqual(roundTripped.metadata["native_status"], "succeeded")
+    XCTAssertFalse(failedExecution.isSuccess)
+    XCTAssertEqual(failedExecution.error?.code, "agent_action_failed")
+    XCTAssertEqual(failedExecution.output["metadata"]?.objectValue?["screen"], .string("Settings"))
+  }
+
+  func testAgentNativeToolResultModelsUseAndroidWireNames() throws {
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.result",
+      requiredPermissions: [AgentNativePermissionRequirement(id: "ios.permission.camera")]
+    )
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor")
+    ])
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "invoke-1",
+      idempotencyKey: "key-1",
+      attributes: [AgentNativeToolRegistry.legacyActionIdAttribute: "legacy-1"]
+    )
+    let result = registry.makeResult(
+      descriptor.id,
+      input: [:],
+      context: context,
+      status: .rejected,
+      message: "Missing permission",
+      error: AgentNativeToolError(code: "missing_permissions", message: "Missing permission"),
+      verification: AgentNativeToolVerification(status: .skipped),
+      startedAtEpochMillis: 1_000,
+      finishedAtEpochMillis: 1_010
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any]
+    )
+    let receipt = try XCTUnwrap(object["receipt"] as? [String: Any])
+    let provenance = try XCTUnwrap(object["provenance"] as? [String: Any])
+    let callData = try JSONEncoder().encode(AgentNativeToolAgentActionAdapter.fromAgentAction(AgentAction(
+      id: "legacy-1",
+      kind: .tap,
+      target: "Wi-Fi",
+      risk: .low,
+      status: .proposed,
+      description: "Tap"
+    )))
+    let callObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: callData) as? [String: Any]
+    )
+
+    XCTAssertEqual(receipt["invocation_id"] as? String, "invoke-1")
+    XCTAssertEqual(receipt["idempotency_key"] as? String, "key-1")
+    XCTAssertEqual(receipt["started_at_epoch_ms"] as? Int, 1_000)
+    XCTAssertEqual(receipt["finished_at_epoch_ms"] as? Int, 1_010)
+    XCTAssertEqual(receipt["duration_ms"] as? Int, 10)
+    XCTAssertNotNil(receipt["input_sha256"])
+    XCTAssertEqual(provenance["tool_id"] as? String, descriptor.id)
+    XCTAssertEqual(provenance["executor_id"] as? String, "test.executor")
+    XCTAssertEqual(provenance["legacy_agent_action_id"] as? String, "legacy-1")
+    XCTAssertEqual(callObject["tool_id"] as? String, AgentNativeToolAgentActionAdapter.defaultToolId(.tap))
+    XCTAssertNil(receipt["startedAtEpochMillis"])
+    XCTAssertNil(provenance["legacyAgentActionId"])
+    XCTAssertNil(callObject["toolId"])
+  }
+
+  func testAgentNativeToolRegistryBuildsPreflightRejectionResults() throws {
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.preflight",
+      requiredPermissions: [AgentNativePermissionRequirement(id: "ios.permission.camera")]
+    )
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor")
+    ])
+
+    let result = try XCTUnwrap(registry.preflightRejectionResult(
+      descriptor.id,
+      input: [:],
+      context: AgentNativeToolInvocationContext(invocationId: "invoke-preflight")
+    ))
+    let passed = registry.preflightRejectionResult(
+      descriptor.id,
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "invoke-ready",
+        grantedPermissions: ["ios.permission.camera"]
+      )
+    )
+
+    XCTAssertEqual(result.status, .rejected)
+    XCTAssertEqual(result.error?.code, "missing_permissions")
+    XCTAssertEqual(result.receipt.invocationId, "invoke-preflight")
+    XCTAssertEqual(result.provenance.toolId, descriptor.id)
+    XCTAssertNil(passed)
+  }
+
   func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
     let first = planConnectorAction(id: "codex-1", connectorId: "desktop:codex")
     let duplicate = planConnectorAction(id: "codex-2", connectorId: "desktop:codex")
