@@ -1526,6 +1526,86 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(object["startedAtMillis"])
   }
 
+  func testAgentReputationAttestationCanonicalPayloadBindsReceiptHash() throws {
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+    let attestation = try XCTUnwrap(
+      AgentReputationWireCodec.decodeAttestation(remoteReputationAttestationObject(for: receipt))
+    )
+
+    XCTAssertEqual(attestation.verdict, .passed)
+    XCTAssertEqual(attestation.receiptId, receipt.receiptId)
+    XCTAssertEqual(attestation.receiptPayloadHash, agentReputationSha256(receipt.canonicalPayload()))
+    XCTAssertNil(attestation.validationFailure(for: receipt, nowMillis: 10_000))
+
+    let canonical = String(decoding: attestation.canonicalPayload(), as: UTF8.self)
+    XCTAssertTrue(canonical.hasPrefix("{\"attestation_id\":\"\(attestation.attestationId)\""))
+    XCTAssertTrue(canonical.hasSuffix("\"verifier_installation_id\":\"verifier-host\",\"version\":1}"))
+    XCTAssertEqual(
+      agentReputationSha256(attestation.canonicalPayload()),
+      "ad01c99d132f3e0458d43c9deaec1365445a14b429bd486ec57fe68ea6f3f18c"
+    )
+  }
+
+  func testAgentReputationAttestationRejectsDependentOrTamperedClaims() throws {
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+    let attestation = try XCTUnwrap(
+      AgentReputationWireCodec.decodeAttestation(remoteReputationAttestationObject(for: receipt))
+    )
+
+    var tamperedHash = attestation
+    tamperedHash.receiptPayloadHash = String(repeating: "f", count: 64)
+    XCTAssertEqual(
+      tamperedHash.validationFailure(for: receipt, nowMillis: 10_000),
+      AgentRemoteReputation.invalidBindingReason
+    )
+
+    var sameAgent = attestation
+    sameAgent.verifierAgentId = receipt.agentId
+    XCTAssertEqual(
+      sameAgent.validationFailure(for: receipt, nowMillis: 10_000),
+      "independence_boundary_invalid"
+    )
+
+    var signerMismatch = attestation
+    signerMismatch.signerId = "other-verifier"
+    signerMismatch.signatureKeyId = String(repeating: "e", count: 64)
+    XCTAssertEqual(
+      signerMismatch.validationFailure(for: receipt, nowMillis: 10_000),
+      "signer_subject_mismatch"
+    )
+
+    var tooEarly = attestation
+    tooEarly.createdAtMillis = receipt.completedAtMillis - 1
+    XCTAssertEqual(
+      tooEarly.validationFailure(for: receipt, nowMillis: 10_000),
+      "time_boundary_invalid"
+    )
+  }
+
+  func testAgentReputationAttestationModelsUseAndroidWireNames() throws {
+    let receipt = try XCTUnwrap(AgentReputationWireCodec.decodeReceipt(remoteReputationReceiptObject()))
+    let attestation = try XCTUnwrap(
+      AgentReputationWireCodec.decodeAttestation(remoteReputationAttestationObject(for: receipt))
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(attestation)) as? [String: Any]
+    )
+
+    XCTAssertEqual(object["attestation_id"] as? String, attestation.attestationId)
+    XCTAssertEqual(object["receipt_payload_hash"] as? String, agentReputationSha256(receipt.canonicalPayload()))
+    XCTAssertEqual(object["verifier_agent_id"] as? String, "independent-verifier")
+    XCTAssertEqual(object["verifier_installation_id"] as? String, "verifier-host")
+    XCTAssertEqual(object["verifier_failure_domain"] as? String, "phone-b")
+    XCTAssertEqual(object["created_at_millis"] as? Int, 2_100)
+    XCTAssertEqual(object["signature_key_id"] as? String, String(repeating: "d", count: 64))
+    XCTAssertNil(object["receiptPayloadHash"])
+    XCTAssertNil(object["verifierAgentId"])
+
+    var invalid = remoteReputationAttestationObject(for: receipt)
+    invalid["verdict"] = .string("UNKNOWN")
+    XCTAssertNil(AgentReputationWireCodec.decodeAttestation(invalid))
+  }
+
   func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
@@ -5702,6 +5782,26 @@ final class SignalASIStoreTests: XCTestCase {
       "agent_id": .string(agentId),
       "contact_id": .string(resolvedContactId),
       "execution_receipt": .object(remoteReputationReceiptObject())
+    ]
+  }
+
+  private func remoteReputationAttestationObject(
+    for receipt: AgentSignedExecutionReceipt
+  ) -> AgentMcpJSONObject {
+    [
+      "version": .int(1),
+      "attestation_id": .string(agentReputationSha256(Data("\(receipt.receiptId):PASSED".utf8))),
+      "receipt_id": .string(receipt.receiptId),
+      "receipt_payload_hash": .string(agentReputationSha256(receipt.canonicalPayload())),
+      "verifier_agent_id": .string("independent-verifier"),
+      "verifier_installation_id": .string("verifier-host"),
+      "verifier_failure_domain": .string("phone-b"),
+      "verdict": .string("PASSED"),
+      "evidence_hash": .string(agentReputationSha256(Data("evidence-\(receipt.receiptId)".utf8))),
+      "created_at_millis": .int(receipt.completedAtMillis + 100),
+      "signer_id": .string("verifier-host"),
+      "signature_key_id": .string(String(repeating: "d", count: 64)),
+      "signature": .string("attestation-signature")
     ]
   }
 
