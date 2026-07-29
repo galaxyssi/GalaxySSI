@@ -8,6 +8,7 @@ const requiredFiles = [
   "apps/ios/SignalASI.xcodeproj/project.pbxproj",
   "apps/ios/SignalASI.xcodeproj/xcshareddata/xcschemes/SignalASI.xcscheme",
   "apps/ios/SignalASI/SignalASIModels.swift",
+  "apps/ios/SignalASI/SignalASIContactExchange.swift",
   "apps/ios/SignalASI/SignalASIAttachments.swift",
   "apps/ios/SignalASI/SignalASILinkProtocol.swift",
   "apps/ios/SignalASI/SignalASILinkReliability.swift",
@@ -16,6 +17,7 @@ const requiredFiles = [
   "apps/ios/SignalASI/SignalASIServices.swift",
   "apps/ios/SignalASI/SignalASIViews.swift",
   "apps/ios/SignalASITests/SignalASIAttachmentTests.swift",
+  "apps/ios/SignalASITests/SignalASIContactExchangeTests.swift",
   "apps/ios/SignalASITests/SignalASILinkProtocolTests.swift",
   "apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift",
   "apps/ios/SignalASITests/SignalASIBackupTests.swift",
@@ -37,6 +39,7 @@ for (const relativePath of requiredFiles) {
 const project = read("apps/ios/SignalASI.xcodeproj/project.pbxproj");
 const readme = read("apps/ios/README.md");
 const models = read("apps/ios/SignalASI/SignalASIModels.swift");
+const contactExchange = read("apps/ios/SignalASI/SignalASIContactExchange.swift");
 const attachments = read("apps/ios/SignalASI/SignalASIAttachments.swift");
 const linkProtocol = read("apps/ios/SignalASI/SignalASILinkProtocol.swift");
 const linkReliability = read("apps/ios/SignalASI/SignalASILinkReliability.swift");
@@ -45,6 +48,7 @@ const services = read("apps/ios/SignalASI/SignalASIServices.swift");
 const views = read("apps/ios/SignalASI/SignalASIViews.swift");
 const tests = [
   read("apps/ios/SignalASITests/SignalASIAttachmentTests.swift"),
+  read("apps/ios/SignalASITests/SignalASIContactExchangeTests.swift"),
   read("apps/ios/SignalASITests/SignalASILinkProtocolTests.swift"),
   read("apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift"),
   read("apps/ios/SignalASITests/SignalASIBackupTests.swift"),
@@ -59,6 +63,8 @@ const requiredProjectSnippets = [
   "INFOPLIST_KEY_NSSpeechRecognitionUsageDescription",
   "SignalASIAttachments.swift in Sources",
   "SignalASIAttachmentTests.swift in Sources",
+  "SignalASIContactExchange.swift in Sources",
+  "SignalASIContactExchangeTests.swift in Sources",
   "SignalASITests.xctest",
   "SignalASIBackup.swift",
   "SignalASIBackupTests.swift",
@@ -67,6 +73,11 @@ const requiredProjectSnippets = [
 const requiredSourceSnippets = [
   [readme, "iOS 15"],
   [models, "static let androidParity"],
+  [models, "SignalASIFriendRequest"],
+  [models, "mqttInboxTopic"],
+  [contactExchange, "signalasi_contact"],
+  [contactExchange, "importContactQRCode"],
+  [contactExchange, "makeContactQRText"],
   [attachments, "data_b64"],
   [attachments, "maximumInlineBytes = 320 * 1024"],
   [linkProtocol, "signalasi_pairing_ciphertext"],
@@ -83,9 +94,14 @@ const requiredSourceSnippets = [
   [services, "UNUserNotificationCenter"],
   [services, "SFSpeechRecognizer"],
   [views, "PhotoLibraryPickerView"],
+  [views, "MyContactQRCodeView"],
+  [views, "FriendRequestDetailView"],
   [views, "fileImporter"],
   [views, "AVCaptureMetadataOutput"],
   [tests, "testAttachmentDescriptorsMatchAndroidWireNames"],
+  [tests, "testMyContactQRPayloadMatchesAndroidWireNames"],
+  [tests, "testImportContactQRAddsPendingFriendRequest"],
+  [tests, "testApprovingFriendRequestCreatesVerifiedContact"],
   [views, "fileExporter"],
   [tests, "testValidatesAndroidCompatiblePairingQRCode"],
   [tests, "testChunkingRoundTripsLargeWirePayload"],

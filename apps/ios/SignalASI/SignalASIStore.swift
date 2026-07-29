@@ -81,6 +81,7 @@ final class InMemorySecretStore: SignalASISecretStore {
 final class SignalASIStore: ObservableObject {
   @Published private(set) var profile: SignalASIProfile
   @Published private(set) var contacts: [SignalASIContact]
+  @Published private(set) var friendRequests: [SignalASIFriendRequest]
   @Published private(set) var messagesByContact: [String: [ChatMessage]]
   @Published private(set) var serverLinks: [ServerLink]
   @Published var voiceSettings: VoiceSettings {
@@ -90,9 +91,36 @@ final class SignalASIStore: ObservableObject {
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
     var contacts: [SignalASIContact]
+    var friendRequests: [SignalASIFriendRequest]
     var messagesByContact: [String: [ChatMessage]]
     var serverLinks: [ServerLink]
     var voiceSettings: VoiceSettings
+
+    init(
+      profile: SignalASIProfile,
+      contacts: [SignalASIContact],
+      friendRequests: [SignalASIFriendRequest],
+      messagesByContact: [String: [ChatMessage]],
+      serverLinks: [ServerLink],
+      voiceSettings: VoiceSettings
+    ) {
+      self.profile = profile
+      self.contacts = contacts
+      self.friendRequests = friendRequests
+      self.messagesByContact = messagesByContact
+      self.serverLinks = serverLinks
+      self.voiceSettings = voiceSettings
+    }
+
+    init(from decoder: Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      profile = try container.decode(SignalASIProfile.self, forKey: .profile)
+      contacts = try container.decode([SignalASIContact].self, forKey: .contacts)
+      friendRequests = try container.decodeIfPresent([SignalASIFriendRequest].self, forKey: .friendRequests) ?? []
+      messagesByContact = try container.decode([String: [ChatMessage]].self, forKey: .messagesByContact)
+      serverLinks = try container.decode([ServerLink].self, forKey: .serverLinks)
+      voiceSettings = try container.decode(VoiceSettings.self, forKey: .voiceSettings)
+    }
   }
 
   private let defaults: UserDefaults
@@ -107,6 +135,7 @@ final class SignalASIStore: ObservableObject {
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
       contacts = state.contacts
+      friendRequests = state.friendRequests
       messagesByContact = state.messagesByContact
       serverLinks = state.serverLinks
       voiceSettings = state.voiceSettings
@@ -114,6 +143,7 @@ final class SignalASIStore: ObservableObject {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
       contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
+      friendRequests = []
       messagesByContact = [
         "hermes": [
           ChatMessage(
@@ -138,12 +168,22 @@ final class SignalASIStore: ObservableObject {
       }
   }
 
+  var pendingFriendRequests: [SignalASIFriendRequest] {
+    friendRequests
+      .filter { $0.status == .pending }
+      .sorted { $0.createdAt > $1.createdAt }
+  }
+
   func contact(id: String) -> SignalASIContact? {
     contacts.first { $0.id == id || $0.signalASIId == id }
   }
 
   func messages(for contactId: String) -> [ChatMessage] {
     messagesByContact[contactId] ?? []
+  }
+
+  func friendRequest(id: String) -> SignalASIFriendRequest? {
+    friendRequests.first { $0.id == id }
   }
 
   func updateProfileName(_ name: String) {
@@ -293,6 +333,100 @@ final class SignalASIStore: ObservableObject {
     secrets.string(account: model.keychainAccount)
   }
 
+  func myContactQRText(now: Date = Date()) throws -> String {
+    try SignalASIContactExchange.makeContactQRText(profile: profile, serverLinks: serverLinks, now: now)
+  }
+
+  @discardableResult
+  func importContactQRCodeAsFriendRequest(_ contents: String, now: Date = Date()) throws -> SignalASIFriendRequest {
+    let request = try SignalASIContactExchange.importContactQRCode(contents, now: now)
+    return addFriendRequest(request, now: now)
+  }
+
+  @discardableResult
+  func addFriendRequest(_ request: SignalASIFriendRequest, now: Date = Date()) -> SignalASIFriendRequest {
+    let existingContact = contact(id: request.signalASIId)
+    let wasDeleted = existingContact?.deleted == true || existingContact?.trustState == .deleted
+    var stored = request
+    stored.id = stored.id.ifBlank("req_\(Int64(now.timeIntervalSince1970 * 1000))")
+    stored.status = .pending
+    stored.createdAt = now
+    stored.previouslyDeleted = wasDeleted
+    stored.readdRequired = wasDeleted
+    if stored.mqttInboxTopic.isEmpty {
+      stored.mqttInboxTopic = stored.mqttTopic
+    }
+    if let index = friendRequests.firstIndex(where: { $0.signalASIId == stored.signalASIId }) {
+      friendRequests[index] = stored
+    } else {
+      friendRequests.append(stored)
+    }
+    save()
+    return stored
+  }
+
+  @discardableResult
+  func approveFriendRequest(id: String, now: Date = Date()) -> Bool {
+    guard let index = friendRequests.firstIndex(where: { $0.id == id }) else {
+      return false
+    }
+    var request = friendRequests[index]
+    request.status = .approved
+    request.approvedAt = now
+    friendRequests[index] = request
+    let contactId = request.type == "hermes" ? "hermes" : request.signalASIId
+    var next = contact(id: contactId) ?? SignalASIContact(
+      id: contactId,
+      signalASIId: request.signalASIId,
+      name: request.name,
+      displayName: request.name,
+      type: request.type.ifBlank("person"),
+      agentKind: request.type == "hermes" ? "desktop-agent" : "person",
+      deliveryMode: .link,
+      trustState: .verified,
+      desktopId: "",
+      desktopName: "",
+      identityFingerprint: request.identityFingerprint,
+      setupStatus: "ready",
+      setupDetail: "Verified from contact QR",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: now,
+      updatedAt: now
+    )
+    next.signalASIId = request.signalASIId
+    next.name = request.name
+    next.displayName = request.name
+    next.type = request.type.ifBlank("person")
+    next.agentKind = request.type == "hermes" ? "desktop-agent" : "person"
+    next.deliveryMode = .link
+    next.trustState = .verified
+    next.identityFingerprint = request.identityFingerprint
+    next.mqttTopic = request.mqttTopic
+    next.mqttInboxTopic = request.mqttInboxTopic
+    next.signalBundleRef = request.signalBundleRef
+    next.setupStatus = "ready"
+    next.setupDetail = request.mqttInboxTopic.isEmpty ? "Verified from contact QR" : "SignalASI contact QR verified"
+    next.deleted = false
+    next.updatedAt = now
+    upsert(next)
+    save()
+    return true
+  }
+
+  @discardableResult
+  func rejectFriendRequest(id: String, now: Date = Date()) -> Bool {
+    guard let index = friendRequests.firstIndex(where: { $0.id == id }) else {
+      return false
+    }
+    friendRequests[index].status = .rejected
+    friendRequests[index].rejectedAt = now
+    save()
+    return true
+  }
+
   func exportBackupPayload(includeContacts: Bool = true, includeMessages: Bool = true) -> SignalASIBackupPayload {
     let cloudSecrets = exportCloudAPISecrets()
     let identity = secrets.string(account: identityPrivateKeyAccount).map {
@@ -321,6 +455,7 @@ final class SignalASIStore: ObservableObject {
         cloudAPISecrets: cloudSecrets
       ),
       contacts: includeContacts ? contacts : [],
+      friendRequests: includeContacts ? friendRequests : [],
       messagesByContact: includeMessages ? messagesByContact : [:]
     )
   }
@@ -335,6 +470,7 @@ final class SignalASIStore: ObservableObject {
     profile = payload.profile
     if payload.includesContacts {
       contacts = payload.contacts
+      friendRequests = payload.friendRequests
     }
     if includeMessages, payload.includesMessages {
       messagesByContact = payload.messagesByContact
@@ -456,6 +592,7 @@ final class SignalASIStore: ObservableObject {
     let state = PersistedState(
       profile: profile,
       contacts: contacts,
+      friendRequests: friendRequests,
       messagesByContact: messagesByContact,
       serverLinks: serverLinks,
       voiceSettings: voiceSettings
