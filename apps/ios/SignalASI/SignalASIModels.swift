@@ -478,6 +478,111 @@ struct VoiceSettings: Codable, Equatable {
   )
 }
 
+struct LanguagePolicySettings: Codable, Equatable {
+  static let auto = "auto"
+  static let zhCN = "zh-CN"
+  static let en = "en"
+  static let enUS = "en-US"
+  static let zhHK = "zh-HK"
+  static let zhTW = "zh-TW"
+
+  static let interfaceChoices = [auto, zhCN, en]
+  static let voiceChoices = [auto, zhCN, enUS, zhHK, zhTW]
+
+  var interfaceLanguage: String
+  var responseLanguage: String
+  var asrLanguage: String
+  var ttsLanguage: String
+
+  init(
+    interfaceLanguage: String = LanguagePolicySettings.auto,
+    responseLanguage: String = LanguagePolicySettings.auto,
+    asrLanguage: String = LanguagePolicySettings.auto,
+    ttsLanguage: String = LanguagePolicySettings.auto
+  ) {
+    self.interfaceLanguage = Self.normalizeInterface(interfaceLanguage)
+    self.responseLanguage = Self.normalizeVoice(responseLanguage)
+    self.asrLanguage = Self.normalizeVoice(asrLanguage)
+    self.ttsLanguage = Self.normalizeVoice(ttsLanguage)
+  }
+
+  static let `default` = LanguagePolicySettings()
+
+  var asrLocaleIdentifier: String {
+    Self.localeIdentifier(for: Self.resolve(asrLanguage))
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case interfaceLanguage = "interface_language"
+    case responseLanguage = "response_language"
+    case asrLanguage = "asr_language"
+    case ttsLanguage = "tts_language"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      interfaceLanguage: try container.decodeIfPresent(String.self, forKey: .interfaceLanguage) ?? Self.auto,
+      responseLanguage: try container.decodeIfPresent(String.self, forKey: .responseLanguage) ?? Self.auto,
+      asrLanguage: try container.decodeIfPresent(String.self, forKey: .asrLanguage) ?? Self.auto,
+      ttsLanguage: try container.decodeIfPresent(String.self, forKey: .ttsLanguage) ?? Self.auto
+    )
+  }
+
+  static func normalizeInterface(_ value: String) -> String {
+    let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return interfaceChoices.first { $0.caseInsensitiveCompare(candidate) == .orderedSame } ?? auto
+  }
+
+  static func normalizeVoice(_ value: String) -> String {
+    let candidate = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return voiceChoices.first { $0.caseInsensitiveCompare(candidate) == .orderedSame } ?? auto
+  }
+
+  static func resolve(_ value: String) -> String {
+    let normalized = normalizeVoice(value)
+    guard normalized == auto else { return normalized }
+    return Locale.current.identifier.replacingOccurrences(of: "_", with: "-").ifBlank(enUS)
+  }
+
+  static func localeIdentifier(for languageTag: String) -> String {
+    resolve(languageTag).replacingOccurrences(of: "-", with: "_")
+  }
+
+  static func displayName(_ value: String) -> String {
+    switch normalizeVoice(value) {
+    case zhCN: return "Simplified Chinese"
+    case enUS: return "English (United States)"
+    case zhHK: return "Traditional Chinese (Hong Kong)"
+    case zhTW: return "Traditional Chinese (Taiwan)"
+    default: return "Automatic"
+    }
+  }
+
+  static func interfaceDisplayName(_ value: String) -> String {
+    switch normalizeInterface(value) {
+    case zhCN: return "Simplified Chinese"
+    case en: return "English"
+    default: return "Automatic"
+    }
+  }
+
+  static func modelLanguageName(_ value: String) -> String {
+    let resolved = resolve(value)
+    if resolved.caseInsensitiveCompare(zhCN) == .orderedSame || resolved.hasPrefix("zh-Hans") {
+      return "Simplified Chinese"
+    }
+    if resolved.caseInsensitiveCompare(zhHK) == .orderedSame ||
+       resolved.caseInsensitiveCompare(zhTW) == .orderedSame ||
+       resolved.hasPrefix("zh-Hant") {
+      return "Traditional Chinese"
+    }
+    let locale = Locale(identifier: localeIdentifier(for: resolved))
+    let english = Locale(identifier: "en_US")
+    return english.localizedString(forLanguageCode: locale.languageCode ?? "")?.capitalized ?? "English"
+  }
+}
+
 enum SignalASIError: LocalizedError {
   case invalidPairingQRCode(String)
   case invalidPayload(String)

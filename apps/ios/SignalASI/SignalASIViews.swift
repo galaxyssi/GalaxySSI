@@ -812,6 +812,31 @@ struct SettingsView: View {
             .font(.system(.caption, design: .monospaced))
             .foregroundColor(.secondary)
         }
+        Section("Language") {
+          Picker("Interface", selection: languageBinding(\.interfaceLanguage)) {
+            ForEach(LanguagePolicySettings.interfaceChoices, id: \.self) { value in
+              Text(LanguagePolicySettings.interfaceDisplayName(value)).tag(value)
+            }
+          }
+          Picker("Model Response", selection: languageBinding(\.responseLanguage)) {
+            ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
+              Text(LanguagePolicySettings.displayName(value)).tag(value)
+            }
+          }
+          Picker("ASR", selection: languageBinding(\.asrLanguage)) {
+            ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
+              Text(LanguagePolicySettings.displayName(value)).tag(value)
+            }
+          }
+          Picker("TTS", selection: languageBinding(\.ttsLanguage)) {
+            ForEach(LanguagePolicySettings.voiceChoices, id: \.self) { value in
+              Text(LanguagePolicySettings.displayName(value)).tag(value)
+            }
+          }
+          Text("ASR locale: \(store.voiceSettings.preferredLocaleIdentifier)")
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -972,6 +997,13 @@ struct SettingsView: View {
   private func setBackupStatus(_ value: String, isError: Bool) {
     backupStatus = value
     backupStatusIsError = isError
+  }
+
+  private func languageBinding(_ keyPath: WritableKeyPath<LanguagePolicySettings, String>) -> Binding<String> {
+    Binding(
+      get: { store.languagePolicy[keyPath: keyPath] },
+      set: { value in store.updateLanguagePolicy { $0[keyPath: keyPath] = value } }
+    )
   }
 }
 

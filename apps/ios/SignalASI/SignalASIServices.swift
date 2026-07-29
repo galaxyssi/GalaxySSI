@@ -237,20 +237,32 @@ struct CloudModelClient {
           CloudModelCredentialPolicy.isStoredCredential(apiKey) else {
       throw SignalASIError.missingAPIKey
     }
+    let languagePolicy = await store.languagePolicy
+    let systemPrompt = Self.systemPrompt(languagePolicy: languagePolicy)
     switch model.apiStyle {
     case .anthropic:
-      return try await sendAnthropic(model: model, apiKey: apiKey, turns: turns)
+      return try await sendAnthropic(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
     case .gemini:
-      return try await sendGemini(model: model, apiKey: apiKey, turns: turns)
+      return try await sendGemini(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
     case .openAICompatible:
-      return try await sendOpenAICompatible(model: model, apiKey: apiKey, turns: turns)
+      return try await sendOpenAICompatible(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
     }
   }
 
-  private func sendOpenAICompatible(model: CloudModelConfig, apiKey: String, turns: [ChatMessage]) async throws -> String {
+  static func systemPrompt(languagePolicy: LanguagePolicySettings) -> String {
+    let responseLanguage = LanguagePolicySettings.modelLanguageName(languagePolicy.responseLanguage)
+    return "\(baseSystemPrompt) Reply in \(responseLanguage) unless the user explicitly asks for another language."
+  }
+
+  private func sendOpenAICompatible(
+    model: CloudModelConfig,
+    apiKey: String,
+    turns: [ChatMessage],
+    systemPrompt: String
+  ) async throws -> String {
     var request = try jsonRequest(url: model.endpoint, apiKey: apiKey)
     var messages: [[String: Any]] = [
-      ["role": "system", "content": defaultSystemPrompt]
+      ["role": "system", "content": systemPrompt]
     ]
     messages.append(contentsOf: turns.filter { !$0.isSystem }.suffix(16).map {
       ["role": $0.isMine ? "user" : "assistant", "content": $0.content] as [String: Any]
@@ -272,7 +284,12 @@ struct CloudModelClient {
     throw SignalASIError.unsupportedResponse
   }
 
-  private func sendAnthropic(model: CloudModelConfig, apiKey: String, turns: [ChatMessage]) async throws -> String {
+  private func sendAnthropic(
+    model: CloudModelConfig,
+    apiKey: String,
+    turns: [ChatMessage],
+    systemPrompt: String
+  ) async throws -> String {
     guard let url = URL(string: model.endpoint) else {
       throw SignalASIError.invalidPayload("Cloud endpoint is not a URL.")
     }
@@ -286,7 +303,7 @@ struct CloudModelClient {
     }
     request.httpBody = try SignalASILinkProtocol.jsonData([
       "model": model.modelId,
-      "system": defaultSystemPrompt,
+      "system": systemPrompt,
       "max_tokens": 1200,
       "messages": messages
     ])
@@ -298,7 +315,12 @@ struct CloudModelClient {
     throw SignalASIError.unsupportedResponse
   }
 
-  private func sendGemini(model: CloudModelConfig, apiKey: String, turns: [ChatMessage]) async throws -> String {
+  private func sendGemini(
+    model: CloudModelConfig,
+    apiKey: String,
+    turns: [ChatMessage],
+    systemPrompt: String
+  ) async throws -> String {
     var components = URLComponents(string: model.endpoint)
     var items = components?.queryItems ?? []
     items.append(URLQueryItem(name: "key", value: apiKey))
@@ -316,7 +338,7 @@ struct CloudModelClient {
       ] as [String: Any]
     }
     request.httpBody = try SignalASILinkProtocol.jsonData([
-      "system_instruction": ["parts": [["text": defaultSystemPrompt]]],
+      "system_instruction": ["parts": [["text": systemPrompt]]],
       "contents": contents,
       "generationConfig": ["temperature": 0.1, "maxOutputTokens": 1200]
     ])
@@ -357,7 +379,7 @@ struct CloudModelClient {
     return object
   }
 
-  private var defaultSystemPrompt: String {
+  private static var baseSystemPrompt: String {
     "You are SignalASI, a private superintelligence interface. Be concise, useful, and preserve user privacy. When a response benefits from structure, use clear sections, tables, or code blocks."
   }
 }
