@@ -4845,7 +4845,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(escaped.error?.details["workspace_error"]?.objectValue?["code"], .string("PATH_ESCAPE"))
   }
 
-  func testAgentWorkspaceNativeToolExecutorGatesConsentAndReportsUnsupportedZip() throws {
+  func testAgentWorkspaceNativeToolExecutorGatesConsentAndReportsInvalidZip() throws {
     let store = AgentWorkspaceNativeToolExecutor()
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
@@ -4861,7 +4861,21 @@ final class SignalASIStoreTests: XCTestCase {
         grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission]
       )
     )
-    let unsupportedZip = registry.invoke(
+    let createdBadZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCreateBytes,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("bundle.zip"),
+        "base64": .string(Data("not a zip".utf8).base64EncodedString())
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "bad-zip-create",
+        idempotencyKey: "bad-zip-key",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let invalidZip = registry.invoke(
       AgentPhoneNativeToolCatalog.workspaceZipList,
       input: [
         "workspace_id": .string("alpha"),
@@ -4878,8 +4892,123 @@ final class SignalASIStoreTests: XCTestCase {
     })))
     XCTAssertEqual(missingConsent.status, .rejected)
     XCTAssertEqual(missingConsent.error?.code, "missing_consents")
-    XCTAssertEqual(unsupportedZip.status, .failed)
-    XCTAssertEqual(unsupportedZip.error?.details["workspace_error"]?.objectValue?["code"], .string("UNSUPPORTED_FILE_TYPE"))
+    XCTAssertTrue(createdBadZip.isSuccess)
+    XCTAssertEqual(invalidZip.status, .failed)
+    XCTAssertEqual(invalidZip.error?.details["workspace_error"]?.objectValue?["code"], .string("INVALID_ARCHIVE"))
+  }
+
+  func testAgentWorkspaceNativeToolExecutorCreatesListsAndExtractsZipArchives() throws {
+    let store = AgentWorkspaceNativeToolExecutor(nowMillis: { 5_000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
+    )
+    func writeContext(_ invocationId: String, _ idempotencyKey: String) -> AgentNativeToolInvocationContext {
+      AgentNativeToolInvocationContext(
+        invocationId: invocationId,
+        idempotencyKey: idempotencyKey,
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    }
+    let readContext = AgentNativeToolInvocationContext(
+      invocationId: "zip-read",
+      grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+      grantedConsents: [AgentPhoneNativeToolCatalog.workspaceReadConsent]
+    )
+
+    _ = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("zip")],
+      context: writeContext("zip-init", "zip-init-key")
+    )
+    let firstFile = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCreateText,
+      input: [
+        "workspace_id": .string("zip"),
+        "path": .string("docs/a.txt"),
+        "text": .string("alpha"),
+        "create_parents": .bool(true)
+      ],
+      context: writeContext("zip-first-file", "zip-first-key")
+    )
+    let secondFile = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCreateText,
+      input: [
+        "workspace_id": .string("zip"),
+        "path": .string("docs/nested/b.txt"),
+        "text": .string("beta"),
+        "create_parents": .bool(true)
+      ],
+      context: writeContext("zip-second-file", "zip-second-key")
+    )
+    let createdZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceZipCreate,
+      input: [
+        "workspace_id": .string("zip"),
+        "archive_path": .string("bundle.zip"),
+        "source_paths": .array([.string("docs")])
+      ],
+      context: writeContext("zip-create", "zip-create-key")
+    )
+    let listedZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceZipList,
+      input: [
+        "workspace_id": .string("zip"),
+        "archive_path": .string("bundle.zip")
+      ],
+      context: readContext
+    )
+    let extractedZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceZipExtract,
+      input: [
+        "workspace_id": .string("zip"),
+        "archive_path": .string("bundle.zip"),
+        "destination_path": .string("unpacked")
+      ],
+      context: writeContext("zip-extract", "zip-extract-key")
+    )
+    let unpackedFirst = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: [
+        "workspace_id": .string("zip"),
+        "path": .string("unpacked/docs/a.txt")
+      ],
+      context: readContext
+    )
+    let unpackedSecond = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: [
+        "workspace_id": .string("zip"),
+        "path": .string("unpacked/docs/nested/b.txt")
+      ],
+      context: readContext
+    )
+
+    let createdEntries = createdZip.output["entries"]?.arrayValue?.compactMap(\.objectValue) ?? []
+    let listedEntries = listedZip.output["entries"]?.arrayValue?.compactMap(\.objectValue) ?? []
+
+    XCTAssertTrue(firstFile.isSuccess)
+    XCTAssertTrue(secondFile.isSuccess)
+    XCTAssertTrue(createdZip.isSuccess)
+    XCTAssertGreaterThan(createdZip.output["archive_bytes"]?.intValue ?? 0, 0)
+    XCTAssertEqual(createdZip.output["total_compressed_bytes"], .int(9))
+    XCTAssertEqual(createdZip.output["total_uncompressed_bytes"], .int(9))
+    XCTAssertEqual(createdEntries.compactMap { $0["path"]?.stringValue }, [
+      "docs",
+      "docs/a.txt",
+      "docs/nested",
+      "docs/nested/b.txt"
+    ])
+    XCTAssertEqual(createdEntries.filter { $0["directory"]?.boolValue == false }.count, 2)
+    XCTAssertTrue(createdEntries.allSatisfy { $0["last_modified_epoch_ms"] != nil })
+    XCTAssertTrue(listedZip.isSuccess)
+    XCTAssertEqual(listedZip.output["archive_bytes"], createdZip.output["archive_bytes"])
+    XCTAssertEqual(listedEntries.compactMap { $0["path"]?.stringValue }, createdEntries.compactMap { $0["path"]?.stringValue })
+    XCTAssertTrue(extractedZip.isSuccess)
+    XCTAssertEqual(extractedZip.output["extracted_entries"], .int(4))
+    XCTAssertEqual(extractedZip.output["extracted_bytes"], .int(9))
+    XCTAssertEqual(unpackedFirst.output["text"], .string("alpha"))
+    XCTAssertEqual(unpackedSecond.output["text"], .string("beta"))
   }
 
   func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
