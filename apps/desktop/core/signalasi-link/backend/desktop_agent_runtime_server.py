@@ -29,6 +29,7 @@ from desktop_agent_adapters import (
 RUNTIME_PROTOCOL = "signalasi.agent-runtime/1.0"
 RUNTIME_STATE_VERSION = 2
 DEFAULT_MAX_WORKERS = 4
+DEFAULT_MAX_QUEUED_RUNS = 64
 DEFAULT_AGENT_FAILURE_THRESHOLD = 3
 DEFAULT_AGENT_FAILURE_COOLDOWN_SECONDS = 30.0
 MAX_RUNTIME_RUNS = 2_000
@@ -56,6 +57,93 @@ class DesktopAgentRuntimeConflict(DesktopAgentRuntimeError):
 
 class DesktopAgentFaultIsolated(DesktopAgentRuntimeError):
     pass
+
+
+class DesktopAgentCapacityExhausted(DesktopAgentRuntimeError):
+    pass
+
+
+class AgentCapacityController:
+    """Bounded global admission state for queued and active Agent Runs."""
+
+    def __init__(self, *, max_active: int, max_queued: int = DEFAULT_MAX_QUEUED_RUNS) -> None:
+        self.max_active = max(1, min(int(max_active or 1), 32))
+        self.max_queued = max(0, min(int(max_queued or 0), 10_000))
+        self._lock = threading.RLock()
+        self._runs: dict[str, dict[str, str | int]] = {}
+        self._rejected_runs = 0
+
+    def reserve(self, run_id: str, agent_id: str) -> None:
+        run = str(run_id or "").strip()
+        agent = str(agent_id or "").strip()
+        if not run or not agent:
+            raise DesktopAgentRuntimeError("Agent capacity reservation requires Run and Agent ids")
+        with self._lock:
+            if run in self._runs:
+                return
+            queued = sum(1 for item in self._runs.values() if item["state"] == "queued")
+            active = sum(1 for item in self._runs.values() if item["state"] == "active")
+            if active + queued >= self.max_active + self.max_queued:
+                self._rejected_runs += 1
+                raise DesktopAgentCapacityExhausted(
+                    "Desktop Agent Runtime is busy; its bounded queue is full"
+                )
+            self._runs[run] = {
+                "agent_id": agent,
+                "state": "queued",
+                "reserved_at": int(time.time() * 1_000),
+                "started_at": 0,
+            }
+
+    def start(self, run_id: str) -> None:
+        with self._lock:
+            row = self._runs.get(str(run_id or "").strip())
+            if row is None:
+                raise DesktopAgentRuntimeError(
+                    f"Agent capacity reservation is missing for Run {run_id}"
+                )
+            row["state"] = "active"
+            row["started_at"] = int(time.time() * 1_000)
+
+    def release(self, run_id: str) -> None:
+        with self._lock:
+            self._runs.pop(str(run_id or "").strip(), None)
+
+    def snapshot(self) -> dict:
+        with self._lock:
+            queued = [row for row in self._runs.values() if row["state"] == "queued"]
+            active = [row for row in self._runs.values() if row["state"] == "active"]
+            agent_ids = sorted({
+                str(row.get("agent_id") or "")
+                for row in self._runs.values()
+                if str(row.get("agent_id") or "")
+            })
+            by_agent = [
+                {
+                    "agent_id": agent_id,
+                    "active_runs": sum(
+                        1
+                        for row in active
+                        if str(row.get("agent_id") or "") == agent_id
+                    ),
+                    "queued_runs": sum(
+                        1
+                        for row in queued
+                        if str(row.get("agent_id") or "") == agent_id
+                    ),
+                }
+                for agent_id in agent_ids
+            ]
+            return {
+                "max_active": self.max_active,
+                "max_queued": self.max_queued,
+                "active_runs": len(active),
+                "queued_runs": len(queued),
+                "available_active_slots": max(0, self.max_active - len(active)),
+                "available_queue_slots": max(0, self.max_queued - len(queued)),
+                "rejected_runs": self._rejected_runs,
+                "by_agent": by_agent,
+            }
 
 
 class AgentFaultDomainRegistry:
@@ -673,7 +761,9 @@ class DesktopAgentRuntimeServer:
         provider: DesktopAgentProvider,
         store: DesktopAgentRuntimeStore,
         max_workers: int = DEFAULT_MAX_WORKERS,
+        max_queued_runs: int = DEFAULT_MAX_QUEUED_RUNS,
         fault_domains: AgentFaultDomainRegistry | None = None,
+        capacity: AgentCapacityController | None = None,
     ) -> None:
         self.provider = provider
         self.store = store
@@ -686,6 +776,10 @@ class DesktopAgentRuntimeServer:
         self._futures: dict[str, Future[AgentAdapterResult]] = {}
         self._closed = False
         self.fault_domains = fault_domains or AgentFaultDomainRegistry()
+        self.capacity = capacity or AgentCapacityController(
+            max_active=self.max_workers,
+            max_queued=max_queued_runs,
+        )
 
     def submit(self, request: AgentAdapterRequest) -> dict:
         normalized = request.normalized()
@@ -694,11 +788,25 @@ class DesktopAgentRuntimeServer:
         snapshot, created = self.store.claim(normalized)
         if not created:
             return snapshot
+        try:
+            self.capacity.reserve(normalized.run_id, normalized.agent_id)
+        except DesktopAgentCapacityExhausted as exc:
+            self.store.fail(normalized.run_id, str(exc))
+            raise
         with self._lock:
             if self._closed:
+                self.capacity.release(normalized.run_id)
                 self.store.fail(normalized.run_id, "Desktop Agent Runtime is shutting down")
                 raise DesktopAgentRuntimeError("Desktop Agent Runtime is shutting down")
-            future = self._executor.submit(self._execute, normalized)
+            try:
+                future = self._executor.submit(self._execute, normalized)
+            except Exception:
+                self.capacity.release(normalized.run_id)
+                self.store.fail(
+                    normalized.run_id,
+                    "Desktop Agent Runtime could not schedule the Run",
+                )
+                raise
             self._futures[normalized.run_id] = future
             future.add_done_callback(
                 lambda _future, run_id=normalized.run_id: self._release_future(run_id)
@@ -775,7 +883,8 @@ class DesktopAgentRuntimeServer:
         with self._lock:
             future = self._futures.get(run_id)
         if future is not None:
-            future.cancel()
+            if future.cancel():
+                self.capacity.release(run_id)
         try:
             self.provider.cancel(str(snapshot.get("agent_id") or ""), run_id)
         except Exception:
@@ -792,6 +901,7 @@ class DesktopAgentRuntimeServer:
             pending_futures = sum(1 for future in self._futures.values() if not future.done())
             closed = self._closed
         agents = self.provider.enumerate()
+        capacity = self.capacity.snapshot()
         return {
             "protocol": RUNTIME_PROTOCOL,
             "state_version": RUNTIME_STATE_VERSION,
@@ -800,7 +910,8 @@ class DesktopAgentRuntimeServer:
             "active_runs": active_runs,
             "queued_runs": queued_runs,
             "pending_futures": pending_futures,
-            "capacity_available": max(0, self.max_workers - active_runs),
+            "capacity_available": capacity["available_active_slots"],
+            "capacity": capacity,
             "active_sessions": sum(
                 1 for session in sessions if session.get("state") == "active"
             ),
@@ -813,6 +924,8 @@ class DesktopAgentRuntimeServer:
                 "cancellation",
                 "restart_recovery",
                 "per_agent_fault_domains",
+                "bounded_global_queue",
+                "capacity_backpressure",
             ],
             "agents": agents,
             "fault_domains": self.fault_domains.snapshots(
@@ -828,7 +941,8 @@ class DesktopAgentRuntimeServer:
             self._closed = True
             futures = list(self._futures.items())
         for run_id, future in futures:
-            future.cancel()
+            if future.cancel():
+                self.capacity.release(run_id)
             snapshot = self.store.status(run_id)
             if snapshot is None:
                 continue
@@ -841,30 +955,34 @@ class DesktopAgentRuntimeServer:
 
     def _execute(self, request: AgentAdapterRequest) -> AgentAdapterResult:
         try:
-            self.fault_domains.acquire(request.agent_id)
-        except DesktopAgentFaultIsolated as exc:
-            self.store.fail(request.run_id, str(exc))
-            raise
-        current = self.store.transition_running(request.run_id)
-        if str(current.get("state") or "") != "running":
-            self.fault_domains.release(request.agent_id)
-            return self._result_from_runtime(current)
-        try:
-            result = self.provider.deliver(request)
-            snapshot = self.store.finish(request.run_id, result)
-            if result.state in {"failed", "interrupted"}:
-                self.fault_domains.fail(request.agent_id, result.error)
-            elif result.state == "cancelled":
+            self.capacity.start(request.run_id)
+            try:
+                self.fault_domains.acquire(request.agent_id)
+            except DesktopAgentFaultIsolated as exc:
+                self.store.fail(request.run_id, str(exc))
+                raise
+            current = self.store.transition_running(request.run_id)
+            if str(current.get("state") or "") != "running":
                 self.fault_domains.release(request.agent_id)
-            else:
-                self.fault_domains.succeed(request.agent_id)
-            if str(snapshot.get("state") or "") != result.state:
-                return self._result_from_runtime(snapshot)
-            return result
-        except Exception as exc:
-            self.store.fail(request.run_id, str(exc))
-            self.fault_domains.fail(request.agent_id, str(exc))
-            raise
+                return self._result_from_runtime(current)
+            try:
+                result = self.provider.deliver(request)
+                snapshot = self.store.finish(request.run_id, result)
+                if result.state in {"failed", "interrupted"}:
+                    self.fault_domains.fail(request.agent_id, result.error)
+                elif result.state == "cancelled":
+                    self.fault_domains.release(request.agent_id)
+                else:
+                    self.fault_domains.succeed(request.agent_id)
+                if str(snapshot.get("state") or "") != result.state:
+                    return self._result_from_runtime(snapshot)
+                return result
+            except Exception as exc:
+                self.store.fail(request.run_id, str(exc))
+                self.fault_domains.fail(request.agent_id, str(exc))
+                raise
+        finally:
+            self.capacity.release(request.run_id)
 
     def _require_agent(self, agent_id: str) -> None:
         if agent_id not in {str(item.get("agent_id") or "") for item in self.provider.enumerate()}:
@@ -877,7 +995,9 @@ class DesktopAgentRuntimeServer:
 
     def _release_future(self, run_id: str) -> None:
         with self._lock:
-            self._futures.pop(run_id, None)
+            future = self._futures.pop(run_id, None)
+        if future is not None and future.cancelled():
+            self.capacity.release(run_id)
 
     @staticmethod
     def _result_from_runtime(snapshot: dict) -> AgentAdapterResult:

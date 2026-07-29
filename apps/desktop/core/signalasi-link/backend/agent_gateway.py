@@ -1113,6 +1113,12 @@ def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
             except ValueError:
                 max_workers = 4
             try:
+                max_queued_runs = int(
+                    os.environ.get("SIGNALASI_AGENT_RUNTIME_QUEUE", "64")
+                )
+            except ValueError:
+                max_queued_runs = 64
+            try:
                 failure_threshold = int(
                     os.environ.get("SIGNALASI_AGENT_FAILURE_THRESHOLD", "3")
                 )
@@ -1131,6 +1137,7 @@ def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
                 provider=provider,
                 store=DesktopAgentRuntimeStore(_agent_runtime_server_state_path()),
                 max_workers=max_workers,
+                max_queued_runs=max_queued_runs,
                 fault_domains=AgentFaultDomainRegistry(
                     failure_threshold=failure_threshold,
                     cooldown_seconds=failure_cooldown,
