@@ -23225,10 +23225,16 @@ struct AgentTaskBudgetUsage: Codable, Equatable {
 struct AgentTaskBudgetEnvironment: Equatable {
   var batteryPercent: Int = -1
   var charging: Bool = false
+  var powerSaveMode: Bool = false
   var networkAvailable: Bool = false
+  var networkValidated: Bool = false
   var networkMetered: Bool = false
   var appMemoryBytes: Int64 = 0
   var availableMemoryBytes: Int64 = 0
+
+  var energyConstrained: Bool {
+    powerSaveMode || (!charging && (0...19).contains(batteryPercent))
+  }
 }
 
 enum AgentTaskBudgetLimit: String, Equatable {
@@ -23314,6 +23320,292 @@ enum AgentTaskBudgetPolicy {
 
   private static func denied(_ limit: AgentTaskBudgetLimit, _ reason: String) -> AgentTaskBudgetDecision {
     AgentTaskBudgetDecision(allowed: false, limit: limit, reason: reason)
+  }
+}
+
+struct GlobalAgentSettings: Codable, Equatable {
+  var enabled: Bool
+  var proactiveInsightsEnabled: Bool
+  var proactiveDiscoveryEnabled: Bool
+  var modelUnderstandingEnabled: Bool
+  var autonomousPreparationEnabled: Bool
+  var autonomousToolExecutionEnabled: Bool
+  var dynamicAutonomousReplanningEnabled: Bool
+  var longHorizonPlanningEnabled: Bool
+  var maxAutonomousReplans: Int
+  var allowCloudCognition: Bool
+  var autonomousResearchEnabled: Bool
+  var autoCreateConversationsEnabled: Bool
+  var notificationsEnabled: Bool
+  var adaptiveLearningEnabled: Bool
+  var protectBatteryForBackgroundWork: Bool
+  var allowMeteredBackgroundResearch: Bool
+  var dailyBackgroundModelCallBudget: Int
+  var maxConcurrentBackgroundModelCalls: Int
+  var dailyBackgroundTokenBudget: Int64
+  var dailyBackgroundReportedCostBudgetMicros: Int64
+  var dailyMessageBudget: Int
+  var dailyDiscoveryTaskBudget: Int
+  var topicCooldownMillis: Int64
+  var discoveryIntervalMillis: Int64
+  var monitorIntervalMillis: Int64
+
+  static let `default` = GlobalAgentSettings()
+
+  init(
+    enabled: Bool = true,
+    proactiveInsightsEnabled: Bool = true,
+    proactiveDiscoveryEnabled: Bool = true,
+    modelUnderstandingEnabled: Bool = true,
+    autonomousPreparationEnabled: Bool = true,
+    autonomousToolExecutionEnabled: Bool = true,
+    dynamicAutonomousReplanningEnabled: Bool = true,
+    longHorizonPlanningEnabled: Bool = true,
+    maxAutonomousReplans: Int = 3,
+    allowCloudCognition: Bool = false,
+    autonomousResearchEnabled: Bool = true,
+    autoCreateConversationsEnabled: Bool = true,
+    notificationsEnabled: Bool = true,
+    adaptiveLearningEnabled: Bool = true,
+    protectBatteryForBackgroundWork: Bool = true,
+    allowMeteredBackgroundResearch: Bool = false,
+    dailyBackgroundModelCallBudget: Int = 48,
+    maxConcurrentBackgroundModelCalls: Int = 3,
+    dailyBackgroundTokenBudget: Int64 = 250_000,
+    dailyBackgroundReportedCostBudgetMicros: Int64 = 1_000_000,
+    dailyMessageBudget: Int = 4,
+    dailyDiscoveryTaskBudget: Int = 3,
+    topicCooldownMillis: Int64 = 6 * 60 * 60 * 1_000,
+    discoveryIntervalMillis: Int64 = 6 * 60 * 60 * 1_000,
+    monitorIntervalMillis: Int64 = 24 * 60 * 60 * 1_000
+  ) {
+    self.enabled = enabled
+    self.proactiveInsightsEnabled = proactiveInsightsEnabled
+    self.proactiveDiscoveryEnabled = proactiveDiscoveryEnabled
+    self.modelUnderstandingEnabled = modelUnderstandingEnabled
+    self.autonomousPreparationEnabled = autonomousPreparationEnabled
+    self.autonomousToolExecutionEnabled = autonomousToolExecutionEnabled
+    self.dynamicAutonomousReplanningEnabled = dynamicAutonomousReplanningEnabled
+    self.longHorizonPlanningEnabled = longHorizonPlanningEnabled
+    self.maxAutonomousReplans = max(0, min(maxAutonomousReplans, 24))
+    self.allowCloudCognition = allowCloudCognition
+    self.autonomousResearchEnabled = autonomousResearchEnabled
+    self.autoCreateConversationsEnabled = autoCreateConversationsEnabled
+    self.notificationsEnabled = notificationsEnabled
+    self.adaptiveLearningEnabled = adaptiveLearningEnabled
+    self.protectBatteryForBackgroundWork = protectBatteryForBackgroundWork
+    self.allowMeteredBackgroundResearch = allowMeteredBackgroundResearch
+    self.dailyBackgroundModelCallBudget = max(0, min(dailyBackgroundModelCallBudget, 1_000))
+    self.maxConcurrentBackgroundModelCalls = max(1, min(maxConcurrentBackgroundModelCalls, 24))
+    self.dailyBackgroundTokenBudget = max(0, min(dailyBackgroundTokenBudget, 100_000_000))
+    self.dailyBackgroundReportedCostBudgetMicros = max(0, min(dailyBackgroundReportedCostBudgetMicros, 1_000_000_000))
+    self.dailyMessageBudget = max(0, min(dailyMessageBudget, 200))
+    self.dailyDiscoveryTaskBudget = max(0, min(dailyDiscoveryTaskBudget, 200))
+    self.topicCooldownMillis = max(0, min(topicCooldownMillis, 30 * 24 * 60 * 60 * 1_000))
+    self.discoveryIntervalMillis = max(60_000, min(discoveryIntervalMillis, 30 * 24 * 60 * 60 * 1_000))
+    self.monitorIntervalMillis = max(60_000, min(monitorIntervalMillis, 30 * 24 * 60 * 60 * 1_000))
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case enabled
+    case proactiveInsightsEnabled = "proactive_insights_enabled"
+    case proactiveDiscoveryEnabled = "proactive_discovery_enabled"
+    case modelUnderstandingEnabled = "model_understanding_enabled"
+    case autonomousPreparationEnabled = "autonomous_preparation_enabled"
+    case autonomousToolExecutionEnabled = "autonomous_tool_execution_enabled"
+    case dynamicAutonomousReplanningEnabled = "dynamic_autonomous_replanning_enabled"
+    case longHorizonPlanningEnabled = "long_horizon_planning_enabled"
+    case maxAutonomousReplans = "max_autonomous_replans"
+    case allowCloudCognition = "allow_cloud_cognition"
+    case autonomousResearchEnabled = "autonomous_research_enabled"
+    case autoCreateConversationsEnabled = "auto_create_conversations_enabled"
+    case notificationsEnabled = "notifications_enabled"
+    case adaptiveLearningEnabled = "adaptive_learning_enabled"
+    case protectBatteryForBackgroundWork = "protect_battery_for_background_work"
+    case allowMeteredBackgroundResearch = "allow_metered_background_research"
+    case dailyBackgroundModelCallBudget = "daily_background_model_call_budget"
+    case maxConcurrentBackgroundModelCalls = "max_concurrent_background_model_calls"
+    case dailyBackgroundTokenBudget = "daily_background_token_budget"
+    case dailyBackgroundReportedCostBudgetMicros = "daily_background_reported_cost_budget_micros"
+    case dailyMessageBudget = "daily_message_budget"
+    case dailyDiscoveryTaskBudget = "daily_discovery_task_budget"
+    case topicCooldownMillis = "topic_cooldown_millis"
+    case discoveryIntervalMillis = "discovery_interval_millis"
+    case monitorIntervalMillis = "monitor_interval_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let fallback = Self.default
+    self.init(
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? fallback.enabled,
+      proactiveInsightsEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveInsightsEnabled) ?? fallback.proactiveInsightsEnabled,
+      proactiveDiscoveryEnabled: try container.decodeIfPresent(Bool.self, forKey: .proactiveDiscoveryEnabled) ?? fallback.proactiveDiscoveryEnabled,
+      modelUnderstandingEnabled: try container.decodeIfPresent(Bool.self, forKey: .modelUnderstandingEnabled) ?? fallback.modelUnderstandingEnabled,
+      autonomousPreparationEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousPreparationEnabled) ?? fallback.autonomousPreparationEnabled,
+      autonomousToolExecutionEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousToolExecutionEnabled) ?? fallback.autonomousToolExecutionEnabled,
+      dynamicAutonomousReplanningEnabled: try container.decodeIfPresent(Bool.self, forKey: .dynamicAutonomousReplanningEnabled) ?? fallback.dynamicAutonomousReplanningEnabled,
+      longHorizonPlanningEnabled: try container.decodeIfPresent(Bool.self, forKey: .longHorizonPlanningEnabled) ?? fallback.longHorizonPlanningEnabled,
+      maxAutonomousReplans: try container.decodeIfPresent(Int.self, forKey: .maxAutonomousReplans) ?? fallback.maxAutonomousReplans,
+      allowCloudCognition: try container.decodeIfPresent(Bool.self, forKey: .allowCloudCognition) ?? fallback.allowCloudCognition,
+      autonomousResearchEnabled: try container.decodeIfPresent(Bool.self, forKey: .autonomousResearchEnabled) ?? fallback.autonomousResearchEnabled,
+      autoCreateConversationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .autoCreateConversationsEnabled) ?? fallback.autoCreateConversationsEnabled,
+      notificationsEnabled: try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? fallback.notificationsEnabled,
+      adaptiveLearningEnabled: try container.decodeIfPresent(Bool.self, forKey: .adaptiveLearningEnabled) ?? fallback.adaptiveLearningEnabled,
+      protectBatteryForBackgroundWork: try container.decodeIfPresent(Bool.self, forKey: .protectBatteryForBackgroundWork) ?? fallback.protectBatteryForBackgroundWork,
+      allowMeteredBackgroundResearch: try container.decodeIfPresent(Bool.self, forKey: .allowMeteredBackgroundResearch) ?? fallback.allowMeteredBackgroundResearch,
+      dailyBackgroundModelCallBudget: try container.decodeIfPresent(Int.self, forKey: .dailyBackgroundModelCallBudget) ?? fallback.dailyBackgroundModelCallBudget,
+      maxConcurrentBackgroundModelCalls: try container.decodeIfPresent(Int.self, forKey: .maxConcurrentBackgroundModelCalls) ?? fallback.maxConcurrentBackgroundModelCalls,
+      dailyBackgroundTokenBudget: try container.decodeIfPresent(Int64.self, forKey: .dailyBackgroundTokenBudget) ?? fallback.dailyBackgroundTokenBudget,
+      dailyBackgroundReportedCostBudgetMicros: try container.decodeIfPresent(Int64.self, forKey: .dailyBackgroundReportedCostBudgetMicros) ?? fallback.dailyBackgroundReportedCostBudgetMicros,
+      dailyMessageBudget: try container.decodeIfPresent(Int.self, forKey: .dailyMessageBudget) ?? fallback.dailyMessageBudget,
+      dailyDiscoveryTaskBudget: try container.decodeIfPresent(Int.self, forKey: .dailyDiscoveryTaskBudget) ?? fallback.dailyDiscoveryTaskBudget,
+      topicCooldownMillis: try container.decodeIfPresent(Int64.self, forKey: .topicCooldownMillis) ?? fallback.topicCooldownMillis,
+      discoveryIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .discoveryIntervalMillis) ?? fallback.discoveryIntervalMillis,
+      monitorIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .monitorIntervalMillis) ?? fallback.monitorIntervalMillis
+    )
+  }
+}
+
+enum GlobalBackgroundWorkKind: String, Codable, CaseIterable, Identifiable {
+  case cognition = "COGNITION"
+  case research = "RESEARCH"
+  case autonomousWork = "AUTONOMOUS_WORK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalBackgroundWorkKind {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .cognition
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum GlobalBackgroundDeferralReason: String, Codable, CaseIterable, Identifiable {
+  case none = "NONE"
+  case powerSave = "POWER_SAVE"
+  case criticalBattery = "CRITICAL_BATTERY"
+  case lowBattery = "LOW_BATTERY"
+  case networkUnavailable = "NETWORK_UNAVAILABLE"
+  case networkUnvalidated = "NETWORK_UNVALIDATED"
+  case meteredNetwork = "METERED_NETWORK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> GlobalBackgroundDeferralReason {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .none
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct GlobalBackgroundExecutionDecision: Codable, Equatable {
+  var allowed: Bool
+  var nextEligibleAtMillis: Int64
+  var reason: GlobalBackgroundDeferralReason
+
+  init(
+    allowed: Bool,
+    nextEligibleAtMillis: Int64,
+    reason: GlobalBackgroundDeferralReason = .none
+  ) {
+    self.allowed = allowed
+    self.nextEligibleAtMillis = max(0, nextEligibleAtMillis)
+    self.reason = reason
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case allowed
+    case nextEligibleAtMillis = "next_eligible_at_millis"
+    case reason
+  }
+}
+
+enum GlobalBackgroundExecutionBudgetPolicy {
+  static let criticalBatteryPercent = 14
+  static let lowBatteryPercent = 24
+  static let powerSaveRetryMillis: Int64 = 30 * 60 * 1_000
+  static let criticalBatteryRetryMillis: Int64 = 60 * 60 * 1_000
+  static let lowBatteryReasoningRetryMillis: Int64 = 20 * 60 * 1_000
+  static let lowBatteryResearchRetryMillis: Int64 = 45 * 60 * 1_000
+  static let networkRecoveryRetryMillis: Int64 = 10 * 60 * 1_000
+  static let meteredNetworkRetryMillis: Int64 = 60 * 60 * 1_000
+
+  static func decide(
+    kind: GlobalBackgroundWorkKind,
+    environment: AgentTaskBudgetEnvironment,
+    settings: GlobalAgentSettings,
+    nowMillis: Int64,
+    explicitUserOverride: Bool = false
+  ) -> GlobalBackgroundExecutionDecision {
+    if explicitUserOverride {
+      return allowed(nowMillis)
+    }
+    if settings.protectBatteryForBackgroundWork {
+      if environment.powerSaveMode {
+        return deferred(nowMillis, powerSaveRetryMillis, .powerSave)
+      }
+      if !environment.charging && (0...criticalBatteryPercent).contains(environment.batteryPercent) {
+        return deferred(nowMillis, criticalBatteryRetryMillis, .criticalBattery)
+      }
+      if !environment.charging &&
+        ((criticalBatteryPercent + 1)...lowBatteryPercent).contains(environment.batteryPercent) {
+        let retry = kind == .research ? lowBatteryResearchRetryMillis : lowBatteryReasoningRetryMillis
+        return deferred(nowMillis, retry, .lowBattery)
+      }
+    }
+    if kind == .research {
+      if !environment.networkAvailable {
+        return deferred(nowMillis, networkRecoveryRetryMillis, .networkUnavailable)
+      }
+      if !environment.networkValidated {
+        return deferred(nowMillis, networkRecoveryRetryMillis, .networkUnvalidated)
+      }
+      if environment.networkMetered && !settings.allowMeteredBackgroundResearch {
+        return deferred(nowMillis, meteredNetworkRetryMillis, .meteredNetwork)
+      }
+    }
+    return allowed(nowMillis)
+  }
+
+  private static func allowed(_ nowMillis: Int64) -> GlobalBackgroundExecutionDecision {
+    GlobalBackgroundExecutionDecision(allowed: true, nextEligibleAtMillis: nowMillis)
+  }
+
+  private static func deferred(
+    _ nowMillis: Int64,
+    _ retryMillis: Int64,
+    _ reason: GlobalBackgroundDeferralReason
+  ) -> GlobalBackgroundExecutionDecision {
+    GlobalBackgroundExecutionDecision(
+      allowed: false,
+      nextEligibleAtMillis: nowMillis + retryMillis,
+      reason: reason
+    )
   }
 }
 
