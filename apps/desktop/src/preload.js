@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld("signalasi", {
   getDesktopMemory: (query, limit, status) =>
     ipcRenderer.invoke("desktop-memory:list", query, limit, status),
   getDesktopMemoryInbox: (limit) => ipcRenderer.invoke("desktop-memory:inbox", limit),
+  getDesktopMemoryEvolution: (limit) => ipcRenderer.invoke("desktop-memory:evolution", limit),
   proposeDesktopMemory: (payload) => ipcRenderer.invoke("desktop-memory:propose", payload),
   rememberDesktopMemory: (payload) => ipcRenderer.invoke("desktop-memory:remember", payload),
   forgetDesktopMemory: (memoryId) => ipcRenderer.invoke("desktop-memory:forget", memoryId),

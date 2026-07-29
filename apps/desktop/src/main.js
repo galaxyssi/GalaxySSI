@@ -69,7 +69,9 @@ async function runUiSmoke() {
   const setupPath = path.join(outDir, "desktop-setup-guide.png");
   const matrixPath = path.join(outDir, "desktop-status-matrix.png");
   const agentsPath = path.join(outDir, "desktop-agents.png");
+  const memoryOverviewPath = path.join(outDir, "desktop-memory-overview.png");
   const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
+  const memoryConflictsPath = path.join(outDir, "desktop-memory-conflicts.png");
   const mcpGovernancePath = path.join(outDir, "desktop-mcp-governance.png");
   const mcpImportPath = path.join(outDir, "desktop-mcp-import.png");
   const mcpTaskPath = path.join(outDir, "desktop-mcp-task-transparency.png");
@@ -311,8 +313,26 @@ async function runUiSmoke() {
           importance: 0.8,
           namespace: "user"
         });
+        await window.signalasi.rememberDesktopMemory({
+          content: "The desktop memory runtime is ready",
+          kind: "device_state",
+          importance: 0.8,
+          namespace: "device"
+        });
+        await window.signalasi.proposeDesktopMemory({
+          content: "The desktop memory runtime is inaccessible",
+          kind: "device_state",
+          importance: 0.8,
+          namespace: "device"
+        });
         await refreshMemory("");
         document.querySelector('[data-capability-tab="memory"]')?.click();
+        document.querySelector('[data-memory-view="overview"]')?.click();
+        const overviewState = {
+          metrics: document.querySelectorAll(".memory-metric").length,
+          health: document.querySelector(".memory-health")?.textContent || "",
+          recent: document.querySelectorAll(".memory-evolution-list > div").length
+        };
         document.querySelector('[data-memory-view="inbox"]')?.click();
         await new Promise((resolve) => setTimeout(resolve, 250));
         const memoryState = {
@@ -322,7 +342,8 @@ async function runUiSmoke() {
           summary: document.querySelector("#memorySummary")?.textContent || "",
           inboxCount: document.querySelector("#memoryInboxCount")?.textContent || "",
           candidates: document.querySelectorAll("#memoryList .memory-candidate").length,
-          approveActions: document.querySelectorAll("[data-approve-memory-candidate]").length
+          approveActions: document.querySelectorAll("[data-approve-memory-candidate]").length,
+          overviewState
         };
         window.__signalasiMemorySmokeState = memoryState;
         return memoryState;
@@ -330,12 +351,15 @@ async function runUiSmoke() {
     `);
     if (
       !capabilitiesState.active
-      || capabilitiesState.views !== 3
+      || capabilitiesState.views !== 5
       || !capabilitiesState.inboxActive
       || !capabilitiesState.summary.trim()
       || !capabilitiesState.inboxCount.trim()
       || capabilitiesState.candidates !== 1
       || capabilitiesState.approveActions !== 1
+      || capabilitiesState.overviewState.metrics !== 4
+      || !capabilitiesState.overviewState.health.trim()
+      || capabilitiesState.overviewState.recent < 2
     ) {
       throw new Error(`Memory Inbox did not render: ${JSON.stringify(capabilitiesState)}`);
     }
@@ -356,15 +380,30 @@ async function runUiSmoke() {
           if (inboxCount === 0 && currentCount >= 1) break;
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
+        document.querySelector('[data-memory-view="conflicts"]')?.click();
         return {
           inboxCount: Number(document.querySelector("#memoryInboxCount")?.textContent || "-1"),
-          currentCount: Number(document.querySelector("#memoryCurrentCount")?.textContent || "0")
+          currentCount: Number(document.querySelector("#memoryCurrentCount")?.textContent || "0"),
+          conflicts: document.querySelectorAll("#memoryList .memory-conflict").length,
+          comparisons: document.querySelectorAll("#memoryList .memory-comparison").length,
+          conflictActions: document.querySelectorAll("#memoryList [data-approve-memory-candidate]").length
         };
       })()
     `);
-    if (memoryReviewState.inboxCount !== 0 || memoryReviewState.currentCount < 1) {
+    if (
+      memoryReviewState.inboxCount !== 0
+      || memoryReviewState.currentCount < 2
+      || memoryReviewState.conflicts !== 1
+      || memoryReviewState.comparisons !== 1
+      || memoryReviewState.conflictActions !== 1
+    ) {
       throw new Error(`Memory candidate approval did not persist: ${JSON.stringify(memoryReviewState)}`);
     }
+    await captureSmokeScreenshot(memoryConflictsPath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-view="overview"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryOverviewPath);
     const mcpGovernanceState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         state.mcp = [{
@@ -845,7 +884,9 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${setupPath}`);
     console.log(`[ui-smoke] screenshot: ${matrixPath}`);
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryOverviewPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryConflictsPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpGovernancePath}`);
     console.log(`[ui-smoke] screenshot: ${mcpImportPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpTaskPath}`);
@@ -1579,6 +1620,11 @@ async function getDesktopMemoryInbox(limit = 100) {
   return fetchJson(`/api/desktop-memory/inbox?limit=${encodeURIComponent(limit || 100)}`);
 }
 
+async function getDesktopMemoryEvolution(limit = 100) {
+  await startBackend();
+  return fetchJson(`/api/desktop-memory/evolution?limit=${encodeURIComponent(limit || 100)}`);
+}
+
 async function proposeDesktopMemory(payload = {}) {
   await startBackend();
   return fetchJson("/api/desktop-memory/inbox", {
@@ -1837,6 +1883,7 @@ ipcMain.handle("proactive-runs:cancel", (_event, runId) => cancelProactiveRun(ru
 ipcMain.handle("desktop-control:get", getDesktopControl);
 ipcMain.handle("desktop-memory:list", (_event, query, limit, status) => getDesktopMemory(query, limit, status));
 ipcMain.handle("desktop-memory:inbox", (_event, limit) => getDesktopMemoryInbox(limit));
+ipcMain.handle("desktop-memory:evolution", (_event, limit) => getDesktopMemoryEvolution(limit));
 ipcMain.handle("desktop-memory:propose", (_event, payload) => proposeDesktopMemory(payload));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));

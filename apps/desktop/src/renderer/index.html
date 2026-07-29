@@ -179,8 +179,10 @@
       <div id="memoryCapability" class="capability-pane">
         <div class="capability-summary"><div><strong data-i18n="Long-term memory">Long-term memory</strong><p id="memorySummary" data-i18n="Loading">Loading</p></div><button id="refreshMemoryButton" class="secondary-button" data-i18n="Refresh">Refresh</button></div>
         <div class="memory-view-tabs" role="tablist" aria-label="Memory views">
-          <button class="active" data-memory-view="current"><span data-i18n="Current">Current</span><em id="memoryCurrentCount">0</em></button>
+          <button class="active" data-memory-view="overview"><span data-i18n="Overview">Overview</span></button>
+          <button data-memory-view="current"><span data-i18n="Current">Current</span><em id="memoryCurrentCount">0</em></button>
           <button data-memory-view="inbox"><span data-i18n="Inbox">Inbox</span><em id="memoryInboxCount">0</em></button>
+          <button data-memory-view="conflicts"><span data-i18n="Conflicts">Conflicts</span><em id="memoryConflictCount">0</em></button>
           <button data-memory-view="history"><span data-i18n="History">History</span><em id="memoryHistoryCount">0</em></button>
         </div>
         <label class="search-field"><span class="search-symbol"></span><input id="memorySearch" data-i18n-placeholder="Search memory" placeholder="Search memory"></label>
