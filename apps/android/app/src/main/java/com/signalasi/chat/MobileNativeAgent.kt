@@ -2260,7 +2260,7 @@ class MobileNativeAgent(
         costMicros: Long,
         networkBytes: Long
     ): AgentUiState? {
-        if (sourceMessageId <= 0L || (success && content.isBlank())) return null
+        if (sourceMessageId <= 0L) return null
         val pendingResult = lastActionResult ?: return null
         val recoveringTimeout = success && isRecoverableConnectorTimeout(pendingResult, sourceMessageId)
         if (phase != AgentPhase.WAITING_RESPONSE && !recoveringTimeout) return null
@@ -2293,35 +2293,72 @@ class MobileNativeAgent(
         ) {
             return snapshot()
         }
-        val response = content.trim().ifBlank { "The selected resource did not return a usable response." }
-            .take(MAX_CONNECTOR_RESPONSE_CHARACTERS)
+        val rawResponse = content.trim().take(MAX_CONNECTOR_RESPONSE_CHARACTERS)
+        val normalizedRichOutput = AgentRichContentCodec.normalize(richOutputJson)
+        val responseSelfCheck = if (success) {
+            AgentResponseSelfCheck.evaluate(
+                latestRequest = currentGoal,
+                response = rawResponse,
+                hasAttachments = pendingResult.metadata["has_attachments"] == "true",
+                hasOutputArtifacts = normalizedRichOutput.isNotBlank()
+            )
+        } else {
+            null
+        }
+        val effectiveSuccess = success && responseSelfCheck?.accepted != false
+        val response = when {
+            effectiveSuccess -> rawResponse
+            success -> appContext.getString(R.string.agent_response_self_check_failed)
+            else -> rawResponse.ifBlank { "The selected resource did not return a usable response." }
+        }
+        responseSelfCheck?.let { review ->
+            recordAudit(
+                if (review.accepted) {
+                    AgentAuditEvent.RESPONSE_SELF_CHECK_PASSED
+                } else {
+                    AgentAuditEvent.RESPONSE_SELF_CHECK_FAILED
+                },
+                "request_digest=${review.requestDigest}; response_digest=${review.responseDigest}; " +
+                    "reasons=${review.reasons.joinToString(",")}"
+            )
+        }
         val resourceId = pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }
         val resourceStartedAt = pendingResult.metadata["resource_started_at"]?.toLongOrNull()
             ?: System.currentTimeMillis()
         if (pendingResult.metadata["cloud_health_recorded"] != "true") {
             AgentResourceHealthStore(appContext).record(
                 id = "target:$resourceId",
-                success = success,
+                success = effectiveSuccess,
                 latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
             )
         }
         pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
             AgentResourceHealthStore(appContext).record(
                 id = "domain:$domain",
-                success = success,
+                success = effectiveSuccess,
                 latencyMs = (System.currentTimeMillis() - resourceStartedAt).coerceAtLeast(0L)
             )
         }
-        if (!success) {
+        if (!effectiveSuccess) {
+            val failureReason = responseSelfCheck?.diagnostic
+                ?: content.trim().ifBlank { "Connector returned no usable result" }
             if (!recordExecutionFailure(
                     failureClass = "connector:${pendingResult.metadata["resource_id"].orEmpty().ifBlank { contactId }}",
-                    reason = content.trim().ifBlank { "Connector returned no usable result" },
+                    reason = failureReason,
                     actionId = actionId
                 )
             ) {
                 return snapshot()
             }
-            continueWithConnectorFallback(plan, pendingResult)?.let { return it }
+            val failedResult = pendingResult.copy(
+                success = false,
+                message = response,
+                metadata = pendingResult.metadata + mapOf(
+                    "response_self_check" to (responseSelfCheck?.status?.name?.lowercase(Locale.ROOT) ?: "not_run"),
+                    "response_self_check_reasons" to responseSelfCheck?.reasons.orEmpty().joinToString(",")
+                )
+            )
+            continueWithConnectorFallback(plan, failedResult)?.let { return it }
         }
         val completedMetadata = pendingResult.metadata - setOf(
             "timeout_stage",
@@ -2329,19 +2366,23 @@ class MobileNativeAgent(
         ) + mapOf(
             "awaiting_response" to "false",
             "response_received_at" to System.currentTimeMillis().toString(),
-            "rich_output" to AgentRichContentCodec.normalize(richOutputJson),
+            "rich_output" to if (effectiveSuccess) normalizedRichOutput else "",
+            "response_self_check" to (responseSelfCheck?.status?.name?.lowercase(Locale.ROOT) ?: "not_run"),
+            "response_self_check_reasons" to responseSelfCheck?.reasons.orEmpty().joinToString(","),
+            "response_request_digest" to responseSelfCheck?.requestDigest.orEmpty(),
+            "response_digest" to responseSelfCheck?.responseDigest.orEmpty(),
             "recovered_after_timeout" to recoveringTimeout.toString()
         )
         val completedResult = AgentActionResult(
             actionId = actionId,
-            success = success,
+            success = effectiveSuccess,
             message = response,
             metadata = completedMetadata
         )
-        val responseStatus = if (success) AgentActionStatus.COMPLETED else AgentActionStatus.FAILED
+        val responseStatus = if (effectiveSuccess) AgentActionStatus.COMPLETED else AgentActionStatus.FAILED
         var responsePlan = plan.markAction(actionId, responseStatus, completedResult)
         val completedAction = plan.actions.firstOrNull { it.id == actionId }
-        if (success && completedAction?.parameters?.get("connector_task_mode") == PHONE_DEVELOPMENT_CONNECTOR_MODE) {
+        if (effectiveSuccess && completedAction?.parameters?.get("connector_task_mode") == PHONE_DEVELOPMENT_CONNECTOR_MODE) {
             AgentPhoneDevelopmentManifestCodec.parse(response).getOrNull()?.decisionSummary
                 ?.takeIf(String::isNotBlank)
                 ?.let { summary ->
@@ -2365,12 +2406,12 @@ class MobileNativeAgent(
         val hasPendingActions = responsePlan.actions.any {
             it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
         }
-        val preservesToolGraph = success && responsePlan.hasOutputHandoffFrom(actionId)
-        val shouldReplan = (hasPendingActions && !preservesToolGraph) || !success
+        val preservesToolGraph = effectiveSuccess && responsePlan.hasOutputHandoffFrom(actionId)
+        val shouldReplan = (hasPendingActions && !preservesToolGraph) || !effectiveSuccess
         val continuedPlan = if (shouldReplan) {
             if (!advanceExecutionLoop(
                     nextPhase = AgentExecutionLoopPhase.REPLAN,
-                    reason = if (success) {
+                    reason = if (effectiveSuccess) {
                         "Planning the next step after the connector response"
                     } else {
                         "Planning recovery after the connector response failed"
@@ -2383,7 +2424,7 @@ class MobileNativeAgent(
             currentScreen = captureScreen()
             replanFromCurrentState(
                 responsePlan,
-                if (success) "connector_response_received" else "connector_response_failed"
+                if (effectiveSuccess) "connector_response_received" else "connector_response_failed"
             ) ?: responsePlan
         } else {
             responsePlan
@@ -2393,7 +2434,7 @@ class MobileNativeAgent(
             AgentPhase.PAUSED
         } else if (continuedPlan.safetyReview.blocked) {
             AgentPhase.BLOCKED
-        } else if (!success && continuedPlan === responsePlan) {
+        } else if (!effectiveSuccess && continuedPlan === responsePlan) {
             AgentPhase.FAILED
         } else if (continuedPlan.actions.any {
                 it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
@@ -2405,7 +2446,7 @@ class MobileNativeAgent(
         }
         recordAudit(
             AgentAuditEvent.CONNECTOR_RESPONSE_RECEIVED,
-            "source_message_id=$sourceMessageId; contact=$contactId; success=$success; chars=${response.length}"
+            "source_message_id=$sourceMessageId; contact=$contactId; success=$effectiveSuccess; chars=${response.length}"
         )
         saveTaskRecord(result = response)
         return if (
@@ -12245,6 +12286,8 @@ enum class AgentAuditEvent {
     GOAL_RECEIVED,
     INVOCATION_AUDIT,
     CONNECTOR_RESPONSE_RECEIVED,
+    RESPONSE_SELF_CHECK_PASSED,
+    RESPONSE_SELF_CHECK_FAILED,
     MEMORY_SKIPPED,
     MEMORY_FORGOTTEN,
     MEMORY_UPDATED,
