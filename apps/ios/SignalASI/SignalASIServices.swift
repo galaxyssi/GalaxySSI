@@ -233,7 +233,8 @@ struct CloudModelClient {
     guard let model = contact.selectedCloudModel else {
       throw SignalASIError.missingCloudModel
     }
-    guard let apiKey = await store.apiKey(for: model), !apiKey.isEmpty else {
+    guard let apiKey = await store.apiKey(for: model),
+          CloudModelCredentialPolicy.isStoredCredential(apiKey) else {
       throw SignalASIError.missingAPIKey
     }
     switch model.apiStyle {

@@ -111,6 +111,117 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.voiceSettings, .default)
   }
 
+  func testSelectingCloudModelChangesProviderActiveModel() throws {
+    let store = makeStore()
+
+    _ = try store.addCloudModelContact(
+      displayName: "Model A",
+      provider: "OpenAI",
+      modelId: "model-a",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "key-a",
+      apiStyle: .openAICompatible
+    )
+    _ = try store.addCloudModelContact(
+      displayName: "Model B",
+      provider: "OpenAI",
+      modelId: "model-b",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "key-b",
+      apiStyle: .openAICompatible
+    )
+
+    XCTAssertTrue(store.setSelectedCloudModel(contactId: "cloud:openai", modelId: "model-b"))
+
+    let contact = store.contact(id: "cloud:openai")
+    XCTAssertEqual(contact?.selectedCloudModelId, "model-b")
+    XCTAssertEqual(contact?.selectedCloudModel?.displayName, "Model B")
+  }
+
+  func testDeletingSelectedCloudModelRemovesSecretAndFallsBack() throws {
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+    _ = try store.addCloudModelContact(
+      displayName: "Model A",
+      provider: "OpenAI",
+      modelId: "model-a",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "key-a",
+      apiStyle: .openAICompatible
+    )
+    _ = try store.addCloudModelContact(
+      displayName: "Model B",
+      provider: "OpenAI",
+      modelId: "model-b",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "key-b",
+      apiStyle: .openAICompatible
+    )
+    XCTAssertTrue(store.setSelectedCloudModel(contactId: "cloud:openai", modelId: "model-b"))
+    let removedAccount = store.contact(id: "cloud:openai")!.cloudModels[1].keychainAccount
+
+    XCTAssertTrue(store.deleteCloudModel(contactId: "cloud:openai", modelId: "model-b"))
+
+    let contact = store.contact(id: "cloud:openai")
+    XCTAssertNil(secrets.string(account: removedAccount))
+    XCTAssertEqual(contact?.cloudModels.map(\.modelId), ["model-a"])
+    XCTAssertEqual(contact?.selectedCloudModelId, "model-a")
+    XCTAssertEqual(contact?.deleted, false)
+  }
+
+  func testDeletingLastCloudModelHidesProviderContact() throws {
+    let store = makeStore()
+    _ = try store.addCloudModelContact(
+      displayName: "Model A",
+      provider: "OpenAI",
+      modelId: "model-a",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "key-a",
+      apiStyle: .openAICompatible
+    )
+
+    XCTAssertTrue(store.deleteCloudModel(contactId: "cloud:openai", modelId: "model-a"))
+
+    XCTAssertEqual(store.contact(id: "cloud:openai")?.deleted, true)
+    XCTAssertTrue(store.cloudModelContacts.isEmpty)
+  }
+
+  func testCloudModelCredentialPolicyRejectsPlaceholders() {
+    XCTAssertFalse(CloudModelCredentialPolicy.isStoredCredential(""))
+    XCTAssertFalse(CloudModelCredentialPolicy.isStoredCredential("****-key"))
+    XCTAssertFalse(CloudModelCredentialPolicy.isStoredCredential("your-api-key"))
+    XCTAssertFalse(CloudModelCredentialPolicy.isAutoRoutableCredential("sk-signalasi-smoke-key"))
+    XCTAssertTrue(CloudModelCredentialPolicy.isStoredCredential("sk-live-key"))
+  }
+
+  func testCloudClientRejectsPlaceholderCredentialBeforeNetwork() async throws {
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+    let contact = try store.addCloudModelContact(
+      displayName: "Model A",
+      provider: "OpenAI",
+      modelId: "model-a",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-live-key",
+      apiStyle: .openAICompatible
+    )
+    let model = contact.cloudModels[0]
+    try secrets.setString("your-api-key", account: model.keychainAccount)
+
+    do {
+      _ = try await CloudModelClient().send(
+        contact: store.contact(id: "cloud:openai")!,
+        store: store,
+        turns: [ChatMessage(contactId: "cloud:openai", content: "hello", isMine: true)]
+      )
+      XCTFail("Expected placeholder credentials to fail before a network request.")
+    } catch SignalASIError.missingAPIKey {
+      XCTAssertTrue(true)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+  }
+
   private func makeStore() -> SignalASIStore {
     makeStore(secrets: InMemorySecretStore())
   }

@@ -619,12 +619,14 @@ struct SettingsView: View {
             .foregroundColor(.secondary)
         }
         Section("Cloud Models") {
-          ForEach(store.contacts.filter { $0.deliveryMode == .cloudAPI }) { contact in
-            VStack(alignment: .leading) {
-              Text(contact.displayName)
-              Text(contact.selectedCloudModel?.modelId ?? "No model")
-                .font(.caption)
-                .foregroundColor(.secondary)
+          ForEach(store.cloudModelContacts) { contact in
+            NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
+              VStack(alignment: .leading) {
+                Text(contact.displayName)
+                Text(contact.selectedCloudModel?.modelId ?? "No model")
+                  .font(.caption)
+                  .foregroundColor(.secondary)
+              }
             }
           }
           Button {
@@ -814,17 +816,125 @@ struct ResetPrivateDataView: View {
   }
 }
 
+struct CloudModelProviderDetailView: View {
+  @EnvironmentObject private var store: SignalASIStore
+  @State private var showingAddModel = false
+  var contactId: String
+
+  private var contact: SignalASIContact? {
+    store.contact(id: contactId)
+  }
+
+  var body: some View {
+    Form {
+      if let contact {
+        Section("Provider") {
+          Text(contact.displayName)
+          Text(contact.cloudProvider.ifBlank(contact.id))
+            .font(.caption)
+            .foregroundColor(.secondary)
+          if let selected = contact.selectedCloudModel {
+            Label("Selected: \(selected.modelId)", systemImage: "checkmark.circle")
+          }
+        }
+        Section("Selected Model") {
+          Picker("Model", selection: selectedModelBinding(contact)) {
+            ForEach(contact.cloudModels) { model in
+              Text(model.displayName).tag(model.modelId)
+            }
+          }
+        }
+        Section("Models") {
+          ForEach(contact.cloudModels) { model in
+            VStack(alignment: .leading, spacing: 6) {
+              HStack {
+                Text(model.displayName)
+                  .font(.headline)
+                Spacer()
+                readinessLabel(for: model, contact: contact)
+              }
+              Text(model.modelId)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.secondary)
+              Text(model.endpoint)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(2)
+              Text(model.apiStyle.rawValue)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+            }
+          }
+          .onDelete { offsets in
+            let modelIds = offsets.map { contact.cloudModels[$0].modelId }
+            for modelId in modelIds {
+              store.deleteCloudModel(contactId: contact.id, modelId: modelId)
+            }
+          }
+        }
+        Button {
+          showingAddModel = true
+        } label: {
+          Label("Add Model", systemImage: "plus.circle")
+        }
+      } else {
+        Section("Provider") {
+          Text("Cloud model contact not found.")
+            .foregroundColor(.secondary)
+        }
+      }
+    }
+    .navigationTitle(contact?.displayName ?? "Cloud Model")
+    .sheet(isPresented: $showingAddModel) {
+      AddCloudModelView(initialProvider: contact?.cloudProvider)
+    }
+  }
+
+  private func selectedModelBinding(_ contact: SignalASIContact) -> Binding<String> {
+    Binding(
+      get: { contact.selectedCloudModelId },
+      set: { next in
+        store.setSelectedCloudModel(contactId: contact.id, modelId: next)
+      }
+    )
+  }
+
+  private func readinessLabel(for model: CloudModelConfig, contact: SignalASIContact) -> some View {
+    let ready = CloudModelCredentialPolicy.isAutoRoutable(
+      model: model,
+      apiKey: store.apiKey(for: model),
+      provider: contact.cloudProvider,
+      setupStatus: contact.setupStatus
+    )
+    return Label(ready ? "Ready" : "Needs Setup", systemImage: ready ? "checkmark.circle.fill" : "exclamationmark.triangle")
+      .font(.caption)
+      .foregroundColor(ready ? .green : .orange)
+  }
+}
+
 struct AddCloudModelView: View {
   @Environment(\.dismiss) private var dismiss
   @EnvironmentObject private var store: SignalASIStore
-  @State private var selectedPreset = CloudModelPreset.androidParity.first!
-  @State private var provider = CloudModelPreset.androidParity.first!.provider
-  @State private var displayName = CloudModelPreset.androidParity.first!.name
-  @State private var modelId = CloudModelPreset.androidParity.first!.modelId
-  @State private var endpoint = CloudModelPreset.androidParity.first!.endpoint
-  @State private var apiStyle = CloudModelPreset.androidParity.first!.apiStyle
+  @State private var selectedPreset: CloudModelPreset
+  @State private var provider: String
+  @State private var displayName: String
+  @State private var modelId: String
+  @State private var endpoint: String
+  @State private var apiStyle: SignalASICloudAPIStyle
   @State private var apiKey = ""
   @State private var errorText = ""
+
+  init(initialProvider: String? = nil) {
+    let preset = CloudModelPreset.androidParity.first {
+      $0.provider.localizedCaseInsensitiveCompare(initialProvider ?? "") == .orderedSame
+    } ?? CloudModelPreset.androidParity.first!
+    _selectedPreset = State(initialValue: preset)
+    _provider = State(initialValue: initialProvider?.ifBlank(preset.provider) ?? preset.provider)
+    _displayName = State(initialValue: preset.name)
+    _modelId = State(initialValue: preset.modelId)
+    _endpoint = State(initialValue: preset.endpoint)
+    _apiStyle = State(initialValue: preset.apiStyle)
+  }
 
   var body: some View {
     NavigationView {
@@ -844,15 +954,20 @@ struct AddCloudModelView: View {
         TextField("Provider", text: $provider)
         TextField("Display Name", text: $displayName)
         TextField("Model ID", text: $modelId)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
         TextField("Endpoint", text: $endpoint)
           .keyboardType(.URL)
           .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
         Picker("API Style", selection: $apiStyle) {
           ForEach(SignalASICloudAPIStyle.allCases) { style in
             Text(style.rawValue).tag(style)
           }
         }
         SecureField("API Key", text: $apiKey)
+          .textInputAutocapitalization(.never)
+          .autocorrectionDisabled(true)
         if !errorText.isEmpty {
           Text(errorText)
             .foregroundColor(.red)
@@ -865,9 +980,17 @@ struct AddCloudModelView: View {
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save") { save() }
+            .disabled(!canSave)
         }
       }
     }
+  }
+
+  private var canSave: Bool {
+    !provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !modelId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      CloudModelCredentialPolicy.isStoredCredential(apiKey)
   }
 
   private func save() {
