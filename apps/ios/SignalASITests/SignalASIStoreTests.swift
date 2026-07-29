@@ -1244,6 +1244,308 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encoded.contains(#""rich_output_json":"#))
   }
 
+  func testAgentTranscriptPresentationPolicyCollapsesProcessGroupsBetweenUserAndAssistant() {
+    let entries = [
+      transcriptEntry("process-before-user", timestampMillis: 1),
+      transcriptEntry("user", role: .user, timestampMillis: 2),
+      transcriptEntry("process-running", timestampMillis: 3),
+      transcriptEntry("process-linux", timestampMillis: 4),
+      transcriptEntry("assistant", role: .assistant, timestampMillis: 5)
+    ]
+
+    let visible = AgentTranscriptPresentationPolicy.collapseProcessGroups(entries)
+
+    XCTAssertEqual(visible.map(\.role), [.user, .process, .assistant])
+    XCTAssertEqual(visible[1].text, "process-linux")
+    XCTAssertTrue(visible[1].id.hasPrefix("process-group:"))
+  }
+
+  func testAgentTranscriptPresentationPolicyFoldsRemoteCompletionAndKeepsStableRenderId() {
+    let user = transcriptEntry("user", role: .user, timestampMillis: 10)
+    let accepted = transcriptEntry("accepted", timestampMillis: 20)
+    let running = transcriptEntry("running", timestampMillis: 30)
+    let assistant = transcriptEntry("assistant", role: .assistant, timestampMillis: 40)
+    let completed = transcriptEntry(
+      "completed",
+      turnId: "remote-codex-turn",
+      timestampMillis: 50
+    )
+
+    let completedVisible = AgentTranscriptPresentationPolicy.collapseProcessGroups([
+      user,
+      running,
+      assistant,
+      completed
+    ])
+    let initial = AgentTranscriptPresentationPolicy.collapseProcessGroups([user, accepted])
+    let updated = AgentTranscriptPresentationPolicy.collapseProcessGroups([user, running])
+    let diff = AgentTranscriptRenderPolicy.diff(
+      renderedIds: initial.map(\.id),
+      renderedSignatures: Dictionary(uniqueKeysWithValues: initial.map {
+        ($0.id, AgentTranscriptRenderPolicy.signature($0))
+      }),
+      incoming: updated
+    )
+
+    XCTAssertEqual(completedVisible.map(\.role), [.user, .process, .assistant])
+    XCTAssertEqual(completedVisible[1].text, "completed")
+    XCTAssertEqual(completedVisible[1].turnId, "turn")
+    XCTAssertEqual(initial[1].id, updated[1].id)
+    XCTAssertFalse(diff.reset)
+    XCTAssertEqual(diff.replacementIndices, [1])
+  }
+
+  func testAgentTranscriptPresentationPolicyClassifiesExpansionCompletionAndDurations() {
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.processVisualKind("\u{5df2}\u{5206}\u{6790}\u{8bf7}\u{6c42}"),
+      .analysis
+    )
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.processVisualKind("\u{6b63}\u{5728}\u{8fd0}\u{884c}\u{624b}\u{673a}\u{672c}\u{5730} Linux"),
+      .command
+    )
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.processVisualKind("Edited 2 files"), .file)
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.processVisualKind("\u{5df2}\u{67e5}\u{770b} 1 \u{5f20}\u{56fe}\u{7247}"),
+      .image
+    )
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.processVisualKind("Web search complete"), .network)
+
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.processExpanded(
+      completed: false,
+      manuallyExpanded: false,
+      manuallyCollapsedWhileActive: false
+    ))
+    XCTAssertFalse(AgentTranscriptPresentationPolicy.processExpanded(
+      completed: false,
+      manuallyExpanded: false,
+      manuallyCollapsedWhileActive: true
+    ))
+    XCTAssertFalse(AgentTranscriptPresentationPolicy.processExpanded(
+      completed: true,
+      manuallyExpanded: false,
+      manuallyCollapsedWhileActive: false
+    ))
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.processExpanded(
+      completed: true,
+      manuallyExpanded: true,
+      manuallyCollapsedWhileActive: false
+    ))
+
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.processClockStopsFor(.waitingConfirmation))
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.processClockStopsFor(.completed))
+    XCTAssertFalse(AgentTranscriptPresentationPolicy.processClockStopsFor(.executing))
+    XCTAssertFalse(AgentTranscriptPresentationPolicy.processClockStopsFor(.waitingResponse))
+
+    XCTAssertFalse(AgentTranscriptPresentationPolicy.shouldRenderToolCompletion(
+      actionKind: .callConnector,
+      succeeded: true,
+      awaitingResponse: true
+    ))
+    XCTAssertFalse(AgentTranscriptPresentationPolicy.shouldRenderToolCompletion(
+      actionKind: .callConnector,
+      succeeded: true,
+      awaitingResponse: nil
+    ))
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.shouldRenderToolCompletion(
+      actionKind: .callConnector,
+      succeeded: true,
+      awaitingResponse: false
+    ))
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.shouldRenderToolCompletion(
+      actionKind: .callConnector,
+      succeeded: false,
+      awaitingResponse: true
+    ))
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.shouldRenderToolCompletion(
+      actionKind: .callNativeTool,
+      succeeded: true,
+      awaitingResponse: false
+    ))
+
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(0), "1s")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(999), "1s")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(1_999), "1s")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(2_000), "2s")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(59_999), "59s")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(60_000), "1m")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(77_000), "1m 17s")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(3_600_000), "1h")
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.formatElapsedSeconds(4_646_000), "1h 17m 26s")
+  }
+
+  func testAgentTranscriptPresentationPolicySegmentsVisibleProcessRows() {
+    let entries = [
+      transcriptEntry(
+        "generic-analysis",
+        text: "Analyzed the request - Codex",
+        dedupeKey: "audit:1:REASONING_SUMMARY:fallback"
+      ),
+      transcriptEntry("tool-start", timestampMillis: 2, dedupeKey: "audit:2:TOOL_STARTED:x"),
+      transcriptEntry("tool-complete", timestampMillis: 3, dedupeKey: "audit:3:TOOL_COMPLETED:x"),
+      transcriptEntry(
+        "plan",
+        timestampMillis: 4,
+        text: "Implement a small Python program",
+        dedupeKey: "pending:plan:action"
+      ),
+      transcriptEntry("phone-linux", timestampMillis: 5, dedupeKey: "audit:5:TOOL_STARTED:y"),
+      transcriptEntry("phone-linux-complete", timestampMillis: 6, dedupeKey: "audit:6:TOOL_COMPLETED:y")
+    ]
+    let connectorEntries = [
+      transcriptEntry(
+        "fallback-analysis",
+        text: "Analyzed the request",
+        dedupeKey: "audit:1:REASONING_SUMMARY:fallback"
+      ),
+      transcriptEntry("running-codex", text: "Running Codex", dedupeKey: "audit:2:TOOL_STARTED:codex"),
+      transcriptEntry(
+        "commentary",
+        timestampMillis: 3,
+        text: "I will inspect the provided input before acting.",
+        dedupeKey: "connector-event:task:REASONING_SUMMARY:codex:commentary:1"
+      ),
+      transcriptEntry(
+        "image-view",
+        timestampMillis: 4,
+        text: "Viewed 1 image",
+        dedupeKey: "connector-event:task:TOOL_EVENT:codex:image_view:1"
+      )
+    ]
+
+    let segments = AgentTranscriptPresentationPolicy.processSegments(entries)
+    let connectorSegments = AgentTranscriptPresentationPolicy.processSegments(connectorEntries)
+
+    XCTAssertEqual(segments.map(\.kind), [.toolActivity, .narration, .toolActivity])
+    XCTAssertEqual(segments.map { $0.entries.count }, [3, 1, 2])
+    XCTAssertEqual(
+      connectorSegments.flatMap { $0.entries }.map(\.text),
+      ["I will inspect the provided input before acting.", "Viewed 1 image"]
+    )
+    XCTAssertEqual(connectorSegments.map(\.kind), [.narration, .toolActivity])
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.narrationSegments(connectorEntries).flatMap { $0.entries }.map(\.text),
+      ["I will inspect the provided input before acting."]
+    )
+  }
+
+  func testAgentTranscriptPresentationPolicyFiltersInternalProcessNoise() {
+    let loopEntries = [
+      transcriptEntry("planning", text: "Planning", dedupeKey: "agent-loop:turn:PLAN:1"),
+      transcriptEntry("observe", timestampMillis: 2, text: "Checking the result", dedupeKey: "agent-loop:turn:OBSERVE:2"),
+      transcriptEntry(
+        "waiting",
+        timestampMillis: 3,
+        text: "Waiting for a resource",
+        dedupeKey: "agent-loop:turn:WAITING_RESPONSE:3"
+      ),
+      transcriptEntry(
+        "heartbeat",
+        timestampMillis: 4,
+        text: "Working",
+        dedupeKey: "connector-event:task:TOOL_EVENT:codex:heartbeat:1"
+      ),
+      transcriptEntry("watchdog", timestampMillis: 5, text: "No progress reported", dedupeKey: "task-watchdog:turn"),
+      transcriptEntry("finalize", timestampMillis: 6, text: "Finalizing", dedupeKey: "agent-loop:turn:FINALIZE:4")
+    ]
+    let legacyEntries = [
+      transcriptEntry("user", role: .user, timestampMillis: 1),
+      transcriptEntry(
+        "legacy-zh",
+        timestampMillis: 2,
+        text: "\u{8fd0}\u{884c}\u{4e86} 3 \u{4e2a}\u{5de5}\u{5177}\u{6b65}\u{9aa4}",
+        dedupeKey: "pending:legacy:tool-summary"
+      ),
+      transcriptEntry("legacy-en", timestampMillis: 3, text: "Ran 2 tool steps.", dedupeKey: "pending:legacy:tool-summary-en"),
+      transcriptEntry("assistant", role: .assistant, timestampMillis: 4)
+    ]
+    let runtimeEntries = [
+      transcriptEntry("user", role: .user, timestampMillis: 1),
+      transcriptEntry(
+        "runtime",
+        timestampMillis: 2,
+        text: "Execute in the on-device Linux sandbox",
+        dedupeKey: "pending:plan:runtime"
+      ),
+      transcriptEntry(
+        "implementation",
+        timestampMillis: 3,
+        text: "Implement a small Python program",
+        dedupeKey: "pending:plan:summary"
+      ),
+      transcriptEntry("assistant", role: .assistant, timestampMillis: 4)
+    ]
+
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.processSegments(loopEntries).isEmpty())
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.collapseProcessGroups(legacyEntries).map(\.text),
+      ["user", "assistant"]
+    )
+    XCTAssertTrue(AgentTranscriptPresentationPolicy.processSegments(legacyEntries).isEmpty())
+    XCTAssertEqual(
+      AgentTranscriptPresentationPolicy.collapseProcessGroups(runtimeEntries).map(\.text),
+      ["user", "Implement a small Python program", "assistant"]
+    )
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.controlMessageKind("Task cancelled"), .cancelled)
+    XCTAssertEqual(AgentTranscriptPresentationPolicy.controlMessageKind(" task CANCELED "), .cancelled)
+    XCTAssertNil(AgentTranscriptPresentationPolicy.controlMessageKind("The user discussed a cancelled task"))
+  }
+
+  func testAgentTranscriptRenderPolicyMatchesAndroidDiffRules() {
+    let previous = transcriptEntry("process-1", text: "Accepted")
+    let current = transcriptEntry("process-1", text: "Running")
+    let first = transcriptEntry("user-1", role: .user, text: "Run this")
+    let second = transcriptEntry("process-2", text: "Processing")
+    let assistantPrevious = transcriptEntry("assistant-1", role: .assistant, text: "Done", richOutputJson: #"{"type":"text"}"#)
+    let assistantCurrent = transcriptEntry("assistant-1", role: .assistant, text: "Done", richOutputJson: #"{"type":"table"}"#)
+
+    let changed = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [previous.id],
+      renderedSignatures: [previous.id: AgentTranscriptRenderPolicy.signature(previous)],
+      incoming: [current]
+    )
+    let appended = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [first.id],
+      renderedSignatures: [first.id: AgentTranscriptRenderPolicy.signature(first)],
+      incoming: [first, second]
+    )
+    let reset = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [first.id, second.id],
+      renderedSignatures: [
+        first.id: AgentTranscriptRenderPolicy.signature(first),
+        second.id: AgentTranscriptRenderPolicy.signature(second)
+      ],
+      incoming: [second]
+    )
+    let richChanged = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [assistantPrevious.id],
+      renderedSignatures: [assistantPrevious.id: AgentTranscriptRenderPolicy.signature(assistantPrevious)],
+      incoming: [assistantCurrent]
+    )
+    let assistantAppended = AgentTranscriptRenderPolicy.diff(
+      renderedIds: [first.id, second.id],
+      renderedSignatures: [
+        first.id: AgentTranscriptRenderPolicy.signature(first),
+        second.id: AgentTranscriptRenderPolicy.signature(second)
+      ],
+      incoming: [first, second, transcriptEntry("assistant-2", role: .assistant, text: "Done")]
+    )
+
+    XCTAssertFalse(changed.reset)
+    XCTAssertEqual(changed.replacementIndices, [0])
+    XCTAssertEqual(changed.appendFromIndex, 1)
+    XCTAssertFalse(appended.reset)
+    XCTAssertTrue(appended.replacementIndices.isEmpty)
+    XCTAssertEqual(appended.appendFromIndex, 1)
+    XCTAssertTrue(reset.reset)
+    XCTAssertTrue(reset.replacementIndices.isEmpty)
+    XCTAssertEqual(reset.appendFromIndex, 0)
+    XCTAssertEqual(richChanged.replacementIndices, [0])
+    XCTAssertFalse(assistantAppended.reset)
+    XCTAssertEqual(assistantAppended.replacementIndices, [1])
+    XCTAssertEqual(assistantAppended.appendFromIndex, 2)
+  }
+
   func testAgentFastLocalResponseAnswersBoundedBinaryArithmeticLocally() {
     let context = AgentConversationContext(conversationId: "test", summary: "", turns: [], privateMode: false)
 
@@ -2665,6 +2967,30 @@ final class SignalASIStoreTests: XCTestCase {
       conversationId: conversationId,
       turnId: "turn",
       taskId: "task",
+      richOutputJson: richOutputJson
+    )
+  }
+
+  private func transcriptEntry(
+    _ id: String,
+    role: AgentTranscriptRole = .process,
+    conversationId: String = "conversation",
+    turnId: String = "turn",
+    timestampMillis: Int64 = 1,
+    text: String? = nil,
+    dedupeKey: String = "",
+    taskId: String = "task",
+    richOutputJson: String = ""
+  ) -> AgentTranscriptEntry {
+    AgentTranscriptEntry(
+      id: id,
+      role: role,
+      text: text ?? id,
+      timestampMillis: timestampMillis,
+      dedupeKey: dedupeKey,
+      conversationId: conversationId,
+      turnId: turnId,
+      taskId: taskId,
       richOutputJson: richOutputJson
     )
   }

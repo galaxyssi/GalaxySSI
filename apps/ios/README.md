@@ -26,6 +26,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style cron expression parser for workflow schedules with time-zone aware next/previous matching
 - Android-style inline Markdown parsing for bold, italic, strike, code, and link segments
 - Android-style transcript scroll policy for auto-follow and older-history pagination thresholds
+- Android-style transcript presentation and render diff policy for stable grouped process progress rows
 - Android-style agent task identity generation and desktop response matching
 - Android-style agent task intent classification for chat, code, phone, desktop, research, file, memory, and automation requests
 - Android-style agent execution profiles for task kind, timeout, artifact, installation, and verification contracts

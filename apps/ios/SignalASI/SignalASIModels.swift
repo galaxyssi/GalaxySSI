@@ -2001,6 +2001,407 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
   }
 }
 
+struct AgentTranscriptRenderDiff: Codable, Equatable {
+  var reset: Bool
+  var replacementIndices: [Int]
+  var appendFromIndex: Int
+}
+
+enum AgentTranscriptRenderPolicy {
+  static func signature(_ entry: AgentTranscriptEntry) -> Int {
+    let fields = [
+      entry.id,
+      entry.role.rawValue,
+      entry.text,
+      String(entry.timestampMillis),
+      entry.dedupeKey,
+      entry.conversationId,
+      entry.turnId,
+      entry.taskId,
+      entry.richOutputJson,
+      entry.sourceConversationId,
+      entry.sourceConversationTitle,
+      entry.sourceEntryId
+    ]
+    let hash = Data(SHA256.hash(data: Data(fields.joined(separator: "\u{001f}").utf8)))
+    let value = hash.prefix(8).reduce(UInt64(0)) { partial, byte in
+      (partial << 8) | UInt64(byte)
+    }
+    return Int(truncatingIfNeeded: value)
+  }
+
+  static func diff(
+    renderedIds: [String],
+    renderedSignatures: [String: Int],
+    incoming: [AgentTranscriptEntry]
+  ) -> AgentTranscriptRenderDiff {
+    let incomingIds = incoming.map(\.id)
+    let hasStablePrefix = renderedIds.count <= incomingIds.count &&
+      Array(incomingIds.prefix(renderedIds.count)) == renderedIds
+    guard hasStablePrefix else {
+      return AgentTranscriptRenderDiff(reset: true, replacementIndices: [], appendFromIndex: 0)
+    }
+    let signatureReplacements = renderedIds.indices.filter { index in
+      let entry = incoming[index]
+      return renderedSignatures[entry.id] != signature(entry)
+    }
+    let changedAssistantGroups = Set(incoming.enumerated().compactMap { index, entry -> String? in
+      guard entry.role == .assistant,
+        index >= renderedIds.count || signatureReplacements.contains(index) else {
+        return nil
+      }
+      return AgentTranscriptPresentationPolicy.processGroupKey(entry)
+    })
+    let processCompletionReplacements = renderedIds.indices.filter { index in
+      let entry = incoming[index]
+      return entry.role == .process &&
+        changedAssistantGroups.contains(AgentTranscriptPresentationPolicy.processGroupKey(entry))
+    }
+    let replacements = Array(Set(signatureReplacements + processCompletionReplacements)).sorted()
+    return AgentTranscriptRenderDiff(
+      reset: false,
+      replacementIndices: replacements,
+      appendFromIndex: renderedIds.count
+    )
+  }
+}
+
+enum AgentTranscriptPresentationPolicy {
+  enum ProcessVisualKind: String, Codable, Equatable {
+    case analysis
+    case command
+    case file
+    case image
+    case network
+    case generic
+  }
+
+  enum ProcessContentKind: String, Codable, Equatable {
+    case narration
+    case toolActivity = "tool_activity"
+  }
+
+  enum ControlMessageKind: String, Codable, Equatable {
+    case cancelled
+  }
+
+  struct ProcessSegment: Codable, Equatable {
+    var kind: ProcessContentKind
+    var entries: [AgentTranscriptEntry]
+  }
+
+  static func processGroupKey(_ entry: AgentTranscriptEntry) -> String {
+    if !entry.turnId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return "turn:\(entry.conversationId):\(entry.turnId)"
+    }
+    if !entry.taskId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return "task:\(entry.conversationId):\(entry.taskId)"
+    }
+    return "entry:\(entry.id)"
+  }
+
+  static func collapseProcessGroups(_ entries: [AgentTranscriptEntry]) -> [AgentTranscriptEntry] {
+    let retainedEntries = AgentFinalResponseIdentity.coalesce(entries).filter { entry in
+      !isRedundantConnectorCompletion(entry) &&
+        !isInternalRuntimeHandoff(entry) &&
+        !isLegacyToolStepSummary(entry)
+    }
+    let localUserTurnIds = Set(
+      retainedEntries
+        .filter { $0.role == .user && !$0.turnId.isEmpty }
+        .map(\.turnId)
+    )
+    let normalizedEntries = retainedEntries.map { entry -> AgentTranscriptEntry in
+      guard entry.role == .process, !localUserTurnIds.contains(entry.turnId) else {
+        return entry
+      }
+      let inferred = retainedEntries
+        .filter {
+          $0.role == .user &&
+            $0.conversationId == entry.conversationId &&
+            !$0.turnId.isEmpty &&
+            $0.timestampMillis <= entry.timestampMillis
+        }
+        .max(by: { $0.timestampMillis < $1.timestampMillis }) ??
+        retainedEntries.last(where: {
+          $0.role == .user &&
+            $0.conversationId == entry.conversationId &&
+            !$0.turnId.isEmpty
+        })
+      guard let inferred = inferred else {
+        return entry
+      }
+      var rebound = entry
+      rebound.turnId = inferred.turnId
+      return rebound
+    }
+
+    var representatives: [String: AgentTranscriptEntry] = [:]
+    var representativeKeys: [String] = []
+    for process in normalizedEntries where process.role == .process {
+      let key = processGroupKey(process)
+      var representative = process
+      representative.id = processRepresentativeId(groupKey: key)
+      if representatives[key] == nil {
+        representativeKeys.append(key)
+      }
+      representatives[key] = representative
+    }
+
+    var emitted: Set<String> = []
+    var result: [AgentTranscriptEntry] = []
+    for entry in normalizedEntries where entry.role != .process {
+      let key = processGroupKey(entry)
+      switch entry.role {
+      case .user:
+        result.append(entry)
+        if let process = representatives[key], emitted.insert(key).inserted {
+          result.append(process)
+        }
+      case .assistant:
+        if let process = representatives[key], emitted.insert(key).inserted {
+          result.append(process)
+        }
+        result.append(entry)
+      case .process:
+        break
+      }
+    }
+    for key in representativeKeys where emitted.insert(key).inserted {
+      if let process = representatives[key] {
+        result.append(process)
+      }
+    }
+    return result
+  }
+
+  static func processVisualKind(_ value: String) -> ProcessVisualKind {
+    let text = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if containsAny(text, imageTerms) {
+      return .image
+    }
+    if containsAny(text, fileTerms) {
+      return .file
+    }
+    if containsAny(text, networkTerms) {
+      return .network
+    }
+    if containsAny(text, commandTerms) {
+      return .command
+    }
+    if containsAny(text, analysisTerms) {
+      return .analysis
+    }
+    return .generic
+  }
+
+  static func processExpanded(
+    completed: Bool,
+    manuallyExpanded: Bool,
+    manuallyCollapsedWhileActive: Bool
+  ) -> Bool {
+    completed ? manuallyExpanded : !manuallyCollapsedWhileActive
+  }
+
+  static func processClockStopsFor(_ phase: AgentPhase) -> Bool {
+    [.waitingConfirmation, .paused, .blocked, .completed, .failed, .cancelled].contains(phase)
+  }
+
+  static func shouldRenderToolCompletion(
+    actionKind: AgentActionKind?,
+    succeeded: Bool,
+    awaitingResponse: Bool?
+  ) -> Bool {
+    !succeeded ||
+      actionKind != .callConnector ||
+      awaitingResponse == false
+  }
+
+  static func formatElapsedSeconds(_ durationMillis: Int64) -> String {
+    let totalSeconds = max(max(durationMillis, 0) / 1_000, 1)
+    let hours = totalSeconds / 3_600
+    let minutes = totalSeconds % 3_600 / 60
+    let seconds = totalSeconds % 60
+    var parts: [String] = []
+    if hours > 0 {
+      parts.append("\(hours)h")
+    }
+    if minutes > 0 {
+      parts.append("\(minutes)m")
+    }
+    if seconds > 0 || parts.isEmpty {
+      parts.append("\(seconds)s")
+    }
+    return parts.joined(separator: " ")
+  }
+
+  static func processContentKind(_ entry: AgentTranscriptEntry) -> ProcessContentKind {
+    let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let genericAnalysis = text.hasPrefix("analyzed the request") ||
+      text.hasPrefix("\u{5df2}\u{5206}\u{6790}\u{8bf7}\u{6c42}")
+    let explicitReasoning = entry.dedupeKey.contains(":REASONING_SUMMARY:") && !genericAnalysis
+    let plannedNarration = entry.dedupeKey.hasPrefix("pending:")
+    return explicitReasoning || plannedNarration ? .narration : .toolActivity
+  }
+
+  static func processSegments(_ entries: [AgentTranscriptEntry]) -> [ProcessSegment] {
+    let hasConnectorDetail = entries.contains { $0.dedupeKey.hasPrefix("connector-event:") }
+    let visibleEntries = entries.filter { entry in
+      isUserRelevantProcessEntry(entry) &&
+        (!hasConnectorDetail || !isGenericConnectorFallback(entry))
+    }
+    var result: [ProcessSegment] = []
+    for entry in visibleEntries {
+      let kind = processContentKind(entry)
+      if let last = result.last, last.kind == kind {
+        result[result.count - 1] = ProcessSegment(kind: last.kind, entries: last.entries + [entry])
+      } else {
+        result.append(ProcessSegment(kind: kind, entries: [entry]))
+      }
+    }
+    return result
+  }
+
+  static func narrationSegments(_ entries: [AgentTranscriptEntry]) -> [ProcessSegment] {
+    processSegments(entries).filter { $0.kind == .narration }
+  }
+
+  static func controlMessageKind(_ value: String) -> ControlMessageKind? {
+    switch value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "task cancelled", "task canceled":
+      return .cancelled
+    default:
+      return nil
+    }
+  }
+
+  static func isUserRelevantProcessEntry(_ entry: AgentTranscriptEntry) -> Bool {
+    guard entry.role == .process else {
+      return false
+    }
+    if isLegacyToolStepSummary(entry) || entry.dedupeKey.hasPrefix("task-watchdog:") {
+      return false
+    }
+    if entry.dedupeKey.hasPrefix("agent-loop:") &&
+      hiddenLoopPhaseTokens.contains(where: entry.dedupeKey.contains) {
+      return false
+    }
+    if !entry.dedupeKey.hasPrefix("connector-event:") {
+      return true
+    }
+    return !hiddenConnectorTexts.contains(
+      entry.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    )
+  }
+
+  static func isRedundantConnectorCompletion(_ entry: AgentTranscriptEntry) -> Bool {
+    entry.role == .process && entry.dedupeKey.hasPrefix("connector-task:")
+  }
+
+  static func isLegacyToolStepSummary(_ entry: AgentTranscriptEntry) -> Bool {
+    guard entry.role == .process else {
+      return false
+    }
+    let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    return regexContains(#"^ran\s+\d+\s+tool\s+steps?[\s.!]*$"#, in: text, caseInsensitive: true) ||
+      regexContains(
+        "^\u{8fd0}\u{884c}\u{4e86}\\s*\\d+\\s*\u{4e2a}?\u{5de5}\u{5177}\u{6b65}\u{9aa4}[\u{3002}\u{ff01}!.\\s]*$",
+        in: text
+      )
+  }
+
+  static func isInternalRuntimeHandoff(_ entry: AgentTranscriptEntry) -> Bool {
+    guard entry.role == .process else {
+      return false
+    }
+    let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if text.contains("local-agent-runtime") {
+      return true
+    }
+    guard entry.dedupeKey.hasPrefix("pending:") else {
+      return false
+    }
+    return text == "execute in the on-device linux sandbox" ||
+      ((text.contains("phone linux") || text.contains("on-device linux")) &&
+        (text.contains("run and verify") || text.contains("execute and verify"))) ||
+      (text.contains("\u{624b}\u{673a}\u{672c}\u{5730} linux") &&
+        text.contains("\u{6267}\u{884c}\u{5e76}\u{9a8c}\u{8bc1}"))
+  }
+
+  private static func processRepresentativeId(groupKey: String) -> String {
+    "process-group:\(nameUUID(groupKey))"
+  }
+
+  private static func nameUUID(_ value: String) -> String {
+    var bytes = Array(Insecure.MD5.hash(data: Data(value.utf8)))
+    bytes[6] = (bytes[6] & 0x0f) | 0x30
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    let uuid = UUID(uuid: (
+      bytes[0], bytes[1], bytes[2], bytes[3],
+      bytes[4], bytes[5], bytes[6], bytes[7],
+      bytes[8], bytes[9], bytes[10], bytes[11],
+      bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
+    return uuid.uuidString.lowercased()
+  }
+
+  private static func isGenericConnectorFallback(_ entry: AgentTranscriptEntry) -> Bool {
+    let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if text.hasPrefix("analyzed the request") ||
+      text.hasPrefix("\u{5df2}\u{5206}\u{6790}\u{8bf7}\u{6c42}") {
+      return true
+    }
+    guard entry.dedupeKey.contains(":TOOL_STARTED:") else {
+      return false
+    }
+    return text.hasPrefix("running codex") ||
+      text.hasPrefix("\u{6b63}\u{5728}\u{8fd0}\u{884c} codex")
+  }
+
+  private static func containsAny(_ value: String, _ terms: [String]) -> Bool {
+    terms.contains { value.contains($0) }
+  }
+
+  private static func regexContains(_ pattern: String, in value: String, caseInsensitive: Bool = false) -> Bool {
+    var options: NSRegularExpression.Options = []
+    if caseInsensitive {
+      options.insert(.caseInsensitive)
+    }
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+      return false
+    }
+    let range = NSRange(value.startIndex..<value.endIndex, in: value)
+    return regex.firstMatch(in: value, options: [], range: range) != nil
+  }
+
+  private static let imageTerms = [
+    "image", "photo", "screenshot", "ocr",
+    "\u{56fe}\u{7247}", "\u{56fe}\u{50cf}", "\u{622a}\u{56fe}", "\u{62cd}\u{7167}"
+  ]
+  private static let fileTerms = [
+    "file", "write", "edit", "save", "archive", "zip",
+    "\u{6587}\u{4ef6}", "\u{7f16}\u{8f91}", "\u{5199}\u{5165}", "\u{4fdd}\u{5b58}", "\u{6253}\u{5305}"
+  ]
+  private static let networkTerms = [
+    "web", "http", "search", "fetch", "network",
+    "\u{7f51}\u{9875}", "\u{641c}\u{7d22}", "\u{7f51}\u{7edc}", "\u{8054}\u{7f51}"
+  ]
+  private static let commandTerms = [
+    "run", "execute", "command", "terminal", "linux", "codex", "tool",
+    "\u{8fd0}\u{884c}", "\u{6267}\u{884c}", "\u{547d}\u{4ee4}", "\u{5de5}\u{5177}"
+  ]
+  private static let analysisTerms = [
+    "analy", "reason", "plan", "inspect",
+    "\u{5206}\u{6790}", "\u{601d}\u{8003}", "\u{8ba1}\u{5212}", "\u{68c0}\u{67e5}"
+  ]
+  private static let hiddenConnectorTexts: Set<String> = [
+    "accepted", "queued", "started", "working", "working complete", "completed"
+  ]
+  private static let hiddenLoopPhaseTokens = [
+    ":PLAN:", ":ACT:", ":OBSERVE:", ":REPLAN:", ":VERIFY:", ":FINALIZE:", ":LEARN:", ":WAITING_RESPONSE:"
+  ]
+}
+
 enum AgentConversationStatus: String, Codable, CaseIterable, Identifiable {
   case active = "ACTIVE"
   case archived = "ARCHIVED"
