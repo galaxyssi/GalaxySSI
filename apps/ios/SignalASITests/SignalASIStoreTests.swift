@@ -2143,6 +2143,140 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(statusJSON.contains(#""by_kind":{"browser":1}"#))
   }
 
+  func testAgentPrivateDataInventoryAuditCoversExportAndEraseDecisions() {
+    let audit = AgentPrivateDataInventory.audit()
+    let ids = AgentPrivateDataInventory.descriptors.map(\.id)
+
+    XCTAssertTrue(audit.complete)
+    XCTAssertTrue(audit.duplicateIds.isEmpty)
+    XCTAssertTrue(audit.descriptorsWithoutStorage.isEmpty)
+    XCTAssertTrue(audit.exportedDescriptorsWithoutPath.isEmpty)
+    XCTAssertTrue(audit.nonExportedDescriptorsWithPath.isEmpty)
+    XCTAssertEqual(audit.identityRotationCount, 1)
+    XCTAssertEqual(ids.count, Set(ids).count)
+  }
+
+  func testAgentPrivateDataInventoryMinimalManifestExcludesOptionalAndLocalOnlyStores() {
+    let manifest = AgentPrivateDataInventory.backupManifest(
+      includeContacts: false,
+      includeSessionHistory: false
+    )
+    let included = Set(manifest.includedStoreIds)
+    let excluded = Set(manifest.excludedStoreIds)
+
+    XCTAssertEqual(manifest.policyVersion, AgentPrivateDataInventory.policyVersion)
+    XCTAssertTrue(manifest.encryptedContainerRequired)
+    XCTAssertFalse(manifest.privateModeExported)
+    XCTAssertFalse(manifest.pausedTrackingExported)
+    XCTAssertTrue(manifest.identityRotatedOnReset)
+    XCTAssertTrue(included.contains("identity"))
+    XCTAssertTrue(included.contains("memory"))
+    XCTAssertTrue(included.contains("personal_asi"))
+    XCTAssertTrue(excluded.contains("contacts"))
+    XCTAssertTrue(excluded.contains("chat_history"))
+    XCTAssertTrue(excluded.contains("transcript"))
+    XCTAssertTrue(excluded.contains("permission_grants"))
+    XCTAssertTrue(excluded.contains("run_start_receipts"))
+    XCTAssertTrue(excluded.contains("runtime_files"))
+    XCTAssertEqual(Set(manifest.eraseStoreIds), Set(AgentPrivateDataInventory.descriptors.map(\.id)))
+  }
+
+  func testAgentPrivateDataInventoryFullManifestIncludesChosenDataButNeverLiveAuthority() {
+    let manifest = AgentPrivateDataInventory.backupManifest(
+      includeContacts: true,
+      includeSessionHistory: true
+    )
+    let included = Set(manifest.includedStoreIds)
+    let excluded = Set(manifest.excludedStoreIds)
+    let all = Set(AgentPrivateDataInventory.descriptors.map(\.id))
+
+    XCTAssertTrue(included.contains("contacts"))
+    XCTAssertTrue(included.contains("chat_history"))
+    XCTAssertTrue(included.contains("transcript"))
+    XCTAssertTrue(included.contains("home_assistant"))
+    XCTAssertTrue(Set(manifest.secretStoreIds).contains("identity"))
+    XCTAssertTrue(Set(manifest.secretStoreIds).contains("home_assistant"))
+    XCTAssertTrue(excluded.contains("permission_grants"))
+    XCTAssertTrue(excluded.contains("run_start_receipts"))
+    XCTAssertTrue(excluded.contains("mcp_credentials"))
+    XCTAssertEqual(included.union(excluded), all)
+    XCTAssertTrue(included.intersection(excluded).isEmpty)
+  }
+
+  func testAgentPrivateDataInventoryExportedBackupPathsMatchAndroidSchema() {
+    let paths = Set(
+      AgentPrivateDataInventory.descriptors
+        .filter { $0.exportPolicy != .neverExport }
+        .map(\.backupPath)
+    )
+
+    XCTAssertEqual(
+      paths,
+      Set([
+        "root.identity",
+        "root.profile",
+        "root.contacts",
+        "root.friend_requests",
+        "root.messages",
+        "agent.memory",
+        "agent.knowledge",
+        "agent.tasks",
+        "agent.transcript",
+        "agent.agent_conversations",
+        "agent.active_agent_conversation",
+        "agent.workflows",
+        "agent.workflow_schedules",
+        "agent.workflow_triggers",
+        "agent.workflow_execution_history",
+        "agent.safety",
+        "agent.custom_device_connectors",
+        "agent.global_super_agent",
+        "agent.agent_self_model",
+        "agent.model_planner",
+        "agent.voice_assistant",
+        "agent.home_assistant"
+      ])
+    )
+  }
+
+  func testAgentPrivateDataInventoryModelsUseAndroidWireNames() throws {
+    let descriptor = try JSONDecoder.signalASI.decode(
+      AgentPrivateDataDescriptor.self,
+      from: Data(
+        """
+        {
+          "id": "identity",
+          "category": "Identity",
+          "storage_ids": ["keychain:identity"],
+          "backup_path": "root.identity",
+          "export_policy": "ALWAYS_ENCRYPTED",
+          "sensitivity": "SECRET",
+          "erase_policy": "DELETE_AND_ROTATE_IDENTITY"
+        }
+        """.utf8
+      )
+    )
+    let fallbackPolicy = try JSONDecoder.signalASI.decode(
+      AgentPrivateDataExportPolicy.self,
+      from: Data(#""future""#.utf8)
+    )
+    let encoded = String(
+      decoding: try JSONEncoder.signalASI.encode(
+        AgentPrivateDataInventory.backupManifest(includeContacts: true, includeSessionHistory: false)
+      ),
+      as: UTF8.self
+    )
+
+    XCTAssertEqual(descriptor.exportPolicy, .alwaysEncrypted)
+    XCTAssertEqual(descriptor.sensitivity, .secret)
+    XCTAssertEqual(descriptor.erasePolicy, .deleteAndRotateIdentity)
+    XCTAssertEqual(fallbackPolicy, .neverExport)
+    XCTAssertTrue(encoded.contains(#""policy_version":1"#))
+    XCTAssertTrue(encoded.contains(#""encrypted_container_required":true"#))
+    XCTAssertTrue(encoded.contains(#""identity_rotated_on_reset":true"#))
+    XCTAssertTrue(encoded.contains(#""erase_store_ids""#))
+  }
+
   func testAgentFailoverPolicyMatchesAndroidDesktopFallbackAndTimeoutStages() {
     let primary = AgentFailoverResource(location: .trustedDesktop, failureDomain: "desktop-a")
     let cloud = AgentFailoverResource(location: .cloud, failureDomain: "cloud-openai")
