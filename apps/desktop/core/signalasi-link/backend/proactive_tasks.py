@@ -31,6 +31,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 PROTOCOL = "signalasi.proactive-task.v1"
 TRIGGER_KINDS = {"manual", "cron", "interval", "goal_checkpoint", "webhook"}
 ACTION_KINDS = {"agent", "subagent_team", "workflow", "native_tool"}
+TEAM_ROLES = {
+    "lead",
+    "coordinator",
+    "executor",
+    "specialist",
+    "observer",
+    "verifier",
+}
 MISFIRE_POLICIES = {"skip", "fire_once", "catch_up"}
 RUN_STATUSES = {
     "queued",
@@ -148,18 +156,27 @@ class ProactiveAction:
         if len(team_raw) > 16:
             raise ProactiveTaskError("invalid_action", "Sub-agent team exceeds 16 members")
         team: list[dict[str, str]] = []
-        lead_count = 0
+        final_responder_count = 0
+        agent_ids: set[str] = set()
+        roles: set[str] = set()
         for value in team_raw:
             if not isinstance(value, Mapping):
                 raise ProactiveTaskError("invalid_action", "Sub-agent team member must be an object")
             agent_id = _text(value.get("agent_id"), "team.agent_id", 128)
             role = _text(value.get("role"), "team.role", 32).lower()
-            if role not in {"lead", "executor", "observer", "verifier"}:
+            if role not in TEAM_ROLES:
                 raise ProactiveTaskError("invalid_action", f"Unsupported team role: {role}")
+            if agent_id in agent_ids:
+                raise ProactiveTaskError(
+                    "invalid_action",
+                    f"Sub-agent team repeats Agent: {agent_id}",
+                )
             instructions = str(value.get("instructions") or "").strip()
             if len(instructions) > 8_192:
                 raise ProactiveTaskError("invalid_action", "Team member instructions are too long")
-            lead_count += int(role == "lead")
+            agent_ids.add(agent_id)
+            roles.add(role)
+            final_responder_count += int(role in {"lead", "coordinator"})
             team.append(
                 {
                     "agent_id": agent_id,
@@ -167,10 +184,18 @@ class ProactiveAction:
                     "instructions": instructions,
                 }
             )
-        if kind == "subagent_team" and (not team or lead_count != 1):
+        if kind == "subagent_team" and (not team or final_responder_count != 1):
             raise ProactiveTaskError(
                 "invalid_action",
-                "A sub-agent team requires exactly one lead and at least one member",
+                "A sub-agent team requires exactly one lead or coordinator and at least one member",
+            )
+        specialist_mode = bool({"coordinator", "specialist"}.intersection(roles))
+        if kind == "subagent_team" and specialist_mode and (
+            "coordinator" not in roles or "lead" in roles or "specialist" not in roles
+        ):
+            raise ProactiveTaskError(
+                "invalid_action",
+                "Coordinator-specialist mode requires one coordinator and at least one specialist",
             )
         if kind in {"agent", "subagent_team"} and not prompt:
             raise ProactiveTaskError(
