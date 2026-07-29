@@ -1505,6 +1505,288 @@ struct AgentSignedReputationAttestation: Codable, Equatable {
   }
 }
 
+struct AgentReputationSnapshot: Codable, Equatable {
+  var agentId: String
+  var score: Int
+  var confidence: Int
+  var reliability: Int
+  var quality: Int
+  var timeliness: Int
+  var costEfficiency: Int
+  var evaluatedRuns: Int
+  var independentlyVerifiedRuns: Int
+  var disputedRuns: Int
+  var timeoutRuns: Int
+  var independentFailureDomains: Int
+  var lastEvidenceAtMillis: Int64
+  var routingAdjustment: Int
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case score
+    case confidence
+    case reliability
+    case quality
+    case timeliness
+    case costEfficiency = "cost_efficiency"
+    case evaluatedRuns = "evaluated_runs"
+    case independentlyVerifiedRuns = "independently_verified_runs"
+    case disputedRuns = "disputed_runs"
+    case timeoutRuns = "timeout_runs"
+    case independentFailureDomains = "independent_failure_domains"
+    case lastEvidenceAtMillis = "last_evidence_at_millis"
+    case routingAdjustment = "routing_adjustment"
+  }
+
+  static func neutral(_ agentId: String) -> AgentReputationSnapshot {
+    AgentReputationSnapshot(
+      agentId: agentId,
+      score: 70,
+      confidence: 0,
+      reliability: 70,
+      quality: 70,
+      timeliness: 70,
+      costEfficiency: 70,
+      evaluatedRuns: 0,
+      independentlyVerifiedRuns: 0,
+      disputedRuns: 0,
+      timeoutRuns: 0,
+      independentFailureDomains: 0,
+      lastEvidenceAtMillis: 0,
+      routingAdjustment: 0
+    )
+  }
+}
+
+enum AgentReputationScoring {
+  static func snapshot(
+    agentId: String,
+    capabilities: Set<AgentCapability> = [],
+    receipts allReceipts: [AgentSignedExecutionReceipt],
+    attestations allAttestations: [AgentSignedReputationAttestation],
+    nowMillis: Int64
+  ) -> AgentReputationSnapshot {
+    let receipts = latestReceipts(
+      agentId: agentId,
+      capabilities: capabilities,
+      receipts: allReceipts
+    )
+    guard !receipts.isEmpty else {
+      return .neutral(agentId)
+    }
+
+    var reliabilityTotal = 0.0
+    var qualityTotal = 0.0
+    var timelinessTotal = 0.0
+    var costTotal = 0.0
+    var evidenceTotal = 0.0
+    var verifiedRuns = 0
+    var disputedRuns = 0
+    var timeoutRuns = 0
+    var lastEvidenceAt: Int64 = 0
+    var verifierDomains = Set<String>()
+
+    for receipt in receipts {
+      let attestations = allAttestations.filter {
+        $0.receiptId == receipt.receiptId &&
+          $0.validationFailure(for: receipt, nowMillis: nowMillis) == nil
+      }
+      let failed = attestations.contains { $0.verdict == .failed }
+      let passed = !failed && attestations.contains { $0.verdict == .passed }
+      if passed {
+        verifiedRuns += 1
+        attestations
+          .filter { $0.verdict == .passed }
+          .forEach { verifierDomains.insert($0.signerId) }
+      }
+      if failed {
+        disputedRuns += 1
+      }
+      if receipt.outcome == .timedOut {
+        timeoutRuns += 1
+      }
+
+      let age = max(Int64(0), nowMillis - receipt.completedAtMillis)
+      let recency = exp(-log(2.0) * Double(age) / reputationHalfLifeMillis)
+      let provenanceWeight = receipt.provenance == .executorSigned ? 0.25 : 0.60
+      let verificationWeight: Double
+      if failed {
+        verificationWeight = 1.25
+      } else if passed {
+        verificationWeight = 1.0
+      } else {
+        verificationWeight = provenanceWeight
+      }
+      let outcomeWeight: Double
+      switch receipt.outcome {
+      case .cancelled:
+        outcomeWeight = 0.20
+      case .rejected:
+        outcomeWeight = 0.10
+      case .succeeded, .partial, .failed, .timedOut:
+        outcomeWeight = 1.0
+      }
+      let weight = recency * verificationWeight * outcomeWeight
+      guard weight > 0.0 else {
+        continue
+      }
+
+      let reliability = failed ? 0.0 : reliabilityValue(for: receipt.outcome)
+      let quality: Double
+      if failed {
+        quality = 0.0
+      } else if passed {
+        quality = 1.0
+      } else {
+        quality = qualityValue(for: receipt.outcome)
+      }
+      let timeliness: Double
+      if receipt.deadlineAtMillis <= 0 {
+        timeliness = reliability
+      } else if receipt.completedAtMillis <= receipt.deadlineAtMillis {
+        timeliness = 1.0
+      } else {
+        timeliness = 0.0
+      }
+      let costEfficiency: Double
+      if receipt.estimatedCostUnits <= 0 {
+        costEfficiency = reliability > 0.0 ? 0.75 : 0.0
+      } else if receipt.actualCostUnits <= receipt.estimatedCostUnits {
+        costEfficiency = 1.0
+      } else {
+        costEfficiency = Double(receipt.estimatedCostUnits) / Double(max(receipt.actualCostUnits, 1))
+      }
+
+      reliabilityTotal += reliability * weight
+      qualityTotal += quality * weight
+      timelinessTotal += timeliness * weight
+      costTotal += costEfficiency * weight
+      evidenceTotal += weight
+      lastEvidenceAt = max(
+        max(lastEvidenceAt, receipt.completedAtMillis),
+        attestations.map(\.createdAtMillis).max() ?? 0
+      )
+    }
+
+    guard evidenceTotal > 0.0 else {
+      return .neutral(agentId)
+    }
+    let reliability = posteriorPercent(success: reliabilityTotal, total: evidenceTotal)
+    let quality = posteriorPercent(success: qualityTotal, total: evidenceTotal)
+    let timeliness = posteriorPercent(success: timelinessTotal, total: evidenceTotal)
+    let costEfficiency = posteriorPercent(success: costTotal, total: evidenceTotal)
+    let score = clamp(
+      Int((
+        Double(reliability) * 0.45 +
+          Double(quality) * 0.25 +
+          Double(timeliness) * 0.15 +
+          Double(costEfficiency) * 0.15
+      ).rounded()),
+      lower: 0,
+      upper: 100
+    )
+    let confidence = clamp(
+      Int(((1.0 - exp(-evidenceTotal / confidenceScale)) * 100.0).rounded()),
+      lower: 0,
+      upper: 100
+    )
+    let routingAdjustment: Int
+    if confidence < minRoutingConfidence {
+      routingAdjustment = 0
+    } else {
+      routingAdjustment = clamp(
+        Int((Double(score - routingNeutralScore) * Double(confidence) / 100.0 * routingWeight).rounded()),
+        lower: -maxRoutingAdjustment,
+        upper: maxRoutingAdjustment
+      )
+    }
+
+    return AgentReputationSnapshot(
+      agentId: agentId,
+      score: score,
+      confidence: confidence,
+      reliability: reliability,
+      quality: quality,
+      timeliness: timeliness,
+      costEfficiency: costEfficiency,
+      evaluatedRuns: receipts.count,
+      independentlyVerifiedRuns: verifiedRuns,
+      disputedRuns: disputedRuns,
+      timeoutRuns: timeoutRuns,
+      independentFailureDomains: verifierDomains.count,
+      lastEvidenceAtMillis: lastEvidenceAt,
+      routingAdjustment: routingAdjustment
+    )
+  }
+
+  private static func latestReceipts(
+    agentId: String,
+    capabilities: Set<AgentCapability>,
+    receipts: [AgentSignedExecutionReceipt]
+  ) -> [AgentSignedExecutionReceipt] {
+    var latestByRun: [String: AgentSignedExecutionReceipt] = [:]
+    for receipt in receipts where receipt.agentId == agentId {
+      if !capabilities.isEmpty && receipt.capabilities.isDisjoint(with: capabilities) {
+        continue
+      }
+      guard let existing = latestByRun[receipt.runId] else {
+        latestByRun[receipt.runId] = receipt
+        continue
+      }
+      if receipt.completedAtMillis > existing.completedAtMillis ||
+        (receipt.completedAtMillis == existing.completedAtMillis && receipt.receiptId > existing.receiptId) {
+        latestByRun[receipt.runId] = receipt
+      }
+    }
+    return Array(latestByRun.values)
+  }
+
+  private static func posteriorPercent(success: Double, total: Double) -> Int {
+    clamp(
+      Int(((priorSuccess + success) / (priorWeight + total) * 100.0).rounded()),
+      lower: 0,
+      upper: 100
+    )
+  }
+
+  private static func reliabilityValue(for outcome: AgentReputationOutcome) -> Double {
+    switch outcome {
+    case .succeeded:
+      return 1.0
+    case .partial:
+      return 0.60
+    case .cancelled:
+      return 0.50
+    case .failed, .timedOut, .rejected:
+      return 0.0
+    }
+  }
+
+  private static func qualityValue(for outcome: AgentReputationOutcome) -> Double {
+    switch outcome {
+    case .succeeded:
+      return 0.75
+    case .partial, .cancelled:
+      return 0.50
+    case .failed, .timedOut, .rejected:
+      return 0.0
+    }
+  }
+
+  private static func clamp(_ value: Int, lower: Int, upper: Int) -> Int {
+    min(max(value, lower), upper)
+  }
+
+  private static let priorWeight = 2.0
+  private static let priorSuccess = 1.4
+  private static let confidenceScale = 5.0
+  private static let minRoutingConfidence = 15
+  private static let routingNeutralScore = 65
+  private static let routingWeight = 4.0
+  private static let maxRoutingAdjustment = 180
+  private static let reputationHalfLifeMillis = Double(30 * 24 * 60 * 60 * 1_000)
+}
+
 enum AgentReputationWireCodec {
   static func decodeReceipt(_ raw: String) -> AgentSignedExecutionReceipt? {
     guard let data = raw.data(using: .utf8),

@@ -1606,6 +1606,134 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(AgentReputationWireCodec.decodeAttestation(invalid))
   }
 
+  func testAgentReputationSnapshotNeutralAndIndependentPassRaiseConfidence() {
+    let receipt = reputationReceipt("run-1", outcome: .succeeded)
+    let neutral = AgentReputationScoring.snapshot(
+      agentId: receipt.agentId,
+      receipts: [],
+      attestations: [],
+      nowMillis: reputationNow
+    )
+    let before = AgentReputationScoring.snapshot(
+      agentId: receipt.agentId,
+      receipts: [receipt],
+      attestations: [],
+      nowMillis: reputationNow + 1_000
+    )
+    let after = AgentReputationScoring.snapshot(
+      agentId: receipt.agentId,
+      receipts: [receipt],
+      attestations: [reputationAttestation(for: receipt, verdict: .passed)],
+      nowMillis: reputationNow + 1_000
+    )
+
+    XCTAssertEqual(neutral, AgentReputationSnapshot.neutral(receipt.agentId))
+    XCTAssertTrue(after.confidence > before.confidence)
+    XCTAssertTrue(after.score >= before.score)
+    XCTAssertEqual(after.independentlyVerifiedRuns, 1)
+    XCTAssertEqual(after.independentFailureDomains, 1)
+    XCTAssertEqual(after.lastEvidenceAtMillis, receipt.completedAtMillis + 100)
+  }
+
+  func testAgentReputationSnapshotFailureTimeoutAndBudgetDimensions() {
+    let succeeded = reputationReceipt("run-1", outcome: .succeeded)
+    let beforeFailure = AgentReputationScoring.snapshot(
+      agentId: succeeded.agentId,
+      receipts: [succeeded],
+      attestations: [],
+      nowMillis: reputationNow + 1_000
+    )
+    let afterFailure = AgentReputationScoring.snapshot(
+      agentId: succeeded.agentId,
+      receipts: [succeeded],
+      attestations: [reputationAttestation(for: succeeded, verdict: .failed)],
+      nowMillis: reputationNow + 1_000
+    )
+    let timeout = reputationReceipt(
+      "run-timeout",
+      outcome: .timedOut,
+      deadlineAtMillis: reputationNow - 500,
+      estimatedCostUnits: 2,
+      actualCostUnits: 8
+    )
+    let timeoutProfile = AgentReputationScoring.snapshot(
+      agentId: timeout.agentId,
+      receipts: [timeout],
+      attestations: [],
+      nowMillis: reputationNow + 1_000
+    )
+
+    XCTAssertTrue(afterFailure.score < beforeFailure.score)
+    XCTAssertEqual(afterFailure.disputedRuns, 1)
+    XCTAssertEqual(afterFailure.independentlyVerifiedRuns, 0)
+    XCTAssertEqual(timeoutProfile.timeoutRuns, 1)
+    XCTAssertTrue(timeoutProfile.timeliness < 70)
+    XCTAssertTrue(timeoutProfile.costEfficiency < 70)
+    XCTAssertTrue(timeoutProfile.reliability < 70)
+  }
+
+  func testAgentReputationSnapshotFiltersCapabilitiesAndUsesLatestRunVersion() {
+    let codeReceipts = (0..<4).map {
+      reputationReceipt("code-\($0)", outcome: .succeeded, capabilities: [.code])
+    }
+    let researchFailure = reputationReceipt(
+      "research-failure",
+      outcome: .failed,
+      capabilities: [.research]
+    )
+    let code = AgentReputationScoring.snapshot(
+      agentId: "codex-agent",
+      capabilities: [.code],
+      receipts: codeReceipts + [researchFailure],
+      attestations: [],
+      nowMillis: reputationNow + 1_000
+    )
+    let research = AgentReputationScoring.snapshot(
+      agentId: "codex-agent",
+      capabilities: [.research],
+      receipts: codeReceipts + [researchFailure],
+      attestations: [],
+      nowMillis: reputationNow + 1_000
+    )
+    let failed = reputationReceipt("run-1", outcome: .failed)
+    let corrected = reputationReceipt("run-1", outcome: .succeeded, completedAtMillis: reputationNow + 100)
+    let correctedProfile = AgentReputationScoring.snapshot(
+      agentId: failed.agentId,
+      receipts: [failed, corrected],
+      attestations: [],
+      nowMillis: reputationNow + 100
+    )
+
+    XCTAssertTrue(code.score > research.score)
+    XCTAssertEqual(code.evaluatedRuns, 4)
+    XCTAssertEqual(research.evaluatedRuns, 1)
+    XCTAssertEqual(correctedProfile.evaluatedRuns, 1)
+    XCTAssertTrue(correctedProfile.score > 70)
+  }
+
+  func testAgentReputationSnapshotModelsUseAndroidWireNames() throws {
+    let receipt = reputationReceipt("run-1", outcome: .succeeded)
+    let snapshot = AgentReputationScoring.snapshot(
+      agentId: receipt.agentId,
+      receipts: [receipt],
+      attestations: [reputationAttestation(for: receipt, verdict: .passed)],
+      nowMillis: reputationNow + 1_000
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot)) as? [String: Any]
+    )
+
+    XCTAssertEqual(object["agent_id"] as? String, "codex-agent")
+    XCTAssertEqual(object["cost_efficiency"] as? Int, snapshot.costEfficiency)
+    XCTAssertEqual(object["evaluated_runs"] as? Int, 1)
+    XCTAssertEqual(object["independently_verified_runs"] as? Int, 1)
+    XCTAssertEqual(object["independent_failure_domains"] as? Int, 1)
+    XCTAssertEqual(object["last_evidence_at_millis"] as? Int, Int(reputationNow + 100))
+    XCTAssertEqual(object["routing_adjustment"] as? Int, snapshot.routingAdjustment)
+    XCTAssertNil(object["costEfficiency"])
+    XCTAssertNil(object["evaluatedRuns"])
+  }
+
   func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
@@ -5803,6 +5931,62 @@ final class SignalASIStoreTests: XCTestCase {
       "signature_key_id": .string(String(repeating: "d", count: 64)),
       "signature": .string("attestation-signature")
     ]
+  }
+
+  private var reputationNow: Int64 { 10_000_000 }
+
+  private func reputationReceipt(
+    _ runId: String,
+    outcome: AgentReputationOutcome,
+    agentId: String = "codex-agent",
+    capabilities: Set<AgentCapability> = [.chat, .reasoning],
+    completedAtMillis: Int64? = nil,
+    deadlineAtMillis: Int64 = 0,
+    estimatedCostUnits: Int = 0,
+    actualCostUnits: Int = 0
+  ) -> AgentSignedExecutionReceipt {
+    let completedAt = completedAtMillis ?? reputationNow
+    return AgentSignedExecutionReceipt(
+      receiptId: agentReputationSha256(Data("\(agentId):\(runId):\(outcome.rawValue):\(completedAt)".utf8)),
+      runId: runId,
+      taskIdHash: agentReputationSha256(Data("task-\(runId)".utf8)),
+      agentId: agentId,
+      installationId: "executor-host",
+      executorFailureDomain: "executor-host",
+      capabilities: capabilities,
+      outcome: outcome,
+      provenance: .executorSigned,
+      startedAtMillis: completedAt - 1_000,
+      completedAtMillis: completedAt,
+      deadlineAtMillis: deadlineAtMillis,
+      estimatedCostUnits: estimatedCostUnits,
+      actualCostUnits: actualCostUnits,
+      outputHash: outcome == .succeeded ? agentReputationSha256(Data("output-\(runId)".utf8)) : "",
+      evidenceHash: "",
+      signerId: "executor-host",
+      signatureKeyId: String(repeating: "a", count: 64),
+      signature: "receipt-signature"
+    )
+  }
+
+  private func reputationAttestation(
+    for receipt: AgentSignedExecutionReceipt,
+    verdict: AgentReputationVerificationVerdict
+  ) -> AgentSignedReputationAttestation {
+    AgentSignedReputationAttestation(
+      attestationId: agentReputationSha256(Data("\(receipt.receiptId):\(verdict.rawValue)".utf8)),
+      receiptId: receipt.receiptId,
+      receiptPayloadHash: agentReputationSha256(receipt.canonicalPayload()),
+      verifierAgentId: "independent-verifier",
+      verifierInstallationId: "verifier-host",
+      verifierFailureDomain: "phone-b",
+      verdict: verdict,
+      evidenceHash: agentReputationSha256(Data("evidence-\(receipt.receiptId)".utf8)),
+      createdAtMillis: receipt.completedAtMillis + 100,
+      signerId: "verifier-host",
+      signatureKeyId: String(repeating: "d", count: 64),
+      signature: "attestation-signature"
+    )
   }
 
   private var globalBudgetNow: Int64 { 1_000_000 }
