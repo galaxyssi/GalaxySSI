@@ -1885,4 +1885,8 @@
     <string name="agent_execution_location_automatic">自动路由</string>
     <string name="agent_execution_cancel">取消</string>
     <string name="agent_execution_cancel_description">取消当前运行任务</string>
+    <string name="agent_plan_only_not_executed">只给方案模式不会执行任何动作。</string>
+    <string name="agent_plan_only_intro">下面是建议方案，尚未执行任何操作。</string>
+    <string name="agent_plan_only_step">%1$d. %2$s</string>
+    <string name="agent_plan_only_risk">风险等级：%1$s。开始执行后仍会遵循正常的动作授权策略。</string>
 </resources>

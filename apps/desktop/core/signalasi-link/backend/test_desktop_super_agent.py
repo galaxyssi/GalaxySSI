@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from agent_execution_harness import execution_policy_for
 from desktop_agent_loop import AgentLoopBudget
 from desktop_super_agent import DesktopSuperAgent
 from task_workspace import task_artifacts, task_workspace
@@ -136,6 +137,60 @@ class DesktopSuperAgentTest(unittest.TestCase):
 
         self.assertEqual(outcome.reply, "Launched Notepad.")
         self.assertEqual(registry.calls[0][1], {"name": "Notepad"})
+
+    def test_plan_only_filters_mutating_tools_and_skips_learning(self):
+        manager = FakeTaskManager()
+        registry = FakeRegistry({
+            "signalasi.desktop.windows.app.launch": succeeded({
+                "id": "notepad",
+                "name": "Notepad",
+                "launched": True,
+            }),
+        })
+        memory = FakeMemory()
+        deliveries: list[dict] = []
+
+        def deliver(agent_id, prompt, **kwargs):
+            deliveries.append({
+                "agent_id": agent_id,
+                "prompt": prompt,
+                **kwargs,
+            })
+            return {"reply": "1. Review the target application.\n2. Launch it after approval."}
+
+        coordinator = DesktopSuperAgent(
+            task_manager=manager,
+            diagnostics=lambda quick=True: {
+                "agents": [{"id": "codex", "status": "ready"}],
+            },
+            deliver=deliver,
+            registry=registry,
+            memory=memory,
+            skills=FakeSkills(),
+            mcp=MatchingMcp(),
+        )
+        policy = execution_policy_for(
+            "Open Notepad",
+            requested_execution_mode="plan_only",
+        )
+
+        outcome = coordinator.run(
+            task_id="task-plan-only",
+            conversation_id="conversation-plan-only",
+            prompt="Open Notepad",
+            compiled_prompt="compiled",
+            attachments=[],
+            execution_policy=policy,
+        )
+
+        self.assertEqual([], registry.calls)
+        self.assertEqual([], memory.learned)
+        self.assertEqual("codex", outcome.delegate_agent_id)
+        self.assertEqual(
+            "plan_only",
+            deliveries[0]["execution_policy"]["execution_mode"],
+        )
+        self.assertIn("Do not create, edit, delete", deliveries[0]["prompt"])
 
     def test_starting_a_project_is_delegated_instead_of_treated_as_an_app(self):
         manager = FakeTaskManager()

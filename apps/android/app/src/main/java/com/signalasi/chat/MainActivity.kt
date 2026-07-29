@@ -3722,7 +3722,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         originalGoal: String = goal
     ) {
         val routingStartedAt = SystemClock.elapsedRealtime()
-        if (handleAgentSkillCommand(goal, conversationId, turnId)) return
+        val taskExecutionMode = AgentTaskExecutionModePolicy.resolve(
+            originalGoal.ifBlank { goal },
+            mobileNativeAgent.safetySettings().taskExecutionMode
+        ).mode
+        if (
+            taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY &&
+            handleAgentSkillCommand(goal, conversationId, turnId)
+        ) return
         agentRoutingExecutor.execute {
             val localConversationContext = agentTranscriptStore.context(
                 conversationId = conversationId,
@@ -3763,7 +3770,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             } else {
                 goal
             }
-            val activeTurn = activeAgentTurnForConversation(conversationId, turnId)
+            val activeTurn = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+                null
+            } else {
+                activeAgentTurnForConversation(conversationId, turnId)
+            }
             val activeTurnDecision = activeTurn?.let { active ->
                 AgentActiveTurnPolicy.decide(
                     request = originalGoal.ifBlank { executionGoal },
@@ -3810,7 +3821,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     )
                 }
             }
-            AgentFastLocalResponse.reply(executionGoal, localConversationContext)?.let { response ->
+            if (taskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
+                AgentFastLocalResponse.reply(executionGoal, localConversationContext)?.let { response ->
                 agentTranscriptStore.append(
                     AgentTranscriptRole.ASSISTANT,
                     response,
@@ -3822,13 +3834,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 Log.d("SignalASIAgent", "fast_local_completed turn=${turnId.take(8)}")
                 runOnUiThread { refreshAgentTranscriptWindow(conversationId) }
                 return@execute
+                }
             }
             val conversationContext = globalSuperAgentRuntime.augmentContext(
                 localConversationContext,
                 executionGoal
             )
-            val skillMatch = agentSkillMatcher.match(executionGoal)
-            val requestedForcedAction = forcedAction ?: activeDesktopSteerAction
+            val skillMatch = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+                null
+            } else {
+                agentSkillMatcher.match(executionGoal)
+            }
+            val requestedForcedAction = if (taskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+                null
+            } else {
+                forcedAction ?: activeDesktopSteerAction
+            }
             val resolvedForcedAction = requestedForcedAction?.let { action ->
                 if (clarification.mode == AgentClarificationMode.ASK_WITH_MODEL) {
                     action.copy(parameters = action.parameters + ("prompt" to executionGoal))
@@ -3897,7 +3918,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             conversationContext,
                             conversationId,
                             turnId,
-                            resolvedForcedAction
+                            resolvedForcedAction,
+                            taskExecutionMode
                         )
                     }
                     deterministicAction != null &&
@@ -3918,7 +3940,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             conversationContext,
                             conversationId,
                             turnId,
-                            deterministicAction
+                            deterministicAction,
+                            taskExecutionMode
                         )
                     }
                     skillMatch != null &&
@@ -3933,7 +3956,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         executionGoal,
                         conversationContext,
                         conversationId,
-                        turnId
+                        turnId,
+                        executionMode = taskExecutionMode
                     )
                 }
             }
@@ -4085,7 +4109,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         conversationContext: AgentConversationContext,
         conversationId: String,
         turnId: String,
-        deterministicAction: AgentAction? = null
+        deterministicAction: AgentAction? = null,
+        executionMode: AgentTaskExecutionMode? = null
     ) {
         val workspace = AgentWorkspace(
             workspaceId = turnId,
@@ -4121,7 +4146,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             agentRuntimeConversationIds[runtime] = conversationId
             agentRuntimeTurnIds[runtime] = turnId
             val outcome = runCatching {
-                var state = runtime.submitGoal(goal, conversationContext, turnId)
+                var state = runtime.submitGoal(
+                    goal,
+                    conversationContext,
+                    turnId,
+                    executionMode
+                )
                 var approvals = 0
                 while (state.pendingAction != null &&
                     state.phase != AgentPhase.WAITING_RESPONSE &&
@@ -6996,6 +7026,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "profile.copy_fingerprint" -> copyText(SignalASICrypto.localIdentitySha256(), getString(R.string.security_copied_phone_fingerprint))
             "profile.recovery" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.DATA_BACKUP))
             "agent.execution_policy" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.EXECUTION_POLICY))
+            "agent.task_execution_mode" -> openExistingControlCenterPage { showPermissionModeSettingsPage() }
             "agent.permission_mode" -> openExistingControlCenterPage { showPermissionModeSettingsPage() }
             "agent.toggle_pause" -> {
                 val next = !mobileNativeAgent.safetySettings().executionPaused
@@ -7167,6 +7198,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "advanced.cache" -> clearRebuildableCache()
             "reset.begin" -> showResetConfirmationDialog()
             else -> when {
+                actionId.startsWith("agent.task_execution_mode:") -> {
+                    val mode = AgentTaskExecutionMode.fromWireValue(actionId.substringAfter(':'))
+                    mobileNativeAgent.updateTaskExecutionMode(mode)
+                    showPermissionModeSettingsPage()
+                }
                 actionId.startsWith("agent.permission_mode:") -> {
                     val mode = runCatching {
                         PermissionMode.valueOf(actionId.substringAfter(':').uppercase(Locale.ROOT))
@@ -10217,7 +10253,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showPermissionModeSettingsPage() {
-        val selected = mobileNativeAgent.safetySettings().permissionMode
+        val settings = mobileNativeAgent.safetySettings()
+        val selectedExecutionMode = settings.taskExecutionMode
+        val selectedPermissionMode = settings.permissionMode
         showControlCenterFeature(
             getString(R.string.on_device_agent_permission_mode),
             ControlCenterPageSpec(
@@ -10229,9 +10267,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ),
                 sections = listOf(
                     ControlCenterSectionSpec(
+                        getString(R.string.cc_task_execution_mode_section),
+                        AgentTaskExecutionMode.entries.map { mode ->
+                            val isSelected = mode == selectedExecutionMode
+                            ControlCenterRowSpec(
+                                actionId = if (isSelected) "" else "agent.task_execution_mode:${mode.wireValue}",
+                                title = taskExecutionModeLabel(mode),
+                                subtitle = taskExecutionModeDescription(mode),
+                                iconRes = R.drawable.ic_agent_control,
+                                status = if (isSelected) getString(R.string.settings_language_selected) else "",
+                                tone = if (isSelected) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL,
+                                showChevron = false
+                            )
+                        }
+                    ),
+                    ControlCenterSectionSpec(
                         getString(R.string.cc_permission_mode_section),
                         PermissionMode.entries.map { mode ->
-                            val isSelected = mode == selected
+                            val isSelected = mode == selectedPermissionMode
                             ControlCenterRowSpec(
                                 actionId = if (isSelected) "" else "agent.permission_mode:${mode.name}",
                                 title = permissionModeLabel(mode),
@@ -10247,6 +10300,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         )
     }
+
+    private fun taskExecutionModeDescription(mode: AgentTaskExecutionMode): String = getString(
+        when (mode) {
+            AgentTaskExecutionMode.PLAN_ONLY -> R.string.cc_task_execution_plan_only_subtitle
+            AgentTaskExecutionMode.AUTO_COMPLETE -> R.string.cc_task_execution_auto_complete_subtitle
+        }
+    )
 
     private fun permissionModeDescription(mode: PermissionMode): String = getString(
         when (mode) {
@@ -10340,6 +10400,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         getString(R.string.cc_permission_mode_section),
                         listOf(
                             ControlCenterRowSpec("agent.permission_mode", getString(R.string.on_device_agent_permission_mode), getString(R.string.on_device_agent_permission_mode_subtitle), R.drawable.ic_security_shield, permissionModeLabel(safety.permissionMode), ControlCenterTone.BLUE),
+                            ControlCenterRowSpec("agent.task_execution_mode", getString(R.string.cc_task_execution_mode_title), getString(R.string.cc_task_execution_mode_subtitle), R.drawable.ic_agent_control, taskExecutionModeLabel(safety.taskExecutionMode), ControlCenterTone.GREEN),
                             ControlCenterRowSpec("security.toggle_guard", getString(R.string.on_device_agent_high_risk_guard), getString(R.string.on_device_agent_high_risk_guard_subtitle), R.drawable.ic_security_shield, switchValue = safety.highRiskGuard, showChevron = false)
                         )
                     ),
@@ -21513,6 +21574,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         PermissionMode.SUGGEST_ONLY -> getString(R.string.permission_mode_suggest_only)
         PermissionMode.ASK_BEFORE_ACTION -> getString(R.string.permission_mode_ask_before_action)
         PermissionMode.AUTO_LOW_RISK -> getString(R.string.permission_mode_auto_low_risk)
+    }
+
+    private fun taskExecutionModeLabel(mode: AgentTaskExecutionMode): String = when (mode) {
+        AgentTaskExecutionMode.PLAN_ONLY -> getString(R.string.task_execution_mode_plan_only)
+        AgentTaskExecutionMode.AUTO_COMPLETE -> getString(R.string.task_execution_mode_auto_complete)
     }
 
     private fun showLanguageSettingsPage() {

@@ -1660,6 +1660,7 @@ def api_cancel_agent_task(
 class DesktopTaskStartReq(BaseModel):
     prompt: str
     agent_id: str = "auto"
+    execution_mode: str = "auto_complete"
     conversation_id: str = ""
     attachments: list[str] = Field(default_factory=list)
     response_language: str = ""
@@ -1690,6 +1691,7 @@ def _desktop_task_prompt(
     conversation_id: str,
     attachment_paths: list[str],
     response_language: str = "",
+    execution_policy=None,
 ) -> str:
     from conversation_context import (
         ContextBudget,
@@ -1708,10 +1710,20 @@ def _desktop_task_prompt(
         conversation_id,
         after_cursor=summary_state.cursor,
     )
-    preamble = response_policy_prompt(prompt, response_language) + "\n\n" + (
+    from agent_execution_harness import AgentExecutionMode
+
+    plan_only = (
+        execution_policy is not None
+        and execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    )
+    task_instruction = (
+        "You are preparing a read-only plan from SignalASI Desktop. Inspect only what is needed, "
+        "make no changes, and return a concrete plan with assumptions and risks."
+        if plan_only else
         "You are executing a task from SignalASI Desktop. Work directly, use the available local tools, "
         "verify the result, and return a concise final response with artifact paths when files are created."
     )
+    preamble = response_policy_prompt(prompt, response_language) + "\n\n" + task_instruction
     if attachment_paths:
         preamble += "\n\nFiles attached to this task workspace:\n" + "\n".join(
             f"- {value}" for value in attachment_paths
@@ -1769,8 +1781,20 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
         raise HTTPException(status_code=400, detail=api_error("desktop_task_empty"))
     task_id = str(uuid.uuid4())
     conversation_id = str(req.conversation_id or "").strip() or str(uuid.uuid4())
-    agent_id = _desktop_agent_for(prompt, req.agent_id)
     attachments = _copy_desktop_attachments(task_id, req.attachments)
+    from agent_execution_harness import AgentExecutionMode, execution_policy_for
+
+    desktop_execution_policy = execution_policy_for(
+        prompt,
+        attachments=attachments,
+        requested_execution_mode=req.execution_mode,
+    )
+    agent_id = _desktop_agent_for(prompt, req.agent_id)
+    if (
+        desktop_execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+        and agent_id.startswith("mcp:")
+    ):
+        agent_id = "desktop"
     response_language = str(req.response_language or "").strip() or language_policy_config()["response_language"]
     from agent_execution_harness import AgentClarificationMode, clarification_decision_for
     from response_policy import clarification_question, response_language_tag
@@ -1790,7 +1814,13 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
         if clarification.mode == AgentClarificationMode.ASK_LOCALLY
         else ""
     )
-    compiled_prompt = _desktop_task_prompt(prompt, conversation_id, attachments, response_language)
+    compiled_prompt = _desktop_task_prompt(
+        prompt,
+        conversation_id,
+        attachments,
+        response_language,
+        desktop_execution_policy,
+    )
 
     def runner(task):
         if clarification_reply:
@@ -1824,6 +1854,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                 compiled_prompt=compiled_prompt,
                 attachments=attachments,
                 response_language=response_language,
+                execution_policy=desktop_execution_policy,
             )
             return outcome.reply
         if agent_id.startswith("mcp:"):
@@ -1937,8 +1968,6 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
                     f"{prompt.rstrip()}\n\n"
                     f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
                 )
-        from agent_execution_harness import execution_policy_for
-
         result = deliver_agent_sync(
             agent_id,
             compiled_prompt,
@@ -1948,19 +1977,10 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
             return_path="desktop-ui",
             response_language=response_language,
             execution_prompt=prompt,
-            execution_policy=execution_policy_for(
-                prompt,
-                attachments=attachments,
-            ).public(),
+            execution_policy=desktop_execution_policy.public(),
         )
         return str(result.get("reply") or "")
 
-    from agent_execution_harness import execution_policy_for
-
-    desktop_execution_policy = execution_policy_for(
-        prompt,
-        attachments=attachments,
-    )
     task = agent_task_manager.create(
         agent_id=agent_id,
         contact_id=agent_id,
@@ -2077,6 +2097,10 @@ def api_retry_desktop_task(task_id: str, request: Request):
         DesktopTaskStartReq(
             prompt=task.prompt,
             agent_id=task.agent_id,
+            execution_mode=str(
+                (task.execution_policy or {}).get("execution_mode")
+                or "auto_complete"
+            ),
             conversation_id=task.conversation_id,
             attachments=sources,
             retry_of=task.retry_of or task.task_id,

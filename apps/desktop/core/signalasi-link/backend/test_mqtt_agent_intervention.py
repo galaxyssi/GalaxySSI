@@ -67,6 +67,7 @@ class _TaskManager:
     def __init__(self):
         self.active = _Task("active", "Build a web dashboard")
         self.created = None
+        self.created_execution_policy = {}
         self.cancelled = []
         self.events = []
 
@@ -96,6 +97,7 @@ class _TaskManager:
 
     def create(self, **values):
         self.created = _Task(values["task_id"], values["prompt"], status="queued")
+        self.created_execution_policy = dict(values.get("execution_policy") or {})
         for field in (
             "task_disposition",
             "merged_into_task_id",
@@ -107,6 +109,7 @@ class _TaskManager:
 
     def create_external(self, **values):
         self.created = _Task(values["task_id"], values["prompt"], status="accepted")
+        self.created_execution_policy = dict(values.get("execution_policy") or {})
         for field in (
             "task_disposition",
             "merged_into_task_id",
@@ -143,7 +146,7 @@ class _Provider:
 
 
 class MqttAgentInterventionTests(unittest.TestCase):
-    def _dispatch(self, content: str):
+    def _dispatch(self, content: str, execution_mode: str = "auto_complete"):
         manager = _TaskManager()
         provider = _Provider()
         published = []
@@ -170,6 +173,7 @@ class MqttAgentInterventionTests(unittest.TestCase):
                     "conversation_id": "conversation-1",
                     "turn_id": "turn-new",
                     "attachments": [],
+                    "execution_mode": execution_mode,
                 },
                 trace=[],
                 content=content,
@@ -200,6 +204,28 @@ class MqttAgentInterventionTests(unittest.TestCase):
         self.assertEqual("interrupted", manager.created.task_disposition)
         self.assertEqual("active", manager.created.merged_into_task_id)
         self.assertFalse(any(event.get("result") for event in published))
+
+    def test_plan_only_starts_an_independent_read_only_task(self):
+        manager, provider, _published = self._dispatch(
+            "Change the goal to a native Android dashboard",
+            execution_mode="plan_only",
+        )
+
+        self.assertEqual([], manager.cancelled)
+        self.assertEqual([], provider.cancelled)
+        self.assertEqual("", manager.created.task_disposition)
+        self.assertEqual("", manager.created.supersedes_task_id)
+        self.assertEqual(
+            "Change the goal to a native Android dashboard",
+            manager.created.prompt,
+        )
+        self.assertEqual(
+            "plan_only",
+            manager.created_execution_policy["execution_mode"],
+        )
+        self.assertFalse(
+            manager.created_execution_policy["requires_artifact"],
+        )
 
 
 if __name__ == "__main__":

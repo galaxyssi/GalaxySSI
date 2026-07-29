@@ -45,7 +45,9 @@ object GlobalCapabilityObservationExtractor {
         val stableKey = "capability:authorization:agent-safety-policy"
         val executionState = if (after.executionPaused) "paused" else "active"
         val summary = buildString {
-            append("The local Agent safety policy uses ")
+            append("The local Agent task mode is ")
+            append(after.taskExecutionMode.name.lowercase(Locale.ROOT).replace('_', ' '))
+            append("; the action policy uses ")
             append(after.permissionMode.name.lowercase(Locale.ROOT).replace('_', ' '))
             append(" mode; execution is ").append(executionState).append("; ")
             append("local actions are ").append(if (after.localActionsAllowed) "allowed" else "blocked").append("; ")
@@ -53,6 +55,7 @@ object GlobalCapabilityObservationExtractor {
             append("device control is ").append(if (after.deviceControlAllowed) "allowed" else "blocked").append('.')
         }
         val fingerprint = GlobalAgentText.stableKey(
+            after.taskExecutionMode.name,
             after.permissionMode.name,
             after.highRiskGuard.toString(),
             after.memoryCapture.toString(),
@@ -75,6 +78,7 @@ object GlobalCapabilityObservationExtractor {
             topicHints = setOf(AUTHORIZATION_TOPIC),
             metadata = mapOf(
                 "origin" to "agent_safety_policy",
+                "task_execution_mode" to after.taskExecutionMode.wireValue,
                 "permission_mode" to after.permissionMode.name.lowercase(Locale.ROOT),
                 "high_risk_guard" to after.highRiskGuard.toString(),
                 "memory_capture" to after.memoryCapture.toString(),

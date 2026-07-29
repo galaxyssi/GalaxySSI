@@ -100,6 +100,81 @@ def test_desktop_auto_uses_super_agent_and_explicit_agents_remain_direct(monkeyp
     assert main._desktop_agent_for("Fix the project build", "codex") == "codex"
 
 
+def test_desktop_task_forwards_plan_only_policy_without_requesting_artifacts(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
+    manager = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", manager)
+    monkeypatch.setenv("SIGNALASI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setattr(
+        main,
+        "connector_diagnostics",
+        lambda quick=False: {"agents": [{"id": "codex", "status": "ready"}]},
+    )
+    deliveries: list[dict] = []
+
+    def fake_delivery(agent_id, provider_prompt, **kwargs):
+        deliveries.append({
+            "agent_id": agent_id,
+            "provider_prompt": provider_prompt,
+            **kwargs,
+        })
+        return {"reply": "Plan ready", "agent_id": agent_id}
+
+    monkeypatch.setattr(main, "deliver_agent_sync", fake_delivery)
+    started = main.api_start_desktop_task(
+        main.DesktopTaskStartReq(
+            prompt="Build an Android app and return the APK",
+            agent_id="codex",
+            execution_mode="plan_only",
+            conversation_id="plan-conversation",
+        ),
+        LoopbackRequest(),
+    )
+    completed = wait_for_terminal(manager, started["task_id"])
+
+    assert completed.result == "Plan ready"
+    assert deliveries[0]["execution_policy"]["execution_mode"] == "plan_only"
+    assert deliveries[0]["execution_policy"]["requires_artifact"] is False
+    assert "read-only plan" in deliveries[0]["provider_prompt"].lower()
+
+
+def test_prompt_can_override_desktop_plan_default_with_auto_complete(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
+    manager = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", manager)
+    monkeypatch.setenv("SIGNALASI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setattr(
+        main,
+        "connector_diagnostics",
+        lambda quick=False: {"agents": [{"id": "codex", "status": "ready"}]},
+    )
+    policies: list[dict] = []
+
+    def fake_delivery(_agent_id, _prompt, **kwargs):
+        policies.append(kwargs["execution_policy"])
+        return {"reply": "Completed"}
+
+    monkeypatch.setattr(main, "deliver_agent_sync", fake_delivery)
+    started = main.api_start_desktop_task(
+        main.DesktopTaskStartReq(
+            prompt="Build the app and execute until complete",
+            agent_id="codex",
+            execution_mode="plan_only",
+        ),
+        LoopbackRequest(),
+    )
+    wait_for_terminal(manager, started["task_id"])
+
+    assert policies[0]["execution_mode"] == "auto_complete"
+    assert policies[0]["requires_artifact"] is True
+
+
 def test_desktop_asks_once_then_uses_the_same_conversation_context(tmp_path, monkeypatch):
     monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
     manager = task_module.AgentTaskManager()

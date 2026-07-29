@@ -64,6 +64,11 @@ class AgentReasoningEffort(str, Enum):
     HIGH = "high"
 
 
+class AgentExecutionMode(str, Enum):
+    PLAN_ONLY = "plan_only"
+    AUTO_COMPLETE = "auto_complete"
+
+
 @dataclass(frozen=True)
 class AgentExecutionPolicy:
     task_kind: AgentTaskKind
@@ -77,6 +82,7 @@ class AgentExecutionPolicy:
     task_intent: AgentTaskIntent = AgentTaskIntent.CHAT
     task_intent_confidence: int = 100
     task_intent_signals: tuple[str, ...] = ()
+    execution_mode: AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE
 
     def public(self) -> dict:
         return {
@@ -84,6 +90,7 @@ class AgentExecutionPolicy:
             "task_intent": self.task_intent.value,
             "task_intent_confidence": self.task_intent_confidence,
             "task_intent_signals": list(self.task_intent_signals),
+            "execution_mode": self.execution_mode.value,
             "reasoning_effort": self.reasoning_effort.value,
             "no_progress_timeout_seconds": self.no_progress_timeout_seconds,
             "max_replans": self.max_replans,
@@ -109,6 +116,12 @@ class AgentExecutionPolicy:
             task_intent = AgentTaskIntent(str(value.get("task_intent") or "chat"))
         except ValueError:
             task_intent = AgentTaskIntent.CHAT
+        try:
+            execution_mode = AgentExecutionMode(
+                str(value.get("execution_mode") or AgentExecutionMode.AUTO_COMPLETE.value)
+            )
+        except ValueError:
+            execution_mode = AgentExecutionMode.AUTO_COMPLETE
         try:
             task_intent_confidence = int(value.get("task_intent_confidence", 100))
         except (TypeError, ValueError):
@@ -143,6 +156,7 @@ class AgentExecutionPolicy:
                     if str(item).strip()
                 )
             )[:6],
+            execution_mode=execution_mode,
         )
 
 
@@ -436,12 +450,59 @@ _ANDROID_TERMS = (
     "\u5b89\u5353", "\u624b\u673a app", "\u624b\u673a\u4e0a\u73a9",
     "\u624b\u673a\u6e38\u620f", "\u5b89\u88c5\u5230\u624b\u673a",
 )
+_PLAN_ONLY_SIGNALS = (
+    "\u5148\u7ed9\u65b9\u6848", "\u5148\u7ed9\u6211\u65b9\u6848",
+    "\u53ea\u7ed9\u65b9\u6848", "\u4ec5\u7ed9\u65b9\u6848",
+    "\u4ec5\u63d0\u4f9b\u65b9\u6848", "\u53ea\u5236\u5b9a\u8ba1\u5212",
+    "\u5148\u5236\u5b9a\u8ba1\u5212", "\u5148\u5217\u51fa\u8ba1\u5212",
+    "\u6682\u4e0d\u6267\u884c", "\u5148\u4e0d\u8981\u6267\u884c",
+    "\u4e0d\u8981\u5b9e\u9645\u6267\u884c",
+    "\u4e0d\u8981\u6267\u884c\u4efb\u4f55\u64cd\u4f5c",
+    "\u4e0d\u8981\u6267\u884c\u4efb\u4f55\u52a8\u4f5c",
+    "plan only", "proposal only", "show me the plan first",
+    "give me a plan first", "do not execute", "don't execute",
+    "without executing", "without making changes",
+)
+_AUTO_COMPLETE_SIGNALS = (
+    "\u81ea\u52a8\u6267\u884c\u5230\u5b8c\u6210",
+    "\u76f4\u63a5\u6267\u884c\u5230\u5b8c\u6210",
+    "\u4e00\u76f4\u6267\u884c\u5230\u5b8c\u6210",
+    "\u6267\u884c\u8fd9\u4e2a\u65b9\u6848",
+    "\u6309\u8fd9\u4e2a\u65b9\u6848\u6267\u884c",
+    "\u7ee7\u7eed\u6267\u884c\u5230\u5b8c\u6210",
+    "go ahead and execute",
+    "execute until complete", "carry this through to completion",
+    "implement this plan", "proceed with the plan",
+)
+
+
+def resolve_execution_mode(
+    prompt: str,
+    requested: str | AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE,
+) -> tuple[AgentExecutionMode, str]:
+    normalized = " ".join(str(prompt or "").lower().split())
+    for signal in _PLAN_ONLY_SIGNALS:
+        if signal in normalized:
+            return AgentExecutionMode.PLAN_ONLY, signal
+    for signal in _AUTO_COMPLETE_SIGNALS:
+        if signal in normalized:
+            return AgentExecutionMode.AUTO_COMPLETE, signal
+    try:
+        configured = (
+            requested
+            if isinstance(requested, AgentExecutionMode)
+            else AgentExecutionMode(str(requested or AgentExecutionMode.AUTO_COMPLETE.value))
+        )
+    except ValueError:
+        configured = AgentExecutionMode.AUTO_COMPLETE
+    return configured, ""
 
 
 def execution_policy_for(
     prompt: str,
     *,
     attachments: Iterable[str] = (),
+    requested_execution_mode: str | AgentExecutionMode = AgentExecutionMode.AUTO_COMPLETE,
 ) -> AgentExecutionPolicy:
     normalized = " ".join(str(prompt or "").lower().split())
     has_attachment_context = bool(tuple(attachments))
@@ -455,6 +516,10 @@ def execution_policy_for(
     has_research = _contains_any(normalized, _RESEARCH_TERMS)
     has_device = _contains_any(normalized, _DEVICE_TERMS)
     target_platform = "android" if _contains_any(normalized, _ANDROID_TERMS) else ""
+    execution_mode, _execution_mode_signal = resolve_execution_mode(
+        normalized,
+        requested_execution_mode,
+    )
 
     if has_install:
         kind = AgentTaskKind.INSTALL
@@ -491,19 +556,34 @@ def execution_policy_for(
         no_progress_timeout_seconds=no_progress_timeout,
         max_replans=3 if complex_task else 2,
         max_same_failure_attempts=2,
-        requires_artifact=(
+        requires_artifact=execution_mode != AgentExecutionMode.PLAN_ONLY and (
             has_artifact_request
             or kind in {AgentTaskKind.BUILD, AgentTaskKind.INSTALL}
         ),
         target_platform=target_platform,
-        verify_installation=kind == AgentTaskKind.INSTALL,
+        verify_installation=(
+            execution_mode != AgentExecutionMode.PLAN_ONLY
+            and kind == AgentTaskKind.INSTALL
+        ),
         task_intent=intent.intent,
         task_intent_confidence=intent.confidence,
         task_intent_signals=intent.matched_signals,
+        execution_mode=execution_mode,
     )
 
 
 def execution_contract(policy: AgentExecutionPolicy) -> str:
+    if policy.execution_mode == AgentExecutionMode.PLAN_ONLY:
+        return "\n".join((
+            "SignalASI execution contract:",
+            f"- Task class: {policy.task_kind.value}; intent: {policy.task_intent.value}; "
+            f"reasoning effort: {policy.reasoning_effort.value}; mode: plan_only.",
+            "- Inspect only the context needed to produce a concrete, actionable plan.",
+            "- Read-only file, repository, device-state, and web inspection is allowed.",
+            "- Do not create, edit, delete, install, launch, send, publish, or mutate anything.",
+            "- Do not claim that a command, tool, action, verification, or installation was executed.",
+            "- Return the proposed steps, important assumptions, risks, and the first approval needed to begin.",
+        ))
     target = policy.target_platform or "the requested platform"
     artifact_line = (
         "- Put every final deliverable in the task workspace outputs directory. "
@@ -520,7 +600,7 @@ def execution_contract(policy: AgentExecutionPolicy) -> str:
     return "\n".join((
         "SignalASI execution contract:",
         f"- Task class: {policy.task_kind.value}; intent: {policy.task_intent.value}; "
-        f"reasoning effort: {policy.reasoning_effort.value}.",
+        f"reasoning effort: {policy.reasoning_effort.value}; mode: auto_complete.",
         "- Work through Plan -> Act -> Observe -> Replan -> Verify -> Finalize.",
         "- Preserve useful work in the task workspace before risky or long-running steps.",
         "- Do not repeat the same failed approach. Diagnose the observed failure and choose a materially different path.",

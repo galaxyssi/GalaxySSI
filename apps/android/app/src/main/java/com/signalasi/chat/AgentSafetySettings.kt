@@ -4,6 +4,7 @@ import android.content.Context
 import org.json.JSONObject
 
 data class AgentSafetySettings(
+    val taskExecutionMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
     val permissionMode: PermissionMode = PermissionMode.ASK_BEFORE_ACTION,
     val highRiskGuard: Boolean = true,
     val memoryCapture: Boolean = true,
@@ -37,6 +38,10 @@ class SharedPreferencesAgentSafetySettingsStore(context: Context) : AgentSafetyS
     private fun readStored(): AgentSafetySettings {
         val json = runCatching { JSONObject(prefs.readString(KEY_SETTINGS, "{}")) }.getOrDefault(JSONObject())
         return AgentSafetySettings(
+            taskExecutionMode = enumOrDefault(
+                json.optString("task_execution_mode"),
+                AgentTaskExecutionMode.AUTO_COMPLETE
+            ),
             permissionMode = enumOrDefault(
                 json.optString("permission_mode"),
                 PermissionMode.ASK_BEFORE_ACTION
@@ -55,7 +60,8 @@ class SharedPreferencesAgentSafetySettingsStore(context: Context) : AgentSafetyS
         prefs.writeString(
             KEY_SETTINGS,
             JSONObject()
-                .put("version", 2)
+                .put("version", 3)
+                .put("task_execution_mode", settings.taskExecutionMode.name)
                 .put("permission_mode", settings.permissionMode.name)
                 .put("high_risk_guard", settings.highRiskGuard)
                 .put("memory_capture", settings.memoryCapture)

@@ -97,6 +97,41 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertEqual("restricted", restricted["SIGNALASI_DESKTOP_ACCESS_PROFILE"])
         self.assertEqual("workspace_only", restricted["SIGNALASI_AGENT_TOOL_MODE"])
 
+    def test_plan_only_commands_enforce_each_provider_read_only_mode(self):
+        codex = agent_gateway._plan_only_command(
+            agent_gateway.BASE_AGENTS["codex"],
+            list(agent_gateway.BASE_AGENTS["codex"].command or ()),
+        )
+        claude = agent_gateway._plan_only_command(
+            agent_gateway.BASE_AGENTS["claude"],
+            list(agent_gateway.BASE_AGENTS["claude"].command or ()),
+        )
+        hermes = agent_gateway._plan_only_command(
+            agent_gateway.BASE_AGENTS["hermes"],
+            list(agent_gateway.BASE_AGENTS["hermes"].command or ()),
+        )
+        openclaw = agent_gateway._plan_only_command(
+            agent_gateway.BASE_AGENTS["openclaw"],
+            list(agent_gateway.BASE_AGENTS["openclaw"].command or ()),
+        )
+
+        self.assertEqual("read-only", codex[codex.index("--sandbox") + 1])
+        self.assertEqual("never", codex[codex.index("--ask-for-approval") + 1])
+        self.assertEqual("plan", claude[claude.index("--permission-mode") + 1])
+        self.assertEqual("none", hermes[hermes.index("--toolsets") + 1])
+        self.assertEqual("1", hermes[hermes.index("--max-turns") + 1])
+        self.assertEqual(
+            ["openclaw", "model", "run", "--prompt", "{prompt}"],
+            openclaw,
+        )
+
+    def test_custom_cli_plan_only_fails_closed(self):
+        with self.assertRaisesRegex(RuntimeError, "read-only planning mode"):
+            agent_gateway._plan_only_command(
+                agent_gateway.BASE_AGENTS["custom-agent"],
+                ["custom-agent", "{prompt}"],
+            )
+
     def test_persistent_jsonl_agent_reuses_keepalive_process(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

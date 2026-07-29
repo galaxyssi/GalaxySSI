@@ -1143,6 +1143,7 @@ async function startDesktopTask(payload = {}) {
       agent_id: String(payload.agentId || "auto"),
       conversation_id: String(payload.conversationId || ""),
       attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+      execution_mode: String(payload.executionMode || "auto_complete"),
       response_language: String(payload.responseLanguage || "")
     })
   });

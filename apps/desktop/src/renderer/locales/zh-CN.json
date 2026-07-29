@@ -1,4 +1,7 @@
 {
+  "Execute": "执行",
+  "Auto complete": "自动完成",
+  "Plan only": "只给方案",
   "Language": "语言",
   "First output": "首次输出",
   "Traced time": "链路耗时",

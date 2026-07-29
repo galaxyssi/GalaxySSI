@@ -41,6 +41,7 @@ private const val INTERNAL_CLOUD_KNOWLEDGE_CONTEXT = "_signalasi_cloud_knowledge
 private const val INTERNAL_AGENT_KNOWLEDGE_CONTEXT = "_signalasi_agent_knowledge_context"
 private const val INTERNAL_SCREEN_CONTEXT = "_signalasi_screen_context"
 private const val INTERNAL_LONG_TERM_WRITE_ALLOWED = "_signalasi_long_term_write_allowed"
+private const val INTERNAL_TASK_EXECUTION_MODE = "_signalasi_task_execution_mode"
 
 private val SENSITIVE_MEMORY_TERMS = listOf(
     "password",
@@ -246,6 +247,8 @@ class MobileNativeAgent(
     private var sessionId: String = UUID.randomUUID().toString()
     private var activeConversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false)
     private var activeConversationTurnId: String = ""
+    private var activeTaskExecutionMode: AgentTaskExecutionMode =
+        safetySettingsStore.load().taskExecutionMode
     @Volatile private var phase: AgentPhase = AgentPhase.OBSERVING
     private var currentGoal: String = ""
     private var currentScreen: ScreenContext = captureScreen()
@@ -465,6 +468,7 @@ class MobileNativeAgent(
             phase = phase,
             currentGoal = currentGoal,
             currentScreen = currentScreen,
+            taskExecutionMode = activeTaskExecutionMode,
             permissionMode = context.permissionMode,
             highRiskGuard = context.highRiskGuard,
             callableTargets = targets,
@@ -1522,7 +1526,8 @@ class MobileNativeAgent(
     fun submitGoal(
         goal: String,
         conversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false),
-        turnId: String = ""
+        turnId: String = "",
+        executionMode: AgentTaskExecutionMode? = null
     ): AgentUiState {
         PhoneExecutionAuthority.clearCancellation(sessionId)
         val requestedGoal = goal.trim()
@@ -1541,6 +1546,10 @@ class MobileNativeAgent(
         if (currentGoal.isBlank()) {
             return observeCurrentScreen()
         }
+        activeTaskExecutionMode = executionMode ?: AgentTaskExecutionModePolicy.resolve(
+            requestedGoal,
+            safetySettingsStore.load().taskExecutionMode
+        ).mode
 
         return try {
             startExecutionLoop(turnId)
@@ -1564,6 +1573,7 @@ class MobileNativeAgent(
 
     private fun executeSubmittedGoal(): AgentUiState {
         currentScreen = captureScreen()
+        if (activeTaskExecutionMode != AgentTaskExecutionMode.PLAN_ONLY) {
         callableInventoryCommand(currentGoal)?.let { filter ->
             return showCallableInventoryCommand(filter)
         }
@@ -1726,6 +1736,7 @@ class MobileNativeAgent(
         knowledgeSearchCommandValue(currentGoal)?.let { query ->
             return searchKnowledgeCommand(query)
         }
+        }
         val targets = connectorRegistry.availableTargets()
         val memories = if (activeConversationContext.privateMode) emptyList() else memoryStore.recall(currentGoal)
         val knowledgeItems = knowledgeStore.search(currentGoal)
@@ -1770,6 +1781,7 @@ class MobileNativeAgent(
             }.take(6_000)
         } else ""
         val contextualPlan = planned.copy(
+            executionMode = activeTaskExecutionMode,
             actions = planned.actions.map { action ->
                 val targetIds = setOf(
                     action.parameters["connector_id"].orEmpty(),
@@ -1795,7 +1807,8 @@ class MobileNativeAgent(
                     INTERNAL_AGENT_KNOWLEDGE_CONTEXT to listOf(agentKnowledgePrompt, selectedKnowledgePrompt)
                         .filter(String::isNotBlank).joinToString("\n"),
                     INTERNAL_SCREEN_CONTEXT to screenPrompt,
-                    INTERNAL_LONG_TERM_WRITE_ALLOWED to (!activeConversationContext.privateMode).toString()
+                    INTERNAL_LONG_TERM_WRITE_ALLOWED to (!activeConversationContext.privateMode).toString(),
+                    INTERNAL_TASK_EXECUTION_MODE to activeTaskExecutionMode.wireValue
                 ))
             }
         )
@@ -1807,6 +1820,45 @@ class MobileNativeAgent(
             reputation = reputationLedger
         )
         val safetyReview = safetyPolicy.review(draftPlan)
+        if (activeTaskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
+            val proposedPlan = draftPlan.copy(
+                executionMode = AgentTaskExecutionMode.PLAN_ONLY,
+                actions = draftPlan.actions.map { action ->
+                    action.copy(
+                        status = AgentActionStatus.PROPOSED,
+                        requiresConfirmation = false,
+                        result = "",
+                        evidence = ""
+                    )
+                },
+                safetyReview = AgentSafetyReview(
+                    risk = safetyReview.risk,
+                    requiresConfirmation = false,
+                    blocked = false,
+                    reason = appContext.getString(R.string.agent_plan_only_not_executed),
+                    mode = safetyPolicy.permissionMode()
+                ),
+                confirmationRequired = false
+            )
+            currentPlan = proposedPlan.copy(
+                validation = AgentPlanValidator.validate(proposedPlan)
+            )
+            phase = AgentPhase.COMPLETED
+            lastActionResult = AgentActionResult(
+                actionId = "plan-only",
+                success = true,
+                message = renderPlanOnlyResult(currentPlan!!)
+            )
+            recordAudit(
+                AgentAuditEvent.REASONING_SUMMARY,
+                "execution_mode=plan_only; actions=${currentPlan!!.actions.size}; " +
+                    "risk=${currentPlan!!.safetyReview.risk.name}"
+            )
+            recordAudit(AgentAuditEvent.GOAL_RECEIVED, goalAuditDetail(currentGoal))
+            saveTaskRecord()
+            persistSession()
+            return snapshot()
+        }
         currentPlan = draftPlan.withSafetyReview(safetyReview)
         recordAudit(
             AgentAuditEvent.INVOCATION_AUDIT,
@@ -3109,6 +3161,7 @@ class MobileNativeAgent(
         }
         var revised = proposal.copy(
             planId = plan.planId,
+            executionMode = plan.executionMode,
             actions = revisedActions,
             revision = revision,
             replanCount = plan.replanCount + 1,
@@ -3235,6 +3288,13 @@ class MobileNativeAgent(
     fun updatePermissionMode(mode: PermissionMode): AgentUiState {
         safetySettingsStore.save(safetySettingsStore.load().copy(permissionMode = mode))
         recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "permission_mode:${mode.name}")
+        return snapshot()
+    }
+
+    fun updateTaskExecutionMode(mode: AgentTaskExecutionMode): AgentUiState {
+        safetySettingsStore.save(safetySettingsStore.load().copy(taskExecutionMode = mode))
+        activeTaskExecutionMode = mode
+        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "task_execution_mode:${mode.wireValue}")
         return snapshot()
     }
 
@@ -6094,6 +6154,39 @@ class MobileNativeAgent(
         AgentStep(4, AgentStepKind.CONFIRM_AND_ACT, AgentStepStatus.DONE)
     )
 
+    private fun renderPlanOnlyResult(plan: AgentPlan): String = buildString {
+        append(appContext.getString(R.string.agent_plan_only_intro))
+        val actions = plan.actions.ifEmpty {
+            listOf(
+                AgentAction(
+                    id = "plan-only-summary",
+                    kind = AgentActionKind.DRAFT_PLAN,
+                    target = plan.selectedAgentOrModel,
+                    risk = plan.safetyReview.risk,
+                    status = AgentActionStatus.PROPOSED,
+                    description = plan.expectedResult.ifBlank { plan.goal }
+                )
+            )
+        }
+        actions.forEachIndexed { index, action ->
+            append('\n')
+            append(
+                appContext.getString(
+                    R.string.agent_plan_only_step,
+                    index + 1,
+                    action.description.ifBlank { action.kind.name.lowercase(Locale.ROOT).replace('_', ' ') }
+                )
+            )
+        }
+        append('\n')
+        append(
+            appContext.getString(
+                R.string.agent_plan_only_risk,
+                plan.safetyReview.risk.name.lowercase(Locale.ROOT)
+            )
+        )
+    }
+
     private fun buildRuntimeContext(
         goal: String,
         screen: ScreenContext,
@@ -6286,6 +6379,7 @@ class MobileNativeAgent(
             restoredSession.phase == AgentPhase.VERIFYING ||
             executionLoop.snapshot?.phase?.isActive == true
         sessionId = restoredSession.sessionId.ifBlank { UUID.randomUUID().toString() }
+        activeTaskExecutionMode = restoredSession.taskExecutionMode
         phase = if (executionWasInterrupted) AgentPhase.PAUSED else restoredSession.phase
         currentGoal = restoredSession.currentGoal
         currentScreen = restoredSession.currentScreen
@@ -6351,6 +6445,7 @@ class MobileNativeAgent(
                 auditTrail = auditTrail.toList(),
                 lastActionResult = lastActionResult,
                 activeWorkflowExecutionId = activeWorkflowExecutionId.orEmpty(),
+                taskExecutionMode = activeTaskExecutionMode,
                 executionLoopSnapshot = executionLoop.snapshot,
                 updatedAtMillis = System.currentTimeMillis()
             )
@@ -9012,7 +9107,10 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             deliveryTrace = trace,
             conversationId = clientConversationId,
             turnId = clientTurnId,
-            taskId = remoteTaskId
+            taskId = remoteTaskId,
+            executionMode = AgentTaskExecutionMode.fromWireValue(
+                action.parameters[INTERNAL_TASK_EXECUTION_MODE]
+            )
         )
         if (published) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
         if (!managedTeamAction) {
@@ -10683,7 +10781,7 @@ class SharedPreferencesAgentSessionStore(
     }
 
     private fun encodeSession(snapshot: AgentSessionSnapshot): JSONObject = JSONObject()
-        .put("version", 4)
+        .put("version", 5)
         .put("session_id", snapshot.sessionId)
         .put("phase", snapshot.phase.name)
         .put("current_goal", snapshot.currentGoal)
@@ -10694,6 +10792,7 @@ class SharedPreferencesAgentSessionStore(
         })
         .put("last_action_result", snapshot.lastActionResult?.let { encodeActionResult(it) })
         .put("active_workflow_execution_id", snapshot.activeWorkflowExecutionId)
+        .put("task_execution_mode", snapshot.taskExecutionMode.name)
         .put(
             "execution_loop",
             snapshot.executionLoopSnapshot
@@ -10711,6 +10810,10 @@ class SharedPreferencesAgentSessionStore(
         auditTrail = decodeAuditTrail(json.optJSONArray("audit_trail")),
         lastActionResult = json.optJSONObject("last_action_result")?.let { decodeActionResult(it) },
         activeWorkflowExecutionId = json.optString("active_workflow_execution_id"),
+        taskExecutionMode = enumOrDefault(
+            json.optString("task_execution_mode"),
+            AgentTaskExecutionMode.AUTO_COMPLETE
+        ),
         executionLoopSnapshot = json.optJSONObject("execution_loop")
             ?.toString()
             ?.let(AgentExecutionLoopJsonCodec::decode),
@@ -10889,6 +10992,7 @@ class SharedPreferencesAgentSessionStore(
     private fun encodePlan(plan: AgentPlan): JSONObject = JSONObject()
         .put("goal", plan.goal)
         .put("screen", encodeScreen(plan.screen))
+        .put("execution_mode", plan.executionMode.name)
         .put("plan_id", plan.planId)
         .put("selected_agent_or_model", plan.selectedAgentOrModel)
         .put("required_permissions", encodePermissions(plan.requiredPermissions))
@@ -10925,6 +11029,10 @@ class SharedPreferencesAgentSessionStore(
         screen = decodeScreen(json.optJSONObject("screen")),
         steps = decodeSteps(json.optJSONArray("steps")),
         actions = decodeActions(json.optJSONArray("actions")),
+        executionMode = enumOrDefault(
+            json.optString("execution_mode"),
+            AgentTaskExecutionMode.AUTO_COMPLETE
+        ),
         planId = json.optString("plan_id").ifBlank { UUID.randomUUID().toString() },
         selectedAgentOrModel = json.optString("selected_agent_or_model"),
         requiredPermissions = decodePermissions(json.optJSONArray("required_permissions")),
@@ -11409,6 +11517,7 @@ data class AgentUiState(
     val phase: AgentPhase,
     val currentGoal: String,
     val currentScreen: ScreenContext,
+    val taskExecutionMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
     val permissionMode: PermissionMode,
     val highRiskGuard: Boolean,
     val callableTargets: List<AgentCallableTarget>,
@@ -11434,6 +11543,7 @@ data class AgentSessionSnapshot(
     val auditTrail: List<AgentAuditEntry>,
     val lastActionResult: AgentActionResult?,
     val activeWorkflowExecutionId: String = "",
+    val taskExecutionMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
     val executionLoopSnapshot: AgentExecutionLoopSnapshot? = null,
     val updatedAtMillis: Long
 )
@@ -11603,6 +11713,7 @@ data class AgentPlan(
     val screen: ScreenContext,
     val steps: List<AgentStep>,
     val actions: List<AgentAction>,
+    val executionMode: AgentTaskExecutionMode = AgentTaskExecutionMode.AUTO_COMPLETE,
     val planId: String = UUID.randomUUID().toString(),
     val selectedAgentOrModel: String = actions.firstOrNull()?.target.orEmpty(),
     val requiredPermissions: List<AgentPermissionRequirement> = emptyList(),

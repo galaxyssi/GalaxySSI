@@ -514,6 +514,7 @@ def _agent_adapter_descriptors() -> list[AgentAdapterDescriptor]:
 
 def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) -> str:
     from agent_execution_harness import (
+        AgentExecutionMode,
         AgentExecutionHarness,
         AgentExecutionPolicy,
         execution_contract,
@@ -553,6 +554,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
         ),
         policy=execution_policy,
     )
+    plan_only = harness.policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     contract = execution_contract(harness.policy)
     current_prompt = request.prompt.rstrip()
     if "SignalASI execution contract:" not in current_prompt:
@@ -573,6 +575,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 "provider": agent_id,
                 "task_kind": harness.policy.task_kind.value,
                 "reasoning_effort": harness.policy.reasoning_effort.value,
+                "execution_mode": harness.policy.execution_mode.value,
             },
         )
 
@@ -604,6 +607,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 restricted_workspace=(
                     str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
                 ),
+                plan_only=plan_only,
             )
         reply = sanitize_assistant_response(raw_reply)
         if reply and not _agent_reply_failed(reply) and not looks_failed_reply(reply):
@@ -614,7 +618,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 "cloud-model",
             }
             artifact_finalization = None
-            if request.run_id and workspace_capable:
+            if request.run_id and workspace_capable and not plan_only:
                 artifact_finalization = finalize_task_artifacts(
                     request.run_id,
                     execution_prompt,
@@ -1503,6 +1507,7 @@ def _ask_agent_sync_inner(
     conversation_id: str = "",
     response_language: str = "",
     restricted_workspace: bool = False,
+    plan_only: bool = False,
 ) -> str:
     if spec is None:
         return f"[SignalASI] \u672a\u77e5 Agent: {contact_id}"
@@ -1517,6 +1522,7 @@ def _ask_agent_sync_inner(
         conversation_id=conversation_id,
         response_language=response_language,
         restricted_workspace=restricted_workspace,
+        plan_only=plan_only,
     )
 
 
@@ -1599,6 +1605,7 @@ def ask_cli_agent(
     conversation_id: str = "",
     response_language: str = "",
     restricted_workspace: bool = False,
+    plan_only: bool = False,
     working_directory: Path | None = None,
 ) -> str:
     command = _command_for(spec)
@@ -1616,6 +1623,7 @@ def ask_cli_agent(
             conversation_id=conversation_id,
             response_language=response_language,
             restricted_workspace=restricted_workspace,
+            plan_only=plan_only,
             working_directory=working_directory,
         )
 
@@ -1714,6 +1722,7 @@ def _ask_cli_agent_locked(
     conversation_id: str,
     response_language: str = "",
     restricted_workspace: bool = False,
+    plan_only: bool = False,
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
 ) -> str:
@@ -1721,13 +1730,17 @@ def _ask_cli_agent_locked(
 
     sessions = agent_conversation_sessions()
     binding = sessions.get(spec.id, conversation_id)
-    has_native_session = spec.id in NATIVE_SESSION_AGENT_IDS and bool(conversation_id)
+    has_native_session = (
+        not plan_only
+        and spec.id in NATIVE_SESSION_AGENT_IDS
+        and bool(conversation_id)
+    )
     existing_native_session = bool(binding.session_id)
     if has_native_session and spec.id in {"claude", "openclaw"} and not binding.session_id:
         binding = sessions.ensure(spec.id, conversation_id)
     if not conversation_id:
         invocation_text = text
-    elif not has_native_session or not existing_native_session:
+    elif plan_only or not has_native_session or not existing_native_session:
         invocation_text = _compiled_cli_prompt(
             spec,
             text,
@@ -1750,11 +1763,15 @@ def _ask_cli_agent_locked(
             )
             or _styled_turn_prompt(text, response_language)
         )
-    session_command = _native_session_command(
-        spec,
-        command,
-        binding.session_id,
-        existing=existing_native_session,
+    session_command = (
+        _plan_only_command(spec, command)
+        if plan_only
+        else _native_session_command(
+            spec,
+            command,
+            binding.session_id,
+            existing=existing_native_session,
+        )
     )
     return _run_cli_agent_process(
         spec,
@@ -1765,6 +1782,7 @@ def _ask_cli_agent_locked(
         conversation_id=conversation_id,
         response_language=response_language,
         restricted_workspace=restricted_workspace,
+        plan_only=plan_only,
         retried_stale_session=retried_stale_session,
         working_directory=working_directory,
     )
@@ -1780,7 +1798,8 @@ def _run_cli_agent_process(
     conversation_id: str,
     response_language: str,
     restricted_workspace: bool,
-    retried_stale_session: bool,
+    plan_only: bool = False,
+    retried_stale_session: bool = False,
     working_directory: Path | None = None,
 ) -> str:
     process: subprocess.Popen | None = None
@@ -1789,6 +1808,8 @@ def _run_cli_agent_process(
 
         cli_runtime = cli_agent_runtime_config(spec.id, command)
         if (
+            not plan_only
+            and
             cli_runtime["enabled"]
             and cli_runtime["mode"] == "signalasi-jsonl-v1"
             and restricted_workspace
@@ -1798,6 +1819,8 @@ def _run_cli_agent_process(
                 "requires desktop executor authorization"
             )
         persistent_transport = (
+            not plan_only
+            and
             cli_runtime["enabled"]
             and cli_runtime["mode"] == "signalasi-jsonl-v1"
             and not restricted_workspace
@@ -1907,11 +1930,13 @@ def _run_cli_agent_process(
             agent_task_manager.record_exit_code(task_id, process.returncode)
         stdout_text = decode_output(stdout or b"").strip()
         stderr_text = decode_output(stderr or b"").strip()
-        _capture_native_session(spec, conversation_id, stderr_text, stdout_text)
+        if not plan_only:
+            _capture_native_session(spec, conversation_id, stderr_text, stdout_text)
         if process.returncode != 0:
             failure = stderr_text or stdout_text or f"Process exited with code {process.returncode}"
             if (
-                conversation_id
+                not plan_only
+                and conversation_id
                 and not retried_stale_session
                 and _is_stale_native_session_error(spec, failure)
             ):
@@ -1926,6 +1951,7 @@ def _run_cli_agent_process(
                     conversation_id=conversation_id,
                     response_language=response_language,
                     restricted_workspace=restricted_workspace,
+                    plan_only=plan_only,
                     retried_stale_session=True,
                     working_directory=working_directory,
                 )
@@ -1934,12 +1960,13 @@ def _run_cli_agent_process(
         if not raw:
             return f"[{spec.name}] \u65e0\u54cd\u5e94"
         reply = clean_agent_output(spec, raw, text)
-        _mark_native_session_synced(
-            spec,
-            conversation_id,
-            task_id,
-            original_text,
-        )
+        if not plan_only:
+            _mark_native_session_synced(
+                spec,
+                conversation_id,
+                task_id,
+                original_text,
+            )
         return reply
     except FileNotFoundError:
         return f"[{spec.name}] \u672a\u68c0\u6d4b\u5230\u547d\u4ee4\uff1a{command[0]}\u3002\u8bf7\u5728 SignalASI Desktop \u4e2d\u914d\u7f6e\u8fde\u63a5\u5668\u3002"
@@ -1976,6 +2003,67 @@ def _native_session_command(
     if spec.id == "openclaw":
         return [*command, "--session-id", session_id]
     return list(command)
+
+
+def _plan_only_command(spec: AgentSpec, command: list[str]) -> list[str]:
+    if spec.kind == "custom-cli":
+        raise RuntimeError(
+            f"{spec.name} does not declare a verifiable read-only planning mode"
+        )
+    if spec.id == "codex":
+        return _replace_cli_options(
+            command,
+            {
+                "--sandbox": "read-only",
+                "--ask-for-approval": "never",
+            },
+        )
+    if spec.id == "claude":
+        return _replace_cli_options(command, {"--permission-mode": "plan"})
+    if spec.id == "hermes":
+        return _replace_cli_options(
+            command,
+            {
+                "--toolsets": "none",
+                "--max-turns": "1",
+            },
+        )
+    if spec.id == "openclaw":
+        return [command[0], "model", "run", "--prompt", "{prompt}"]
+    raise RuntimeError(
+        f"{spec.name} does not provide a verifiable read-only planning mode"
+    )
+
+
+def _replace_cli_options(command: list[str], replacements: dict[str, str]) -> list[str]:
+    output: list[str] = []
+    index = 0
+    while index < len(command):
+        item = command[index]
+        option = next(
+            (
+                name
+                for name in replacements
+                if item == name or item.startswith(f"{name}=")
+            ),
+            "",
+        )
+        if not option:
+            output.append(item)
+            index += 1
+            continue
+        if item == option and index + 1 < len(command):
+            index += 2
+        else:
+            index += 1
+    trailing_stdin_prompt = bool(output and output[-1] == "-")
+    if trailing_stdin_prompt:
+        output.pop()
+    for option, value in replacements.items():
+        output.extend((option, value))
+    if trailing_stdin_prompt:
+        output.append("-")
+    return output
 
 
 def _capture_native_session(

@@ -515,7 +515,8 @@ object SignalASIMqttClient {
         deliveryTrace: org.json.JSONArray? = null,
         conversationId: String = "",
         turnId: String = "",
-        taskId: String = ""
+        taskId: String = "",
+        executionMode: AgentTaskExecutionMode? = null
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -524,7 +525,8 @@ object SignalASIMqttClient {
         deliveryTrace = deliveryTrace,
         conversationId = conversationId,
         turnId = turnId,
-        taskId = taskId
+        taskId = taskId,
+        executionMode = executionMode
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -535,7 +537,8 @@ object SignalASIMqttClient {
         deliveryTrace: org.json.JSONArray? = null,
         conversationId: String = "",
         turnId: String = "",
-        taskId: String = ""
+        taskId: String = "",
+        executionMode: AgentTaskExecutionMode? = null
     ): MqttPublishResult {
         val context = appContext
         val resolvedConversationId = AgentTaskIdentityPolicy.conversationId(
@@ -551,6 +554,15 @@ object SignalASIMqttClient {
             turnId = resolvedTurnId,
             requested = taskId
         )
+        val configuredExecutionMode = context
+            ?.let(::SharedPreferencesAgentSafetySettingsStore)
+            ?.load()
+            ?.taskExecutionMode
+            ?: AgentTaskExecutionMode.AUTO_COMPLETE
+        val resolvedExecutionMode = executionMode ?: AgentTaskExecutionModePolicy.resolve(
+            content,
+            configuredExecutionMode
+        ).mode
         val payload = JSONObject()
             .put("type", "text")
             .put("content", content)
@@ -558,6 +570,7 @@ object SignalASIMqttClient {
             .put("task_id", resolvedTaskId)
             .put("conversation_id", resolvedConversationId)
             .put("turn_id", resolvedTurnId)
+            .put("execution_mode", resolvedExecutionMode.wireValue)
             .put("time", System.currentTimeMillis())
         if (context != null) {
             val policy = LanguagePolicySettings.get(context)

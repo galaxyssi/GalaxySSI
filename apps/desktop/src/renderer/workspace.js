@@ -86,6 +86,9 @@ const state = {
   currentConversationId: crypto.randomUUID(),
   selectedAgentId: "auto",
   selectedAgentName: "Agent",
+  executionMode: localStorage.getItem("signalasi-desktop-execution-mode") === "plan_only"
+    ? "plan_only"
+    : "auto_complete",
   attachments: [],
   renderingSignature: "",
   polling: false,
@@ -110,6 +113,7 @@ const elements = {
   send: $("#sendButton"),
   attachments: $("#attachmentTray"),
   selectedAgent: $("#selectedAgentLabel"),
+  executionMode: $("#executionModeButton"),
   agentCount: $("#agentCount"),
   capabilityCount: $("#capabilityCount"),
   gatewayCount: $("#gatewayCount"),
@@ -317,6 +321,7 @@ async function setLanguage(language, persist = true) {
   renderConversation(true);
   renderEvolutionTasks();
   updateHeaderStatus();
+  updateExecutionMode();
   document.dispatchEvent(new CustomEvent("signalasi:locale-changed", {
     detail: { language: state.language }
   }));
@@ -653,6 +658,7 @@ async function sendTask() {
       agentId: state.selectedAgentId,
       conversationId: state.currentConversationId,
       attachments,
+      executionMode: state.executionMode,
       responseLanguage: resolveLanguagePolicy(
         state.agentConfig?.language_policy?.response_language || "auto"
       )
@@ -692,6 +698,13 @@ function updateSelectedAgent() {
   elements.selectedAgent.textContent = state.selectedAgentId === "auto" ? t("Agent") : state.selectedAgentName;
   $("#autoModeButton").classList.toggle("active", state.selectedAgentId === "auto");
   $("#localModeButton").classList.toggle("active", state.selectedAgentId === "desktop");
+}
+
+function updateExecutionMode() {
+  const planOnly = state.executionMode === "plan_only";
+  elements.executionMode.textContent = t(planOnly ? "Plan only" : "Auto complete");
+  elements.executionMode.classList.toggle("plan-only", planOnly);
+  elements.executionMode.setAttribute("aria-pressed", planOnly ? "true" : "false");
 }
 
 async function refreshBackend() {
@@ -2149,6 +2162,11 @@ function bindEvents() {
   $("#sendButton").addEventListener("click", sendTask);
   $("#autoModeButton").addEventListener("click", () => { state.selectedAgentId = "auto"; state.selectedAgentName = t("Agent"); updateSelectedAgent(); });
   $("#localModeButton").addEventListener("click", () => { state.selectedAgentId = "desktop"; state.selectedAgentName = t("This desktop"); updateSelectedAgent(); });
+  $("#executionModeButton").addEventListener("click", () => {
+    state.executionMode = state.executionMode === "plan_only" ? "auto_complete" : "plan_only";
+    localStorage.setItem("signalasi-desktop-execution-mode", state.executionMode);
+    updateExecutionMode();
+  });
   elements.prompt.addEventListener("input", updateSendState);
   elements.prompt.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -2373,6 +2391,7 @@ async function init() {
   renderAgentContacts();
   updateAgentCounters();
   updateSelectedAgent();
+  updateExecutionMode();
   updateSendState();
   await refreshBackend();
   await Promise.all([refreshAgents(), refreshGateway(), refreshDesktopControl(), refreshCapabilities(), refreshTasks(true)]);
