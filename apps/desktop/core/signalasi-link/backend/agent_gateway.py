@@ -45,6 +45,7 @@ from desktop_agent_adapters import (
     DesktopAgentStateStore,
 )
 from desktop_agent_runtime_server import (
+    AgentFaultDomainRegistry,
     DesktopAgentRuntimeServer,
     DesktopAgentRuntimeStore,
 )
@@ -1111,10 +1112,29 @@ def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
                 max_workers = int(configured_workers)
             except ValueError:
                 max_workers = 4
+            try:
+                failure_threshold = int(
+                    os.environ.get("SIGNALASI_AGENT_FAILURE_THRESHOLD", "3")
+                )
+            except ValueError:
+                failure_threshold = 3
+            try:
+                failure_cooldown = float(
+                    os.environ.get(
+                        "SIGNALASI_AGENT_FAILURE_COOLDOWN_SECONDS",
+                        "30",
+                    )
+                )
+            except ValueError:
+                failure_cooldown = 30.0
             _agent_runtime_server = DesktopAgentRuntimeServer(
                 provider=provider,
                 store=DesktopAgentRuntimeStore(_agent_runtime_server_state_path()),
                 max_workers=max_workers,
+                fault_domains=AgentFaultDomainRegistry(
+                    failure_threshold=failure_threshold,
+                    cooldown_seconds=failure_cooldown,
+                ),
             )
         return _agent_runtime_server
 
