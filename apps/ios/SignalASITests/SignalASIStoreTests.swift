@@ -10202,6 +10202,40 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  func testAgentEmbeddedRuntimeBundleCodecRequiresDefaultBootstrapEnvironment() throws {
+    let bundle = try AgentEmbeddedRuntimeBundleCodec.decode(embeddedRuntimeIndexJson())
+    let encoded = try JSONEncoder().encode(bundle)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let packs = try XCTUnwrap(object["packs"] as? [[String: Any]])
+
+    XCTAssertEqual(bundle.architecture, "arm64-v8a")
+    XCTAssertEqual(bundle.formatVersion, 1)
+    XCTAssertEqual(bundle.packs.map(\.packId), ["linux-base", "python-uv"])
+    XCTAssertEqual(bundle.packs.last?.dependencies, ["linux-base"])
+    XCTAssertEqual(bundle.packs.first?.archiveSha256, String(repeating: "a", count: 64))
+    XCTAssertEqual(object["format_version"] as? Int, 1)
+    XCTAssertEqual(packs.first?["pack_id"] as? String, "linux-base")
+    XCTAssertEqual(packs.last?["asset_path"] as? String, "runtime/bootstrap/python-uv.sarpack")
+  }
+
+  func testAgentEmbeddedRuntimeBundleCodecRejectsIncompleteDefaultEnvironment() {
+    let invalid = """
+      {"format_version":1,"architecture":"arm64-v8a","packs":[
+        {"pack_id":"linux-base","version":"1.0.0","architecture":"arm64-v8a","asset_path":"runtime/bootstrap/linux-base.sarpack","archive_sha256":"\(String(repeating: "a", count: 64))","archive_size_bytes":1024,"installed_size_bytes":2048,"dependencies":[]}
+      ]}
+      """
+
+    XCTAssertThrowsError(try AgentEmbeddedRuntimeBundleCodec.decode(invalid))
+  }
+
+  func testAgentEmbeddedRuntimeBootstrapVersionComparisonAvoidsDowngrades() {
+    XCTAssertEqual(AgentEmbeddedRuntimeBootstrap.compareVersions("1.2.0", "1.1.9"), 1)
+    XCTAssertEqual(AgentEmbeddedRuntimeBootstrap.compareVersions("1.2.0", "1.2.0"), 0)
+    XCTAssertEqual(AgentEmbeddedRuntimeBootstrap.compareVersions("1.1.9", "1.2.0"), -1)
+    XCTAssertEqual(AgentEmbeddedRuntimeBootstrap.compareVersions("1.2.0", "1.2.0-rc.1"), 1)
+    XCTAssertEqual(AgentEmbeddedRuntimeBootstrap.compareVersions("1.2.0+build.2", "1.2.0+build.1"), 0)
+  }
+
   func testAgentMcpToolSecurityPolicyMatchesAndroidRiskAndPermissions() {
     let read = AgentMcpToolSecurityPolicy.assess(
       tool: mcpTool("get_weather", readOnly: true),
@@ -12192,6 +12226,15 @@ final class SignalASIStoreTests: XCTestCase {
       minimumHostVersionCode: 1,
       guestApiVersion: AgentRuntimeGuestProtocol.version
     )
+  }
+
+  private func embeddedRuntimeIndexJson() -> String {
+    """
+    {"format_version":1,"architecture":"arm64-v8a","packs":[
+      {"pack_id":"linux-base","version":"1.0.0","architecture":"arm64-v8a","asset_path":"runtime/bootstrap/linux-base.sarpack","archive_sha256":"\(String(repeating: "A", count: 64))","archive_size_bytes":1024,"installed_size_bytes":2048,"dependencies":[]},
+      {"pack_id":"python-uv","version":"1.0.0","architecture":"arm64-v8a","asset_path":"runtime/bootstrap/python-uv.sarpack","archive_sha256":"\(String(repeating: "b", count: 64))","archive_size_bytes":2048,"installed_size_bytes":4096,"dependencies":["linux-base"]}
+    ]}
+    """
   }
 
   private func agentWorkspace(
