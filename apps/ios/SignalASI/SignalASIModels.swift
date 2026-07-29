@@ -2358,6 +2358,44 @@ enum AgentEndpointStatus: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentResourceType: String, Codable, CaseIterable, Identifiable {
+  case onDeviceModel = "ON_DEVICE_MODEL"
+  case remoteLocalModel = "REMOTE_LOCAL_MODEL"
+  case cloudModel = "CLOUD_MODEL"
+  case localAgent = "LOCAL_AGENT"
+  case remoteAgent = "REMOTE_AGENT"
+  case localTool = "LOCAL_TOOL"
+  case localMcp = "LOCAL_MCP"
+  case remoteMcp = "REMOTE_MCP"
+  case cloudMcp = "CLOUD_MCP"
+  case localSkill = "LOCAL_SKILL"
+  case remoteSkill = "REMOTE_SKILL"
+  case cloudSkill = "CLOUD_SKILL"
+  case homeAssistant = "HOME_ASSISTANT"
+  case customDevice = "CUSTOM_DEVICE"
+  case knowledge = "KNOWLEDGE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentResourceType {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .cloudModel
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
 enum AgentResourceCost: String, Codable, CaseIterable, Comparable, Identifiable {
   case free = "FREE"
   case low = "LOW"
@@ -2408,6 +2446,38 @@ enum AgentResourceTrust: String, Codable, CaseIterable, Identifiable {
   case unknown = "UNKNOWN"
 
   var id: String { rawValue }
+}
+
+enum AgentResourceEnergy: String, Codable, CaseIterable, Comparable, Identifiable {
+  case minimal = "MINIMAL"
+  case low = "LOW"
+  case moderate = "MODERATE"
+  case high = "HIGH"
+
+  var id: String { rawValue }
+  var rank: Int { Self.allCases.firstIndex(of: self) ?? 0 }
+
+  static func < (lhs: AgentResourceEnergy, rhs: AgentResourceEnergy) -> Bool {
+    lhs.rank < rhs.rank
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentResourceEnergy {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .low
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 struct AgentProtocolRange: Codable, Equatable {
@@ -3897,6 +3967,24 @@ enum AgentRoutingMode: String, Codable, CaseIterable, Identifiable {
   case `private` = "PRIVATE"
 
   var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRoutingMode {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .balanced
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 enum AgentDataSensitivity: String, Codable, CaseIterable, Identifiable {
@@ -3906,35 +3994,455 @@ enum AgentDataSensitivity: String, Codable, CaseIterable, Identifiable {
   case restricted = "RESTRICTED"
 
   var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentDataSensitivity {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .personal
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentExecutionHorizon: String, Codable, CaseIterable, Identifiable {
+  case interactive = "INTERACTIVE"
+  case background = "BACKGROUND"
+  case longRunning = "LONG_RUNNING"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentExecutionHorizon {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .interactive
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 struct AgentTaskRequirements: Codable, Equatable {
   var capabilities: Set<AgentCapability>
   var mode: AgentRoutingMode
+  var liveDataRequired: Bool
   var localOnly: Bool
   var complexReasoning: Bool
+  var estimatedInputTokens: Int
   var dataSensitivity: AgentDataSensitivity
+  var executionHorizon: AgentExecutionHorizon
 
   init(
     capabilities: Set<AgentCapability> = [],
     mode: AgentRoutingMode = .balanced,
+    liveDataRequired: Bool = false,
     localOnly: Bool = false,
     complexReasoning: Bool = false,
-    dataSensitivity: AgentDataSensitivity = .personal
+    estimatedInputTokens: Int = 0,
+    dataSensitivity: AgentDataSensitivity = .personal,
+    executionHorizon: AgentExecutionHorizon = .interactive
   ) {
     self.capabilities = capabilities
     self.mode = mode
+    self.liveDataRequired = liveDataRequired
     self.localOnly = localOnly
     self.complexReasoning = complexReasoning
+    self.estimatedInputTokens = max(0, estimatedInputTokens)
     self.dataSensitivity = dataSensitivity
+    self.executionHorizon = executionHorizon
   }
 
   enum CodingKeys: String, CodingKey {
     case capabilities
     case mode
+    case liveDataRequired = "live_data_required"
     case localOnly = "local_only"
     case complexReasoning = "complex_reasoning"
+    case estimatedInputTokens = "estimated_input_tokens"
     case dataSensitivity = "data_sensitivity"
+    case executionHorizon = "execution_horizon"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let decodedCapabilities = try container.decodeIfPresent(Set<AgentCapability>.self, forKey: .capabilities) ?? []
+    capabilities = decodedCapabilities
+    mode = try container.decodeIfPresent(AgentRoutingMode.self, forKey: .mode) ?? .balanced
+    liveDataRequired = try container.decodeIfPresent(Bool.self, forKey: .liveDataRequired) ??
+      decodedCapabilities.contains(.liveData)
+    localOnly = try container.decodeIfPresent(Bool.self, forKey: .localOnly) ?? false
+    complexReasoning = try container.decodeIfPresent(Bool.self, forKey: .complexReasoning) ?? false
+    estimatedInputTokens = max(0, try container.decodeIfPresent(Int.self, forKey: .estimatedInputTokens) ?? 0)
+    dataSensitivity = try container.decodeIfPresent(AgentDataSensitivity.self, forKey: .dataSensitivity) ?? .personal
+    executionHorizon = try container.decodeIfPresent(AgentExecutionHorizon.self, forKey: .executionHorizon) ??
+      .interactive
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(capabilities, forKey: .capabilities)
+    try container.encode(mode, forKey: .mode)
+    try container.encode(liveDataRequired, forKey: .liveDataRequired)
+    try container.encode(localOnly, forKey: .localOnly)
+    try container.encode(complexReasoning, forKey: .complexReasoning)
+    try container.encode(estimatedInputTokens, forKey: .estimatedInputTokens)
+    try container.encode(dataSensitivity, forKey: .dataSensitivity)
+    try container.encode(executionHorizon, forKey: .executionHorizon)
+  }
+}
+
+struct AgentResourceDescriptor: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var type: AgentResourceType
+  var location: AgentResourceLocation
+  var status: AgentConnectorStatus
+  var capabilities: Set<AgentCapability>
+  var cost: AgentResourceCost
+  var latency: AgentResourceLatency
+  var quality: AgentResourceQuality
+  var supportsTools: Bool
+  var targetId: String
+  var trust: AgentResourceTrust
+  var energy: AgentResourceEnergy
+  var contextWindowTokens: Int
+  var supportsStreaming: Bool
+  var supportsBackground: Bool
+  var activeTasks: Int
+  var maxParallelTasks: Int
+  var failureDomain: String
+  var providerProfile: ProviderProfile?
+
+  init(
+    id: String,
+    title: String,
+    type: AgentResourceType,
+    location: AgentResourceLocation,
+    status: AgentConnectorStatus,
+    capabilities: Set<AgentCapability>,
+    cost: AgentResourceCost,
+    latency: AgentResourceLatency,
+    quality: AgentResourceQuality,
+    supportsTools: Bool,
+    targetId: String = "",
+    trust: AgentResourceTrust = .unknown,
+    energy: AgentResourceEnergy = .low,
+    contextWindowTokens: Int = 8_192,
+    supportsStreaming: Bool = false,
+    supportsBackground: Bool = false,
+    activeTasks: Int = 0,
+    maxParallelTasks: Int = 1,
+    failureDomain: String = "",
+    providerProfile: ProviderProfile? = nil
+  ) {
+    self.id = id
+    self.title = title
+    self.type = type
+    self.location = location
+    self.status = status
+    self.capabilities = capabilities
+    self.cost = cost
+    self.latency = latency
+    self.quality = quality
+    self.supportsTools = supportsTools
+    self.targetId = targetId
+    self.trust = trust
+    self.energy = energy
+    self.contextWindowTokens = max(0, contextWindowTokens)
+    self.supportsStreaming = supportsStreaming
+    self.supportsBackground = supportsBackground
+    self.activeTasks = max(0, activeTasks)
+    self.maxParallelTasks = max(1, maxParallelTasks)
+    self.failureDomain = failureDomain
+    self.providerProfile = providerProfile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case title
+    case type
+    case location
+    case status
+    case capabilities
+    case cost
+    case latency
+    case quality
+    case supportsTools = "supports_tools"
+    case targetId = "target_id"
+    case trust
+    case energy
+    case contextWindowTokens = "context_window_tokens"
+    case supportsStreaming = "supports_streaming"
+    case supportsBackground = "supports_background"
+    case activeTasks = "active_tasks"
+    case maxParallelTasks = "max_parallel_tasks"
+    case failureDomain = "failure_domain"
+    case providerProfile = "provider_profile"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      type: try container.decodeIfPresent(AgentResourceType.self, forKey: .type) ?? .cloudModel,
+      location: try container.decodeIfPresent(AgentResourceLocation.self, forKey: .location) ?? .cloud,
+      status: try container.decodeIfPresent(AgentConnectorStatus.self, forKey: .status) ?? .disconnected,
+      capabilities: try container.decodeIfPresent(Set<AgentCapability>.self, forKey: .capabilities) ?? [],
+      cost: ProviderProfileCatalog.cost(try container.decodeIfPresent(String.self, forKey: .cost), fallback: .free),
+      latency: ProviderProfileCatalog.latency(
+        try container.decodeIfPresent(String.self, forKey: .latency),
+        fallback: .normal
+      ),
+      quality: ProviderProfileCatalog.quality(
+        try container.decodeIfPresent(String.self, forKey: .quality),
+        fallback: .standard
+      ),
+      supportsTools: try container.decodeIfPresent(Bool.self, forKey: .supportsTools) ?? false,
+      targetId: try container.decodeIfPresent(String.self, forKey: .targetId) ?? "",
+      trust: ProviderProfileCatalog.trust(try container.decodeIfPresent(String.self, forKey: .trust), fallback: .unknown),
+      energy: try container.decodeIfPresent(AgentResourceEnergy.self, forKey: .energy) ?? .low,
+      contextWindowTokens: try container.decodeIfPresent(Int.self, forKey: .contextWindowTokens) ?? 8_192,
+      supportsStreaming: try container.decodeIfPresent(Bool.self, forKey: .supportsStreaming) ?? false,
+      supportsBackground: try container.decodeIfPresent(Bool.self, forKey: .supportsBackground) ?? false,
+      activeTasks: try container.decodeIfPresent(Int.self, forKey: .activeTasks) ?? 0,
+      maxParallelTasks: try container.decodeIfPresent(Int.self, forKey: .maxParallelTasks) ?? 1,
+      failureDomain: try container.decodeIfPresent(String.self, forKey: .failureDomain) ?? "",
+      providerProfile: try container.decodeIfPresent(ProviderProfile.self, forKey: .providerProfile)
+    )
+  }
+}
+
+struct AgentRuntimeEnvironment: Codable, Equatable {
+  var batteryPercent: Int
+  var charging: Bool
+  var powerSaveMode: Bool
+  var networkAvailable: Bool
+  var networkValidated: Bool
+  var networkMetered: Bool
+  var appMemoryBytes: Int64
+  var availableMemoryBytes: Int64
+
+  var energyConstrained: Bool {
+    powerSaveMode || (!charging && batteryPercent >= 0 && batteryPercent <= 19)
+  }
+
+  init(
+    batteryPercent: Int = -1,
+    charging: Bool = false,
+    powerSaveMode: Bool = false,
+    networkAvailable: Bool = false,
+    networkValidated: Bool = false,
+    networkMetered: Bool = false,
+    appMemoryBytes: Int64 = 0,
+    availableMemoryBytes: Int64 = 0
+  ) {
+    self.batteryPercent = batteryPercent
+    self.charging = charging
+    self.powerSaveMode = powerSaveMode
+    self.networkAvailable = networkAvailable
+    self.networkValidated = networkValidated
+    self.networkMetered = networkMetered
+    self.appMemoryBytes = max(0, appMemoryBytes)
+    self.availableMemoryBytes = max(0, availableMemoryBytes)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case batteryPercent = "battery_percent"
+    case charging
+    case powerSaveMode = "power_save_mode"
+    case networkAvailable = "network_available"
+    case networkValidated = "network_validated"
+    case networkMetered = "network_metered"
+    case appMemoryBytes = "app_memory_bytes"
+    case availableMemoryBytes = "available_memory_bytes"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      batteryPercent: try container.decodeIfPresent(Int.self, forKey: .batteryPercent) ?? -1,
+      charging: try container.decodeIfPresent(Bool.self, forKey: .charging) ?? false,
+      powerSaveMode: try container.decodeIfPresent(Bool.self, forKey: .powerSaveMode) ?? false,
+      networkAvailable: try container.decodeIfPresent(Bool.self, forKey: .networkAvailable) ?? false,
+      networkValidated: try container.decodeIfPresent(Bool.self, forKey: .networkValidated) ?? false,
+      networkMetered: try container.decodeIfPresent(Bool.self, forKey: .networkMetered) ?? false,
+      appMemoryBytes: try container.decodeIfPresent(Int64.self, forKey: .appMemoryBytes) ?? 0,
+      availableMemoryBytes: try container.decodeIfPresent(Int64.self, forKey: .availableMemoryBytes) ?? 0
+    )
+  }
+}
+
+struct AgentResourceCandidate: Codable, Equatable {
+  var resource: AgentResourceDescriptor
+  var score: Int
+  var reasons: [String]
+
+  init(resource: AgentResourceDescriptor, score: Int, reasons: [String] = []) {
+    self.resource = resource
+    self.score = score
+    self.reasons = reasons
+  }
+}
+
+struct AgentRoutingDecision: Codable, Equatable {
+  var requirements: AgentTaskRequirements
+  var primary: AgentResourceCandidate?
+  var fallbacks: [AgentResourceCandidate]
+  var environment: AgentRuntimeEnvironment
+  var catalog: [AgentResourceDescriptor]
+  var taskBudget: AgentTaskBudget
+
+  var orderedTargetIds: [String] {
+    var ids: [String] = []
+    if let primaryId = primary?.resource.targetId, !primaryId.isEmpty {
+      ids.append(primaryId)
+    }
+    ids.append(contentsOf: fallbacks.map(\.resource.targetId).filter { !$0.isEmpty })
+    return ids
+  }
+
+  init(
+    requirements: AgentTaskRequirements,
+    primary: AgentResourceCandidate?,
+    fallbacks: [AgentResourceCandidate] = [],
+    environment: AgentRuntimeEnvironment = AgentRuntimeEnvironment(),
+    catalog: [AgentResourceDescriptor] = [],
+    taskBudget: AgentTaskBudget = .default
+  ) {
+    self.requirements = requirements
+    self.primary = primary
+    self.fallbacks = fallbacks
+    self.environment = environment
+    self.catalog = catalog
+    self.taskBudget = taskBudget
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case requirements
+    case primary
+    case fallbacks
+    case environment
+    case catalog
+    case taskBudget = "task_budget"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      requirements: try container.decodeIfPresent(AgentTaskRequirements.self, forKey: .requirements) ??
+        AgentTaskRequirements(),
+      primary: try container.decodeIfPresent(AgentResourceCandidate.self, forKey: .primary),
+      fallbacks: try container.decodeIfPresent([AgentResourceCandidate].self, forKey: .fallbacks) ?? [],
+      environment: try container.decodeIfPresent(AgentRuntimeEnvironment.self, forKey: .environment) ??
+        AgentRuntimeEnvironment(),
+      catalog: try container.decodeIfPresent([AgentResourceDescriptor].self, forKey: .catalog) ?? [],
+      taskBudget: try container.decodeIfPresent(AgentTaskBudget.self, forKey: .taskBudget) ?? .default
+    )
+  }
+}
+
+struct AgentConnectorRouteSelection: Codable, Equatable {
+  var target: AgentCallableTarget
+  var decision: AgentRoutingDecision?
+}
+
+enum AgentConnectorRouteSelector {
+  static func isDeliverable(_ target: AgentCallableTarget?) -> Bool {
+    guard let target else { return false }
+    return target.status == .available ||
+      (target.status == .disconnected && hasReasoningCapability(target))
+  }
+
+  static func select(
+    targets: [AgentCallableTarget],
+    decision: AgentRoutingDecision?,
+    preferredTargetId: String = ""
+  ) -> AgentConnectorRouteSelection? {
+    let reasoningTargets = targets.filter(hasReasoningCapability)
+    var eligible = reasoningTargets.filter { $0.status == .available }
+    if eligible.isEmpty {
+      eligible = reasoningTargets.filter(isDeliverable)
+    }
+    guard !eligible.isEmpty else { return nil }
+
+    let eligibleById = eligible.reduce(into: [String: AgentCallableTarget]()) { values, target in
+      values[target.id] = target
+    }
+    let decisionCandidates: [AgentResourceCandidate]
+    if let decision {
+      decisionCandidates = [decision.primary].compactMap { $0 } + decision.fallbacks
+    } else {
+      decisionCandidates = []
+    }
+    var seenTargetIds = Set<String>()
+    let routedCandidates = decisionCandidates
+      .filter { eligibleById[$0.resource.targetId] != nil }
+      .filter { seenTargetIds.insert($0.resource.targetId).inserted }
+    let preferredTarget = preferredTargetId.isEmpty ? nil : eligibleById[preferredTargetId]
+    let routedTarget = routedCandidates.compactMap { eligibleById[$0.resource.targetId] }.first
+    let selectedTarget = preferredTarget ?? routedTarget ?? defaultTarget(eligible)
+
+    guard let decision else {
+      return AgentConnectorRouteSelection(target: selectedTarget, decision: nil)
+    }
+    let selectedCandidate = routedCandidates.first { $0.resource.targetId == selectedTarget.id } ??
+      decision.catalog.first { $0.targetId == selectedTarget.id }.map { resource in
+        AgentResourceCandidate(
+          resource: resource,
+          score: 0,
+          reasons: [
+            selectedTarget.status == .disconnected ?
+              "recoverable_connector_status" :
+              "eligible_reasoning_fallback"
+          ]
+        )
+      }
+    let connectorDecision = selectedCandidate.map { primary in
+      AgentRoutingDecision(
+        requirements: decision.requirements,
+        primary: primary,
+        fallbacks: routedCandidates.filter { $0.resource.targetId != selectedTarget.id },
+        environment: decision.environment,
+        catalog: decision.catalog,
+        taskBudget: decision.taskBudget
+      )
+    }
+    return AgentConnectorRouteSelection(target: selectedTarget, decision: connectorDecision)
+  }
+
+  private static func hasReasoningCapability(_ target: AgentCallableTarget) -> Bool {
+    target.kind != .device &&
+      target.capabilities.contains { capability in
+        capability == .chat || capability == .reasoning || capability == .research
+      }
+  }
+
+  private static func defaultTarget(_ targets: [AgentCallableTarget]) -> AgentCallableTarget {
+    targets.first { $0.id == "codex" || $0.id.hasSuffix(":codex") } ??
+      targets.first { $0.id == "local-llm" } ??
+      targets.first { $0.kind == .model } ??
+      targets.first { $0.id == "hermes" || $0.id.hasSuffix(":hermes") } ??
+      targets.first { $0.capabilities.contains(.research) } ??
+      targets[0]
   }
 }
 
@@ -4199,12 +4707,23 @@ enum AgentTaskRequirementAnalyzer {
       normalized.contains("high quality") ||
       normalized.contains("difficult") ||
       tokens.contains("analyze")
+    let executionHorizon: AgentExecutionHorizon
+    if normalized.contains("long running") || normalized.contains("keep running") || normalized.contains("until complete") {
+      executionHorizon = .longRunning
+    } else if !tokens.isDisjoint(with: ["background", "later", "schedule", "monitor", "overnight"]) {
+      executionHorizon = .background
+    } else {
+      executionHorizon = .interactive
+    }
     return AgentTaskRequirements(
       capabilities: capabilities,
       mode: mode,
+      liveDataRequired: capabilities.contains(.liveData),
       localOnly: localOnly,
       complexReasoning: complexReasoning,
-      dataSensitivity: dataSensitivity
+      estimatedInputTokens: max(64, goal.count / 3),
+      dataSensitivity: dataSensitivity,
+      executionHorizon: executionHorizon
     )
   }
 }
