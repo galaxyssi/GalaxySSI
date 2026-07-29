@@ -125,6 +125,52 @@ class DesktopProactiveDispatcherTests(unittest.TestCase):
             for call in collaboration_calls
         ))
 
+    def test_coordinator_plans_specialists_then_returns_one_final_response(self):
+        action = ProactiveAction.parse(
+            {
+                "kind": "subagent_team",
+                "prompt": "Repair the failing release",
+                "team": [
+                    {"agent_id": "codex", "role": "coordinator"},
+                    {
+                        "agent_id": "claude",
+                        "role": "specialist",
+                        "instructions": "Inspect the implementation",
+                    },
+                    {
+                        "agent_id": "hermes",
+                        "role": "specialist",
+                        "instructions": "Inspect release evidence",
+                    },
+                ],
+            }
+        )
+        calls = []
+
+        def deliver(agent_id, prompt, **_kwargs):
+            calls.append((agent_id, prompt))
+            if agent_id == "codex" and "delegation plan only" in prompt:
+                return {"reply": "Claude reviews code; Hermes checks evidence."}
+            if agent_id == "codex":
+                return {"reply": "The release is repaired and verified."}
+            return {"reply": f"{agent_id} specialist evidence"}
+
+        with patch("agent_gateway.deliver_agent_sync", side_effect=deliver):
+            output = DesktopProactiveDispatcher()(task_for(action), run_for())
+
+        self.assertEqual("The release is repaired and verified.", output["reply"])
+        self.assertEqual("coordinator_specialist", output["team_mode"])
+        self.assertEqual("codex", output["coordinator_agent_id"])
+        self.assertEqual(2, output["specialist_count"])
+        self.assertEqual(2, output["worker_count"])
+        self.assertEqual("codex", calls[0][0])
+        self.assertEqual({"claude", "hermes"}, {
+            agent_id for agent_id, _prompt in calls[1:-1]
+        })
+        self.assertEqual("codex", calls[-1][0])
+        self.assertIn("Available specialists", calls[0][1])
+        self.assertIn("only final responder", calls[-1][1])
+
     def test_goal_checkpoint_marker_is_hidden_and_completes_goal(self):
         action = ProactiveAction.parse(
             {

@@ -305,6 +305,48 @@ class ProactiveTaskRuntimeTests(unittest.TestCase):
                 }
             )
 
+    def test_coordinator_specialist_team_requires_unique_bounded_roles(self):
+        action = ProactiveAction.parse(
+            {
+                "kind": "subagent_team",
+                "prompt": "Prepare the release",
+                "team": [
+                    {"agent_id": "codex", "role": "coordinator"},
+                    {
+                        "agent_id": "claude",
+                        "role": "specialist",
+                        "instructions": "Review the implementation",
+                    },
+                    {"agent_id": "hermes", "role": "verifier"},
+                ],
+            }
+        )
+
+        self.assertEqual("coordinator", action.team[0]["role"])
+        self.assertEqual("specialist", action.team[1]["role"])
+        with self.assertRaisesRegex(ProactiveTaskError, "at least one specialist"):
+            ProactiveAction.parse(
+                {
+                    "kind": "subagent_team",
+                    "prompt": "Prepare the release",
+                    "team": [
+                        {"agent_id": "codex", "role": "coordinator"},
+                        {"agent_id": "hermes", "role": "verifier"},
+                    ],
+                }
+            )
+        with self.assertRaisesRegex(ProactiveTaskError, "repeats Agent"):
+            ProactiveAction.parse(
+                {
+                    "kind": "subagent_team",
+                    "prompt": "Prepare the release",
+                    "team": [
+                        {"agent_id": "codex", "role": "coordinator"},
+                        {"agent_id": "codex", "role": "specialist"},
+                    ],
+                }
+            )
+
     def test_goal_checkpoint_requires_goal_id(self):
         with self.assertRaises(ProactiveTaskError):
             ProactiveTrigger.parse(
