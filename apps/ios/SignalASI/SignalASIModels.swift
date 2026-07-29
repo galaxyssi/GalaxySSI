@@ -1076,6 +1076,7 @@ enum AgentRisk: String, Codable, CaseIterable, Identifiable {
 enum AgentElementOrigin: String, Codable, CaseIterable, Identifiable {
   case accessibility = "ACCESSIBILITY"
   case visualOcr = "VISUAL_OCR"
+  case fused = "FUSED"
   case manual = "MANUAL"
   case unknown = "UNKNOWN"
 
@@ -1098,6 +1099,517 @@ enum AgentElementOrigin: String, Codable, CaseIterable, Identifiable {
   func encode(to encoder: Encoder) throws {
     var container = encoder.singleValueContainer()
     try container.encode(rawValue)
+  }
+}
+
+enum AgentVisualRole: String, Codable, CaseIterable, Identifiable {
+  case title = "TITLE"
+  case button = "BUTTON"
+  case input = "INPUT"
+  case navigation = "NAVIGATION"
+  case listItem = "LIST_ITEM"
+  case text = "TEXT"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentVisualRole {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .uppercased()
+      .replacingOccurrences(of: "-", with: "_")
+      .replacingOccurrences(of: " ", with: "_") ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unknown
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentVisualElement: Codable, Equatable {
+  var text: String
+  var bounds: String
+  var confidence: Double
+  var role: AgentVisualRole
+  var actionable: Bool
+  var inputCandidate: Bool
+
+  init(
+    text: String,
+    bounds: String,
+    confidence: Double = 1,
+    role: AgentVisualRole = .unknown,
+    actionable: Bool = false,
+    inputCandidate: Bool = false
+  ) {
+    self.text = String(text.prefix(Self.maximumTextLength))
+    self.bounds = bounds
+    self.confidence = min(max(confidence, 0), 1)
+    self.role = role
+    self.actionable = actionable
+    self.inputCandidate = inputCandidate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case text
+    case bounds
+    case confidence
+    case role
+    case actionable
+    case inputCandidate = "input_candidate"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      text: try container.decodeIfPresent(String.self, forKey: .text) ?? "",
+      bounds: try container.decodeIfPresent(String.self, forKey: .bounds) ?? "",
+      confidence: try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 1,
+      role: try container.decodeIfPresent(AgentVisualRole.self, forKey: .role) ?? .unknown,
+      actionable: try container.decodeIfPresent(Bool.self, forKey: .actionable) ?? false,
+      inputCandidate: try container.decodeIfPresent(Bool.self, forKey: .inputCandidate) ?? false
+    )
+  }
+
+  private static let maximumTextLength = 500
+}
+
+struct AgentVisualScene: Codable, Equatable {
+  var width: Int
+  var height: Int
+  var modelProfile: String
+  var elements: [AgentVisualElement]
+  var actionCandidateCount: Int
+  var inputCandidateCount: Int
+  var timestampMillis: Int64
+
+  init(
+    width: Int = 0,
+    height: Int = 0,
+    modelProfile: String = "none",
+    elements: [AgentVisualElement] = [],
+    actionCandidateCount: Int? = nil,
+    inputCandidateCount: Int? = nil,
+    timestampMillis: Int64 = 0
+  ) {
+    self.width = max(width, 0)
+    self.height = max(height, 0)
+    self.modelProfile = modelProfile
+    self.elements = elements
+    self.actionCandidateCount = max(actionCandidateCount ?? elements.filter(\.actionable).count, 0)
+    self.inputCandidateCount = max(inputCandidateCount ?? elements.filter(\.inputCandidate).count, 0)
+    self.timestampMillis = max(timestampMillis, 0)
+  }
+
+  var available: Bool {
+    width > 0 && height > 0 && !elements.isEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case width
+    case height
+    case modelProfile = "model_profile"
+    case elements
+    case actionCandidateCount = "action_candidate_count"
+    case inputCandidateCount = "input_candidate_count"
+    case timestampMillis = "timestamp_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      width: try container.decodeIfPresent(Int.self, forKey: .width) ?? 0,
+      height: try container.decodeIfPresent(Int.self, forKey: .height) ?? 0,
+      modelProfile: try container.decodeIfPresent(String.self, forKey: .modelProfile) ?? "none",
+      elements: try container.decodeIfPresent([AgentVisualElement].self, forKey: .elements) ?? [],
+      actionCandidateCount: try container.decodeIfPresent(Int.self, forKey: .actionCandidateCount),
+      inputCandidateCount: try container.decodeIfPresent(Int.self, forKey: .inputCandidateCount),
+      timestampMillis: try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ?? 0
+    )
+  }
+}
+
+struct AgentScreenElement: Codable, Equatable, Identifiable {
+  var label: String
+  var viewId: String
+  var className: String
+  var bounds: String
+  var origin: AgentElementOrigin
+  var confidence: Double
+  var visualRole: AgentVisualRole
+  var actionable: Bool
+
+  var id: String {
+    [viewId, label, bounds].joined(separator: "|")
+  }
+
+  init(
+    label: String,
+    viewId: String,
+    className: String,
+    bounds: String,
+    origin: AgentElementOrigin = .accessibility,
+    confidence: Double = 1,
+    visualRole: AgentVisualRole = .unknown,
+    actionable: Bool = true
+  ) {
+    self.label = String(label.prefix(Self.maximumLabelLength))
+    self.viewId = String(viewId.prefix(Self.maximumIdentifierLength))
+    self.className = String(className.prefix(Self.maximumIdentifierLength))
+    self.bounds = bounds
+    self.origin = origin
+    self.confidence = min(max(confidence, 0), 1)
+    self.visualRole = visualRole
+    self.actionable = actionable
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case label
+    case viewId = "view_id"
+    case className = "class_name"
+    case bounds
+    case origin
+    case confidence
+    case visualRole = "visual_role"
+    case actionable
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      label: try container.decodeIfPresent(String.self, forKey: .label) ?? "",
+      viewId: try container.decodeIfPresent(String.self, forKey: .viewId) ?? "",
+      className: try container.decodeIfPresent(String.self, forKey: .className) ?? "",
+      bounds: try container.decodeIfPresent(String.self, forKey: .bounds) ?? "",
+      origin: try container.decodeIfPresent(AgentElementOrigin.self, forKey: .origin) ?? .accessibility,
+      confidence: try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 1,
+      visualRole: try container.decodeIfPresent(AgentVisualRole.self, forKey: .visualRole) ?? .unknown,
+      actionable: try container.decodeIfPresent(Bool.self, forKey: .actionable) ?? true
+    )
+  }
+
+  private static let maximumLabelLength = 500
+  private static let maximumIdentifierLength = 300
+}
+
+enum AgentVisualGrounding {
+  static func analyze(
+    rawElements: [AgentVisualElement],
+    width: Int,
+    height: Int,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> AgentVisualScene {
+    guard width > 0 && height > 0 else {
+      return AgentVisualScene()
+    }
+    var seen: Set<String> = []
+    var elements: [AgentVisualElement] = []
+    for raw in rawElements {
+      let text = normalizedText(raw.text)
+      guard !text.isEmpty,
+            let rect = AgentVisualBounds.parse(raw.bounds),
+            rect.width > 1,
+            rect.height > 1 else {
+        continue
+      }
+      let dedupeKey = "\(text.lowercased()):\(raw.bounds)"
+      guard seen.insert(dedupeKey).inserted else {
+        continue
+      }
+      let role = inferRole(text: text, rect: rect, width: width, height: height)
+      elements.append(
+        AgentVisualElement(
+          text: text,
+          bounds: raw.bounds,
+          confidence: raw.confidence,
+          role: role,
+          actionable: actionableRoles.contains(role),
+          inputCandidate: role == .input
+        )
+      )
+      if elements.count >= maxVisualElements {
+        break
+      }
+    }
+    return AgentVisualScene(
+      width: width,
+      height: height,
+      modelProfile: "mlkit-ocr-layout-v1",
+      elements: elements,
+      timestampMillis: timestampMillis
+    )
+  }
+
+  static func fuseClickableElements(
+    accessibilityElements: [AgentScreenElement],
+    scene: AgentVisualScene
+  ) -> [AgentScreenElement] {
+    fuse(
+      accessibilityElements: accessibilityElements,
+      visualElements: scene.elements.filter(\.actionable),
+      limit: maxFusedActions,
+      requireInput: false
+    )
+  }
+
+  static func fuseInputFields(
+    accessibilityElements: [AgentScreenElement],
+    scene: AgentVisualScene
+  ) -> [AgentScreenElement] {
+    fuse(
+      accessibilityElements: accessibilityElements,
+      visualElements: scene.elements.filter(\.inputCandidate),
+      limit: maxFusedFields,
+      requireInput: true
+    )
+  }
+
+  private static func fuse(
+    accessibilityElements: [AgentScreenElement],
+    visualElements: [AgentVisualElement],
+    limit: Int,
+    requireInput: Bool
+  ) -> [AgentScreenElement] {
+    var visualPool = visualElements
+    var fused = accessibilityElements.map { accessibility -> AgentScreenElement in
+      guard let matchIndex = bestMatchIndex(for: accessibility, in: visualPool),
+            matchScore(accessibility: accessibility, visual: visualPool[matchIndex]) >= minimumFusionScore else {
+        return accessibility
+      }
+      let match = visualPool.remove(at: matchIndex)
+      return AgentScreenElement(
+        label: accessibility.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? match.text : accessibility.label,
+        viewId: accessibility.viewId,
+        className: accessibility.className,
+        bounds: accessibility.bounds,
+        origin: .fused,
+        confidence: max(accessibility.confidence, match.confidence),
+        visualRole: match.role,
+        actionable: accessibility.actionable || match.actionable
+      )
+    }
+    var visualIndex = 0
+    for visual in visualPool where fused.count < limit {
+      guard visual.confidence >= minVisualActionConfidence,
+            !requireInput || visual.inputCandidate,
+            !fused.contains(where: { overlapRatio($0.bounds, visual.bounds) >= duplicateOverlapThreshold }) else {
+        continue
+      }
+      let roleName = visual.role.rawValue.lowercased()
+      let classRole = roleName.prefix(1).uppercased() + String(roleName.dropFirst())
+      fused.append(
+        AgentScreenElement(
+          label: visual.text,
+          viewId: "visual:\(roleName):\(visualIndex)",
+          className: "AgentVisual\(classRole)",
+          bounds: visual.bounds,
+          origin: .visualOcr,
+          confidence: visual.confidence,
+          visualRole: visual.role,
+          actionable: visual.actionable
+        )
+      )
+      visualIndex += 1
+    }
+    return Array(fused.prefix(limit))
+  }
+
+  private static func bestMatchIndex(for accessibility: AgentScreenElement, in visualPool: [AgentVisualElement]) -> Int? {
+    var bestIndex: Int?
+    var bestScore = 0.0
+    for (index, visual) in visualPool.enumerated() {
+      let score = matchScore(accessibility: accessibility, visual: visual)
+      if score > bestScore {
+        bestScore = score
+        bestIndex = index
+      }
+    }
+    return bestIndex
+  }
+
+  private static func inferRole(text: String, rect: AgentVisualBounds, width: Int, height: Int) -> AgentVisualRole {
+    let normalized = text.lowercased()
+    let centerY = Double(rect.centerY) / Double(height)
+    let widthRatio = Double(rect.width) / Double(width)
+    let shortLabel = text.count <= 36
+    if inputTerms.contains(where: normalized.contains) {
+      return .input
+    }
+    if actionTerms.contains(normalized) ||
+      (shortLabel && actionTerms.contains(where: { normalized.hasPrefix($0) })) {
+      return .button
+    }
+    if centerY >= 0.82 && shortLabel {
+      return .navigation
+    }
+    if centerY <= 0.18 && widthRatio >= 0.18 {
+      return .title
+    }
+    if shortLabel && widthRatio >= 0.22 && (0.18...0.82).contains(centerY) {
+      return .listItem
+    }
+    return .text
+  }
+
+  private static func matchScore(accessibility: AgentScreenElement, visual: AgentVisualElement) -> Double {
+    let overlap = overlapRatio(accessibility.bounds, visual.bounds)
+    let accessibilityLabel = accessibility.label.normalizedElementLabel()
+    let visualLabel = visual.text.normalizedElementLabel()
+    let labelScore: Double
+    if accessibilityLabel.isEmpty || visualLabel.isEmpty {
+      labelScore = 0
+    } else if accessibilityLabel == visualLabel {
+      labelScore = 1
+    } else if accessibilityLabel.contains(visualLabel) || visualLabel.contains(accessibilityLabel) {
+      labelScore = 0.75
+    } else {
+      labelScore = 0
+    }
+    return max(overlap, labelScore)
+  }
+
+  private static func overlapRatio(_ firstBounds: String, _ secondBounds: String) -> Double {
+    guard let first = AgentVisualBounds.parse(firstBounds),
+          let second = AgentVisualBounds.parse(secondBounds),
+          let intersection = first.intersection(second) else {
+      return 0
+    }
+    let smallerArea = min(first.area, second.area)
+    guard smallerArea > 0 else {
+      return 0
+    }
+    return Double(intersection.area) / Double(smallerArea)
+  }
+
+  private static func normalizedText(_ value: String) -> String {
+    String(
+      value
+        .components(separatedBy: .whitespacesAndNewlines)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+        .prefix(500)
+    )
+  }
+
+  private static let maxVisualElements = 160
+  private static let maxFusedActions = 80
+  private static let maxFusedFields = 30
+  private static let minVisualActionConfidence = 0.55
+  private static let minimumFusionScore = 0.45
+  private static let duplicateOverlapThreshold = 0.65
+  private static let actionableRoles: Set<AgentVisualRole> = [
+    .button,
+    .navigation,
+    .listItem
+  ]
+  private static let actionTerms = [
+    "ok", "yes", "no", "done", "next", "continue", "confirm", "cancel", "save", "send", "search",
+    "open", "close", "add", "delete", "edit", "allow", "deny", "login", "sign in", "submit", "share",
+    "\u{786e}\u{5b9a}", "\u{53d6}\u{6d88}", "\u{4fdd}\u{5b58}", "\u{53d1}\u{9001}",
+    "\u{641c}\u{7d22}", "\u{4e0b}\u{4e00}\u{6b65}", "\u{7ee7}\u{7eed}",
+    "\u{786e}\u{8ba4}", "\u{5141}\u{8bb8}", "\u{62d2}\u{7edd}", "\u{767b}\u{5f55}",
+    "\u{63d0}\u{4ea4}", "\u{6dfb}\u{52a0}", "\u{5220}\u{9664}", "\u{7f16}\u{8f91}",
+    "\u{5173}\u{95ed}", "\u{6253}\u{5f00}", "\u{5206}\u{4eab}"
+  ]
+  private static let inputTerms = [
+    "search", "type", "enter", "message", "email", "phone", "name", "password", "input",
+    "\u{641c}\u{7d22}", "\u{8f93}\u{5165}", "\u{6d88}\u{606f}", "\u{90ae}\u{7bb1}",
+    "\u{624b}\u{673a}\u{53f7}", "\u{59d3}\u{540d}", "\u{5bc6}\u{7801}"
+  ]
+}
+
+enum AgentScreenElementMatcher {
+  static func resolve(query: String, elements: [AgentScreenElement]) -> AgentScreenElement? {
+    let clean = query.normalizedElementLabel()
+    guard !clean.isEmpty else {
+      return nil
+    }
+    return elements
+      .map { ($0, score(query: clean, element: $0)) }
+      .filter { $0.1 > 0 }
+      .sorted { first, second in
+        if first.1 != second.1 {
+          return first.1 > second.1
+        }
+        if first.0.confidence != second.0.confidence {
+          return first.0.confidence > second.0.confidence
+        }
+        return first.0.origin != .visualOcr && second.0.origin == .visualOcr
+      }
+      .first?
+      .0
+  }
+
+  private static func score(query: String, element: AgentScreenElement) -> Int {
+    let label = element.label.normalizedElementLabel()
+    let viewId = element.viewId.normalizedElementLabel()
+    let className = element.className.normalizedElementLabel()
+    let role = element.visualRole.rawValue.normalizedElementLabel()
+    if viewId == query { return 140 }
+    if label == query { return 120 }
+    if label.hasPrefix(query) { return 100 }
+    if label.contains(query) { return 90 }
+    if query.contains(label) && label.count >= 2 { return 75 }
+    if viewId.contains(query) { return 65 }
+    if className.contains(query) { return 35 }
+    if role == query { return 25 }
+    return 0
+  }
+}
+
+private struct AgentVisualBounds: Equatable {
+  var left: Int
+  var top: Int
+  var right: Int
+  var bottom: Int
+
+  var width: Int { right - left }
+  var height: Int { bottom - top }
+  var centerY: Int { (top + bottom) / 2 }
+  var area: Int { width * height }
+
+  static func parse(_ value: String) -> AgentVisualBounds? {
+    let parts = value.split(separator: ",").map {
+      Int(String($0).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    guard parts.count == 4,
+          let left = parts[0],
+          let top = parts[1],
+          let right = parts[2],
+          let bottom = parts[3],
+          right > left,
+          bottom > top else {
+      return nil
+    }
+    return AgentVisualBounds(left: left, top: top, right: right, bottom: bottom)
+  }
+
+  func intersection(_ other: AgentVisualBounds) -> AgentVisualBounds? {
+    let nextLeft = max(left, other.left)
+    let nextTop = max(top, other.top)
+    let nextRight = min(right, other.right)
+    let nextBottom = min(bottom, other.bottom)
+    guard nextRight > nextLeft && nextBottom > nextTop else {
+      return nil
+    }
+    return AgentVisualBounds(left: nextLeft, top: nextTop, right: nextRight, bottom: nextBottom)
+  }
+}
+
+private extension String {
+  func normalizedElementLabel() -> String {
+    unicodeScalars
+      .filter { CharacterSet.alphanumerics.contains($0) }
+      .map(String.init)
+      .joined()
+      .lowercased()
   }
 }
 
