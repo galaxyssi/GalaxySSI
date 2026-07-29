@@ -144,16 +144,7 @@ final class SignalASIStore: ObservableObject {
       profile = generatedProfile
       contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
       friendRequests = []
-      messagesByContact = [
-        "hermes": [
-          ChatMessage(
-            contactId: "hermes",
-            content: "Pair SignalASI Desktop to start a trusted Link conversation.",
-            isMine: false,
-            isSystem: true
-          )
-        ]
-      ]
+      messagesByContact = SignalASIStore.defaultMessages()
       serverLinks = []
       voiceSettings = .default
       save()
@@ -188,6 +179,93 @@ final class SignalASIStore: ObservableObject {
 
   func updateProfileName(_ name: String) {
     profile.name = name.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("Me")
+    save()
+  }
+
+  @discardableResult
+  func renameContact(id: String, displayName: String) -> Bool {
+    let cleaned = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleaned.isEmpty,
+          let index = contacts.firstIndex(where: { $0.id == id || $0.signalASIId == id }) else {
+      return false
+    }
+    contacts[index].name = cleaned
+    contacts[index].displayName = cleaned
+    contacts[index].updatedAt = Date()
+    save()
+    return true
+  }
+
+  @discardableResult
+  func deleteContact(id: String, deleteMessages: Bool = false, now: Date = Date()) -> Bool {
+    guard id != "system" else { return false }
+    var deletedIds = Set([id])
+    var changed = false
+
+    for index in contacts.indices {
+      let contact = contacts[index]
+      guard contact.id == id || contact.signalASIId == id else { continue }
+      deletedIds.insert(contact.id)
+      deletedIds.insert(contact.signalASIId)
+      for model in contact.cloudModels {
+        secrets.delete(account: model.keychainAccount)
+      }
+      contacts[index].deleted = true
+      contacts[index].deletedAt = now
+      contacts[index].trustState = .deleted
+      contacts[index].updatedAt = now
+      contacts[index].setupStatus = "deleted"
+      contacts[index].setupDetail = contact.id == "hermes"
+        ? "Scan and pair again before communicating."
+        : "Add and verify this contact again before communicating."
+      if contact.id == "hermes" {
+        contacts[index].desktopId = ""
+        contacts[index].desktopName = ""
+        contacts[index].identityFingerprint = ""
+      }
+      changed = true
+    }
+
+    if deletedIds.contains("hermes") {
+      serverLinks.removeAll()
+    }
+
+    for index in friendRequests.indices {
+      let request = friendRequests[index]
+      guard deletedIds.contains(request.id) || deletedIds.contains(request.signalASIId) else { continue }
+      friendRequests[index].status = .deleted
+      friendRequests[index].deletedAt = now
+      friendRequests[index].readdRequired = true
+      changed = true
+    }
+
+    if deleteMessages {
+      for contactId in deletedIds {
+        messagesByContact.removeValue(forKey: contactId)
+      }
+    }
+
+    if changed {
+      save()
+    }
+    return changed
+  }
+
+  func deleteMessages(for contactId: String) {
+    messagesByContact.removeValue(forKey: contactId)
+    save()
+  }
+
+  func destroyAllPrivateData() {
+    let accounts = Set(contacts.flatMap { contact in
+      contact.cloudModels.map(\.keychainAccount)
+    })
+    for account in accounts {
+      secrets.delete(account: account)
+    }
+    secrets.delete(account: identityPrivateKeyAccount)
+    defaults.removeObject(forKey: storageKey)
+    resetToFreshState()
     save()
   }
 
@@ -323,6 +401,11 @@ final class SignalASIStore: ObservableObject {
     if contact.selectedCloudModelId.isEmpty {
       contact.selectedCloudModelId = model.modelId
     }
+    contact.deleted = false
+    contact.deletedAt = nil
+    contact.trustState = .verified
+    contact.setupStatus = "ready"
+    contact.setupDetail = "Mobile direct cloud model API"
     contact.updatedAt = now
     upsert(contact)
     save()
@@ -373,6 +456,8 @@ final class SignalASIStore: ObservableObject {
     var request = friendRequests[index]
     request.status = .approved
     request.approvedAt = now
+    request.deletedAt = nil
+    request.readdRequired = false
     friendRequests[index] = request
     let contactId = request.type == "hermes" ? "hermes" : request.signalASIId
     var next = contact(id: contactId) ?? SignalASIContact(
@@ -410,6 +495,7 @@ final class SignalASIStore: ObservableObject {
     next.setupStatus = "ready"
     next.setupDetail = request.mqttInboxTopic.isEmpty ? "Verified from contact QR" : "SignalASI contact QR verified"
     next.deleted = false
+    next.deletedAt = nil
     next.updatedAt = now
     upsert(next)
     save()
@@ -514,6 +600,8 @@ final class SignalASIStore: ObservableObject {
 
     var hermes = contact(id: "hermes") ?? SignalASIContact.hermes()
     hermes.trustState = link.paired ? .verified : .unverified
+    hermes.deleted = false
+    hermes.deletedAt = nil
     hermes.identityFingerprint = link.desktopFingerprint
     hermes.desktopId = link.desktopId
     hermes.desktopName = link.desktopName
@@ -552,6 +640,15 @@ final class SignalASIStore: ObservableObject {
       upsert(hermes)
     }
     save()
+  }
+
+  private func resetToFreshState() {
+    profile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
+    contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
+    friendRequests = []
+    messagesByContact = SignalASIStore.defaultMessages()
+    serverLinks = []
+    voiceSettings = .default
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -621,6 +718,19 @@ final class SignalASIStore: ObservableObject {
       identityFingerprint: digest.hexString(),
       identityPublicKey: publicData.base64URLEncodedString()
     )
+  }
+
+  private static func defaultMessages() -> [String: [ChatMessage]] {
+    [
+      "hermes": [
+        ChatMessage(
+          contactId: "hermes",
+          content: "Pair SignalASI Desktop to start a trusted Link conversation.",
+          isMine: false,
+          isSystem: true
+        )
+      ]
+    ]
   }
 
   private static func slug(_ value: String) -> String {

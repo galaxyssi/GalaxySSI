@@ -44,6 +44,7 @@ const attachments = read("apps/ios/SignalASI/SignalASIAttachments.swift");
 const linkProtocol = read("apps/ios/SignalASI/SignalASILinkProtocol.swift");
 const linkReliability = read("apps/ios/SignalASI/SignalASILinkReliability.swift");
 const backup = read("apps/ios/SignalASI/SignalASIBackup.swift");
+const store = read("apps/ios/SignalASI/SignalASIStore.swift");
 const services = read("apps/ios/SignalASI/SignalASIServices.swift");
 const views = read("apps/ios/SignalASI/SignalASIViews.swift");
 const tests = [
@@ -89,6 +90,9 @@ const requiredSourceSnippets = [
   [backup, "pbkdf2-hmac-sha256"],
   [backup, "aes-256-gcm"],
   [backup, "SignalASIBackupDocument"],
+  [store, "func renameContact"],
+  [store, "func deleteContact"],
+  [store, "func destroyAllPrivateData"],
   [services, "broker.emqx.io"],
   [services, "scheduleOutboxFlush"],
   [services, "UNUserNotificationCenter"],
@@ -96,6 +100,8 @@ const requiredSourceSnippets = [
   [views, "PhotoLibraryPickerView"],
   [views, "MyContactQRCodeView"],
   [views, "FriendRequestDetailView"],
+  [views, "ContactDetailView"],
+  [views, "ResetPrivateDataView"],
   [views, "fileImporter"],
   [views, "AVCaptureMetadataOutput"],
   [tests, "testAttachmentDescriptorsMatchAndroidWireNames"],
@@ -108,6 +114,8 @@ const requiredSourceSnippets = [
   [tests, "testPBKDF2SHA256MatchesKnownVector"],
   [tests, "testBackupRestoresCloudAPISecretsAndLocalState"],
   [tests, "testCloudModelContactsAreGroupedByProvider"],
+  [tests, "testDeleteContactSoftDeletesAndOptionallyRemovesMessages"],
+  [tests, "testDestroyAllPrivateDataRegeneratesIdentityAndClearsSecrets"],
 ];
 
 for (const snippet of requiredProjectSnippets) {
