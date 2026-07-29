@@ -734,6 +734,7 @@ class DesktopSkillEnabledReq(BaseModel):
 
 class ToolMarketplaceInstallReq(BaseModel):
     configuration: dict[str, Any] = Field(default_factory=dict)
+    approved_permissions: list[str] = Field(default_factory=list)
 
 
 class DesktopMcpReq(BaseModel):
@@ -1954,12 +1955,16 @@ def api_install_tool_marketplace_item(
     from tool_marketplace import ToolMarketplaceError, tool_marketplace
 
     try:
-        return tool_marketplace().install(item_id, req.configuration)
+        return tool_marketplace().install(
+            item_id,
+            req.configuration,
+            req.approved_permissions,
+        )
     except ToolMarketplaceError as exc:
         status = 404 if exc.code == "item_not_found" else 409
         raise HTTPException(
             status_code=status,
-            detail=api_error(exc.code, str(exc)),
+            detail=api_error(exc.code, str(exc), details=exc.details),
         ) from exc
     except ValueError as exc:
         raise HTTPException(
@@ -1979,7 +1984,37 @@ def api_uninstall_tool_marketplace_item(item_id: str, request: Request):
         status = 404 if exc.code == "item_not_found" else 409
         raise HTTPException(
             status_code=status,
-            detail=api_error(exc.code, str(exc)),
+            detail=api_error(exc.code, str(exc), details=exc.details),
+        ) from exc
+
+
+@app.post("/api/tool-marketplace/{item_id}/revoke")
+def api_revoke_tool_marketplace_item(item_id: str, request: Request):
+    require_desktop_api_token(request)
+    from tool_marketplace import ToolMarketplaceError, tool_marketplace
+
+    try:
+        return tool_marketplace().revoke(item_id)
+    except ToolMarketplaceError as exc:
+        status = 404 if exc.code == "item_not_found" else 409
+        raise HTTPException(
+            status_code=status,
+            detail=api_error(exc.code, str(exc), details=exc.details),
+        ) from exc
+
+
+@app.post("/api/tool-marketplace/{item_id}/rollback")
+def api_rollback_tool_marketplace_item(item_id: str, request: Request):
+    require_desktop_api_token(request)
+    from tool_marketplace import ToolMarketplaceError, tool_marketplace
+
+    try:
+        return tool_marketplace().rollback(item_id)
+    except ToolMarketplaceError as exc:
+        status = 404 if exc.code == "item_not_found" else 409
+        raise HTTPException(
+            status_code=status,
+            detail=api_error(exc.code, str(exc), details=exc.details),
         ) from exc
 
 

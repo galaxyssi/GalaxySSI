@@ -19,6 +19,22 @@ enum class AgentMarketplaceInstallState(val wireValue: String) {
     UNAVAILABLE("unavailable")
 }
 
+data class AgentMarketplacePermission(
+    val id: String,
+    val title: String = id,
+    val description: String = "",
+    val scope: String = "item",
+    val risk: String = "medium"
+)
+
+data class AgentMarketplacePermissionDiff(
+    val added: List<AgentMarketplacePermission> = emptyList(),
+    val removed: List<AgentMarketplacePermission> = emptyList(),
+    val unchanged: List<AgentMarketplacePermission> = emptyList()
+) {
+    val requiresApproval: Boolean get() = added.isNotEmpty()
+}
+
 data class AgentMarketplaceItem(
     val id: String,
     val kind: AgentCapabilityCatalogKind,
@@ -32,7 +48,16 @@ data class AgentMarketplaceItem(
     val trusted: Boolean = true,
     val tags: Set<String> = emptySet(),
     val dependencies: Set<String> = emptySet(),
-    val requiresLocalPackage: Boolean = false
+    val requiresLocalPackage: Boolean = false,
+    val capabilities: Set<String> = emptySet(),
+    val permissions: List<AgentMarketplacePermission> = emptyList(),
+    val permissionDiff: AgentMarketplacePermissionDiff = AgentMarketplacePermissionDiff(),
+    val installedVersion: String = "",
+    val availableVersion: String = version,
+    val updateAvailable: Boolean = false,
+    val rollbackVersions: List<String> = emptyList(),
+    val revocable: Boolean = false,
+    val revoked: Boolean = false
 ) {
     init {
         require(id.isNotBlank())
@@ -267,6 +292,7 @@ data class AgentMcpCatalogEntry(
     val transport: AgentMcpTransportKind = AgentMcpTransportKind.STREAMABLE_HTTP,
     val defaultEndpoint: String = "",
     val authProfiles: List<AgentMcpAuthProfile> = listOf(AgentMcpAuthProfile(AgentMcpAuthMethod.NONE)),
+    val version: String = "1.0.0",
     val toolHints: List<String> = emptyList(),
     val tags: Set<String> = emptySet(),
     val featured: Boolean = true,
@@ -1019,6 +1045,26 @@ object AgentDefaultCapabilityCatalog {
         nowMillis: Long = System.currentTimeMillis()
     ): List<AgentMarketplaceItem> {
         val native = nativeTools.map { tool ->
+            val permissions = buildList {
+                tool.requiredPermissions.forEach { requirement ->
+                    add(AgentMarketplacePermission(
+                        requirement.id,
+                        requirement.title,
+                        requirement.description,
+                        scope = "android_permission",
+                        risk = tool.risk.wireValue
+                    ))
+                }
+                tool.requiredConsents.forEach { requirement ->
+                    add(AgentMarketplacePermission(
+                        requirement.id,
+                        requirement.title,
+                        requirement.description,
+                        scope = "user_consent",
+                        risk = tool.risk.wireValue
+                    ))
+                }
+            }
             AgentMarketplaceItem(
                 id = tool.id,
                 kind = AgentCapabilityCatalogKind.NATIVE_TOOL,
@@ -1036,6 +1082,10 @@ object AgentDefaultCapabilityCatalog {
                 enabled = tool.risk != AgentNativeToolRisk.BLOCKED &&
                     tool.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE,
                 tags = tool.capabilities,
+                capabilities = tool.capabilities,
+                permissions = permissions,
+                permissionDiff = AgentMarketplacePermissionDiff(unchanged = permissions),
+                installedVersion = tool.version,
                 dependencies = buildSet {
                     addAll(tool.requiredPermissions.map { it.id })
                     addAll(tool.requiredConsents.map { it.id })
@@ -1044,12 +1094,14 @@ object AgentDefaultCapabilityCatalog {
         }
         val mcp = mcpEntries.map { entry ->
             val connection = installedMcp.firstOrNull { it.catalogId == entry.id }
+            val permissions = mcpMarketplacePermissions(entry)
+            val installedVersion = connection?.packageVersion?.ifBlank { entry.version }.orEmpty()
             AgentMarketplaceItem(
                 id = entry.id,
                 kind = AgentCapabilityCatalogKind.MCP,
                 name = entry.name,
                 summary = entry.summary,
-                version = connection?.packageVersion?.ifBlank { "1.0.0" } ?: "1.0.0",
+                version = entry.version,
                 installState = when {
                     connection == null -> AgentMarketplaceInstallState.AVAILABLE
                     connection.isCallable(nowMillis) -> AgentMarketplaceInstallState.INSTALLED
@@ -1059,20 +1111,36 @@ object AgentDefaultCapabilityCatalog {
                 featured = entry.featured,
                 tags = entry.tags,
                 dependencies = entry.toolHints.toSet(),
-                requiresLocalPackage = entry.requiresPackage
+                requiresLocalPackage = entry.requiresPackage,
+                capabilities = entry.toolHints.toSet(),
+                permissions = permissions,
+                permissionDiff = if (connection == null) {
+                    AgentMarketplacePermissionDiff(added = permissions)
+                } else {
+                    AgentMarketplacePermissionDiff(unchanged = permissions)
+                },
+                installedVersion = installedVersion,
+                updateAvailable = installedVersion.isNotBlank() &&
+                    compareMarketplaceVersions(entry.version, installedVersion) > 0,
+                revocable = connection != null,
+                revoked = connection?.enabled == false
             )
         }
-        val latestInstallations = installedAutomations
-            .groupBy { it.id }
-            .mapValues { (_, versions) -> versions.maxByOrNull { it.version } }
+        val groupedInstallations = installedAutomations.groupBy { it.id }
         val automations = skillEntries.map { entry ->
-            val installation = latestInstallations[entry.id]
+            val versions = groupedInstallations[entry.id].orEmpty()
+                .sortedWith { left, right -> compareMarketplaceVersions(right.version, left.version) }
+            val installation = versions.firstOrNull { it.enabled } ?: versions.firstOrNull()
             val dependency = AgentCapabilityDependencyResolver.resolve(
                 entry,
                 installedMcp,
                 nativeTools.mapTo(mutableSetOf()) { it.id },
                 nowMillis
             )
+            val availablePermissions = skillMarketplacePermissions(entry.manifest)
+            val installedPermissions = installation?.manifest?.let(::skillMarketplacePermissions).orEmpty()
+            val availableById = availablePermissions.associateBy { it.id }
+            val installedById = installedPermissions.associateBy { it.id }
             AgentMarketplaceItem(
                 id = entry.id,
                 kind = AgentCapabilityCatalogKind.AUTOMATION,
@@ -1087,12 +1155,68 @@ object AgentDefaultCapabilityCatalog {
                 enabled = installation?.enabled ?: false,
                 featured = entry.featured,
                 tags = setOf("automation", "workflow"),
-                dependencies = entry.requiredNativeTools + entry.requiredMcpCatalogIds
+                dependencies = entry.requiredNativeTools + entry.requiredMcpCatalogIds,
+                capabilities = entry.requiredNativeTools + entry.requiredMcpCatalogIds,
+                permissions = availablePermissions,
+                permissionDiff = AgentMarketplacePermissionDiff(
+                    added = (availableById.keys - installedById.keys).mapNotNull(availableById::get),
+                    removed = (installedById.keys - availableById.keys).mapNotNull(installedById::get),
+                    unchanged = (availableById.keys intersect installedById.keys).mapNotNull(availableById::get)
+                ),
+                installedVersion = installation?.version.orEmpty(),
+                updateAvailable = installation != null &&
+                    compareMarketplaceVersions(entry.manifest.version, installation.version) > 0,
+                rollbackVersions = versions
+                    .filter { installation != null && compareMarketplaceVersions(it.version, installation.version) < 0 }
+                    .map { it.version },
+                revocable = installation != null,
+                revoked = installation?.enabled == false
             )
         }
         return (native + mcp + automations).sortedWith(
             compareBy<AgentMarketplaceItem>({ it.kind.ordinal }, { !it.featured }, { it.name.lowercase(Locale.ROOT) })
         )
+    }
+
+    private fun mcpMarketplacePermissions(entry: AgentMcpCatalogEntry): List<AgentMarketplacePermission> =
+        buildList {
+            add(AgentMarketplacePermission(
+                "network.${entry.id}",
+                "Connect to ${entry.name}",
+                "Exchange requests with the configured MCP server.",
+                scope = "network",
+                risk = "low"
+            ))
+            entry.toolHints.forEach { capability ->
+                add(AgentMarketplacePermission(
+                    capability,
+                    capability,
+                    "Allow the MCP server to expose this capability.",
+                    scope = "mcp_tool",
+                    risk = if (capability.contains("write") || capability.contains("control")) "high" else "medium"
+                ))
+            }
+        }
+
+    private fun skillMarketplacePermissions(manifest: AgentSkillManifest): List<AgentMarketplacePermission> =
+        (manifest.permissions + manifest.nativeTools).distinct().map { permissionId ->
+            AgentMarketplacePermission(
+                permissionId,
+                permissionId,
+                "Required by this automation workflow.",
+                scope = if (permissionId in manifest.nativeTools) "native_tool" else "skill",
+                risk = "medium"
+            )
+        }
+
+    private fun compareMarketplaceVersions(left: String, right: String): Int {
+        val leftParts = left.split('.').map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
+        val rightParts = right.split('.').map { it.filter(Char::isDigit).toIntOrNull() ?: 0 }
+        return (0 until maxOf(leftParts.size, rightParts.size, 3))
+            .firstNotNullOfOrNull { index ->
+                (leftParts.getOrElse(index) { 0 } - rightParts.getOrElse(index) { 0 })
+                    .takeIf { it != 0 }
+            } ?: 0
     }
 
     private fun skill(

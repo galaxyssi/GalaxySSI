@@ -1646,24 +1646,50 @@ function renderMarketplace() {
   });
   $("#marketplaceList").innerHTML = items.length ? items.map((item) => {
     const dependencies = Array.isArray(item.dependencies) ? item.dependencies : [];
+    const capabilities = Array.isArray(item.capabilities) ? item.capabilities : [];
+    const permissionDiff = item.permission_diff || {};
+    const addedPermissions = Array.isArray(permissionDiff.added) ? permissionDiff.added : [];
+    const removedPermissions = Array.isArray(permissionDiff.removed) ? permissionDiff.removed : [];
     const endpointRequired = item.kind === "mcp" && dependencies.includes("endpoint");
-    const canInstall = item.install_state === "available" && !endpointRequired;
+    const canInstall = (item.install_state === "available" || item.update_available || item.revoked) && !endpointRequired;
     const needsSetup = item.install_state === "needs_setup" || endpointRequired;
+    const canRemove = ["installed", "needs_setup"].includes(item.install_state)
+      && item.kind !== "native_tool";
+    const version = item.installed_version && item.installed_version !== item.available_version
+      ? `v${item.installed_version} \u2192 v${item.available_version}`
+      : `v${item.available_version || item.version || "1.0.0"}`;
     const detail = [
       item.publisher,
-      `v${item.version || "1.0.0"}`,
+      version,
       item.status_detail
     ].filter(Boolean).join(" \u00b7 ");
+    const lifecycle = [
+      capabilities.length ? t("{count} capabilities", { count: capabilities.length }) : "",
+      addedPermissions.length ? t("{count} new permissions", { count: addedPermissions.length }) : "",
+      removedPermissions.length ? t("{count} removed permissions", { count: removedPermissions.length }) : "",
+      item.rollback_available
+        ? t("Rollback: {versions}", { versions: (item.rollback_versions || []).map((value) => `v${value}`).join(", ") })
+        : ""
+    ].filter(Boolean).join(" \u00b7 ");
+    const installLabel = item.revoked
+      ? t("Restore access")
+      : item.update_available
+        ? t("Update")
+        : t("Install");
     return `
-      <article class="capability-item">
+      <article class="capability-item marketplace-lifecycle-item ${item.revoked ? "is-revoked" : ""}">
         <div>
           <strong><em class="marketplace-kind">${escapeHtml(marketplaceKindLabel(item.kind))}</em>${escapeHtml(item.name || item.id)}</strong>
           <small>${escapeHtml(item.summary || "")}</small>
           <small>${escapeHtml(detail)}</small>
+          ${lifecycle ? `<small class="${addedPermissions.length ? "marketplace-permission-change" : ""}">${escapeHtml(lifecycle)}</small>` : ""}
         </div>
         <div class="capability-item-actions">
-          <span class="marketplace-state">${escapeHtml(marketplaceStateLabel(item.install_state))}</span>
-          ${canInstall ? `<button class="primary" data-install-marketplace="${escapeHtml(item.id)}">${escapeHtml(t("Install"))}</button>` : ""}
+          <span class="marketplace-state">${escapeHtml(item.revoked ? t("Access revoked") : marketplaceStateLabel(item.install_state))}</span>
+          ${item.rollback_available ? `<button data-rollback-marketplace="${escapeHtml(item.id)}">${escapeHtml(t("Rollback"))}</button>` : ""}
+          ${item.revocable && !item.revoked ? `<button data-revoke-marketplace="${escapeHtml(item.id)}">${escapeHtml(t("Revoke"))}</button>` : ""}
+          ${canRemove ? `<button data-uninstall-marketplace="${escapeHtml(item.id)}">${escapeHtml(t("Uninstall"))}</button>` : ""}
+          ${canInstall ? `<button class="primary" data-install-marketplace="${escapeHtml(item.id)}">${escapeHtml(installLabel)}</button>` : ""}
           ${needsSetup ? `<button data-setup-marketplace="${escapeHtml(item.id)}" data-marketplace-item-kind="${escapeHtml(item.kind)}">${escapeHtml(t("Set up"))}</button>` : ""}
         </div>
       </article>`;
@@ -3056,17 +3082,56 @@ function bindEvents() {
   $("#marketplaceList").addEventListener("click", async (event) => {
     const install = event.target.closest("[data-install-marketplace]");
     const setup = event.target.closest("[data-setup-marketplace]");
+    const revoke = event.target.closest("[data-revoke-marketplace]");
+    const rollback = event.target.closest("[data-rollback-marketplace]");
+    const uninstall = event.target.closest("[data-uninstall-marketplace]");
     if (install) {
       try {
+        const item = state.marketplace.items.find(
+          (value) => value.id === install.dataset.installMarketplace
+        ) || {};
+        const added = Array.isArray(item.permission_diff?.added)
+          ? item.permission_diff.added
+          : [];
+        if (added.length) {
+          const permissionList = added.map(
+            (permission) => `\u2022 ${permission.title || permission.id}`
+          ).join("\n");
+          if (!window.confirm(`${t("This release requests new permissions:")}\n\n${permissionList}\n\n${t("Continue?")}`)) {
+            return;
+          }
+        }
         await window.signalasi.installToolMarketplaceItem(
           install.dataset.installMarketplace,
-          {}
+          {},
+          added.map((permission) => permission.id)
         );
         showToast(t("Marketplace item installed."));
         await refreshCapabilities();
       } catch (error) {
         showToast(error.message || String(error));
       }
+      return;
+    }
+    if (revoke) {
+      if (!window.confirm(t("Revoke this item's access while keeping its configuration?"))) return;
+      await window.signalasi.revokeToolMarketplaceItem(revoke.dataset.revokeMarketplace);
+      showToast(t("Marketplace access revoked."));
+      await refreshCapabilities();
+      return;
+    }
+    if (rollback) {
+      if (!window.confirm(t("Restore the previous verified version?"))) return;
+      await window.signalasi.rollbackToolMarketplaceItem(rollback.dataset.rollbackMarketplace);
+      showToast(t("Previous marketplace version restored."));
+      await refreshCapabilities();
+      return;
+    }
+    if (uninstall) {
+      if (!window.confirm(t("Uninstall this item? A verified rollback snapshot will be retained."))) return;
+      await window.signalasi.uninstallToolMarketplaceItem(uninstall.dataset.uninstallMarketplace);
+      showToast(t("Marketplace item uninstalled."));
+      await refreshCapabilities();
       return;
     }
     if (setup) {
