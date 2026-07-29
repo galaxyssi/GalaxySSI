@@ -929,6 +929,158 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
+  func testAgentFinalResponseIdentityMatchesAndroidPriorityAndResolution() {
+    let local = AgentFinalResponseIdentity.dedupeKey(
+      turnId: "turn-1",
+      sourceMessageId: 101,
+      taskId: "mobile-session"
+    )
+    let remote = AgentFinalResponseIdentity.dedupeKey(
+      turnId: "turn-1",
+      sourceMessageId: 101,
+      taskId: "desktop-task"
+    )
+
+    XCTAssertEqual(local, remote)
+    XCTAssertEqual(
+      AgentFinalResponseIdentity.dedupeKey(turnId: "", sourceMessageId: 202, taskId: "mobile-session"),
+      AgentFinalResponseIdentity.dedupeKey(turnId: "", sourceMessageId: 202, taskId: "desktop-task")
+    )
+    XCTAssertNotEqual(
+      AgentFinalResponseIdentity.dedupeKey(turnId: "turn-1", sourceMessageId: 101, taskId: "task"),
+      AgentFinalResponseIdentity.dedupeKey(turnId: "turn-2", sourceMessageId: 101, taskId: "task")
+    )
+    XCTAssertEqual(
+      AgentFinalResponseIdentity.dedupeKey(turnId: "", taskId: " task-1 "),
+      "assistant-final:task:task-1"
+    )
+    XCTAssertEqual(
+      AgentFinalResponseIdentity.resolveTurnId(
+        explicitTurnId: "",
+        taskId: "task-1"
+      ) { taskId in
+        taskId == "task-1" ? "turn-1" : nil
+      },
+      "turn-1"
+    )
+    XCTAssertEqual(
+      AgentFinalResponseIdentity.resolveTurnId(
+        explicitTurnId: " turn-2 ",
+        taskId: "task-1"
+      ) { _ in "turn-1" },
+      "turn-2"
+    )
+  }
+
+  func testAgentTranscriptEntryDecodesAndroidWireNames() throws {
+    let decoded = try JSONDecoder().decode(
+      AgentTranscriptEntry.self,
+      from: Data(
+        #"""
+        {
+          "id": "entry-1",
+          "role": "ASSISTANT",
+          "text": "CODEX_OK",
+          "timestamp_millis": 42,
+          "dedupe_key": "assistant-final:turn:turn-1",
+          "conversation_id": "conversation",
+          "turn_id": "turn-1",
+          "task_id": "task-1",
+          "rich_output_json": "{\"type\":\"markdown\"}",
+          "source_conversation_id": "source-conversation",
+          "source_conversation_title": "Source",
+          "source_entry_id": "source-entry"
+        }
+        """#.utf8
+      )
+    )
+
+    XCTAssertEqual(decoded.role, .assistant)
+    XCTAssertEqual(decoded.timestampMillis, 42)
+    XCTAssertEqual(decoded.dedupeKey, "assistant-final:turn:turn-1")
+    XCTAssertEqual(decoded.richOutputJson, #"{"type":"markdown"}"#)
+    XCTAssertEqual(decoded.sourceConversationTitle, "Source")
+
+    let fallback = try JSONDecoder().decode(
+      AgentTranscriptEntry.self,
+      from: Data(#"{"id":"entry-2","role":"FUTURE","text":"Running"}"#.utf8)
+    )
+    XCTAssertEqual(fallback.role, .process)
+
+    let encoded = String(decoding: try JSONEncoder().encode(decoded), as: UTF8.self)
+    XCTAssertTrue(encoded.contains(#""timestamp_millis":42"#))
+    XCTAssertTrue(encoded.contains(#""dedupe_key":"assistant-final:turn:turn-1""#))
+    XCTAssertTrue(encoded.contains(#""rich_output_json":"#))
+  }
+
+  func testAgentFinalResponseIdentityCoalescesCanonicalDuplicates() {
+    let canonical = finalTranscriptEntry(
+      id: "canonical",
+      turnId: "turn-1",
+      taskId: "task-1",
+      dedupeKey: "assistant-final:turn:turn-1",
+      timestampMillis: 1
+    )
+    let lateDuplicate = finalTranscriptEntry(
+      id: "late",
+      turnId: "",
+      taskId: " task-1 ",
+      dedupeKey: "assistant-final:task:task-1",
+      timestampMillis: 2
+    )
+    let userEntry = finalTranscriptEntry(
+      id: "user",
+      role: .user,
+      taskId: "task-1",
+      dedupeKey: "assistant-final:task:task-1",
+      timestampMillis: 3
+    )
+    let otherTask = finalTranscriptEntry(
+      id: "other",
+      taskId: "task-2",
+      dedupeKey: "assistant-final:task:task-2",
+      timestampMillis: 4
+    )
+
+    XCTAssertEqual(
+      AgentFinalResponseIdentity.coalesce([canonical, lateDuplicate, userEntry, otherTask]),
+      [canonical, userEntry, otherTask]
+    )
+  }
+
+  func testAgentFinalResponseIdentityPrefersRichOutputThenLatestTimestamp() {
+    let plain = finalTranscriptEntry(
+      id: "plain",
+      taskId: "task-1",
+      dedupeKey: "assistant-final:source:101",
+      timestampMillis: 3
+    )
+    let rich = finalTranscriptEntry(
+      id: "rich",
+      taskId: "task-1",
+      dedupeKey: "assistant-final:task:task-1",
+      timestampMillis: 1,
+      richOutputJson: #"{"type":"markdown"}"#
+    )
+    let latest = finalTranscriptEntry(
+      id: "latest",
+      taskId: "task-2",
+      dedupeKey: "assistant-final:source:202",
+      timestampMillis: 4
+    )
+    let earlier = finalTranscriptEntry(
+      id: "earlier",
+      taskId: "task-2",
+      dedupeKey: "assistant-final:task:task-2",
+      timestampMillis: 2
+    )
+
+    XCTAssertEqual(
+      AgentFinalResponseIdentity.coalesce([plain, rich, latest, earlier]),
+      [rich, latest]
+    )
+  }
+
   func testAgentInlineMarkdownParsesBoldCodeAndLinksWithoutMarkers() {
     let segments = AgentInlineMarkdown.parse(
       "Today is **cloudy**. Run `status` and open [Shanghai Weather](https://sh.cma.gov.cn/)."
@@ -1342,6 +1494,29 @@ final class SignalASIStoreTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suite)!
     defaults.removePersistentDomain(forName: suite)
     return SignalASIStore(defaults: defaults, secrets: secrets)
+  }
+
+  private func finalTranscriptEntry(
+    id: String,
+    role: AgentTranscriptRole = .assistant,
+    text: String = "CODEX_OK",
+    turnId: String = "",
+    taskId: String,
+    dedupeKey: String,
+    timestampMillis: Int64,
+    richOutputJson: String = ""
+  ) -> AgentTranscriptEntry {
+    AgentTranscriptEntry(
+      id: id,
+      role: role,
+      text: text,
+      timestampMillis: timestampMillis,
+      dedupeKey: dedupeKey,
+      conversationId: "conversation",
+      turnId: turnId,
+      taskId: taskId,
+      richOutputJson: richOutputJson
+    )
   }
 
   private func makeFriendRequest(signalASIId: String, name: String) -> SignalASIFriendRequest {
