@@ -54,6 +54,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style Local MCP runtime bridge response codec for structured tool/list/call results without leaking process logs
 - Android-style MCP package manifest codec for declarative HTTP and sandboxed local stdio packages with auth, tool, timeout, endpoint, and local-runtime guard validation
 - Android-style MCP package archive inspection for signed and unsigned local packages with manifest digest checks, safe ZIP entry validation, runtime entrypoint enforcement, and iOS stored-entry activation boundaries
+- Android-style MCP package repository and registry installation for durable local package metadata, runtime workspace preparation, request cleanup, package SHA/version tracking, and local-package connection projection
 - Android-style agent plan lifecycle policy for stale runtime draft cleanup and completed connector restoration
 - Android-style agent execution continuity for pre-action checkpoints, Android screen digests, rollback actions, interrupted action recovery, and bounded replan history
 - Android-style agent execution loop timeline policy for run-control events, recovery actions, and progress placeholders

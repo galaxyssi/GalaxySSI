@@ -18069,6 +18069,259 @@ struct AgentMcpPackageInstaller {
   }()
 }
 
+struct AgentMcpLocalInvocation: Codable, Equatable {
+  var workspaceId: String
+  var requestPath: String
+
+  enum CodingKeys: String, CodingKey {
+    case workspaceId = "workspace_id"
+    case requestPath = "request_path"
+  }
+}
+
+final class AgentMcpPackageRepository {
+  private let packagesRoot: URL
+  private let runtimeProjectsRoot: URL
+  private let fileManager: FileManager
+  private let lock = NSLock()
+
+  init(rootDirectory: URL, fileManager: FileManager = .default) {
+    let root = rootDirectory.standardizedFileURL
+    self.packagesRoot = root.appendingPathComponent(Self.packagesDirectory, isDirectory: true)
+    self.runtimeProjectsRoot = root.appendingPathComponent(Self.runtimeProjectsDirectory, isDirectory: true)
+    self.fileManager = fileManager
+  }
+
+  static func defaultRoot(fileManager: FileManager = .default) throws -> URL {
+    guard let root = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package storage is unavailable")
+    }
+    return root
+  }
+
+  func save(_ inspection: AgentMcpPackageInspection) throws {
+    try synchronized {
+      try persistPackageFiles(inspection)
+    }
+  }
+
+  func get(_ id: String) -> AgentMcpPackageManifest? {
+    synchronized {
+      let manifestUrl = packageDirectory(id).appendingPathComponent(AgentMcpPackageInstaller.manifestPath)
+      guard let data = try? Data(contentsOf: manifestUrl),
+            let raw = String(data: data, encoding: .utf8) else {
+        return nil
+      }
+      return try? AgentMcpPackageManifestCodec.decode(raw)
+    }
+  }
+
+  func prepareLocalInvocation(id: String, payload: String) throws -> AgentMcpLocalInvocation {
+    try synchronized {
+      let payloadData = Data(payload.utf8)
+      guard payloadData.count <= Self.maxInvocationBytes else {
+        throw AgentRuntimeCapabilityError.invalid("Local MCP invocation is too large")
+      }
+      let sourceRuntime = packageDirectory(id).appendingPathComponent(AgentMcpPackageInstaller.runtimeDirectory, isDirectory: true)
+      guard isDirectory(sourceRuntime) else {
+        throw AgentRuntimeCapabilityError.invalid("Local MCP runtime files are not installed")
+      }
+      let workspaceId = localWorkspaceId(id)
+      let workspace = runtimeProjectsRoot.appendingPathComponent(workspaceId, isDirectory: true)
+      try fileManager.createDirectory(at: workspace, withIntermediateDirectories: true)
+      try replaceDirectory(source: sourceRuntime, target: workspace.appendingPathComponent("runtime", isDirectory: true))
+      let control = workspace.appendingPathComponent(Self.controlDirectory, isDirectory: true)
+      try fileManager.createDirectory(at: control, withIntermediateDirectories: true)
+      for name in (try? fileManager.contentsOfDirectory(atPath: control.path)) ?? [] where name.hasPrefix("request-") {
+        try? fileManager.removeItem(at: control.appendingPathComponent(name))
+      }
+      let requestName = "request-\(UUID().uuidString).json"
+      let request = control.appendingPathComponent(requestName, isDirectory: false)
+      try payloadData.write(to: request, options: [.atomic])
+      return AgentMcpLocalInvocation(workspaceId: workspaceId, requestPath: "\(Self.controlDirectory)/\(requestName)")
+    }
+  }
+
+  func completeLocalInvocation(_ invocation: AgentMcpLocalInvocation) {
+    synchronized {
+      guard let workspace = safeChild(runtimeProjectsRoot, invocation.workspaceId),
+            let request = safeChild(workspace, invocation.requestPath) else {
+        return
+      }
+      try? fileManager.removeItem(at: request)
+    }
+  }
+
+  func delete(_ id: String) {
+    synchronized {
+      try? fileManager.removeItem(at: packageDirectory(id))
+      if let workspace = safeChild(runtimeProjectsRoot, localWorkspaceId(id)) {
+        try? fileManager.removeItem(at: workspace)
+      }
+    }
+  }
+
+  func clear() {
+    synchronized {
+      try? fileManager.removeItem(at: packagesRoot)
+      guard let names = try? fileManager.contentsOfDirectory(atPath: runtimeProjectsRoot.path) else {
+        return
+      }
+      for name in names where name.hasPrefix(Self.workspacePrefix) {
+        try? fileManager.removeItem(at: runtimeProjectsRoot.appendingPathComponent(name, isDirectory: true))
+      }
+    }
+  }
+
+  private func persistPackageFiles(_ inspection: AgentMcpPackageInspection) throws {
+    let target = packageDirectory(inspection.manifest.id)
+    let parent = target.deletingLastPathComponent()
+    try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+    let staging = parent.appendingPathComponent(".\(target.lastPathComponent).\(UUID().uuidString).staging", isDirectory: true)
+    let backup = parent.appendingPathComponent(".\(target.lastPathComponent).\(UUID().uuidString).backup", isDirectory: true)
+    try? fileManager.removeItem(at: staging)
+    try? fileManager.removeItem(at: backup)
+    try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+    do {
+      try Data(inspection.rawManifest.utf8).write(
+        to: staging.appendingPathComponent(AgentMcpPackageInstaller.manifestPath),
+        options: [.atomic]
+      )
+      var totalBytes: Int64 = 0
+      for (relative, data) in inspection.runtimeFiles {
+        guard relative.hasPrefix(AgentMcpPackageInstaller.runtimeDirectory) else {
+          throw AgentRuntimeCapabilityError.invalid("MCP runtime path is invalid")
+        }
+        guard let nextBytes = checkedAdd(totalBytes, Int64(data.count)),
+              nextBytes <= AgentMcpPackageInstaller.maxExtractedBytes else {
+          throw AgentRuntimeCapabilityError.invalid("MCP runtime files exceed the package limit")
+        }
+        totalBytes = nextBytes
+        guard let output = safeChild(staging, relative) else {
+          throw AgentRuntimeCapabilityError.invalid("MCP runtime path is unsafe")
+        }
+        try fileManager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: output, options: [.atomic])
+      }
+      if fileManager.fileExists(atPath: target.path) {
+        try fileManager.moveItem(at: target, to: backup)
+      }
+      do {
+        try fileManager.moveItem(at: staging, to: target)
+        try? fileManager.removeItem(at: backup)
+      } catch {
+        try? fileManager.removeItem(at: target)
+        if fileManager.fileExists(atPath: backup.path) {
+          try? fileManager.moveItem(at: backup, to: target)
+        }
+        throw AgentRuntimeCapabilityError.invalid("MCP package could not be committed")
+      }
+    } catch {
+      try? fileManager.removeItem(at: staging)
+      if !fileManager.fileExists(atPath: target.path), fileManager.fileExists(atPath: backup.path) {
+        try? fileManager.moveItem(at: backup, to: target)
+      }
+      throw error
+    }
+  }
+
+  private func replaceDirectory(source: URL, target: URL) throws {
+    let parent = target.deletingLastPathComponent()
+    try fileManager.createDirectory(at: parent, withIntermediateDirectories: true)
+    let staging = parent.appendingPathComponent(".\(target.lastPathComponent).\(UUID().uuidString).staging", isDirectory: true)
+    try? fileManager.removeItem(at: staging)
+    try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+    guard let enumerator = fileManager.enumerator(atPath: source.path) else {
+      throw AgentRuntimeCapabilityError.invalid("Local MCP runtime files are not installed")
+    }
+    do {
+      for case let relative as String in enumerator {
+        guard !relative.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+        let input = source.appendingPathComponent(relative)
+        guard let output = safeChild(staging, relative) else {
+          throw AgentRuntimeCapabilityError.invalid("Local MCP runtime path is unsafe")
+        }
+        var isDirectoryValue = ObjCBool(false)
+        guard fileManager.fileExists(atPath: input.path, isDirectory: &isDirectoryValue) else {
+          continue
+        }
+        if isDirectoryValue.boolValue {
+          try fileManager.createDirectory(at: output, withIntermediateDirectories: true)
+        } else {
+          let attributes = try fileManager.attributesOfItem(atPath: input.path)
+          let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+          guard size <= Int64(AgentMcpPackageInstaller.maxAssetBytes) else {
+            throw AgentRuntimeCapabilityError.invalid("Local MCP runtime file is invalid")
+          }
+          try fileManager.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)
+          try fileManager.copyItem(at: input, to: output)
+        }
+      }
+      try? fileManager.removeItem(at: target)
+      try fileManager.moveItem(at: staging, to: target)
+    } catch {
+      try? fileManager.removeItem(at: staging)
+      throw error
+    }
+  }
+
+  private func packageDirectory(_ id: String) -> URL {
+    packagesRoot.appendingPathComponent(encodedId(id), isDirectory: true)
+  }
+
+  private func localWorkspaceId(_ id: String) -> String {
+    "\(Self.workspacePrefix)\(AgentMcpPackageInstaller.sha256(Data(id.utf8)).prefix(32))"
+  }
+
+  private func encodedId(_ id: String) -> String {
+    Data(id.utf8)
+      .base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  private func safeChild(_ parent: URL, _ relative: String) -> URL? {
+    guard case .success(let segments) = AgentWorkspaceFilePathPolicy.normalizeRelativePath(relative, allowRoot: false) else {
+      return nil
+    }
+    let cleanParent = parent.standardizedFileURL
+    var candidate = cleanParent
+    for segment in segments {
+      candidate.appendPathComponent(segment)
+    }
+    let cleanCandidate = candidate.standardizedFileURL
+    guard cleanCandidate.path.hasPrefix(cleanParent.path + "/") else {
+      return nil
+    }
+    return cleanCandidate
+  }
+
+  private func isDirectory(_ url: URL) -> Bool {
+    var isDirectoryValue = ObjCBool(false)
+    return fileManager.fileExists(atPath: url.path, isDirectory: &isDirectoryValue) && isDirectoryValue.boolValue
+  }
+
+  private func checkedAdd(_ left: Int64, _ right: Int64) -> Int64? {
+    guard right >= 0, left <= Int64.max - right else {
+      return nil
+    }
+    return left + right
+  }
+
+  private func synchronized<T>(_ body: () throws -> T) rethrows -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return try body()
+  }
+
+  private static let packagesDirectory = "agent-mcp-packages"
+  private static let runtimeProjectsDirectory = "agent-native-workspaces"
+  private static let controlDirectory = ".signalasi-mcp"
+  private static let workspacePrefix = "mcp-"
+  private static let maxInvocationBytes = 512 * 1_024
+}
+
 struct AgentMcpCatalogEntry: Codable, Equatable, Identifiable {
   var id: String
   var name: String
@@ -18533,6 +18786,36 @@ final class AgentMcpRegistry {
       authProfile: profile,
       catalogId: entry.id
     )
+  }
+
+  func installPackage(_ manifest: AgentMcpPackageManifest, packageSha256: String) throws -> AgentMcpConnection {
+    let now = nowMillis()
+    let profile = manifest.authProfiles.first ?? (try AgentMcpAuthProfile(.none))
+    let endpoint: String
+    if manifest.transport == .localStdio {
+      endpoint = manifest.endpoint
+    } else {
+      endpoint = try AgentMcpEndpointPolicy.normalize(manifest.endpoint)
+    }
+    let authState: AgentMcpAuthState = profile.method == .none ? .notRequired : .notConfigured
+    let connection = AgentMcpConnection(
+      id: manifest.id,
+      catalogId: manifest.catalogId,
+      displayName: manifest.name,
+      endpoint: endpoint,
+      distribution: .localPackage,
+      transport: manifest.transport,
+      authProfile: profile,
+      authState: authState,
+      state: authState == .notRequired ? .installed : .needsSetup,
+      installedAtMillis: now,
+      updatedAtMillis: now,
+      toolIds: manifest.tools.map(\.name),
+      packageVersion: manifest.version,
+      packageSha256: packageSha256
+    )
+    store.upsert(connection)
+    return connection
   }
 
   func beginAuthentication(_ id: String) throws -> AgentMcpAuthStepSpec? {
