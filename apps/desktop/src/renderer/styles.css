@@ -552,7 +552,7 @@ button:disabled { cursor: default; opacity: 0.48; }
 .check-row small { margin-top: 2px; color: var(--muted); font-size: 8px; }
 .compact-forms { gap: 8px; }
 
-.capability-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; margin-bottom: 12px; padding: 3px; border-radius: 7px; background: #e9edef; }
+.capability-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; margin-bottom: 12px; padding: 3px; border-radius: 7px; background: #e9edef; }
 .capability-tabs button { height: 29px; border: 0; border-radius: 5px; background: transparent; color: #68717a; font-size: 8px; }
 .capability-tabs button.active { background: var(--surface); color: #242a30; box-shadow: 0 1px 2px rgba(22, 28, 34, 0.08); font-weight: 650; }
 .capability-pane { display: none; }
@@ -581,6 +581,11 @@ button:disabled { cursor: default; opacity: 0.48; }
 .mcp-policy-select:focus { border-color: #8cb5ec; box-shadow: 0 0 0 2px var(--blue-soft); }
 .capability-item button { height: 26px; padding: 0 7px; border: 0; border-radius: 5px; background: #eef1f3; color: #56616a; font-size: 8px; }
 .capability-item button.primary { background: var(--green-soft); color: var(--green-ink); }
+.marketplace-filters { display: flex; gap: 5px; margin: 0 0 10px; overflow-x: auto; }
+.marketplace-filters button { flex: 0 0 auto; height: 27px; padding: 0 9px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--muted); font-size: 8px; }
+.marketplace-filters button.active { border-color: #9dd9bb; background: var(--green-soft); color: var(--green-ink); }
+.marketplace-kind { display: inline-block; margin-right: 5px; color: var(--green-ink); font-style: normal; }
+.marketplace-state { color: var(--muted); font-size: 8px; white-space: nowrap; }
 .mcp-import-panel { display: grid; gap: 8px; padding: 2px 0 4px; }
 .mcp-import-panel > p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
 .mcp-import-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }

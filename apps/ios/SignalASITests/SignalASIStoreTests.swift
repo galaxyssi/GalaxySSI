@@ -824,6 +824,136 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.modelPlannerSettings.noProgressTimeoutSeconds, AgentModelPlannerSettings.minimumNoProgressTimeoutSeconds)
   }
 
+  func testAgentAutonomyGuardStopsWhenToolCallBudgetIsReached() {
+    let completed = (0..<AgentModelPlannerSettings.minimumToolCalls).map {
+      agentAutonomyAction(id: "completed-\($0)", status: .completed, package: "com.signalasi.\($0)")
+    }
+    let pending = agentAutonomyAction(id: "pending", status: .pendingConfirmation)
+    let plan = agentAutonomyPlan(actions: [pending], actionHistory: completed)
+
+    let decision = AgentAutonomyGuard.review(
+      plan: plan,
+      action: pending,
+      settings: AgentModelPlannerSettings(maxToolCalls: AgentModelPlannerSettings.minimumToolCalls)
+    )
+
+    XCTAssertFalse(decision.allowed)
+    XCTAssertEqual(decision.reason, "Autonomous tool-call budget reached")
+    XCTAssertEqual(decision.completedToolCalls, AgentModelPlannerSettings.minimumToolCalls)
+    XCTAssertEqual(decision.repeatedCalls, 0)
+  }
+
+  func testAgentAutonomyGuardIgnoresReadScreenDraftAndPendingActionsForBudget() {
+    let history = [
+      agentAutonomyAction(id: "screen", kind: .readScreen, status: .completed),
+      agentAutonomyAction(id: "draft", kind: .draftPlan, status: .failed),
+      agentAutonomyAction(id: "pending", kind: .openApp, status: .pendingConfirmation),
+      agentAutonomyAction(id: "blocked", kind: .openApp, status: .blocked, package: "com.signalasi.blocked")
+    ]
+    let next = agentAutonomyAction(id: "next", kind: .callConnector, status: .pendingConfirmation, connectorId: "calendar")
+    let plan = agentAutonomyPlan(actions: [next], actionHistory: history)
+
+    let decision = AgentAutonomyGuard.review(
+      plan: plan,
+      action: next,
+      settings: AgentModelPlannerSettings(maxToolCalls: 8)
+    )
+
+    XCTAssertTrue(decision.allowed)
+    XCTAssertEqual(AgentAutonomyGuard.completedToolCalls(plan: plan), 1)
+    XCTAssertEqual(decision.completedToolCalls, 1)
+  }
+
+  func testAgentAutonomyGuardBlocksRepeatedLoopSensitiveToolCalls() {
+    let repeated = [
+      agentAutonomyAction(id: "first", kind: .openApp, status: .completed, package: "com.signalasi.chat"),
+      agentAutonomyAction(id: "second", kind: .openApp, status: .failed, package: "com.signalasi.chat")
+    ]
+    let pending = agentAutonomyAction(
+      id: "third",
+      kind: .openApp,
+      status: .pendingConfirmation,
+      package: "com.signalasi.chat"
+    )
+    let plan = agentAutonomyPlan(actions: [pending], actionHistory: repeated)
+
+    let decision = AgentAutonomyGuard.review(
+      plan: plan,
+      action: pending,
+      settings: AgentModelPlannerSettings(maxToolCalls: 8)
+    )
+
+    XCTAssertFalse(decision.allowed)
+    XCTAssertEqual(decision.reason, "Repeated autonomous tool-call loop blocked")
+    XCTAssertEqual(decision.completedToolCalls, 2)
+    XCTAssertEqual(decision.repeatedCalls, AgentAutonomyGuard.maxRepeatedToolCalls)
+  }
+
+  func testAgentAutonomyGuardAllowsDistinctPromptSignaturesAndNonLoopActions() {
+    let first = agentAutonomyAction(
+      id: "first",
+      kind: .callConnector,
+      status: .completed,
+      connectorId: "research",
+      prompt: "Find the latest note"
+    )
+    let second = agentAutonomyAction(
+      id: "second",
+      kind: .callConnector,
+      status: .failed,
+      connectorId: "research",
+      prompt: "Find the latest note"
+    )
+    let distinctPrompt = agentAutonomyAction(
+      id: "distinct",
+      kind: .callConnector,
+      status: .pendingConfirmation,
+      connectorId: "research",
+      prompt: "Find the latest note again"
+    )
+    let nonLoopRepeated = agentAutonomyAction(
+      id: "type",
+      kind: .typeText,
+      status: .pendingConfirmation,
+      prompt: "Find the latest note"
+    )
+    let plan = agentAutonomyPlan(actions: [distinctPrompt], actionHistory: [first, second])
+
+    XCTAssertTrue(
+      AgentAutonomyGuard.review(
+        plan: plan,
+        action: distinctPrompt,
+        settings: AgentModelPlannerSettings(maxToolCalls: 8)
+      ).allowed
+    )
+    XCTAssertTrue(
+      AgentAutonomyGuard.review(
+        plan: agentAutonomyPlan(actions: [nonLoopRepeated], actionHistory: [first, second]),
+        action: nonLoopRepeated,
+        settings: AgentModelPlannerSettings(maxToolCalls: 8)
+      ).allowed
+    )
+  }
+
+  func testAgentAutonomyGuardModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder.signalASI.decode(
+      AgentAutonomyDecision.self,
+      from: Data(
+        #"{"allowed":false,"reason":"Repeated autonomous tool-call loop blocked","completed_tool_calls":2,"repeated_calls":2}"#.utf8
+      )
+    )
+    let encoded = String(
+      decoding: try JSONEncoder.signalASI.encode(decoded),
+      as: UTF8.self
+    )
+
+    XCTAssertFalse(decoded.allowed)
+    XCTAssertEqual(decoded.completedToolCalls, 2)
+    XCTAssertEqual(decoded.repeatedCalls, 2)
+    XCTAssertTrue(encoded.contains(#""completed_tool_calls":2"#))
+    XCTAssertTrue(encoded.contains(#""repeated_calls":2"#))
+  }
+
   func testHomeAssistantSettingsDecodeAndroidFieldsAndStoreTokenInKeychain() throws {
     let longURL = "http://homeassistant.local:8123/" + String(repeating: "x", count: 2_200)
     let longToken = String(repeating: "t", count: 8_400)
@@ -1047,6 +1177,178 @@ final class SignalASIStoreTests: XCTestCase {
       ]
     )
     XCTAssertEqual(AgentConfirmationPolicy.tier(for: connectorAction), .direct)
+  }
+
+  func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
+    var now: Int64 = 1_000
+    let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
+    _ = try store.grant(permissionGrant(lifetime: .singleUse))
+
+    XCTAssertTrue(try store.authorize(permissionRequest(), consume: true).granted)
+    XCTAssertFalse(try store.authorize(permissionRequest(), consume: true).granted)
+    XCTAssertEqual(store.list().first?.status, .consumed)
+    XCTAssertEqual(store.list(includeInactive: false).count, 0)
+    now = 1_100
+    XCTAssertFalse(try store.authorize(permissionRequest(), consume: false).granted)
+  }
+
+  func testAgentPermissionGrantLedgerExpiresTemporaryGrantAtBoundary() throws {
+    var now: Int64 = 1_000
+    let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
+    _ = try store.grant(permissionGrant(
+      lifetime: .temporary,
+      expiresAtMillis: 2_000,
+      maxUses: 0
+    ))
+
+    XCTAssertTrue(try store.authorize(permissionRequest()).granted)
+    now = 2_000
+    XCTAssertFalse(try store.authorize(permissionRequest()).granted)
+    XCTAssertEqual(store.list().first?.status, .expired)
+  }
+
+  func testAgentPermissionGrantLedgerEnforcesResourceAndTargetConstraints() throws {
+    let store = InMemoryAgentPermissionGrantStore(nowMillis: { 1_000 })
+    _ = try store.grant(permissionGrant(
+      lifetime: .permanent,
+      resource: "content://documents/report.pdf",
+      target: "local-runtime",
+      maxUses: 0
+    ))
+
+    XCTAssertTrue(try store.authorize(permissionRequest(
+      resource: "content://documents/report.pdf",
+      target: "local-runtime"
+    )).granted)
+    XCTAssertFalse(try store.authorize(permissionRequest(
+      resource: "content://documents/private.pdf",
+      target: "local-runtime"
+    )).granted)
+    XCTAssertFalse(try store.authorize(permissionRequest(
+      resource: "content://documents/report.pdf",
+      target: "cloud-runtime"
+    )).granted)
+  }
+
+  func testAgentPermissionGrantLedgerRevocationAndSerializationSurviveRecreation() throws {
+    let first = InMemoryAgentPermissionGrantStore(nowMillis: { 1_000 })
+    let issued = try first.grant(permissionGrant(lifetime: .permanent, maxUses: 0))
+    let recreated = InMemoryAgentPermissionGrantStore(
+      serialized: first.serializedSnapshot(),
+      nowMillis: { 1_500 }
+    )
+    let duplicate = try recreated.grant(permissionGrant(lifetime: .permanent, maxUses: 0))
+
+    XCTAssertEqual(duplicate.grantId, issued.grantId)
+    XCTAssertTrue(try recreated.authorize(permissionRequest()).granted)
+    let revocation = recreated.revokeGrant(grantId: issued.grantId, reason: " user_revoked ")
+    let afterRestart = InMemoryAgentPermissionGrantStore(
+      serialized: recreated.serializedSnapshot(),
+      nowMillis: { 2_000 }
+    )
+
+    XCTAssertEqual(revocation.revokedGrantIds, Set([issued.grantId]))
+    XCTAssertEqual(revocation.scopes, Set(["location.foreground"]))
+    XCTAssertEqual(revocation.reason, "user_revoked")
+    XCTAssertFalse(try afterRestart.authorize(permissionRequest()).granted)
+    XCTAssertEqual(afterRestart.list().first?.revocationReason, "user_revoked")
+  }
+
+  func testAgentPermissionGrantLedgerRejectsMalformedOrContradictoryGrants() throws {
+    let store = InMemoryAgentPermissionGrantStore(nowMillis: { 1_000 })
+
+    XCTAssertThrowsError(try store.grant(permissionGrant(
+      lifetime: .temporary,
+      expiresAtMillis: 999,
+      maxUses: 0
+    ))) { error in
+      XCTAssertTrue(error is AgentPermissionGrantLedgerError)
+    }
+    XCTAssertThrowsError(try store.grant(permissionGrant(
+      lifetime: .permanent,
+      constraintsJson: "[]",
+      maxUses: 0
+    ))) { error in
+      XCTAssertTrue(error is AgentPermissionGrantLedgerError)
+    }
+  }
+
+  func testAgentPermissionGrantLedgerUsesMostSpecificActiveGrant() throws {
+    let store = InMemoryAgentPermissionGrantStore(nowMillis: { 1_000 })
+    _ = try store.grant(permissionGrant(
+      grantId: "wildcard",
+      lifetime: .permanent,
+      subjectId: "*",
+      scope: "*",
+      action: "",
+      maxUses: 0,
+      createdAtMillis: 900
+    ))
+    _ = try store.grant(permissionGrant(
+      grantId: "specific",
+      lifetime: .permanent,
+      resource: "content://documents/report.pdf",
+      target: "local-runtime",
+      maxUses: 0,
+      createdAtMillis: 1_000
+    ))
+
+    let decision = try store.authorize(permissionRequest(
+      resource: "content://documents/report.pdf",
+      target: "local-runtime"
+    ))
+
+    XCTAssertTrue(decision.granted)
+    XCTAssertEqual(decision.grant?.grantId, "specific")
+    XCTAssertEqual(decision.reason, "host_grant_active")
+  }
+
+  func testAgentPermissionGrantLedgerModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder.signalASI.decode(
+      AgentPermissionGrant.self,
+      from: Data(
+        #"""
+        {
+          "grant_id": "grant-1",
+          "subject_type": "TOOL",
+          "subject_id": "android.location",
+          "scope": "location.foreground",
+          "action": "read",
+          "resource": "content://documents/report.pdf",
+          "target": "local-runtime",
+          "constraints_json": "{\"allow\":\"once\"}",
+          "issuer": "USER",
+          "evidence": "approval-dialog:turn-1",
+          "lifetime": "SINGLE_USE",
+          "status": "ACTIVE",
+          "max_uses": 1,
+          "uses": 0,
+          "created_at_millis": 1000,
+          "expires_at_millis": 0,
+          "consumed_at_millis": 0,
+          "revoked_at_millis": 0,
+          "revocation_reason": ""
+        }
+        """#.utf8
+      )
+    )
+    let encoded = try JSONEncoder.signalASI.encode(decoded)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let serialized = AgentPermissionGrantJsonCodec.encode([decoded])
+    let roundTripped = AgentPermissionGrantJsonCodec.decode(serialized)
+    let fallbackSubject = try JSONDecoder.signalASI.decode(
+      AgentPermissionSubjectType.self,
+      from: Data(#""future""#.utf8)
+    )
+
+    XCTAssertEqual(decoded.grantId, "grant-1")
+    XCTAssertEqual(decoded.subjectType, .tool)
+    XCTAssertEqual(decoded.lifetime, .singleUse)
+    XCTAssertEqual(object["grant_id"] as? String, "grant-1")
+    XCTAssertEqual(object["subject_type"] as? String, "TOOL")
+    XCTAssertEqual(object["constraints_json"] as? String, #"{"allow":"once"}"#)
+    XCTAssertEqual(roundTripped.first?.grantId, "grant-1")
+    XCTAssertEqual(fallbackSubject, .tool)
   }
 
   func testAgentActionRecoveryModelsUseAndroidWireNames() throws {
@@ -1969,6 +2271,140 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(recordJSON.contains("resource_id"))
     XCTAssertTrue(statusJSON.contains(#""active_count":1"#))
     XCTAssertTrue(statusJSON.contains(#""by_kind":{"browser":1}"#))
+  }
+
+  func testAgentPrivateDataInventoryAuditCoversExportAndEraseDecisions() {
+    let audit = AgentPrivateDataInventory.audit()
+    let ids = AgentPrivateDataInventory.descriptors.map(\.id)
+
+    XCTAssertTrue(audit.complete)
+    XCTAssertTrue(audit.duplicateIds.isEmpty)
+    XCTAssertTrue(audit.descriptorsWithoutStorage.isEmpty)
+    XCTAssertTrue(audit.exportedDescriptorsWithoutPath.isEmpty)
+    XCTAssertTrue(audit.nonExportedDescriptorsWithPath.isEmpty)
+    XCTAssertEqual(audit.identityRotationCount, 1)
+    XCTAssertEqual(ids.count, Set(ids).count)
+  }
+
+  func testAgentPrivateDataInventoryMinimalManifestExcludesOptionalAndLocalOnlyStores() {
+    let manifest = AgentPrivateDataInventory.backupManifest(
+      includeContacts: false,
+      includeSessionHistory: false
+    )
+    let included = Set(manifest.includedStoreIds)
+    let excluded = Set(manifest.excludedStoreIds)
+
+    XCTAssertEqual(manifest.policyVersion, AgentPrivateDataInventory.policyVersion)
+    XCTAssertTrue(manifest.encryptedContainerRequired)
+    XCTAssertFalse(manifest.privateModeExported)
+    XCTAssertFalse(manifest.pausedTrackingExported)
+    XCTAssertTrue(manifest.identityRotatedOnReset)
+    XCTAssertTrue(included.contains("identity"))
+    XCTAssertTrue(included.contains("memory"))
+    XCTAssertTrue(included.contains("personal_asi"))
+    XCTAssertTrue(excluded.contains("contacts"))
+    XCTAssertTrue(excluded.contains("chat_history"))
+    XCTAssertTrue(excluded.contains("transcript"))
+    XCTAssertTrue(excluded.contains("permission_grants"))
+    XCTAssertTrue(excluded.contains("run_start_receipts"))
+    XCTAssertTrue(excluded.contains("runtime_files"))
+    XCTAssertEqual(Set(manifest.eraseStoreIds), Set(AgentPrivateDataInventory.descriptors.map(\.id)))
+  }
+
+  func testAgentPrivateDataInventoryFullManifestIncludesChosenDataButNeverLiveAuthority() {
+    let manifest = AgentPrivateDataInventory.backupManifest(
+      includeContacts: true,
+      includeSessionHistory: true
+    )
+    let included = Set(manifest.includedStoreIds)
+    let excluded = Set(manifest.excludedStoreIds)
+    let all = Set(AgentPrivateDataInventory.descriptors.map(\.id))
+
+    XCTAssertTrue(included.contains("contacts"))
+    XCTAssertTrue(included.contains("chat_history"))
+    XCTAssertTrue(included.contains("transcript"))
+    XCTAssertTrue(included.contains("home_assistant"))
+    XCTAssertTrue(Set(manifest.secretStoreIds).contains("identity"))
+    XCTAssertTrue(Set(manifest.secretStoreIds).contains("home_assistant"))
+    XCTAssertTrue(excluded.contains("permission_grants"))
+    XCTAssertTrue(excluded.contains("run_start_receipts"))
+    XCTAssertTrue(excluded.contains("mcp_credentials"))
+    XCTAssertEqual(included.union(excluded), all)
+    XCTAssertTrue(included.intersection(excluded).isEmpty)
+  }
+
+  func testAgentPrivateDataInventoryExportedBackupPathsMatchAndroidSchema() {
+    let paths = Set(
+      AgentPrivateDataInventory.descriptors
+        .filter { $0.exportPolicy != .neverExport }
+        .map(\.backupPath)
+    )
+
+    XCTAssertEqual(
+      paths,
+      Set([
+        "root.identity",
+        "root.profile",
+        "root.contacts",
+        "root.friend_requests",
+        "root.messages",
+        "agent.memory",
+        "agent.knowledge",
+        "agent.tasks",
+        "agent.transcript",
+        "agent.agent_conversations",
+        "agent.active_agent_conversation",
+        "agent.workflows",
+        "agent.workflow_schedules",
+        "agent.workflow_triggers",
+        "agent.workflow_execution_history",
+        "agent.safety",
+        "agent.custom_device_connectors",
+        "agent.global_super_agent",
+        "agent.agent_self_model",
+        "agent.model_planner",
+        "agent.voice_assistant",
+        "agent.home_assistant"
+      ])
+    )
+  }
+
+  func testAgentPrivateDataInventoryModelsUseAndroidWireNames() throws {
+    let descriptor = try JSONDecoder.signalASI.decode(
+      AgentPrivateDataDescriptor.self,
+      from: Data(
+        """
+        {
+          "id": "identity",
+          "category": "Identity",
+          "storage_ids": ["keychain:identity"],
+          "backup_path": "root.identity",
+          "export_policy": "ALWAYS_ENCRYPTED",
+          "sensitivity": "SECRET",
+          "erase_policy": "DELETE_AND_ROTATE_IDENTITY"
+        }
+        """.utf8
+      )
+    )
+    let fallbackPolicy = try JSONDecoder.signalASI.decode(
+      AgentPrivateDataExportPolicy.self,
+      from: Data(#""future""#.utf8)
+    )
+    let encoded = String(
+      decoding: try JSONEncoder.signalASI.encode(
+        AgentPrivateDataInventory.backupManifest(includeContacts: true, includeSessionHistory: false)
+      ),
+      as: UTF8.self
+    )
+
+    XCTAssertEqual(descriptor.exportPolicy, .alwaysEncrypted)
+    XCTAssertEqual(descriptor.sensitivity, .secret)
+    XCTAssertEqual(descriptor.erasePolicy, .deleteAndRotateIdentity)
+    XCTAssertEqual(fallbackPolicy, .neverExport)
+    XCTAssertTrue(encoded.contains(#""policy_version":1"#))
+    XCTAssertTrue(encoded.contains(#""encrypted_container_required":true"#))
+    XCTAssertTrue(encoded.contains(#""identity_rotated_on_reset":true"#))
+    XCTAssertTrue(encoded.contains(#""erase_store_ids""#))
   }
 
   func testAgentFailoverPolicyMatchesAndroidDesktopFallbackAndTimeoutStages() {
@@ -3656,6 +4092,103 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "delete_device"), .high)
   }
 
+  func testUnifiedCommandProtocolRequestPayloadUsesAndroidDesktopMqttContract() throws {
+    let payload = try UnifiedCommandProtocol.requestPayload(
+      commandId: "commands.list",
+      args: ["dry_run": .bool(true)],
+      messageId: "message-1"
+    )
+
+    XCTAssertEqual(payload["type"]?.stringValue, UnifiedCommandProtocol.requestType)
+    XCTAssertEqual(payload["message_id"]?.stringValue, "message-1")
+    XCTAssertEqual(payload["source_message_id"]?.stringValue, "message-1")
+    XCTAssertEqual(payload["contact_id"]?.stringValue, "system")
+    XCTAssertEqual(payload["command_id"]?.stringValue, "commands.list")
+    XCTAssertEqual(payload["args"]?.objectValue?["dry_run"]?.boolValue, true)
+    XCTAssertEqual(payload["requested_by"]?.stringValue, "paired_phone")
+    XCTAssertEqual(payload["approve"]?.boolValue, false)
+  }
+
+  func testUnifiedCommandProtocolSlashPayloadCanOmitCommandIdAndRejectsBlankRequests() throws {
+    let payload = try UnifiedCommandProtocol.requestPayload(
+      commandId: "",
+      slash: "/commands",
+      messageId: "message-2"
+    )
+
+    XCTAssertEqual(payload["command_id"]?.stringValue, "")
+    XCTAssertEqual(payload["slash"]?.stringValue, "/commands")
+    XCTAssertThrowsError(
+      try UnifiedCommandProtocol.requestPayload(commandId: "", raw: "  ", slash: "")
+    ) { error in
+      XCTAssertEqual(error as? UnifiedCommandProtocolError, .missingCommand)
+    }
+  }
+
+  func testUnifiedCommandProtocolDecodesStructuredCommandResult() throws {
+    let payload: AgentMcpJSONObject = [
+      "type": .string("unified_command_result"),
+      "command_id": .string("commands.list"),
+      "command_status": .string("completed"),
+      "source_message_id": .string("message-1"),
+      "result": .object([
+        "status": .string("completed"),
+        "command_id": .string("commands.list"),
+        "run_id": .string("run-1"),
+        "data": .object(["catalog_size": .int(753)]),
+        "display": .object(["type": .string("command_list")])
+      ])
+    ]
+
+    let result = try XCTUnwrap(UnifiedCommandProtocol.decodeResult(payload))
+
+    XCTAssertEqual(result.commandId, "commands.list")
+    XCTAssertEqual(result.status, "completed")
+    XCTAssertEqual(result.runId, "run-1")
+    XCTAssertEqual(result.sourceMessageId, "message-1")
+    XCTAssertEqual(result.data["catalog_size"]?.intValue, 753)
+    XCTAssertEqual(result.display["type"]?.stringValue, "command_list")
+  }
+
+  func testUnifiedCommandProtocolIgnoresOtherPayloadTypesAndUsesResultFallbacks() throws {
+    XCTAssertNil(UnifiedCommandProtocol.decodeResult(["type": .string("text")]))
+
+    let result = try XCTUnwrap(
+      UnifiedCommandProtocol.decodeResult([
+        "type": .string("unified_command_result"),
+        "source_message_id": .string("message-fallback"),
+        "result": .object([
+          "status": .string("failed"),
+          "command_id": .string("commands.run"),
+          "error_code": .string("command_failed"),
+          "message": .string("Command failed")
+        ])
+      ])
+    )
+
+    XCTAssertEqual(result.commandId, "commands.run")
+    XCTAssertEqual(result.status, "failed")
+    XCTAssertEqual(result.errorCode, "command_failed")
+    XCTAssertEqual(result.message, "Command failed")
+  }
+
+  func testUnifiedCommandResultUsesAndroidWireNames() throws {
+    let result = UnifiedCommandResult(
+      commandId: "commands.list",
+      status: "completed",
+      runId: "run-1",
+      sourceMessageId: "message-1",
+      data: ["catalog_size": .int(753)],
+      display: ["type": .string("command_list")]
+    )
+    let encoded = String(decoding: try JSONEncoder.signalASI.encode(result), as: UTF8.self)
+
+    XCTAssertTrue(encoded.contains(#""command_id":"commands.list""#))
+    XCTAssertTrue(encoded.contains(#""run_id":"run-1""#))
+    XCTAssertTrue(encoded.contains(#""source_message_id":"message-1""#))
+    XCTAssertTrue(encoded.contains(#""catalog_size":753"#))
+  }
+
   func testAgentFailureRecoveryPayloadRoundTripsAndroidWireNames() throws {
     let payload = AgentFailureRecoveryPayload(
       action: .switchAgent,
@@ -4409,6 +4942,54 @@ final class SignalASIStoreTests: XCTestCase {
     return SignalASIStore(defaults: defaults, secrets: secrets)
   }
 
+  private func permissionGrant(
+    grantId: String = "grant-location",
+    lifetime: AgentPermissionGrantLifetime,
+    subjectId: String = "android.location",
+    scope: String = "location.foreground",
+    action: String = "read",
+    resource: String = "",
+    target: String = "",
+    constraintsJson: String = "{}",
+    expiresAtMillis: Int64 = 0,
+    maxUses: Int? = nil,
+    createdAtMillis: Int64 = 1_000
+  ) -> AgentPermissionGrant {
+    AgentPermissionGrant(
+      grantId: grantId,
+      subjectType: .tool,
+      subjectId: subjectId,
+      scope: scope,
+      action: action,
+      resource: resource,
+      target: target,
+      constraintsJson: constraintsJson,
+      issuer: .user,
+      evidence: "approval-dialog:turn-1",
+      lifetime: lifetime,
+      maxUses: maxUses,
+      createdAtMillis: createdAtMillis,
+      expiresAtMillis: expiresAtMillis
+    )
+  }
+
+  private func permissionRequest(
+    subjectId: String = "android.location",
+    scope: String = "location.foreground",
+    action: String = "read",
+    resource: String = "",
+    target: String = ""
+  ) -> AgentPermissionRequest {
+    AgentPermissionRequest(
+      subjectType: .tool,
+      subjectId: subjectId,
+      scope: scope,
+      action: action,
+      resource: resource,
+      target: target
+    )
+  }
+
   private var globalBudgetNow: Int64 { 1_000_000 }
   private var globalBudgetLeaseMillis: Int64 { 60_000 }
 
@@ -4470,6 +5051,44 @@ final class SignalASIStoreTests: XCTestCase {
       risk: risk,
       status: .failed,
       description: "Recover \(kind.rawValue)"
+    )
+  }
+
+  private func agentAutonomyAction(
+    id: String,
+    kind: AgentActionKind = .openApp,
+    status: AgentActionStatus,
+    package: String = "com.signalasi.chat",
+    connectorId: String = "",
+    url: String = "",
+    prompt: String = ""
+  ) -> AgentAction {
+    var parameters: [String: String] = [:]
+    if !package.isEmpty { parameters["package"] = package }
+    if !connectorId.isEmpty { parameters["connector_id"] = connectorId }
+    if !url.isEmpty { parameters["url"] = url }
+    if !prompt.isEmpty { parameters["prompt"] = prompt }
+    return AgentAction(
+      id: id,
+      kind: kind,
+      target: "SignalASI",
+      risk: .low,
+      status: status,
+      description: id,
+      parameters: parameters
+    )
+  }
+
+  private func agentAutonomyPlan(
+    actions: [AgentAction],
+    actionHistory: [AgentAction] = []
+  ) -> AgentPlan {
+    AgentPlan(
+      goal: "Review autonomy guard",
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
+      steps: [],
+      actions: actions,
+      actionHistory: actionHistory
     )
   }
 

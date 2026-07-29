@@ -152,13 +152,31 @@
 
     <section id="capabilitiesPanel" class="drawer-panel">
       <div class="capability-tabs" role="tablist">
-        <button class="active" data-capability-tab="memory" data-i18n="Memory">Memory</button>
+        <button class="active" data-capability-tab="marketplace" data-i18n="Marketplace">Marketplace</button>
+        <button data-capability-tab="memory" data-i18n="Memory">Memory</button>
         <button data-capability-tab="skills" data-i18n="Skills">Skills</button>
         <button data-capability-tab="mcp">MCP</button>
         <button data-capability-tab="automation" data-i18n="Automation">Automation</button>
       </div>
 
-      <div id="memoryCapability" class="capability-pane active">
+      <div id="marketplaceCapability" class="capability-pane active">
+        <div class="capability-summary">
+          <div>
+            <strong data-i18n="Tool Marketplace">Tool Marketplace</strong>
+            <p id="marketplaceSummary" data-i18n="Loading">Loading</p>
+          </div>
+          <button id="refreshMarketplaceButton" class="secondary-button" data-i18n="Refresh">Refresh</button>
+        </div>
+        <div class="marketplace-filters" role="tablist">
+          <button class="active" data-marketplace-kind="" data-i18n="All">All</button>
+          <button data-marketplace-kind="native_tool" data-i18n="Tools">Tools</button>
+          <button data-marketplace-kind="mcp">MCP</button>
+          <button data-marketplace-kind="automation" data-i18n="Automations">Automations</button>
+        </div>
+        <div id="marketplaceList" class="capability-list"></div>
+      </div>
+
+      <div id="memoryCapability" class="capability-pane">
         <div class="capability-summary"><div><strong data-i18n="Long-term memory">Long-term memory</strong><p id="memorySummary" data-i18n="Loading">Loading</p></div><button id="refreshMemoryButton" class="secondary-button" data-i18n="Refresh">Refresh</button></div>
         <div class="memory-view-tabs" role="tablist" aria-label="Memory views">
           <button class="active" data-memory-view="current"><span data-i18n="Current">Current</span><em id="memoryCurrentCount">0</em></button>
