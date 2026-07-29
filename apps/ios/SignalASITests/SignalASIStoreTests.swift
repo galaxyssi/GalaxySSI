@@ -2797,6 +2797,207 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(AgentManagedResponseCodec.decode(#"[{"owner_run_id":"","source_message_id":0}]"#).isEmpty)
   }
 
+  func testAgentCrossTeamDelegationLaunchRequestUsesIsolatedContext() throws {
+    let fixture = crossTeamFixture()
+    let destination = crossTeamDestinationTeam()
+    let input = crossTeamInput(
+      constraints: ["Use public evidence only"],
+      expectedOutput: "A concise verified answer",
+      evidence: [
+        AgentDelegationEvidence(
+          evidenceId: "evidence-one",
+          summary: "The API changed in the latest release.",
+          sourceAgentId: "hermes-source",
+          contentHash: "ABC123"
+        )
+      ]
+    )
+
+    let prepared = try fixture.coordinator.prepare(
+      input: input,
+      destination: destination,
+      registrations: crossTeamRegistrations()
+    )
+    let admission = try fixture.coordinator.admit(
+      delegationId: prepared.envelope.delegationId,
+      destination: destination,
+      registrations: crossTeamRegistrations()
+    )
+    let request = try XCTUnwrap(admission.launchSpec?.request)
+
+    XCTAssertEqual(admission.record.state, .authorized)
+    XCTAssertEqual(request.conversationId, "delegation:\(input.delegationId)")
+    XCTAssertEqual(request.parentRunId, input.sourceRunId)
+    XCTAssertEqual(request.requiredCapabilities, Set([AgentCapability.chat]))
+    XCTAssertTrue(request.goal.contains("Use public evidence only"))
+    XCTAssertTrue(request.goal.contains("The API changed in the latest release."))
+    XCTAssertNil(request.context["conversation_history"])
+    XCTAssertNil(request.context["internal_memory"])
+    XCTAssertNil(request.context["system_prompt"])
+    XCTAssertNil(request.context["checkpoint"])
+    XCTAssertEqual(request.context["cross_team_delegation"]?.boolValue, true)
+  }
+
+  func testAgentCrossTeamDelegationArtifactManifestWaitsForGrantAndOmitsUris() throws {
+    let fixture = crossTeamFixture()
+    let destination = crossTeamDestinationTeam()
+    let prepared = try fixture.coordinator.prepare(
+      input: crossTeamInput(artifacts: [
+        AgentDelegationArtifactManifest(
+          artifactId: "artifact-one",
+          name: "report.pdf",
+          mimeType: "APPLICATION/PDF",
+          contentHash: "DEADBEEF",
+          sizeBytes: 1_024
+        )
+      ]),
+      destination: destination,
+      registrations: crossTeamRegistrations()
+    )
+
+    XCTAssertEqual(prepared.state, .waitingConfirmation)
+    _ = try fixture.grants.grant(crossTeamGrant(subjectId: "codex-destination", lifetime: .permanent))
+    let admitted = try fixture.coordinator.admit(
+      delegationId: prepared.envelope.delegationId,
+      destination: destination,
+      registrations: crossTeamRegistrations()
+    )
+    let encoded = AgentCrossTeamDelegationCodec.encodeEnvelope(admitted.record.envelope)
+
+    XCTAssertEqual(admitted.record.state, .authorized)
+    XCTAssertNotNil(admitted.launchSpec)
+    XCTAssertTrue(encoded.contains("artifact-one"))
+    XCTAssertTrue(encoded.contains("application/pdf"))
+    XCTAssertFalse(encoded.contains("content://"))
+    XCTAssertFalse(encoded.contains("file://"))
+    XCTAssertFalse(encoded.contains("\"uri\""))
+  }
+
+  func testAgentCrossTeamDelegationResumesDispatchesAndReturnsPrimaryOutputOnly() throws {
+    let fixture = crossTeamFixture()
+    let destination = crossTeamDestinationTeam(includeObserver: true)
+    let registrations = crossTeamRegistrations(includeObserver: true)
+    let prepared = try fixture.coordinator.prepare(
+      input: crossTeamInput(),
+      destination: destination,
+      registrations: registrations
+    )
+    let firstAdmission = try fixture.coordinator.admit(
+      delegationId: prepared.envelope.delegationId,
+      destination: destination,
+      registrations: registrations
+    )
+    let resumed = try fixture.coordinator.admit(
+      delegationId: prepared.envelope.delegationId,
+      destination: destination,
+      registrations: registrations
+    )
+    let request = try XCTUnwrap(resumed.launchSpec?.request)
+
+    XCTAssertEqual(firstAdmission.record.state, .authorized)
+    XCTAssertEqual(firstAdmission.launchSpec?.request.runId, request.runId)
+    let dispatched = try fixture.coordinator.markDispatched(
+      delegationId: prepared.envelope.delegationId,
+      destinationRunId: request.runId
+    )
+    let finished = try fixture.coordinator.finish(
+      delegationId: prepared.envelope.delegationId,
+      snapshot: AgentTeamExecutionSnapshot(
+        supervisorRunId: dispatched.destinationRunId,
+        teamId: destination.teamId,
+        taskId: "delegated-task",
+        primaryAgentId: destination.primaryAgentId,
+        state: .succeeded,
+        members: [
+          AgentTeamMemberSnapshot(
+            agentId: destination.primaryAgentId,
+            deliveryMode: .respond,
+            status: .succeeded,
+            output: "Final delegated result"
+          ),
+          AgentTeamMemberSnapshot(
+            agentId: "hermes-observer",
+            deliveryMode: .observe,
+            status: .succeeded,
+            output: "Private observer evidence"
+          )
+        ],
+        finalOutput: "Final delegated result",
+        updatedAtMillis: crossTeamNow + 1_000
+      )
+    )
+
+    XCTAssertEqual(dispatched.state, .dispatched)
+    XCTAssertEqual(finished.state, .returned)
+    XCTAssertEqual(finished.resultSummary, "Final delegated result")
+    XCTAssertFalse(finished.resultSummary.contains("Private observer evidence"))
+  }
+
+  func testAgentCrossTeamDelegationCodecAndDenialsUseAndroidContract() throws {
+    let fixture = crossTeamFixture()
+    let prepared = try fixture.coordinator.prepare(
+      input: crossTeamInput(
+        constraints: ["No network writes"],
+        evidence: [AgentDelegationEvidence(evidenceId: "evidence-one", summary: "A bounded summary", sourceAgentId: "source-agent")]
+      ),
+      destination: crossTeamDestinationTeam(),
+      registrations: crossTeamRegistrations()
+    )
+    let encodedEnvelope = AgentCrossTeamDelegationCodec.encodeEnvelope(prepared.envelope)
+    let encodedRecords = AgentCrossTeamDelegationCodec.encodeRecords([prepared])
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(encodedEnvelope.utf8)) as? [String: Any])
+    let returnContract = try XCTUnwrap(object["return_contract"] as? [String: Any])
+
+    XCTAssertEqual(object["delegation_id"] as? String, "delegation-one")
+    XCTAssertEqual(object["source_team_id"] as? String, "team-source")
+    XCTAssertEqual(returnContract["maximum_characters"] as? Int, 16_000)
+    XCTAssertNil(object["delegationId"])
+    XCTAssertEqual(AgentCrossTeamDelegationCodec.decodeEnvelope(encodedEnvelope), prepared.envelope)
+    XCTAssertEqual(AgentCrossTeamDelegationCodec.decodeRecords(encodedRecords), [prepared])
+    XCTAssertFalse(encodedEnvelope.contains("conversation_history"))
+    XCTAssertFalse(encodedEnvelope.contains("internal_memory"))
+    XCTAssertFalse(encodedEnvelope.contains("system_prompt"))
+
+    let denied = try fixture.coordinator.prepare(
+      input: crossTeamInput(delegationId: "delegation-denied", nonce: "delegation-nonce-0002", delegationDepth: 4),
+      destination: crossTeamDestinationTeam(),
+      registrations: crossTeamRegistrations()
+    )
+    let deniedAdmission = try fixture.coordinator.admit(
+      delegationId: denied.envelope.delegationId,
+      destination: crossTeamDestinationTeam(),
+      registrations: crossTeamRegistrations()
+    )
+    XCTAssertEqual(denied.state, .denied)
+    XCTAssertTrue(denied.policyReasonCodes.contains("delegation_depth_exceeded"))
+    XCTAssertNil(deniedAdmission.launchSpec)
+
+    let changed = AgentTeamDefinition(
+      teamId: crossTeamDestinationTeam().teamId,
+      primaryAgentId: "codex-destination",
+      members: crossTeamDestinationTeam().members + [
+        AgentTeamMember(
+          agentId: "unreviewed-agent",
+          deliveryMode: .observe,
+          requiredCapabilities: [.chat],
+          role: "observer",
+          objective: "",
+          dependsOnAgentIds: [],
+          context: [:]
+        )
+      ],
+      visibilityMode: .background,
+      collectiveCapabilities: [.chat]
+    )
+    XCTAssertThrowsError(try fixture.coordinator.admit(
+      delegationId: prepared.envelope.delegationId,
+      destination: changed,
+      registrations: crossTeamRegistrations()
+    )) { error in
+      XCTAssertTrue("\(error)".contains("members changed"))
+    }
+  }
+
   func testAgentPermissionGrantLedgerConsumesSingleUseGrantExactlyOnce() throws {
     var now: Int64 = 1_000
     let store = InMemoryAgentPermissionGrantStore(nowMillis: { now })
@@ -7191,6 +7392,141 @@ final class SignalASIStoreTests: XCTestCase {
       failureDomain: target.failureDomain,
       adapterType: target.adapterType
     )
+  }
+
+  private var crossTeamNow: Int64 { 2_000_000 }
+  private var crossTeamSourceTeam: String { "team-source" }
+  private var crossTeamDestinationTeamId: String { "team-destination" }
+
+  private func crossTeamFixture() -> CrossTeamFixture {
+    let grants = InMemoryAgentPermissionGrantStore(nowMillis: { self.crossTeamNow })
+    let firewall = AgentPersonalPolicyFirewall(
+      grantStore: grants,
+      replayStore: InMemoryAgentPolicyReplayStore(),
+      auditStore: InMemoryAgentPolicyFirewallAuditStore(),
+      clock: { self.crossTeamNow }
+    )
+    return CrossTeamFixture(
+      grants: grants,
+      coordinator: AgentCrossTeamDelegationCoordinator(
+        firewall: firewall,
+        store: InMemoryAgentCrossTeamDelegationStore(),
+        clock: { self.crossTeamNow }
+      )
+    )
+  }
+
+  private func crossTeamInput(
+    delegationId: String = "delegation-one",
+    nonce: String = "delegation-nonce-0001",
+    goal: String = "Complete the delegated analysis",
+    constraints: [String] = [],
+    expectedOutput: String = "",
+    evidence: [AgentDelegationEvidence] = [],
+    artifacts: [AgentDelegationArtifactManifest] = [],
+    delegationDepth: Int = 1,
+    secureTransport: Bool = true
+  ) -> AgentCrossTeamDelegationInput {
+    AgentCrossTeamDelegationInput(
+      delegationId: delegationId,
+      nonce: nonce,
+      sourceTeamId: crossTeamSourceTeam,
+      sourceRunId: "source-run",
+      requesterAgentId: "signalasi-mobile",
+      goal: goal,
+      constraints: constraints,
+      expectedOutput: expectedOutput,
+      requiredCapabilities: [.chat],
+      evidence: evidence,
+      artifacts: artifacts,
+      delegationDepth: delegationDepth,
+      secureTransport: secureTransport,
+      identityProofVerified: true,
+      createdAtMillis: crossTeamNow,
+      expiresAtMillis: crossTeamNow + 60_000
+    )
+  }
+
+  private func crossTeamDestinationTeam(includeObserver: Bool = false) -> AgentTeamDefinition {
+    var members = [
+      AgentTeamMember(
+        agentId: "codex-destination",
+        deliveryMode: .respond,
+        requiredCapabilities: [.chat],
+        role: "lead synthesizer",
+        objective: "",
+        dependsOnAgentIds: [],
+        context: [:]
+      )
+    ]
+    if includeObserver {
+      members.append(AgentTeamMember(
+        agentId: "hermes-observer",
+        deliveryMode: .observe,
+        requiredCapabilities: [],
+        role: "research specialist",
+        objective: "",
+        dependsOnAgentIds: [],
+        context: [:]
+      ))
+    }
+    return AgentTeamDefinition(
+      teamId: crossTeamDestinationTeamId,
+      primaryAgentId: "codex-destination",
+      members: members,
+      visibilityMode: .background,
+      collectiveCapabilities: [.chat]
+    )
+  }
+
+  private func crossTeamRegistrations(includeObserver: Bool = false) -> [AgentRegistration] {
+    var registrations = [
+      networkRegistration(
+        agentId: "codex-destination",
+        displayName: "codex-destination",
+        providerId: "codex",
+        deviceId: "device-codex-destination",
+        capabilities: [.chat],
+        trust: .verifiedPaired
+      )
+    ]
+    if includeObserver {
+      registrations.append(networkRegistration(
+        agentId: "hermes-observer",
+        displayName: "hermes-observer",
+        providerId: "hermes",
+        deviceId: "device-hermes-observer",
+        capabilities: [.chat],
+        trust: .verifiedPaired
+      ))
+    }
+    return registrations
+  }
+
+  private func crossTeamGrant(
+    subjectId: String,
+    lifetime: AgentPermissionGrantLifetime
+  ) -> AgentPermissionGrant {
+    AgentPermissionGrant(
+      grantId: "grant-\(subjectId)",
+      subjectType: .agent,
+      subjectId: subjectId,
+      scope: AgentPersonalPolicyFirewall.DELEGATION_SCOPE,
+      action: "outbound",
+      resource: crossTeamSourceTeam,
+      target: crossTeamDestinationTeamId,
+      issuer: .user,
+      evidence: "user-confirmed",
+      lifetime: lifetime,
+      maxUses: lifetime == .singleUse ? 1 : 0,
+      createdAtMillis: crossTeamNow,
+      expiresAtMillis: lifetime == .temporary ? crossTeamNow + 60_000 : 0
+    )
+  }
+
+  private struct CrossTeamFixture {
+    var grants: InMemoryAgentPermissionGrantStore
+    var coordinator: AgentCrossTeamDelegationCoordinator
   }
 
   private var globalBudgetNow: Int64 { 1_000_000 }
