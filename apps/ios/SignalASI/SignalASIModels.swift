@@ -50,6 +50,7 @@ struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
   var mqttTopic: String? = nil
   var mqttInboxTopic: String? = nil
   var signalBundleRef: String? = nil
+  var deletedAt: Date? = nil
 
   var selectedCloudModel: CloudModelConfig? {
     cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first
@@ -112,6 +113,7 @@ enum SignalASIFriendRequestStatus: String, Codable, CaseIterable {
   case pending
   case approved
   case rejected
+  case deleted
 }
 
 struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
@@ -129,6 +131,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
   var createdAt: Date
   var approvedAt: Date?
   var rejectedAt: Date?
+  var deletedAt: Date?
   var previouslyDeleted: Bool
   var readdRequired: Bool
 
@@ -147,6 +150,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     createdAt: Date = Date(),
     approvedAt: Date? = nil,
     rejectedAt: Date? = nil,
+    deletedAt: Date? = nil,
     previouslyDeleted: Bool = false,
     readdRequired: Bool = false
   ) {
@@ -164,6 +168,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     self.createdAt = createdAt
     self.approvedAt = approvedAt
     self.rejectedAt = rejectedAt
+    self.deletedAt = deletedAt
     self.previouslyDeleted = previouslyDeleted
     self.readdRequired = readdRequired
   }
@@ -183,6 +188,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     case createdAt = "created_at"
     case approvedAt = "approved_at"
     case rejectedAt = "rejected_at"
+    case deletedAt = "deleted_at"
     case previouslyDeleted = "previously_deleted"
     case readdRequired = "readd_required"
   }
@@ -203,6 +209,7 @@ struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
     createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()
     approvedAt = Self.decodeDate(container, key: .approvedAt)
     rejectedAt = Self.decodeDate(container, key: .rejectedAt)
+    deletedAt = Self.decodeDate(container, key: .deletedAt)
     previouslyDeleted = try container.decodeIfPresent(Bool.self, forKey: .previouslyDeleted) ?? false
     readdRequired = try container.decodeIfPresent(Bool.self, forKey: .readdRequired) ?? previouslyDeleted
   }

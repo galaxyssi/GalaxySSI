@@ -248,8 +248,10 @@ struct ContactsView: View {
           }
         }
         Section("Contacts") {
-          ForEach(store.contacts.filter { !$0.deleted }) { contact in
-            ContactRow(contact: contact, latestMessage: store.messages(for: contact.id).last)
+          ForEach(store.contacts.filter { !$0.deleted && $0.id != "system" }) { contact in
+            NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
+              ContactRow(contact: contact, latestMessage: store.messages(for: contact.id).last)
+            }
           }
         }
         if !contactImportStatus.isEmpty {
@@ -294,6 +296,157 @@ struct ContactsView: View {
     } catch {
       contactImportStatus = error.localizedDescription
       contactImportIsError = true
+    }
+  }
+}
+
+struct ContactDetailView: View {
+  @EnvironmentObject private var store: SignalASIStore
+  @Environment(\.dismiss) private var dismiss
+  @State private var remarkName = ""
+  @State private var deleteMessagesWhenDeleting = false
+  @State private var showingDeleteConfirmation = false
+  @State private var statusText = ""
+  var contactId: String
+
+  private var contact: SignalASIContact? {
+    store.contact(id: contactId)
+  }
+
+  var body: some View {
+    Form {
+      if let contact {
+        Section("Contact") {
+          HStack(spacing: 12) {
+            AvatarView(contact: contact)
+            VStack(alignment: .leading, spacing: 4) {
+              Text(contact.displayName)
+                .font(.headline)
+              Text(contact.setupDetail)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            }
+          }
+          NavigationLink(destination: ConversationView(contactId: contact.id)) {
+            Label("Open Chat", systemImage: "bubble.left.and.bubble.right")
+          }
+        }
+        Section("Remark") {
+          TextField("Display Name", text: $remarkName)
+          Button {
+            saveRemark()
+          } label: {
+            Label("Save", systemImage: "checkmark")
+          }
+          .disabled(remarkName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || remarkName == contact.displayName)
+          if !statusText.isEmpty {
+            Text(statusText)
+              .foregroundColor(.secondary)
+          }
+        }
+        Section("Identity") {
+          detailRow("SignalASI ID", contact.signalASIId)
+          detailRow("Fingerprint", contact.identityFingerprint.ifBlank("Unavailable"))
+        }
+        if hasRouteDetails(contact) {
+          Section("Route") {
+            if let mqttTopic = contact.mqttTopic, !mqttTopic.isEmpty {
+              detailRow("Topic", mqttTopic)
+            }
+            if let mqttInboxTopic = contact.mqttInboxTopic, !mqttInboxTopic.isEmpty {
+              detailRow("Inbox", mqttInboxTopic)
+            }
+            if let signalBundleRef = contact.signalBundleRef, !signalBundleRef.isEmpty {
+              detailRow("Bundle", signalBundleRef)
+            }
+          }
+        }
+        if contact.deliveryMode == .cloudAPI {
+          Section("Cloud Model") {
+            ForEach(contact.cloudModels) { model in
+              HStack {
+                VStack(alignment: .leading) {
+                  Text(model.displayName)
+                  Text(model.modelId)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+                Spacer()
+                if model.modelId == contact.selectedCloudModelId {
+                  Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+                }
+              }
+            }
+          }
+        }
+        Section("Manage") {
+          Button(role: .destructive) {
+            store.deleteMessages(for: contact.id)
+            statusText = "Chat history deleted."
+          } label: {
+            Label("Delete Chat History", systemImage: "trash")
+          }
+          Toggle("Also Delete Chat History", isOn: $deleteMessagesWhenDeleting)
+          Button(role: .destructive) {
+            showingDeleteConfirmation = true
+          } label: {
+            Label("Delete Contact", systemImage: "person.crop.circle.badge.xmark")
+          }
+        }
+      } else {
+        Section("Contact") {
+          Text("Contact not found.")
+            .foregroundColor(.secondary)
+        }
+      }
+    }
+    .navigationTitle(contact?.displayName ?? "Contact")
+    .onAppear(perform: syncRemarkName)
+    .onChange(of: contact?.displayName ?? "") { _ in
+      syncRemarkName()
+    }
+    .alert("Delete Contact?", isPresented: $showingDeleteConfirmation) {
+      Button("Delete", role: .destructive) {
+        deleteContact()
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text(deleteMessagesWhenDeleting ? "The contact and chat history will be removed from this device." : "The contact will be removed from this device.")
+    }
+  }
+
+  private func detailRow(_ title: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title)
+        .font(.caption)
+        .foregroundColor(.secondary)
+      Text(value)
+        .font(.system(.caption, design: .monospaced))
+        .textSelection(.enabled)
+    }
+  }
+
+  private func hasRouteDetails(_ contact: SignalASIContact) -> Bool {
+    [contact.mqttTopic, contact.mqttInboxTopic, contact.signalBundleRef].contains { value in
+      !(value ?? "").isEmpty
+    }
+  }
+
+  private func syncRemarkName() {
+    remarkName = contact?.displayName ?? ""
+  }
+
+  private func saveRemark() {
+    if store.renameContact(id: contactId, displayName: remarkName) {
+      statusText = "Contact updated."
+    }
+  }
+
+  private func deleteContact() {
+    guard let contact else { return }
+    if store.deleteContact(id: contact.id, deleteMessages: deleteMessagesWhenDeleting) {
+      dismiss()
     }
   }
 }
@@ -448,6 +601,8 @@ struct SettingsView: View {
   @State private var backupImportPresented = false
   @State private var backupStatus = ""
   @State private var backupStatusIsError = false
+  @State private var showingResetPrivateData = false
+  @State private var privacyStatus = ""
 
   var body: some View {
     NavigationView {
@@ -503,6 +658,17 @@ struct SettingsView: View {
               .foregroundColor(backupStatusIsError ? .red : .secondary)
           }
         }
+        Section("Privacy") {
+          Button(role: .destructive) {
+            showingResetPrivateData = true
+          } label: {
+            Label("Reset Private Data", systemImage: "trash")
+          }
+          if !privacyStatus.isEmpty {
+            Text(privacyStatus)
+              .foregroundColor(.secondary)
+          }
+        }
         Section("Notifications") {
           Button {
             Task {
@@ -520,6 +686,12 @@ struct SettingsView: View {
       .navigationTitle("Settings")
       .sheet(isPresented: $showingAddModel) {
         AddCloudModelView()
+      }
+      .sheet(isPresented: $showingResetPrivateData) {
+        ResetPrivateDataView {
+          store.destroyAllPrivateData()
+          privacyStatus = "Private data reset."
+        }
       }
       .fileExporter(
         isPresented: $backupExportPresented,
@@ -604,6 +776,41 @@ struct SettingsView: View {
   private func setBackupStatus(_ value: String, isError: Bool) {
     backupStatus = value
     backupStatusIsError = isError
+  }
+}
+
+struct ResetPrivateDataView: View {
+  @Environment(\.dismiss) private var dismiss
+  @State private var confirmation = ""
+  var onReset: () -> Void
+
+  var body: some View {
+    NavigationView {
+      Form {
+        Section("Reset") {
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, and saved model keys on this device.")
+            .foregroundColor(.secondary)
+          TextField("RESET", text: $confirmation)
+            .textInputAutocapitalization(.characters)
+            .autocorrectionDisabled(true)
+          Button(role: .destructive) {
+            onReset()
+            dismiss()
+          } label: {
+            Label("Reset Private Data", systemImage: "trash")
+          }
+          .disabled(confirmation != "RESET")
+        }
+      }
+      .navigationTitle("Reset")
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel") {
+            dismiss()
+          }
+        }
+      }
+    }
   }
 }
 
