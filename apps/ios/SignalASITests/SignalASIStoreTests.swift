@@ -3897,6 +3897,137 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
   }
 
+  func testAgentActionNativeToolExecutorRunsLegacyExecutorThroughRegistry() throws {
+    var capturedAction: AgentAction?
+    var capturedScreen: AgentScreenContext?
+    let descriptor = try nativeToolDescriptor(
+      AgentNativeToolAgentActionAdapter.defaultToolId(.tap),
+      risk: .medium
+    )
+    let delegate = TestAgentActionExecutor { action, screen in
+      capturedAction = action
+      capturedScreen = screen
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Tapped",
+        metadata: ["screen": screen.pageTitle]
+      )
+    }
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentActionNativeToolExecutor.executableDefinition(
+        definition: AgentPhoneNativeToolDefinition(
+          descriptor: descriptor,
+          executorId: "legacy.agent_action",
+          provenanceMetadata: ["adapter": "AgentActionExecutor"]
+        ),
+        delegate: delegate,
+        kind: .tap,
+        screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Settings") }
+      ))
+    let legacy = AgentAction(
+      id: "legacy-9",
+      kind: .tap,
+      target: "Wi-Fi",
+      risk: .medium,
+      status: .proposed,
+      description: "Tap Wi-Fi",
+      parameters: ["bounds": "[0,0][10,10]"]
+    )
+    let call = AgentNativeToolAgentActionAdapter.fromAgentAction(legacy, toolId: descriptor.id)
+
+    let nativeResult = registry.invoke(call.toolId, input: call.input, context: call.context)
+    let roundTripped = AgentNativeToolAgentActionAdapter.toAgentActionResult(nativeResult, actionId: legacy.id)
+
+    XCTAssertTrue(nativeResult.toJson(), nativeResult.isSuccess)
+    XCTAssertEqual(delegate.callCount, 1)
+    XCTAssertEqual(capturedAction?.id, "legacy-9")
+    XCTAssertEqual(capturedAction?.kind, .tap)
+    XCTAssertEqual(capturedAction?.target, "Wi-Fi")
+    XCTAssertEqual(capturedAction?.parameters["bounds"], "[0,0][10,10]")
+    XCTAssertTrue(capturedAction?.requiresConfirmation == true)
+    XCTAssertEqual(capturedScreen?.pageTitle, "Settings")
+    XCTAssertEqual(nativeResult.provenance.legacyAgentActionId, "legacy-9")
+    XCTAssertEqual(nativeResult.provenance.executorId, "legacy.agent_action")
+    XCTAssertTrue(roundTripped.success)
+    XCTAssertEqual(roundTripped.metadata["native_tool_id"], descriptor.id)
+    XCTAssertEqual(roundTripped.metadata["native_receipt_id"], "legacy-9")
+  }
+
+  func testAgentPhoneNativeToolCatalogBuildsExecutableActionDefinitions() throws {
+    var captured: [AgentAction] = []
+    let delegate = TestAgentActionExecutor { action, _ in
+      captured.append(action)
+      return AgentActionResult(
+        actionId: action.id,
+        success: true,
+        message: "Executed \(action.kind.rawValue)"
+      )
+    }
+    let executables = AgentPhoneNativeToolCatalog.actionExecutableDefinitions(
+      delegate: delegate,
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Browser") },
+      capabilityStatuses: readyPhoneCapabilityStatuses()
+    )
+    let openURL = try XCTUnwrap(
+      executables.first { $0.id == AgentNativeToolAgentActionAdapter.defaultToolId(.openURL) }
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutables(executables)
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "open-url",
+      grantedPermissions: Set(openURL.descriptor.requiredPermissions.filter { $0.required }.map(\.id)),
+      grantedConsents: Set(openURL.descriptor.requiredConsents.filter { $0.required }.map(\.id))
+    )
+
+    let result = registry.invoke(
+      openURL.id,
+      input: [
+        "target": .string("Safari"),
+        "url": .string("https://signalasi.com"),
+        "parameters": .object(["url": .string("https://signalasi.com")])
+      ],
+      context: context
+    )
+
+    XCTAssertEqual(Set(executables.map(\.id)), Set(AgentPhoneNativeToolCatalog.supportedActionKinds.map {
+      AgentNativeToolAgentActionAdapter.defaultToolId($0)
+    }))
+    XCTAssertEqual(registry.ids(), Set(executables.map(\.id)))
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(captured.first?.kind, .openURL)
+    XCTAssertEqual(captured.first?.target, "Safari")
+    XCTAssertEqual(captured.first?.parameters["url"], "https://signalasi.com")
+    XCTAssertEqual(result.provenance.executorId, AgentPhoneNativeToolCatalog.actionExecutorId)
+  }
+
+  func testAgentActionNativeToolExecutorMapsLegacyFailuresToNativeFailures() throws {
+    let descriptor = try nativeToolDescriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.tap))
+    let delegate = TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: false, message: "Missed target")
+    }
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentActionNativeToolExecutor.executableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "legacy.agent_action"),
+        delegate: delegate,
+        kind: .tap,
+        screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Settings") }
+      ))
+    let call = AgentNativeToolAgentActionAdapter.fromAgentAction(AgentAction(
+      id: "legacy-failed",
+      kind: .tap,
+      target: "Wi-Fi",
+      risk: .low,
+      status: .proposed,
+      description: "Tap Wi-Fi"
+    ))
+
+    let result = registry.invoke(call.toolId, input: call.input, context: call.context)
+
+    XCTAssertEqual(result.status, .failed)
+    XCTAssertEqual(result.error?.code, "agent_action_failed")
+    XCTAssertEqual(result.output["action_id"], .string("legacy-failed"))
+  }
+
   func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
     let first = planConnectorAction(id: "codex-1", connectorId: "desktop:codex")
     let duplicate = planConnectorAction(id: "codex-2", connectorId: "desktop:codex")

@@ -10265,6 +10265,78 @@ enum AgentNativeToolAgentActionAdapter {
   }
 }
 
+struct AgentActionNativeToolExecutor {
+  var delegate: AgentActionExecutor
+  var screenProvider: (AgentNativeToolInvocation) -> AgentScreenContext
+  var actionFactory: (AgentNativeToolInvocation) -> AgentAction
+
+  init(
+    delegate: AgentActionExecutor,
+    screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
+    actionFactory: @escaping (AgentNativeToolInvocation) -> AgentAction
+  ) {
+    self.delegate = delegate
+    self.screenProvider = screenProvider
+    self.actionFactory = actionFactory
+  }
+
+  func execute(_ invocation: AgentNativeToolInvocation) throws -> AgentNativeToolExecutionResult {
+    try invocation.checkpoint()
+    let action = actionFactory(invocation)
+    let result = delegate.execute(action: action, screen: screenProvider(invocation))
+    try invocation.checkpoint()
+    return AgentNativeToolAgentActionAdapter.fromAgentActionResult(result)
+  }
+
+  static func forKind(
+    delegate: AgentActionExecutor,
+    kind: AgentActionKind,
+    screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
+    targetProvider: ((AgentNativeToolInvocation) -> String)? = nil,
+    descriptionProvider: ((AgentNativeToolInvocation) -> String)? = nil
+  ) -> AgentActionNativeToolExecutor {
+    AgentActionNativeToolExecutor(
+      delegate: delegate,
+      screenProvider: screenProvider,
+      actionFactory: { invocation in
+        let call = AgentNativeToolCall(
+          toolId: invocation.descriptor.id,
+          input: invocation.input,
+          context: invocation.context
+        )
+        return AgentNativeToolAgentActionAdapter.toAgentAction(
+          call: call,
+          descriptor: invocation.descriptor,
+          kind: kind,
+          target: targetProvider?(invocation),
+          description: descriptionProvider?(invocation)
+        )
+      }
+    )
+  }
+
+  static func executableDefinition(
+    definition: AgentPhoneNativeToolDefinition,
+    delegate: AgentActionExecutor,
+    kind: AgentActionKind,
+    screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
+    targetProvider: ((AgentNativeToolInvocation) -> String)? = nil,
+    descriptionProvider: ((AgentNativeToolInvocation) -> String)? = nil
+  ) -> AgentNativeToolExecutableDefinition {
+    let executor = forKind(
+      delegate: delegate,
+      kind: kind,
+      screenProvider: screenProvider,
+      targetProvider: targetProvider,
+      descriptionProvider: descriptionProvider
+    )
+    return AgentNativeToolExecutableDefinition(
+      definition: definition,
+      executor: executor.execute
+    )
+  }
+}
+
 private extension AgentNativeToolRisk {
   var legacyRisk: AgentRisk {
     switch self {
@@ -12216,6 +12288,21 @@ enum AgentPhoneNativeToolCatalog {
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
   ) -> [AgentNativeToolDescriptor] {
     definitions(capabilityStatuses: capabilityStatuses).map(\.descriptor)
+  }
+
+  static func actionExecutableDefinitions(
+    delegate: AgentActionExecutor,
+    screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
+    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
+  ) -> [AgentNativeToolExecutableDefinition] {
+    zip(supportedActionKinds, actionDefinitions(capabilityStatuses: capabilityStatuses)).map { kind, definition in
+      AgentActionNativeToolExecutor.executableDefinition(
+        definition: definition,
+        delegate: delegate,
+        kind: kind,
+        screenProvider: screenProvider
+      )
+    }
   }
 
   static func capabilities(for kind: AgentActionKind) -> Set<AgentPhoneCapabilityId> {
