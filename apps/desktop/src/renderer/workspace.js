@@ -1559,7 +1559,8 @@ function memoryFindingLabel(value) {
     unresolved_conflict: "Unresolved memory conflict",
     stale_candidate: "Candidate waiting too long",
     low_confidence_reused: "Low-confidence memory reused",
-    missing_evidence: "Memory has no evidence reference"
+    missing_evidence: "Memory has no evidence reference",
+    broken_supersession_chain: "Supersession evidence chain is incomplete"
   };
   return t(labels[value] || value || "Memory needs review");
 }
@@ -1841,6 +1842,7 @@ function renderMemory() {
             <div class="memory-facts">
               <span>${escapeHtml(memoryNamespaceLabel(memory.namespace))}</span>
               <span>${escapeHtml(memoryEvidenceLabel(memory))}</span>
+              ${memory.superseded_by_id ? `<span>${escapeHtml(t("Replaced by newer memory"))}</span>` : ""}
               <span>${escapeHtml(memoryTime(memory.updated_at))}</span>
             </div>
           </div>

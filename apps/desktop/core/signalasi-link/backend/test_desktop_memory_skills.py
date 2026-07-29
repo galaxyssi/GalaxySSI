@@ -26,10 +26,55 @@ class DesktopMemoryTest(unittest.TestCase):
                 conversation_id="new-conversation",
             )
 
-            self.assertEqual(store.get(first["id"])["status"], "superseded")
+            previous = store.get(first["id"])
+            self.assertEqual(previous["status"], "superseded")
+            self.assertEqual(previous["superseded_by_id"], second["id"])
             self.assertEqual(second["supersedes_id"], first["id"])
             matches = store.search("What is the SignalASI response style?")
             self.assertEqual(matches[0]["id"], second["id"])
+
+    def test_supersession_chain_preserves_every_version_and_its_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            clock = iter((100.0, 101.0, 102.0, 103.0))
+            store = DesktopMemoryStore(Path(directory) / "memory.db", now=lambda: next(clock))
+            first = store.remember(
+                "The runtime is preparing",
+                kind="device_state",
+                key="device:runtime-state",
+                evidence=[{"source": "event-a"}],
+            )
+            second = store.remember(
+                "The runtime is installing",
+                kind="device_state",
+                key="device:runtime-state",
+                evidence=[{"source": "event-b"}],
+            )
+            third = store.remember(
+                "The runtime is ready",
+                kind="device_state",
+                key="device:runtime-state",
+                evidence=[{"source": "event-c"}],
+            )
+
+            chain = store.supersession_chain(second["id"])
+
+            self.assertTrue(chain["complete"])
+            self.assertEqual(
+                [first["id"], second["id"], third["id"]],
+                [memory["id"] for memory in chain["memories"]],
+            )
+            self.assertEqual(
+                ["event-a", "event-b", "event-c"],
+                [memory["evidence"][0]["source"] for memory in chain["memories"]],
+            )
+            self.assertEqual(chain["evidence_count"], 3)
+            self.assertEqual(store.get(first["id"])["superseded_by_id"], second["id"])
+            self.assertEqual(store.get(second["id"])["supersedes_id"], first["id"])
+            self.assertEqual(store.get(second["id"])["superseded_by_id"], third["id"])
+            self.assertEqual(store.get(third["id"])["supersedes_id"], second["id"])
+            snapshot = store.evolution_snapshot()
+            self.assertEqual(snapshot["summary"]["supersession_edges"], 2)
+            self.assertEqual(snapshot["supersession"]["broken_edge_count"], 0)
 
     def test_evolution_ignores_secrets_and_records_reusable_task_episode(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -234,6 +279,8 @@ class DesktopMemoryTest(unittest.TestCase):
             current = store.get(approved["resulting_memory_id"])
             self.assertEqual(old["status"], "superseded")
             self.assertEqual(old["temporal_state"], "deprecated")
+            self.assertEqual(old["superseded_by_id"], current["id"])
+            self.assertEqual(current["supersedes_id"], old["id"])
             self.assertEqual(old["evidence"][0]["source"], "health-check-1")
             self.assertEqual(current["evidence"][0]["source"], "health-check-2")
 

@@ -9408,13 +9408,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         items.take(200).forEach { item ->
-            featureContent.addView(featureRow(
-                item.topic.ifBlank { item.kind.name.lowercase(Locale.ROOT).replace('_', ' ') },
+            val itemState = memoryTemporalStateLabel(GlobalMemoryTemporalPolicy.classify(item))
+            val itemSubtitle = if (item.supersededByItemId.isNotBlank()) {
+                getString(
+                    R.string.cc_memory_temporal_item_replaced_subtitle,
+                    itemState,
+                    item.evidenceCount
+                )
+            } else {
                 getString(
                     R.string.cc_memory_temporal_item_subtitle,
-                    memoryTemporalStateLabel(GlobalMemoryTemporalPolicy.classify(item)),
+                    itemState,
                     item.evidenceCount
-                ),
+                )
+            }
+            featureContent.addView(featureRow(
+                item.topic.ifBlank { item.kind.name.lowercase(Locale.ROOT).replace('_', ' ') },
+                itemSubtitle,
                 R.drawable.ic_agent_memory,
                 securityTime(item.lastSeenAtMillis)
             ))

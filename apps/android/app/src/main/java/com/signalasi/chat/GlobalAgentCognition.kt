@@ -135,6 +135,8 @@ data class GlobalWorldItem(
     val status: GlobalWorldItemStatus = GlobalWorldItemStatus.ACTIVE,
     val temporalState: GlobalMemoryTemporalState = GlobalMemoryTemporalState.CURRENT,
     val conflictGroupId: String = "",
+    val supersedesItemIds: List<String> = emptyList(),
+    val supersededByItemId: String = "",
     val firstSeenAtMillis: Long = System.currentTimeMillis(),
     val lastSeenAtMillis: Long = System.currentTimeMillis(),
     val expiresAtMillis: Long = 0L
@@ -557,6 +559,14 @@ object GlobalWorldModelReducer {
                     .takeLast(MAX_EVIDENCE_PER_ITEM)
                 val replaceProjection = event.type in PERSISTENT_CONTEXT_UPSERT_EVENTS
                 val candidateIsCurrent = candidate.lastSeenAtMillis >= existing.lastSeenAtMillis
+                val createsNewVersion = replaceProjection &&
+                    candidateIsCurrent &&
+                    GlobalAgentText.normalize(existing.value) != GlobalAgentText.normalize(candidate.value)
+                if (createsNewVersion) {
+                    mutable += candidate
+                    changed += candidate
+                    return@forEach
+                }
                 val merged = existing.copy(
                     kind = if (replaceProjection && candidateIsCurrent) candidate.kind else existing.kind,
                     layer = if (replaceProjection && candidateIsCurrent) candidate.layer else existing.layer,

@@ -35,9 +35,118 @@ class GlobalMemoryEvolutionTest {
             understanding = understanding(event, "Screen understanding")
         )
 
-        assertEquals(GlobalWorldItemStatus.SUPERSEDED, result.reduction.world.items.first { it.id == "old" }.status)
-        assertEquals(GlobalWorldItemStatus.ACTIVE, result.reduction.world.items.first { it.id == "new" }.status)
+        val old = result.reduction.world.items.first { it.id == "old" }
+        val current = result.reduction.world.items.first { it.id == "new" }
+        assertEquals(GlobalWorldItemStatus.SUPERSEDED, old.status)
+        assertEquals(GlobalWorldItemStatus.ACTIVE, current.status)
+        assertEquals("new", old.supersededByItemId)
+        assertEquals(listOf("old"), current.supersedesItemIds)
+        assertEquals(listOf("event-old"), old.evidenceEventIds)
+        val trace = GlobalMemorySupersessionPolicy.trace(result.reduction.world, "new")
+        assertTrue(trace.complete)
+        assertEquals(setOf("old", "new"), trace.items.map(GlobalWorldItem::id).toSet())
+        assertEquals(setOf("event-old", "event-new"), trace.evidenceEventIds.toSet())
         assertEquals(GlobalMemoryTemporalState.CURRENT, result.candidates.single().temporalState)
+    }
+
+    @Test
+    fun persistentMemoryUpdateCreatesANewVersionInsteadOfRewritingEvidence() {
+        fun memoryEvent(
+            id: String,
+            type: GlobalConversationEventType,
+            content: String,
+            timestampMillis: Long
+        ) = GlobalConversationEvent(
+            id = id,
+            type = type,
+            conversationId = "conversation-a",
+            actor = GlobalConversationActor.USER,
+            timestampMillis = timestampMillis,
+            content = content,
+            metadata = mapOf(
+                "memory_id" to "runtime-state",
+                "memory_kind" to AgentMemoryKind.KNOWLEDGE.name,
+                "memory_topic" to "Runtime state"
+            ),
+            sensitivity = GlobalConversationSensitivity.PERSONAL
+        )
+
+        val created = memoryEvent(
+            "memory-created",
+            GlobalConversationEventType.MEMORY_CREATED,
+            "The runtime is preparing",
+            1_000L
+        )
+        val createdUnderstanding = understanding(created, "Runtime state")
+        val initial = GlobalMemoryEvolutionPolicy.evolve(
+            PersonalWorldModel(),
+            GlobalWorldModelReducer.reduce(PersonalWorldModel(), created, createdUnderstanding),
+            GlobalMemoryInbox(),
+            created,
+            createdUnderstanding
+        )
+        val previous = initial.reduction.world.items.single()
+        val updated = memoryEvent(
+            "memory-updated",
+            GlobalConversationEventType.MEMORY_UPDATED,
+            "The runtime is ready",
+            2_000L
+        )
+        val updatedUnderstanding = understanding(updated, "Runtime state")
+        val baseReduction = GlobalWorldModelReducer.reduce(
+            initial.reduction.world,
+            updated,
+            updatedUnderstanding
+        )
+
+        assertEquals(2, baseReduction.world.items.size)
+        val evolved = GlobalMemoryEvolutionPolicy.evolve(
+            initial.reduction.world,
+            baseReduction,
+            initial.inbox,
+            updated,
+            updatedUnderstanding
+        )
+        val old = evolved.reduction.world.items.first { it.id == previous.id }
+        val current = evolved.reduction.world.items.first { it.status == GlobalWorldItemStatus.ACTIVE }
+
+        assertEquals("The runtime is preparing", old.value)
+        assertEquals(listOf("memory-created"), old.evidenceEventIds)
+        assertEquals(GlobalWorldItemStatus.SUPERSEDED, old.status)
+        assertEquals(current.id, old.supersededByItemId)
+        assertEquals(listOf(old.id), current.supersedesItemIds)
+        assertEquals("The runtime is ready", current.value)
+        assertEquals(listOf("memory-updated"), current.evidenceEventIds)
+        GlobalMemorySupersessionPolicy.inspect(evolved.reduction.world).requireSafe()
+    }
+
+    @Test
+    fun supersessionIntegrityFailsClosedForAOneSidedLink() {
+        val previous = item(
+            id = "previous",
+            kind = GlobalWorldItemKind.STATE,
+            topic = "Runtime state",
+            value = "The runtime is preparing",
+            eventId = "event-previous"
+        ).copy(
+            status = GlobalWorldItemStatus.SUPERSEDED,
+            temporalState = GlobalMemoryTemporalState.DEPRECATED,
+            supersededByItemId = "replacement"
+        )
+        val replacement = item(
+            id = "replacement",
+            kind = GlobalWorldItemKind.STATE,
+            topic = "Runtime state",
+            value = "The runtime is ready",
+            eventId = "event-replacement"
+        )
+
+        val report = GlobalMemorySupersessionPolicy.inspect(
+            PersonalWorldModel(items = listOf(previous, replacement))
+        )
+
+        assertTrue(report.violations.any { it.startsWith("missing_forward:") })
+        assertTrue(runCatching { report.requireSafe() }.isFailure)
     }
 
     @Test
@@ -201,6 +310,60 @@ class GlobalMemoryEvolutionTest {
         assertEquals(GlobalMemoryTemporalState.DEPRECATED, old.temporalState)
         assertEquals(GlobalWorldItemStatus.ACTIVE, current.status)
         assertEquals(GlobalMemoryTemporalState.CURRENT, current.temporalState)
+        assertEquals(current.id, old.supersededByItemId)
+        assertEquals(listOf(old.id), current.supersedesItemIds)
+        assertEquals(listOf("previous-preference-event"), old.evidenceEventIds)
+    }
+
+    @Test
+    fun approvingEquivalentPreferenceStrengthensWithoutCreatingAFalseVersion() {
+        val previous = item(
+            "previous-preference",
+            GlobalWorldItemKind.PREFERENCE,
+            layer = GlobalWorldLayer.USER,
+            topic = "Response style",
+            value = "Prefer concise responses",
+            eventId = "previous-preference-event"
+        )
+        val source = event(
+            "repeated-preference-event",
+            "Prefer concise responses",
+            metadata = mapOf("memory_kind" to AgentMemoryKind.PREFERENCE.name)
+        )
+        val incoming = item(
+            "repeated-preference",
+            GlobalWorldItemKind.PREFERENCE,
+            layer = GlobalWorldLayer.USER,
+            topic = "Response style",
+            value = source.content,
+            eventId = source.id
+        )
+        val evolved = GlobalMemoryEvolutionPolicy.evolve(
+            PersonalWorldModel(items = listOf(previous)),
+            GlobalWorldReduction(
+                world = PersonalWorldModel(items = listOf(previous, incoming)),
+                changedItems = listOf(incoming),
+                conflicts = emptyList()
+            ),
+            GlobalMemoryInbox(),
+            source,
+            understanding(source, incoming.topic)
+        )
+
+        assertEquals(GlobalMemoryEvolutionAction.STRENGTHEN, evolved.candidates.single().action)
+        val (approvedWorld, _) = GlobalMemoryEvolutionPolicy.approve(
+            evolved.reduction.world,
+            evolved.inbox,
+            evolved.inbox.pending().single().id,
+            nowMillis = 3_000L
+        )
+
+        val memory = approvedWorld.items.single()
+        assertEquals(previous.id, memory.id)
+        assertEquals(GlobalWorldItemStatus.ACTIVE, memory.status)
+        assertEquals(setOf("previous-preference-event", "repeated-preference-event"), memory.evidenceEventIds.toSet())
+        assertTrue(memory.supersedesItemIds.isEmpty())
+        assertTrue(memory.supersededByItemId.isBlank())
     }
 
     @Test
@@ -885,6 +1048,15 @@ class GlobalMemoryEvolutionTest {
         assertEquals(1, world.items.count { it.kind == GlobalWorldItemKind.FACT && it.status == GlobalWorldItemStatus.ACTIVE })
         assertTrue(report.findings.any { it.kind == GlobalMemoryAuditFindingKind.DUPLICATE })
         assertTrue(report.themes.any { it.title == "SignalASI runtime" && it.itemCount >= 3 })
+        val consolidated = world.items.first {
+            it.kind == GlobalWorldItemKind.FACT && it.status == GlobalWorldItemStatus.ACTIVE
+        }
+        val superseded = world.items.first {
+            it.kind == GlobalWorldItemKind.FACT && it.status == GlobalWorldItemStatus.SUPERSEDED
+        }
+        assertEquals(consolidated.id, superseded.supersededByItemId)
+        assertTrue(superseded.id in consolidated.supersedesItemIds)
+        GlobalMemorySupersessionPolicy.inspect(world).requireSafe()
         val records = GlobalMemoryEvolutionPolicy.auditRecords(before, world, report.createdAtMillis)
         assertEquals(GlobalMemoryEvolutionAction.CONSOLIDATE, records.single().action)
         assertTrue(records.single().resultingItemId.isNotBlank())

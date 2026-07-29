@@ -233,6 +233,7 @@ class GlobalCognitionExecutor(context: Context) {
             entityGraph,
             evolution.inbox
         ).requireSafe()
+        GlobalMemorySupersessionPolicy.inspect(reduction.world).requireSafe()
         repository.saveMemoryInbox(evolution.inbox)
         repository.saveWorld(reduction.world)
         repository.saveTopicGraph(topicGraph)

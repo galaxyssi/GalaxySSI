@@ -1001,6 +1001,8 @@ class GlobalAgentRepository(context: Context) {
         .put("status", item.status.name)
         .put("temporal_state", item.temporalState.name)
         .put("conflict_group_id", item.conflictGroupId)
+        .put("supersedes_item_ids", JSONArray(item.supersedesItemIds))
+        .put("superseded_by_item_id", item.supersededByItemId)
         .put("first_seen_at_millis", item.firstSeenAtMillis)
         .put("last_seen_at_millis", item.lastSeenAtMillis)
         .put("expires_at_millis", item.expiresAtMillis)
@@ -1040,6 +1042,8 @@ class GlobalAgentRepository(context: Context) {
                 }
             ),
             conflictGroupId = json.optString("conflict_group_id"),
+            supersedesItemIds = json.optJSONArray("supersedes_item_ids").strings().takeLast(12),
+            supersededByItemId = json.optString("superseded_by_item_id"),
             firstSeenAtMillis = json.optLong("first_seen_at_millis"),
             lastSeenAtMillis = json.optLong("last_seen_at_millis"),
             expiresAtMillis = json.optLong("expires_at_millis")
@@ -1854,6 +1858,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
                 entityGraph,
                 memoryInbox
             ).requireSafe()
+            GlobalMemorySupersessionPolicy.inspect(world).requireSafe()
             changedItems += reduction.changedItems.size
             val decision = GlobalInterventionPolicy.decide(
                 event,
@@ -1976,6 +1981,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
             entityGraph,
             memoryInbox
         ).requireSafe()
+        GlobalMemorySupersessionPolicy.inspect(world).requireSafe()
         repository.saveMemoryInbox(memoryInbox)
         repository.saveWorld(world)
         repository.saveTopicGraph(topicGraph)
@@ -2000,6 +2006,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val inbox = repository.memoryInbox()
         val worldBeforeAudit = repository.loadWorld()
         val (auditedWorld, report) = GlobalMemoryCritic.audit(worldBeforeAudit, inbox)
+        GlobalMemorySupersessionPolicy.inspect(auditedWorld).requireSafe()
         repository.saveWorld(auditedWorld)
         repository.saveMemoryAudit(report)
         repository.appendMemoryEvolutionRecords(
@@ -2061,6 +2068,7 @@ class GlobalSuperAgentRuntime private constructor(context: Context) {
         val candidate = inbox.candidates.firstOrNull { it.id == candidateId } ?: return@synchronized false
         val (updatedWorld, updatedInbox) = GlobalMemoryEvolutionPolicy.approve(world, inbox, candidateId)
         if (updatedInbox == inbox) return@synchronized false
+        GlobalMemorySupersessionPolicy.inspect(updatedWorld).requireSafe()
         repository.saveWorld(updatedWorld)
         repository.saveMemoryInbox(updatedInbox)
         repository.appendMemoryEvolutionRecords(listOf(
