@@ -19913,7 +19913,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 copyText(desktopFingerprint, getString(R.string.security_copied_desktop_fingerprint))
             }
         })
-        snapshot.authorizations.filter { it.status != "revoked" }.forEach { authorization ->
+        addSectionTitle(getString(R.string.desktop_control_authorized_apps))
+        if (snapshot.authorizations.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.desktop_control_no_authorized_apps),
+                getString(R.string.desktop_control_no_authorized_apps_subtitle),
+                R.drawable.signalasi_mark,
+                ""
+            ))
+        }
+        snapshot.authorizations.forEach { authorization ->
             val timeSummary = when {
                 authorization.grantedAt > 0L && authorization.lastUsedAt > 0L -> getString(
                     R.string.desktop_control_granted_and_used,
@@ -19924,33 +19933,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     R.string.desktop_control_granted_at,
                     securityTime(authorization.grantedAt)
                 )
-                else -> ""
+                else -> getString(R.string.desktop_control_never_used)
             }
             featureContent.addView(featureRow(
-                authorization.phoneName.ifBlank { getString(R.string.desktop_control_this_phone) },
-                listOf(formatFingerprint(authorization.phoneFingerprint), timeSummary)
+                authorization.appName.ifBlank {
+                    authorization.phoneName.ifBlank { getString(R.string.desktop_control_this_phone) }
+                },
+                listOf(
+                    listOf(
+                        authorization.appPlatform.ifBlank { "Android" },
+                        formatFingerprint(authorization.phoneFingerprint)
+                    ).filter { it.isNotBlank() }.joinToString(" · "),
+                    timeSummary
+                )
                     .filter { it.isNotBlank() }
                     .joinToString("\n"),
-                R.drawable.ic_security_shield,
+                R.drawable.signalasi_mark,
                 desktopControlStatusLabel(authorization.status)
-            ))
-        }
-        if (snapshot.currentAuthorization?.status == "active") {
-            featureContent.addView(featureRow(
-                getString(R.string.desktop_control_revoke),
-                getString(R.string.desktop_control_revoke_subtitle),
-                R.drawable.ic_delete,
-                getString(R.string.security_revoke)
             ).apply {
                 setOnClickListener {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle(getString(R.string.desktop_control_revoke))
-                        .setMessage(getString(R.string.desktop_control_revoke_confirm))
-                        .setPositiveButton(getString(R.string.security_revoke)) { _, _ ->
-                            DesktopRemoteControl.revoke(device.id, snapshot.currentAuthorization.authorizationId)
-                        }
-                        .setNegativeButton(getString(R.string.common_cancel), null)
-                        .show()
+                    showDesktopAuthorizationRecordPage(device, authorization)
                 }
             })
         }
@@ -19993,6 +19995,172 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             textSize = 12f
             setPadding(dp(4), dp(14), dp(4), dp(20))
         })
+    }
+
+    private fun showDesktopAuthorizationRecordPage(
+        device: DesktopSecuritySummary,
+        authorization: DesktopControlAuthorization
+    ) {
+        showFeaturePage(getString(R.string.desktop_control_authorization_detail))
+        activeDesktopControlId = device.id
+        setFeatureBackAction { showDesktopRemoteControlPage(device) }
+        val active = authorization.status == "active"
+        featureContent.addView(featureHeroCard(
+            authorization.appName.ifBlank {
+                authorization.phoneName.ifBlank { getString(R.string.desktop_control_this_phone) }
+            },
+            getString(
+                R.string.desktop_control_authorization_app_subtitle,
+                authorization.appPlatform.ifBlank { "Android" }
+            ),
+            R.drawable.signalasi_mark,
+            if (active) "#14C66A" else "#8A939B",
+            desktopControlStatusLabel(authorization.status)
+        ))
+
+        addSectionTitle(getString(R.string.security_section_identity))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_app_instance_id),
+            authorization.appInstanceId,
+            R.drawable.ic_protocol_link,
+            getString(R.string.common_copy)
+        ).apply {
+            isEnabled = authorization.appInstanceId.isNotBlank()
+            setOnClickListener {
+                copyText(
+                    authorization.appInstanceId,
+                    getString(R.string.desktop_control_copied_app_instance_id)
+                )
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.settings_identity_fingerprint),
+            formatFingerprint(authorization.phoneFingerprint),
+            R.drawable.ic_settings_fingerprint,
+            getString(R.string.common_copy)
+        ).apply {
+            isEnabled = authorization.phoneFingerprint.isNotBlank()
+            setOnClickListener {
+                copyText(
+                    authorization.phoneFingerprint,
+                    getString(R.string.security_copied_phone_fingerprint)
+                )
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_authorization_id),
+            authorization.authorizationId,
+            R.drawable.ic_security_shield,
+            getString(R.string.common_copy)
+        ).apply {
+            setOnClickListener {
+                copyText(
+                    authorization.authorizationId,
+                    getString(R.string.desktop_control_copied_authorization_id)
+                )
+            }
+        })
+
+        addSectionTitle(getString(R.string.desktop_control_permission_scope))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_access_profile),
+            getString(
+                if (authorization.accessProfile == SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR) {
+                    R.string.pairing_access_full
+                } else {
+                    R.string.pairing_access_restricted
+                }
+            ),
+            R.drawable.ic_security_shield,
+            desktopControlStatusLabel(authorization.status)
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_allowed_actions),
+            desktopControlAllowedActions(authorization.allowedTools),
+            R.drawable.ic_agent_control,
+            getString(R.string.count_items, authorization.allowedTools.size)
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_grant_source),
+            getString(
+                if (authorization.grantSource == "pairing_qr") {
+                    R.string.desktop_control_grant_source_pairing
+                } else {
+                    R.string.status_unknown
+                }
+            ),
+            R.drawable.ic_scan,
+            ""
+        ))
+
+        addSectionTitle(getString(R.string.desktop_control_authorization_history))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_granted_time),
+            securityTime(authorization.grantedAt),
+            R.drawable.ic_agent_history,
+            ""
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_last_used_time),
+            if (authorization.lastUsedAt > 0L) {
+                securityTime(authorization.lastUsedAt)
+            } else {
+                getString(R.string.desktop_control_never_used)
+            },
+            R.drawable.ic_agent_history,
+            ""
+        ))
+        if (!active && authorization.revokedAt > 0L) {
+            featureContent.addView(featureRow(
+                getString(R.string.desktop_control_revoked_time),
+                securityTime(authorization.revokedAt),
+                R.drawable.ic_delete,
+                getString(R.string.desktop_control_revoked)
+            ))
+        }
+
+        if (active) {
+            addSectionTitle(getString(R.string.security_section_danger))
+            featureContent.addView(featureRow(
+                getString(R.string.desktop_control_revoke),
+                getString(R.string.desktop_control_revoke_subtitle),
+                R.drawable.ic_delete,
+                getString(R.string.security_revoke)
+            ).apply {
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle(getString(R.string.desktop_control_revoke))
+                        .setMessage(getString(R.string.desktop_control_revoke_confirm))
+                        .setPositiveButton(getString(R.string.security_revoke)) { _, _ ->
+                            if (DesktopRemoteControl.revoke(device.id, authorization.authorizationId)) {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.desktop_control_revoke_sent),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        .setNegativeButton(getString(R.string.common_cancel), null)
+                        .show()
+                }
+            })
+        }
+    }
+
+    private fun desktopControlAllowedActions(tools: List<String>): String {
+        val labels = tools.map { tool ->
+            getString(
+                when (tool) {
+                    DesktopRemoteControl.SCREENSHOT -> R.string.desktop_control_action_view_screen
+                    DesktopRemoteControl.CLICK_XY -> R.string.desktop_control_action_click
+                    DesktopRemoteControl.TYPE_TEXT -> R.string.desktop_control_action_type
+                    DesktopRemoteControl.HOTKEY -> R.string.desktop_control_action_hotkey
+                    DesktopRemoteControl.SCROLL -> R.string.desktop_control_action_scroll
+                    else -> R.string.status_unknown
+                }
+            )
+        }.distinct()
+        return labels.joinToString(" · ").ifBlank { getString(R.string.status_unknown) }
     }
 
     private fun desktopControlButtonRow(

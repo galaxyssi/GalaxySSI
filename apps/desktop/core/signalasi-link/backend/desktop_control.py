@@ -20,7 +20,12 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
-from pairing_access import DESKTOP_EXECUTOR, grant_binding, has_full_executor
+from pairing_access import (
+    DESKTOP_EXECUTOR,
+    client_grant,
+    grant_binding,
+    has_full_executor,
+)
 from pairing_state import DATA_DIR
 from signalasi_client import get_signal_bundle, sign_signal_identity
 from tool_handle_registry import (
@@ -33,6 +38,7 @@ from tool_handle_registry import (
 
 
 CONTRACT_VERSION = "signalasi.desktop-control/1.2"
+AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
 RECEIPT_VERSION = 3
 OFFER_TTL_SECONDS = 10 * 60
@@ -273,6 +279,7 @@ class DesktopControlManager:
                     "desktop_executor_scope_required",
                     "Desktop control requires a pairing QR with Desktop Executor access",
                 )
+            pairing_access = client_grant(paired_client)
             access_binding = grant_binding(paired_client)
 
             existing = next(
@@ -291,6 +298,7 @@ class DesktopControlManager:
                 )[:120]
                 existing["grant_source"] = "pairing_qr"
                 existing["access_profile"] = DESKTOP_EXECUTOR
+                existing["access_scopes"] = list(pairing_access["scopes"])
                 existing["pairing_access_sha256"] = access_binding
                 existing["status"] = "active"
                 existing["granted_at"] = int(existing.get("granted_at") or now * 1_000)
@@ -313,6 +321,7 @@ class DesktopControlManager:
                 "grant_type": "desktop_control",
                 "grant_source": "pairing_qr",
                 "access_profile": DESKTOP_EXECUTOR,
+                "access_scopes": list(pairing_access["scopes"]),
                 "pairing_access_sha256": access_binding,
                 "phone_identity_fingerprint": fingerprint,
                 "phone_signal_name": signal_name,
@@ -419,6 +428,7 @@ class DesktopControlManager:
             ][:MAX_VISIBLE_RECEIPTS]
             return {
                 "contract_version": CONTRACT_VERSION,
+                "authorized_app_contract": AUTHORIZED_APP_CONTRACT,
                 "tool_handle_contract": TOOL_HANDLE_CONTRACT,
                 "enabled": bool(self._state["settings"].get("enabled")),
                 "require_unlocked": bool(self._state["settings"].get("require_unlocked")),
@@ -1027,8 +1037,13 @@ class DesktopControlManager:
                 reuse=True,
             )
         return {
+            "record_version": 1,
             "authorization_id": str(row.get("authorization_id") or ""),
             "grant_type": "desktop_control",
+            "app_instance_id": str(row.get("phone_signal_name") or ""),
+            "app_name": str(row.get("phone_name") or "SignalASI Phone"),
+            "app_identity_fingerprint": fingerprint,
+            "app_platform": str(row.get("platform") or "unknown"),
             "phone_name": str(row.get("phone_name") or "SignalASI Phone"),
             "phone_fingerprint": fingerprint,
             "phone_fingerprint_short": fingerprint[:16],
@@ -1036,6 +1051,7 @@ class DesktopControlManager:
             "platform": str(row.get("platform") or "unknown"),
             "grant_source": str(row.get("grant_source") or ""),
             "access_profile": str(row.get("access_profile") or ""),
+            "access_scopes": list(row.get("access_scopes") or []),
             "pairing_access_sha256": str(row.get("pairing_access_sha256") or ""),
             "requested_at": int(row.get("requested_at") or 0),
             "granted_at": int(row.get("granted_at") or 0),
