@@ -8780,6 +8780,212 @@ struct AgentObservationOutcome: Codable, Equatable {
   private static let maximumEvidenceLength = 2_000
 }
 
+struct AgentObservedContext: Codable, Equatable, Identifiable {
+  static let defaultTTLMillis: Int64 = 24 * 60 * 60 * 1_000
+
+  var id: String
+  var targetId: String
+  var text: String
+  var conversationId: String
+  var taskId: String
+  var createdAtMillis: Int64
+  var expiresAtMillis: Int64
+
+  init(
+    id: String = UUID().uuidString,
+    targetId: String,
+    text: String,
+    conversationId: String = "",
+    taskId: String = "",
+    createdAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    expiresAtMillis: Int64? = nil
+  ) {
+    self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? UUID().uuidString : id
+    self.targetId = String(targetId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTargetCharacters))
+    self.text = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxEntryCharacters))
+    self.conversationId = String(conversationId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    self.taskId = String(taskId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters))
+    self.createdAtMillis = max(createdAtMillis, 0)
+    self.expiresAtMillis = max(expiresAtMillis ?? (self.createdAtMillis + Self.defaultTTLMillis), 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case targetId = "target_id"
+    case text
+    case conversationId = "conversation_id"
+    case taskId = "task_id"
+    case createdAtMillis = "created_at_millis"
+    case expiresAtMillis = "expires_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      targetId: try container.decodeIfPresent(String.self, forKey: .targetId) ?? "",
+      text: try container.decodeIfPresent(String.self, forKey: .text) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      createdAtMillis: createdAtMillis,
+      expiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .expiresAtMillis)
+    )
+  }
+
+  func isExpired(nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
+    expiresAtMillis > 0 && nowMillis >= expiresAtMillis
+  }
+
+  fileprivate var isUsable: Bool {
+    !targetId.isEmpty && !text.isEmpty
+  }
+
+  fileprivate static let maxTotalEntries = 128
+  fileprivate static let maxEntriesPerTarget = 16
+  fileprivate static let maxTargetCharacters = 160
+  fileprivate static let maxIdCharacters = 160
+  fileprivate static let maxEntryCharacters = 8_000
+}
+
+enum AgentObservationContextJsonCodec {
+  static func encode(_ items: [AgentObservedContext]) -> String {
+    guard let data = try? JSONEncoder().encode(items) else {
+      return "[]"
+    }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  static func decode(
+    _ raw: String,
+    nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> [AgentObservedContext] {
+    guard let data = raw.data(using: .utf8),
+          let array = try? JSONSerialization.jsonObject(with: data) as? [Any] else {
+      return []
+    }
+    let decoded = array.compactMap { value -> AgentObservedContext? in
+      guard let object = value as? [String: Any],
+            JSONSerialization.isValidJSONObject(object),
+            let data = try? JSONSerialization.data(withJSONObject: object),
+            let item = try? JSONDecoder().decode(AgentObservedContext.self, from: data) else {
+        return nil
+      }
+      return item
+    }
+    return decoded.filter { $0.isUsable && !$0.isExpired(nowMillis: nowMillis) }
+  }
+}
+
+final class InMemoryAgentObservationContextStore {
+  private let lock = NSRecursiveLock()
+  private let clock: () -> Int64
+  private let idFactory: () -> String
+  private var document: String
+
+  init(
+    serialized: String = "[]",
+    clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
+    idFactory: @escaping () -> String = { UUID().uuidString }
+  ) {
+    self.document = serialized
+    self.clock = clock
+    self.idFactory = idFactory
+  }
+
+  func observe(
+    targetId: String,
+    text: String,
+    conversationId: String = "",
+    taskId: String = ""
+  ) -> AgentObservedContext? {
+    lock.lock()
+    defer { lock.unlock() }
+    let now = max(clock(), 0)
+    let entry = AgentObservedContext(
+      id: idFactory(),
+      targetId: targetId,
+      text: text,
+      conversationId: conversationId,
+      taskId: taskId,
+      createdAtMillis: now,
+      expiresAtMillis: now + AgentObservedContext.defaultTTLMillis
+    )
+    guard entry.isUsable else {
+      return nil
+    }
+    let current = load(nowMillis: now).filter { existing in
+      !(existing.targetId == entry.targetId &&
+        existing.text == entry.text &&
+        existing.conversationId == entry.conversationId)
+    }
+    let otherTargets = current.filter { $0.targetId != entry.targetId }
+    let targetEntries = Array((current.filter { $0.targetId == entry.targetId } + [entry]).suffix(AgentObservedContext.maxEntriesPerTarget))
+    let bounded = Array((otherTargets + targetEntries)
+      .sorted { $0.createdAtMillis < $1.createdAtMillis }
+      .suffix(AgentObservedContext.maxTotalEntries))
+    save(bounded)
+    return entry
+  }
+
+  func peek(targetId: String, conversationId: String = "") -> [AgentObservedContext] {
+    lock.lock()
+    defer { lock.unlock() }
+    let targetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let conversationId = conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    return Array(load(nowMillis: max(clock(), 0)).filter { entry in
+      entry.targetId == targetId &&
+        (conversationId.isEmpty || entry.conversationId.isEmpty || entry.conversationId == conversationId)
+    }.suffix(AgentObservedContext.maxEntriesPerTarget))
+  }
+
+  func acknowledge(entryIds: Set<String>) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !entryIds.isEmpty else {
+      return 0
+    }
+    let current = load(nowMillis: max(clock(), 0))
+    let remaining = current.filter { !entryIds.contains($0.id) }
+    if remaining.count != current.count {
+      save(remaining)
+    }
+    return current.count - remaining.count
+  }
+
+  func clearTarget(_ targetId: String) -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    let targetId = targetId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let current = load(nowMillis: max(clock(), 0))
+    let remaining = current.filter { $0.targetId != targetId }
+    if remaining.count != current.count {
+      save(remaining)
+    }
+    return current.count - remaining.count
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    document = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return document
+  }
+
+  private func load(nowMillis: Int64) -> [AgentObservedContext] {
+    AgentObservationContextJsonCodec.decode(document, nowMillis: nowMillis)
+  }
+
+  private func save(_ items: [AgentObservedContext]) {
+    document = AgentObservationContextJsonCodec.encode(items)
+  }
+}
+
 struct AgentContinuousObservationController {
   let maxSamples: Int
   let stableSampleCount: Int
