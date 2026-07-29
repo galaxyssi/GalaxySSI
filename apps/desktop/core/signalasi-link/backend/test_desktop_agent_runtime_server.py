@@ -12,7 +12,9 @@ from desktop_agent_adapters import (
     DesktopAgentStateStore,
 )
 from desktop_agent_runtime_server import (
+    AgentCapacityController,
     AgentFaultDomainRegistry,
+    DesktopAgentCapacityExhausted,
     DesktopAgentFaultIsolated,
     DesktopAgentRuntimeConflict,
     DesktopAgentRuntimeError,
@@ -49,8 +51,10 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         self,
         execute=None,
         max_workers: int = 2,
+        max_queued_runs: int = 64,
         descriptors=None,
         fault_domains: AgentFaultDomainRegistry | None = None,
+        capacity: AgentCapacityController | None = None,
     ) -> DesktopAgentRuntimeServer:
         def default_execute(agent_id, request):
             self.calls.append((agent_id, request.prompt))
@@ -65,7 +69,9 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             provider=provider,
             store=DesktopAgentRuntimeStore(self.root / "runtime-state.json"),
             max_workers=max_workers,
+            max_queued_runs=max_queued_runs,
             fault_domains=fault_domains,
+            capacity=capacity,
         )
         self.servers.append(server)
         return server
@@ -291,6 +297,77 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         self.assertEqual("cancelled", cancelled["state"])
         self.assertEqual("cancelled", server.status("run-2")["state"])
         self.assertNotIn(("codex", "second"), self.calls)
+
+    def test_bounded_global_queue_rejects_excess_and_recovers_capacity(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def execute(agent_id, request):
+            self.calls.append((agent_id, request.prompt))
+            if request.run_id == "run-1":
+                started.set()
+                release.wait(timeout=2)
+            return request.prompt
+
+        server = self.server(
+            execute,
+            max_workers=1,
+            max_queued_runs=1,
+        )
+        first = self.request("first", run_id="run-1")
+        second = self.request("second", run_id="run-2")
+        server.submit(first)
+        self.assertTrue(started.wait(timeout=1))
+        server.submit(second)
+
+        with self.assertRaises(DesktopAgentCapacityExhausted):
+            server.submit(self.request("excess", run_id="run-3"))
+        capacity = server.health()["capacity"]
+        self.assertEqual(1, capacity["active_runs"])
+        self.assertEqual(1, capacity["queued_runs"])
+        self.assertEqual(1, capacity["rejected_runs"])
+        self.assertEqual(
+            [{"agent_id": "codex", "active_runs": 1, "queued_runs": 1}],
+            capacity["by_agent"],
+        )
+
+        release.set()
+        server.execute(first)
+        server.execute(second)
+        retry = server.execute(self.request("retry", run_id="run-4"))
+
+        self.assertEqual("completed", retry.state)
+        self.assertEqual(0, server.health()["capacity"]["active_runs"])
+        self.assertEqual(0, server.health()["capacity"]["queued_runs"])
+
+    def test_cancelling_queued_run_releases_queue_slot(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def execute(agent_id, request):
+            if request.run_id == "run-1":
+                started.set()
+                release.wait(timeout=2)
+            return request.prompt
+
+        server = self.server(
+            execute,
+            max_workers=1,
+            max_queued_runs=1,
+        )
+        first = self.request("first", run_id="run-1")
+        second = self.request("second", run_id="run-2")
+        server.submit(first)
+        self.assertTrue(started.wait(timeout=1))
+        server.submit(second)
+        server.cancel(second.run_id)
+        third = self.request("third", run_id="run-3")
+        server.submit(third)
+
+        self.assertEqual(1, server.health()["capacity"]["queued_runs"])
+        release.set()
+        server.execute(first)
+        self.assertEqual("completed", server.execute(third).state)
 
     def test_restart_marks_queued_and_running_runs_recoverable(self):
         store = DesktopAgentRuntimeStore(self.root / "runtime-state.json")
