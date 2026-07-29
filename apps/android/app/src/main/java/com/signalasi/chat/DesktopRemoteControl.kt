@@ -10,15 +10,61 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class DesktopControlAuthorization(
     val authorizationId: String,
+    val appInstanceId: String,
+    val appName: String,
+    val appPlatform: String,
     val phoneName: String,
     val phoneFingerprint: String,
+    val grantSource: String,
+    val accessProfile: String,
+    val accessScopes: List<String>,
     val grantedAt: Long,
     val lastUsedAt: Long,
+    val revokedAt: Long,
+    val revokeReason: String,
     val status: String,
     val allowedTools: List<String>,
     val desktopSessionId: String,
     val desktopSessionExpiresAt: Long
 )
+
+internal fun parseDesktopControlAuthorization(json: JSONObject?): DesktopControlAuthorization? {
+    val source = json ?: return null
+    val status = source.optString("status")
+    val id = source.optString("authorization_id")
+    if (id.isBlank() && status != "pending") return null
+    val tools = source.optJSONArray("allowed_tools") ?: JSONArray()
+    return DesktopControlAuthorization(
+        authorizationId = id,
+        appInstanceId = source.optString("app_instance_id"),
+        appName = source.optString("app_name", source.optString("phone_name")),
+        appPlatform = source.optString("app_platform", source.optString("platform")),
+        phoneName = source.optString("phone_name"),
+        phoneFingerprint = source.optString(
+            "app_identity_fingerprint",
+            source.optString("phone_fingerprint")
+        ),
+        grantSource = source.optString("grant_source"),
+        accessProfile = source.optString("access_profile"),
+        accessScopes = source.optJSONArray("access_scopes").let { scopes ->
+            buildList {
+                if (scopes != null) {
+                    for (index in 0 until scopes.length()) add(scopes.optString(index))
+                }
+            }
+        },
+        grantedAt = source.optLong("granted_at"),
+        lastUsedAt = source.optLong("last_used_at"),
+        revokedAt = source.optLong("revoked_at"),
+        revokeReason = source.optString("revoke_reason"),
+        status = status,
+        allowedTools = buildList {
+            for (index in 0 until tools.length()) add(tools.optString(index))
+        },
+        desktopSessionId = source.optString("desktop_session_id"),
+        desktopSessionExpiresAt = source.optLong("desktop_session_expires_at")
+    )
+}
 
 data class DesktopControlScreenshot(
     val jpegBytes: ByteArray,
@@ -387,7 +433,7 @@ object DesktopRemoteControl {
         val item = read(context).optJSONObject(desktopId) ?: JSONObject()
         val link = SignalASILinkProtocol.serverLink(context, desktopId)
         val authorizations = parseAuthorizations(item.optJSONArray("authorizations") ?: JSONArray())
-        val current = parseAuthorization(item.optJSONObject("current_authorization"))
+        val current = parseDesktopControlAuthorization(item.optJSONObject("current_authorization"))
             ?: authorizations.firstOrNull { it.status == "active" }
             ?: authorizations.firstOrNull { it.status == "pending" }
         val live = runtime[desktopId]
@@ -661,7 +707,9 @@ object DesktopRemoteControl {
     }
 
     private fun parseAuthorizations(array: JSONArray): List<DesktopControlAuthorization> = buildList {
-        for (index in 0 until array.length()) parseAuthorization(array.optJSONObject(index))?.let(::add)
+        for (index in 0 until array.length()) {
+            parseDesktopControlAuthorization(array.optJSONObject(index))?.let(::add)
+        }
     }
 
     private fun parseAudit(array: JSONArray): List<DesktopControlAudit> = buildList {
@@ -699,25 +747,6 @@ object DesktopRemoteControl {
                 durationMillis = source.optLong("duration_ms")
             ))
         }
-    }
-
-    private fun parseAuthorization(json: JSONObject?): DesktopControlAuthorization? {
-        val source = json ?: return null
-        val status = source.optString("status")
-        val id = source.optString("authorization_id")
-        if (id.isBlank() && status != "pending") return null
-        val tools = source.optJSONArray("allowed_tools") ?: JSONArray()
-        return DesktopControlAuthorization(
-            authorizationId = id,
-            phoneName = source.optString("phone_name"),
-            phoneFingerprint = source.optString("phone_fingerprint"),
-            grantedAt = source.optLong("granted_at"),
-            lastUsedAt = source.optLong("last_used_at"),
-            status = status,
-            allowedTools = buildList { for (index in 0 until tools.length()) add(tools.optString(index)) },
-            desktopSessionId = source.optString("desktop_session_id"),
-            desktopSessionExpiresAt = source.optLong("desktop_session_expires_at")
-        )
     }
 
     private fun read(context: Context): JSONObject {

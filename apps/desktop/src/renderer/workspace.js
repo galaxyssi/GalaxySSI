@@ -1461,6 +1461,44 @@ function formatControlTime(value) {
 
 function renderDesktopControl() {
   const control = state.desktopControl || { recent_audit: [] };
+  const authorizations = Array.isArray(control.authorizations)
+    ? [...control.authorizations].sort(
+      (left, right) => Number(right.updated_at || 0) - Number(left.updated_at || 0)
+    )
+    : [];
+  $("#authorizedAppList").innerHTML = authorizations.length
+    ? authorizations.map((authorization) => {
+      const active = authorization.status === "active";
+      const appName = authorization.app_name || authorization.phone_name || t("SignalASI phone");
+      const platform = authorization.app_platform || authorization.platform || t("Unknown");
+      const fingerprint = authorization.app_identity_fingerprint
+        || authorization.phone_fingerprint
+        || "";
+      const access = authorization.access_profile === "desktop_executor"
+        ? t("Full Desktop Executor")
+        : t("Restricted access");
+      const timing = [
+        authorization.granted_at
+          ? t("Granted {time}", { time: formatControlTime(authorization.granted_at) })
+          : "",
+        authorization.last_used_at
+          ? t("Last used {time}", { time: formatControlTime(authorization.last_used_at) })
+          : t("Never used")
+      ].filter(Boolean).join(" / ");
+      return `<article class="authorized-app-row">
+        <span class="phone-outline"></span>
+        <div>
+          <strong>${escapeHtml(`${appName} / ${platform}`)}</strong>
+          <small>${escapeHtml(`${fingerprint.slice(0, 16) || t("Verified")} / ${access}`)}</small>
+          <small>${escapeHtml(timing)}</small>
+        </div>
+        <span class="authorized-app-actions">
+          <small class="${active ? "active" : "revoked"}">${escapeHtml(t(active ? "Active" : "Revoked"))}</small>
+          ${active ? `<button data-revoke-authorization="${escapeHtml(authorization.authorization_id || "")}">${escapeHtml(t("Revoke"))}</button>` : ""}
+        </span>
+      </article>`;
+    }).join("")
+    : `<div class="history-empty">${escapeHtml(t("No app has Desktop execution access."))}</div>`;
   const receipts = Array.isArray(control.recent_receipts)
     ? control.recent_receipts.slice(0, 20)
     : [];
@@ -3674,6 +3712,13 @@ function bindEvents() {
     await window.signalasi.clearPairing(button.dataset.revokeClient);
     await refreshGateway();
     await refreshDesktopControl();
+  });
+  $("#authorizedAppList").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-revoke-authorization]");
+    if (!button || !window.confirm(t("Revoke execution access for this app?"))) return;
+    await window.signalasi.revokeDesktopAuthorization(button.dataset.revokeAuthorization);
+    await Promise.all([refreshDesktopControl(), refreshGateway()]);
+    showToast(t("App authorization revoked."));
   });
   $$('[data-capability-tab]').forEach((button) => button.addEventListener("click", () => selectCapabilityTab(button.dataset.capabilityTab)));
   $$("[data-marketplace-kind]").forEach((button) => {

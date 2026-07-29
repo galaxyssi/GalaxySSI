@@ -803,25 +803,31 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
     from desktop_control import desktop_control_manager
 
     manager = desktop_control_manager()
-    own = manager.status(str(paired_client.get("client_route_id") or ""))
+    own = manager.status(
+        str(paired_client.get("client_route_id") or ""),
+        include_revoked=True,
+    )
     own_rows = own.get("authorizations") or []
-    may_view_all = any(row.get("status") == "active" for row in own_rows)
-    visible = manager.status() if may_view_all else own
+    current = next(
+        (row for row in own_rows if row.get("status") == "active"),
+        None,
+    )
     return {
         "type": DESKTOP_CONTROL_AUTHORIZATIONS_TYPE,
         "desktop_id": desktop_id(),
         "desktop_name": desktop_name(),
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
         "server_route_id": server_route_id(),
-        "contract_version": visible.get("contract_version"),
+        "contract_version": own.get("contract_version"),
+        "authorized_app_contract": own.get("authorized_app_contract"),
         "pairing_access": client_grant(paired_client),
-        "enabled": bool(visible.get("enabled")),
-        "require_unlocked": bool(visible.get("require_unlocked")),
-        "allowed_tools": list(visible.get("allowed_tools") or []),
-        "items": list(visible.get("authorizations") or []),
-        "current_authorization": own_rows[0] if own_rows else None,
-        "recent_audit": list(visible.get("recent_audit") or []),
-        "recent_receipts": list(visible.get("recent_receipts") or []),
+        "enabled": bool(own.get("enabled")),
+        "require_unlocked": bool(own.get("require_unlocked")),
+        "allowed_tools": list(own.get("allowed_tools") or []),
+        "items": list(own_rows),
+        "current_authorization": current,
+        "recent_audit": list(own.get("recent_audit") or []),
+        "recent_receipts": list(own.get("recent_receipts") or []),
         "reason": str(reason or "status")[:80],
         "sender": "system",
         "time": time.time(),

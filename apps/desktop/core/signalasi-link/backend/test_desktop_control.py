@@ -181,6 +181,15 @@ class DesktopControlTests(unittest.TestCase):
         self.assertEqual("pairing_qr", authorization["grant_source"])
         self.assertEqual("desktop_executor", authorization["access_profile"])
         self.assertEqual(64, len(authorization["pairing_access_sha256"]))
+        self.assertEqual("signalasi:" + "a" * 16, authorization["app_instance_id"])
+        self.assertEqual("Test Phone", authorization["app_name"])
+        self.assertEqual("a" * 64, authorization["app_identity_fingerprint"])
+        self.assertEqual("android", authorization["app_platform"])
+        self.assertIn("desktop.control", authorization["access_scopes"])
+        self.assertEqual(
+            "signalasi.authorized-app/1.0",
+            self.manager.status()["authorized_app_contract"],
+        )
 
     def test_restricted_pairing_cannot_be_promoted_by_the_control_offer(self):
         self.manager.update_settings(enabled=True)

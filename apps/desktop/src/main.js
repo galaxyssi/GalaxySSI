@@ -697,16 +697,53 @@ async function runUiSmoke() {
     await captureSmokeScreenshot(marketplacePath);
     const gatewayControlState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
+        const smokeDesktopControl = {
+          authorizations: [
+            {
+              authorization_id: "smoke-active-authorization",
+              app_name: "SignalASI Phone",
+              app_platform: "android",
+              app_identity_fingerprint: "${"a".repeat(64)}",
+              access_profile: "desktop_executor",
+              granted_at: Date.now() - 3600000,
+              last_used_at: Date.now() - 60000,
+              updated_at: Date.now(),
+              status: "active"
+            },
+            {
+              authorization_id: "smoke-revoked-authorization",
+              app_name: "Previous Phone",
+              app_platform: "android",
+              app_identity_fingerprint: "${"b".repeat(64)}",
+              access_profile: "desktop_executor",
+              granted_at: Date.now() - 86400000,
+              last_used_at: 0,
+              updated_at: Date.now() - 1000,
+              status: "revoked"
+            }
+          ],
+          recent_receipts: [],
+          recent_audit: []
+        };
+        state.desktopControl = smokeDesktopControl;
+        renderDesktopControl();
         document.querySelector('[data-open-panel="gateway"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        state.desktopControl = smokeDesktopControl;
+        renderDesktopControl();
         for (let attempt = 0; attempt < 30; attempt += 1) {
           if (document.querySelector("#desktopControlAuditList")?.children.length > 0) break;
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
         const history = document.querySelector(".gateway-access-history");
         if (history) history.open = true;
+        const authorizedApps = document.querySelector(".gateway-authorized-apps");
+        if (authorizedApps) authorizedApps.open = true;
         return {
           active: document.querySelector("#gatewayPanel")?.classList.contains("active") || false,
           accessHistory: document.querySelector("#desktopControlAuditList")?.children.length || 0,
+          authorizedApps: document.querySelectorAll("#authorizedAppList .authorized-app-row").length,
+          revokeActions: document.querySelectorAll("#authorizedAppList [data-revoke-authorization]").length,
           pairingExecutor: Boolean(document.querySelector("#pairingDesktopExecutorEnabled")),
           computerPanel: Boolean(document.querySelector("#computerPanel")),
           desktopToolList: Boolean(document.querySelector("#desktopToolList"))
@@ -716,6 +753,8 @@ async function runUiSmoke() {
     if (
       !gatewayControlState.active
       || gatewayControlState.accessHistory < 1
+      || gatewayControlState.authorizedApps !== 2
+      || gatewayControlState.revokeActions !== 1
       || !gatewayControlState.pairingExecutor
       || gatewayControlState.computerPanel
       || gatewayControlState.desktopToolList
@@ -1678,6 +1717,14 @@ async function getDesktopControl() {
   return fetchJson("/api/desktop-control");
 }
 
+async function revokeDesktopAuthorization(authorizationId) {
+  await startBackend();
+  return fetchJson(
+    `/api/desktop-control/authorizations/${encodeURIComponent(authorizationId)}/revoke`,
+    { method: "POST" }
+  );
+}
+
 async function getDesktopMemory(query = "", limit = 100, status = "active") {
   await startBackend();
   return fetchJson(
@@ -1965,6 +2012,8 @@ ipcMain.handle("proactive-tasks:trigger", (_event, taskId) => triggerProactiveTa
 ipcMain.handle("proactive-runs:list", (_event, taskId, limit) => listProactiveRuns(taskId, limit));
 ipcMain.handle("proactive-runs:cancel", (_event, runId) => cancelProactiveRun(runId));
 ipcMain.handle("desktop-control:get", getDesktopControl);
+ipcMain.handle("desktop-control:revoke", (_event, authorizationId) =>
+  revokeDesktopAuthorization(authorizationId));
 ipcMain.handle("desktop-memory:list", (_event, query, limit, status) => getDesktopMemory(query, limit, status));
 ipcMain.handle("desktop-memory:inbox", (_event, limit) => getDesktopMemoryInbox(limit));
 ipcMain.handle("desktop-memory:evolution", (_event, limit) => getDesktopMemoryEvolution(limit));
