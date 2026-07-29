@@ -1978,4 +1978,8 @@
     <string name="agent_execution_location_automatic">Automatic route</string>
     <string name="agent_execution_cancel">Cancel</string>
     <string name="agent_execution_cancel_description">Cancel this running task</string>
+    <string name="agent_plan_only_not_executed">Plan-only mode does not execute actions.</string>
+    <string name="agent_plan_only_intro">Here is the proposed plan. Nothing has been executed.</string>
+    <string name="agent_plan_only_step">%1$d. %2$s</string>
+    <string name="agent_plan_only_risk">Risk: %1$s. The normal action-permission policy still applies when execution begins.</string>
 </resources>

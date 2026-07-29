@@ -20,7 +20,7 @@ object AgentBackupData {
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
         return JSONObject()
-            .put("version", 29)
+            .put("version", 30)
             .put("interface_language", AppLanguage.current(context))
             .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
             .put("knowledge", readArray(context, KNOWLEDGE_PREFS, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS))
@@ -41,6 +41,7 @@ object AgentBackupData {
             .put(
                 "safety",
                 JSONObject()
+                    .put("task_execution_mode", safety.taskExecutionMode.name)
                     .put("permission_mode", safety.permissionMode.name)
                     .put("high_risk_guard", safety.highRiskGuard)
                     .put("memory_capture", safety.memoryCapture)
@@ -145,6 +146,10 @@ object AgentBackupData {
         payload.optJSONObject("safety")?.let { json ->
             SharedPreferencesAgentSafetySettingsStore(context).save(
                 AgentSafetySettings(
+                    taskExecutionMode = enumOrDefault(
+                        json.optString("task_execution_mode"),
+                        AgentTaskExecutionMode.AUTO_COMPLETE
+                    ),
                     permissionMode = enumOrDefault(
                         json.optString("permission_mode"),
                         PermissionMode.ASK_BEFORE_ACTION

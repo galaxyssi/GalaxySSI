@@ -2830,7 +2830,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             current_user_request,
             kind=active_turn_decision.intervention_kind,
         )
-    from agent_execution_harness import execution_contract, execution_policy_for
+    from agent_execution_harness import (
+        AgentExecutionMode,
+        execution_contract,
+        execution_policy_for,
+    )
 
     execution_policy = execution_policy_for(
         current_user_request,
@@ -2839,7 +2843,19 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             for item in attachments
             if isinstance(item, dict)
         ),
+        requested_execution_mode=str(
+            payload.get("execution_mode")
+            or AgentExecutionMode.AUTO_COMPLETE.value
+        ),
     )
+    plan_only = execution_policy.execution_mode == AgentExecutionMode.PLAN_ONLY
+    if plan_only:
+        active_conversation_task = None
+        active_turn_decision = None
+        supersedes_active_task_id = ""
+        effective_content = content
+        image_artifact_required = False
+        codex_sandbox = "read-only"
     image_artifact_repair_attempts = 0
     image_artifact_repair_lock = threading.Lock()
     artifact_repair_attempts = 0
@@ -3054,7 +3070,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         return reply
 
     def publish_result(task: dict) -> None:
-        from agent_execution_harness import finalize_task_artifacts
+        from agent_execution_harness import ArtifactFinalization, finalize_task_artifacts
         from artifact_delivery import (
             discard_task_workspace_if_no_artifacts,
             prepare_artifacts,
@@ -3071,11 +3087,21 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         ]
         raw_result = str(task.get("result") or "")
         hidden_artifact_paths = [str(path) for path in referenced_task_artifact_paths(raw_result)]
-        finalization = finalize_task_artifacts(
-            task_id,
-            current_user_request,
-            agent_id,
-            allow_device_install=full_desktop_executor,
+        finalization = (
+            ArtifactFinalization(
+                output_files=(),
+                verification={
+                    "status": "not_required",
+                    "reason": AgentExecutionMode.PLAN_ONLY.value,
+                },
+            )
+            if plan_only
+            else finalize_task_artifacts(
+                task_id,
+                current_user_request,
+                agent_id,
+                allow_device_install=full_desktop_executor,
+            )
         )
         output_files = list(finalization.output_files)
         artifacts = prepare_artifacts(task_id, output_files)
@@ -3299,8 +3325,8 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     if agent_id == "codex":
         from agent_gateway import BASE_AGENTS, _agent_env, _find_codex_desktop_cli
         codex_conversation_id = backend_conversation_id
-        codex_run_conversation_id = codex_conversation_id
-        parallel_codex_task = False
+        codex_run_conversation_id = "" if plan_only else codex_conversation_id
+        parallel_codex_task = plan_only
         if payload.get("_recovered_task") is True:
             active_conversation_task = None
             task = agent_task_manager.resume_external(str(payload.get("task_id") or ""), publish_event)
@@ -3726,7 +3752,11 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 from desktop_file_tools import try_execute_explicit_file_task
 
                 sessions = agent_conversation_sessions()
-                session_binding = sessions.get("codex", codex_conversation_id)
+                session_binding = (
+                    None
+                    if plan_only
+                    else sessions.get("codex", codex_conversation_id)
+                )
                 restored_context_paths: list[Path] = []
                 from conversation_artifacts import (
                     conversation_input_artifact_paths,
@@ -3781,7 +3811,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                     full_turn += restored_context_note
                 if active_conversation_task is not None:
                     selected_turn = compact_turn
-                elif session_binding.session_id:
+                elif session_binding is not None and session_binding.session_id:
                     selected_turn = (
                         _native_incremental_cli_prompt(
                             BASE_AGENTS["codex"],
@@ -3851,12 +3881,21 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                         on_event=publish_event,
                         current_step="Preparing task",
                     )
-                add_task_trace("desktop_file_tool_checked", f"inputs={len(input_paths)}")
-                try:
-                    fast_result = try_execute_explicit_file_task(content, input_paths, workspace / "outputs")
-                except Exception as fast_exc:
-                    fast_result = None
-                    log.warning("Desktop file tool fallback task_id=%s: %s", task.task_id, fast_exc)
+                fast_result = None
+                if not plan_only:
+                    add_task_trace("desktop_file_tool_checked", f"inputs={len(input_paths)}")
+                    try:
+                        fast_result = try_execute_explicit_file_task(
+                            content,
+                            input_paths,
+                            workspace / "outputs",
+                        )
+                    except Exception as fast_exc:
+                        log.warning(
+                            "Desktop file tool fallback task_id=%s: %s",
+                            task.task_id,
+                            fast_exc,
+                        )
                 if fast_result is not None:
                     add_task_trace("desktop_file_tool_completed", f"{fast_result.operation} {fast_result.elapsed_ms}ms")
                     completed = agent_task_manager.update(

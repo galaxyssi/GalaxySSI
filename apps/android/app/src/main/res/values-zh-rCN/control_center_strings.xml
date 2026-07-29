@@ -257,7 +257,14 @@
 
     <string name="cc_execution_policy_title">执行策略</string>
     <string name="cc_section_confirmation_rules">确认规则</string>
-    <string name="cc_permission_mode_section">执行模式</string>
+    <string name="cc_task_execution_mode_section">任务执行</string>
+    <string name="cc_task_execution_mode_title">任务执行方式</string>
+    <string name="cc_task_execution_mode_subtitle">选择任务在给出方案后停止，还是继续执行并验证</string>
+    <string name="task_execution_mode_plan_only">只给方案</string>
+    <string name="task_execution_mode_auto_complete">自动执行到完成</string>
+    <string name="cc_task_execution_plan_only_subtitle">读取必要上下文并给出可执行方案，不修改任何内容</string>
+    <string name="cc_task_execution_auto_complete_subtitle">持续执行、恢复、验证，直到任务完成</string>
+    <string name="cc_permission_mode_section">动作授权</string>
     <string name="cc_permission_mode_banner_title">真实执行边界</string>
     <string name="cc_permission_mode_banner_subtitle">本地安全策略会在每个动作执行前强制应用此设置。</string>
     <string name="cc_permission_observe_subtitle">只读取当前屏幕和设备状态，不创建或执行任何动作</string>

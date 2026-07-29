@@ -257,7 +257,14 @@
 
     <string name="cc_execution_policy_title">Execution Policy</string>
     <string name="cc_section_confirmation_rules">Confirmation Rules</string>
-    <string name="cc_permission_mode_section">Execution mode</string>
+    <string name="cc_task_execution_mode_section">Task Execution</string>
+    <string name="cc_task_execution_mode_title">Task execution</string>
+    <string name="cc_task_execution_mode_subtitle">Choose whether tasks stop after a plan or continue through verification</string>
+    <string name="task_execution_mode_plan_only">Plan only</string>
+    <string name="task_execution_mode_auto_complete">Auto complete</string>
+    <string name="cc_task_execution_plan_only_subtitle">Inspect context and return an actionable plan without changing anything</string>
+    <string name="cc_task_execution_auto_complete_subtitle">Continue through execution, recovery, verification, and completion</string>
+    <string name="cc_permission_mode_section">Action Permissions</string>
     <string name="cc_permission_mode_banner_title">Real execution boundary</string>
     <string name="cc_permission_mode_banner_subtitle">This setting is enforced by the local safety policy before every action.</string>
     <string name="cc_permission_observe_subtitle">Read the current screen and device state; never create or execute actions</string>

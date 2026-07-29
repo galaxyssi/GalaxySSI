@@ -10,6 +10,7 @@ from unittest.mock import patch
 from agent_execution_harness import (
     AgentClarificationMode,
     AgentClarificationQuestion,
+    AgentExecutionMode,
     AgentExecutionHarness,
     AgentExecutionPolicy,
     AgentReasoningEffort,
@@ -17,6 +18,7 @@ from agent_execution_harness import (
     AgentTaskKind,
     classify_task_intent,
     clarification_decision_for,
+    execution_contract,
     execution_policy_for,
     finalize_task_artifacts,
 )
@@ -180,6 +182,42 @@ class AgentExecutionHarnessTests(unittest.TestCase):
             policy,
             type(policy).from_public(policy.public()),
         )
+
+    def test_plan_only_mode_can_be_selected_by_prompt_or_request(self):
+        explicit = execution_policy_for(
+            "Build an Android app, but first give me a plan without executing"
+        )
+        configured = execution_policy_for(
+            "Build an Android app",
+            requested_execution_mode="plan_only",
+        )
+
+        for policy in (explicit, configured):
+            with self.subTest(source=policy.public()):
+                self.assertEqual(AgentExecutionMode.PLAN_ONLY, policy.execution_mode)
+                self.assertFalse(policy.requires_artifact)
+                self.assertFalse(policy.verify_installation)
+                self.assertIn("Do not create, edit, delete", execution_contract(policy))
+                self.assertEqual(
+                    policy,
+                    AgentExecutionPolicy.from_public(policy.public()),
+                )
+
+    def test_explicit_auto_complete_overrides_configured_plan_only(self):
+        policy = execution_policy_for(
+            "Implement this plan and execute until complete",
+            requested_execution_mode="plan_only",
+        )
+
+        self.assertEqual(AgentExecutionMode.AUTO_COMPLETE, policy.execution_mode)
+        self.assertTrue(policy.requires_artifact)
+
+    def test_scoped_negative_instruction_does_not_disable_the_whole_task(self):
+        policy = execution_policy_for(
+            "\u5220\u9664\u8fc7\u671f\u8bb0\u5f55\uff0c\u4f46\u4e0d\u8981\u6267\u884c\u5220\u9664\u7cfb\u7edf\u6587\u4ef6"
+        )
+
+        self.assertEqual(AgentExecutionMode.AUTO_COMPLETE, policy.execution_mode)
 
     def test_input_attachment_uses_medium_reasoning_without_requiring_new_output(self):
         policy = execution_policy_for(

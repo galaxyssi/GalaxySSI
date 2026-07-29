@@ -8,6 +8,8 @@ from pathlib import PurePosixPath
 from typing import Callable
 
 from agent_execution_harness import (
+    AgentExecutionMode,
+    AgentExecutionPolicy,
     AgentExecutionHarness,
     AgentTaskKind,
     execution_contract,
@@ -49,6 +51,17 @@ TEXT_EXTENSIONS = {
     ".ps1", ".bat", ".cmd", ".log", ".ini", ".toml", ".sql", ".html", ".css",
 }
 OFFICE_EXTENSIONS = {".xlsx", ".docx", ".pptx"}
+PLAN_ONLY_READ_TOOLS = frozenset({
+    APP_LIST,
+    FILE_LIST,
+    FILE_READ_TEXT,
+    HOST_FILE_SEARCH,
+    OFFICE_INSPECT,
+    PROCESS_LIST,
+    RUNTIME_STATUS,
+    SYSTEM_STATUS,
+    WEB_FETCH,
+})
 
 
 @dataclass(frozen=True)
@@ -97,12 +110,18 @@ class DesktopSuperAgent:
         compiled_prompt: str,
         attachments: list[str],
         response_language: str = "",
+        execution_policy: AgentExecutionPolicy | None = None,
     ) -> DesktopAgentOutcome:
         self._execution_harness = AgentExecutionHarness(
             task_id,
             "desktop",
             prompt,
             attachments=attachments,
+            policy=execution_policy,
+        )
+        plan_only = (
+            self._execution_harness.policy.execution_mode
+            == AgentExecutionMode.PLAN_ONLY
         )
         self._artifact_finalization = None
         if self._configured_loop_budget is None:
@@ -147,8 +166,15 @@ class DesktopSuperAgent:
             ),
         )
 
-        mcp_connection = self.mcp.match(prompt)
+        mcp_connection = None if plan_only else self.mcp.match(prompt)
         calls, direct_kind = self._local_plan(prompt, attachments, task_id)
+        if plan_only:
+            calls = [
+                call
+                for call in calls
+                if call[0] in PLAN_ONLY_READ_TOOLS
+            ]
+            direct_kind = ""
         plan_steps = []
         if mcp_connection is not None:
             plan_steps.append(f"Use {mcp_connection.name}")
@@ -776,14 +802,32 @@ class DesktopSuperAgent:
     ) -> DesktopAgentOutcome:
         artifact_verification: dict = {}
         if self._execution_harness is not None:
+            plan_only = (
+                self._execution_harness.policy.execution_mode
+                == AgentExecutionMode.PLAN_ONLY
+            )
+            if plan_only:
+                learn = False
+                self._artifact_finalization = None
+                artifact_verification = {
+                    "status": "not_requested",
+                    "required_artifact": False,
+                    "outputs": [],
+                    "installation": {
+                        "requested": False,
+                        "status": "not_requested",
+                    },
+                }
             if self._artifact_finalization is None:
-                self._artifact_finalization = finalize_task_artifacts(
-                    task_id,
-                    prompt,
-                    "desktop",
-                    allow_device_install=True,
-                )
-            artifact_verification = dict(self._artifact_finalization.verification)
+                if not plan_only:
+                    self._artifact_finalization = finalize_task_artifacts(
+                        task_id,
+                        prompt,
+                        "desktop",
+                        allow_device_install=True,
+                    )
+            if self._artifact_finalization is not None:
+                artifact_verification = dict(self._artifact_finalization.verification)
             if (
                 self._execution_harness.policy.requires_artifact
                 and artifact_verification.get("status") != "passed"
@@ -1118,6 +1162,7 @@ class DesktopSuperAgent:
                     self._execution_harness.policy.no_progress_timeout_seconds
                 ),
                 "absolute_timeout_seconds": None,
+                "execution_mode": self._execution_harness.policy.execution_mode.value,
             }
         self.task_manager.add_event(
             task_id,
