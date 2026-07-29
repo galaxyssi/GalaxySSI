@@ -4636,6 +4636,252 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(result.output["action_id"], .string("legacy-failed"))
   }
 
+  func testAgentWorkspaceNativeToolExecutorRunsCoreFileWorkflowThroughRegistry() throws {
+    let store = AgentWorkspaceNativeToolExecutor(nowMillis: { 1_234 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
+    )
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "workspace-call",
+      idempotencyKey: "workspace-key",
+      grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+      grantedConsents: [
+        AgentPhoneNativeToolCatalog.workspaceReadConsent,
+        AgentPhoneNativeToolCatalog.workspaceWriteConsent
+      ]
+    )
+
+    let initialized = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("alpha")],
+      context: context
+    )
+    let created = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCreateText,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs/note.txt"),
+        "text": .string("hello"),
+        "create_parents": .bool(true)
+      ],
+      context: context
+    )
+    let appended = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceAppendText,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs/note.txt"),
+        "text": .string(" world")
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "append",
+        idempotencyKey: "append-key",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let read = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs/note.txt")
+      ],
+      context: context
+    )
+    let listing = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceList,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs"),
+        "recursive": .bool(true)
+      ],
+      context: context
+    )
+    let patched = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceApplyExactPatch,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs/note.txt"),
+        "expected_text": .string("world"),
+        "replacement_text": .string("iOS")
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "patch",
+        idempotencyKey: "patch-key",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let digest = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceSha256,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs/note.txt")
+      ],
+      context: context
+    )
+    let search = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceSearchText,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("docs"),
+        "query": .string("ios")
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(initialized.isSuccess)
+    XCTAssertEqual(initialized.output["kind"], .string("initialize"))
+    XCTAssertTrue(created.isSuccess)
+    XCTAssertEqual(created.output["affected_entries"], .int(1))
+    XCTAssertTrue(appended.isSuccess)
+    XCTAssertEqual(read.output["text"], .string("hello world"))
+    XCTAssertEqual(read.output["size_bytes"], .int(11))
+    XCTAssertEqual((listing.output["entries"]?.arrayValue ?? []).count, 2)
+    XCTAssertEqual(patched.output["replacements"], .int(1))
+    XCTAssertEqual(digest.output["algorithm"], .string("SHA-256"))
+    XCTAssertEqual(digest.output["hex"]?.stringValue?.count, 64)
+    XCTAssertEqual((search.output["matches"]?.arrayValue ?? []).count, 1)
+  }
+
+  func testAgentWorkspaceNativeToolExecutorSupportsBytesMoveCopyDeleteAndErrors() throws {
+    let store = AgentWorkspaceNativeToolExecutor(nowMillis: { 2_000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
+    )
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "bytes",
+      idempotencyKey: "bytes-key",
+      grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+      grantedConsents: [
+        AgentPhoneNativeToolCatalog.workspaceReadConsent,
+        AgentPhoneNativeToolCatalog.workspaceWriteConsent
+      ]
+    )
+    _ = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("binary")],
+      context: context
+    )
+    let created = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCreateBytes,
+      input: [
+        "workspace_id": .string("binary"),
+        "path": .string("data/blob.bin"),
+        "base64": .string(Data([1, 2, 3]).base64EncodedString()),
+        "create_parents": .bool(true)
+      ],
+      context: context
+    )
+    let read = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadBytes,
+      input: [
+        "workspace_id": .string("binary"),
+        "path": .string("data/blob.bin")
+      ],
+      context: context
+    )
+    let copied = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCopy,
+      input: [
+        "workspace_id": .string("binary"),
+        "source_path": .string("data/blob.bin"),
+        "destination_path": .string("copy/blob.bin"),
+        "create_parents": .bool(true)
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "copy",
+        idempotencyKey: "copy-key",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let moved = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceMove,
+      input: [
+        "workspace_id": .string("binary"),
+        "source_path": .string("copy/blob.bin"),
+        "destination_path": .string("moved/blob.bin"),
+        "create_parents": .bool(true)
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "move",
+        idempotencyKey: "move-key",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let deleted = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceDelete,
+      input: [
+        "workspace_id": .string("binary"),
+        "path": .string("moved"),
+        "recursive": .bool(true)
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "delete",
+        idempotencyKey: "delete-key",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let escaped = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceWriteText,
+      input: [
+        "workspace_id": .string("binary"),
+        "path": .string("../escape.txt"),
+        "text": .string("bad")
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(created.isSuccess)
+    XCTAssertEqual(read.output["base64"], .string(Data([1, 2, 3]).base64EncodedString()))
+    XCTAssertEqual(copied.output["affected_entries"], .int(1))
+    XCTAssertEqual(moved.output["affected_entries"], .int(1))
+    XCTAssertEqual(deleted.output["affected_entries"], .int(2))
+    XCTAssertEqual(escaped.status, .failed)
+    XCTAssertEqual(escaped.error?.code, "workspace_file_error")
+    XCTAssertEqual(escaped.error?.details["workspace_error"]?.objectValue?["code"], .string("PATH_ESCAPE"))
+  }
+
+  func testAgentWorkspaceNativeToolExecutorGatesConsentAndReportsUnsupportedZip() throws {
+    let store = AgentWorkspaceNativeToolExecutor()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
+    )
+    let missingConsent = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceWriteText,
+      input: [
+        "workspace_id": .string("alpha"),
+        "path": .string("note.txt"),
+        "text": .string("hello")
+      ],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission]
+      )
+    )
+    let unsupportedZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceZipList,
+      input: [
+        "workspace_id": .string("alpha"),
+        "archive_path": .string("bundle.zip")
+      ],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceReadConsent]
+      )
+    )
+
+    XCTAssertEqual(Set(registry.ids()), AgentPhoneNativeToolCatalog.toolIds.subtracting(Set(AgentPhoneNativeToolCatalog.supportedActionKinds.map {
+      AgentNativeToolAgentActionAdapter.defaultToolId($0)
+    })))
+    XCTAssertEqual(missingConsent.status, .rejected)
+    XCTAssertEqual(missingConsent.error?.code, "missing_consents")
+    XCTAssertEqual(unsupportedZip.status, .failed)
+    XCTAssertEqual(unsupportedZip.error?.details["workspace_error"]?.objectValue?["code"], .string("UNSUPPORTED_FILE_TYPE"))
+  }
+
   func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
     let first = planConnectorAction(id: "codex-1", connectorId: "desktop:codex")
     let duplicate = planConnectorAction(id: "codex-2", connectorId: "desktop:codex")
