@@ -175,6 +175,16 @@ final class SignalASIStore: ObservableObject {
       }
   }
 
+  func visibleContacts(matching query: String) -> [SignalASIContact] {
+    visibleContacts.filter { contactMatchesSearch($0, query: query) }
+  }
+
+  func contactList(matching query: String) -> [SignalASIContact] {
+    contacts
+      .filter { !$0.deleted && $0.id != "system" }
+      .filter { contactMatchesSearch($0, query: query) }
+  }
+
   var cloudModelContacts: [SignalASIContact] {
     contacts
       .filter { !$0.deleted && $0.deliveryMode == .cloudAPI }
@@ -791,6 +801,24 @@ final class SignalASIStore: ObservableObject {
 
   private func lastMessageDate(for contactId: String) -> Date {
     messagesByContact[contactId]?.last?.createdAt ?? .distantPast
+  }
+
+  private func contactMatchesSearch(_ contact: SignalASIContact, query: String) -> Bool {
+    let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { return true }
+    let fields = [
+      contact.displayName,
+      contact.name,
+      contact.id,
+      contact.signalASIId,
+      contact.desktopName,
+      contact.cloudProvider,
+      contact.setupDetail,
+      contact.selectedCloudModel?.modelId ?? ""
+    ]
+    return fields.contains {
+      $0.range(of: normalized, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
   }
 
   private func exportCloudAPISecrets() -> [String: String] {

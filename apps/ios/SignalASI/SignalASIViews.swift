@@ -45,15 +45,28 @@ struct RootView: View {
 
 struct ChatListView: View {
   @EnvironmentObject private var store: SignalASIStore
+  @State private var searchText = ""
+
+  private var filteredContacts: [SignalASIContact] {
+    store.visibleContacts(matching: searchText)
+  }
 
   var body: some View {
     NavigationView {
-      List(store.visibleContacts) { contact in
-        NavigationLink(destination: ConversationView(contactId: contact.id)) {
-          ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+      List {
+        if filteredContacts.isEmpty {
+          Text("No matching chats")
+            .foregroundColor(.secondary)
+        } else {
+          ForEach(filteredContacts) { contact in
+            NavigationLink(destination: ConversationView(contactId: contact.id)) {
+              ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+            }
+          }
         }
       }
       .navigationTitle("SignalASI")
+      .searchable(text: $searchText, prompt: "Search chats")
     }
   }
 }
@@ -385,13 +398,31 @@ struct ContactsView: View {
   @State private var contactScannerPresented = false
   @State private var contactImportStatus = ""
   @State private var contactImportIsError = false
+  @State private var contactSearchText = ""
+
+  private var filteredFriendRequests: [SignalASIFriendRequest] {
+    let normalized = contactSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { return store.pendingFriendRequests }
+    return store.pendingFriendRequests.filter { request in
+      searchMatches([
+        request.name,
+        request.signalASIId,
+        request.mqttTopic,
+        request.mqttInboxTopic
+      ], query: normalized)
+    }
+  }
+
+  private var filteredContacts: [SignalASIContact] {
+    store.contactList(matching: contactSearchText)
+  }
 
   var body: some View {
     NavigationView {
       List {
-        if !store.pendingFriendRequests.isEmpty {
+        if !filteredFriendRequests.isEmpty {
           Section("New Friends") {
-            ForEach(store.pendingFriendRequests) { request in
+            ForEach(filteredFriendRequests) { request in
               NavigationLink(destination: FriendRequestDetailView(requestId: request.id)) {
                 FriendRequestRow(request: request)
               }
@@ -399,9 +430,14 @@ struct ContactsView: View {
           }
         }
         Section("Contacts") {
-          ForEach(store.contacts.filter { !$0.deleted && $0.id != "system" }) { contact in
-            NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
-              ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+          if filteredContacts.isEmpty {
+            Text("No matching contacts")
+              .foregroundColor(.secondary)
+          } else {
+            ForEach(filteredContacts) { contact in
+              NavigationLink(destination: ContactDetailView(contactId: contact.id)) {
+                ContactRow(contact: contact, summary: store.conversationSummary(for: contact.id))
+              }
             }
           }
         }
@@ -413,6 +449,7 @@ struct ContactsView: View {
         }
       }
       .navigationTitle("Contacts")
+      .searchable(text: $contactSearchText, prompt: "Search contacts")
       .toolbar {
         ToolbarItemGroup(placement: .navigationBarTrailing) {
           Button {
@@ -447,6 +484,12 @@ struct ContactsView: View {
     } catch {
       contactImportStatus = error.localizedDescription
       contactImportIsError = true
+    }
+  }
+
+  private func searchMatches(_ fields: [String], query: String) -> Bool {
+    fields.contains {
+      $0.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
   }
 }
