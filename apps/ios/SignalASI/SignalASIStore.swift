@@ -214,7 +214,7 @@ final class SignalASIStore: ObservableObject {
   }
 
   func markMessage(_ messageId: UUID, status: ChatDeliveryStatus, detail: String = "") {
-    for contactId in messagesByContact.keys {
+    for contactId in Array(messagesByContact.keys) {
       guard var messages = messagesByContact[contactId],
             let index = messages.firstIndex(where: { $0.id == messageId }) else {
         continue

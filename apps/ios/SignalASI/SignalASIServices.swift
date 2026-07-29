@@ -404,18 +404,31 @@ final class MessageCoordinator: ObservableObject {
     scheduleOutboxFlush(after: 0)
   }
 
-  func send(_ text: String, to contact: SignalASIContact) async {
+  func send(
+    _ text: String,
+    to contact: SignalASIContact,
+    attachments: [SignalASIDraftAttachment] = []
+  ) async {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmed.isEmpty else { return }
-    let outgoing = store.appendOutgoing(trimmed, to: contact.id)
+    guard !trimmed.isEmpty || !attachments.isEmpty else { return }
+    let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
+    let outgoing = store.appendOutgoing(displayText, to: contact.id)
     do {
       switch contact.deliveryMode {
       case .cloudAPI:
-        let reply = try await cloudClient.send(contact: contact, store: store, turns: store.messages(for: contact.id))
+        let cloudText = cloudPrompt(text: displayText, attachments: attachments)
+        var cloudTurns = store.messages(for: contact.id)
+        if let index = cloudTurns.firstIndex(where: { $0.id == outgoing.id }) {
+          cloudTurns[index].content = cloudText
+        }
+        if cloudText != displayText {
+          store.markMessage(outgoing.id, contactId: contact.id, status: .sent, detail: "Attachments described to cloud model.")
+        }
+        let reply = try await cloudClient.send(contact: contact, store: store, turns: cloudTurns)
         store.markMessage(outgoing.id, contactId: contact.id, status: .delivered)
         store.appendIncoming(reply, from: contact.id)
       case .link:
-        try await publishLinkMessage(trimmed, contact: contact, outgoing: outgoing)
+        try await publishLinkMessage(displayText, contact: contact, outgoing: outgoing, attachments: attachments)
       case .local:
         store.markMessage(outgoing.id, contactId: contact.id, status: .delivered)
       }
@@ -460,11 +473,16 @@ final class MessageCoordinator: ObservableObject {
     pairingStatus = result == .published ? "Pairing claim sent" : "Pairing claim queued"
   }
 
-  private func publishLinkMessage(_ text: String, contact: SignalASIContact, outgoing: ChatMessage) async throws {
+  private func publishLinkMessage(
+    _ text: String,
+    contact: SignalASIContact,
+    outgoing: ChatMessage,
+    attachments: [SignalASIDraftAttachment]
+  ) async throws {
     guard let link = store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first else {
       throw SignalASIError.notPaired
     }
-    let payload: [String: Any] = [
+    var payload: [String: Any] = [
       "type": "text",
       "message_id": outgoing.id.uuidString,
       "content": text,
@@ -474,6 +492,10 @@ final class MessageCoordinator: ObservableObject {
       "client_message_id": outgoing.id.uuidString,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
+    let attachmentDescriptors = SignalASIAttachmentPayloadBuilder.descriptors(for: attachments)
+    if !attachmentDescriptors.isEmpty {
+      payload["attachments"] = attachmentDescriptors
+    }
     let envelope = try SignalASILinkProtocol.makeEnvelope(
       payload: payload,
       sourceId: store.profile.signalASIId,
@@ -678,6 +700,12 @@ final class MessageCoordinator: ObservableObject {
       return ""
     }
     return SignalASILinkCiphertextReplayPolicy.digest(wire: wire)
+  }
+
+  private func cloudPrompt(text: String, attachments: [SignalASIDraftAttachment]) -> String {
+    let suffix = SignalASIAttachmentPayloadBuilder.promptSuffix(for: attachments)
+    guard !suffix.isEmpty else { return text }
+    return text + "\n\n" + suffix
   }
 
   private var mqttClientId: String {
