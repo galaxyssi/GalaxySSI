@@ -3683,6 +3683,220 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(passed)
   }
 
+  func testAgentNativeToolRegistryInvokeReturnsReceiptProgressAndVerification() throws {
+    var now: Int64 = 1_000
+    var started = 0
+    var progress: [AgentNativeToolProgressUpdate] = []
+    var finished = 0
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.invoke",
+      outputSchema: [
+        "type": .string("object"),
+        "properties": .object(["value": .object(["type": .string("string")])]),
+        "required": .array([.string("value")]),
+        "additionalProperties": .bool(false)
+      ]
+    )
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(
+          descriptor: descriptor,
+          executorId: "test.executor",
+          provenanceMetadata: ["implementation": "fake"]
+        ),
+        executor: { invocation in
+          try invocation.reportProgress(
+            stage: "working",
+            message: "Preparing output",
+            percent: 40,
+            sequence: 3
+          )
+          now += 7
+          return .success(
+            output: ["value": .string("done")],
+            message: "Completed",
+            metadata: ["native_call": .string("local")]
+          )
+        },
+        verifier: { _, execution in
+          AgentNativeToolVerification(
+            status: .passed,
+            evidence: ["observed": execution.output["value"] ?? .null]
+          )
+        }
+      ))
+
+    let result = registry.invoke(
+      descriptor.id,
+      input: [:],
+      context: AgentNativeToolInvocationContext(invocationId: "invoke-7", requestedAtEpochMillis: now),
+      hooks: AgentNativeToolInvocationHooks(
+        nowMillis: { now },
+        onStarted: { _ in started += 1 },
+        onProgress: { _, update in progress.append(update) },
+        onFinished: { _ in finished += 1 }
+      )
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.status, .succeeded)
+    XCTAssertEqual(result.output["value"], .string("done"))
+    XCTAssertEqual(result.message, "Completed")
+    XCTAssertEqual(result.receipt.durationMillis, 7)
+    XCTAssertEqual(result.receipt.inputSha256.count, 64)
+    XCTAssertEqual(result.receipt.outputSha256.count, 64)
+    XCTAssertEqual(result.verification?.status, .passed)
+    XCTAssertEqual(result.provenance.executorId, "test.executor")
+    XCTAssertEqual(result.provenance.toolVersion, "1.0.0")
+    XCTAssertEqual(started, 1)
+    XCTAssertEqual(progress.first?.stage, "working")
+    XCTAssertEqual(progress.first?.percent, 40)
+    XCTAssertEqual(progress.first?.sequence, 3)
+    XCTAssertEqual(finished, 1)
+    XCTAssertTrue(result.toJson().contains("\"invocation_id\":\"invoke-7\""))
+  }
+
+  func testAgentNativeToolRegistryInvokeRejectsInvalidOutputAndFailedVerification() throws {
+    let invalidOutput = try nativeToolDescriptor(
+      "signalasi.test.invalid-output",
+      outputSchema: [
+        "type": .string("object"),
+        "properties": .object(["value": .object(["type": .string("string")])]),
+        "required": .array([.string("value")]),
+        "additionalProperties": .bool(false)
+      ]
+    )
+    let verificationFailed = try nativeToolDescriptor("signalasi.test.verification")
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: invalidOutput, executorId: "test.executor"),
+        executor: { _ in .success(output: ["value": .int(1)], message: "Invalid") }
+      ))
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: verificationFailed, executorId: "test.executor"),
+        executor: { _ in .success(message: "Executed") },
+        verifier: { _, _ in AgentNativeToolVerification(status: .failed, message: "Screen did not change") }
+      ))
+
+    let invalid = registry.invoke(invalidOutput.id, input: [:])
+    let failed = registry.invoke(verificationFailed.id, input: [:])
+
+    XCTAssertEqual(invalid.status, .failed)
+    XCTAssertEqual(invalid.error?.code, "invalid_output")
+    XCTAssertEqual(failed.status, .verificationFailed)
+    XCTAssertEqual(failed.error?.code, "verification_failed")
+    XCTAssertEqual(failed.verification?.message, "Screen did not change")
+  }
+
+  func testAgentNativeToolRegistryInvokeHandlesCancellationTimeoutAndMissingExecutor() throws {
+    var now: Int64 = 10
+    var cancelledHooks = 0
+    var timeoutHooks = 0
+    var executions = 0
+    let cancelledDescriptor = try nativeToolDescriptor("signalasi.test.cancelled")
+    let timedDescriptor = try nativeToolDescriptor("signalasi.test.timeout", timeoutMillis: 5)
+    let descriptorOnly = try nativeToolDescriptor("signalasi.test.descriptor-only")
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(descriptor: descriptorOnly, executorId: "test.executor")
+    ])
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: cancelledDescriptor, executorId: "test.executor"),
+        executor: { _ in
+          executions += 1
+          return .success()
+        }
+      ))
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: timedDescriptor, executorId: "test.executor"),
+        executor: { invocation in
+          now += 5
+          try invocation.checkpoint()
+          return .success()
+        }
+      ))
+
+    let cancelled = registry.invoke(
+      cancelledDescriptor.id,
+      input: [:],
+      hooks: AgentNativeToolInvocationHooks(
+        nowMillis: { now },
+        cancellationRequested: { true },
+        onCancelled: { _ in cancelledHooks += 1 }
+      )
+    )
+    let timedOut = registry.invoke(
+      timedDescriptor.id,
+      input: [:],
+      hooks: AgentNativeToolInvocationHooks(
+        nowMillis: { now },
+        onTimeout: { _ in timeoutHooks += 1 }
+      )
+    )
+    let missingExecutor = registry.invoke(descriptorOnly.id, input: [:])
+
+    XCTAssertEqual(cancelled.status, .cancelled)
+    XCTAssertEqual(cancelled.error?.code, "cancelled")
+    XCTAssertEqual(executions, 0)
+    XCTAssertEqual(cancelledHooks, 1)
+    XCTAssertEqual(timedOut.status, .timedOut)
+    XCTAssertEqual(timedOut.error?.code, "timeout")
+    XCTAssertEqual(timeoutHooks, 1)
+    XCTAssertEqual(missingExecutor.status, .unavailable)
+    XCTAssertEqual(missingExecutor.error?.code, "missing_executor")
+  }
+
+  func testAgentNativeToolRegistryInvokeReplaysSuccessfulKeyedResults() throws {
+    var executions = 0
+    let replayStore = InMemoryAgentNativeToolReplayStore()
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.replay",
+      inputSchema: [
+        "type": .string("object"),
+        "properties": .object(["value": .object(["type": .string("integer")])]),
+        "required": .array([.string("value")]),
+        "additionalProperties": .bool(false)
+      ],
+      idempotency: .idempotencyKeyRequired
+    )
+
+    func registry() throws -> AgentNativeToolRegistry {
+      try AgentNativeToolRegistry(replayStore: replayStore)
+        .registerExecutable(AgentNativeToolExecutableDefinition(
+          definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
+          executor: { _ in
+            executions += 1
+            return .success(output: ["execution": .int(Int64(executions))])
+          }
+        ))
+    }
+
+    let missingKey = try registry().invoke(descriptor.id, input: ["value": .int(1)])
+    let first = try registry().invoke(
+      descriptor.id,
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "first", idempotencyKey: "request-1")
+    )
+    let replay = try registry().invoke(
+      descriptor.id,
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "second", idempotencyKey: "request-1")
+    )
+    let conflict = try registry().invoke(
+      descriptor.id,
+      input: ["value": .int(2)],
+      context: AgentNativeToolInvocationContext(invocationId: "third", idempotencyKey: "request-1")
+    )
+
+    XCTAssertEqual(missingKey.error?.code, "missing_idempotency_key")
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(first.output, replay.output)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(replay.receipt.originalInvocationId, "first")
+    XCTAssertEqual(replay.receipt.invocationId, "second")
+    XCTAssertEqual(conflict.status, .rejected)
+    XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
+  }
+
   func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
     let first = planConnectorAction(id: "codex-1", connectorId: "desktop:codex")
     let duplicate = planConnectorAction(id: "codex-2", connectorId: "desktop:codex")

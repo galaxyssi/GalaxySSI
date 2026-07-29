@@ -9999,6 +9999,165 @@ struct AgentNativeToolCall: Codable, Equatable {
   }
 }
 
+enum AgentNativeToolInvocationError: Error, Equatable {
+  case cancelled
+  case timedOut
+}
+
+struct AgentNativeToolProgressUpdate: Codable, Equatable {
+  var sequence: Int64
+  var stage: String
+  var message: String
+  var percent: Int?
+  var timestampEpochMillis: Int64
+
+  init(
+    sequence: Int64,
+    stage: String,
+    message: String = "",
+    percent: Int? = nil,
+    timestampEpochMillis: Int64
+  ) {
+    self.sequence = max(0, sequence)
+    self.stage = String(stage.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+    self.message = String(message.prefix(2_000))
+    self.percent = percent.map { min(100, max(0, $0)) }
+    self.timestampEpochMillis = max(0, timestampEpochMillis)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case sequence
+    case stage
+    case message
+    case percent
+    case timestampEpochMillis = "timestamp_epoch_millis"
+  }
+}
+
+struct AgentNativeToolInvocation {
+  var descriptor: AgentNativeToolDescriptor
+  var input: AgentMcpJSONObject
+  var context: AgentNativeToolInvocationContext
+  var startedAtEpochMillis: Int64
+  var deadlineEpochMillis: Int64
+
+  private let nowMillis: () -> Int64
+  private let cancellationRequested: () -> Bool
+  private let progressReporter: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Void
+
+  var remainingTimeMillis: Int64 {
+    max(0, deadlineEpochMillis - nowMillis())
+  }
+
+  var isCancellationRequested: Bool {
+    cancellationRequested()
+  }
+
+  var isTimedOut: Bool {
+    nowMillis() >= deadlineEpochMillis
+  }
+
+  init(
+    descriptor: AgentNativeToolDescriptor,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    startedAtEpochMillis: Int64,
+    deadlineEpochMillis: Int64,
+    nowMillis: @escaping () -> Int64,
+    cancellationRequested: @escaping () -> Bool,
+    progressReporter: @escaping (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Void
+  ) {
+    self.descriptor = descriptor
+    self.input = input
+    self.context = context
+    self.startedAtEpochMillis = max(0, startedAtEpochMillis)
+    self.deadlineEpochMillis = max(0, deadlineEpochMillis)
+    self.nowMillis = nowMillis
+    self.cancellationRequested = cancellationRequested
+    self.progressReporter = progressReporter
+  }
+
+  func checkpoint() throws {
+    if isCancellationRequested {
+      throw AgentNativeToolInvocationError.cancelled
+    }
+    if isTimedOut {
+      throw AgentNativeToolInvocationError.timedOut
+    }
+  }
+
+  func reportProgress(
+    stage: String,
+    message: String = "",
+    percent: Int? = nil,
+    sequence: Int64 = 0,
+    timestampEpochMillis: Int64? = nil
+  ) throws {
+    try checkpoint()
+    progressReporter(
+      self,
+      AgentNativeToolProgressUpdate(
+        sequence: sequence,
+        stage: stage,
+        message: message,
+        percent: percent,
+        timestampEpochMillis: timestampEpochMillis ?? nowMillis()
+      )
+    )
+  }
+}
+
+struct AgentNativeToolInvocationHooks {
+  var nowMillis: () -> Int64
+  var cancellationRequested: () -> Bool
+  var onStarted: (AgentNativeToolInvocation) -> Void
+  var onProgress: (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Void
+  var onCancelled: (AgentNativeToolInvocation) -> Void
+  var onTimeout: (AgentNativeToolInvocation) -> Void
+  var onFinished: (AgentNativeToolResult) -> Void
+
+  init(
+    nowMillis: @escaping () -> Int64 = {
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    },
+    cancellationRequested: @escaping () -> Bool = { false },
+    onStarted: @escaping (AgentNativeToolInvocation) -> Void = { _ in },
+    onProgress: @escaping (AgentNativeToolInvocation, AgentNativeToolProgressUpdate) -> Void = { _, _ in },
+    onCancelled: @escaping (AgentNativeToolInvocation) -> Void = { _ in },
+    onTimeout: @escaping (AgentNativeToolInvocation) -> Void = { _ in },
+    onFinished: @escaping (AgentNativeToolResult) -> Void = { _ in }
+  ) {
+    self.nowMillis = nowMillis
+    self.cancellationRequested = cancellationRequested
+    self.onStarted = onStarted
+    self.onProgress = onProgress
+    self.onCancelled = onCancelled
+    self.onTimeout = onTimeout
+    self.onFinished = onFinished
+  }
+}
+
+struct AgentNativeToolExecutableDefinition {
+  var definition: AgentPhoneNativeToolDefinition
+  var executor: (AgentNativeToolInvocation) throws -> AgentNativeToolExecutionResult
+  var verifier: ((AgentNativeToolInvocation, AgentNativeToolExecutionResult) throws -> AgentNativeToolVerification?)?
+
+  var id: String { definition.id }
+  var descriptor: AgentNativeToolDescriptor { definition.descriptor }
+  var executorId: String { definition.executorId }
+  var provenanceMetadata: [String: String] { definition.provenanceMetadata }
+
+  init(
+    definition: AgentPhoneNativeToolDefinition,
+    executor: @escaping (AgentNativeToolInvocation) throws -> AgentNativeToolExecutionResult,
+    verifier: ((AgentNativeToolInvocation, AgentNativeToolExecutionResult) throws -> AgentNativeToolVerification?)? = nil
+  ) {
+    self.definition = definition
+    self.executor = executor
+    self.verifier = verifier
+  }
+}
+
 enum AgentNativeToolAgentActionAdapter {
   static let legacyActionIdAttribute = "legacy_agent_action_id"
 
@@ -11185,6 +11344,7 @@ struct AgentNativeToolReplayRecord: Codable, Equatable {
 
 final class InMemoryAgentNativeToolReplayStore {
   private var records: [String: AgentNativeToolReplayRecord] = [:]
+  private var results: [String: AgentNativeToolResult] = [:]
 
   func decide(
     descriptor: AgentNativeToolDescriptor,
@@ -11212,7 +11372,7 @@ final class InMemoryAgentNativeToolReplayStore {
     }
 
     let digest = AgentMcpJSONCodec.sha256(input)
-    let storageKey = "\(descriptor.id)\u{001F}\(key)"
+    let storageKey = self.storageKey(descriptor: descriptor, idempotencyKey: key)
     if let existing = records[storageKey] {
       return AgentNativeToolReplayDecision(
         code: existing.inputSha256 == digest ? .replay : .conflict,
@@ -11236,6 +11396,92 @@ final class InMemoryAgentNativeToolReplayStore {
     )
   }
 
+  func cachedResult(
+    descriptor: AgentNativeToolDescriptor,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext
+  ) -> (AgentNativeToolReplayDecision, AgentNativeToolResult?) {
+    guard descriptor.idempotency != .nonIdempotent else {
+      return (
+        AgentNativeToolReplayDecision(
+          code: .bypassed,
+          replayed: false,
+          originalInvocationId: nil,
+          inputSha256: AgentMcpJSONCodec.sha256(input)
+        ),
+        nil
+      )
+    }
+    guard let key = context.idempotencyKey, !key.isEmpty else {
+      return (
+        AgentNativeToolReplayDecision(
+          code: descriptor.idempotency == .idempotencyKeyRequired ? .keyRequired : .accepted,
+          replayed: false,
+          originalInvocationId: nil,
+          inputSha256: AgentMcpJSONCodec.sha256(input)
+        ),
+        nil
+      )
+    }
+
+    let digest = AgentMcpJSONCodec.sha256(input)
+    let keyValue = storageKey(descriptor: descriptor, idempotencyKey: key)
+    guard let existing = records[keyValue] else {
+      return (
+        AgentNativeToolReplayDecision(
+          code: .accepted,
+          replayed: false,
+          originalInvocationId: nil,
+          inputSha256: digest
+        ),
+        nil
+      )
+    }
+    guard existing.inputSha256 == digest else {
+      return (
+        AgentNativeToolReplayDecision(
+          code: .conflict,
+          replayed: false,
+          originalInvocationId: existing.invocationId,
+          inputSha256: digest
+        ),
+        nil
+      )
+    }
+    return (
+      AgentNativeToolReplayDecision(
+        code: .replay,
+        replayed: true,
+        originalInvocationId: existing.invocationId,
+        inputSha256: digest
+      ),
+      results[keyValue]
+    )
+  }
+
+  func recordResult(
+    descriptor: AgentNativeToolDescriptor,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    result: AgentNativeToolResult
+  ) {
+    guard descriptor.idempotency != .nonIdempotent,
+          let key = context.idempotencyKey,
+          !key.isEmpty else {
+      return
+    }
+    let digest = AgentMcpJSONCodec.sha256(input)
+    let keyValue = storageKey(descriptor: descriptor, idempotencyKey: key)
+    records[keyValue] = AgentNativeToolReplayRecord(
+      toolId: descriptor.id,
+      idempotencyKey: key,
+      inputSha256: digest,
+      invocationId: context.invocationId,
+      recordedAtEpochMillis: result.receipt.finishedAtEpochMillis
+    )
+    results[keyValue] = result
+  }
+
   func snapshot() -> [AgentNativeToolReplayRecord] {
     records.values.sorted {
       if $0.toolId != $1.toolId {
@@ -11243,6 +11489,13 @@ final class InMemoryAgentNativeToolReplayStore {
       }
       return $0.idempotencyKey < $1.idempotencyKey
     }
+  }
+
+  private func storageKey(
+    descriptor: AgentNativeToolDescriptor,
+    idempotencyKey: String
+  ) -> String {
+    "\(descriptor.id)\u{001F}\(descriptor.version)\u{001F}\(idempotencyKey)"
   }
 }
 
@@ -11262,6 +11515,7 @@ final class AgentNativeToolRegistry {
   static let legacyActionIdAttribute = AgentNativeToolAgentActionAdapter.legacyActionIdAttribute
 
   private var definitionsById: [String: AgentPhoneNativeToolDefinition] = [:]
+  private var executableById: [String: AgentNativeToolExecutableDefinition] = [:]
   private let replayStore: InMemoryAgentNativeToolReplayStore
 
   init(
@@ -11278,6 +11532,22 @@ final class AgentNativeToolRegistry {
       throw AgentNativeToolRegistryError.duplicateTool(definition.id)
     }
     definitionsById[definition.id] = definition
+    return self
+  }
+
+  @discardableResult
+  func registerExecutable(_ executable: AgentNativeToolExecutableDefinition) throws -> AgentNativeToolRegistry {
+    try register(executable.definition)
+    executableById[executable.id] = executable
+    return self
+  }
+
+  @discardableResult
+  func registerExecutables(_ executables: [AgentNativeToolExecutableDefinition]) throws -> AgentNativeToolRegistry {
+    try registerAll(executables.map(\.definition))
+    for executable in executables {
+      executableById[executable.id] = executable
+    }
     return self
   }
 
@@ -11300,6 +11570,10 @@ final class AgentNativeToolRegistry {
 
   func lookup(_ id: String) -> AgentPhoneNativeToolDefinition? {
     definitionsById[id]
+  }
+
+  func executable(_ id: String) -> AgentNativeToolExecutableDefinition? {
+    executableById[id]
   }
 
   func ids() -> Set<String> {
@@ -11503,6 +11777,223 @@ final class AgentNativeToolRegistry {
     )
   }
 
+  func invoke(
+    _ id: String,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext = AgentNativeToolInvocationContext(),
+    hooks: AgentNativeToolInvocationHooks = AgentNativeToolInvocationHooks()
+  ) -> AgentNativeToolResult {
+    guard let executable = executableById[id] else {
+      if lookup(id) == nil {
+        return finishSynthetic(
+          id,
+          input: input,
+          context: context,
+          hooks: hooks,
+          startedAtEpochMillis: hooks.nowMillis(),
+          status: .rejected,
+          error: AgentNativeToolError(
+            code: "unknown_tool",
+            message: "No native tool is registered with id \(id)"
+          )
+        )
+      }
+      return finishSynthetic(
+        id,
+        input: input,
+        context: context,
+        hooks: hooks,
+        startedAtEpochMillis: hooks.nowMillis(),
+        status: .unavailable,
+        error: AgentNativeToolError(
+          code: "missing_executor",
+          message: "No executable native tool implementation is registered for id \(id)"
+        )
+      )
+    }
+
+    let descriptor = executable.descriptor
+    let startedAt = hooks.nowMillis()
+    let deadline = min(context.deadlineEpochMillis ?? Int64.max, safeAdd(startedAt, descriptor.timeoutMillis))
+    let invocation = AgentNativeToolInvocation(
+      descriptor: descriptor,
+      input: input,
+      context: context,
+      startedAtEpochMillis: startedAt,
+      deadlineEpochMillis: deadline,
+      nowMillis: hooks.nowMillis,
+      cancellationRequested: hooks.cancellationRequested,
+      progressReporter: hooks.onProgress
+    )
+    hooks.onStarted(invocation)
+
+    func finish(
+      status: AgentNativeToolResultStatus,
+      output: AgentMcpJSONObject = [:],
+      message: String = "",
+      metadata: AgentMcpJSONObject = [:],
+      error: AgentNativeToolError? = nil,
+      verification: AgentNativeToolVerification? = nil,
+      replayed: Bool = false,
+      originalInvocationId: String? = nil,
+      finishedAtEpochMillis: Int64? = nil
+    ) -> AgentNativeToolResult {
+      let result = makeResult(
+        id,
+        input: input,
+        context: context,
+        status: status,
+        output: output,
+        message: message,
+        metadata: metadata,
+        error: error,
+        verification: verification,
+        startedAtEpochMillis: startedAt,
+        finishedAtEpochMillis: finishedAtEpochMillis ?? hooks.nowMillis(),
+        replayed: replayed,
+        originalInvocationId: originalInvocationId
+      )
+      hooks.onFinished(result)
+      return result
+    }
+
+    do {
+      try invocation.checkpoint()
+
+      if let preflight = preflightRejectionResult(id, input: input, context: context) {
+        let result = makeResult(
+          id,
+          input: input,
+          context: context,
+          status: preflight.status,
+          message: preflight.message,
+          error: preflight.error,
+          startedAtEpochMillis: startedAt,
+          finishedAtEpochMillis: hooks.nowMillis()
+        )
+        hooks.onFinished(result)
+        return result
+      }
+
+      let replay = replayStore.cachedResult(descriptor: descriptor, input: input, context: context)
+      switch replay.0.code {
+      case .conflict:
+        return finish(
+          status: .rejected,
+          error: AgentNativeToolError(
+            code: "idempotency_key_conflict",
+            message: "The idempotency key was already used with different input"
+          )
+        )
+      case .replay:
+        if let cached = replay.1 {
+          return finish(
+            status: cached.status,
+            output: cached.output,
+            message: cached.message,
+            metadata: cached.metadata,
+            error: cached.error,
+            verification: cached.verification,
+            replayed: true,
+            originalInvocationId: cached.receipt.originalInvocationId ?? cached.receipt.invocationId
+          )
+        }
+      case .bypassed, .accepted, .keyRequired, .unknownTool:
+        break
+      }
+
+      let execution = try executable.executor(invocation)
+      try invocation.checkpoint()
+      if !execution.isSuccess {
+        return finish(
+          status: .failed,
+          output: execution.output,
+          message: execution.message,
+          metadata: execution.metadata,
+          error: execution.error
+        )
+      }
+
+      let outputValidation = AgentNativeJsonSchemaValidator.validateObject(
+        schema: descriptor.outputSchema,
+        object: execution.output
+      )
+      if !outputValidation.isValid {
+        return finish(
+          status: .failed,
+          output: execution.output,
+          message: execution.message,
+          metadata: execution.metadata,
+          error: AgentNativeToolError(
+            code: "invalid_output",
+            message: "Native tool output does not satisfy its JSON schema",
+            details: validationDetails(outputValidation)
+          )
+        )
+      }
+
+      let verification = try executable.verifier?(invocation, execution)
+      try invocation.checkpoint()
+      if verification?.status == .failed {
+        let verificationMessage = verification?.message.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return finish(
+          status: .verificationFailed,
+          output: execution.output,
+          message: execution.message,
+          metadata: execution.metadata,
+          error: AgentNativeToolError(
+            code: "verification_failed",
+            message: verificationMessage.isEmpty ? "Native tool verification failed" : verificationMessage
+          ),
+          verification: verification
+        )
+      }
+
+      let result = finish(
+        status: .succeeded,
+        output: execution.output,
+        message: execution.message,
+        metadata: execution.metadata,
+        verification: verification
+      )
+      replayStore.recordResult(
+        descriptor: descriptor,
+        input: input,
+        context: context,
+        result: result
+      )
+      return result
+    } catch AgentNativeToolInvocationError.cancelled {
+      hooks.onCancelled(invocation)
+      return finish(
+        status: .cancelled,
+        error: AgentNativeToolError(
+          code: "cancelled",
+          message: "Native tool invocation was cancelled",
+          retryable: true
+        )
+      )
+    } catch AgentNativeToolInvocationError.timedOut {
+      hooks.onTimeout(invocation)
+      return finish(
+        status: .timedOut,
+        error: AgentNativeToolError(
+          code: "timeout",
+          message: "Native tool invocation exceeded its deadline",
+          retryable: true
+        )
+      )
+    } catch {
+      return finish(
+        status: .failed,
+        error: AgentNativeToolError(
+          code: "tool_invocation_failed",
+          message: error.localizedDescription.isEmpty ? String(describing: error) : error.localizedDescription
+        )
+      )
+    }
+  }
+
   func replayDecision(
     _ id: String,
     input: AgentMcpJSONObject,
@@ -11544,6 +12035,41 @@ final class AgentNativeToolRegistry {
       })
     }
     return details
+  }
+
+  private func finishSynthetic(
+    _ id: String,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext,
+    hooks: AgentNativeToolInvocationHooks,
+    startedAtEpochMillis: Int64,
+    status: AgentNativeToolResultStatus,
+    error: AgentNativeToolError
+  ) -> AgentNativeToolResult {
+    let result = makeResult(
+      id,
+      input: input,
+      context: context,
+      status: status,
+      message: error.message,
+      error: error,
+      startedAtEpochMillis: startedAtEpochMillis,
+      finishedAtEpochMillis: hooks.nowMillis()
+    )
+    hooks.onFinished(result)
+    return result
+  }
+
+  private func validationDetails(_ result: AgentNativeValidationResult) -> AgentMcpJSONObject {
+    [
+      "issues": .array(result.issues.map { issue in
+        .object([
+          "path": .string(issue.path),
+          "code": .string(issue.code),
+          "message": .string(issue.message)
+        ])
+      })
+    ]
   }
 
   private func decision(
