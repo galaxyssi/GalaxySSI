@@ -9,8 +9,11 @@ from pathlib import Path
 from pairing_access import grant_for_executor
 from desktop_control import (
     CLICK_XY,
+    DEFAULT_ALLOWED_TOOLS,
+    FILE_SELECT,
     SCREENSHOT,
     TYPE_TEXT,
+    WINDOW_SWITCH,
     RECEIPT_SIGNED_FIELDS,
     DesktopControlError,
     DesktopControlManager,
@@ -48,6 +51,12 @@ class FakeInput:
 
     def scroll(self, delta):
         self.calls.append(("scroll", delta))
+
+    def window_switch(self, direction):
+        self.calls.append(("window_switch", direction))
+
+    def select_file(self, path):
+        self.calls.append(("file_select", path))
 
 
 class FakeReceiptIdentity:
@@ -192,6 +201,23 @@ class DesktopControlTests(unittest.TestCase):
             self.manager.status()["authorized_app_contract"],
         )
 
+    def test_repairing_refreshes_the_authorized_standard_tool_set(self):
+        authorization = self.authorize()
+        authorization_id = authorization["authorization_id"]
+        self.manager._state["authorizations"][authorization_id]["allowed_tools"] = [
+            SCREENSHOT
+        ]
+        offer = self.manager.create_offer("renewed-pair-token")
+
+        rebound = self.manager.accept_pairing_offer(
+            offer["token"],
+            "renewed-pair-token",
+            self.client,
+        )
+
+        self.assertEqual(authorization_id, rebound["authorization_id"])
+        self.assertEqual(list(DEFAULT_ALLOWED_TOOLS), rebound["allowed_tools"])
+
     def test_restricted_pairing_cannot_be_promoted_by_the_control_offer(self):
         self.manager.update_settings(enabled=True)
         offer = self.manager.create_offer("pair-token")
@@ -288,6 +314,72 @@ class DesktopControlTests(unittest.TestCase):
         state_text = (Path(self.temporary.name) / "control.json").read_text(encoding="utf-8")
         self.assertNotIn(secret, state_text)
         self.assertIn("typed 41 chars", state_text)
+
+    def test_window_switch_and_file_select_use_standard_tools(self):
+        authorization = self.authorize()
+        selected = Path(self.temporary.name) / "private project.txt"
+        selected.write_text("private", encoding="utf-8")
+
+        next_window = self.manager.execute_request(
+            self.request(
+                authorization,
+                WINDOW_SWITCH,
+                {"direction": "next"},
+            ),
+            self.client,
+        )
+        previous_window = self.manager.execute_request(
+            self.request(
+                authorization,
+                WINDOW_SWITCH,
+                {"direction": "previous"},
+            ),
+            self.client,
+        )
+        file_selection = self.manager.execute_request(
+            self.request(
+                authorization,
+                FILE_SELECT,
+                {"path": str(selected)},
+            ),
+            self.client,
+        )
+
+        self.assertEqual("succeeded", next_window["status"])
+        self.assertEqual("succeeded", previous_window["status"])
+        self.assertEqual("succeeded", file_selection["status"])
+        self.assertEqual(
+            [
+                ("window_switch", "next"),
+                ("window_switch", "previous"),
+                ("file_select", str(selected.resolve())),
+            ],
+            self.input.calls,
+        )
+        self.assertEqual("private project.txt", file_selection["output"]["file_name"])
+        state_text = (Path(self.temporary.name) / "control.json").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn(str(selected), state_text)
+        self.assertIn("selected an existing file in the active file dialog", state_text)
+
+    def test_file_select_rejects_missing_files_without_input(self):
+        authorization = self.authorize()
+        missing = Path(self.temporary.name) / "missing.txt"
+
+        receipt = self.manager.execute_request(
+            self.request(
+                authorization,
+                FILE_SELECT,
+                {"path": str(missing)},
+            ),
+            self.client,
+        )
+
+        self.assertEqual("failed", receipt["status"])
+        self.assertEqual("file_not_found", receipt["error_code"])
+        self.assertEqual([], self.input.calls)
+        self.assertNotIn(str(missing), str(receipt))
 
     def test_click_coordinate_space_is_forwarded_and_scaled_for_windows_dpi(self):
         authorization = self.authorize()
