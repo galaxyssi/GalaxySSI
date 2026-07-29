@@ -8220,6 +8220,565 @@ struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentNativeVerificationStatus: String, Codable, CaseIterable, Identifiable {
+  case passed
+  case failed
+  case skipped
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeVerificationStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .skipped
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolVerification: Codable, Equatable {
+  var status: AgentNativeVerificationStatus
+  var message: String
+  var evidence: AgentMcpJSONObject
+
+  init(
+    status: AgentNativeVerificationStatus,
+    message: String = "",
+    evidence: AgentMcpJSONObject = [:]
+  ) {
+    self.status = status
+    self.message = message
+    self.evidence = evidence
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case message
+    case evidence
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      status: try container.decodeIfPresent(AgentNativeVerificationStatus.self, forKey: .status) ?? .skipped,
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      evidence: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .evidence) ?? [:]
+    )
+  }
+}
+
+struct AgentNativeToolError: Codable, Equatable {
+  var code: String
+  var message: String
+  var retryable: Bool
+  var details: AgentMcpJSONObject
+
+  init(
+    code: String,
+    message: String,
+    retryable: Bool = false,
+    details: AgentMcpJSONObject = [:]
+  ) {
+    self.code = code
+    self.message = message
+    self.retryable = retryable
+    self.details = details
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case code
+    case message
+    case retryable
+    case details
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      code: try container.decodeIfPresent(String.self, forKey: .code) ?? "",
+      message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      retryable: try container.decodeIfPresent(Bool.self, forKey: .retryable) ?? false,
+      details: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .details) ?? [:]
+    )
+  }
+}
+
+struct AgentNativeToolProvenance: Codable, Equatable {
+  var toolId: String
+  var toolVersion: String
+  var location: AgentNativeToolLocation
+  var executorId: String
+  var contractVersion: String
+  var legacyAgentActionId: String?
+  var metadata: [String: String]
+
+  init(
+    toolId: String,
+    toolVersion: String,
+    location: AgentNativeToolLocation,
+    executorId: String,
+    contractVersion: String,
+    legacyAgentActionId: String? = nil,
+    metadata: [String: String] = [:]
+  ) {
+    self.toolId = toolId
+    self.toolVersion = toolVersion
+    self.location = location
+    self.executorId = executorId
+    self.contractVersion = contractVersion
+    self.legacyAgentActionId = legacyAgentActionId
+    self.metadata = metadata
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case location
+    case executorId = "executor_id"
+    case contractVersion = "contract_version"
+    case legacyAgentActionId = "legacy_agent_action_id"
+    case metadata
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      toolId: container.decode(String.self, forKey: .toolId),
+      toolVersion: container.decode(String.self, forKey: .toolVersion),
+      location: container.decodeIfPresent(AgentNativeToolLocation.self, forKey: .location) ?? .unknown,
+      executorId: container.decodeIfPresent(String.self, forKey: .executorId) ?? "",
+      contractVersion: container.decodeIfPresent(String.self, forKey: .contractVersion) ?? "",
+      legacyAgentActionId: container.decodeIfPresent(String.self, forKey: .legacyAgentActionId),
+      metadata: container.decodeIfPresent([String: String].self, forKey: .metadata) ?? [:]
+    )
+  }
+}
+
+enum AgentNativeToolResultStatus: String, Codable, CaseIterable, Identifiable {
+  case succeeded
+  case failed
+  case verificationFailed = "verification_failed"
+  case rejected
+  case unavailable
+  case cancelled
+  case timedOut = "timed_out"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeToolResultStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .failed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolReceipt: Codable, Equatable {
+  var invocationId: String
+  var idempotencyKey: String?
+  var startedAtEpochMillis: Int64
+  var finishedAtEpochMillis: Int64
+  var durationMillis: Int64
+  var status: AgentNativeToolResultStatus
+  var inputSha256: String
+  var outputSha256: String
+  var replayed: Bool
+  var originalInvocationId: String?
+
+  init(
+    invocationId: String,
+    idempotencyKey: String? = nil,
+    startedAtEpochMillis: Int64,
+    finishedAtEpochMillis: Int64,
+    durationMillis: Int64,
+    status: AgentNativeToolResultStatus,
+    inputSha256: String,
+    outputSha256: String,
+    replayed: Bool = false,
+    originalInvocationId: String? = nil
+  ) {
+    self.invocationId = invocationId
+    self.idempotencyKey = idempotencyKey
+    self.startedAtEpochMillis = startedAtEpochMillis
+    self.finishedAtEpochMillis = finishedAtEpochMillis
+    self.durationMillis = durationMillis
+    self.status = status
+    self.inputSha256 = inputSha256
+    self.outputSha256 = outputSha256
+    self.replayed = replayed
+    self.originalInvocationId = originalInvocationId
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case invocationId = "invocation_id"
+    case idempotencyKey = "idempotency_key"
+    case startedAtEpochMillis = "started_at_epoch_ms"
+    case finishedAtEpochMillis = "finished_at_epoch_ms"
+    case durationMillis = "duration_ms"
+    case status
+    case inputSha256 = "input_sha256"
+    case outputSha256 = "output_sha256"
+    case replayed
+    case originalInvocationId = "original_invocation_id"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      invocationId: container.decode(String.self, forKey: .invocationId),
+      idempotencyKey: container.decodeIfPresent(String.self, forKey: .idempotencyKey),
+      startedAtEpochMillis: container.decodeIfPresent(Int64.self, forKey: .startedAtEpochMillis) ?? 0,
+      finishedAtEpochMillis: container.decodeIfPresent(Int64.self, forKey: .finishedAtEpochMillis) ?? 0,
+      durationMillis: container.decodeIfPresent(Int64.self, forKey: .durationMillis) ?? 0,
+      status: container.decodeIfPresent(AgentNativeToolResultStatus.self, forKey: .status) ?? .failed,
+      inputSha256: container.decodeIfPresent(String.self, forKey: .inputSha256) ?? "",
+      outputSha256: container.decodeIfPresent(String.self, forKey: .outputSha256) ?? "",
+      replayed: container.decodeIfPresent(Bool.self, forKey: .replayed) ?? false,
+      originalInvocationId: container.decodeIfPresent(String.self, forKey: .originalInvocationId)
+    )
+  }
+}
+
+struct AgentNativeToolResult: Codable, Equatable {
+  var status: AgentNativeToolResultStatus
+  var output: AgentMcpJSONObject
+  var message: String
+  var metadata: AgentMcpJSONObject
+  var error: AgentNativeToolError?
+  var verification: AgentNativeToolVerification?
+  var receipt: AgentNativeToolReceipt
+  var provenance: AgentNativeToolProvenance
+
+  var isSuccess: Bool { status == .succeeded }
+
+  init(
+    status: AgentNativeToolResultStatus,
+    output: AgentMcpJSONObject,
+    message: String,
+    metadata: AgentMcpJSONObject = [:],
+    error: AgentNativeToolError? = nil,
+    verification: AgentNativeToolVerification? = nil,
+    receipt: AgentNativeToolReceipt,
+    provenance: AgentNativeToolProvenance
+  ) {
+    self.status = status
+    self.output = output
+    self.message = message
+    self.metadata = metadata
+    self.error = error
+    self.verification = verification
+    self.receipt = receipt
+    self.provenance = provenance
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case output
+    case message
+    case metadata
+    case error
+    case verification
+    case receipt
+    case provenance
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      status: container.decodeIfPresent(AgentNativeToolResultStatus.self, forKey: .status) ?? .failed,
+      output: container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .output) ?? [:],
+      message: container.decodeIfPresent(String.self, forKey: .message) ?? "",
+      metadata: container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .metadata) ?? [:],
+      error: container.decodeIfPresent(AgentNativeToolError.self, forKey: .error),
+      verification: container.decodeIfPresent(AgentNativeToolVerification.self, forKey: .verification),
+      receipt: container.decode(AgentNativeToolReceipt.self, forKey: .receipt),
+      provenance: container.decode(AgentNativeToolProvenance.self, forKey: .provenance)
+    )
+  }
+
+  func toJson() -> String {
+    AgentMcpJSONCodec.stringify(toJSONObject())
+  }
+
+  func toJsonValue() -> AgentMcpJSONValue {
+    .object(toJSONObject())
+  }
+
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "output": .object(output),
+      "message": .string(message),
+      "metadata": .object(metadata),
+      "error": error.map { .object($0.toJSONObject()) } ?? .null,
+      "verification": verification.map { .object($0.toJSONObject()) } ?? .null,
+      "receipt": .object(receipt.toJSONObject()),
+      "provenance": .object(provenance.toJSONObject())
+    ]
+  }
+
+  static func fromJSONObject(_ object: AgentMcpJSONObject) -> AgentNativeToolResult? {
+    let raw = AgentMcpJSONCodec.stringify(object)
+    guard let data = raw.data(using: .utf8) else {
+      return nil
+    }
+    return try? JSONDecoder().decode(AgentNativeToolResult.self, from: data)
+  }
+}
+
+private extension AgentNativeToolError {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "code": .string(code),
+      "message": .string(message),
+      "retryable": .bool(retryable),
+      "details": .object(details)
+    ]
+  }
+}
+
+private extension AgentNativeToolVerification {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "status": .string(status.rawValue),
+      "message": .string(message),
+      "evidence": .object(evidence)
+    ]
+  }
+}
+
+private extension AgentNativeToolReceipt {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "invocation_id": .string(invocationId),
+      "idempotency_key": idempotencyKey.map(AgentMcpJSONValue.string) ?? .null,
+      "started_at_epoch_ms": .int(startedAtEpochMillis),
+      "finished_at_epoch_ms": .int(finishedAtEpochMillis),
+      "duration_ms": .int(durationMillis),
+      "status": .string(status.rawValue),
+      "input_sha256": .string(inputSha256),
+      "output_sha256": .string(outputSha256),
+      "replayed": .bool(replayed),
+      "original_invocation_id": originalInvocationId.map(AgentMcpJSONValue.string) ?? .null
+    ]
+  }
+}
+
+private extension AgentNativeToolProvenance {
+  func toJSONObject() -> AgentMcpJSONObject {
+    [
+      "tool_id": .string(toolId),
+      "tool_version": .string(toolVersion),
+      "location": .string(location.rawValue),
+      "executor_id": .string(executorId),
+      "contract_version": .string(contractVersion),
+      "legacy_agent_action_id": legacyAgentActionId.map(AgentMcpJSONValue.string) ?? .null,
+      "metadata": .object(metadata.reduce(into: AgentMcpJSONObject()) { result, item in
+        result[item.key] = .string(item.value)
+      })
+    ]
+  }
+}
+
+struct AgentNativeToolReplayKey: Codable, Equatable, Hashable {
+  var toolId: String
+  var toolVersion: String
+  var idempotencyKey: String
+
+  init(toolId: String, toolVersion: String, idempotencyKey: String) {
+    self.toolId = toolId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.toolVersion = toolVersion.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.idempotencyKey = idempotencyKey.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var isComplete: Bool {
+    !toolId.isEmpty && !toolVersion.isEmpty && !idempotencyKey.isEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case toolVersion = "tool_version"
+    case idempotencyKey = "idempotency_key"
+  }
+}
+
+protocol AgentNativeToolReplayStore: AnyObject {
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult?
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws
+  func clear()
+}
+
+enum AgentNativeToolReplayError: Error, Equatable {
+  case unsuccessfulResult
+}
+
+final class InMemoryAgentNativeToolReplayStore: AgentNativeToolReplayStore {
+  static let maxEntries = 2_000
+
+  private let lock = NSRecursiveLock()
+  private var entries: [AgentNativeToolReplayKey: AgentNativeToolResult] = [:]
+  private var order: [AgentNativeToolReplayKey] = []
+
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    return entries[key]
+  }
+
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
+    lock.lock()
+    defer { lock.unlock() }
+    if entries[key] == nil {
+      order.append(key)
+    }
+    entries[key] = result
+    while entries.count > Self.maxEntries, let oldest = order.first {
+      order.removeFirst()
+      entries.removeValue(forKey: oldest)
+    }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    entries.removeAll()
+    order.removeAll()
+  }
+}
+
+struct AgentNativeToolReplayEntry: Equatable {
+  var key: AgentNativeToolReplayKey
+  var result: AgentNativeToolResult
+  var savedAtMillis: Int64
+}
+
+enum AgentNativeToolReplayJsonCodec {
+  static func stringify(_ entries: [AgentNativeToolReplayEntry]) -> String {
+    AgentMcpJSONCodec.stringify(.array(entries.map(entryObject)))
+  }
+
+  static func decode(_ raw: String) -> [AgentNativeToolReplayEntry] {
+    guard let data = raw.data(using: .utf8),
+          let values = try? JSONDecoder().decode([AgentMcpJSONValue].self, from: data) else {
+      return []
+    }
+    return values.compactMap { value in
+      guard let object = value.objectValue,
+            let resultObject = object.object("result"),
+            let result = AgentNativeToolResult.fromJSONObject(resultObject) else {
+        return nil
+      }
+      let key = AgentNativeToolReplayKey(
+        toolId: object.string("tool_id"),
+        toolVersion: object.string("tool_version"),
+        idempotencyKey: object.string("idempotency_key")
+      )
+      guard key.isComplete else {
+        return nil
+      }
+      return AgentNativeToolReplayEntry(
+        key: key,
+        result: result,
+        savedAtMillis: object.int64("saved_at_millis")
+      )
+    }
+  }
+
+  private static func entryObject(_ entry: AgentNativeToolReplayEntry) -> AgentMcpJSONValue {
+    .object([
+      "tool_id": .string(entry.key.toolId),
+      "tool_version": .string(entry.key.toolVersion),
+      "idempotency_key": .string(entry.key.idempotencyKey),
+      "saved_at_millis": .int(entry.savedAtMillis),
+      "result": entry.result.toJsonValue()
+    ])
+  }
+}
+
+final class AgentNativeToolReplaySnapshotStore: AgentNativeToolReplayStore {
+  static let maxEntries = 2_000
+  static let retentionMillis: Int64 = 30 * 24 * 60 * 60 * 1_000
+
+  private let lock = NSRecursiveLock()
+  private var serializedEntries: String
+  private let nowMillis: () -> Int64
+
+  init(
+    serializedEntries: String = "[]",
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.serializedEntries = serializedEntries
+    self.nowMillis = nowMillis
+  }
+
+  func get(_ key: AgentNativeToolReplayKey) -> AgentNativeToolResult? {
+    lock.lock()
+    defer { lock.unlock() }
+    let loaded = load()
+    let retained = retainedEntries(loaded, nowMillis: nowMillis())
+    if retained.count != loaded.count {
+      save(retained)
+    }
+    return retained.last { $0.key == key }?.result
+  }
+
+  func put(_ key: AgentNativeToolReplayKey, result: AgentNativeToolResult) throws {
+    guard result.isSuccess else {
+      throw AgentNativeToolReplayError.unsuccessfulResult
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    let now = nowMillis()
+    var entries = Array(retainedEntries(load(), nowMillis: now)
+      .filter { $0.key != key }
+      .suffix(Self.maxEntries - 1))
+    entries.append(AgentNativeToolReplayEntry(key: key, result: result, savedAtMillis: now))
+    save(entries)
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    serializedEntries = "[]"
+  }
+
+  func serializedSnapshot() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return serializedEntries
+  }
+
+  private func load() -> [AgentNativeToolReplayEntry] {
+    AgentNativeToolReplayJsonCodec.decode(serializedEntries)
+  }
+
+  private func save(_ entries: [AgentNativeToolReplayEntry]) {
+    serializedEntries = AgentNativeToolReplayJsonCodec.stringify(entries)
+  }
+
+  private func retainedEntries(
+    _ entries: [AgentNativeToolReplayEntry],
+    nowMillis: Int64
+  ) -> [AgentNativeToolReplayEntry] {
+    entries.filter { nowMillis - $0.savedAtMillis <= Self.retentionMillis }
+  }
+}
+
 struct AgentSystemTool: Codable, Equatable, Identifiable {
   var id: String
   var title: String

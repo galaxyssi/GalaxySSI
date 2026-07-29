@@ -1260,6 +1260,163 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(capability, .appNavigation)
   }
 
+  func testAgentNativeToolResultModelsUseAndroidWireNames() throws {
+    let result = nativeToolResult(
+      invocationId: "invoke-1",
+      idempotencyKey: "native-replay-key",
+      verification: AgentNativeToolVerification(
+        status: .passed,
+        evidence: ["receipt": .string("verified")]
+      )
+    )
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any]
+    )
+    let receipt = try XCTUnwrap(object["receipt"] as? [String: Any])
+    let provenance = try XCTUnwrap(object["provenance"] as? [String: Any])
+    let verification = try XCTUnwrap(object["verification"] as? [String: Any])
+    let decodedStatus = try JSONDecoder().decode(
+      AgentNativeToolResultStatus.self,
+      from: Data(#""unknown_status""#.utf8)
+    )
+    let decodedVerification = try JSONDecoder().decode(
+      AgentNativeVerificationStatus.self,
+      from: Data(#""unknown_verification""#.utf8)
+    )
+    let roundTripped = try XCTUnwrap(AgentNativeToolResult.fromJSONObject(result.toJSONObject()))
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(object["status"] as? String, "succeeded")
+    XCTAssertNotNil(object["output"] as? [String: Any])
+    XCTAssertEqual(receipt["invocation_id"] as? String, "invoke-1")
+    XCTAssertEqual(receipt["idempotency_key"] as? String, "native-replay-key")
+    XCTAssertEqual(receipt["started_at_epoch_ms"] as? Int, 1_000)
+    XCTAssertEqual(receipt["finished_at_epoch_ms"] as? Int, 1_050)
+    XCTAssertEqual(receipt["duration_ms"] as? Int, 50)
+    XCTAssertEqual(receipt["input_sha256"] as? String, String(repeating: "a", count: 64))
+    XCTAssertEqual(receipt["output_sha256"] as? String, String(repeating: "b", count: 64))
+    XCTAssertEqual(receipt["replayed"] as? Bool, false)
+    XCTAssertEqual(provenance["tool_id"] as? String, "signalasi.test.native")
+    XCTAssertEqual(provenance["tool_version"] as? String, "1.0.0")
+    XCTAssertEqual(provenance["executor_id"] as? String, "ios-native")
+    XCTAssertEqual(provenance["contract_version"] as? String, "signalasi.native-tool/1.0")
+    XCTAssertEqual(verification["status"] as? String, "passed")
+    XCTAssertEqual(decodedStatus, .failed)
+    XCTAssertEqual(decodedVerification, .skipped)
+    XCTAssertEqual(roundTripped, result)
+  }
+
+  func testAgentNativeToolReplayStoreEvictsOldestAndClears() throws {
+    let store = InMemoryAgentNativeToolReplayStore()
+    let firstKey = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.first",
+      toolVersion: "1.0.0",
+      idempotencyKey: "first"
+    )
+    try store.put(firstKey, result: nativeToolResult(invocationId: "first", idempotencyKey: "first"))
+
+    for index in 1...InMemoryAgentNativeToolReplayStore.maxEntries {
+      let key = AgentNativeToolReplayKey(
+        toolId: "signalasi.test.\(index)",
+        toolVersion: "1.0.0",
+        idempotencyKey: "key-\(index)"
+      )
+      try store.put(key, result: nativeToolResult(invocationId: "invoke-\(index)", idempotencyKey: key.idempotencyKey))
+    }
+
+    let retainedKey = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.1",
+      toolVersion: "1.0.0",
+      idempotencyKey: "key-1"
+    )
+    let lastKey = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.\(InMemoryAgentNativeToolReplayStore.maxEntries)",
+      toolVersion: "1.0.0",
+      idempotencyKey: "key-\(InMemoryAgentNativeToolReplayStore.maxEntries)"
+    )
+
+    XCTAssertNil(store.get(firstKey))
+    XCTAssertEqual(store.get(retainedKey)?.receipt.invocationId, "invoke-1")
+    XCTAssertEqual(store.get(lastKey)?.receipt.invocationId, "invoke-\(InMemoryAgentNativeToolReplayStore.maxEntries)")
+
+    store.clear()
+
+    XCTAssertNil(store.get(retainedKey))
+    XCTAssertNil(store.get(lastKey))
+  }
+
+  func testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults() throws {
+    var now: Int64 = 1_000
+    let key = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.native",
+      toolVersion: "1.0.0",
+      idempotencyKey: "replay-once"
+    )
+    let store = AgentNativeToolReplaySnapshotStore(nowMillis: { now })
+
+    try store.put(key, result: nativeToolResult(invocationId: "fresh", idempotencyKey: "replay-once"))
+
+    let serialized = store.serializedSnapshot()
+    let entries = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(serialized.utf8)) as? [[String: Any]])
+    let first = try XCTUnwrap(entries.first)
+    let restored = AgentNativeToolReplaySnapshotStore(serializedEntries: serialized, nowMillis: { now })
+    let replayed = try XCTUnwrap(restored.get(key))
+
+    XCTAssertEqual(first["tool_id"] as? String, "signalasi.test.native")
+    XCTAssertEqual(first["tool_version"] as? String, "1.0.0")
+    XCTAssertEqual(first["idempotency_key"] as? String, "replay-once")
+    XCTAssertEqual(first["saved_at_millis"] as? Int, 1_000)
+    XCTAssertNotNil(first["result"] as? [String: Any])
+    XCTAssertEqual(replayed.receipt.invocationId, "fresh")
+    XCTAssertThrowsError(
+      try restored.put(
+        AgentNativeToolReplayKey(toolId: "signalasi.test.native", toolVersion: "1.0.0", idempotencyKey: "failed"),
+        result: nativeToolResult(status: .failed, invocationId: "failed", idempotencyKey: "failed")
+      )
+    ) { error in
+      XCTAssertEqual(error as? AgentNativeToolReplayError, .unsuccessfulResult)
+    }
+
+    now += AgentNativeToolReplaySnapshotStore.retentionMillis + 1
+
+    XCTAssertNil(restored.get(key))
+    XCTAssertEqual(restored.serializedSnapshot(), "[]")
+  }
+
+  func testAgentNativeToolReplayJsonCodecSkipsMalformedEntries() throws {
+    let key = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.native",
+      toolVersion: "1.0.0",
+      idempotencyKey: "valid"
+    )
+    let valid = AgentNativeToolReplayEntry(
+      key: key,
+      result: nativeToolResult(invocationId: "valid", idempotencyKey: "valid"),
+      savedAtMillis: 2_000
+    )
+    let raw = AgentMcpJSONCodec.stringify(.array([
+      .string("ignored"),
+      .object([
+        "tool_id": .string(""),
+        "tool_version": .string("1.0.0"),
+        "idempotency_key": .string("blank"),
+        "saved_at_millis": .int(1_000),
+        "result": valid.result.toJsonValue()
+      ]),
+      .object([
+        "tool_id": .string(valid.key.toolId),
+        "tool_version": .string(valid.key.toolVersion),
+        "idempotency_key": .string(valid.key.idempotencyKey),
+        "saved_at_millis": .int(valid.savedAtMillis),
+        "result": valid.result.toJsonValue()
+      ])
+    ]))
+    let decoded = AgentNativeToolReplayJsonCodec.decode(raw)
+
+    XCTAssertEqual(decoded, [valid])
+    XCTAssertTrue(AgentNativeToolReplayJsonCodec.decode("{broken").isEmpty)
+  }
+
   func testAgentCapabilityCatalogIdsAreStableAndUnique() {
     let mcp = AgentDefaultCapabilityCatalog.mcpEntries
     let skills = AgentDefaultCapabilityCatalog.skillEntries
@@ -9072,6 +9229,49 @@ final class SignalASIStoreTests: XCTestCase {
       requiredPermissions: requiredPermissions,
       requiredConsents: requiredConsents,
       availability: availability
+    )
+  }
+
+  private func nativeToolResult(
+    status: AgentNativeToolResultStatus = .succeeded,
+    invocationId: String,
+    idempotencyKey: String?,
+    replayed: Bool = false,
+    verification: AgentNativeToolVerification? = nil
+  ) -> AgentNativeToolResult {
+    AgentNativeToolResult(
+      status: status,
+      output: [
+        "ok": .bool(status == .succeeded),
+        "invocation_id": .string(invocationId)
+      ],
+      message: status == .succeeded ? "Done" : "Failed",
+      metadata: ["platform": .string("ios")],
+      error: status == .succeeded ? nil : AgentNativeToolError(
+        code: "test_failure",
+        message: "Failed",
+        retryable: false
+      ),
+      verification: verification,
+      receipt: AgentNativeToolReceipt(
+        invocationId: invocationId,
+        idempotencyKey: idempotencyKey,
+        startedAtEpochMillis: 1_000,
+        finishedAtEpochMillis: 1_050,
+        durationMillis: 50,
+        status: status,
+        inputSha256: String(repeating: "a", count: 64),
+        outputSha256: String(repeating: "b", count: 64),
+        replayed: replayed
+      ),
+      provenance: AgentNativeToolProvenance(
+        toolId: "signalasi.test.native",
+        toolVersion: "1.0.0",
+        location: .application,
+        executorId: "ios-native",
+        contractVersion: "signalasi.native-tool/1.0",
+        metadata: ["platform": "ios"]
+      )
     )
   }
 
