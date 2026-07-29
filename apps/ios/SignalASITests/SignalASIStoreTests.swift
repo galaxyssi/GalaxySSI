@@ -268,6 +268,42 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(store.agentSafetySettings.executionPaused)
   }
 
+  func testAgentTaskExecutionModePolicyMatchesAndroidExplicitSignals() {
+    let planOnly = AgentTaskExecutionModePolicy.resolve(
+      request: "\u{5148}\u{7ed9}\u{65b9}\u{6848}\u{ff0c}\u{4e0d}\u{8981}\u{6267}\u{884c}\u{4efb}\u{4f55}\u{64cd}\u{4f5c}",
+      configuredMode: .autoComplete
+    )
+    let autoComplete = AgentTaskExecutionModePolicy.resolve(
+      request: "\u{6309}\u{8fd9}\u{4e2a}\u{65b9}\u{6848}\u{6267}\u{884c}\u{ff0c}\u{7ee7}\u{7eed}\u{6267}\u{884c}\u{5230}\u{5b8c}\u{6210}",
+      configuredMode: .planOnly
+    )
+
+    XCTAssertEqual(planOnly.mode, .planOnly)
+    XCTAssertTrue(planOnly.explicitlyRequested)
+    XCTAssertEqual(planOnly.matchedSignal, "\u{5148}\u{7ed9}\u{65b9}\u{6848}")
+    XCTAssertEqual(autoComplete.mode, .autoComplete)
+    XCTAssertTrue(autoComplete.explicitlyRequested)
+    XCTAssertEqual(autoComplete.matchedSignal, "\u{6309}\u{8fd9}\u{4e2a}\u{65b9}\u{6848}\u{6267}\u{884c}")
+  }
+
+  func testAgentTaskExecutionModePolicyKeepsDefaultsAndScopedNegatives() {
+    let configuredDefault = AgentTaskExecutionModePolicy.resolve(
+      request: "\u{68c0}\u{67e5}\u{8fd9}\u{4e2a}\u{9879}\u{76ee}\u{7684}\u{6784}\u{5efa}\u{72b6}\u{6001}",
+      configuredMode: .planOnly
+    )
+    let scopedNegative = AgentTaskExecutionModePolicy.resolve(
+      request: "\u{68c0}\u{67e5}\u{9879}\u{76ee}\u{ff0c}\u{4f46}\u{4e0d}\u{8981}\u{6267}\u{884c}\u{5220}\u{9664}\u{64cd}\u{4f5c}",
+      configuredMode: .autoComplete
+    )
+
+    XCTAssertEqual(configuredDefault.mode, .planOnly)
+    XCTAssertFalse(configuredDefault.explicitlyRequested)
+    XCTAssertEqual(scopedNegative.mode, .autoComplete)
+    XCTAssertFalse(scopedNegative.explicitlyRequested)
+    XCTAssertEqual(AgentTaskExecutionMode.fromWireValue("plan_only"), .planOnly)
+    XCTAssertEqual(AgentTaskExecutionMode.fromWireValue("AUTO_COMPLETE"), .autoComplete)
+  }
+
   func testAgentTaskBudgetDecodesAndroidProfilesAndNormalizesLimits() throws {
     let decoded = try JSONDecoder.signalASI.decode(
       AgentTaskBudget.self,
