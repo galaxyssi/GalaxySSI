@@ -41,8 +41,17 @@ class DesktopProactiveDispatcher:
             {
                 "task_id": run.run_id,
                 "conversation_id": f"proactive:{task.task_id}",
+                "client_route_id": str(
+                    task.action.delivery.get("client_route_id")
+                    or task.action.arguments.get("client_route_id")
+                    or "desktop-local"
+                ),
+                "collaboration_task_id": run.run_id,
                 "idempotency_key": f"proactive:{run.run_id}",
                 "caller_id": "signalasi.desktop.proactive",
+                "agent_id": str(
+                    task.action.arguments.get("agent_id") or "proactive-runtime"
+                ),
             },
         )
         if str(result.get("status") or "") in {"failed", "blocked"}:
@@ -337,6 +346,11 @@ class DesktopProactiveDispatcher:
                 repository_id=str(
                     collaboration_scope.get("repository_id") or ""
                 ),
+                working_directory=str(
+                    task.action.arguments.get("repository_root")
+                    or task.action.arguments.get("workspace_root")
+                    or ""
+                ).strip(),
             )
         except Exception as exc:
             raise ProactiveTaskError(

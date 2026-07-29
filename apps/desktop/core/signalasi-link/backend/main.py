@@ -42,6 +42,12 @@ from agent_collaboration_channels import (
     CollaborationScope,
     agent_collaboration_bus,
 )
+from agent_file_access_ledger import (
+    AgentFileAccessError,
+    FileAccessScope,
+    FileObservation,
+    agent_file_access_ledger,
+)
 from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
@@ -621,6 +627,32 @@ class AgentCollaborationAckReq(BaseModel):
     through_sequence: int
 
 
+class AgentFileAccessReq(BaseModel):
+    access_kind: str
+    agent_id: str
+    path: str
+    sha256: str = ""
+    exists: bool = True
+    size_bytes: int = 0
+    event_id: str = ""
+    client_route_id: str
+    conversation_id: str
+    task_id: str
+    repository_id: str = ""
+    workspace_id: str = ""
+    collaboration_channel_ids: list[str] = Field(default_factory=list)
+
+
+class AgentFileConflictResolveReq(BaseModel):
+    agent_id: str
+    reason: str = "reviewed"
+    client_route_id: str
+    conversation_id: str
+    task_id: str
+    repository_id: str = ""
+    workspace_id: str = ""
+
+
 class DesktopNativeToolInvokeReq(BaseModel):
     tool_id: str
     tool_version: str = "1.0.0"
@@ -629,6 +661,11 @@ class DesktopNativeToolInvokeReq(BaseModel):
     task_id: str = ""
     conversation_id: str = ""
     workspace_id: str = ""
+    agent_id: str = ""
+    client_route_id: str = ""
+    repository_id: str = ""
+    collaboration_task_id: str = ""
+    collaboration_channel_ids: list[str] = Field(default_factory=list)
     idempotency_key: str = ""
     confirmation: dict | None = None
 
@@ -1112,6 +1149,7 @@ def api_agent_runtime(request: Request):
     return {
         **desktop_agent_runtime_server().health(),
         "collaboration": agent_collaboration_bus().health(),
+        "file_access": agent_file_access_ledger().health(),
         "external_cli_runtime": external_cli_runtime_manifest(),
     }
 
@@ -1370,6 +1408,111 @@ def api_acknowledge_agent_collaboration_channel(
         raise _agent_collaboration_http_error(exc) from exc
 
 
+@app.post("/api/agent-runtime/file-access")
+def api_record_agent_file_access(req: AgentFileAccessReq, request: Request):
+    require_desktop_api_token(request)
+    try:
+        scope = FileAccessScope.create(
+            client_route_id=req.client_route_id,
+            conversation_id=req.conversation_id,
+            task_id=req.task_id,
+            repository_id=req.repository_id,
+            workspace_id=req.workspace_id,
+        )
+        observation = FileObservation.create(
+            req.path,
+            sha256=req.sha256,
+            exists=req.exists,
+            size_bytes=req.size_bytes,
+        )
+        kind = str(req.access_kind or "").strip().lower()
+        if kind == "read":
+            return agent_file_access_ledger().record_read(
+                scope,
+                agent_id=req.agent_id,
+                observation=observation,
+                event_id=req.event_id,
+            )
+        if kind == "write":
+            return agent_file_access_ledger().record_write(
+                scope,
+                agent_id=req.agent_id,
+                observation=observation,
+                event_id=req.event_id,
+                collaboration_channel_ids=req.collaboration_channel_ids,
+            )
+        raise AgentFileAccessError("File access kind must be read or write")
+    except AgentFileAccessError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("agent_file_access_invalid", str(exc)[:240]),
+        ) from exc
+
+
+@app.get("/api/agent-runtime/file-conflicts")
+def api_list_agent_file_conflicts(
+    request: Request,
+    agent_id: str = Query(""),
+    client_route_id: str = Query(...),
+    conversation_id: str = Query(...),
+    task_id: str = Query(...),
+    repository_id: str = Query(""),
+    workspace_id: str = Query(""),
+    status: str = Query("open"),
+    limit: int = Query(100),
+):
+    require_desktop_api_token(request)
+    try:
+        return {
+            "conflicts": agent_file_access_ledger().conflicts(
+                FileAccessScope.create(
+                    client_route_id=client_route_id,
+                    conversation_id=conversation_id,
+                    task_id=task_id,
+                    repository_id=repository_id,
+                    workspace_id=workspace_id,
+                ),
+                requester_agent_id=agent_id,
+                status=status,
+                limit=limit,
+            )
+        }
+    except AgentFileAccessError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("agent_file_conflict_query_invalid", str(exc)[:240]),
+        ) from exc
+
+
+@app.post("/api/agent-runtime/file-conflicts/{conflict_id}/resolve")
+def api_resolve_agent_file_conflict(
+    conflict_id: str,
+    req: AgentFileConflictResolveReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    try:
+        return {
+            "conflict": agent_file_access_ledger().resolve(
+                FileAccessScope.create(
+                    client_route_id=req.client_route_id,
+                    conversation_id=req.conversation_id,
+                    task_id=req.task_id,
+                    repository_id=req.repository_id,
+                    workspace_id=req.workspace_id,
+                ),
+                conflict_id,
+                reader_agent_id=req.agent_id,
+                reason=req.reason,
+            )
+        }
+    except AgentFileAccessError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("agent_file_conflict_invalid", str(exc)[:240]),
+        ) from exc
+
+
 @app.get("/api/desktop-tools")
 def api_desktop_native_tools(request: Request):
     require_loopback(request)
@@ -1402,9 +1545,14 @@ def api_invoke_desktop_native_tool(req: DesktopNativeToolInvokeReq, request: Req
             "invocation_id": req.invocation_id,
             "task_id": req.task_id,
             "conversation_id": req.conversation_id,
+            "client_route_id": req.client_route_id,
+            "repository_id": req.repository_id,
+            "collaboration_task_id": req.collaboration_task_id,
+            "collaboration_channel_ids": req.collaboration_channel_ids,
             "idempotency_key": req.idempotency_key,
             "confirmation": req.confirmation,
-            "caller_id": "signalasi.desktop.loopback",
+            "caller_id": req.agent_id or "signalasi.desktop.loopback",
+            "agent_id": req.agent_id,
         },
     )
 

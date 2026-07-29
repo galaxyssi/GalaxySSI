@@ -823,6 +823,7 @@ class DesktopNativeToolRegistry:
         execution_slot = False
         side_effect_slot = False
         receipt_claimed = False
+        workspace_capture = None
         invocation_id = self._identifier(context.get("invocation_id") or uuid.uuid4(), "invocation_id")
         started_at = int(self.now() * 1_000)
         spec = self.specs.get(str(tool_id or ""))
@@ -856,8 +857,32 @@ class DesktopNativeToolRegistry:
             receipt_claimed = bool(receipt_key)
             if self._is_cancelled(invocation_id):
                 raise DesktopNativeToolError("cancelled", "Desktop tool call was cancelled")
-            execution = self.handlers[spec.tool_id](dict(input_value), {**context, "invocation_id": invocation_id})
+            if spec.tool_id == TERMINAL_RUN:
+                workspace_capture = self._begin_workspace_capture(
+                    dict(input_value),
+                    context,
+                    invocation_id,
+                )
+            try:
+                execution = self.handlers[spec.tool_id](
+                    dict(input_value),
+                    {**context, "invocation_id": invocation_id},
+                )
+            finally:
+                if workspace_capture is not None:
+                    try:
+                        workspace_capture.finish()
+                    except Exception:
+                        pass
+                    workspace_capture = None
             output = _bounded_json(dict(execution.output))
+            self._record_exact_file_access(
+                spec.tool_id,
+                dict(input_value),
+                output,
+                context,
+                invocation_id,
+            )
             result = self._result(
                 spec,
                 invocation_id,
@@ -912,6 +937,11 @@ class DesktopNativeToolRegistry:
                 },
             )
         finally:
+            if workspace_capture is not None:
+                try:
+                    workspace_capture.finish()
+                except Exception:
+                    pass
             if side_effect_slot:
                 self._side_effect_slot.release()
             if execution_slot:
@@ -919,6 +949,159 @@ class DesktopNativeToolRegistry:
             with self._process_lock:
                 self._processes.pop(invocation_id, None)
                 self._cancelled.discard(invocation_id)
+
+    def _file_access_scope(
+        self,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+        invocation_id: str,
+    ):
+        from agent_file_access_ledger import FileAccessScope
+
+        return FileAccessScope.create(
+            client_route_id=(
+                context.get("client_route_id")
+                or context.get("caller_id")
+                or "desktop-local"
+            ),
+            conversation_id=(
+                context.get("conversation_id")
+                or f"desktop-tool:{invocation_id}"
+            ),
+            task_id=context.get("collaboration_task_id")
+            or context.get("task_id")
+            or invocation_id,
+            repository_id=context.get("repository_id") or "",
+            workspace_id=arguments.get("workspace_id") or "",
+        )
+
+    @staticmethod
+    def _file_access_actor(context: dict[str, Any]) -> str:
+        return str(
+            context.get("agent_id")
+            or context.get("caller_id")
+            or "signalasi.desktop.native"
+        )
+
+    def _begin_workspace_capture(
+        self,
+        arguments: dict[str, Any],
+        context: dict[str, Any],
+        invocation_id: str,
+    ):
+        from agent_file_access_ledger import (
+            AgentWorkspaceCapture,
+            agent_file_access_ledger,
+        )
+
+        workspace_id = str(arguments.get("workspace_id") or "")
+        if not workspace_id:
+            return None
+        return AgentWorkspaceCapture.begin(
+            self._workspace(workspace_id),
+            scope=self._file_access_scope(arguments, context, invocation_id),
+            agent_id=self._file_access_actor(context),
+            ledger=agent_file_access_ledger(),
+            collaboration_channel_ids=context.get(
+                "collaboration_channel_ids",
+                (),
+            ),
+            capture_id=invocation_id,
+        )
+
+    def _record_exact_file_access(
+        self,
+        tool_id: str,
+        arguments: dict[str, Any],
+        output: dict[str, Any],
+        context: dict[str, Any],
+        invocation_id: str,
+    ) -> None:
+        if tool_id == TERMINAL_RUN or not arguments.get("workspace_id"):
+            return
+        from agent_file_access_ledger import (
+            FileObservation,
+            agent_file_access_ledger,
+            observation_for_path,
+        )
+
+        reads: list[FileObservation] = []
+        writes: list[FileObservation] = []
+        workspace_id = str(arguments["workspace_id"])
+        root = self._workspace(workspace_id)
+
+        def output_observation() -> FileObservation | None:
+            path = str(output.get("path") or "").strip()
+            if not path:
+                return None
+            return FileObservation.create(
+                path,
+                sha256=output.get("sha256") or "",
+                size_bytes=int(output.get("size_bytes") or 0),
+            )
+
+        try:
+            if tool_id in {FILE_READ_TEXT, FILE_SHA256, OFFICE_INSPECT}:
+                observation = output_observation()
+                if observation is not None:
+                    reads.append(observation)
+            elif tool_id == FILE_WRITE_TEXT:
+                observation = output_observation()
+                if observation is not None:
+                    writes.append(observation)
+            elif tool_id == ARCHIVE_CREATE:
+                for raw_path in arguments.get("paths", []):
+                    _root, source = self._workspace_path(
+                        workspace_id,
+                        str(raw_path),
+                        allow_root=True,
+                    )
+                    candidates = (
+                        [source]
+                        if source.is_file()
+                        else list(source.rglob("*"))
+                        if source.is_dir()
+                        else []
+                    )
+                    for candidate in candidates:
+                        if (
+                            candidate.is_file()
+                            and not candidate.is_symlink()
+                            and candidate != self._workspace_path(
+                                workspace_id,
+                                str(arguments.get("output_path") or ""),
+                            )[1]
+                        ):
+                            reads.append(observation_for_path(root, candidate))
+                observation = output_observation()
+                if observation is not None:
+                    writes.append(observation)
+            elif tool_id == OFFICE_CONVERT:
+                _root, source = self._workspace_path(
+                    workspace_id,
+                    str(arguments.get("path") or ""),
+                )
+                reads.append(observation_for_path(root, source))
+                observation = output_observation()
+                if observation is not None:
+                    writes.append(observation)
+            if not reads and not writes:
+                return
+            agent_file_access_ledger().record_batch(
+                self._file_access_scope(arguments, context, invocation_id),
+                agent_id=self._file_access_actor(context),
+                reads=reads,
+                writes=writes,
+                event_id=invocation_id,
+                collaboration_channel_ids=context.get(
+                    "collaboration_channel_ids",
+                    (),
+                ),
+                observation_mode="exact_native_tool",
+            )
+        except Exception:
+            # File access telemetry must never invalidate a successful tool call.
+            return
 
     def cancel(self, invocation_id: str) -> bool:
         key = str(invocation_id or "").strip()

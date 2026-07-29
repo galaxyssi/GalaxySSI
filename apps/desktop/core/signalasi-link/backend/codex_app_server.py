@@ -126,6 +126,9 @@ class CodexRun:
     finished: bool = False
     prefers_chinese: bool = False
     first_output_emitted: bool = False
+    working_directory: str = ""
+    file_access_scope: object | None = field(default=None, repr=False)
+    workspace_capture: object | None = field(default=None, repr=False)
 
 
 class CodexAppServer:
@@ -195,7 +198,9 @@ class CodexAppServer:
             prefers_chinese=self._contains_chinese(prompt),
             execution_policy=resolved_policy,
             execution_harness=execution_harness,
+            working_directory=str(Path(cwd).expanduser().resolve()),
         )
+        run.workspace_capture = self._begin_file_access_capture(run)
         reused_thread = False
         try:
             with self._lock:
@@ -504,6 +509,7 @@ class CodexAppServer:
             ):
                 continue
             run.finished = True
+            self._finish_file_access_capture(run)
             message = (
                 "Codex \u957f\u65f6\u95f4\u6ca1\u6709\u65b0\u8fdb\u5c55\uff0c\u4efb\u52a1\u5df2\u505c\u6b62\uff0c\u907f\u514d\u7ee7\u7eed\u963b\u585e\u540e\u7eed\u8bf7\u6c42\u3002\u8bf7\u91cd\u65b0\u53d1\u9001\u4e00\u6b21\u3002"
                 if run.prefers_chinese else
@@ -636,6 +642,7 @@ class CodexAppServer:
             if run.finished:
                 return
             run.finished = True
+        self._finish_file_access_capture(run)
         self._checkpoint_progress(
             run,
             "failed",
@@ -861,11 +868,109 @@ class CodexAppServer:
 
     def _discard_run(self, run: CodexRun) -> None:
         run.finished = True
+        self._finish_file_access_capture(run)
         with self._lock:
             if self._turn_tasks.get(run.turn_id) == run.task_id:
                 self._turn_tasks.pop(run.turn_id, None)
             if self._runs.get(run.task_id) is run:
                 self._runs.pop(run.task_id, None)
+
+    @staticmethod
+    def _begin_file_access_capture(run: CodexRun):
+        try:
+            from agent_file_access_ledger import (
+                AgentWorkspaceCapture,
+                FileAccessScope,
+                agent_file_access_ledger,
+                repository_identity,
+            )
+            from agent_task_manager import agent_task_manager
+
+            root = Path(run.working_directory).expanduser().resolve()
+            task = agent_task_manager.get(run.task_id)
+            scope = FileAccessScope.create(
+                client_route_id=(
+                    getattr(task, "client_route_id", "")
+                    or "desktop-local"
+                ),
+                conversation_id=(
+                    getattr(task, "client_conversation_id", "")
+                    or run.conversation_id
+                    or run.task_id
+                ),
+                task_id=run.task_id,
+                repository_id=repository_identity(root),
+            )
+            run.file_access_scope = scope
+            return AgentWorkspaceCapture.begin(
+                root,
+                scope=scope,
+                agent_id="codex",
+                ledger=agent_file_access_ledger(),
+                capture_id=f"codex:{run.task_id}:{time.time_ns()}",
+            )
+        except Exception:
+            log.debug(
+                "Codex file access capture could not start",
+                exc_info=True,
+            )
+            return None
+
+    @staticmethod
+    def _record_file_changes(run: CodexRun, item: dict) -> None:
+        if run.file_access_scope is None or not run.working_directory:
+            return
+        try:
+            from agent_file_access_ledger import (
+                FileObservation,
+                agent_file_access_ledger,
+                observation_for_path,
+            )
+
+            root = Path(run.working_directory).expanduser().resolve()
+            writes: list[FileObservation] = []
+            for change in item.get("changes") or []:
+                if not isinstance(change, dict):
+                    continue
+                raw_path = str(
+                    change.get("path") or change.get("file") or ""
+                ).strip()
+                if not raw_path:
+                    continue
+                candidate = Path(raw_path)
+                if not candidate.is_absolute():
+                    candidate = root / candidate
+                try:
+                    writes.append(observation_for_path(root, candidate))
+                except Exception:
+                    continue
+            if writes:
+                agent_file_access_ledger().record_batch(
+                    run.file_access_scope,
+                    agent_id="codex",
+                    writes=writes,
+                    event_id=(
+                        f"codex-file-change:{run.task_id}:"
+                        f"{item.get('id') or ''}"
+                    ),
+                    observation_mode="codex_app_server",
+                )
+        except Exception:
+            log.debug("Codex file change telemetry failed", exc_info=True)
+
+    @staticmethod
+    def _finish_file_access_capture(run: CodexRun) -> None:
+        capture = run.workspace_capture
+        run.workspace_capture = None
+        if capture is None:
+            return
+        try:
+            capture.finish()
+        except Exception:
+            log.debug(
+                "Codex file access capture could not finish",
+                exc_info=True,
+            )
 
     def _load_conversation_threads(self) -> dict[str, str]:
         try:
@@ -1145,6 +1250,14 @@ class CodexAppServer:
                         )
                     else:
                         run.final_text = text
+            elif item_type == "fileChange":
+                self._record_file_changes(run, item)
+                self._emit_item_progress(
+                    task_id,
+                    common,
+                    item,
+                    completed=True,
+                )
             elif item_type == "reasoning":
                 summary = self._reasoning_summary(run, item_id, item)
                 if summary:
@@ -1203,6 +1316,7 @@ class CodexAppServer:
                     mapped = "failed"
                     run.final_text = str(exc)
             run.finished = True
+            self._finish_file_access_capture(run)
             run.agent_message_deltas.clear()
             run.reasoning_summary_deltas.clear()
             if turn_id:

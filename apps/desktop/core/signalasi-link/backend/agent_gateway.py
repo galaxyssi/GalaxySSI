@@ -531,6 +531,11 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     )
     from agent_conversation_sessions import agent_conversation_sessions
     from agent_task_manager import agent_task_manager
+    from agent_file_access_ledger import (
+        FileAccessScope,
+        agent_file_access_ledger,
+        repository_identity as file_repository_identity,
+    )
     from response_policy import apply_response_policy, sanitize_assistant_response
     from response_self_check import (
         evaluate_response,
@@ -571,6 +576,37 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 ),
             ),
         )
+    working_directory_value = str(
+        request.checkpoint.get("working_directory") or ""
+    ).strip()
+    working_directory = (
+        Path(working_directory_value).expanduser().resolve()
+        if working_directory_value
+        else None
+    )
+    repository_id = str(
+        request.checkpoint.get("repository_id") or ""
+    ).strip()
+    if working_directory is not None:
+        repository_id = file_repository_identity(working_directory)
+    file_access_scope = FileAccessScope.create(
+        client_route_id=request.checkpoint.get("client_route_id")
+        or "desktop-local",
+        conversation_id=request.conversation_id or request.run_id,
+        task_id=request.checkpoint.get("collaboration_task_id")
+        or request.checkpoint.get("task_id")
+        or request.run_id,
+        repository_id=repository_id,
+        workspace_id=(
+            ""
+            if repository_id
+            else f"agent-task-{request.run_id or agent_id}"
+        ),
+    )
+    file_conflict_context = agent_file_access_ledger().compile_context(
+        file_access_scope,
+        requester_agent_id=collaboration_actor_id,
+    )
     attachment_names = tuple(
         str(item.get("name") or item.get("relative_path") or "")
         for item in request.artifacts
@@ -597,6 +633,8 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     base_prompt = request.prompt.rstrip()
     if collaboration_context.text:
         base_prompt = f"{base_prompt}\n\n{collaboration_context.text}"
+    if file_conflict_context:
+        base_prompt = f"{base_prompt}\n\n{file_conflict_context}"
     current_prompt = base_prompt
     if "SignalASI execution contract:" not in current_prompt:
         current_prompt = f"{current_prompt}\n\n{contract}"
@@ -678,6 +716,12 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                     str(request.checkpoint.get("desktop_access_profile") or "") == "restricted"
                 ),
                 plan_only=plan_only,
+                working_directory=working_directory,
+                file_access_context={
+                    "scope": file_access_scope,
+                    "actor_id": collaboration_actor_id,
+                    "collaboration_channel_ids": collaboration_channel_ids,
+                },
             )
         harness.account_usage(
             output_tokens=estimate_text_tokens(str(raw_reply or "")),
@@ -1554,6 +1598,7 @@ def deliver_agent_sync(
     collaboration_actor_id: str = "",
     collaboration_task_id: str = "",
     repository_id: str = "",
+    working_directory: str = "",
 ) -> dict:
     from agent_execution_harness import execution_policy_for
 
@@ -1605,6 +1650,7 @@ def deliver_agent_sync(
                         collaboration_task_id or task_id
                     ).strip(),
                     "repository_id": str(repository_id or "").strip(),
+                    "working_directory": str(working_directory or "").strip(),
                 },
             )
         )
@@ -1656,6 +1702,8 @@ def _ask_agent_sync_inner(
     response_language: str = "",
     restricted_workspace: bool = False,
     plan_only: bool = False,
+    working_directory: Path | None = None,
+    file_access_context: dict | None = None,
 ) -> str:
     if spec is None:
         return f"[SignalASI] \u672a\u77e5 Agent: {contact_id}"
@@ -1671,6 +1719,8 @@ def _ask_agent_sync_inner(
         response_language=response_language,
         restricted_workspace=restricted_workspace,
         plan_only=plan_only,
+        working_directory=working_directory,
+        file_access_context=file_access_context,
     )
 
 
@@ -1755,6 +1805,7 @@ def ask_cli_agent(
     restricted_workspace: bool = False,
     plan_only: bool = False,
     working_directory: Path | None = None,
+    file_access_context: dict | None = None,
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -1773,6 +1824,7 @@ def ask_cli_agent(
             restricted_workspace=restricted_workspace,
             plan_only=plan_only,
             working_directory=working_directory,
+            file_access_context=file_access_context,
         )
 
 
@@ -1873,6 +1925,7 @@ def _ask_cli_agent_locked(
     plan_only: bool = False,
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
+    file_access_context: dict | None = None,
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
@@ -1933,6 +1986,7 @@ def _ask_cli_agent_locked(
         plan_only=plan_only,
         retried_stale_session=retried_stale_session,
         working_directory=working_directory,
+        file_access_context=file_access_context,
     )
 
 
@@ -1949,8 +2003,10 @@ def _run_cli_agent_process(
     plan_only: bool = False,
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
+    file_access_context: dict | None = None,
 ) -> str:
     process: subprocess.Popen | None = None
+    workspace_capture = None
     try:
         from task_workspace import task_workspace
 
@@ -1998,6 +2054,41 @@ def _run_cli_agent_process(
         )
         if not execution_directory.is_dir():
             raise RuntimeError("Agent working directory is unavailable")
+        if not isinstance(file_access_context, dict) and working_directory is not None:
+            from agent_file_access_ledger import (
+                FileAccessScope,
+                repository_identity as file_repository_identity,
+            )
+
+            file_access_context = {
+                "scope": FileAccessScope.create(
+                    client_route_id="desktop-local",
+                    conversation_id=conversation_id or task_id or spec.id,
+                    task_id=task_id or spec.id,
+                    repository_id=file_repository_identity(execution_directory),
+                ),
+                "actor_id": spec.id,
+                "collaboration_channel_ids": (),
+            }
+        if isinstance(file_access_context, dict):
+            from agent_file_access_ledger import (
+                AgentWorkspaceCapture,
+                agent_file_access_ledger,
+            )
+
+            file_scope = file_access_context.get("scope")
+            if file_scope is not None:
+                workspace_capture = AgentWorkspaceCapture.begin(
+                    execution_directory,
+                    scope=file_scope,
+                    agent_id=file_access_context.get("actor_id") or spec.id,
+                    ledger=agent_file_access_ledger(),
+                    collaboration_channel_ids=file_access_context.get(
+                        "collaboration_channel_ids",
+                        (),
+                    ),
+                    capture_id=f"{task_id or spec.id}:{uuid.uuid4().hex}",
+                )
         base_agent_env = _agent_env(spec, restricted_workspace=restricted_workspace)
         agent_env = dict(base_agent_env)
         agent_env.update(
@@ -2102,6 +2193,7 @@ def _run_cli_agent_process(
                     plan_only=plan_only,
                     retried_stale_session=True,
                     working_directory=working_directory,
+                    file_access_context=file_access_context,
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()
@@ -2128,6 +2220,15 @@ def _run_cli_agent_process(
         return f"[{spec.name}] \u8d85\u65f6"
     except Exception as exc:
         return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{str(exc)[:200]}"
+    finally:
+        if workspace_capture is not None:
+            try:
+                workspace_capture.finish()
+            except Exception:
+                log.debug(
+                    "Agent workspace file access capture failed",
+                    exc_info=True,
+                )
 
 
 def _native_session_command(

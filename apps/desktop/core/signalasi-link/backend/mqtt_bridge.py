@@ -644,9 +644,26 @@ def _execute_desktop_tool_request(
             "invocation_id": invocation_id,
             "task_id": task_id,
             "conversation_id": conversation_id,
+            "client_route_id": str(
+                paired_client.get("client_route_id") or ""
+            ),
+            "repository_id": str(payload.get("repository_id") or ""),
+            "collaboration_task_id": str(
+                payload.get("collaboration_task_id") or task_id
+            ),
+            "collaboration_channel_ids": (
+                list(payload.get("collaboration_channel_ids") or [])
+                if isinstance(payload.get("collaboration_channel_ids"), list)
+                else []
+            ),
             "idempotency_key": str(payload.get("idempotency_key") or ""),
             "confirmation": confirmation,
             "caller_id": str(paired_client.get("signal_name") or "signalasi.phone"),
+            "agent_id": str(
+                payload.get("agent_id")
+                or paired_client.get("signal_name")
+                or "signalasi.phone"
+            ),
         },
     )
     response = {
