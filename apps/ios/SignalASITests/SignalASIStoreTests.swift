@@ -3722,6 +3722,168 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(unstable.evidence.contains("decision=CHANGED_BUT_UNSTABLE"))
   }
 
+  func testAgentObservationContextStoreObservesDedupesAndFiltersConversationScope() throws {
+    var now: Int64 = 1_000
+    var nextId = 0
+    let store = InMemoryAgentObservationContextStore(
+      clock: { now },
+      idFactory: {
+        defer { nextId += 1 }
+        return "observation-\(nextId)"
+      }
+    )
+
+    let first = try XCTUnwrap(store.observe(
+      targetId: " codex ",
+      text: " Needs review ",
+      conversationId: " conversation-a ",
+      taskId: " task-a "
+    ))
+    now = 2_000
+    let duplicate = try XCTUnwrap(store.observe(
+      targetId: "codex",
+      text: "Needs review",
+      conversationId: "conversation-a",
+      taskId: "task-a"
+    ))
+    _ = store.observe(targetId: "codex", text: "Global hint")
+    _ = store.observe(targetId: "codex", text: "Other conversation", conversationId: "conversation-b")
+
+    let scoped = store.peek(targetId: " codex ", conversationId: "conversation-a")
+    let unscoped = store.peek(targetId: "codex")
+
+    XCTAssertEqual(first.id, "observation-0")
+    XCTAssertEqual(duplicate.id, "observation-1")
+    XCTAssertEqual(duplicate.targetId, "codex")
+    XCTAssertEqual(duplicate.text, "Needs review")
+    XCTAssertEqual(duplicate.conversationId, "conversation-a")
+    XCTAssertEqual(duplicate.taskId, "task-a")
+    XCTAssertEqual(duplicate.createdAtMillis, 2_000)
+    XCTAssertEqual(duplicate.expiresAtMillis, 2_000 + AgentObservedContext.defaultTTLMillis)
+    XCTAssertEqual(scoped.map(\.id), ["observation-1", "observation-2"])
+    XCTAssertEqual(unscoped.map(\.id), ["observation-1", "observation-2", "observation-3"])
+    XCTAssertNil(store.observe(targetId: " ", text: "ignored"))
+    XCTAssertNil(store.observe(targetId: "codex", text: " "))
+  }
+
+  func testAgentObservationContextStoreExpiresAcknowledgesClearsAndBoundsEntries() throws {
+    var now: Int64 = 10_000
+    let valid = AgentObservedContext(
+      id: "valid",
+      targetId: "codex",
+      text: "Fresh context",
+      conversationId: "conversation",
+      taskId: "task",
+      createdAtMillis: 9_000,
+      expiresAtMillis: 20_000
+    )
+    let expired = AgentObservedContext(
+      id: "expired",
+      targetId: "codex",
+      text: "Old context",
+      createdAtMillis: 1_000,
+      expiresAtMillis: 9_999
+    )
+    let invalid = AgentObservedContext(
+      id: "invalid",
+      targetId: "",
+      text: "Missing target",
+      createdAtMillis: 9_000,
+      expiresAtMillis: 20_000
+    )
+    let store = InMemoryAgentObservationContextStore(
+      serialized: AgentObservationContextJsonCodec.encode([expired, invalid, valid]),
+      clock: { now },
+      idFactory: { "new" }
+    )
+
+    XCTAssertEqual(store.peek(targetId: "codex").map(\.id), ["valid"])
+    XCTAssertEqual(store.acknowledge(entryIds: ["missing"]), 0)
+    XCTAssertEqual(store.acknowledge(entryIds: ["valid"]), 1)
+    XCTAssertTrue(store.peek(targetId: "codex").isEmpty)
+
+    _ = store.observe(targetId: "codex", text: "A")
+    _ = store.observe(targetId: "other", text: "B")
+    XCTAssertEqual(store.clearTarget(" codex "), 1)
+    XCTAssertEqual(store.peek(targetId: "other").map(\.text), ["B"])
+    store.clear()
+    XCTAssertEqual(AgentObservationContextJsonCodec.decode(store.serializedSnapshot(), nowMillis: now), [])
+
+    now = 1_000
+    var boundedSeed = 0
+    let bounded = InMemoryAgentObservationContextStore(
+      clock: { now },
+      idFactory: {
+        defer { boundedSeed += 1 }
+        return "bounded-\(boundedSeed)"
+      }
+    )
+    for index in 0..<18 {
+      now = Int64(1_000 + index)
+      _ = bounded.observe(targetId: "codex", text: "target-entry-\(index)")
+    }
+    XCTAssertEqual(bounded.peek(targetId: "codex").count, 16)
+    XCTAssertEqual(bounded.peek(targetId: "codex").first?.text, "target-entry-2")
+
+    var totalSeed = 0
+    let total = InMemoryAgentObservationContextStore(
+      clock: { now },
+      idFactory: {
+        defer { totalSeed += 1 }
+        return "total-\(totalSeed)"
+      }
+    )
+    for index in 0..<130 {
+      now = Int64(2_000 + index)
+      _ = total.observe(targetId: "target-\(index)", text: "total-entry-\(index)")
+    }
+    let decoded = AgentObservationContextJsonCodec.decode(total.serializedSnapshot(), nowMillis: now)
+    XCTAssertEqual(decoded.count, 128)
+    XCTAssertFalse(decoded.contains { $0.targetId == "target-0" })
+    XCTAssertEqual(decoded.first?.targetId, "target-2")
+    XCTAssertEqual(decoded.last?.targetId, "target-129")
+  }
+
+  func testAgentObservationContextCodecUsesAndroidWireNamesAndBoundsPayloads() throws {
+    let longText = String(repeating: "x", count: 8_050)
+    let context = AgentObservedContext(
+      id: "context",
+      targetId: String(repeating: "t", count: 200),
+      text: longText,
+      conversationId: String(repeating: "c", count: 200),
+      taskId: "task",
+      createdAtMillis: 1_000,
+      expiresAtMillis: 2_000
+    )
+    let encoded = AgentObservationContextJsonCodec.encode([context])
+    let object = try XCTUnwrap(
+      (JSONSerialization.jsonObject(with: Data(encoded.utf8)) as? [[String: Any]])?.first
+    )
+    let decoded = AgentObservationContextJsonCodec.decode(
+      """
+      [
+        "ignored",
+        {"id":"blank","target_id":"","text":"ignored","created_at_millis":1,"expires_at_millis":9999},
+        {"id":"expired","target_id":"codex","text":"old","created_at_millis":1,"expires_at_millis":999},
+        \(encoded.dropFirst().dropLast())
+      ]
+      """,
+      nowMillis: 1_500
+    )
+
+    XCTAssertEqual(object["id"] as? String, "context")
+    XCTAssertEqual((object["target_id"] as? String)?.count, 160)
+    XCTAssertEqual((object["text"] as? String)?.count, 8_000)
+    XCTAssertEqual((object["conversation_id"] as? String)?.count, 160)
+    XCTAssertEqual(object["task_id"] as? String, "task")
+    XCTAssertEqual((object["created_at_millis"] as? NSNumber)?.int64Value, Int64(1_000))
+    XCTAssertEqual((object["expires_at_millis"] as? NSNumber)?.int64Value, Int64(2_000))
+    XCTAssertEqual(decoded, [context])
+    XCTAssertTrue(context.isExpired(nowMillis: 2_000))
+    XCTAssertFalse(context.isExpired(nowMillis: 1_999))
+    XCTAssertEqual(AgentObservationContextJsonCodec.decode("not-json", nowMillis: 1_500), [])
+  }
+
   func testPhoneExecutionAuthorityAnnotatesConcurrentReadsWithoutSerialization() {
     let action = phoneAuthorityAction(
       id: "read-1",
