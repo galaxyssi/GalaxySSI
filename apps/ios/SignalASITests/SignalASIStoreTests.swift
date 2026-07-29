@@ -907,6 +907,251 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("waiting_approval"), .paused)
   }
 
+  func testAgentPlanLifecyclePolicyRestoresConnectorResultAndCompletesSession() {
+    let connector = lifecycleAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      status: .completed,
+      result: "The worksheet has been corrected."
+    )
+    let draft = lifecycleAction(
+      id: "draft-plan",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .completed
+    )
+    let session = lifecycleSession(
+      phase: .planning,
+      plan: lifecyclePlan(connector, draft),
+      result: AgentActionResult(actionId: draft.id, success: true, message: "")
+    )
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(session)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.session.currentPlan?.actions, [connector])
+    XCTAssertEqual(normalized.session.phase, .completed)
+    XCTAssertEqual(normalized.session.lastActionResult?.actionId, connector.id)
+    XCTAssertEqual(normalized.session.lastActionResult?.message, connector.result)
+  }
+
+  func testAgentPlanLifecyclePolicyRemovesPendingTrailingDraftBeforeItRuns() {
+    let connector = lifecycleAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      status: .completed,
+      result: "Done"
+    )
+    let draft = lifecycleAction(
+      id: "draft-plan",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .pendingConfirmation
+    )
+    let plan = lifecyclePlan(connector, draft)
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(plan)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.plan.actions, [connector])
+  }
+
+  func testAgentPlanLifecyclePolicyRetiresStandaloneLegacyRuntimeDraft() {
+    let standalone = lifecyclePlan(
+      lifecycleAction(
+        id: "draft-plan",
+        kind: .draftPlan,
+        target: "local-agent-runtime",
+        status: .completed
+      )
+    )
+    let taskComplete = lifecyclePlan(
+      lifecycleAction(id: "connector", kind: .callConnector, target: "Codex", status: .completed),
+      lifecycleAction(id: "done", kind: .draftPlan, target: "task-complete", status: .completed)
+    )
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(standalone)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.plan.actions.first?.target, "task-complete")
+    XCTAssertEqual(normalized.plan.actions.first?.status, .failed)
+    XCTAssertTrue(normalized.plan.actions.first?.result.contains("Send it again") == true)
+    XCTAssertTrue(normalized.plan.validation.valid)
+    XCTAssertFalse(AgentPlanLifecyclePolicy.normalize(taskComplete).changed)
+  }
+
+  func testAgentPlanLifecyclePolicyRecoversCompletedConnectorFromHistory() {
+    let connector = lifecycleAction(
+      id: "connector-codex",
+      kind: .callConnector,
+      target: "Codex",
+      status: .completed,
+      result: "Recovered Codex reply"
+    )
+    let draft = lifecycleAction(
+      id: "replanned-draft",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .completed
+    )
+    var sourcePlan = lifecyclePlan(draft)
+    sourcePlan.actionHistory = [connector]
+    let sourceSession = lifecycleSession(
+      phase: .planning,
+      plan: sourcePlan,
+      result: AgentActionResult(actionId: draft.id, success: true, message: "")
+    )
+
+    let normalized = AgentPlanLifecyclePolicy.normalize(sourceSession)
+
+    XCTAssertTrue(normalized.changed)
+    XCTAssertEqual(normalized.session.currentPlan?.actions, [connector])
+    XCTAssertTrue(normalized.session.currentPlan?.actionHistory.isEmpty == true)
+    XCTAssertEqual(normalized.session.phase, .completed)
+    XCTAssertEqual(normalized.session.lastActionResult?.message, "Recovered Codex reply")
+  }
+
+  func testAgentPlanLifecyclePolicyRecoversReceivedConnectorWithoutLocalRuntimeDraft() {
+    let draft = lifecycleAction(
+      id: "replanned-draft",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .completed
+    )
+    var sourcePlan = lifecyclePlan(draft)
+    sourcePlan.route = AgentRoute(kind: .desktopAgent, targetTitle: "Codex")
+    let sourceSession = lifecycleSession(
+      phase: .planning,
+      plan: sourcePlan,
+      result: AgentActionResult(actionId: draft.id, success: true, message: "Created a local task plan"),
+      auditTrail: [
+        AgentAuditEntry(
+          event: .connectorResponseReceived,
+          detail: "source_message_id=1",
+          timestampMillis: 2
+        )
+      ]
+    )
+    let durableTask = agentTaskRecord(
+      taskId: sourcePlan.planId,
+      sessionId: "session",
+      goal: sourcePlan.goal,
+      phase: .completed,
+      routeKind: .desktopAgent,
+      targetTitle: "Codex",
+      risk: .low,
+      result: "Durable Codex result"
+    )
+
+    let recovered = AgentPlanLifecyclePolicy.recoverCompletedConnector(
+      session: sourceSession,
+      persistedTask: durableTask,
+      missingResult: "No final result"
+    )
+
+    XCTAssertEqual(recovered.phase, .completed)
+    XCTAssertEqual(recovered.currentPlan?.actions.first?.kind, .callConnector)
+    XCTAssertEqual(recovered.currentPlan?.actions.first?.target, "Codex")
+    XCTAssertEqual(recovered.lastActionResult?.message, "Durable Codex result")
+    XCTAssertFalse(recovered.currentPlan?.actions.contains { $0.target == "local-agent-runtime" } == true)
+  }
+
+  func testAgentPlanLifecyclePolicyDoesNotRewriteWithoutConnectorReceipt() {
+    let draft = lifecycleAction(
+      id: "draft",
+      kind: .draftPlan,
+      target: "local-agent-runtime",
+      status: .pendingConfirmation
+    )
+    let source = lifecycleSession(phase: .planning, plan: lifecyclePlan(draft), result: nil)
+
+    let recovered = AgentPlanLifecyclePolicy.recoverCompletedConnector(
+      session: source,
+      persistedTask: nil,
+      missingResult: "No final result"
+    )
+
+    XCTAssertEqual(source, recovered)
+  }
+
+  func testAgentPlanLifecycleModelsUseAndroidWireNames() throws {
+    let decoded = try JSONDecoder().decode(
+      AgentSessionSnapshot.self,
+      from: Data(
+        #"""
+        {
+          "session_id": "session",
+          "phase": "PLANNING",
+          "current_goal": "Correct the worksheet",
+          "current_screen": {
+            "foreground_app": "SignalASI",
+            "page_title": "Agent"
+          },
+          "current_plan": {
+            "goal": "Correct the worksheet",
+            "screen": {
+              "foreground_app": "SignalASI",
+              "page_title": "Agent"
+            },
+            "steps": [
+              {"order": 1, "kind": "BUILD_PLAN", "status": "CURRENT"}
+            ],
+            "actions": [
+              {
+                "id": "connector",
+                "kind": "CALL_CONNECTOR",
+                "target": "Codex",
+                "risk": "LOW",
+                "status": "COMPLETED",
+                "description": "Run Codex",
+                "result": "Done"
+              }
+            ],
+            "execution_mode": "AUTO_COMPLETE",
+            "plan_id": "plan",
+            "route": {
+              "kind": "DESKTOP_AGENT",
+              "target_title": "Codex"
+            },
+            "verification_results": [
+              {"action_id": "connector", "success": true, "evidence": "ok", "timestamp_millis": 12}
+            ],
+            "checkpoints": [
+              {"action_id": "connector", "summary": "checkpoint", "timestamp_millis": 13}
+            ]
+          },
+          "audit_trail": [
+            {"event": "CONNECTOR_RESPONSE_RECEIVED", "detail": "ok", "timestamp_millis": 14}
+          ],
+          "last_action_result": {
+            "action_id": "connector",
+            "success": true,
+            "message": "Done"
+          },
+          "task_execution_mode": "AUTO_COMPLETE",
+          "updated_at_millis": 15
+        }
+        """#.utf8
+      )
+    )
+    let fallbackAudit = try JSONDecoder().decode(
+      AgentAuditEvent.self,
+      from: Data(#""FUTURE""#.utf8)
+    )
+    let encoded = String(decoding: try JSONEncoder().encode(decoded), as: UTF8.self)
+
+    XCTAssertEqual(decoded.phase, .planning)
+    XCTAssertEqual(decoded.currentPlan?.route.kind, .desktopAgent)
+    XCTAssertEqual(decoded.currentPlan?.steps.first?.kind, .buildPlan)
+    XCTAssertEqual(decoded.auditTrail.first?.event, .connectorResponseReceived)
+    XCTAssertEqual(fallbackAudit, .invocationAudit)
+    XCTAssertTrue(encoded.contains(#""current_plan":"#) || encoded.contains(#""current_plan":{"#))
+    XCTAssertTrue(encoded.contains(#""task_execution_mode":"AUTO_COMPLETE""#))
+    XCTAssertTrue(encoded.contains(#""timestamp_millis":14"#))
+  }
+
   func testAgentExecutionLoopTimelinePolicyProjectsCanonicalPhases() {
     let plan = AgentExecutionLoopTimelinePolicy.project(loopEvent(.plan))
     let act = AgentExecutionLoopTimelinePolicy.project(
@@ -3599,6 +3844,55 @@ final class SignalASIStoreTests: XCTestCase {
       sequence: sequence,
       kind: kind,
       timestampMillis: timestampMillis
+    )
+  }
+
+  private func lifecycleAction(
+    id: String,
+    kind: AgentActionKind,
+    target: String,
+    status: AgentActionStatus,
+    result: String = ""
+  ) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: kind,
+      target: target,
+      risk: .low,
+      status: status,
+      description: id,
+      result: result
+    )
+  }
+
+  private func lifecyclePlan(_ actions: AgentAction...) -> AgentPlan {
+    let needsRoute = actions.contains {
+      $0.kind == .callConnector || $0.kind == .controlDevice
+    }
+    return AgentPlan(
+      goal: "Correct the worksheet",
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
+      steps: [],
+      actions: actions,
+      route: needsRoute ? AgentRoute(kind: .desktopAgent, targetTitle: "Codex") : AgentRoute()
+    )
+  }
+
+  private func lifecycleSession(
+    phase: AgentPhase,
+    plan: AgentPlan,
+    result: AgentActionResult?,
+    auditTrail: [AgentAuditEntry] = []
+  ) -> AgentSessionSnapshot {
+    AgentSessionSnapshot(
+      sessionId: "session",
+      phase: phase,
+      currentGoal: plan.goal,
+      currentScreen: plan.screen,
+      currentPlan: plan,
+      auditTrail: auditTrail,
+      lastActionResult: result,
+      updatedAtMillis: 1
     )
   }
 
