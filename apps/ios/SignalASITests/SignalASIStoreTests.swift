@@ -2790,6 +2790,197 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(decoded.fallbacks, [])
   }
 
+  func testAgentResourceCatalogBuildsTargetsToolsAndNativeTools() throws {
+    let codex = AgentCallableTarget(
+      id: "desktop:codex",
+      title: "Codex",
+      kind: .agent,
+      status: .available,
+      capabilities: [.chat, .code, .taskExecution, .toolUse],
+      failureDomain: "desktop-dev",
+      adapterType: "codex-app-server"
+    )
+    let qwenProfile = ProviderProfileCatalog.fromCloudModel(
+      resourceId: "cloud:qwen",
+      provider: "Qwen",
+      model: providerCloudModel(
+        provider: "Qwen",
+        modelId: "qwen3.7-max",
+        endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+      ),
+      apiKey: "stored-key",
+      performance: ProviderPerformanceProfile(attempts: 10, successes: 8, failures: 2, failureRate: 0.2)
+    )
+    let cloud = AgentCallableTarget(
+      id: "cloud:qwen",
+      title: "Qwen",
+      kind: .model,
+      status: .available,
+      capabilities: Array(qwenProfile.capabilities),
+      providerProfile: qwenProfile
+    )
+    let workflow = AgentSystemTool(
+      id: "workflow:daily",
+      title: "Daily workflow",
+      kind: .draftPlan,
+      risk: .low,
+      capabilities: [.taskExecution]
+    )
+    let native = try nativeToolDescriptor(
+      "signalasi.runtime.python",
+      capabilities: ["runtime.python", "workspace.files"]
+    )
+
+    let catalog = AgentResourceCatalog.build(
+      targets: [codex, cloud],
+      tools: [workflow],
+      nativeTools: [native]
+    )
+    let codexResource = try XCTUnwrap(catalog.first { $0.id == "target:desktop:codex" })
+    let cloudResource = try XCTUnwrap(catalog.first { $0.id == "target:cloud:qwen" })
+    let workflowResource = try XCTUnwrap(catalog.first { $0.id == "tool:workflow:daily" })
+    let nativeResource = try XCTUnwrap(catalog.first { $0.id == "native:\(native.id)" })
+
+    XCTAssertEqual(codexResource.type, .remoteAgent)
+    XCTAssertEqual(codexResource.location, .trustedDesktop)
+    XCTAssertEqual(codexResource.targetId, codex.id)
+    XCTAssertEqual(codexResource.failureDomain, "desktop-dev")
+    XCTAssertTrue(codexResource.supportsBackground)
+    XCTAssertEqual(cloudResource.contextWindowTokens, qwenProfile.contextWindowTokens)
+    XCTAssertEqual(cloudResource.cost, qwenProfile.pricing.tier)
+    XCTAssertEqual(cloudResource.latency, qwenProfile.latency)
+    XCTAssertEqual(cloudResource.providerProfile?.performance.failureRate, 0.2)
+    XCTAssertEqual(workflowResource.type, .localSkill)
+    XCTAssertEqual(workflowResource.status, .available)
+    XCTAssertEqual(workflowResource.trust, .phoneSystem)
+    XCTAssertEqual(workflowResource.energy, .minimal)
+    XCTAssertEqual(workflowResource.maxParallelTasks, 4)
+    XCTAssertEqual(nativeResource.type, .localTool)
+    XCTAssertEqual(nativeResource.energy, .high)
+    XCTAssertTrue(nativeResource.supportsBackground)
+    XCTAssertTrue(nativeResource.capabilities.isSuperset(of: Set([.toolUse, .code, .taskExecution])))
+  }
+
+  func testAgentResourceCatalogMapsCapabilitySnapshotStatus() throws {
+    let available = try nativeToolDescriptor("signalasi.test.available")
+    let unavailable = try nativeToolDescriptor(
+      "signalasi.test.unavailable",
+      availability: AgentNativeToolAvailability(status: .unavailable, reason: "Missing")
+    )
+    let target = AgentCallableTarget(
+      id: "codex",
+      title: "Codex",
+      kind: .agent,
+      status: .disconnected,
+      capabilities: [.code]
+    )
+
+    let catalog = AgentResourceCatalog.build(
+      targets: [target],
+      tools: [],
+      nativeTools: [available, unavailable]
+    )
+
+    XCTAssertEqual(catalog.first { $0.id == "target:codex" }?.status, .disconnected)
+    XCTAssertEqual(catalog.first { $0.id == "native:\(available.id)" }?.status, .available)
+    XCTAssertEqual(catalog.first { $0.id == "native:\(unavailable.id)" }?.status, .disconnected)
+  }
+
+  func testAgentResourceCatalogClassifiesRemoteTargets() {
+    let targets = [
+      AgentCallableTarget(
+        id: "home-assistant",
+        title: "Home Assistant",
+        kind: .device,
+        status: .available,
+        capabilities: [.smartHome]
+      ),
+      AgentCallableTarget(
+        id: "custom-device:lamp",
+        title: "Lamp",
+        kind: .device,
+        status: .available,
+        capabilities: [.deviceControl]
+      ),
+      AgentCallableTarget(
+        id: "remote-mcp:github",
+        title: "GitHub MCP",
+        kind: .agent,
+        status: .available,
+        capabilities: [.mcp, .toolUse]
+      ),
+      AgentCallableTarget(
+        id: "remote-skill:summary",
+        title: "Summary Skill",
+        kind: .agent,
+        status: .available,
+        capabilities: [.skill, .toolUse]
+      ),
+      AgentCallableTarget(
+        id: "knowledge:docs",
+        title: "Docs",
+        kind: .knowledge,
+        status: .available,
+        capabilities: [.knowledgeSearch]
+      ),
+      AgentCallableTarget(
+        id: "local-llm",
+        title: "Local LLM",
+        kind: .model,
+        status: .available,
+        capabilities: [.chat, .localInference]
+      )
+    ]
+
+    let catalog = AgentResourceCatalog.build(targets: targets, tools: [])
+
+    XCTAssertEqual(catalog.first { $0.targetId == "home-assistant" }?.type, .homeAssistant)
+    XCTAssertEqual(catalog.first { $0.targetId == "home-assistant" }?.location, .privateNetwork)
+    XCTAssertEqual(catalog.first { $0.targetId == "custom-device:lamp" }?.type, .customDevice)
+    XCTAssertEqual(catalog.first { $0.targetId == "remote-mcp:github" }?.type, .remoteMcp)
+    XCTAssertEqual(catalog.first { $0.targetId == "remote-skill:summary" }?.type, .remoteSkill)
+    XCTAssertEqual(catalog.first { $0.targetId == "knowledge:docs" }?.location, .phone)
+    XCTAssertEqual(catalog.first { $0.targetId == "local-llm" }?.type, .remoteLocalModel)
+    XCTAssertEqual(catalog.first { $0.targetId == "local-llm" }?.maxParallelTasks, 2)
+  }
+
+  func testAgentResourceCatalogModelsUseAndroidWireNames() throws {
+    let profile = ProviderProfileCatalog.fromCloudModel(
+      resourceId: "cloud:deepseek",
+      provider: "DeepSeek",
+      model: providerCloudModel(
+        provider: "DeepSeek",
+        modelId: "deepseek-v4-pro",
+        endpoint: "https://api.deepseek.com/chat/completions"
+      ),
+      apiKey: "stored-key"
+    )
+    let catalog = AgentResourceCatalog.build(
+      targets: [
+        AgentCallableTarget(
+          id: "cloud:deepseek",
+          title: "DeepSeek",
+          kind: .model,
+          status: .available,
+          capabilities: Array(profile.capabilities),
+          providerProfile: profile
+        )
+      ],
+      tools: []
+    )
+    let resource = try XCTUnwrap(catalog.first)
+    let object = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(resource)) as? [String: Any]
+    )
+
+    XCTAssertEqual(object["target_id"] as? String, "cloud:deepseek")
+    XCTAssertEqual(object["supports_background"] as? Bool, true)
+    XCTAssertEqual(object["max_parallel_tasks"] as? Int, 4)
+    XCTAssertNotNil(object["provider_profile"])
+    XCTAssertNil(object["targetId"])
+    XCTAssertNil(object["supportsBackground"])
+  }
+
   func testAgentDynamicTeamCompilerBuildsVerifiedDagFromComplementaryAgents() throws {
     let result = AgentDynamicTeamCompiler().compile(
       request: AgentDynamicTeamRequest(
