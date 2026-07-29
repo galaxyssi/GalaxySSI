@@ -1073,6 +1073,752 @@ enum AgentRisk: String, Codable, CaseIterable, Identifiable {
   }
 }
 
+enum AgentConnectorKind: String, Codable, CaseIterable, Identifiable {
+  case model = "MODEL"
+  case agent = "AGENT"
+  case device = "DEVICE"
+  case knowledge = "KNOWLEDGE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentConnectorKind {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .agent
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentConnectorStatus: String, Codable, CaseIterable, Identifiable {
+  case available = "AVAILABLE"
+  case needsSetup = "NEEDS_SETUP"
+  case disconnected = "DISCONNECTED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentConnectorStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .disconnected
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentCapability: String, Codable, CaseIterable, Identifiable {
+  case chat = "CHAT"
+  case reasoning = "REASONING"
+  case liveData = "LIVE_DATA"
+  case toolUse = "TOOL_USE"
+  case mcp = "MCP"
+  case skill = "SKILL"
+  case localInference = "LOCAL_INFERENCE"
+  case research = "RESEARCH"
+  case code = "CODE"
+  case taskExecution = "TASK_EXECUTION"
+  case smartHome = "SMART_HOME"
+  case deviceControl = "DEVICE_CONTROL"
+  case knowledgeSearch = "KNOWLEDGE_SEARCH"
+  case screenReading = "SCREEN_READING"
+  case clipboard = "CLIPBOARD"
+  case systemSettings = "SYSTEM_SETTINGS"
+  case appNavigation = "APP_NAVIGATION"
+  case alarm = "ALARM"
+
+  var id: String { rawValue }
+  var wireValue: String { rawValue.lowercased() }
+
+  static func fromWireValue(_ value: String?) -> AgentCapability? {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self)) ?? .chat
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentNativeToolLocation: String, Codable, CaseIterable, Identifiable {
+  case phone
+  case desktop
+  case application
+  case androidSystem = "android_system"
+  case accessibilityService = "accessibility_service"
+  case unknown
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeToolLocation {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unknown
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentNativeToolRisk: String, Codable, CaseIterable, Identifiable {
+  case low
+  case medium
+  case high
+  case blocked
+
+  var id: String { rawValue }
+
+  var weight: Int {
+    switch self {
+    case .low: return 1
+    case .medium: return 2
+    case .high: return 3
+    case .blocked: return 4
+    }
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeToolRisk {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .medium
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentNativeToolIdempotency: String, Codable, CaseIterable, Identifiable {
+  case nonIdempotent = "non_idempotent"
+  case idempotent
+  case idempotencyKeyRequired = "idempotency_key_required"
+
+  var id: String { rawValue }
+}
+
+enum AgentNativeToolAvailabilityStatus: String, Codable, CaseIterable, Identifiable {
+  case available
+  case requiresSetup = "requires_setup"
+  case unavailable
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentNativeToolAvailabilityStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unavailable
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentNativeToolAvailability: Codable, Equatable {
+  var status: AgentNativeToolAvailabilityStatus
+  var reason: String
+  var checkedAtEpochMillis: Int64?
+
+  static let available = AgentNativeToolAvailability(status: .available)
+
+  init(
+    status: AgentNativeToolAvailabilityStatus,
+    reason: String = "",
+    checkedAtEpochMillis: Int64? = nil
+  ) {
+    self.status = status
+    self.reason = reason
+    self.checkedAtEpochMillis = checkedAtEpochMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case reason
+    case checkedAtEpochMillis = "checked_at_epoch_millis"
+  }
+}
+
+struct AgentNativePermissionRequirement: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var description: String
+  var required: Bool
+
+  init(
+    id: String,
+    title: String? = nil,
+    description: String = "",
+    required: Bool = true
+  ) {
+    let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.id = cleanId
+    self.title = (title ?? cleanId).trimmingCharacters(in: .whitespacesAndNewlines)
+    self.description = description
+    self.required = required
+  }
+}
+
+struct AgentNativeConsentRequirement: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var description: String
+  var required: Bool
+
+  init(
+    id: String,
+    title: String? = nil,
+    description: String = "",
+    required: Bool = true
+  ) {
+    let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.id = cleanId
+    self.title = (title ?? cleanId).trimmingCharacters(in: .whitespacesAndNewlines)
+    self.description = description
+    self.required = required
+  }
+}
+
+struct AgentNativeToolDescriptor: Codable, Equatable, Identifiable {
+  static let defaultTimeoutMillis: Int64 = 30_000
+
+  var id: String
+  var version: String
+  var title: String
+  var description: String
+  var location: AgentNativeToolLocation
+  var inputSchema: AgentMcpJSONObject
+  var outputSchema: AgentMcpJSONObject
+  var risk: AgentNativeToolRisk
+  var capabilities: Set<String>
+  var requiredPermissions: [AgentNativePermissionRequirement]
+  var requiredConsents: [AgentNativeConsentRequirement]
+  var timeoutMillis: Int64
+  var idempotency: AgentNativeToolIdempotency
+  var availability: AgentNativeToolAvailability
+
+  init(
+    id: String,
+    version: String,
+    title: String,
+    description: String,
+    location: AgentNativeToolLocation,
+    inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
+    outputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
+    risk: AgentNativeToolRisk,
+    capabilities: Set<String> = [],
+    requiredPermissions: [AgentNativePermissionRequirement] = [],
+    requiredConsents: [AgentNativeConsentRequirement] = [],
+    timeoutMillis: Int64 = AgentNativeToolDescriptor.defaultTimeoutMillis,
+    idempotency: AgentNativeToolIdempotency = .nonIdempotent,
+    availability: AgentNativeToolAvailability = .available
+  ) throws {
+    let cleanId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard cleanId.range(
+      of: #"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"#,
+      options: .regularExpression
+    ) != nil else {
+      throw AgentRuntimeCapabilityError.invalid("Tool id must be a stable lowercase dotted identifier")
+    }
+    guard version.range(
+      of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"#,
+      options: .regularExpression
+    ) != nil else {
+      throw AgentRuntimeCapabilityError.invalid("Tool version must be semantic")
+    }
+    guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("Tool title must not be blank")
+    }
+    guard !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("Tool description must not be blank")
+    }
+    guard timeoutMillis > 0 else {
+      throw AgentRuntimeCapabilityError.invalid("Tool timeout must be positive")
+    }
+    guard capabilities.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+      throw AgentRuntimeCapabilityError.invalid("Capability ids must not be blank")
+    }
+    guard Set(requiredPermissions.map(\.id)).count == requiredPermissions.count else {
+      throw AgentRuntimeCapabilityError.invalid("Permission ids must be unique")
+    }
+    guard Set(requiredConsents.map(\.id)).count == requiredConsents.count else {
+      throw AgentRuntimeCapabilityError.invalid("Consent ids must be unique")
+    }
+
+    self.id = cleanId
+    self.version = version
+    self.title = title
+    self.description = description
+    self.location = location
+    self.inputSchema = inputSchema
+    self.outputSchema = outputSchema
+    self.risk = risk
+    self.capabilities = capabilities
+    self.requiredPermissions = requiredPermissions
+    self.requiredConsents = requiredConsents
+    self.timeoutMillis = timeoutMillis
+    self.idempotency = idempotency
+    self.availability = availability
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case version
+    case title
+    case description
+    case location
+    case inputSchema = "input_schema"
+    case outputSchema = "output_schema"
+    case risk
+    case capabilities
+    case requiredPermissions = "required_permissions"
+    case requiredConsents = "required_consents"
+    case timeoutMillis = "timeout_millis"
+    case idempotency
+    case availability
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+      version: try container.decodeIfPresent(String.self, forKey: .version) ?? "0.0.0",
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      description: try container.decodeIfPresent(String.self, forKey: .description) ?? "",
+      location: try container.decodeIfPresent(AgentNativeToolLocation.self, forKey: .location) ?? .unknown,
+      inputSchema: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .inputSchema) ?? Self.objectSchema(),
+      outputSchema: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .outputSchema) ?? Self.objectSchema(),
+      risk: try container.decodeIfPresent(AgentNativeToolRisk.self, forKey: .risk) ?? .medium,
+      capabilities: try container.decodeIfPresent(Set<String>.self, forKey: .capabilities) ?? [],
+      requiredPermissions: try container.decodeIfPresent([AgentNativePermissionRequirement].self, forKey: .requiredPermissions) ?? [],
+      requiredConsents: try container.decodeIfPresent([AgentNativeConsentRequirement].self, forKey: .requiredConsents) ?? [],
+      timeoutMillis: try container.decodeIfPresent(Int64.self, forKey: .timeoutMillis) ?? Self.defaultTimeoutMillis,
+      idempotency: try container.decodeIfPresent(AgentNativeToolIdempotency.self, forKey: .idempotency) ?? .nonIdempotent,
+      availability: try container.decodeIfPresent(AgentNativeToolAvailability.self, forKey: .availability) ?? .available
+    )
+  }
+
+  static func objectSchema() -> AgentMcpJSONObject {
+    [
+      "type": .string("object"),
+      "properties": .object([:]),
+      "required": .array([]),
+      "additionalProperties": .bool(true)
+    ]
+  }
+}
+
+struct AgentSystemTool: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var kind: AgentActionKind
+  var risk: AgentRisk
+  var capabilities: [AgentCapability]
+  var examples: [String]
+
+  init(
+    id: String,
+    title: String,
+    kind: AgentActionKind,
+    risk: AgentRisk,
+    capabilities: [AgentCapability],
+    examples: [String] = []
+  ) {
+    self.id = id
+    self.title = title
+    self.kind = kind
+    self.risk = risk
+    self.capabilities = capabilities
+    self.examples = examples
+  }
+}
+
+struct AgentCallableTarget: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var kind: AgentConnectorKind
+  var status: AgentConnectorStatus
+  var capabilities: [AgentCapability]
+  var failureDomain: String
+  var runtimeFailureDomain: String
+  var adapterType: String
+  var independentlyUpgradeable: Bool
+  var desktopAccessProfile: String
+
+  init(
+    id: String,
+    title: String,
+    kind: AgentConnectorKind,
+    status: AgentConnectorStatus,
+    capabilities: [AgentCapability],
+    failureDomain: String = "",
+    runtimeFailureDomain: String = "",
+    adapterType: String = "",
+    independentlyUpgradeable: Bool = true,
+    desktopAccessProfile: String = ""
+  ) {
+    self.id = id
+    self.title = title
+    self.kind = kind
+    self.status = status
+    self.capabilities = capabilities
+    self.failureDomain = failureDomain
+    self.runtimeFailureDomain = runtimeFailureDomain
+    self.adapterType = adapterType
+    self.independentlyUpgradeable = independentlyUpgradeable
+    self.desktopAccessProfile = desktopAccessProfile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case title
+    case kind
+    case status
+    case capabilities
+    case failureDomain = "failure_domain"
+    case runtimeFailureDomain = "runtime_failure_domain"
+    case adapterType = "adapter_type"
+    case independentlyUpgradeable = "independently_upgradeable"
+    case desktopAccessProfile = "desktop_access_profile"
+  }
+}
+
+enum AgentRuntimeCapabilitySource: String, Codable, CaseIterable, Identifiable {
+  case nativeTool = "NATIVE_TOOL"
+  case systemTool = "SYSTEM_TOOL"
+  case connector = "CONNECTOR"
+
+  var id: String { rawValue }
+
+  var sortOrder: Int {
+    switch self {
+    case .nativeTool: return 0
+    case .systemTool: return 1
+    case .connector: return 2
+    }
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentRuntimeCapabilitySource {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .connector
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRuntimeCapabilityState: String, Codable, CaseIterable, Identifiable {
+  case available = "AVAILABLE"
+  case requiresSetup = "REQUIRES_SETUP"
+  case unavailable = "UNAVAILABLE"
+  case blocked = "BLOCKED"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentRuntimeCapabilityState {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unavailable
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentRuntimeCapabilityEntry: Codable, Equatable, Identifiable {
+  var id: String
+  var title: String
+  var source: AgentRuntimeCapabilitySource
+  var state: AgentRuntimeCapabilityState
+  var capabilities: Set<String>
+  var location: String
+  var risk: String
+  var reason: String
+  var requiredPermissions: Set<String>
+  var requiredConsents: Set<String>
+
+  var executable: Bool {
+    state == .available && risk != AgentNativeToolRisk.blocked.rawValue
+  }
+
+  init(
+    id: String,
+    title: String,
+    source: AgentRuntimeCapabilitySource,
+    state: AgentRuntimeCapabilityState,
+    capabilities: Set<String>,
+    location: String,
+    risk: String,
+    reason: String = "",
+    requiredPermissions: Set<String> = [],
+    requiredConsents: Set<String> = []
+  ) {
+    self.id = id
+    self.title = title
+    self.source = source
+    self.state = state
+    self.capabilities = capabilities
+    self.location = location
+    self.risk = risk
+    self.reason = reason
+    self.requiredPermissions = requiredPermissions
+    self.requiredConsents = requiredConsents
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case title
+    case source
+    case state
+    case capabilities
+    case location
+    case risk
+    case reason
+    case requiredPermissions = "required_permissions"
+    case requiredConsents = "required_consents"
+  }
+}
+
+struct AgentRuntimeCapabilitySnapshot: Codable, Equatable {
+  var entries: [AgentRuntimeCapabilityEntry]
+
+  static let empty = AgentRuntimeCapabilitySnapshot(entries: [])
+
+  var availableEntries: [AgentRuntimeCapabilityEntry] {
+    entries.filter(\.executable)
+  }
+
+  var availableNativeToolIds: Set<String> {
+    Set(entries.filter { $0.source == .nativeTool && $0.executable }.map(\.id))
+  }
+
+  var setupRequiredEntries: [AgentRuntimeCapabilityEntry] {
+    entries.filter { $0.state == .requiresSetup }
+  }
+
+  var unavailableEntries: [AgentRuntimeCapabilityEntry] {
+    entries.filter { $0.state == .unavailable || $0.state == .blocked }
+  }
+
+  func entry(source: AgentRuntimeCapabilitySource, id: String) -> AgentRuntimeCapabilityEntry? {
+    entries.first { $0.source == source && $0.id == id }
+  }
+
+  func isNativeToolExecutable(id: String) -> Bool {
+    entry(source: .nativeTool, id: id)?.executable == true
+  }
+}
+
+enum AgentRuntimeCapabilityError: LocalizedError, Equatable {
+  case invalid(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .invalid(let message):
+      return message
+    }
+  }
+}
+
+enum AgentNativeToolAgentActionAdapter {
+  static func defaultToolId(_ kind: AgentActionKind) -> String {
+    "signalasi.agent_action.\(kind.rawValue.lowercased().replacingOccurrences(of: "_", with: "."))"
+  }
+}
+
+enum AgentRuntimeCapabilityMatrix {
+  static func build(
+    nativeTools: [AgentNativeToolDescriptor],
+    systemTools: [AgentSystemTool],
+    targets: [AgentCallableTarget]
+  ) -> AgentRuntimeCapabilitySnapshot {
+    var nativeById: [String: AgentNativeToolDescriptor] = [:]
+    for tool in nativeTools {
+      nativeById[tool.id] = tool
+    }
+    let allEntries = nativeTools.map(nativeEntry) +
+      systemTools.map { systemEntry($0, nativeById: nativeById) } +
+      targets.map(connectorEntry)
+    var seen: Set<String> = []
+    let entries = allEntries.filter { entry in
+      seen.insert("\(entry.source.rawValue):\(entry.id)").inserted
+    }.sorted {
+      if $0.source.sortOrder != $1.source.sortOrder {
+        return $0.source.sortOrder < $1.source.sortOrder
+      }
+      return $0.id < $1.id
+    }
+    return AgentRuntimeCapabilitySnapshot(entries: entries)
+  }
+
+  static func availableNativeTools(
+    nativeTools: [AgentNativeToolDescriptor],
+    systemTools: [AgentSystemTool] = [],
+    targets: [AgentCallableTarget] = []
+  ) -> [AgentNativeToolDescriptor] {
+    let snapshot = build(
+      nativeTools: nativeTools,
+      systemTools: systemTools,
+      targets: targets
+    )
+    return nativeTools.filter { snapshot.isNativeToolExecutable(id: $0.id) }
+  }
+
+  private static func nativeEntry(_ tool: AgentNativeToolDescriptor) -> AgentRuntimeCapabilityEntry {
+    let state: AgentRuntimeCapabilityState
+    if tool.risk == .blocked {
+      state = .blocked
+    } else {
+      switch tool.availability.status {
+      case .available:
+        state = .available
+      case .requiresSetup:
+        state = .requiresSetup
+      case .unavailable:
+        state = .unavailable
+      }
+    }
+    return AgentRuntimeCapabilityEntry(
+      id: tool.id,
+      title: tool.title,
+      source: .nativeTool,
+      state: state,
+      capabilities: tool.capabilities,
+      location: tool.location.rawValue,
+      risk: tool.risk.rawValue,
+      reason: tool.availability.reason,
+      requiredPermissions: Set(tool.requiredPermissions.filter(\.required).map(\.id)),
+      requiredConsents: Set(tool.requiredConsents.filter(\.required).map(\.id))
+    )
+  }
+
+  private static func systemEntry(
+    _ tool: AgentSystemTool,
+    nativeById: [String: AgentNativeToolDescriptor]
+  ) -> AgentRuntimeCapabilityEntry {
+    let hostOwnedWorkflow = tool.id.hasPrefix("workflow:") || tool.id.hasPrefix("template:")
+    let native = nativeById[AgentNativeToolAgentActionAdapter.defaultToolId(tool.kind)]
+    let state: AgentRuntimeCapabilityState
+    if tool.risk == .blocked {
+      state = .blocked
+    } else if hostOwnedWorkflow {
+      state = .available
+    } else if let native {
+      switch (native.risk, native.availability.status) {
+      case (.blocked, _):
+        state = .blocked
+      case (_, .available):
+        state = .available
+      case (_, .requiresSetup):
+        state = .requiresSetup
+      case (_, .unavailable):
+        state = .unavailable
+      }
+    } else {
+      state = .unavailable
+    }
+    return AgentRuntimeCapabilityEntry(
+      id: tool.id,
+      title: tool.title,
+      source: .systemTool,
+      state: state,
+      capabilities: Set(tool.capabilities.map(\.wireValue)),
+      location: "phone",
+      risk: tool.risk.rawValue.lowercased(),
+      reason: systemReason(hostOwnedWorkflow: hostOwnedWorkflow, native: native),
+      requiredPermissions: Set(native?.requiredPermissions.filter(\.required).map(\.id) ?? []),
+      requiredConsents: Set(native?.requiredConsents.filter(\.required).map(\.id) ?? [])
+    )
+  }
+
+  private static func connectorEntry(_ target: AgentCallableTarget) -> AgentRuntimeCapabilityEntry {
+    let state: AgentRuntimeCapabilityState
+    switch target.status {
+    case .available:
+      state = .available
+    case .needsSetup:
+      state = .requiresSetup
+    case .disconnected:
+      state = .unavailable
+    }
+    return AgentRuntimeCapabilityEntry(
+      id: target.id,
+      title: target.title,
+      source: .connector,
+      state: state,
+      capabilities: Set(target.capabilities.map(\.wireValue)),
+      location: target.failureDomain.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? "external"
+        : target.failureDomain,
+      risk: AgentNativeToolRisk.medium.rawValue,
+      reason: target.status.rawValue.lowercased()
+    )
+  }
+
+  private static func systemReason(
+    hostOwnedWorkflow: Bool,
+    native: AgentNativeToolDescriptor?
+  ) -> String {
+    if hostOwnedWorkflow {
+      return "Host-owned workflow is installed"
+    }
+    guard let native else {
+      return "No executable native adapter is registered"
+    }
+    return native.availability.reason
+  }
+}
+
 enum AgentObservationDecision: String, Codable, CaseIterable, Identifiable {
   case actionFailed = "ACTION_FAILED"
   case noChangeRequired = "NO_CHANGE_REQUIRED"
