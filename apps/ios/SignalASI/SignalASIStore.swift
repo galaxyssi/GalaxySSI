@@ -262,6 +262,26 @@ final class SignalASIStore: ObservableObject {
     save()
   }
 
+  @discardableResult
+  func deleteMessage(_ messageId: UUID, contactId: String? = nil) -> Bool {
+    let contactIds = contactId.map { [$0] } ?? Array(messagesByContact.keys)
+    for id in contactIds {
+      guard var messages = messagesByContact[id],
+            let index = messages.firstIndex(where: { $0.id == messageId }) else {
+        continue
+      }
+      messages.remove(at: index)
+      if messages.isEmpty {
+        messagesByContact.removeValue(forKey: id)
+      } else {
+        messagesByContact[id] = messages
+      }
+      save()
+      return true
+    }
+    return false
+  }
+
   func destroyAllPrivateData() {
     let accounts = Set(contacts.flatMap { contact in
       contact.cloudModels.map(\.keychainAccount)

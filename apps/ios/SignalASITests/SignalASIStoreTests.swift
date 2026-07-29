@@ -67,6 +67,32 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.friendRequest(id: request.id)?.readdRequired, true)
   }
 
+  func testDeleteMessageRemovesOnlyTargetMessage() {
+    let store = makeStore()
+    let first = store.appendOutgoing("first", to: "hermes")
+    let second = store.appendOutgoing("second", to: "hermes")
+
+    XCTAssertTrue(store.deleteMessage(first.id, contactId: "hermes"))
+
+    XCTAssertEqual(store.messages(for: "hermes").map(\.content), [
+      "Pair SignalASI Desktop to start a trusted Link conversation.",
+      "second"
+    ])
+    XCTAssertFalse(store.deleteMessage(first.id, contactId: "hermes"))
+    XCTAssertEqual(store.messages(for: "hermes").last?.id, second.id)
+  }
+
+  func testDeleteChatHistoryKeepsContact() {
+    let store = makeStore()
+    store.appendOutgoing("hello", to: "hermes")
+
+    store.deleteMessages(for: "hermes")
+
+    XCTAssertTrue(store.messages(for: "hermes").isEmpty)
+    XCTAssertNotNil(store.contact(id: "hermes"))
+    XCTAssertEqual(store.contact(id: "hermes")?.deleted, false)
+  }
+
   func testDeletingHermesClearsServerLinks() throws {
     let store = makeStore()
     _ = try store.addServerLink(from: makePairingQRCode())
