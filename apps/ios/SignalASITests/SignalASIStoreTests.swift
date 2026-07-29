@@ -320,6 +320,58 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(networkDecision.limit, .network)
   }
 
+  func testHomeAssistantSettingsDecodeAndroidFieldsAndStoreTokenInKeychain() throws {
+    let longURL = "http://homeassistant.local:8123/" + String(repeating: "x", count: 2_200)
+    let longToken = String(repeating: "t", count: 8_400)
+    let settings = try JSONDecoder.signalASI.decode(
+      HomeAssistantSettings.self,
+      from: Data("""
+      {
+        "version": 1,
+        "enabled": true,
+        "base_url": "  \(longURL)//  ",
+        "access_token": "  \(longToken)  ",
+        "default_entity_id": "  light.living_room  "
+      }
+      """.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+
+    XCTAssertTrue(settings.enabled)
+    XCTAssertTrue(settings.credentialsConfigured)
+    XCTAssertTrue(settings.configured)
+    XCTAssertFalse(settings.baseUrl.hasSuffix("/"))
+    XCTAssertEqual(settings.baseUrl.count, HomeAssistantSettings.maximumBaseURLLength)
+    XCTAssertEqual(settings.accessToken.count, HomeAssistantSettings.maximumAccessTokenLength)
+    XCTAssertEqual(settings.defaultEntityId, "light.living_room")
+    XCTAssertEqual(object["version"] as? Int, 1)
+    XCTAssertEqual(object["base_url"] as? String, settings.baseUrl)
+    XCTAssertEqual(object["access_token"] as? String, settings.accessToken)
+
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = " http://homeassistant.local:8123/ "
+      $0.accessToken = " ha-token "
+      $0.defaultEntityId = " light.office "
+    }
+
+    XCTAssertTrue(store.homeAssistantSettings.configured)
+    XCTAssertEqual(store.homeAssistantSettings.baseUrl, "http://homeassistant.local:8123")
+    XCTAssertEqual(store.homeAssistantSettings.accessToken, "ha-token")
+    XCTAssertEqual(store.homeAssistantSettings.defaultEntityId, "light.office")
+    XCTAssertEqual(secrets.string(account: "home_assistant.access_token"), "ha-token")
+
+    store.updateHomeAssistantSettings {
+      $0.accessToken = ""
+    }
+
+    XCTAssertFalse(store.homeAssistantSettings.credentialsConfigured)
+    XCTAssertNil(secrets.string(account: "home_assistant.access_token"))
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
@@ -395,6 +447,12 @@ final class SignalASIStoreTests: XCTestCase {
       $0.executionPaused = true
     }
     store.selectAgentTaskBudgetProfile(.privateMode)
+    store.updateHomeAssistantSettings {
+      $0.enabled = true
+      $0.baseUrl = "http://homeassistant.local:8123"
+      $0.accessToken = "ha-token"
+      $0.defaultEntityId = "light.office"
+    }
 
     store.destroyAllPrivateData()
 
@@ -410,6 +468,8 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.displaySettings, .default)
     XCTAssertEqual(store.agentSafetySettings, .default)
     XCTAssertEqual(store.agentTaskBudget, .default)
+    XCTAssertEqual(store.homeAssistantSettings, .default)
+    XCTAssertNil(secrets.string(account: "home_assistant.access_token"))
   }
 
   func testSelectingCloudModelChangesProviderActiveModel() throws {

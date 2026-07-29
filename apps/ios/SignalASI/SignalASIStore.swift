@@ -109,6 +109,9 @@ final class SignalASIStore: ObservableObject {
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
+  @Published private(set) var homeAssistantSettings: HomeAssistantSettings {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -122,6 +125,7 @@ final class SignalASIStore: ObservableObject {
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
     var agentTaskBudget: AgentTaskBudget
+    var homeAssistantSettings: HomeAssistantSettings
 
     init(
       profile: SignalASIProfile,
@@ -134,7 +138,8 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: LanguagePolicySettings = .default,
       displaySettings: AppDisplaySettings = .default,
       agentSafetySettings: AgentSafetySettings = .default,
-      agentTaskBudget: AgentTaskBudget = .default
+      agentTaskBudget: AgentTaskBudget = .default,
+      homeAssistantSettings: HomeAssistantSettings = .default
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -147,6 +152,7 @@ final class SignalASIStore: ObservableObject {
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
       self.agentTaskBudget = agentTaskBudget
+      self.homeAssistantSettings = homeAssistantSettings
     }
 
     init(from decoder: Decoder) throws {
@@ -162,6 +168,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
       agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
+      homeAssistantSettings = try container.decodeIfPresent(HomeAssistantSettings.self, forKey: .homeAssistantSettings) ?? .default
     }
   }
 
@@ -169,6 +176,7 @@ final class SignalASIStore: ObservableObject {
   private let secrets: SignalASISecretStore
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
+  private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
     self.defaults = defaults
@@ -186,6 +194,13 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      let storedHomeAssistantAccessToken = secrets.string(account: "home_assistant.access_token") ?? ""
+      homeAssistantSettings = HomeAssistantSettings(
+        enabled: state.homeAssistantSettings.enabled,
+        baseUrl: state.homeAssistantSettings.baseUrl,
+        accessToken: storedHomeAssistantAccessToken,
+        defaultEntityId: state.homeAssistantSettings.defaultEntityId
+      )
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -199,6 +214,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      homeAssistantSettings = .default
       save()
     }
   }
@@ -375,6 +391,7 @@ final class SignalASIStore: ObservableObject {
       secrets.delete(account: account)
     }
     secrets.delete(account: identityPrivateKeyAccount)
+    secrets.delete(account: homeAssistantAccessTokenAccount)
     defaults.removeObject(forKey: storageKey)
     resetToFreshState()
     save()
@@ -424,6 +441,12 @@ final class SignalASIStore: ObservableObject {
     mutate(&next)
     next.profile = .custom
     agentTaskBudget = next.normalized
+  }
+
+  func updateHomeAssistantSettings(_ mutate: (inout HomeAssistantSettings) -> Void) {
+    var next = homeAssistantSettings
+    mutate(&next)
+    try? applyHomeAssistantSettings(next)
   }
 
   @discardableResult
@@ -724,6 +747,7 @@ final class SignalASIStore: ObservableObject {
         includesDisplaySettings: true,
         includesAgentSafetySettings: true,
         includesAgentTaskBudget: true,
+        includesHomeAssistantSettings: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
       agentData: SignalASIBackupAgentData(
@@ -733,7 +757,8 @@ final class SignalASIStore: ObservableObject {
         displaySettings: displaySettings,
         agentSafetySettings: agentSafetySettings,
         cloudAPISecrets: cloudSecrets,
-        taskBudget: agentTaskBudget
+        taskBudget: agentTaskBudget,
+        homeAssistantSettings: homeAssistantSettings
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
@@ -765,6 +790,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = payload.agentData.displaySettings
       agentSafetySettings = payload.agentData.agentSafetySettings
       agentTaskBudget = payload.agentData.taskBudget
+      try applyHomeAssistantSettings(payload.agentData.homeAssistantSettings)
     }
     save()
   }
@@ -880,6 +906,7 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    homeAssistantSettings = .default
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -934,6 +961,16 @@ final class SignalASIStore: ObservableObject {
     }
   }
 
+  private func applyHomeAssistantSettings(_ settings: HomeAssistantSettings) throws {
+    let next = settings.normalized
+    if next.accessToken.isEmpty {
+      secrets.delete(account: homeAssistantAccessTokenAccount)
+    } else {
+      try secrets.setString(next.accessToken, account: homeAssistantAccessTokenAccount)
+    }
+    homeAssistantSettings = next
+  }
+
   private func save() {
     let state = PersistedState(
       profile: profile,
@@ -946,7 +983,8 @@ final class SignalASIStore: ObservableObject {
       languagePolicy: languagePolicy,
       displaySettings: displaySettings,
       agentSafetySettings: agentSafetySettings,
-      agentTaskBudget: agentTaskBudget
+      agentTaskBudget: agentTaskBudget,
+      homeAssistantSettings: homeAssistantSettings.withoutAccessToken
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)
