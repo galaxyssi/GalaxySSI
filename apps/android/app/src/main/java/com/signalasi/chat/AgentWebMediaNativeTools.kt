@@ -976,10 +976,18 @@ data class AgentWebMediaServices(
     val mediaTranscoder: AgentMediaTranscoder = AgentUnavailableMediaTranscoder
 )
 
+private data class AgentBrowserSessionState(
+    var currentUrl: String = "",
+    val history: MutableList<String> = mutableListOf()
+)
+
 object AgentWebMediaNativeTools {
     const val WEB_SEARCH = "web.search"
     const val WEB_OPEN = "web.open"
     const val BROWSER_RENDER = "browser.render"
+    const val BROWSER_SESSION_CREATE = "browser.session.create"
+    const val BROWSER_SESSION_NAVIGATE = "browser.session.navigate"
+    const val BROWSER_SESSION_CLOSE = "browser.session.close"
     const val CONTENT_EXTRACT = "content.extract"
     const val HTTP_REQUEST = "http.request"
     const val FILE_DOWNLOAD = "file.download"
@@ -1007,6 +1015,7 @@ object AgentWebMediaNativeTools {
     const val MAX_OCR_BLOCKS = 200
     const val MAX_TOOL_TIMEOUT_MILLIS = 15_000L
     const val MAX_TRANSCODE_TIMEOUT_MILLIS = 15L * 60_000L
+    private const val MAX_BROWSER_HISTORY = 256
 
     private const val VERSION = "1.0.0"
     private const val WEB_EXECUTOR_ID = "signalasi.bounded_https"
@@ -1018,6 +1027,9 @@ object AgentWebMediaNativeTools {
         WEB_SEARCH,
         WEB_OPEN,
         BROWSER_RENDER,
+        BROWSER_SESSION_CREATE,
+        BROWSER_SESSION_NAVIGATE,
+        BROWSER_SESSION_CLOSE,
         CONTENT_EXTRACT,
         HTTP_REQUEST,
         FILE_DOWNLOAD,
@@ -1051,13 +1063,22 @@ object AgentWebMediaNativeTools {
 
     fun createRegistry(
         services: AgentWebMediaServices,
-        clock: AgentNativeClock = AgentNativeClock.SYSTEM
-    ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock).registerAll(definitions(services))
+        clock: AgentNativeClock = AgentNativeClock.SYSTEM,
+        handles: AgentExplicitToolHandleRegistry = AgentExplicitToolHandleRegistry.SHARED
+    ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock).registerAll(
+        definitions(services, handles)
+    )
 
-    fun definitions(services: AgentWebMediaServices): List<AgentNativeToolDefinition> = listOf(
+    fun definitions(
+        services: AgentWebMediaServices,
+        handles: AgentExplicitToolHandleRegistry = AgentExplicitToolHandleRegistry.SHARED
+    ): List<AgentNativeToolDefinition> = listOf(
         webSearchDefinition(services.web),
         webOpenDefinition(services.web, WEB_OPEN, "Open and extract public web page"),
         webOpenDefinition(services.web, BROWSER_RENDER, "Render isolated public page content"),
+        browserSessionCreateDefinition(services.web, handles),
+        browserSessionNavigateDefinition(services.web, handles),
+        browserSessionCloseDefinition(handles),
         contentExtractDefinition(),
         httpRequestDefinition(services.web),
         aliasDefinition(webDownloadDefinition(services.web, services.contentWriter), FILE_DOWNLOAD, "Download file"),
@@ -1149,6 +1170,219 @@ object AgentWebMediaNativeTools {
         executorId = WEB_EXECUTOR_ID,
         provenanceMetadata = webProvenance() + mapOf("cookies" to "none"),
         availabilityProvider = AgentNativeToolAvailabilityProvider { web.availability }
+    )
+
+    private fun browserSessionCreateDefinition(
+        web: AgentBoundedWebService,
+        handles: AgentExplicitToolHandleRegistry
+    ) = AgentNativeToolDefinition(
+        descriptor = webDescriptor(
+            id = BROWSER_SESSION_CREATE,
+            title = "Create isolated browser session",
+            description = "Creates an explicit browser_id scoped to the caller and conversation. An optional public HTTPS page can be opened immediately.",
+            inputSchema = objectSchema(
+                properties = webInputProperties(MAX_FETCH_BYTES)
+            ),
+            outputSchema = browserSessionCreateOutputSchema(),
+            consents = emptyList(),
+            availability = web.availability
+        ),
+        executor = AgentNativeToolExecutor { invocation ->
+            executeBounded {
+                val requestedUrl = invocation.input.string("url", "")
+                val resource = requestedUrl.takeIf(String::isNotBlank)?.let { url ->
+                    web.fetch(
+                        url,
+                        invocation.input.long("max_bytes", MAX_FETCH_BYTES),
+                        invocation.input.timeout(invocation),
+                        invocation.cancellationToken,
+                        invocation::checkpoint
+                    )
+                }
+                val state = AgentBrowserSessionState(
+                    currentUrl = resource?.finalUrl.orEmpty(),
+                    history = resource?.finalUrl?.let { mutableListOf(it) } ?: mutableListOf()
+                )
+                val opened = handles.create(
+                    kind = "browser_session",
+                    resourceId = invocation.context.invocationId,
+                    scope = AgentExplicitToolHandleScope.from(invocation.context),
+                    capabilities = setOf("browser.navigate", "browser.close"),
+                    resource = state,
+                    metadata = mapOf("render_mode" to "isolated_static_dom")
+                )
+                val output = linkedMapOf<String, Any?>(
+                    "browser_id" to opened["handle_id"],
+                    "current_url" to state.currentUrl,
+                    "history_count" to state.history.size,
+                    "expires_at_epoch_ms" to opened["expires_at_epoch_ms"]
+                )
+                resource?.let {
+                    val html = it.body.toString(charset(it.contentType, it.selectedHeaders))
+                    output.putAll(it.commonValue())
+                    output["text"] = extractText(html)
+                    output["html_sha256"] = sha256(it.body)
+                }
+                AgentNativeToolExecutionResult.success(
+                    output = output,
+                    message = "Isolated browser session created",
+                    metadata = mapOf(
+                        "tool_handle_contract" to AGENT_TOOL_HANDLE_CONTRACT,
+                        "cookies" to "none",
+                        "javascript" to false
+                    )
+                )
+            }
+        },
+        executorId = WEB_EXECUTOR_ID,
+        provenanceMetadata = webProvenance() + mapOf(
+            "state_model" to "explicit_browser_id",
+            "cookies" to "none",
+            "javascript" to "false"
+        ),
+        availabilityProvider = AgentNativeToolAvailabilityProvider { web.availability }
+    )
+
+    private fun browserSessionNavigateDefinition(
+        web: AgentBoundedWebService,
+        handles: AgentExplicitToolHandleRegistry
+    ) = AgentNativeToolDefinition(
+        descriptor = webDescriptor(
+            id = BROWSER_SESSION_NAVIGATE,
+            title = "Navigate isolated browser session",
+            description = "Navigates an existing caller-scoped browser_id and returns bounded readable page content.",
+            inputSchema = objectSchema(
+                properties = webInputProperties(MAX_FETCH_BYTES) + (
+                    "browser_id" to AgentNativeJsonSchema.string(
+                        minLength = 16,
+                        maxLength = 240
+                    )
+                ),
+                required = setOf("browser_id", "url")
+            ),
+            outputSchema = browserSessionNavigateOutputSchema(),
+            consents = emptyList(),
+            availability = web.availability
+        ),
+        executor = AgentNativeToolExecutor { invocation ->
+            executeBounded {
+                val browserId = invocation.input.string("browser_id")
+                val resolved = handles.resolve(
+                    handleId = browserId,
+                    kind = "browser_session",
+                    scope = AgentExplicitToolHandleScope.from(invocation.context),
+                    requiredCapability = "browser.navigate"
+                )
+                val state = resolved.resource as? AgentBrowserSessionState
+                    ?: throw AgentExplicitToolHandleException(
+                        "tool_handle_resource_invalid",
+                        "Browser handle state is unavailable",
+                        retryable = true
+                    )
+                val resource = web.fetch(
+                    invocation.input.string("url"),
+                    invocation.input.long("max_bytes", MAX_FETCH_BYTES),
+                    invocation.input.timeout(invocation),
+                    invocation.cancellationToken,
+                    invocation::checkpoint
+                )
+                val historyCount = synchronized(state) {
+                    state.currentUrl = resource.finalUrl
+                    if (state.history.lastOrNull() != resource.finalUrl) {
+                        state.history += resource.finalUrl
+                        while (state.history.size > MAX_BROWSER_HISTORY) {
+                            state.history.removeAt(0)
+                        }
+                    }
+                    state.history.size
+                }
+                val html = resource.body.toString(
+                    charset(resource.contentType, resource.selectedHeaders)
+                )
+                AgentNativeToolExecutionResult.success(
+                    output = resource.commonValue() + mapOf(
+                        "browser_id" to browserId,
+                        "current_url" to resource.finalUrl,
+                        "history_count" to historyCount,
+                        "text" to extractText(html),
+                        "html_sha256" to sha256(resource.body)
+                    ),
+                    message = "Browser session navigated",
+                    metadata = mapOf(
+                        "tool_handle_contract" to AGENT_TOOL_HANDLE_CONTRACT,
+                        "cookies" to "none",
+                        "javascript" to false
+                    )
+                )
+            }
+        },
+        executorId = WEB_EXECUTOR_ID,
+        provenanceMetadata = webProvenance() + mapOf(
+            "state_model" to "explicit_browser_id",
+            "cookies" to "none",
+            "javascript" to "false"
+        ),
+        availabilityProvider = AgentNativeToolAvailabilityProvider { web.availability }
+    )
+
+    private fun browserSessionCloseDefinition(
+        handles: AgentExplicitToolHandleRegistry
+    ) = AgentNativeToolDefinition(
+        descriptor = AgentNativeToolDescriptor(
+            id = BROWSER_SESSION_CLOSE,
+            version = VERSION,
+            title = "Close isolated browser session",
+            description = "Releases a caller-scoped browser_id and its in-memory state.",
+            location = AgentNativeToolLocation.APPLICATION,
+            inputSchema = objectSchema(
+                properties = mapOf(
+                    "browser_id" to AgentNativeJsonSchema.string(
+                        minLength = 16,
+                        maxLength = 240
+                    )
+                ),
+                required = setOf("browser_id")
+            ),
+            outputSchema = objectSchema(
+                properties = mapOf(
+                    "browser_id" to AgentNativeJsonSchema.string(
+                        minLength = 16,
+                        maxLength = 240
+                    ),
+                    "closed" to AgentNativeJsonSchema.boolean()
+                ),
+                required = setOf("browser_id", "closed")
+            ),
+            risk = AgentNativeToolRisk.LOW,
+            capabilities = setOf("browser.session", "tool_handle.explicit"),
+            timeoutMillis = MAX_TOOL_TIMEOUT_MILLIS,
+            idempotency = AgentNativeToolIdempotency.IDEMPOTENT
+        ),
+        executor = AgentNativeToolExecutor { invocation ->
+            executeBounded {
+                val browserId = invocation.input.string("browser_id")
+                handles.resolve(
+                    handleId = browserId,
+                    kind = "browser_session",
+                    scope = AgentExplicitToolHandleScope.from(invocation.context),
+                    requiredCapability = "browser.close"
+                )
+                val closed = handles.release(
+                    browserId,
+                    AgentExplicitToolHandleScope.from(invocation.context)
+                )
+                AgentNativeToolExecutionResult.success(
+                    output = mapOf("browser_id" to browserId, "closed" to closed),
+                    message = "Browser session closed",
+                    metadata = mapOf("tool_handle_contract" to AGENT_TOOL_HANDLE_CONTRACT)
+                )
+            }
+        },
+        executorId = "signalasi.explicit_tool_handles",
+        provenanceMetadata = mapOf(
+            "state_model" to "explicit_browser_id",
+            "persistence" to "process_lifetime"
+        )
     )
 
     private fun webOpenDefinition(web: AgentBoundedWebService, id: String, title: String) = AgentNativeToolDefinition(
@@ -1805,6 +2039,35 @@ object AgentWebMediaNativeTools {
         WEB_COMMON_REQUIRED + setOf("text", "html_sha256", "render_mode")
     )
 
+    private fun browserSessionCreateOutputSchema() = objectSchema(
+        webCommonOutputProperties() + mapOf(
+            "browser_id" to AgentNativeJsonSchema.string(minLength = 16, maxLength = 240),
+            "current_url" to AgentNativeJsonSchema.string(maxLength = 4_096),
+            "history_count" to AgentNativeJsonSchema.integer(0, MAX_BROWSER_HISTORY.toLong()),
+            "expires_at_epoch_ms" to AgentNativeJsonSchema.integer(minimum = 0),
+            "text" to AgentNativeJsonSchema.string(maxLength = 240_000),
+            "html_sha256" to sha256Schema()
+        ),
+        setOf("browser_id", "current_url", "history_count", "expires_at_epoch_ms")
+    )
+
+    private fun browserSessionNavigateOutputSchema() = objectSchema(
+        webCommonOutputProperties() + mapOf(
+            "browser_id" to AgentNativeJsonSchema.string(minLength = 16, maxLength = 240),
+            "current_url" to urlSchema(),
+            "history_count" to AgentNativeJsonSchema.integer(1, MAX_BROWSER_HISTORY.toLong()),
+            "text" to AgentNativeJsonSchema.string(maxLength = 240_000),
+            "html_sha256" to sha256Schema()
+        ),
+        WEB_COMMON_REQUIRED + setOf(
+            "browser_id",
+            "current_url",
+            "history_count",
+            "text",
+            "html_sha256"
+        )
+    )
+
     private fun httpRequestOutputSchema() = objectSchema(
         webCommonOutputProperties() + mapOf(
             "text" to AgentNativeJsonSchema.string(maxLength = MAX_FETCH_BYTES.toInt())
@@ -2133,6 +2396,12 @@ object AgentWebMediaNativeTools {
 
     private fun executeBounded(block: () -> AgentNativeToolExecutionResult): AgentNativeToolExecutionResult = try {
         block()
+    } catch (error: AgentExplicitToolHandleException) {
+        AgentNativeToolExecutionResult.failure(
+            error.code,
+            error.message,
+            error.retryable
+        )
     } catch (error: AgentWebMediaException) {
         AgentNativeToolExecutionResult.failure(error.code, error.message, error.retryable, error.details)
     } catch (error: AgentNativeToolCancelledException) {

@@ -5,6 +5,12 @@ Agent commands. Each connection has a typed transport, protocol policy,
 permission policy, discovered identity, capability snapshot, health state, and
 tool inventory.
 
+Stateful SignalASI callers first open an explicit, scoped `mcp_handle_id` and
+then invoke the connection through that handle. The handle binds owner,
+conversation context, capability, expiry, and revocation while keeping the
+underlying connection identifier private. See
+[Explicit Tool Handles v1](../protocol/Explicit-Tool-Handles-v1.md).
+
 ## Supported transports
 
 ### Local process

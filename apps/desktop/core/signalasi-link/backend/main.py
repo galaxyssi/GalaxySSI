@@ -767,6 +767,21 @@ class DesktopMcpImportCommitReq(DesktopMcpImportPreviewReq):
     selected_ids: list[str] = Field(default_factory=list, max_length=128)
 
 
+class ToolHandleOpenReq(BaseModel):
+    owner_id: str = Field(default="signalasi.desktop.loopback", min_length=1, max_length=240)
+    context_id: str = Field(default="", max_length=240)
+    parent_run_id: str = Field(default="", max_length=240)
+    ttl_seconds: int = Field(default=3_600, ge=1, le=2_592_000)
+
+
+class DesktopMcpHandleInvokeReq(BaseModel):
+    prompt: str = Field(min_length=1, max_length=262_144)
+    owner_id: str = Field(default="signalasi.desktop.loopback", min_length=1, max_length=240)
+    context_id: str = Field(default="", max_length=240)
+    explicit_user_selection: bool = False
+    task_id: str = Field(default="", max_length=240)
+
+
 class DesktopControlSettingsReq(BaseModel):
     enabled: bool | None = None
     require_unlocked: bool | None = None
@@ -1970,6 +1985,145 @@ def api_save_desktop_mcp(req: DesktopMcpReq, request: Request):
         return desktop_mcp_registry().upsert(req.model_dump())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=api_error("desktop_mcp_invalid", str(exc))) from exc
+
+
+def _tool_handle_http_exception(error) -> HTTPException:
+    code = str(getattr(error, "code", "") or "tool_handle_failed")
+    if code in {"tool_handle_not_found"}:
+        status_code = 404
+    elif code in {"tool_handle_expired"}:
+        status_code = 410
+    elif code.endswith("_mismatch") or code == "tool_handle_capability_denied":
+        status_code = 403
+    else:
+        status_code = 400
+    return HTTPException(
+        status_code=status_code,
+        detail=api_error(
+            code,
+            str(error),
+            retryable=bool(getattr(error, "retryable", False)),
+        ),
+    )
+
+
+@app.get("/api/tool-handles")
+def api_tool_handles(
+    request: Request,
+    owner_id: str = "",
+    context_id: str = "",
+    kind: str = "",
+):
+    require_loopback(request)
+    from tool_handle_registry import ToolHandleScope, tool_handle_registry
+
+    scope = (
+        ToolHandleScope(owner_id=owner_id, context_id=context_id)
+        if owner_id
+        else None
+    )
+    try:
+        registry = tool_handle_registry()
+        return {
+            "handles": registry.list(scope=scope, kind=kind),
+            "status": registry.status(),
+        }
+    except Exception as exc:
+        from tool_handle_registry import ToolHandleError
+
+        if isinstance(exc, ToolHandleError):
+            raise _tool_handle_http_exception(exc) from exc
+        raise
+
+
+@app.delete("/api/tool-handles/{handle_id}")
+def api_release_tool_handle(
+    handle_id: str,
+    request: Request,
+    owner_id: str,
+    context_id: str = "",
+):
+    require_loopback(request)
+    from tool_handle_registry import ToolHandleError, ToolHandleScope, tool_handle_registry
+
+    try:
+        released = tool_handle_registry().release(
+            handle_id,
+            scope=ToolHandleScope(owner_id=owner_id, context_id=context_id),
+        )
+        return {"handle_id": handle_id, "released": released}
+    except ToolHandleError as exc:
+        raise _tool_handle_http_exception(exc) from exc
+
+
+@app.post("/api/desktop-mcp/{connection_id}/handles")
+def api_open_desktop_mcp_handle(
+    connection_id: str,
+    req: ToolHandleOpenReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_mcp import desktop_mcp_registry
+    from tool_handle_registry import ToolHandleError
+
+    try:
+        return desktop_mcp_registry().open_handle(
+            connection_id,
+            owner_id=req.owner_id,
+            context_id=req.context_id,
+            parent_run_id=req.parent_run_id,
+            ttl_seconds=req.ttl_seconds,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=api_error("desktop_mcp_not_found"),
+        ) from exc
+    except ToolHandleError as exc:
+        raise _tool_handle_http_exception(exc) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=api_error("desktop_mcp_unavailable", str(exc)),
+        ) from exc
+
+
+@app.post("/api/desktop-mcp/handles/{handle_id}/invoke")
+def api_invoke_desktop_mcp_handle(
+    handle_id: str,
+    req: DesktopMcpHandleInvokeReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_mcp import desktop_mcp_registry
+    from mcp_security import McpPermissionDenied
+    from tool_handle_registry import ToolHandleError
+
+    try:
+        return desktop_mcp_registry().invoke_handle(
+            handle_id,
+            req.prompt,
+            owner_id=req.owner_id,
+            context_id=req.context_id,
+            explicit_user_selection=req.explicit_user_selection,
+            audit_context={
+                "caller_id": req.owner_id,
+                "task_id": req.task_id,
+                "conversation_id": req.context_id,
+            },
+        )
+    except ToolHandleError as exc:
+        raise _tool_handle_http_exception(exc) from exc
+    except McpPermissionDenied as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=api_error("desktop_mcp_permission_denied", str(exc)),
+        ) from exc
+    except (KeyError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=api_error("desktop_mcp_invoke_failed", str(exc)),
+        ) from exc
 
 
 @app.get("/api/desktop-mcp-import/sources")

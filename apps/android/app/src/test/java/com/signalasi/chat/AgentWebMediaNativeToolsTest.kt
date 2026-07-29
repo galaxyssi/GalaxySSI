@@ -187,6 +187,68 @@ class AgentWebMediaNativeToolsTest {
     }
 
     @Test
+    fun browserSessionUsesExplicitConversationScopedHandle() {
+        val clock = MutableClock(1_000L)
+        val handles = AgentExplicitToolHandleRegistry(clock)
+        val registry = registry(
+            FakeTransport(
+                AgentWebTransportResponse(
+                    200,
+                    mapOf("Content-Type" to listOf("text/html; charset=utf-8")),
+                    "<h1>Handled page</h1>".toByteArray()
+                )
+            ),
+            FakeResolver(
+                "public.example.test" to listOf(publicAddress(93, 184, 216, 34))
+            ),
+            clock,
+            handles = handles
+        )
+        val context = AgentNativeToolInvocationContext(
+            conversationId = "conversation-1",
+            callerId = "signalasi.mobile_agent",
+            grantedPermissions = setOf(AgentWebMediaNativeTools.INTERNET_PERMISSION)
+        )
+
+        val opened = registry.invoke(
+            AgentWebMediaNativeTools.BROWSER_SESSION_CREATE,
+            emptyMap(),
+            context
+        )
+        assertTrue(opened.toJson(), opened.isSuccess)
+        val browserId = opened.output["browser_id"].toString()
+        assertTrue(browserId.startsWith("sth_browsers_"))
+
+        val navigated = registry.invoke(
+            AgentWebMediaNativeTools.BROWSER_SESSION_NAVIGATE,
+            mapOf(
+                "browser_id" to browserId,
+                "url" to "https://public.example.test/page"
+            ),
+            context
+        )
+        assertTrue(navigated.toJson(), navigated.isSuccess)
+        assertEquals("Handled page", navigated.output["text"])
+        assertEquals(1, navigated.output["history_count"])
+
+        val crossConversation = registry.invoke(
+            AgentWebMediaNativeTools.BROWSER_SESSION_CLOSE,
+            mapOf("browser_id" to browserId),
+            context.copy(conversationId = "conversation-2")
+        )
+        assertFalse(crossConversation.isSuccess)
+        assertEquals("tool_handle_context_mismatch", crossConversation.error?.code)
+
+        val closed = registry.invoke(
+            AgentWebMediaNativeTools.BROWSER_SESSION_CLOSE,
+            mapOf("browser_id" to browserId),
+            context
+        )
+        assertTrue(closed.toJson(), closed.isSuccess)
+        assertEquals(true, closed.output["closed"])
+    }
+
+    @Test
     fun fetchFollowsRevalidatedRedirectAndReturnsTimestampedSourceProvenance() {
         val clock = MutableClock(1_000L)
         val transport = FakeTransport(
@@ -471,7 +533,8 @@ class AgentWebMediaNativeToolsTest {
         ocr: AgentContentOcr = FakeOcr(),
         inspector: AgentMediaInspector = FakeInspector(),
         playback: AgentMediaPlayback = FakePlayback(),
-        transcoder: AgentMediaTranscoder = AgentUnavailableMediaTranscoder
+        transcoder: AgentMediaTranscoder = AgentUnavailableMediaTranscoder,
+        handles: AgentExplicitToolHandleRegistry = AgentExplicitToolHandleRegistry(clock)
     ): AgentNativeToolRegistry {
         val web = AgentBoundedWebService(
             transport,
@@ -484,7 +547,8 @@ class AgentWebMediaNativeToolsTest {
         )
         return AgentWebMediaNativeTools.createRegistry(
             AgentWebMediaServices(web, writer, ocr, inspector, playback, transcoder),
-            clock
+            clock,
+            handles
         )
     }
 

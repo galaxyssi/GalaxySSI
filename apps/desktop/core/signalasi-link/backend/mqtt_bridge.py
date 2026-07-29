@@ -4980,12 +4980,14 @@ def capability_manifest(client_route_id: str = "") -> dict:
     from desktop_native_tools import desktop_native_tool_registry
     from desktop_control import desktop_control_manager
     from provider_profiles import routable_model_profiles
+    from tool_handle_registry import tool_handle_registry
 
     diagnostics = connector_diagnostics()
     paired_client = get_client(client_route_id) if client_route_id else None
     access = client_grant(paired_client)
     full_executor = has_full_executor(paired_client)
     control_status = desktop_control_manager().status(client_route_id)
+    handle_status = tool_handle_registry().status()
     native_manifest = desktop_native_tool_registry().manifest()
     provider_profiles = diagnostics.get("provider_profiles") or {
         "schema_version": 1,
@@ -5039,6 +5041,14 @@ def capability_manifest(client_route_id: str = "") -> dict:
             ],
             "authorizations": list(control_status.get("authorizations") or []),
         },
+        "tool_handles": {
+            "contract": handle_status.get("contract"),
+            "supported_kinds": [
+                "desktop_session",
+                "mcp_connection",
+                "browser_session",
+            ],
+        },
         "features": [
             "tasks",
             "task_events",
@@ -5055,6 +5065,10 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "desktop_control_authorization_v1",
             "desktop_control_screenshot_v1",
             "desktop_control_input_v1",
+            "explicit_tool_handles_v1",
+            "desktop_session_handles_v1",
+            "mcp_connection_handles_v1",
+            "browser_session_handles_v1",
             "pairing_access_profiles_v1",
             "mqtt_fragmentation_v1",
             "mqtt_fragment_integrity_sha256",

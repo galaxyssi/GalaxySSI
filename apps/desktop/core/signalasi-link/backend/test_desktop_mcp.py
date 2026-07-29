@@ -12,6 +12,7 @@ from pathlib import Path
 
 from desktop_mcp import DesktopMcpRegistry
 from mcp_security import McpAuditStore, McpPermissionDenied
+from tool_handle_registry import ToolHandleError, ToolHandleRegistry
 
 
 FAKE_SERVER = r'''
@@ -180,6 +181,94 @@ class DesktopMcpRegistryTest(unittest.TestCase):
             self.assertEqual(len(audit), 1)
             self.assertEqual(audit[0]["status"], "succeeded")
             self.assertEqual(audit[0]["task_id"], "task-1")
+
+    def test_explicit_handle_is_scoped_and_threads_through_live_events(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            server = root / "fake_mcp.py"
+            server.write_text(textwrap.dedent(FAKE_SERVER), encoding="utf-8")
+            handles = ToolHandleRegistry()
+            registry = DesktopMcpRegistry(
+                root / "mcp.json",
+                handle_registry=handles,
+            )
+            registry.upsert({
+                "id": "handled",
+                "name": "Handled MCP",
+                "command": f'"{sys.executable}" "{server}"',
+                "default_tool": "get_status",
+                "permission_mode": "read_only",
+            })
+
+            opened = registry.open_handle(
+                "handled",
+                owner_id="signalasi.desktop.agent_loop",
+                context_id="conversation-1",
+                parent_run_id="task-1",
+            )
+            self.assertTrue(opened["handle_id"].startswith("sth_mcpconne_"))
+            self.assertNotIn("resource_id", opened)
+
+            events: list[dict] = []
+            result = registry.invoke_handle(
+                opened["handle_id"],
+                "status",
+                owner_id="signalasi.desktop.agent_loop",
+                context_id="conversation-1",
+                audit_context={"task_id": "task-1"},
+                tool_call_callback=events.append,
+            )
+            self.assertEqual("MCP_OK:status", result["result"])
+            self.assertEqual(opened["handle_id"], result["mcp_handle_id"])
+            self.assertTrue(events)
+            self.assertTrue(
+                all(
+                    event["mcp_handle_id"] == opened["handle_id"]
+                    for event in events
+                )
+            )
+
+            with self.assertRaises(ToolHandleError) as raised:
+                registry.invoke_handle(
+                    opened["handle_id"],
+                    "status",
+                    owner_id="another-owner",
+                    context_id="conversation-1",
+                )
+            self.assertEqual("tool_handle_owner_mismatch", raised.exception.code)
+
+    def test_connection_change_and_delete_revoke_explicit_handles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            handles = ToolHandleRegistry()
+            registry = DesktopMcpRegistry(
+                root / "mcp.json",
+                handle_registry=handles,
+            )
+            original = {
+                "id": "revoked",
+                "name": "Revoked MCP",
+                "command": "python original.py",
+            }
+            registry.upsert(original)
+            first = registry.open_handle("revoked", owner_id="owner")
+
+            registry.upsert({**original, "command": "python replacement.py"})
+            with self.assertRaises(ToolHandleError):
+                registry.invoke_handle(
+                    first["handle_id"],
+                    "status",
+                    owner_id="owner",
+                )
+
+            second = registry.open_handle("revoked", owner_id="owner")
+            self.assertTrue(registry.delete("revoked"))
+            with self.assertRaises(ToolHandleError):
+                registry.invoke_handle(
+                    second["handle_id"],
+                    "status",
+                    owner_id="owner",
+                )
 
     def test_read_only_and_high_risk_tools_follow_connection_policy(self):
         with tempfile.TemporaryDirectory() as directory:
