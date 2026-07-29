@@ -934,6 +934,16 @@ struct SettingsView: View {
               .foregroundColor(.orange)
           }
         }
+        Section("Agent Task Budget") {
+          NavigationLink(destination: AgentTaskBudgetSettingsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Task Budget")
+              Text("\(store.agentTaskBudget.profile.displayName) / \(store.agentTaskBudget.costLimitLabel) / \(store.agentTaskBudget.networkPolicy.displayName)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section("Cloud Models") {
           ForEach(store.cloudModelContacts) { contact in
             NavigationLink(destination: CloudModelProviderDetailView(contactId: contact.id)) {
@@ -1173,6 +1183,223 @@ struct AgentSafetySettingsView: View {
   }
 }
 
+struct AgentTaskBudgetSettingsView: View {
+  @EnvironmentObject private var store: SignalASIStore
+
+  var body: some View {
+    Form {
+      Section("Budget Profile") {
+        Picker("Profile", selection: profileBinding) {
+          ForEach(AgentTaskBudgetProfile.allCases) { profile in
+            Text(profile.displayName).tag(profile)
+          }
+        }
+        Text(store.agentTaskBudget.profile.detail)
+          .font(.caption)
+          .foregroundColor(.secondary)
+      }
+      Section("Per-Task Limits") {
+        budgetTextField(
+          "Active Minutes",
+          text: activeMinutesBinding,
+          detail: "0 for unlimited. Waiting for approval does not count.",
+          keyboard: .decimalPad
+        )
+        budgetTextField(
+          "Reported Cost USD",
+          text: costDollarsBinding,
+          detail: "0 for unlimited paid model usage.",
+          keyboard: .decimalPad
+        )
+        budgetTextField(
+          "Input Tokens",
+          text: inputTokensBinding,
+          detail: "Maximum context and prompt tokens."
+        )
+        budgetTextField(
+          "Output Tokens",
+          text: outputTokensBinding,
+          detail: "Maximum generated tokens across attempts."
+        )
+        budgetTextField(
+          "Network MiB",
+          text: networkMibBinding,
+          detail: "Maximum encrypted payload, attachment, and provider traffic."
+        )
+        budgetTextField(
+          "Minimum Battery",
+          text: batteryPercentBinding,
+          detail: "Pause new work below this percentage unless charging."
+        )
+        budgetTextField(
+          "Working Memory MiB",
+          text: memoryMibBinding,
+          detail: "0 lets iOS manage the working set."
+        )
+      }
+      Section("Resource Access") {
+        Picker("Network Policy", selection: networkPolicyBinding) {
+          ForEach(AgentTaskNetworkPolicy.allCases) { policy in
+            Text(policy.displayName).tag(policy)
+          }
+        }
+        Toggle("Cloud Resources", isOn: boolBinding(\.allowCloud))
+        Toggle("Paid Providers", isOn: boolBinding(\.allowPaidProviders))
+      }
+    }
+    .navigationTitle("Task Budget")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private var profileBinding: Binding<AgentTaskBudgetProfile> {
+    Binding(
+      get: { store.agentTaskBudget.profile },
+      set: { store.selectAgentTaskBudgetProfile($0) }
+    )
+  }
+
+  private var networkPolicyBinding: Binding<AgentTaskNetworkPolicy> {
+    Binding(
+      get: { store.agentTaskBudget.networkPolicy },
+      set: { value in store.updateAgentTaskBudget { $0.networkPolicy = value } }
+    )
+  }
+
+  private func boolBinding(_ keyPath: WritableKeyPath<AgentTaskBudget, Bool>) -> Binding<Bool> {
+    Binding(
+      get: { store.agentTaskBudget[keyPath: keyPath] },
+      set: { value in store.updateAgentTaskBudget { $0[keyPath: keyPath] = value } }
+    )
+  }
+
+  private var activeMinutesBinding: Binding<String> {
+    Binding(
+      get: {
+        let seconds = store.agentTaskBudget.maxElapsedSeconds
+        guard seconds > 0 else { return "0" }
+        return Self.decimalString(Double(seconds) / 60.0, maximumFractionDigits: seconds % 60 == 0 ? 0 : 2)
+      },
+      set: { raw in
+        guard let value = Self.parseDouble(raw), value >= 0 else { return }
+        store.updateAgentTaskBudget { $0.maxElapsedSeconds = Int64(value * 60.0) }
+      }
+    )
+  }
+
+  private var costDollarsBinding: Binding<String> {
+    Binding(
+      get: {
+        let micros = store.agentTaskBudget.maxCostMicros
+        guard micros > 0 else { return "0" }
+        return Self.decimalString(Double(micros) / 1_000_000.0, maximumFractionDigits: 6)
+      },
+      set: { raw in
+        guard let value = Self.parseDouble(raw), value >= 0 else { return }
+        store.updateAgentTaskBudget { $0.maxCostMicros = Int64(value * 1_000_000.0) }
+      }
+    )
+  }
+
+  private var inputTokensBinding: Binding<String> {
+    int64Binding(\.maxInputTokens)
+  }
+
+  private var outputTokensBinding: Binding<String> {
+    int64Binding(\.maxOutputTokens)
+  }
+
+  private var networkMibBinding: Binding<String> {
+    mibBinding(\.maxNetworkBytes)
+  }
+
+  private var memoryMibBinding: Binding<String> {
+    mibBinding(\.maxMemoryBytes)
+  }
+
+  private var batteryPercentBinding: Binding<String> {
+    Binding(
+      get: { String(store.agentTaskBudget.minimumBatteryPercent) },
+      set: { raw in
+        guard let value = Self.parseInt(raw) else { return }
+        store.updateAgentTaskBudget { $0.minimumBatteryPercent = value }
+      }
+    )
+  }
+
+  private func int64Binding(_ keyPath: WritableKeyPath<AgentTaskBudget, Int64>) -> Binding<String> {
+    Binding(
+      get: { String(store.agentTaskBudget[keyPath: keyPath]) },
+      set: { raw in
+        guard let value = Self.parseInt64(raw) else { return }
+        store.updateAgentTaskBudget { $0[keyPath: keyPath] = value }
+      }
+    )
+  }
+
+  private func mibBinding(_ keyPath: WritableKeyPath<AgentTaskBudget, Int64>) -> Binding<String> {
+    Binding(
+      get: {
+        let bytes = store.agentTaskBudget[keyPath: keyPath]
+        return bytes <= 0 ? "0" : String(bytes / AgentTaskBudget.mib)
+      },
+      set: { raw in
+        guard let value = Self.parseInt64(raw) else { return }
+        store.updateAgentTaskBudget {
+          $0[keyPath: keyPath] = value > Int64.max / AgentTaskBudget.mib ? Int64.max : value * AgentTaskBudget.mib
+        }
+      }
+    )
+  }
+
+  private func budgetTextField(
+    _ title: String,
+    text: Binding<String>,
+    detail: String,
+    keyboard: UIKeyboardType = .numberPad
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      TextField(title, text: text)
+        .keyboardType(keyboard)
+      Text(detail)
+        .font(.caption)
+        .foregroundColor(.secondary)
+    }
+  }
+
+  private static func parseDouble(_ raw: String) -> Double? {
+    let value = raw
+      .replacingOccurrences(of: ",", with: "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : Double(value)
+  }
+
+  private static func parseInt64(_ raw: String) -> Int64? {
+    let value = raw
+      .replacingOccurrences(of: ",", with: "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return value.isEmpty ? nil : Int64(value)
+  }
+
+  private static func parseInt(_ raw: String) -> Int? {
+    parseInt64(raw).map(Int.init)
+  }
+
+  private static func decimalString(_ value: Double, maximumFractionDigits: Int) -> String {
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.minimumFractionDigits = 0
+    formatter.maximumFractionDigits = maximumFractionDigits
+    formatter.numberStyle = .decimal
+    return formatter.string(from: NSNumber(value: value)) ?? String(value)
+  }
+}
+
+private extension AgentTaskBudget {
+  var costLimitLabel: String {
+    maxCostMicros <= 0 ? "Unlimited" : String(format: "$%.2f", Double(maxCostMicros) / 1_000_000.0)
+  }
+}
+
 struct ResetPrivateDataView: View {
   @Environment(\.dismiss) private var dismiss
   @State private var confirmation = ""
@@ -1182,7 +1409,7 @@ struct ResetPrivateDataView: View {
     NavigationView {
       Form {
         Section("Reset") {
-          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, and saved model keys on this device.")
+          Text("This clears your identity, contacts, chats, pairing links, voice settings, agent safety settings, task budget, and saved model keys on this device.")
             .foregroundColor(.secondary)
           TextField("RESET", text: $confirmation)
             .textInputAutocapitalization(.characters)

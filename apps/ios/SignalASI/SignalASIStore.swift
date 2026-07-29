@@ -106,6 +106,9 @@ final class SignalASIStore: ObservableObject {
   @Published var agentSafetySettings: AgentSafetySettings {
     didSet { save() }
   }
+  @Published var agentTaskBudget: AgentTaskBudget {
+    didSet { save() }
+  }
 
   private struct PersistedState: Codable {
     var profile: SignalASIProfile
@@ -118,6 +121,7 @@ final class SignalASIStore: ObservableObject {
     var languagePolicy: LanguagePolicySettings
     var displaySettings: AppDisplaySettings
     var agentSafetySettings: AgentSafetySettings
+    var agentTaskBudget: AgentTaskBudget
 
     init(
       profile: SignalASIProfile,
@@ -129,7 +133,8 @@ final class SignalASIStore: ObservableObject {
       voiceSettings: VoiceSettings,
       languagePolicy: LanguagePolicySettings = .default,
       displaySettings: AppDisplaySettings = .default,
-      agentSafetySettings: AgentSafetySettings = .default
+      agentSafetySettings: AgentSafetySettings = .default,
+      agentTaskBudget: AgentTaskBudget = .default
     ) {
       self.profile = profile
       self.contacts = contacts
@@ -141,6 +146,7 @@ final class SignalASIStore: ObservableObject {
       self.languagePolicy = languagePolicy
       self.displaySettings = displaySettings
       self.agentSafetySettings = agentSafetySettings
+      self.agentTaskBudget = agentTaskBudget
     }
 
     init(from decoder: Decoder) throws {
@@ -155,6 +161,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
       displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default
       agentSafetySettings = try container.decodeIfPresent(AgentSafetySettings.self, forKey: .agentSafetySettings) ?? .default
+      agentTaskBudget = try container.decodeIfPresent(AgentTaskBudget.self, forKey: .agentTaskBudget) ?? .default
     }
   }
 
@@ -178,6 +185,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = state.languagePolicy
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
+      agentTaskBudget = state.agentTaskBudget
     } else {
       let generatedProfile = SignalASIStore.makeProfile(secrets: secrets, account: identityPrivateKeyAccount)
       profile = generatedProfile
@@ -190,6 +198,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = .default
       displaySettings = .default
       agentSafetySettings = .default
+      agentTaskBudget = .default
       save()
     }
   }
@@ -404,6 +413,17 @@ final class SignalASIStore: ObservableObject {
     var next = agentSafetySettings
     mutate(&next)
     agentSafetySettings = next
+  }
+
+  func selectAgentTaskBudgetProfile(_ profile: AgentTaskBudgetProfile) {
+    agentTaskBudget = AgentTaskBudget.forProfile(profile)
+  }
+
+  func updateAgentTaskBudget(_ mutate: (inout AgentTaskBudget) -> Void) {
+    var next = agentTaskBudget
+    mutate(&next)
+    next.profile = .custom
+    agentTaskBudget = next.normalized
   }
 
   @discardableResult
@@ -703,6 +723,7 @@ final class SignalASIStore: ObservableObject {
         includesVoiceSettings: true,
         includesDisplaySettings: true,
         includesAgentSafetySettings: true,
+        includesAgentTaskBudget: true,
         includesCloudAPISecrets: !cloudSecrets.isEmpty
       ),
       agentData: SignalASIBackupAgentData(
@@ -711,7 +732,8 @@ final class SignalASIStore: ObservableObject {
         languagePolicy: languagePolicy,
         displaySettings: displaySettings,
         agentSafetySettings: agentSafetySettings,
-        cloudAPISecrets: cloudSecrets
+        cloudAPISecrets: cloudSecrets,
+        taskBudget: agentTaskBudget
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
@@ -742,6 +764,7 @@ final class SignalASIStore: ObservableObject {
       languagePolicy = payload.agentData.languagePolicy
       displaySettings = payload.agentData.displaySettings
       agentSafetySettings = payload.agentData.agentSafetySettings
+      agentTaskBudget = payload.agentData.taskBudget
     }
     save()
   }
@@ -856,6 +879,7 @@ final class SignalASIStore: ObservableObject {
     languagePolicy = .default
     displaySettings = .default
     agentSafetySettings = .default
+    agentTaskBudget = .default
   }
 
   private func upsert(_ contact: SignalASIContact) {
@@ -921,7 +945,8 @@ final class SignalASIStore: ObservableObject {
       voiceSettings: voiceSettings,
       languagePolicy: languagePolicy,
       displaySettings: displaySettings,
-      agentSafetySettings: agentSafetySettings
+      agentSafetySettings: agentSafetySettings,
+      agentTaskBudget: agentTaskBudget
     )
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)
