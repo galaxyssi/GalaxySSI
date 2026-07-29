@@ -78,6 +78,18 @@ final class SignalASIBackupTests: XCTestCase {
       $0.networkPolicy = .offlineOnly
       $0.allowPaidProviders = false
     }
+    store.upsertCustomDeviceConnector(
+      CustomDeviceConnector(
+        id: "custom-device-office",
+        name: "Office Light",
+        transport: .mqtt,
+        endpoint: "mqtt://broker.local",
+        commandTarget: "topic/light/office",
+        username: "user",
+        authToken: "device-token",
+        risk: .high
+      )
+    )
     store.updateHomeAssistantSettings {
       $0.enabled = true
       $0.baseUrl = "http://homeassistant.local:8123/"
@@ -110,6 +122,7 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertTrue(payload.privacyManifest.includesDisplaySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentSafetySettings)
     XCTAssertTrue(payload.privacyManifest.includesAgentTaskBudget)
+    XCTAssertTrue(payload.privacyManifest.includesCustomDeviceConnectors)
     XCTAssertTrue(payload.privacyManifest.includesHomeAssistantSettings)
     XCTAssertTrue(payload.privacyManifest.includesModelPlannerSettings)
     let restored = makeStore()
@@ -130,6 +143,11 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.agentTaskBudget.maxInputTokens, 42_000)
     XCTAssertEqual(restored.agentTaskBudget.networkPolicy, .offlineOnly)
     XCTAssertFalse(restored.agentTaskBudget.allowPaidProviders)
+    XCTAssertEqual(restored.customDeviceConnectors.count, 1)
+    XCTAssertEqual(restored.customDeviceConnectors[0].id, "custom-device-office")
+    XCTAssertEqual(restored.customDeviceConnectors[0].transport, .mqtt)
+    XCTAssertEqual(restored.customDeviceConnectors[0].authToken, "device-token")
+    XCTAssertEqual(restored.customDeviceConnectors[0].risk, .high)
     XCTAssertTrue(restored.homeAssistantSettings.configured)
     XCTAssertEqual(restored.homeAssistantSettings.baseUrl, "http://homeassistant.local:8123")
     XCTAssertEqual(restored.homeAssistantSettings.accessToken, "ha-token")
