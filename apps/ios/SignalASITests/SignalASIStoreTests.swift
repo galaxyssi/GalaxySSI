@@ -15,6 +15,23 @@ private final class TestAgentActionExecutor: AgentActionExecutor {
   }
 }
 
+private final class FakeMcpLocalRuntimeExecutor: AgentMcpLocalRuntimeExecuting {
+  var requests: [AgentMcpLocalRuntimeExecutionRequest] = []
+  private var responses: [AgentMcpLocalRuntimeExecutionResponse]
+
+  init(_ responses: [AgentMcpLocalRuntimeExecutionResponse]) {
+    self.responses = responses
+  }
+
+  func execute(_ request: AgentMcpLocalRuntimeExecutionRequest) throws -> AgentMcpLocalRuntimeExecutionResponse {
+    requests.append(request)
+    guard !responses.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("No fake MCP runtime response is queued")
+    }
+    return responses.removeFirst()
+  }
+}
+
 private extension AgentRuntimePackCatalogEntry {
   func with(
     version: String? = nil,
@@ -1984,6 +2001,98 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: requestFile.path))
     repository.delete("example.local_mcp")
     XCTAssertNil(repository.get("example.local_mcp"))
+  }
+
+  func testAgentMcpLocalRuntimeClientListsToolsAndRendersSecretEnvironment() throws {
+    let root = try temporaryDirectory("mcp-local-runtime-list")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpLocalStdioPackageManifest()),
+      ("runtime/server.py", "print('server')")
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let installed = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    _ = try registry.beginAuthentication(installed.id)
+    let authenticated = try registry.submitAuthenticationStep(installed.id, values: ["access_token": "secret-token"])
+    let executor = FakeMcpLocalRuntimeExecutor([
+      AgentMcpLocalRuntimeExecutionResponse(
+        stdout: """
+        bridge booted
+        __SIGNALASI_MCP_RESULT__{"ok":true,"result":{"tools":[{"name":"device.read","title":"Read device","description":"Reads state","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}}
+        """,
+        stderr: "",
+        exitCode: 0
+      )
+    ])
+    let client = AgentMcpLocalRuntimeClient(
+      registry: registry,
+      packageRepository: repository,
+      executor: executor,
+      nowMillis: { 10_000 }
+    )
+
+    let tools = try client.listTools(connection: authenticated)
+    let request = try XCTUnwrap(executor.requests.first)
+    let workspace = root
+      .appendingPathComponent("agent-native-workspaces", isDirectory: true)
+      .appendingPathComponent(request.workspaceId, isDirectory: true)
+    let requestFile = relativeFile(try XCTUnwrap(request.arguments.first), under: workspace)
+
+    XCTAssertEqual(tools.map(\.name), ["device.read"])
+    XCTAssertEqual(tools.first?.title, "Read device")
+    XCTAssertEqual(tools.first?.inputSchema["type"], .string("object"))
+    XCTAssertEqual(tools.first?.annotations?["readOnlyHint"], .bool(true))
+    XCTAssertEqual(request.language, .python)
+    XCTAssertTrue(request.source.contains("SIGNALASI_MCP_SANDBOX"))
+    XCTAssertTrue(request.arguments.first?.hasPrefix(".signalasi-mcp/request-") == true)
+    XCTAssertEqual(request.secretEnvironment["ACCESS_TOKEN"], "secret-token")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: requestFile.path))
+  }
+
+  func testAgentMcpLocalRuntimeClientCallsToolAndMapsServerErrorResult() throws {
+    let root = try temporaryDirectory("mcp-local-runtime-call")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpLocalStdioPackageManifest(authentication: #"[{"method":"none"}]"#)),
+      ("runtime/server.py", "print('server')")
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let connection = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    let executor = FakeMcpLocalRuntimeExecutor([
+      AgentMcpLocalRuntimeExecutionResponse(
+        stdout: #"__SIGNALASI_MCP_RESULT__{"ok":true,"result":{"content":[{"type":"text","text":"done"}],"structuredContent":{"ok":true}}}"#,
+        stderr: "",
+        exitCode: 0
+      ),
+      AgentMcpLocalRuntimeExecutionResponse(
+        stdout: #"__SIGNALASI_MCP_RESULT__{"ok":true,"result":{"isError":true,"content":[{"type":"text","text":"denied"}]}}"#,
+        stderr: "",
+        exitCode: 0
+      )
+    ])
+    let client = AgentMcpLocalRuntimeClient(
+      registry: registry,
+      packageRepository: repository,
+      executor: executor,
+      nowMillis: { 10_000 }
+    )
+
+    let success = try client.callTool(connection: connection, toolName: "device.read", arguments: ["enabled": .bool(true)])
+    let failure = try client.callTool(connection: connection, toolName: "device.write", arguments: [:])
+
+    XCTAssertTrue(success.isSuccess)
+    XCTAssertEqual(success.message, "done")
+    XCTAssertEqual(success.output["structured_content"]?.objectValue?["ok"], .bool(true))
+    XCTAssertEqual(success.metadata["transport"], .string("local_stdio"))
+    XCTAssertFalse(failure.isSuccess)
+    XCTAssertEqual(failure.error?.code, "mcp_tool_error")
+    XCTAssertEqual(failure.message, "denied")
+    XCTAssertEqual(executor.requests.map(\.requestId).count, 2)
+    XCTAssertEqual(executor.requests[0].workspaceId, executor.requests[1].workspaceId)
   }
 
   func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
