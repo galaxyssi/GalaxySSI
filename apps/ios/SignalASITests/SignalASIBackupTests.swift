@@ -52,6 +52,8 @@ final class SignalASIBackupTests: XCTestCase {
     }
     _ = try store.addServerLink(from: pairingQRCode())
     store.markServerPaired(desktopId: "desktop-test")
+    store.appendIncoming("desktop hello", from: "hermes")
+    store.markContactRead("hermes", at: Date(timeIntervalSince1970: 2_000_000_000))
     store.appendOutgoing("hello desktop", to: "hermes", status: .sent)
 
     let encrypted = try SignalASIBackupManager.exportBackup(
@@ -70,6 +72,7 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.serverLinks.first?.desktopId, "desktop-test")
     XCTAssertEqual(restored.messages(for: "hermes").last?.content, "hello desktop")
+    XCTAssertEqual(restored.conversationSummary(for: "hermes").unreadCount, 0)
     let cloudContact = try XCTUnwrap(restored.contact(id: "cloud:openai"))
     XCTAssertEqual(cloudContact.cloudModels.count, 1)
     XCTAssertEqual(restored.apiKey(for: cloudContact.cloudModels[0]), "sk-test")

@@ -77,12 +77,22 @@ final class InMemorySecretStore: SignalASISecretStore {
   }
 }
 
+struct ContactConversationSummary: Equatable {
+  var lastMessage: ChatMessage?
+  var unreadCount: Int
+
+  var hasUnreadMessages: Bool {
+    unreadCount > 0
+  }
+}
+
 @MainActor
 final class SignalASIStore: ObservableObject {
   @Published private(set) var profile: SignalASIProfile
   @Published private(set) var contacts: [SignalASIContact]
   @Published private(set) var friendRequests: [SignalASIFriendRequest]
   @Published private(set) var messagesByContact: [String: [ChatMessage]]
+  @Published private(set) var readAtByContact: [String: Date]
   @Published private(set) var serverLinks: [ServerLink]
   @Published var voiceSettings: VoiceSettings {
     didSet { save() }
@@ -93,6 +103,7 @@ final class SignalASIStore: ObservableObject {
     var contacts: [SignalASIContact]
     var friendRequests: [SignalASIFriendRequest]
     var messagesByContact: [String: [ChatMessage]]
+    var readAtByContact: [String: Date]
     var serverLinks: [ServerLink]
     var voiceSettings: VoiceSettings
 
@@ -101,6 +112,7 @@ final class SignalASIStore: ObservableObject {
       contacts: [SignalASIContact],
       friendRequests: [SignalASIFriendRequest],
       messagesByContact: [String: [ChatMessage]],
+      readAtByContact: [String: Date] = [:],
       serverLinks: [ServerLink],
       voiceSettings: VoiceSettings
     ) {
@@ -108,6 +120,7 @@ final class SignalASIStore: ObservableObject {
       self.contacts = contacts
       self.friendRequests = friendRequests
       self.messagesByContact = messagesByContact
+      self.readAtByContact = readAtByContact
       self.serverLinks = serverLinks
       self.voiceSettings = voiceSettings
     }
@@ -118,6 +131,7 @@ final class SignalASIStore: ObservableObject {
       contacts = try container.decode([SignalASIContact].self, forKey: .contacts)
       friendRequests = try container.decodeIfPresent([SignalASIFriendRequest].self, forKey: .friendRequests) ?? []
       messagesByContact = try container.decode([String: [ChatMessage]].self, forKey: .messagesByContact)
+      readAtByContact = try container.decodeIfPresent([String: Date].self, forKey: .readAtByContact) ?? [:]
       serverLinks = try container.decode([ServerLink].self, forKey: .serverLinks)
       voiceSettings = try container.decode(VoiceSettings.self, forKey: .voiceSettings)
     }
@@ -137,6 +151,7 @@ final class SignalASIStore: ObservableObject {
       contacts = state.contacts
       friendRequests = state.friendRequests
       messagesByContact = state.messagesByContact
+      readAtByContact = state.readAtByContact
       serverLinks = state.serverLinks
       voiceSettings = state.voiceSettings
     } else {
@@ -145,6 +160,7 @@ final class SignalASIStore: ObservableObject {
       contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
       friendRequests = []
       messagesByContact = SignalASIStore.defaultMessages()
+      readAtByContact = [:]
       serverLinks = []
       voiceSettings = .default
       save()
@@ -177,6 +193,27 @@ final class SignalASIStore: ObservableObject {
 
   func messages(for contactId: String) -> [ChatMessage] {
     messagesByContact[contactId] ?? []
+  }
+
+  func conversationSummary(for contactId: String) -> ContactConversationSummary {
+    let messages = messages(for: contactId)
+    let readAt = readAtByContact[contactId] ?? .distantPast
+    let unreadCount = messages.filter { message in
+      !message.isMine && !message.isSystem && message.createdAt > readAt
+    }.count
+    return ContactConversationSummary(lastMessage: messages.last, unreadCount: unreadCount)
+  }
+
+  @discardableResult
+  func markContactRead(_ contactId: String, at readAt: Date = Date()) -> Int {
+    let unreadBefore = conversationSummary(for: contactId).unreadCount
+    let previousReadAt = readAtByContact[contactId] ?? .distantPast
+    guard unreadBefore > 0 || readAt > previousReadAt else {
+      return unreadBefore
+    }
+    readAtByContact[contactId] = max(previousReadAt, readAt)
+    save()
+    return unreadBefore
   }
 
   func friendRequest(id: String) -> SignalASIFriendRequest? {
@@ -248,6 +285,7 @@ final class SignalASIStore: ObservableObject {
     if deleteMessages {
       for contactId in deletedIds {
         messagesByContact.removeValue(forKey: contactId)
+        readAtByContact.removeValue(forKey: contactId)
       }
     }
 
@@ -259,6 +297,7 @@ final class SignalASIStore: ObservableObject {
 
   func deleteMessages(for contactId: String) {
     messagesByContact.removeValue(forKey: contactId)
+    readAtByContact.removeValue(forKey: contactId)
     save()
   }
 
@@ -605,7 +644,8 @@ final class SignalASIStore: ObservableObject {
       ),
       contacts: includeContacts ? contacts : [],
       friendRequests: includeContacts ? friendRequests : [],
-      messagesByContact: includeMessages ? messagesByContact : [:]
+      messagesByContact: includeMessages ? messagesByContact : [:],
+      readAtByContact: includeMessages ? readAtByContact : [:]
     )
   }
 
@@ -623,6 +663,7 @@ final class SignalASIStore: ObservableObject {
     }
     if includeMessages, payload.includesMessages {
       messagesByContact = payload.messagesByContact
+      readAtByContact = payload.readAtByContact
     }
     if payload.includesAgentData {
       serverLinks = payload.agentData.serverLinks
@@ -735,6 +776,7 @@ final class SignalASIStore: ObservableObject {
     contacts = [SignalASIContact.hermes(), SignalASIContact.system()]
     friendRequests = []
     messagesByContact = SignalASIStore.defaultMessages()
+    readAtByContact = [:]
     serverLinks = []
     voiceSettings = .default
   }
@@ -779,6 +821,7 @@ final class SignalASIStore: ObservableObject {
       contacts: contacts,
       friendRequests: friendRequests,
       messagesByContact: messagesByContact,
+      readAtByContact: readAtByContact,
       serverLinks: serverLinks,
       voiceSettings: voiceSettings
     )

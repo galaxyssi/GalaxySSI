@@ -93,6 +93,25 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.contact(id: "hermes")?.deleted, false)
   }
 
+  func testConversationSummaryTracksUnreadMessagesAndReadState() {
+    let store = makeStore()
+
+    XCTAssertEqual(store.conversationSummary(for: "hermes").unreadCount, 0)
+
+    store.appendIncoming("desktop reply", from: "hermes")
+    store.appendSystem("local notice", to: "hermes")
+    store.appendOutgoing("ack", to: "hermes")
+
+    let summary = store.conversationSummary(for: "hermes")
+    XCTAssertEqual(summary.lastMessage?.content, "ack")
+    XCTAssertEqual(summary.unreadCount, 1)
+    XCTAssertTrue(summary.hasUnreadMessages)
+
+    XCTAssertEqual(store.markContactRead("hermes"), 1)
+    XCTAssertEqual(store.conversationSummary(for: "hermes").unreadCount, 0)
+    XCTAssertEqual(store.markContactRead("hermes"), 0)
+  }
+
   func testDeliveryTraceStageLabelsMatchAndroidActions() {
     XCTAssertEqual(DeliveryTraceEvent(stage: "mqtt_published").displayTitle, "Published to MQTT")
     XCTAssertEqual(DeliveryTraceEvent(stage: "desktop_decrypted").displayTitle, "Desktop decrypted")
