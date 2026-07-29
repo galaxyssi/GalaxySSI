@@ -19844,6 +19844,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     R.string.desktop_control_screen_metadata,
                     it.originalWidth,
                     it.originalHeight,
+                    it.jpegBytes.size / 1024f,
                     securityTime(it.capturedAt)
                 )
             }.orEmpty().ifBlank { getString(R.string.desktop_control_refresh_screen_subtitle) },

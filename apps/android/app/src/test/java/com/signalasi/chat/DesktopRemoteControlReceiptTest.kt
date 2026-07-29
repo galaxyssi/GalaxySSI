@@ -108,6 +108,61 @@ class DesktopRemoteControlReceiptTest {
         assertFalse(verify(receipt(request, pending), mismatched))
     }
 
+    @Test
+    fun rejectsOversizedOrInconsistentScreenshotEvidence() {
+        val request = request()
+        val pending = DesktopControlReceiptProtocol.pendingRequest(
+            request,
+            "client-route-1",
+            controllerFingerprint,
+            "signalasi:phone"
+        )
+        val oversized = ByteArray(DESKTOP_SCREENSHOT_BYTE_LIMIT + 1) { 0x5a }
+
+        assertFalse(verify(receipt(request, pending, oversized), pending))
+        assertFalse(verify(
+            receipt(
+                request,
+                pending,
+                screenshotBytes = byteArrayOf(1, 2, 3, 4),
+                declaredBytes = 5
+            ),
+            pending
+        ))
+    }
+
+    @Test
+    fun olderScreenshotCannotReplaceNewerFrame() {
+        fun frame(capturedAt: Long) = DesktopControlScreenshot(
+            jpegBytes = byteArrayOf(1),
+            width = 1,
+            height = 1,
+            originalWidth = 1,
+            originalHeight = 1,
+            capturedAt = capturedAt
+        )
+
+        assertTrue(shouldApplyDesktopScreenshot(null, frame(2_000L)))
+        assertTrue(shouldApplyDesktopScreenshot(frame(2_000L), frame(2_000L)))
+        assertFalse(shouldApplyDesktopScreenshot(frame(2_000L), frame(1_999L)))
+    }
+
+    @Test
+    fun screenshotRequestGateCoalescesAndExpiresRefreshes() {
+        val gate = DesktopScreenshotRequestGate()
+
+        assertTrue(gate.claim("desktop-1", "action-1", 2_000L, 1_000L))
+        assertFalse(gate.claim("desktop-1", "action-2", 2_500L, 1_500L))
+        gate.release("desktop-1", "wrong-action")
+        assertFalse(gate.claim("desktop-1", "action-3", 2_500L, 1_600L))
+        gate.release("desktop-1", "action-1")
+        assertTrue(gate.claim("desktop-1", "action-4", 2_500L, 1_700L))
+        assertTrue(gate.claim("desktop-2", "action-5", 2_500L, 1_700L))
+        assertTrue(gate.claim("desktop-1", "action-6", 3_500L, 2_501L))
+        gate.clear("desktop-1")
+        assertTrue(gate.claim("desktop-1", "action-7", 4_000L, 3_000L))
+    }
+
     private fun request(): JSONObject = JSONObject()
         .put("type", "desktop_executor_request")
         .put("task_id", "task-1")
@@ -121,12 +176,19 @@ class DesktopRemoteControlReceiptTest {
 
     private fun receipt(
         request: JSONObject,
-        pending: DesktopControlPendingRequest
+        pending: DesktopControlPendingRequest,
+        screenshotBytes: ByteArray = byteArrayOf(
+            0xff.toByte(),
+            0xd8.toByte(),
+            0xff.toByte(),
+            0xd9.toByte()
+        ),
+        declaredBytes: Int = screenshotBytes.size
     ): JSONObject {
-        val screenshotBytes = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())
         val screenshot = JSONObject()
             .put("image_mime", "image/jpeg")
             .put("image_base64", Base64.getEncoder().encodeToString(screenshotBytes))
+            .put("bytes", declaredBytes)
             .put("width", 480)
             .put("height", 270)
             .put("original_width", 1920)

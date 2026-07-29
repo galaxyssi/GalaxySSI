@@ -231,7 +231,7 @@
     <string name="desktop_control_repair_executor_required">请重新配对，并勾选“启动桌面执行器”</string>
     <string name="desktop_control_refresh_screen">刷新画面</string>
     <string name="desktop_control_refresh_screen_subtitle">获取一张压缩后的电脑画面</string>
-    <string name="desktop_control_screen_metadata">%1$dx%2$d · %3$s</string>
+    <string name="desktop_control_screen_metadata">%1$dx%2$d · %3$.1f KB · %4$s</string>
     <string name="desktop_control_request_sent">加密请求已发送</string>
     <string name="desktop_control_request_failed">远程控制请求发送失败</string>
     <string name="desktop_control_click_sent">已发送点击：%1$d, %2$d</string>

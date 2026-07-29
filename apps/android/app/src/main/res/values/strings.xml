@@ -241,7 +241,7 @@
     <string name="desktop_control_repair_executor_required">Re-pair this phone with Start Desktop Executor enabled</string>
     <string name="desktop_control_refresh_screen">Refresh screen</string>
     <string name="desktop_control_refresh_screen_subtitle">Capture a compressed desktop snapshot</string>
-    <string name="desktop_control_screen_metadata">%1$dx%2$d · %3$s</string>
+    <string name="desktop_control_screen_metadata">%1$dx%2$d · %3$.1f KB · %4$s</string>
     <string name="desktop_control_request_sent">Encrypted request sent</string>
     <string name="desktop_control_request_failed">Could not send the remote-control request</string>
     <string name="desktop_control_click_sent">Click sent: %1$d, %2$d</string>
