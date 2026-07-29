@@ -228,6 +228,59 @@ private struct MQTTPacket {
   var payload: Data
 }
 
+struct CloudHTTPFailure: Error, Equatable {
+  var statusCode: Int
+  var responseBody: String
+}
+
+enum CloudContextOverflowPolicy {
+  static func isContextOverflow(_ error: CloudHTTPFailure) -> Bool {
+    isContextOverflow(statusCode: error.statusCode, responseBody: error.responseBody)
+  }
+
+  static func isContextOverflow(statusCode: Int, responseBody: String) -> Bool {
+    guard [400, 413, 422].contains(statusCode) else { return false }
+    let detail = responseBody.lowercased()
+    if overflowMarkers.contains(where: detail.contains) {
+      return true
+    }
+    return statusCode == 413 &&
+      (detail.contains("request too large") || detail.contains("payload too large"))
+  }
+
+  static func retryWindows(configuredWindowTokens: Int) -> [Int] {
+    let configured = max(configuredWindowTokens, minimumRetryWindowTokens)
+    var windows: [Int] = []
+    var candidate = configured
+    for _ in 0..<maximumAttempts {
+      if !windows.contains(candidate) {
+        windows.append(candidate)
+      }
+      candidate = max(candidate / 2, minimumRetryWindowTokens)
+    }
+    return windows
+  }
+
+  private static let minimumRetryWindowTokens = 4_096
+  private static let maximumAttempts = 4
+  private static let overflowMarkers = [
+    "context_length_exceeded",
+    "maximum context length",
+    "context window",
+    "too many tokens",
+    "token limit",
+    "prompt is too long",
+    "prompt too long",
+    "input is too long",
+    "input too long",
+    "input token count",
+    "exceeds the maximum number of tokens",
+    "exceeds maximum token",
+    "reduce the length of the messages",
+    "reduce your prompt"
+  ]
+}
+
 struct CloudModelClient {
   func send(contact: SignalASIContact, store: SignalASIStore, turns: [ChatMessage]) async throws -> String {
     guard let model = contact.selectedCloudModel else {
@@ -371,6 +424,9 @@ struct CloudModelClient {
     let (data, response) = try await URLSession.shared.data(for: request)
     if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
       let body = String(data: data, encoding: .utf8) ?? ""
+      if CloudContextOverflowPolicy.isContextOverflow(statusCode: http.statusCode, responseBody: body) {
+        throw SignalASIError.invalidPayload("Cloud request exceeded the model context window. Try a shorter chat history or smaller attachment.")
+      }
       throw SignalASIError.invalidPayload("Cloud request failed with \(http.statusCode): \(body.prefix(240))")
     }
     guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {

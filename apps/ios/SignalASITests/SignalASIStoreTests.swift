@@ -154,6 +154,40 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(prompt.contains("Reply in Simplified Chinese"))
   }
 
+  func testCloudContextOverflowPolicyMatchesAndroidContextErrorDetection() {
+    XCTAssertTrue(
+      CloudContextOverflowPolicy.isContextOverflow(
+        CloudHTTPFailure(statusCode: 400, responseBody: #"{"code":"context_length_exceeded"}"#)
+      )
+    )
+    XCTAssertTrue(
+      CloudContextOverflowPolicy.isContextOverflow(
+        CloudHTTPFailure(statusCode: 413, responseBody: "Request too large")
+      )
+    )
+    XCTAssertFalse(
+      CloudContextOverflowPolicy.isContextOverflow(
+        CloudHTTPFailure(statusCode: 401, responseBody: "Too many tokens in the supplied credential")
+      )
+    )
+    XCTAssertFalse(
+      CloudContextOverflowPolicy.isContextOverflow(
+        CloudHTTPFailure(statusCode: 400, responseBody: "Unknown model")
+      )
+    )
+  }
+
+  func testCloudContextOverflowPolicyRetryWindowsShrinkByTokenCapacity() {
+    XCTAssertEqual(
+      CloudContextOverflowPolicy.retryWindows(configuredWindowTokens: 64_000),
+      [64_000, 32_000, 16_000, 8_000]
+    )
+    XCTAssertEqual(
+      CloudContextOverflowPolicy.retryWindows(configuredWindowTokens: 8_192),
+      [8_192, 4_096]
+    )
+  }
+
   func testVoiceSettingsNormalizeAdvancedAndroidParityFields() {
     let store = makeStore()
 

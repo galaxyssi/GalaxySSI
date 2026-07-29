@@ -13,6 +13,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Local contact management with Android-style remark rename, soft delete, optional chat deletion, and private data reset
 - Explicit file/photo attachments with Android-compatible descriptors, inline `data_b64` transport for small payloads, metadata-only fallback for larger files, and chat composer previews
 - Direct cloud model contacts for OpenAI-compatible, Anthropic, and Gemini-style APIs, with provider-level model selection, readiness checks, and API keys stored in Keychain
+- Android-style cloud context overflow detection for cloud model retries and clear request-size failures
 - Android-style language policy settings for interface preference, model response language, ASR locale, and TTS language
 - Android-style app display text sizing with System, Standard, Comfortable, Large, and Extra Large modes
 - Android-style Agent Safety settings for task execution mode, action permission mode, safety guards, pause state, and allowed action surfaces
