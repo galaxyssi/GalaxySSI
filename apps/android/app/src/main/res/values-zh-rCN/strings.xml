@@ -1939,4 +1939,5 @@
     <string name="cc_memory_temporal_empty">暂无%1$s记忆</string>
     <string name="cc_memory_temporal_empty_subtitle">持久证据进入该状态后会显示在这里。</string>
     <string name="cc_memory_temporal_item_subtitle">%1$s · %2$d 条证据引用</string>
+    <string name="cc_memory_temporal_item_replaced_subtitle">%1$s · %2$d 条证据引用 · 已被较新记忆替代</string>
 </resources>

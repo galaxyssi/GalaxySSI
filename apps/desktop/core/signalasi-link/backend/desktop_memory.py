@@ -196,6 +196,7 @@ class DesktopMemoryStore:
                     last_accessed_at INTEGER NOT NULL,
                     use_count INTEGER NOT NULL DEFAULT 0,
                     supersedes_id TEXT NOT NULL DEFAULT '',
+                    superseded_by_id TEXT NOT NULL DEFAULT '',
                     valid_from_at INTEGER NOT NULL DEFAULT 0,
                     valid_until_at INTEGER NOT NULL DEFAULT 0
                 )
@@ -208,6 +209,7 @@ class DesktopMemoryStore:
                     "namespace": "TEXT NOT NULL DEFAULT 'general'",
                     "temporal_state": "TEXT NOT NULL DEFAULT 'current'",
                     "evidence_json": "TEXT NOT NULL DEFAULT '[]'",
+                    "superseded_by_id": "TEXT NOT NULL DEFAULT ''",
                     "valid_from_at": "INTEGER NOT NULL DEFAULT 0",
                     "valid_until_at": "INTEGER NOT NULL DEFAULT 0",
                 },
@@ -250,6 +252,19 @@ class DesktopMemoryStore:
             )
             connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_status ON memories(status, updated_at DESC)")
             connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_key ON memories(namespace, memory_key, status)")
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_supersession "
+                "ON memories(supersedes_id, superseded_by_id)"
+            )
+            connection.execute(
+                "UPDATE memories SET superseded_by_id = ("
+                "SELECT successor.id FROM memories AS successor "
+                "WHERE successor.supersedes_id = memories.id "
+                "ORDER BY successor.created_at DESC LIMIT 1"
+                ") WHERE superseded_by_id = '' AND EXISTS ("
+                "SELECT 1 FROM memories AS successor WHERE successor.supersedes_id = memories.id"
+                ")"
+            )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memory_candidate_status "
                 "ON memory_candidates(status, created_at DESC)"
@@ -316,8 +331,8 @@ class DesktopMemoryStore:
             supersedes_id = str(previous["id"])
             connection.execute(
                 "UPDATE memories SET status = 'superseded', temporal_state = 'deprecated', "
-                "valid_until_at = ?, updated_at = ? WHERE id = ?",
-                (now_ms, now_ms, supersedes_id),
+                "superseded_by_id = ?, valid_until_at = ?, updated_at = ? WHERE id = ?",
+                (memory_id, now_ms, now_ms, supersedes_id),
             )
         connection.execute(
             """
@@ -325,8 +340,8 @@ class DesktopMemoryStore:
                 id, memory_key, namespace, kind, content, status, temporal_state,
                 confidence, importance, source_conversation_id, source_task_id,
                 tags_json, evidence_json, created_at, updated_at, last_accessed_at,
-                use_count, supersedes_id, valid_from_at, valid_until_at
-            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 0)
+                use_count, supersedes_id, superseded_by_id, valid_from_at, valid_until_at
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, '', ?, 0)
             """,
             (
                 memory_id,
@@ -870,6 +885,74 @@ class DesktopMemoryStore:
             row = connection.execute("SELECT * FROM memories WHERE id = ?", (str(memory_id),)).fetchone()
         return self._public(row) if row else None
 
+    def supersession_chain(self, memory_id: str, limit: int = 100) -> dict[str, Any]:
+        bounded_limit = max(1, min(int(limit or 100), 500))
+        with self._lock, self._connect() as connection:
+            selected = connection.execute(
+                "SELECT * FROM memories WHERE id = ?",
+                (str(memory_id),),
+            ).fetchone()
+            if not selected:
+                return {"memories": [], "edges": [], "evidence_count": 0, "complete": False}
+            complete = True
+            visited = {str(selected["id"])}
+            older: list[sqlite3.Row] = []
+            cursor = selected
+            while str(cursor["supersedes_id"]) and len(visited) < bounded_limit:
+                previous_id = str(cursor["supersedes_id"])
+                if previous_id in visited:
+                    complete = False
+                    break
+                previous = connection.execute(
+                    "SELECT * FROM memories WHERE id = ?",
+                    (previous_id,),
+                ).fetchone()
+                if not previous:
+                    complete = False
+                    break
+                if str(previous["superseded_by_id"]) != str(cursor["id"]):
+                    complete = False
+                older.append(previous)
+                visited.add(previous_id)
+                cursor = previous
+            newer: list[sqlite3.Row] = []
+            cursor = selected
+            while str(cursor["superseded_by_id"]) and len(visited) < bounded_limit:
+                replacement_id = str(cursor["superseded_by_id"])
+                if replacement_id in visited:
+                    complete = False
+                    break
+                replacement = connection.execute(
+                    "SELECT * FROM memories WHERE id = ?",
+                    (replacement_id,),
+                ).fetchone()
+                if not replacement:
+                    complete = False
+                    break
+                if str(replacement["supersedes_id"]) != str(cursor["id"]):
+                    complete = False
+                newer.append(replacement)
+                visited.add(replacement_id)
+                cursor = replacement
+        rows = list(reversed(older)) + [selected] + newer
+        if len(rows) >= bounded_limit and (
+            str(rows[0]["supersedes_id"]) or str(rows[-1]["superseded_by_id"])
+        ):
+            complete = False
+        memories = [self._public(row) for row in rows]
+        return {
+            "memories": memories,
+            "edges": [
+                {
+                    "previous_memory_id": memories[index]["id"],
+                    "replacement_memory_id": memories[index + 1]["id"],
+                }
+                for index in range(len(memories) - 1)
+            ],
+            "evidence_count": sum(len(memory["evidence"]) for memory in memories),
+            "complete": complete,
+        }
+
     def forget(self, memory_id: str) -> bool:
         now_ms = int(self.now() * 1_000)
         with self._lock, self._connect() as connection:
@@ -940,6 +1023,9 @@ class DesktopMemoryStore:
             evidence_rows = connection.execute(
                 "SELECT evidence_json FROM memories WHERE status = 'active'"
             ).fetchall()
+            supersession_rows = connection.execute(
+                "SELECT id, supersedes_id, superseded_by_id FROM memories"
+            ).fetchall()
         raw_namespace_counts = {
             str(row["namespace"]): int(row["count"])
             for row in namespace_rows
@@ -949,6 +1035,42 @@ class DesktopMemoryStore:
             for namespace in sorted(MEMORY_NAMESPACES)
         }
         evidence_count = sum(len(_json_list(row["evidence_json"])) for row in evidence_rows)
+        supersession_by_id = {
+            str(row["id"]): row
+            for row in supersession_rows
+        }
+        supersession_edges = [
+            {
+                "previous_memory_id": str(row["supersedes_id"]),
+                "replacement_memory_id": str(row["id"]),
+            }
+            for row in supersession_rows
+            if str(row["supersedes_id"])
+        ]
+        broken_supersession_edges = {
+            (
+                str(row["supersedes_id"]),
+                str(row["id"]),
+            )
+            for row in supersession_rows
+            if str(row["supersedes_id"]) and (
+                str(row["supersedes_id"]) not in supersession_by_id
+                or str(supersession_by_id[str(row["supersedes_id"])]["superseded_by_id"])
+                    != str(row["id"])
+            )
+        }
+        broken_supersession_edges.update({
+            (
+                str(row["id"]),
+                str(row["superseded_by_id"]),
+            )
+            for row in supersession_rows
+            if str(row["superseded_by_id"]) and (
+                str(row["superseded_by_id"]) not in supersession_by_id
+                or str(supersession_by_id[str(row["superseded_by_id"])]["supersedes_id"])
+                    != str(row["id"])
+            )
+        })
         conflicts: list[dict[str, Any]] = []
         for candidate in candidates:
             if candidate["status"] != "conflicted":
@@ -1002,6 +1124,12 @@ class DesktopMemoryStore:
                 "count": len(missing_evidence),
                 "severity": "review",
             })
+        if broken_supersession_edges:
+            findings.append({
+                "kind": "broken_supersession_chain",
+                "count": len(broken_supersession_edges),
+                "severity": "attention",
+            })
 
         recent_evolution = sorted(
             candidates,
@@ -1019,6 +1147,7 @@ class DesktopMemoryStore:
                 "pending_review": candidate_by_status.get("pending_review", 0),
                 "conflicted": candidate_by_status.get("conflicted", 0),
                 "evidence": evidence_count,
+                "supersession_edges": len(supersession_edges),
             },
             "temporal_counts": temporal_counts,
             "namespace_counts": namespace_counts,
@@ -1028,6 +1157,10 @@ class DesktopMemoryStore:
                 "findings": findings,
             },
             "conflicts": conflicts,
+            "supersession": {
+                "edges": supersession_edges[-bounded_limit:],
+                "broken_edge_count": len(broken_supersession_edges),
+            },
             "recent_evolution": recent_evolution,
         }
 
@@ -1044,6 +1177,7 @@ class DesktopMemoryStore:
             "created_at": int(row["created_at"]), "updated_at": int(row["updated_at"]),
             "last_accessed_at": int(row["last_accessed_at"]), "use_count": int(row["use_count"]),
             "supersedes_id": str(row["supersedes_id"]),
+            "superseded_by_id": str(row["superseded_by_id"]),
             "valid_from_at": int(row["valid_from_at"]),
             "valid_until_at": int(row["valid_until_at"]),
         }

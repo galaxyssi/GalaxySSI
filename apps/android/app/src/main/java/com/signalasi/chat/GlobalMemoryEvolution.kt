@@ -236,27 +236,52 @@ object GlobalMemoryEvolutionPolicy {
             temporalState = approvedTemporalState,
             reviewedAtMillis = nowMillis
         )
-        val incoming = approved.item.copy(
+        val incomingBase = approved.item.copy(
             status = GlobalWorldItemStatus.ACTIVE,
             temporalState = approved.temporalState,
             conflictGroupId = "",
+            supersededByItemId = "",
             lastSeenAtMillis = maxOf(approved.item.lastSeenAtMillis, nowMillis)
         )
-        val replaced = world.items.map { existing ->
-            if (existing.id == incoming.id) return@map existing
-            val sameSubject = existing.kind == incoming.kind &&
-                GlobalAgentText.overlap(
-                    GlobalAgentText.tokens(existing.topic),
-                    GlobalAgentText.tokens(incoming.topic)
-                ) >= 0.45
-            if (sameSubject && existing.status in setOf(GlobalWorldItemStatus.ACTIVE, GlobalWorldItemStatus.CONFLICTED)) {
-                existing.copy(
-                    status = GlobalWorldItemStatus.SUPERSEDED,
-                    temporalState = GlobalMemoryTemporalState.DEPRECATED,
-                    conflictGroupId = ""
+        val strengthenTarget = candidate.targetItemIds.firstOrNull()
+            ?.takeIf { candidate.action == GlobalMemoryEvolutionAction.STRENGTHEN }
+            ?.let { targetId -> world.items.firstOrNull { it.id == targetId } }
+        val replaced = if (strengthenTarget != null) {
+            val strengthened = strengthen(strengthenTarget, incomingBase)
+            world.items.map { existing ->
+                if (existing.id == strengthenTarget.id) strengthened else existing
+            }.filterNot { it.id == incomingBase.id && it.id != strengthenTarget.id }
+        } else {
+            val supersededItemIds = world.items.filter { existing ->
+                if (existing.id == approved.item.id) return@filter false
+                val sameSubject = existing.kind == approved.item.kind &&
+                    GlobalAgentText.overlap(
+                        GlobalAgentText.tokens(existing.topic),
+                        GlobalAgentText.tokens(approved.item.topic)
+                    ) >= 0.45
+                sameSubject && existing.status in setOf(
+                    GlobalWorldItemStatus.ACTIVE,
+                    GlobalWorldItemStatus.CONFLICTED
                 )
-            } else existing
-        }.filterNot { it.id == incoming.id } + incoming
+            }.map(GlobalWorldItem::id).take(MAX_EVOLUTION_TARGETS)
+            val incoming = incomingBase.copy(
+                supersedesItemIds = (approved.item.supersedesItemIds + supersededItemIds)
+                    .filter(String::isNotBlank)
+                    .distinct()
+                    .takeLast(MAX_EVOLUTION_TARGETS)
+            )
+            world.items.map { existing ->
+                if (existing.id == incoming.id) return@map existing
+                if (existing.id in supersededItemIds) {
+                    existing.copy(
+                        status = GlobalWorldItemStatus.SUPERSEDED,
+                        temporalState = GlobalMemoryTemporalState.DEPRECATED,
+                        conflictGroupId = "",
+                        supersededByItemId = incoming.id
+                    )
+                } else existing
+            }.filterNot { it.id == incoming.id } + incoming
+        }
         val updatedWorld = world.copy(
             items = replaced.sortedByDescending(GlobalWorldItem::lastSeenAtMillis).take(MAX_WORLD_ITEMS),
             updatedAtMillis = maxOf(world.updatedAtMillis, nowMillis)
@@ -292,7 +317,7 @@ object GlobalMemoryEvolutionPolicy {
         understanding: GlobalUnderstanding,
         reduction: GlobalWorldReduction
     ): List<GlobalMemoryCandidate> {
-        val replacement = replacementSignal(event.content)
+        val replacement = replacementEvent(event)
         return reduction.changedItems.asSequence()
             .filter { item -> item.evidenceEventIds.contains(event.id) || item.evidenceProvenance.any { it.eventId == event.id } }
             .distinctBy(GlobalWorldItem::stableKey)
@@ -405,7 +430,7 @@ object GlobalMemoryEvolutionPolicy {
         val action = when {
             candidate.risk == GlobalMemoryCandidateRisk.PRIVATE_BLOCKED -> GlobalMemoryEvolutionAction.BLOCK_PRIVATE
             candidate.status == GlobalMemoryCandidateStatus.CONFLICTED -> GlobalMemoryEvolutionAction.REVIEW_CONFLICT
-            replacementSignal(event.content) && subjectMatches.isNotEmpty() -> GlobalMemoryEvolutionAction.SUPERSEDE
+            replacementEvent(event) && subjectMatches.isNotEmpty() -> GlobalMemoryEvolutionAction.SUPERSEDE
             equivalent != null -> GlobalMemoryEvolutionAction.STRENGTHEN
             candidate.kind == GlobalMemoryCandidateKind.RELATION -> GlobalMemoryEvolutionAction.LINK
             candidate.kind == GlobalMemoryCandidateKind.SKILL_OPPORTUNITY -> GlobalMemoryEvolutionAction.CONSOLIDATE
@@ -454,6 +479,7 @@ object GlobalMemoryEvolutionPolicy {
                     changed += merged
                 }
                 GlobalMemoryEvolutionAction.SUPERSEDE -> {
+                    val supersededItemIds = mutableListOf<String>()
                     candidate.targetItemIds.forEach { targetId ->
                         val targetIndex = evolvedItems.indexOfFirst { it.id == targetId }
                         if (targetIndex >= 0) {
@@ -462,11 +488,13 @@ object GlobalMemoryEvolutionPolicy {
                                 val superseded = previous.copy(
                                     status = GlobalWorldItemStatus.SUPERSEDED,
                                     temporalState = GlobalMemoryTemporalState.DEPRECATED,
-                                    conflictGroupId = ""
+                                    conflictGroupId = "",
+                                    supersededByItemId = candidate.item.id
                                 )
                                 evolvedItems[targetIndex] = superseded
                                 changed.removeAll { it.id == targetId }
                                 changed += superseded
+                                supersededItemIds += targetId
                             }
                         }
                     }
@@ -475,7 +503,11 @@ object GlobalMemoryEvolutionPolicy {
                         evolvedItems[currentIncomingIndex] = evolvedItems[currentIncomingIndex].copy(
                             status = GlobalWorldItemStatus.ACTIVE,
                             temporalState = GlobalMemoryTemporalState.CURRENT,
-                            conflictGroupId = ""
+                            conflictGroupId = "",
+                            supersedesItemIds = (
+                                evolvedItems[currentIncomingIndex].supersedesItemIds + supersededItemIds
+                            ).filter(String::isNotBlank).distinct().takeLast(MAX_EVOLUTION_TARGETS),
+                            supersededByItemId = ""
                         )
                     }
                 }
@@ -537,7 +569,14 @@ object GlobalMemoryEvolutionPolicy {
             GlobalAgentText.tokens(left.value),
             GlobalAgentText.tokens(right.value)
         )
-        return valueOverlap >= EQUIVALENT_ASSERTION_OVERLAP &&
+        val requiredOverlap = if (left.kind in setOf(
+                GlobalWorldItemKind.PREFERENCE,
+                GlobalWorldItemKind.DECISION
+            )
+        ) {
+            EQUIVALENT_PROTECTED_ASSERTION_OVERLAP
+        } else EQUIVALENT_ASSERTION_OVERLAP
+        return valueOverlap >= requiredOverlap &&
             assertionPolarity(left.value) == assertionPolarity(right.value)
     }
 
@@ -632,6 +671,9 @@ object GlobalMemoryEvolutionPolicy {
         val lower = value.lowercase(Locale.ROOT)
         return REPLACEMENT_SIGNALS.any(lower::contains)
     }
+
+    private fun replacementEvent(event: GlobalConversationEvent): Boolean =
+        replacementSignal(event.content) || event.type in VERSION_REPLACEMENT_EVENTS
 
     internal fun removalSignal(value: String): Boolean {
         val lower = value.lowercase(Locale.ROOT)
@@ -742,6 +784,15 @@ object GlobalMemoryEvolutionPolicy {
         else -> GlobalMemoryTemporalState.CURRENT
     }
 
+    private val VERSION_REPLACEMENT_EVENTS = setOf(
+        GlobalConversationEventType.MEMORY_UPDATED,
+        GlobalConversationEventType.KNOWLEDGE_UPDATED,
+        GlobalConversationEventType.KNOWLEDGE_ACCESS_CHANGED,
+        GlobalConversationEventType.AUTHORIZATION_REVOKED,
+        GlobalConversationEventType.AUTHORIZATION_POLICY_CHANGED,
+        GlobalConversationEventType.RESOURCE_UPDATED,
+        GlobalConversationEventType.RESOURCE_STATE_CHANGED
+    )
     private val REPLACEMENT_SIGNALS = listOf(
         "no longer", "removed", "deleted", "deprecated", "renamed to", "changed to", "replaced by", "disabled",
         "correction", "corrected to", "actually", "instead", "i was wrong", "should be",
@@ -766,6 +817,7 @@ object GlobalMemoryEvolutionPolicy {
         "\u4e0d", "\u672a", "\u65e0", "\u5173\u95ed", "\u79fb\u9664", "\u5220\u9664", "\u5931\u8d25"
     )
     private const val EQUIVALENT_ASSERTION_OVERLAP = 0.64
+    private const val EQUIVALENT_PROTECTED_ASSERTION_OVERLAP = 0.82
     private const val MIN_SPECIFIC_TOPIC_TOKENS = 2
     private const val STRENGTHEN_CONFIDENCE_BOOST = 0.035
     private const val MIN_SKILL_EVIDENCE = 3
@@ -911,12 +963,18 @@ object GlobalMemoryCritic {
                 val duplicate = items[duplicateIndex]
                 if (!duplicate.isCurrentMemory() || currentPrimary.layer != duplicate.layer) return@duplicateLoop
                 if (!GlobalMemoryEvolutionPolicy.equivalentAssertion(currentPrimary, duplicate)) return@duplicateLoop
-                val merged = GlobalMemoryEvolutionPolicy.strengthen(currentPrimary, duplicate)
+                val merged = GlobalMemoryEvolutionPolicy.strengthen(currentPrimary, duplicate).copy(
+                    supersedesItemIds = (currentPrimary.supersedesItemIds + duplicate.id)
+                        .filter(String::isNotBlank)
+                        .distinct()
+                        .takeLast(MAX_SUPERSESSION_TARGETS)
+                )
                 items[primaryIndex] = merged
                 items[duplicateIndex] = duplicate.copy(
                     status = GlobalWorldItemStatus.SUPERSEDED,
                     temporalState = GlobalMemoryTemporalState.DEPRECATED,
-                    conflictGroupId = ""
+                    conflictGroupId = "",
+                    supersededByItemId = merged.id
                 )
                 findings += GlobalMemoryAuditFinding(
                     GlobalMemoryAuditFindingKind.DUPLICATE,
@@ -986,6 +1044,7 @@ object GlobalMemoryCritic {
     private const val MIN_THEME_CONVERSATIONS = 2
     private const val MAX_THEME_ITEMS = 24
     private const val MAX_THEMES = 80
+    private const val MAX_SUPERSESSION_TARGETS = 12
 }
 
 class GlobalMemoryEvolutionStore(context: Context) {
@@ -1249,6 +1308,8 @@ internal object GlobalMemoryEvolutionCodec {
         .put("status", item.status.name)
         .put("temporal_state", item.temporalState.name)
         .put("conflict_group_id", item.conflictGroupId)
+        .put("supersedes_item_ids", JSONArray(item.supersedesItemIds))
+        .put("superseded_by_item_id", item.supersededByItemId)
         .put("first_seen_at_millis", item.firstSeenAtMillis)
         .put("last_seen_at_millis", item.lastSeenAtMillis)
         .put("expires_at_millis", item.expiresAtMillis)
@@ -1296,6 +1357,8 @@ internal object GlobalMemoryEvolutionCodec {
                 )
             ),
             conflictGroupId = json.optString("conflict_group_id"),
+            supersedesItemIds = strings(json.optJSONArray("supersedes_item_ids")).takeLast(12),
+            supersededByItemId = json.optString("superseded_by_item_id"),
             firstSeenAtMillis = json.optLong("first_seen_at_millis"),
             lastSeenAtMillis = json.optLong("last_seen_at_millis"),
             expiresAtMillis = json.optLong("expires_at_millis")

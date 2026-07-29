@@ -64,6 +64,24 @@ Pending, and Conflicted routes. Current-state views and prompt retrieval never i
 planned work or retained history implicitly; historical and deprecated evidence is
 available only through an explicit temporal route or a history-aware query plan.
 
+## Supersession Evidence Chain
+
+Replacing accepted state creates a new memory version. It never edits the old value or
+moves the new evidence into the old record.
+
+- The old version becomes `SUPERSEDED` and `DEPRECATED`.
+- The old version records which new item replaced it.
+- The new version records every item it supersedes.
+- Each version retains its own content, observation time, conversation references, and
+  evidence provenance.
+- Multi-step evolution such as A -> B -> C remains traversable from any version.
+- Duplicate consolidation uses the same chain instead of silently deleting the duplicate.
+- Android validates reciprocal links and rejects missing, one-sided, self-referential, or
+  cyclic chains before persistence.
+- Desktop stores reciprocal SQLite pointers, backfills a missing reverse pointer from the
+  existing forward edge, exposes complete chain traversal, and reports broken links in
+  Memory Health.
+
 ## Candidate Memory Gate
 
 Each proposed durable change is classified as a fact, preference, identity, decision, project state, goal, relation, or Skill opportunity.
