@@ -30,6 +30,12 @@ apps/android/*.xml
 *.keystore
 local.properties
 
+# iOS
+apps/ios/build/
+apps/ios/DerivedData/
+apps/ios/**/*.xcuserstate
+apps/ios/**/xcuserdata/
+
 # Python
 __pycache__/
 *.pyc
