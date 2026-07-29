@@ -35,6 +35,13 @@ from agent_gateway import (
     shutdown_external_cli_process_pool,
 )
 from desktop_agent_adapters import AgentAdapterRequest, AgentDeliveryMode
+from agent_collaboration_channels import (
+    AgentCollaborationAccessError,
+    AgentCollaborationConflict,
+    AgentCollaborationError,
+    CollaborationScope,
+    agent_collaboration_bus,
+)
 from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
@@ -586,6 +593,32 @@ class AgentRuntimeSubmitReq(BaseModel):
     required_features: list[str] = Field(default_factory=list)
     response_language: str = ""
     desktop_access_profile: str = "restricted"
+    collaboration_channel_ids: list[str] = Field(default_factory=list)
+    collaboration_actor_id: str = ""
+    repository_id: str = ""
+
+
+class AgentCollaborationChannelReq(BaseModel):
+    kind: str
+    creator_agent_id: str
+    participant_agent_ids: list[str] = Field(default_factory=list)
+    client_route_id: str
+    conversation_id: str
+    task_id: str
+    repository_root: str = ""
+    repository_id: str = ""
+
+
+class AgentCollaborationMessageReq(BaseModel):
+    sender_agent_id: str
+    content: str
+    message_id: str = ""
+    metadata: dict = Field(default_factory=dict)
+
+
+class AgentCollaborationAckReq(BaseModel):
+    agent_id: str
+    through_sequence: int
 
 
 class DesktopNativeToolInvokeReq(BaseModel):
@@ -1078,6 +1111,7 @@ def api_agent_runtime(request: Request):
     require_loopback(request)
     return {
         **desktop_agent_runtime_server().health(),
+        "collaboration": agent_collaboration_bus().health(),
         "external_cli_runtime": external_cli_runtime_manifest(),
     }
 
@@ -1143,7 +1177,10 @@ def api_agent_runtime_runs(
 
 @app.post("/api/agent-runtime/runs")
 def api_submit_agent_runtime_run(req: AgentRuntimeSubmitReq, request: Request):
-    require_loopback(request)
+    if req.collaboration_channel_ids:
+        require_desktop_api_token(request)
+    else:
+        require_loopback(request)
     try:
         run = desktop_agent_runtime_server().submit(
             AgentAdapterRequest(
@@ -1164,6 +1201,12 @@ def api_submit_agent_runtime_run(req: AgentRuntimeSubmitReq, request: Request):
                     "task_id": req.task_id or req.run_id,
                     "turn_id": req.turn_id,
                     "desktop_access_profile": req.desktop_access_profile,
+                    "collaboration_channel_ids": req.collaboration_channel_ids,
+                    "collaboration_actor_id": (
+                        req.collaboration_actor_id or req.agent_id
+                    ),
+                    "collaboration_task_id": req.task_id or req.run_id,
+                    "repository_id": req.repository_id,
                 },
             )
         )
@@ -1196,6 +1239,135 @@ def api_cancel_agent_runtime_run(run_id: str, request: Request):
     if run is None:
         raise HTTPException(status_code=404, detail=api_error("agent_runtime_run_not_found"))
     return {"run": run}
+
+
+def _agent_collaboration_http_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, AgentCollaborationAccessError):
+        status_code = 403
+    elif isinstance(exc, AgentCollaborationConflict):
+        status_code = 409
+    else:
+        status_code = 400
+    return HTTPException(
+        status_code=status_code,
+        detail=api_error(
+            "agent_collaboration_failed",
+            str(exc)[:240],
+        ),
+    )
+
+
+@app.post("/api/agent-runtime/channels")
+def api_create_agent_collaboration_channel(
+    req: AgentCollaborationChannelReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    try:
+        scope = CollaborationScope.create(
+            client_route_id=req.client_route_id,
+            conversation_id=req.conversation_id,
+            task_id=req.task_id,
+            repository_root=req.repository_root,
+            repository_id=req.repository_id,
+        )
+        channel = agent_collaboration_bus().create_channel(
+            kind=req.kind,
+            creator_agent_id=req.creator_agent_id,
+            participant_agent_ids=req.participant_agent_ids,
+            scope=scope,
+        )
+        return {"channel": channel}
+    except AgentCollaborationError as exc:
+        raise _agent_collaboration_http_error(exc) from exc
+
+
+@app.get("/api/agent-runtime/channels")
+def api_list_agent_collaboration_channels(
+    request: Request,
+    requester_agent_id: str = Query(...),
+    client_route_id: str = Query(""),
+    conversation_id: str = Query(""),
+    task_id: str = Query(""),
+    repository_id: str = Query(""),
+    limit: int = Query(100),
+):
+    require_desktop_api_token(request)
+    try:
+        return {
+            "channels": agent_collaboration_bus().channels(
+                requester_agent_id=requester_agent_id,
+                client_route_id=client_route_id,
+                conversation_id=conversation_id,
+                task_id=task_id,
+                repository_id=repository_id,
+                limit=limit,
+            ),
+        }
+    except AgentCollaborationError as exc:
+        raise _agent_collaboration_http_error(exc) from exc
+
+
+@app.post("/api/agent-runtime/channels/{channel_id}/messages")
+def api_publish_agent_collaboration_message(
+    channel_id: str,
+    req: AgentCollaborationMessageReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    try:
+        return {
+            "message": agent_collaboration_bus().publish(
+                channel_id,
+                sender_agent_id=req.sender_agent_id,
+                content=req.content,
+                message_id=req.message_id,
+                metadata=req.metadata,
+            ),
+        }
+    except AgentCollaborationError as exc:
+        raise _agent_collaboration_http_error(exc) from exc
+
+
+@app.get("/api/agent-runtime/channels/{channel_id}/messages")
+def api_list_agent_collaboration_messages(
+    channel_id: str,
+    request: Request,
+    requester_agent_id: str = Query(...),
+    after_sequence: int = Query(0),
+    limit: int = Query(100),
+):
+    require_desktop_api_token(request)
+    try:
+        return {
+            "messages": agent_collaboration_bus().messages(
+                channel_id,
+                requester_agent_id=requester_agent_id,
+                after_sequence=after_sequence,
+                limit=limit,
+            ),
+        }
+    except AgentCollaborationError as exc:
+        raise _agent_collaboration_http_error(exc) from exc
+
+
+@app.post("/api/agent-runtime/channels/{channel_id}/ack")
+def api_acknowledge_agent_collaboration_channel(
+    channel_id: str,
+    req: AgentCollaborationAckReq,
+    request: Request,
+):
+    require_desktop_api_token(request)
+    try:
+        return {
+            "channel": agent_collaboration_bus().acknowledge(
+                channel_id,
+                agent_id=req.agent_id,
+                through_sequence=req.through_sequence,
+            ),
+        }
+    except AgentCollaborationError as exc:
+        raise _agent_collaboration_http_error(exc) from exc
 
 
 @app.get("/api/desktop-tools")

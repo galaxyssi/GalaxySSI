@@ -513,6 +513,11 @@ def _agent_adapter_descriptors() -> list[AgentAdapterDescriptor]:
 
 
 def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) -> str:
+    from agent_collaboration_channels import (
+        CollaborationContext,
+        CollaborationScope,
+        agent_collaboration_bus,
+    )
     from agent_execution_harness import (
         AgentExecutionMode,
         AgentExecutionHarness,
@@ -538,6 +543,34 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     execution_prompt = str(
         request.checkpoint.get("execution_prompt") or request.prompt
     ).strip()
+    collaboration_actor_id = str(
+        request.checkpoint.get("collaboration_actor_id") or agent_id
+    ).strip()
+    collaboration_channel_ids = tuple(
+        str(value or "").strip()
+        for value in request.checkpoint.get("collaboration_channel_ids", [])
+        if str(value or "").strip()
+    )
+    collaboration_context = CollaborationContext("", {}, 0)
+    if collaboration_channel_ids:
+        collaboration_context = agent_collaboration_bus().compile_context(
+            collaboration_channel_ids,
+            requester_agent_id=collaboration_actor_id,
+            scope=CollaborationScope.create(
+                client_route_id=str(
+                    request.checkpoint.get("client_route_id") or ""
+                ),
+                conversation_id=request.conversation_id,
+                task_id=str(
+                    request.checkpoint.get("collaboration_task_id")
+                    or request.checkpoint.get("task_id")
+                    or request.run_id
+                ),
+                repository_id=str(
+                    request.checkpoint.get("repository_id") or ""
+                ),
+            ),
+        )
     attachment_names = tuple(
         str(item.get("name") or item.get("relative_path") or "")
         for item in request.artifacts
@@ -561,7 +594,10 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
     )
     plan_only = harness.policy.execution_mode == AgentExecutionMode.PLAN_ONLY
     contract = execution_contract(harness.policy)
-    current_prompt = request.prompt.rstrip()
+    base_prompt = request.prompt.rstrip()
+    if collaboration_context.text:
+        base_prompt = f"{base_prompt}\n\n{collaboration_context.text}"
+    current_prompt = base_prompt
     if "SignalASI execution contract:" not in current_prompt:
         current_prompt = f"{current_prompt}\n\n{contract}"
     self_check_contract = response_self_check_contract(
@@ -707,6 +743,11 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                 )
                 add_phase("verify", "Agent result verified")
                 harness.progress("finalize")
+                if collaboration_context.cursors:
+                    agent_collaboration_bus().acknowledge_context(
+                        agent_id=collaboration_actor_id,
+                        cursors=collaboration_context.cursors,
+                    )
                 return reply
             if not failed_self_check.accepted:
                 failure = failed_self_check.diagnostic
@@ -744,17 +785,24 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
             detail=f"same_failure_attempt={same_failure_attempt}",
         )
         if failed_self_check is not None and not failed_self_check.accepted:
+            repair_context = (
+                f"\n\n{collaboration_context.text}"
+                if collaboration_context.text
+                else ""
+            )
+            repair_prompt = response_repair_prompt(
+                execution_prompt,
+                reply,
+                failed_self_check,
+                attachment_names,
+            )
             current_prompt = (
-                f"{response_repair_prompt(
-                    execution_prompt,
-                    reply,
-                    failed_self_check,
-                    attachment_names,
-                )}\n\n{contract}"
+                f"{repair_prompt}{repair_context}"
+                f"\n\n{contract}"
             )
         else:
             current_prompt = (
-                f"{request.prompt.rstrip()}\n\n"
+                f"{base_prompt}\n\n"
                 f"{replan_instruction(harness.policy, failure=failure, attempt=attempt)}"
             )
 
@@ -1502,6 +1550,10 @@ def deliver_agent_sync(
     execution_policy: dict | None = None,
     client_route_id: str = "",
     turn_id: str = "",
+    collaboration_channel_ids: tuple[str, ...] = (),
+    collaboration_actor_id: str = "",
+    collaboration_task_id: str = "",
+    repository_id: str = "",
 ) -> dict:
     from agent_execution_harness import execution_policy_for
 
@@ -1541,6 +1593,18 @@ def deliver_agent_sync(
                     ),
                     "execution_prompt": resolved_execution_prompt,
                     "execution_policy": resolved_execution_policy,
+                    "collaboration_channel_ids": [
+                        str(value or "").strip()
+                        for value in collaboration_channel_ids
+                        if str(value or "").strip()
+                    ],
+                    "collaboration_actor_id": str(
+                        collaboration_actor_id or contact_id
+                    ).strip(),
+                    "collaboration_task_id": str(
+                        collaboration_task_id or task_id
+                    ).strip(),
+                    "repository_id": str(repository_id or "").strip(),
                 },
             )
         )

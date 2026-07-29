@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +39,18 @@ def run_for(cause=None):
 
 
 class DesktopProactiveDispatcherTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.environment = patch.dict(
+            os.environ,
+            {"SIGNALASI_STATE_DIR": self.temporary.name},
+        )
+        self.environment.start()
+
+    def tearDown(self):
+        self.environment.stop()
+        self.temporary.cleanup()
+
     def test_auto_routing_uses_runtime_agent_ids(self):
         with patch("agent_gateway.connector_diagnostics") as diagnostics:
             diagnostics.return_value = {
@@ -86,8 +100,10 @@ class DesktopProactiveDispatcherTests(unittest.TestCase):
         )
         task = task_for(action)
         lead_calls = []
+        collaboration_calls = []
 
-        def deliver(agent_id, prompt, **_kwargs):
+        def deliver(agent_id, prompt, **kwargs):
+            collaboration_calls.append((agent_id, kwargs))
             if agent_id == "claude-code":
                 raise RuntimeError("offline")
             if agent_id == "codex":
@@ -103,6 +119,11 @@ class DesktopProactiveDispatcherTests(unittest.TestCase):
         self.assertEqual("Final report", output["reply"])
         self.assertEqual(["claude-code"], output["failed_members"])
         self.assertEqual(2, len(lead_calls))
+        self.assertTrue(output["collaboration_channel_id"].startswith("channel-"))
+        self.assertTrue(all(
+            call[1].get("collaboration_channel_ids")
+            for call in collaboration_calls
+        ))
 
     def test_goal_checkpoint_marker_is_hidden_and_completes_goal(self):
         action = ProactiveAction.parse(
