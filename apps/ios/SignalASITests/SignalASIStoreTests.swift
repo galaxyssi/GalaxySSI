@@ -32,6 +32,23 @@ private final class FakeMcpLocalRuntimeExecutor: AgentMcpLocalRuntimeExecuting {
   }
 }
 
+private final class FakeMcpDeclarativeHTTPTransport: AgentMcpDeclarativeHTTPTransport {
+  var requests: [AgentMcpDeclarativeHTTPRequest] = []
+  private var responses: [AgentMcpDeclarativeHTTPResponse]
+
+  init(_ responses: [AgentMcpDeclarativeHTTPResponse]) {
+    self.responses = responses
+  }
+
+  func execute(_ request: AgentMcpDeclarativeHTTPRequest) async throws -> AgentMcpDeclarativeHTTPResponse {
+    requests.append(request)
+    guard !responses.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("No fake MCP HTTP response is queued")
+    }
+    return responses.removeFirst()
+  }
+}
+
 private extension AgentRuntimePackCatalogEntry {
   func with(
     version: String? = nil,
@@ -2093,6 +2110,156 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(failure.message, "denied")
     XCTAssertEqual(executor.requests.map(\.requestId).count, 2)
     XCTAssertEqual(executor.requests[0].workspaceId, executor.requests[1].workspaceId)
+  }
+
+  func testAgentMcpDeclarativeHTTPClientListsAndCallsPackageTool() async throws {
+    let root = try temporaryDirectory("mcp-declarative-http-call")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpDeclarativePackageManifest())
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let installed = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    _ = try registry.beginAuthentication(installed.id)
+    let authenticated = try registry.submitAuthenticationStep(
+      installed.id,
+      values: [
+        "username": "alice",
+        "password": "pw",
+        "access_token": "secret-token"
+      ]
+    )
+    let transport = FakeMcpDeclarativeHTTPTransport([
+      AgentMcpDeclarativeHTTPResponse(statusCode: 200, body: #"{"relay":{"state":"on"}}"#)
+    ])
+    let client = AgentMcpDeclarativeHTTPClient(
+      registry: registry,
+      packageRepository: repository,
+      transport: transport,
+      nowMillis: { 10_000 }
+    )
+
+    let tools = try client.listTools(connection: authenticated)
+    let result = try await client.callTool(
+      connection: authenticated,
+      toolName: "relay.switch",
+      arguments: [
+        "device_id": .string("relay 1"),
+        "enabled": .bool(true)
+      ]
+    )
+    let request = try XCTUnwrap(transport.requests.first)
+    let stored = try XCTUnwrap(registry.get(installed.id))
+
+    XCTAssertEqual(tools.map(\.name), ["relay.switch"])
+    XCTAssertEqual(tools.first?.annotations?["readOnlyHint"], .bool(false))
+    XCTAssertEqual(request.method, "POST")
+    XCTAssertEqual(request.url, "https://relay.example/api/relay/relay%201")
+    XCTAssertEqual(request.headers["Accept"], "application/json, text/plain")
+    XCTAssertEqual(request.headers["Authorization"], "Bearer secret-token")
+    XCTAssertEqual(request.body, #"{"enabled":true}"#)
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["result"]?.objectValue?["state"], .string("on"))
+    XCTAssertEqual(result.output["http_status"], .int(200))
+    XCTAssertEqual(result.metadata["transport"], .string("declarative_http"))
+    XCTAssertEqual(stored.state, .connected)
+    XCTAssertEqual(stored.toolIds, ["relay.switch"])
+  }
+
+  func testAgentMcpDeclarativeHTTPClientRejectsEscapedTargetAndMarksFailure() async throws {
+    let root = try temporaryDirectory("mcp-declarative-http-escaped")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let manifest = mcpDeclarativePackageManifest().replacingOccurrences(
+      of: #""path": "/api/relay/{{args.device_id}}""#,
+      with: #""path": "//evil.example/{{args.device_id}}""#
+    )
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", manifest)
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let installed = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    _ = try registry.beginAuthentication(installed.id)
+    let authenticated = try registry.submitAuthenticationStep(
+      installed.id,
+      values: [
+        "username": "alice",
+        "password": "pw",
+        "access_token": "secret-token"
+      ]
+    )
+    let transport = FakeMcpDeclarativeHTTPTransport([])
+    let client = AgentMcpDeclarativeHTTPClient(
+      registry: registry,
+      packageRepository: repository,
+      transport: transport,
+      nowMillis: { 10_000 }
+    )
+
+    do {
+      _ = try await client.callTool(
+        connection: authenticated,
+        toolName: "relay.switch",
+        arguments: ["device_id": .string("relay-1")]
+      )
+      XCTFail("Expected escaped declarative MCP target to be rejected")
+    } catch {
+      let stored = try XCTUnwrap(registry.get(installed.id))
+      XCTAssertEqual(transport.requests.count, 0)
+      XCTAssertEqual(stored.state, .error)
+      XCTAssertTrue(stored.lastError.contains("configured server"))
+    }
+  }
+
+  func testAgentMcpDeclarativeHTTPClientMarksAuthenticationFailureOnHttp401() async throws {
+    let root = try temporaryDirectory("mcp-declarative-http-401")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpDeclarativePackageManifest())
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let installed = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    _ = try registry.beginAuthentication(installed.id)
+    let authenticated = try registry.submitAuthenticationStep(
+      installed.id,
+      values: [
+        "username": "alice",
+        "password": "pw",
+        "access_token": "secret-token"
+      ]
+    )
+    let transport = FakeMcpDeclarativeHTTPTransport([
+      AgentMcpDeclarativeHTTPResponse(statusCode: 401, body: #"{"error":"expired"}"#)
+    ])
+    let client = AgentMcpDeclarativeHTTPClient(
+      registry: registry,
+      packageRepository: repository,
+      transport: transport,
+      nowMillis: { 10_000 }
+    )
+
+    do {
+      _ = try await client.callTool(
+        connection: authenticated,
+        toolName: "relay.switch",
+        arguments: [
+          "device_id": .string("relay-1"),
+          "enabled": .bool(true)
+        ]
+      )
+      XCTFail("Expected HTTP 401 to require MCP reauthentication")
+    } catch {
+      let stored = try XCTUnwrap(registry.get(installed.id))
+      XCTAssertEqual(transport.requests.count, 1)
+      XCTAssertEqual(stored.state, .needsSetup)
+      XCTAssertEqual(stored.authState, .reauthenticationRequired)
+      XCTAssertEqual(stored.lastError, "MCP authentication expired")
+    }
   }
 
   func testAgentCapabilityDependencyResolverAndEndpointPolicyMatchAndroid() throws {
