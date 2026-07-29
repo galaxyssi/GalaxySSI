@@ -31,6 +31,7 @@ from desktop_memory_critic import (
 )
 from desktop_memory_prompt_compiler import CompiledMemoryContext, compile_memory_context
 from desktop_memory_query_planner import DesktopMemoryQueryPlan, plan_memory_query
+from desktop_memory_visualization import build_memory_visualization
 
 
 MAX_CONTENT_CHARS = 2_000
@@ -1214,6 +1215,15 @@ class DesktopMemoryStore:
                     error=str(exc),
                 )
             raise
+
+    def visualization_snapshot(self, limit: int = 100) -> dict[str, Any]:
+        now_ms = int(self.now() * 1_000)
+        with self._lock, self._connect() as connection:
+            return build_memory_visualization(
+                connection,
+                now_ms,
+                limit=limit,
+            )
 
     def stats(self) -> dict[str, Any]:
         with self._lock, self._connect() as connection:

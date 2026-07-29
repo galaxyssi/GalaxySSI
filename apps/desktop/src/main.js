@@ -70,6 +70,9 @@ async function runUiSmoke() {
   const matrixPath = path.join(outDir, "desktop-status-matrix.png");
   const agentsPath = path.join(outDir, "desktop-agents.png");
   const memoryOverviewPath = path.join(outDir, "desktop-memory-overview.png");
+  const memoryTimelinePath = path.join(outDir, "desktop-memory-timeline.png");
+  const memoryGraphPath = path.join(outDir, "desktop-memory-graph.png");
+  const memoryEvidencePath = path.join(outDir, "desktop-memory-evidence.png");
   const memoryInboxPath = path.join(outDir, "desktop-memory-inbox.png");
   const memoryConflictsPath = path.join(outDir, "desktop-memory-conflicts.png");
   const mcpGovernancePath = path.join(outDir, "desktop-mcp-governance.png");
@@ -340,8 +343,28 @@ async function runUiSmoke() {
           health: document.querySelector(".memory-health")?.textContent || "",
           auditAction: Boolean(document.querySelector("[data-run-memory-critic]")),
           criticRun: criticRun?.run?.status || "",
+          visualizationTabs: document.querySelectorAll("[data-memory-visualization-view]").length,
           recent: document.querySelectorAll(".memory-evolution-list > div").length
         };
+        document.querySelector('[data-memory-visualization-view="timeline"]')?.click();
+        overviewState.timelineEvents = document.querySelectorAll(".memory-timeline-event").length;
+        document.querySelector('[data-memory-visualization-view="graph"]')?.click();
+        overviewState.graphNodes = document.querySelectorAll(".memory-graph-node").length;
+        overviewState.graphRelations = document.querySelectorAll(".memory-graph-edges line").length;
+        const graphTargets = Array.from(document.querySelectorAll(".memory-graph-node"));
+        const graphTargetId = graphTargets.at(1)?.dataset.memoryGraphNode || "";
+        graphTargets.at(1)?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        overviewState.graphSelection = graphTargetId
+          && document.querySelector(".memory-graph-node.selected")?.dataset.memoryGraphNode === graphTargetId;
+        document.querySelector('[data-memory-visualization-view="evidence"]')?.click();
+        overviewState.evidenceChains = document.querySelectorAll(".memory-evidence-index button").length;
+        overviewState.evidenceVersions = document.querySelectorAll(".memory-version-chain > div").length;
+        const evidenceTargets = Array.from(document.querySelectorAll(".memory-evidence-index button"));
+        const evidenceTargetId = evidenceTargets.at(1)?.dataset.memoryEvidenceChain || "";
+        evidenceTargets.at(1)?.click();
+        overviewState.evidenceSelection = evidenceTargetId
+          && document.querySelector(".memory-evidence-index button.active")?.dataset.memoryEvidenceChain === evidenceTargetId;
+        document.querySelector('[data-memory-visualization-view="state"]')?.click();
         document.querySelector('[data-memory-view="planned"]')?.click();
         const plannedState = {
           active: document.querySelector('[data-memory-view="planned"]')?.classList.contains("active") || false,
@@ -378,6 +401,14 @@ async function runUiSmoke() {
       || !capabilitiesState.overviewState.health.trim()
       || !capabilitiesState.overviewState.auditAction
       || capabilitiesState.overviewState.criticRun !== "completed"
+      || capabilitiesState.overviewState.visualizationTabs !== 4
+      || capabilitiesState.overviewState.timelineEvents < 3
+      || capabilitiesState.overviewState.graphNodes < 2
+      || capabilitiesState.overviewState.graphRelations < 1
+      || !capabilitiesState.overviewState.graphSelection
+      || capabilitiesState.overviewState.evidenceChains < 2
+      || capabilitiesState.overviewState.evidenceVersions < 1
+      || !capabilitiesState.overviewState.evidenceSelection
       || capabilitiesState.overviewState.recent < 2
       || !capabilitiesState.plannedState.active
       || capabilitiesState.plannedState.count !== 1
@@ -427,6 +458,21 @@ async function runUiSmoke() {
       document.querySelector('[data-memory-view="overview"]')?.click()
     `);
     await captureSmokeScreenshot(memoryOverviewPath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="timeline"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryTimelinePath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="graph"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryGraphPath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="evidence"]')?.click()
+    `);
+    await captureSmokeScreenshot(memoryEvidencePath);
+    await mainWindow.webContents.executeJavaScript(`
+      document.querySelector('[data-memory-visualization-view="state"]')?.click()
+    `);
     const mcpGovernanceState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         state.mcp = [{
@@ -908,6 +954,9 @@ async function runUiSmoke() {
     console.log(`[ui-smoke] screenshot: ${matrixPath}`);
     console.log(`[ui-smoke] screenshot: ${agentsPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryOverviewPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryTimelinePath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryGraphPath}`);
+    console.log(`[ui-smoke] screenshot: ${memoryEvidencePath}`);
     console.log(`[ui-smoke] screenshot: ${memoryInboxPath}`);
     console.log(`[ui-smoke] screenshot: ${memoryConflictsPath}`);
     console.log(`[ui-smoke] screenshot: ${mcpGovernancePath}`);
@@ -1653,6 +1702,13 @@ async function runDesktopMemoryCritic() {
   return fetchJson("/api/desktop-memory/critic/run", { method: "POST" });
 }
 
+async function getDesktopMemoryVisualization(limit = 100) {
+  await startBackend();
+  return fetchJson(
+    `/api/desktop-memory/visualization?limit=${encodeURIComponent(limit || 100)}`
+  );
+}
+
 async function proposeDesktopMemory(payload = {}) {
   await startBackend();
   return fetchJson("/api/desktop-memory/inbox", {
@@ -1913,6 +1969,8 @@ ipcMain.handle("desktop-memory:list", (_event, query, limit, status) => getDeskt
 ipcMain.handle("desktop-memory:inbox", (_event, limit) => getDesktopMemoryInbox(limit));
 ipcMain.handle("desktop-memory:evolution", (_event, limit) => getDesktopMemoryEvolution(limit));
 ipcMain.handle("desktop-memory:critic-run", runDesktopMemoryCritic);
+ipcMain.handle("desktop-memory:visualization", (_event, limit) =>
+  getDesktopMemoryVisualization(limit));
 ipcMain.handle("desktop-memory:propose", (_event, payload) => proposeDesktopMemory(payload));
 ipcMain.handle("desktop-memory:remember", (_event, payload) => rememberDesktopMemory(payload));
 ipcMain.handle("desktop-memory:forget", (_event, memoryId) => forgetDesktopMemory(memoryId));

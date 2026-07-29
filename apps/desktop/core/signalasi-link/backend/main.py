@@ -1920,6 +1920,14 @@ def api_run_desktop_memory_critic(request: Request):
     return desktop_memory_store().run_critic(force=True, trigger="manual")
 
 
+@app.get("/api/desktop-memory/visualization")
+def api_desktop_memory_visualization(request: Request, limit: int = Query(100)):
+    require_loopback(request)
+    from desktop_memory import desktop_memory_store
+
+    return desktop_memory_store().visualization_snapshot(limit=limit)
+
+
 @app.post("/api/desktop-memory/inbox")
 def api_propose_desktop_memory(req: DesktopMemoryReq, request: Request):
     require_loopback(request)
