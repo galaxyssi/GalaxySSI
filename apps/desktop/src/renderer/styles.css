@@ -568,6 +568,25 @@ button:disabled { cursor: default; opacity: 0.48; }
 .mcp-policy-select:focus { border-color: #8cb5ec; box-shadow: 0 0 0 2px var(--blue-soft); }
 .capability-item button { height: 26px; padding: 0 7px; border: 0; border-radius: 5px; background: #eef1f3; color: #56616a; font-size: 8px; }
 .capability-item button.primary { background: var(--green-soft); color: var(--green-ink); }
+.mcp-import-panel { display: grid; gap: 8px; padding: 2px 0 4px; }
+.mcp-import-panel > p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.mcp-import-sources { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.mcp-import-sources > small { width: 100%; color: var(--muted); font-size: 7px; }
+.mcp-import-source { min-height: 28px; display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: #4f5962; font-size: 8px; }
+.mcp-import-source span { color: var(--muted); font-size: 7px; }
+.mcp-import-file { padding: 6px 8px; border-radius: 5px; background: #f2f5f7; color: #56616a; font-size: 8px; overflow-wrap: anywhere; }
+.mcp-import-preview { display: grid; gap: 5px; }
+.mcp-import-candidate { min-height: 58px; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: start; gap: 7px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }
+.mcp-import-candidate.blocked { background: #f7f8f9; opacity: 0.8; }
+.mcp-import-candidate > input { width: 15px; height: 15px; margin: 2px 0 0; accent-color: var(--green); }
+.mcp-import-candidate-body,
+.mcp-import-candidate-body small { display: block; min-width: 0; }
+.mcp-import-candidate-heading { display: flex; align-items: center; gap: 6px; }
+.mcp-import-candidate-heading strong { min-width: 0; overflow: hidden; color: #30373d; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.mcp-import-candidate-heading span { margin-left: auto; padding: 2px 5px; border-radius: 7px; background: var(--green-soft); color: var(--green-ink); font-size: 7px; white-space: nowrap; }
+.mcp-import-candidate.blocked .mcp-import-candidate-heading span { background: #eef0f2; color: #737b82; }
+.mcp-import-candidate-body small { margin-top: 3px; color: var(--muted); font-size: 7px; line-height: 1.4; overflow-wrap: anywhere; }
+.mcp-import-candidate-body .mcp-import-warning { color: #8a6727; }
 .mcp-audit-section { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
 .mcp-audit-heading { margin-bottom: 8px; padding: 0 2px; }
 .mcp-audit-heading strong,

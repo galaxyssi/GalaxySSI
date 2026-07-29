@@ -55,9 +55,12 @@ class DesktopMcpConnection:
     name: str
     transport: str = "local_stdio"
     command: str = ""
+    command_argv: tuple[str, ...] = ()
+    environment_env: tuple[tuple[str, str], ...] = ()
     endpoint: str = ""
     working_directory: str = ""
     header_env: tuple[tuple[str, str], ...] = ()
+    header_templates: tuple[tuple[str, str], ...] = ()
     protocol_version: str = DEFAULT_PROTOCOL_VERSION
     stdio_framing: str = "newline"
     allow_insecure_http: bool = False
@@ -75,21 +78,30 @@ class DesktopMcpConnection:
     server_version: str = ""
     capabilities: tuple[str, ...] = ()
     tool_ids: tuple[str, ...] = ()
+    import_source: str = ""
     updated_at: int = 0
 
     def public(self, include_configuration: bool = False) -> dict[str, Any]:
         value = asdict(self)
         value["triggers"] = list(self.triggers)
+        value["command_argv"] = list(self.command_argv)
+        value["environment_env"] = dict(self.environment_env)
         value["header_env"] = dict(self.header_env)
+        value["header_templates"] = dict(self.header_templates)
         value["capabilities"] = list(self.capabilities)
         value["tool_ids"] = list(self.tool_ids)
         value["configured"] = bool(
-            self.command if self.transport == "local_stdio" else self.endpoint
+            (self.command or self.command_argv)
+            if self.transport == "local_stdio"
+            else self.endpoint
         )
         if not include_configuration:
             value.pop("command", None)
+            value.pop("command_argv", None)
+            value.pop("environment_env", None)
             value.pop("working_directory", None)
             value.pop("header_env", None)
+            value.pop("header_templates", None)
         return value
 
 
@@ -128,6 +140,8 @@ class DesktopMcpRegistry:
         if transport not in MCP_TRANSPORTS:
             raise ValueError("MCP transport is invalid")
         command = str(value.get("command") or "").strip()[:4_000]
+        command_argv = _normalize_command_argv(value.get("command_argv"))
+        environment_env = _normalize_environment_env(value.get("environment_env"))
         endpoint = _normalize_endpoint(
             value.get("endpoint"),
             allow_insecure_http=bool(value.get("allow_insecure_http", False)),
@@ -138,6 +152,10 @@ class DesktopMcpRegistry:
             if not Path(working_directory).is_dir():
                 raise ValueError("MCP working directory does not exist")
         header_env = _normalize_header_env(value.get("header_env"))
+        header_templates = _normalize_header_templates(
+            value.get("header_templates"),
+            header_env,
+        )
         protocol_version = str(
             value.get("protocol_version") or DEFAULT_PROTOCOL_VERSION
         ).strip()
@@ -151,7 +169,7 @@ class DesktopMcpRegistry:
         timeout = max(3, min(int(value.get("timeout_seconds") or 20), 300))
         if not name:
             raise ValueError("MCP connection requires a name")
-        if transport == "local_stdio" and not command:
+        if transport == "local_stdio" and not command and not command_argv:
             raise ValueError("Local MCP requires a server command")
         if transport == "streamable_http" and not endpoint:
             raise ValueError("Remote MCP requires a Streamable HTTP endpoint")
@@ -162,9 +180,12 @@ class DesktopMcpRegistry:
             name=name,
             transport=transport,
             command=command,
+            command_argv=tuple(command_argv),
+            environment_env=tuple(sorted(environment_env.items())),
             endpoint=endpoint,
             working_directory=working_directory,
             header_env=tuple(sorted(header_env.items())),
+            header_templates=tuple(sorted(header_templates.items())),
             protocol_version=protocol_version,
             stdio_framing=stdio_framing,
             allow_insecure_http=bool(value.get("allow_insecure_http", False)),
@@ -175,6 +196,7 @@ class DesktopMcpRegistry:
             permission_mode=normalize_permission_mode(value.get("permission_mode")),
             timeout_seconds=timeout,
             state="disabled" if not enabled else "configured",
+            import_source=str(value.get("import_source") or "").strip().casefold()[:40],
             updated_at=int(time.time() * 1_000),
         )
         if existing is not None and _connection_target(existing) == _connection_target(connection):
@@ -524,6 +546,7 @@ class DesktopMcpRegistry:
     @staticmethod
     def _args(connection: DesktopMcpConnection) -> argparse.Namespace:
         request_headers: dict[str, str] = {}
+        header_templates = dict(connection.header_templates)
         for header, environment_name in connection.header_env:
             value = str(os.environ.get(environment_name) or "")
             if not value:
@@ -534,9 +557,31 @@ class DesktopMcpRegistry:
                 raise RuntimeError(
                     f"MCP HTTP header {header} has an unsafe environment value"
                 )
-            request_headers[header] = value
+            rendered = header_templates.get(
+                header,
+                "{value}",
+            ).replace("{value}", value)
+            if len(rendered) > 8_192 or "\r" in rendered or "\n" in rendered:
+                raise RuntimeError(
+                    f"MCP HTTP header {header} has an unsafe rendered value"
+                )
+            request_headers[header] = rendered
+        process_environment: dict[str, str] = {}
+        for child_name, environment_name in connection.environment_env:
+            value = str(os.environ.get(environment_name) or "")
+            if not value:
+                raise RuntimeError(
+                    f"MCP process variable {child_name} requires environment variable {environment_name}"
+                )
+            if len(value) > 65_536 or "\x00" in value:
+                raise RuntimeError(
+                    f"MCP process variable {child_name} has an unsafe environment value"
+                )
+            process_environment[child_name] = value
         return argparse.Namespace(
             server=connection.command,
+            command_argv=list(connection.command_argv),
+            process_environment=process_environment,
             server_python=None,
             tool=connection.default_tool or None,
             arg_json=None,
@@ -610,12 +655,32 @@ class DesktopMcpRegistry:
                     name=str(item["name"]),
                     transport=str(item.get("transport") or "local_stdio"),
                     command=str(item.get("command") or ""),
+                    command_argv=tuple(
+                        str(value)
+                        for value in list(item.get("command_argv") or [])
+                    ),
+                    environment_env=tuple(
+                        sorted(
+                            (str(key), str(value))
+                            for key, value in dict(
+                                item.get("environment_env") or {}
+                            ).items()
+                        )
+                    ),
                     endpoint=str(item.get("endpoint") or ""),
                     working_directory=str(item.get("working_directory") or ""),
                     header_env=tuple(
                         sorted(
                             (str(key), str(value))
                             for key, value in dict(item.get("header_env") or {}).items()
+                        )
+                    ),
+                    header_templates=tuple(
+                        sorted(
+                            (str(key), str(value))
+                            for key, value in dict(
+                                item.get("header_templates") or {}
+                            ).items()
                         )
                     ),
                     protocol_version=str(item.get("protocol_version") or DEFAULT_PROTOCOL_VERSION),
@@ -635,6 +700,7 @@ class DesktopMcpRegistry:
                     server_version=str(item.get("server_version") or "")[:80],
                     capabilities=tuple(str(value) for value in list(item.get("capabilities") or [])),
                     tool_ids=tuple(str(value) for value in list(item.get("tool_ids") or [])),
+                    import_source=str(item.get("import_source") or ""),
                     updated_at=int(item.get("updated_at") or 0),
                 ))
             except Exception:
@@ -647,7 +713,7 @@ class DesktopMcpRegistry:
         temporary.write_text(
             json.dumps(
                 {
-                    "schema_version": 2,
+                    "schema_version": 4,
                     "connections": [
                         item.public(include_configuration=True)
                         for item in rows
@@ -697,6 +763,39 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+def _normalize_command_argv(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError("MCP command arguments must be an array")
+    result = []
+    for item in list(value)[:256]:
+        argument = str(item)
+        if not argument or "\x00" in argument or len(argument) > 4_000:
+            raise ValueError("MCP command argument is invalid")
+        result.append(argument)
+    return result
+
+
+def _normalize_environment_env(value: Any) -> dict[str, str]:
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("MCP process environment mapping must be an object")
+    result: dict[str, str] = {}
+    for raw_child, raw_environment in list(value.items())[:64]:
+        child = str(raw_child or "").strip()
+        environment = str(raw_environment or "").strip()
+        if not ENVIRONMENT_NAME.fullmatch(child):
+            raise ValueError(f"MCP process variable name is invalid: {child}")
+        if not ENVIRONMENT_NAME.fullmatch(environment):
+            raise ValueError(
+                f"MCP process variable {child} requires a valid environment variable name"
+            )
+        result[child] = environment
+    return result
+
+
 def _normalize_header_env(value: Any) -> dict[str, str]:
     if value in (None, ""):
         return {}
@@ -725,16 +824,45 @@ def _normalize_header_env(value: Any) -> dict[str, str]:
     return result
 
 
+def _normalize_header_templates(
+    value: Any,
+    header_env: dict[str, str],
+) -> dict[str, str]:
+    if value in (None, ""):
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("MCP HTTP header templates must be an object")
+    result: dict[str, str] = {}
+    for raw_header, raw_template in list(value.items())[:32]:
+        header = str(raw_header or "").strip()
+        template = str(raw_template or "")
+        if header not in header_env:
+            raise ValueError(f"MCP HTTP header template has no environment mapping: {header}")
+        if (
+            len(template) > 256
+            or "\r" in template
+            or "\n" in template
+            or template.count("{value}") != 1
+        ):
+            raise ValueError(f"MCP HTTP header template is invalid: {header}")
+        result[header] = template
+    return result
+
+
 def _connection_target(connection: DesktopMcpConnection) -> tuple[Any, ...]:
     return (
         connection.transport,
         connection.command,
+        connection.command_argv,
+        connection.environment_env,
         connection.endpoint,
         connection.working_directory,
         connection.header_env,
+        connection.header_templates,
         connection.protocol_version,
         connection.stdio_framing,
         connection.allow_insecure_http,
+        connection.import_source,
     )
 
 

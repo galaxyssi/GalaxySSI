@@ -22,6 +22,7 @@ const required = [
   "core/signalasi-link/backend/desktop_super_agent.py",
   "core/signalasi-link/backend/desktop_memory.py",
   "core/signalasi-link/backend/desktop_mcp.py",
+  "core/signalasi-link/backend/mcp_config_import.py",
   "core/signalasi-link/backend/mcp_security.py",
   "core/signalasi-link/backend/desktop_runtime.py",
   "core/signalasi-link/backend/desktop_skills.py",
