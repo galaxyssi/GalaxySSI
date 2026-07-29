@@ -695,6 +695,75 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentConfirmationPolicy.tier(for: connectorAction), .direct)
   }
 
+  func testAgentExecutionPresentationPolicyMatchesAndroidLocalAndRemoteLocations() {
+    let desktop = AgentExecutionPresentationPolicy.local(
+      routeKind: .desktopAgent,
+      targetTitle: "Codex \u{00b7} WORKSTATION",
+      selectedAgentOrModel: "",
+      phase: .executing,
+      currentStep: "Reading files",
+      startedAtMillis: 1_000
+    )
+
+    XCTAssertEqual(desktop.executorLabel, "Codex")
+    XCTAssertEqual(desktop.locationLabelHint, "WORKSTATION")
+    XCTAssertEqual(desktop.locationKind, .desktop)
+    XCTAssertTrue(desktop.cancellable)
+
+    let phone = AgentExecutionPresentationPolicy.local(
+      routeKind: .localSystem,
+      targetTitle: "",
+      selectedAgentOrModel: "",
+      phase: .executing,
+      currentStep: "Reading battery",
+      startedAtMillis: 1_000
+    )
+    let cloud = AgentExecutionPresentationPolicy.local(
+      routeKind: .cloudModel,
+      targetTitle: "DeepSeek",
+      selectedAgentOrModel: "",
+      phase: .waitingResponse,
+      currentStep: "Waiting for model",
+      startedAtMillis: 1_000
+    )
+
+    XCTAssertEqual(phone.locationKind, .phone)
+    XCTAssertEqual(phone.executorLabel, "SignalASI")
+    XCTAssertEqual(cloud.locationKind, .cloud)
+    XCTAssertEqual(cloud.executorLabel, "DeepSeek")
+
+    let completed = AgentExecutionPresentationPolicy.remote(
+      executorId: "codex",
+      executorLabel: "Codex",
+      locationKind: "desktop",
+      locationName: "WORKSTATION",
+      status: "completed",
+      currentStep: "",
+      startedAtMillis: 1_000,
+      completedAtMillis: 2_000,
+      advertisedCancellable: true
+    )
+
+    XCTAssertFalse(completed.cancellable)
+    XCTAssertEqual(completed.phase, .completed)
+    XCTAssertEqual(completed.locationKind, .desktop)
+  }
+
+  func testAgentExecutionPresentationPolicyDecodesAndroidWireNames() throws {
+    let phase = try JSONDecoder.signalASI.decode(AgentPhase.self, from: Data(#""WAITING_RESPONSE""#.utf8))
+    let route = try JSONDecoder.signalASI.decode(AgentRouteKind.self, from: Data(#""DESKTOP_AGENT""#.utf8))
+    let fallbackPhase = try JSONDecoder.signalASI.decode(AgentPhase.self, from: Data(#""not-supported""#.utf8))
+    let fallbackRoute = try JSONDecoder.signalASI.decode(AgentRouteKind.self, from: Data(#""not-supported""#.utf8))
+
+    XCTAssertEqual(phase, .waitingResponse)
+    XCTAssertEqual(route, .desktopAgent)
+    XCTAssertEqual(fallbackPhase, .executing)
+    XCTAssertEqual(fallbackRoute, .unknown)
+    XCTAssertFalse(AgentExecutionPresentationPolicy.isCancellable(.blocked))
+    XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("timed_out"), .failed)
+    XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("waiting_approval"), .paused)
+  }
+
   func testAgentClarificationPolicyAsksTargetedQuestionsForMissingDetails() {
     let cases: [(String, AgentClarificationQuestion)] = [
       ("Help me", .taskGoal),
