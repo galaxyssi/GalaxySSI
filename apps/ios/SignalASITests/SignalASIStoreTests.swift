@@ -1409,6 +1409,174 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encoded.contains(#""rich_output_json":"#))
   }
 
+  func testAgentTranscriptLifecyclePolicyRemovesOnlyLegacyPlannerProcessRows() {
+    XCTAssertTrue(
+      AgentTranscriptLifecyclePolicy.isObsoletePlannerProcessEntry(
+        role: .process,
+        dedupeKey: "pending:plan:ask-codex:1"
+      )
+    )
+    XCTAssertFalse(
+      AgentTranscriptLifecyclePolicy.isObsoletePlannerProcessEntry(
+        role: .user,
+        dedupeKey: "pending:plan:user-text:1"
+      )
+    )
+    XCTAssertFalse(
+      AgentTranscriptLifecyclePolicy.isObsoletePlannerProcessEntry(
+        role: .process,
+        dedupeKey: "connector-task:task-id"
+      )
+    )
+  }
+
+  func testAgentTranscriptLifecyclePolicyRecoversStaleConnectorTurnWithoutAssistantReply() {
+    let entries = [
+      transcriptEntry("user", role: .user, timestampMillis: 1),
+      transcriptEntry("remote", timestampMillis: 2, dedupeKey: "connector-task:task")
+    ]
+    let task = agentTaskRecord(
+      phase: .completed,
+      result: " Recovered result\n",
+      updatedAtMillis: 2
+    )
+
+    let recovered = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      entries: entries,
+      tasks: [task],
+      activeTaskIds: [],
+      nowMillis: AgentTranscriptLifecyclePolicy.staleConnectorMillis + 3
+    )
+
+    XCTAssertEqual(recovered.count, 1)
+    XCTAssertEqual(recovered.first?.conversationId, "conversation")
+    XCTAssertEqual(recovered.first?.turnId, "turn")
+    XCTAssertEqual(recovered.first?.taskId, "task")
+    XCTAssertEqual(recovered.first?.result, "Recovered result")
+  }
+
+  func testAgentTranscriptLifecyclePolicySkipsActiveAnsweredFreshAndInternalPlannerResults() {
+    let user = transcriptEntry("user", role: .user, timestampMillis: 1)
+    let process = transcriptEntry("remote", timestampMillis: 2, dedupeKey: "connector-task:task")
+    let approval = transcriptEntry(
+      "approval",
+      role: .assistant,
+      timestampMillis: 3,
+      dedupeKey: "remote-approval:task"
+    )
+    let assistant = transcriptEntry(
+      "assistant",
+      role: .assistant,
+      timestampMillis: 4,
+      dedupeKey: "assistant-final:turn:turn"
+    )
+    let task = agentTaskRecord(result: "Recovered result", updatedAtMillis: 2)
+
+    let answered = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      entries: [user, process, assistant],
+      tasks: [task],
+      activeTaskIds: [],
+      nowMillis: 10 * 60 * 1_000
+    )
+    let active = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      entries: [user, process],
+      tasks: [task],
+      activeTaskIds: ["task"],
+      nowMillis: 10 * 60 * 1_000
+    )
+    let fresh = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      entries: [user, process],
+      tasks: [agentTaskRecord(result: "Recovered result", updatedAtMillis: 9 * 60 * 1_000)],
+      activeTaskIds: [],
+      nowMillis: 10 * 60 * 1_000
+    )
+    let approvalOnly = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      entries: [user, process, approval],
+      tasks: [task],
+      activeTaskIds: [],
+      nowMillis: 10 * 60 * 1_000
+    )
+    let internalPlanner = AgentTranscriptLifecyclePolicy.staleConnectorRecoveries(
+      entries: [
+        transcriptEntry("user-2", role: .user, turnId: "turn-2", timestampMillis: 1, taskId: "internal-task"),
+        transcriptEntry(
+          "remote-2",
+          turnId: "turn-2",
+          timestampMillis: 2,
+          dedupeKey: "connector-task:internal-task",
+          taskId: "internal-task"
+        )
+      ],
+      tasks: [
+        agentTaskRecord(
+          taskId: "internal-task",
+          result: "Create a safe local task plan for local-agent-runtime",
+          updatedAtMillis: 2
+        )
+      ],
+      activeTaskIds: [],
+      nowMillis: 10 * 60 * 1_000
+    )
+
+    XCTAssertTrue(answered.isEmpty)
+    XCTAssertTrue(active.isEmpty)
+    XCTAssertTrue(fresh.isEmpty)
+    XCTAssertEqual(approvalOnly.count, 1)
+    XCTAssertEqual(internalPlanner.count, 1)
+    XCTAssertEqual(internalPlanner.first?.result, "")
+  }
+
+  func testAgentTranscriptLifecycleModelsUseAndroidWireNames() throws {
+    let decodedTask = try JSONDecoder().decode(
+      AgentTaskRecord.self,
+      from: Data(
+        #"""
+        {
+          "task_id": "task",
+          "session_id": "conversation",
+          "goal": "goal",
+          "phase": "COMPLETED",
+          "route_kind": "DESKTOP_AGENT",
+          "target_title": "Codex",
+          "risk": "LOW",
+          "blocked": false,
+          "result": "Recovered",
+          "verification": "Verified",
+          "output_files": ["report.md"],
+          "execution_log": ["step"],
+          "created_at_millis": 1,
+          "updated_at_millis": 2
+        }
+        """#.utf8
+      )
+    )
+    let fallbackTask = try JSONDecoder().decode(
+      AgentTaskRecord.self,
+      from: Data(#"{"task_id":"future","session_id":"conversation","goal":"goal","phase":"FUTURE","route_kind":"FUTURE","risk":"FUTURE"}"#.utf8)
+    )
+    let recovery = AgentStaleConnectorRecovery(
+      conversationId: "conversation",
+      turnId: "turn",
+      taskId: "task",
+      result: "Recovered"
+    )
+    let encodedTask = String(decoding: try JSONEncoder().encode(decodedTask), as: UTF8.self)
+    let encodedRecovery = String(decoding: try JSONEncoder().encode(recovery), as: UTF8.self)
+
+    XCTAssertEqual(decodedTask.phase, .completed)
+    XCTAssertEqual(decodedTask.routeKind, .desktopAgent)
+    XCTAssertEqual(decodedTask.risk, .low)
+    XCTAssertEqual(decodedTask.outputFiles, ["report.md"])
+    XCTAssertEqual(decodedTask.executionLog, ["step"])
+    XCTAssertEqual(fallbackTask.phase, .executing)
+    XCTAssertEqual(fallbackTask.routeKind, .unknown)
+    XCTAssertEqual(fallbackTask.risk, .medium)
+    XCTAssertTrue(encodedTask.contains(#""updated_at_millis":2"#))
+    XCTAssertTrue(encodedTask.contains(#""route_kind":"DESKTOP_AGENT""#))
+    XCTAssertTrue(encodedRecovery.contains(#""conversation_id":"conversation""#))
+    XCTAssertTrue(encodedRecovery.contains(#""turn_id":"turn""#))
+  }
+
   func testAgentTranscriptPresentationPolicyCollapsesProcessGroupsBetweenUserAndAssistant() {
     let entries = [
       transcriptEntry("process-before-user", timestampMillis: 1),
@@ -3307,6 +3475,40 @@ final class SignalASIStoreTests: XCTestCase {
       sequence: sequence,
       kind: kind,
       timestampMillis: timestampMillis
+    )
+  }
+
+  private func agentTaskRecord(
+    taskId: String = "task",
+    sessionId: String = "conversation",
+    goal: String = "goal",
+    phase: AgentPhase = .executing,
+    routeKind: AgentRouteKind = .desktopAgent,
+    targetTitle: String = "Codex",
+    risk: AgentRisk = .low,
+    blocked: Bool = false,
+    result: String = "",
+    verification: String = "",
+    outputFiles: [String] = [],
+    executionLog: [String] = [],
+    createdAtMillis: Int64 = 1,
+    updatedAtMillis: Int64 = 1
+  ) -> AgentTaskRecord {
+    AgentTaskRecord(
+      taskId: taskId,
+      sessionId: sessionId,
+      goal: goal,
+      phase: phase,
+      routeKind: routeKind,
+      targetTitle: targetTitle,
+      risk: risk,
+      blocked: blocked,
+      result: result,
+      verification: verification,
+      outputFiles: outputFiles,
+      executionLog: executionLog,
+      createdAtMillis: createdAtMillis,
+      updatedAtMillis: updatedAtMillis
     )
   }
 

@@ -2141,6 +2141,94 @@ struct AgentWorkspace: Codable, Equatable, Identifiable {
   }
 }
 
+struct AgentTaskRecord: Codable, Equatable, Identifiable {
+  var taskId: String
+  var sessionId: String
+  var goal: String
+  var phase: AgentPhase
+  var routeKind: AgentRouteKind
+  var targetTitle: String
+  var risk: AgentRisk
+  var blocked: Bool
+  var result: String
+  var verification: String
+  var outputFiles: [String]
+  var executionLog: [String]
+  var createdAtMillis: Int64
+  var updatedAtMillis: Int64
+
+  var id: String { taskId }
+
+  init(
+    taskId: String,
+    sessionId: String,
+    goal: String,
+    phase: AgentPhase,
+    routeKind: AgentRouteKind,
+    targetTitle: String,
+    risk: AgentRisk,
+    blocked: Bool,
+    result: String = "",
+    verification: String = "",
+    outputFiles: [String] = [],
+    executionLog: [String] = [],
+    createdAtMillis: Int64 = 0,
+    updatedAtMillis: Int64 = 0
+  ) {
+    self.taskId = taskId
+    self.sessionId = sessionId
+    self.goal = goal
+    self.phase = phase
+    self.routeKind = routeKind
+    self.targetTitle = targetTitle
+    self.risk = risk
+    self.blocked = blocked
+    self.result = result
+    self.verification = verification
+    self.outputFiles = outputFiles
+    self.executionLog = executionLog
+    self.createdAtMillis = createdAtMillis
+    self.updatedAtMillis = updatedAtMillis
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case taskId = "task_id"
+    case sessionId = "session_id"
+    case goal
+    case phase
+    case routeKind = "route_kind"
+    case targetTitle = "target_title"
+    case risk
+    case blocked
+    case result
+    case verification
+    case outputFiles = "output_files"
+    case executionLog = "execution_log"
+    case createdAtMillis = "created_at_millis"
+    case updatedAtMillis = "updated_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      taskId: try container.decodeIfPresent(String.self, forKey: .taskId) ?? "",
+      sessionId: try container.decodeIfPresent(String.self, forKey: .sessionId) ?? "",
+      goal: try container.decodeIfPresent(String.self, forKey: .goal) ?? "",
+      phase: try container.decodeIfPresent(AgentPhase.self, forKey: .phase) ?? .executing,
+      routeKind: try container.decodeIfPresent(AgentRouteKind.self, forKey: .routeKind) ?? .unknown,
+      targetTitle: try container.decodeIfPresent(String.self, forKey: .targetTitle) ?? "",
+      risk: try container.decodeIfPresent(AgentRisk.self, forKey: .risk) ?? .medium,
+      blocked: try container.decodeIfPresent(Bool.self, forKey: .blocked) ?? false,
+      result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
+      verification: try container.decodeIfPresent(String.self, forKey: .verification) ?? "",
+      outputFiles: try container.decodeIfPresent([String].self, forKey: .outputFiles) ?? [],
+      executionLog: try container.decodeIfPresent([String].self, forKey: .executionLog) ?? [],
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
+    )
+  }
+}
+
 enum AgentTaskLivenessState: String, Codable, CaseIterable, Identifiable {
   case healthy = "HEALTHY"
   case stalled = "STALLED"
@@ -3056,6 +3144,106 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
     try container.encode(sourceConversationId, forKey: .sourceConversationId)
     try container.encode(sourceConversationTitle, forKey: .sourceConversationTitle)
     try container.encode(sourceEntryId, forKey: .sourceEntryId)
+  }
+}
+
+struct AgentStaleConnectorRecovery: Codable, Equatable {
+  var conversationId: String
+  var turnId: String
+  var taskId: String
+  var result: String
+
+  enum CodingKeys: String, CodingKey {
+    case conversationId = "conversation_id"
+    case turnId = "turn_id"
+    case taskId = "task_id"
+    case result
+  }
+}
+
+enum AgentTranscriptLifecyclePolicy {
+  static let staleConnectorMillis: Int64 = 5 * 60 * 1_000
+
+  static func isObsoletePlannerProcessEntry(role: AgentTranscriptRole, dedupeKey: String) -> Bool {
+    role == .process && dedupeKey.hasPrefix("pending:")
+  }
+
+  static func staleConnectorRecoveries(
+    entries: [AgentTranscriptEntry],
+    tasks: [AgentTaskRecord],
+    activeTaskIds: Set<String>,
+    nowMillis: Int64,
+    staleAfterMillis: Int64 = staleConnectorMillis
+  ) -> [AgentStaleConnectorRecovery] {
+    var tasksById: [String: AgentTaskRecord] = [:]
+    for task in tasks {
+      tasksById[task.taskId] = task
+    }
+
+    var processEntriesByTurnId: [String: [AgentTranscriptEntry]] = [:]
+    var orderedTurnIds: [String] = []
+    for entry in entries where
+      entry.role == .process &&
+      !isBlank(entry.turnId) &&
+      !isBlank(entry.taskId) &&
+      entry.dedupeKey.hasPrefix("connector-task:") {
+      if processEntriesByTurnId[entry.turnId] == nil {
+        orderedTurnIds.append(entry.turnId)
+      }
+      processEntriesByTurnId[entry.turnId, default: []].append(entry)
+    }
+
+    return orderedTurnIds.compactMap { turnId in
+      guard let taskEntry = processEntriesByTurnId[turnId]?.max(by: {
+        $0.timestampMillis < $1.timestampMillis
+      }) else {
+        return nil
+      }
+      guard !activeTaskIds.contains(taskEntry.taskId) else {
+        return nil
+      }
+      let hasUser = entries.contains {
+        $0.role == .user && $0.turnId == turnId
+      }
+      let hasAssistant = entries.contains {
+        $0.role == .assistant &&
+          $0.turnId == turnId &&
+          !$0.dedupeKey.hasPrefix("approval:") &&
+          !$0.dedupeKey.hasPrefix("remote-approval:")
+      }
+      guard hasUser, !hasAssistant, let task = tasksById[taskEntry.taskId] else {
+        return nil
+      }
+      let lastActivityMillis = max(taskEntry.timestampMillis, task.updatedAtMillis)
+      guard nowMillis - lastActivityMillis >= staleAfterMillis else {
+        return nil
+      }
+      let durableResult = sanitizeDurableResult(task.result)
+      return AgentStaleConnectorRecovery(
+        conversationId: taskEntry.conversationId,
+        turnId: turnId,
+        taskId: taskEntry.taskId,
+        result: durableResult
+      )
+    }
+  }
+
+  private static func sanitizeDurableResult(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, !isInternalPlannerResult(trimmed) else {
+      return ""
+    }
+    return trimmed
+  }
+
+  private static func isInternalPlannerResult(_ value: String) -> Bool {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized.contains("local-agent-runtime") ||
+      normalized.contains("create a safe local task plan")
+  }
+
+  private static func isBlank(_ value: String) -> Bool {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 }
 
