@@ -278,3 +278,99 @@ def test_failed_attachment_task_retries_in_the_same_conversation(tmp_path, monke
     assert policies[0]["task_budget"]["max_elapsed_seconds"] == 900.0
     assert policies[0]["task_budget"]["max_input_tokens"] == 123_000
     assert policies[0]["task_budget"]["allow_paid_providers"] is False
+
+
+def test_failed_task_can_switch_agent_or_return_diagnostics(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
+    manager = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", manager)
+    monkeypatch.setenv("SIGNALASI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setattr(
+        main,
+        "connector_diagnostics",
+        lambda quick=False: {
+            "agents": [
+                {"id": "codex", "status": "unavailable"},
+                {"id": "hermes", "status": "ready"},
+            ]
+        },
+    )
+    calls: list[tuple[str, dict]] = []
+
+    def delivery(agent_id, _prompt, **kwargs):
+        calls.append((agent_id, kwargs["execution_policy"]))
+        if len(calls) == 1:
+            raise RuntimeError("Codex is unavailable")
+        return {"reply": "Recovered with Hermes"}
+
+    monkeypatch.setattr(main, "deliver_agent_sync", delivery)
+    first = main.api_start_desktop_task(
+        main.DesktopTaskStartReq(
+            prompt="Inspect the repository",
+            agent_id="codex",
+            conversation_id="recovery-conversation",
+        ),
+        LoopbackRequest(),
+    )
+    failed = wait_for_terminal(manager, first["task_id"])
+    assert failed.status == "failed"
+    assert len(failed.public()["recovery_actions"]) == 4
+
+    diagnostic = main.api_recover_desktop_task(
+        failed.task_id,
+        main.DesktopTaskRecoveryReq(action="diagnostics"),
+        LoopbackRequest(),
+    )
+    assert diagnostic["diagnostic"]["recommended_action"] == "switch_agent"
+    assert len(calls) == 1
+
+    recovery = main.api_recover_desktop_task(
+        failed.task_id,
+        main.DesktopTaskRecoveryReq(action="switch_agent"),
+        LoopbackRequest(),
+    )
+    completed = wait_for_terminal(manager, recovery["task"]["task_id"])
+    assert completed.status == "completed"
+    assert completed.agent_id == "hermes"
+    assert completed.result == "Recovered with Hermes"
+    assert completed.retry_of == failed.task_id
+
+
+def test_safe_fallback_restarts_in_plan_only_mode(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
+    manager = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", manager)
+    monkeypatch.setenv("SIGNALASI_WORKSPACE_ROOT", str(tmp_path / "workspace"))
+    monkeypatch.setattr(
+        main,
+        "connector_diagnostics",
+        lambda quick=False: {"agents": [{"id": "codex", "status": "ready"}]},
+    )
+    policies: list[dict] = []
+
+    def delivery(_agent_id, _prompt, **kwargs):
+        policies.append(kwargs["execution_policy"])
+        if len(policies) == 1:
+            raise RuntimeError("Verification failed")
+        return {"reply": "Read-only fallback plan"}
+
+    monkeypatch.setattr(main, "deliver_agent_sync", delivery)
+    first = main.api_start_desktop_task(
+        main.DesktopTaskStartReq(
+            prompt="Change the project",
+            agent_id="codex",
+            conversation_id="degrade-conversation",
+        ),
+        LoopbackRequest(),
+    )
+    failed = wait_for_terminal(manager, first["task_id"])
+
+    recovery = main.api_recover_desktop_task(
+        failed.task_id,
+        main.DesktopTaskRecoveryReq(action="degrade"),
+        LoopbackRequest(),
+    )
+    completed = wait_for_terminal(manager, recovery["task"]["task_id"])
+    assert completed.result == "Read-only fallback plan"
+    assert policies[-1]["execution_mode"] == "plan_only"
+    assert policies[-1]["requires_artifact"] is False

@@ -410,8 +410,16 @@ button:disabled { cursor: default; opacity: 0.48; }
 .assistant-actions button { padding: 4px 0; border: 0; background: transparent; color: var(--muted); font-size: 8px; }
 .assistant-actions button:hover { color: var(--blue); }
 .error-answer { padding: 10px 12px; border-left: 3px solid #db7676; background: #fff6f6; color: #7c3737; }
-.retry-task { display: block; margin-top: 8px; padding: 5px 9px; border: 1px solid #e1bcbc; border-radius: 5px; background: #fff; color: #7c3737; font-size: 8px; }
-.retry-task:hover { background: #fff0f0; }
+.recovery-panel { display: grid; gap: 7px; margin-top: 9px; color: #4b555e; }
+.recovery-panel > strong { font-size: 8px; font-weight: 650; }
+.recovery-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.recovery-action { min-height: 27px; padding: 5px 9px; border: 1px solid #d9dfe4; border-radius: 5px; background: #fff; color: #48545e; font-size: 8px; }
+.recovery-action:hover:not(:disabled) { border-color: #88abc8; background: #f2f8fd; color: #205f91; }
+.recovery-action.recommended { border-color: #86acd0; background: #edf6fe; color: #1d659c; }
+.recovery-action:disabled { opacity: 0.42; cursor: not-allowed; }
+.recovery-diagnostic { display: grid; gap: 3px; padding: 8px 9px; border: 1px solid #dfe4e8; border-radius: 5px; background: #f7f9fa; color: #57616a; }
+.recovery-diagnostic strong { color: #303941; font-size: 8px; }
+.recovery-diagnostic span { font-size: 7px; line-height: 1.45; }
 
 .artifact-list { display: grid; gap: 7px; margin-top: 13px; }
 .artifact-row { min-height: 52px; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); }

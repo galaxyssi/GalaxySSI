@@ -1164,6 +1164,17 @@ async function retryDesktopTask(taskId) {
   return fetchJson(`/api/desktop/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST" });
 }
 
+async function recoverDesktopTask(taskId, action, agentId = "") {
+  await startBackend();
+  return fetchJson(`/api/desktop/tasks/${encodeURIComponent(taskId)}/recover`, {
+    method: "POST",
+    body: JSON.stringify({
+      action: String(action || ""),
+      agent_id: String(agentId || "")
+    })
+  });
+}
+
 async function deleteDesktopConversation(conversationId) {
   await startBackend();
   return fetchJson(`/api/desktop/conversations/${encodeURIComponent(conversationId)}`, { method: "DELETE" });
@@ -1462,6 +1473,8 @@ ipcMain.handle("desktop-tasks:stream-config", () => ({
 ipcMain.handle("desktop-tasks:start", (_event, payload) => startDesktopTask(payload));
 ipcMain.handle("desktop-tasks:cancel", (_event, taskId) => cancelDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:retry", (_event, taskId) => retryDesktopTask(taskId));
+ipcMain.handle("desktop-tasks:recover", (_event, taskId, action, agentId = "") =>
+  recoverDesktopTask(taskId, action, agentId));
 ipcMain.handle("desktop-conversations:delete", (_event, conversationId) => deleteDesktopConversation(conversationId));
 ipcMain.handle("evolution-tasks:list", (_event, limit) => listEvolutionTasks(limit));
 ipcMain.handle("evolution-tasks:get", (_event, taskId) => getEvolutionTask(taskId));

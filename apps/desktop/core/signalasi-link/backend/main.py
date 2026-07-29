@@ -1669,6 +1669,11 @@ class DesktopTaskStartReq(BaseModel):
     attempt: int = 1
 
 
+class DesktopTaskRecoveryReq(BaseModel):
+    action: str
+    agent_id: str = ""
+
+
 def _desktop_agent_for(prompt: str, requested: str = "auto") -> str:
     requested_id = str(requested or "auto").strip().lower()
     if requested_id in {"", "auto", "desktop", "this-desktop"}:
@@ -2085,6 +2090,10 @@ def api_retry_desktop_task(task_id: str, request: Request):
     if task.status not in TERMINAL_STATES or task.status == "completed":
         raise HTTPException(status_code=409, detail=api_error("desktop_task_not_retryable"))
 
+    return _restart_desktop_task(task, request)
+
+
+def _desktop_task_attachment_sources(task) -> list[str]:
     from task_workspace import task_workspace
 
     root = task_workspace(task.task_id).resolve()
@@ -2104,12 +2113,21 @@ def api_retry_desktop_task(task_id: str, request: Request):
             continue
         if candidate.is_file():
             sources.append(str(candidate))
+    return sources
 
+
+def _restart_desktop_task(
+    task,
+    request: Request,
+    *,
+    agent_id: str = "",
+    execution_mode: str = "",
+):
     return api_start_desktop_task(
         DesktopTaskStartReq(
             prompt=task.prompt,
-            agent_id=task.agent_id,
-            execution_mode=str(
+            agent_id=agent_id or task.agent_id,
+            execution_mode=execution_mode or str(
                 (task.execution_policy or {}).get("execution_mode")
                 or "auto_complete"
             ),
@@ -2118,12 +2136,108 @@ def api_retry_desktop_task(task_id: str, request: Request):
                 or {}
             ),
             conversation_id=task.conversation_id,
-            attachments=sources,
+            attachments=_desktop_task_attachment_sources(task),
             retry_of=task.retry_of or task.task_id,
             attempt=max(2, task.attempt + 1),
         ),
         request,
     )
+
+
+@app.post("/api/desktop/tasks/{task_id}/recover")
+def api_recover_desktop_task(
+    task_id: str,
+    req: DesktopTaskRecoveryReq,
+    request: Request,
+):
+    require_loopback(request)
+    task = agent_task_manager.get(task_id)
+    if (
+        task is None
+        or not task.source_message_id.startswith("desktop:")
+    ):
+        raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+    if task.status not in TERMINAL_STATES or task.status == "completed":
+        raise HTTPException(status_code=409, detail=api_error("desktop_task_not_recoverable"))
+
+    from agent_failure_recovery import (
+        AgentFailureRecoveryAction,
+        failure_diagnostic,
+        recovery_choices,
+    )
+
+    action = str(req.action or "").strip().lower()
+    try:
+        recovery_action = AgentFailureRecoveryAction(action)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=api_error("desktop_recovery_action_invalid"),
+        ) from exc
+
+    agents = list(connector_diagnostics(quick=True).get("agents") or [])
+    task_payload = task.public(include_prompt=True)
+    choices = recovery_choices(task_payload, agents)
+    selected = next(
+        (
+            choice
+            for choice in choices
+            if choice.get("action") == recovery_action.value
+        ),
+        None,
+    )
+    if selected is None or not selected.get("enabled"):
+        raise HTTPException(
+            status_code=409,
+            detail=api_error(
+                "desktop_recovery_action_unavailable",
+                str((selected or {}).get("reason") or "Recovery action is unavailable."),
+            ),
+        )
+
+    if recovery_action == AgentFailureRecoveryAction.DIAGNOSTICS:
+        return {
+            "action": recovery_action.value,
+            "task": task_payload,
+            "diagnostic": failure_diagnostic(task_payload, agents),
+        }
+    if recovery_action == AgentFailureRecoveryAction.SWITCH_AGENT:
+        candidates = list(selected.get("candidate_agent_ids") or [])
+        requested_agent = str(req.agent_id or "").strip().lower()
+        target_agent = (
+            requested_agent
+            if requested_agent and requested_agent in candidates
+            else (candidates[0] if candidates else "")
+        )
+        if not target_agent:
+            raise HTTPException(
+                status_code=409,
+                detail=api_error(
+                    "desktop_recovery_agent_unavailable",
+                    "No alternative Agent is currently available.",
+                ),
+            )
+        return {
+            "action": recovery_action.value,
+            "task": _restart_desktop_task(
+                task,
+                request,
+                agent_id=target_agent,
+            ),
+        }
+    if recovery_action == AgentFailureRecoveryAction.DEGRADE:
+        return {
+            "action": recovery_action.value,
+            "task": _restart_desktop_task(
+                task,
+                request,
+                execution_mode="plan_only",
+            ),
+        }
+    return {
+        "action": recovery_action.value,
+        "task": _restart_desktop_task(task, request),
+    }
 
 
 @app.delete("/api/desktop/conversations/{conversation_id}")

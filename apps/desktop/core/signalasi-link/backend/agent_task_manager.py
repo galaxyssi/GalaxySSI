@@ -162,6 +162,7 @@ class AgentTask:
         # The timeline is deterministically rebuilt from durable task fields and
         # raw events, so storing a second copy would only inflate the task DB.
         data.pop("run_timeline", None)
+        data.pop("recovery_actions", None)
         data["events"] = list(self.events)
         return data
 
@@ -227,6 +228,12 @@ class AgentTask:
             },
         }
         data["run_timeline"] = project_run_timeline(self)
+        if self.status in {"failed", "timed_out", "cancelled", "not_found"}:
+            from agent_failure_recovery import recovery_choices
+
+            data["recovery_actions"] = recovery_choices(data)
+        else:
+            data["recovery_actions"] = []
         if include_prompt:
             data["prompt"] = self.prompt
         return data

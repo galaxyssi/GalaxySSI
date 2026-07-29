@@ -1982,4 +1982,12 @@
     <string name="agent_plan_only_intro">Here is the proposed plan. Nothing has been executed.</string>
     <string name="agent_plan_only_step">%1$d. %2$s</string>
     <string name="agent_plan_only_risk">Risk: %1$s. The normal action-permission policy still applies when execution begins.</string>
+    <string name="agent_recovery_title">Choose how to continue</string>
+    <string name="agent_recovery_message">The task stopped without a verified result.</string>
+    <string name="agent_recovery_retry">Retry</string>
+    <string name="agent_recovery_switch_agent">Use another Agent</string>
+    <string name="agent_recovery_degrade">Safe fallback</string>
+    <string name="agent_recovery_diagnostics">Diagnostics only</string>
+    <string name="agent_recovery_unavailable">This recovery action is no longer available.</string>
+    <string name="agent_recovery_already_started">This recovery action has already started.</string>
 </resources>

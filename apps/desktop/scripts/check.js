@@ -133,6 +133,7 @@ const backendCustomAgent = fs.readFileSync(path.join(backendDir, "custom_agent_s
 const backendDesktopFileTools = fs.readFileSync(path.join(backendDir, "desktop_file_tools.py"), "utf8");
 const backendDesktopControl = fs.readFileSync(path.join(backendDir, "desktop_control.py"), "utf8");
 const backendDesktopAgentLoop = fs.readFileSync(path.join(backendDir, "desktop_agent_loop.py"), "utf8");
+const backendAgentFailureRecovery = fs.readFileSync(path.join(backendDir, "agent_failure_recovery.py"), "utf8");
 const backendDesktopNativeTools = fs.readFileSync(path.join(backendDir, "desktop_native_tools.py"), "utf8");
 const backendDesktopMemory = fs.readFileSync(path.join(backendDir, "desktop_memory.py"), "utf8");
 const backendDesktopMcp = fs.readFileSync(path.join(backendDir, "desktop_mcp.py"), "utf8");
@@ -178,6 +179,7 @@ const androidMcpRuntime = fs.readFileSync(path.join(workspaceRoot, "android", "a
 const androidExecutionPresentation = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentExecutionPresentation.kt"), "utf8");
 const androidTaskIntent = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskIntent.kt"), "utf8");
 const androidTaskBudget = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentTaskBudget.kt"), "utf8");
+const androidAgentFailureRecovery = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AgentFailureRecovery.kt"), "utf8");
 const androidStringsZh = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values-zh-rCN", "strings.xml"), "utf8");
 const androidStringsEn = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "res", "values", "strings.xml"), "utf8");
 const androidSourceRoot = path.join(workspaceRoot, "android", "app", "src", "main");
@@ -687,18 +689,35 @@ for (const contract of [
 
 for (const taskContract of [
   "/api/desktop/tasks/{task_id}/retry",
+  "/api/desktop/tasks/{task_id}/recover",
   "attachments=attachments",
   "retry_of=str(req.retry_of",
-  "desktop_native_tool_registry().cancel_task"
+  "desktop_native_tool_registry().cancel_task",
+  "AgentFailureRecoveryAction.SWITCH_AGENT",
+  "AgentFailureRecoveryAction.DEGRADE"
 ]) {
   if (!backendMain.includes(taskContract)) {
     throw new Error(`Desktop task recovery contract missing: ${taskContract}`);
   }
 }
 
-for (const rendererContract of ["retryDesktopTask", "data-retry-task", "task.attachments"]) {
+for (const rendererContract of ["recoverDesktopTask", "data-recovery-task", "task.attachments"]) {
   if (!workspaceRenderer.includes(rendererContract) && !preload.includes(rendererContract)) {
     throw new Error(`Desktop task recovery UI missing: ${rendererContract}`);
+  }
+}
+
+for (const recoveryContract of [
+  [backendAgentFailureRecovery, "class AgentFailureRecoveryAction"],
+  [backendAgentFailureRecovery, "def recovery_choices("],
+  [backendAgentFailureRecovery, "def failure_diagnostic("],
+  [backendMqtt, "\"recovery_actions\""],
+  [androidAgentFailureRecovery, "enum class AgentFailureRecoveryAction"],
+  [androidAgentFailureRecovery, "object AgentFailureRecoveryPolicy"],
+  [androidMainActivity, "\"recover_agent_task\""]
+]) {
+  if (!recoveryContract[0].includes(recoveryContract[1])) {
+    throw new Error(`Cross-platform failure recovery is incomplete: ${recoveryContract[1]}`);
   }
 }
 

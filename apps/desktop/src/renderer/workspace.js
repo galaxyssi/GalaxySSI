@@ -196,6 +196,7 @@ const state = {
     ? "plan_only"
     : "auto_complete",
   taskBudget: loadTaskBudget(),
+  recoveryDiagnostics: {},
   attachments: [],
   renderingSignature: "",
   polling: false,
@@ -509,6 +510,45 @@ function renderLatencySummary(task) {
   </div>`;
 }
 
+function renderRecoveryDiagnostic(taskId) {
+  const diagnostic = state.recoveryDiagnostics[taskId];
+  if (!diagnostic) return "";
+  const available = Array.isArray(diagnostic.available_agent_ids)
+    ? diagnostic.available_agent_ids.map(agentName).join(", ")
+    : "";
+  return `<div class="recovery-diagnostic">
+    <strong>${escapeHtml(t("Failure diagnostics"))}</strong>
+    <span>${escapeHtml(t("Failure type"))}: ${escapeHtml(diagnostic.failure_kind || "unknown")}</span>
+    <span>${escapeHtml(t("Agent status"))}: ${escapeHtml(diagnostic.agent_status || "unknown")}</span>
+    ${diagnostic.error ? `<span>${escapeHtml(diagnostic.error)}</span>` : ""}
+    ${available ? `<span>${escapeHtml(t("Available Agents"))}: ${escapeHtml(available)}</span>` : ""}
+  </div>`;
+}
+
+function renderRecoveryActions(task) {
+  const actions = Array.isArray(task.recovery_actions)
+    ? task.recovery_actions
+    : [];
+  if (!actions.length) {
+    return `<button class="recovery-action" data-recovery-task="${escapeHtml(task.task_id)}" data-recovery-action="retry">${escapeHtml(t("Retry"))}</button>`;
+  }
+  return `<div class="recovery-panel">
+    <strong>${escapeHtml(t("Choose how to continue"))}</strong>
+    <div class="recovery-actions">${actions.map((action) => {
+      const candidates = Array.isArray(action.candidate_agent_ids) ? action.candidate_agent_ids : [];
+      return `<button
+        class="recovery-action ${action.recommended ? "recommended" : ""}"
+        data-recovery-task="${escapeHtml(task.task_id)}"
+        data-recovery-action="${escapeHtml(action.action || "")}"
+        data-recovery-agent="${escapeHtml(candidates[0] || "")}"
+        title="${escapeHtml(t(action.reason || action.description || ""))}"
+        ${action.enabled ? "" : "disabled"}
+      >${escapeHtml(t(action.label || action.action || "Continue"))}</button>`;
+    }).join("")}</div>
+    ${renderRecoveryDiagnostic(task.task_id)}
+  </div>`;
+}
+
 function renderTurn(task) {
   const statusClass = task.status === "completed" ? "completed" : (TERMINAL_STATES.has(task.status) ? "failed" : "");
   const isEvolution = task.task_kind === "self_evolution";
@@ -521,7 +561,7 @@ function renderTurn(task) {
   const answer = task.status === "completed"
     ? `<article class="assistant-answer">${renderMarkdown(answerText)}${evolutionMetadata}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
     : (TERMINAL_STATES.has(task.status)
-      ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}<button class="retry-task" data-retry-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Retry"))}</button></article>`
+      ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}${renderRecoveryActions(task)}</article>`
       : "");
   const events = Array.isArray(task?.run_timeline?.events)
     ? task.run_timeline.events
@@ -575,7 +615,9 @@ function renderConversation(force = false) {
     task.current_step,
     task.execution_view?.executor_id,
     task.execution_view?.location_name,
-    task.execution_view?.cancellable
+    task.execution_view?.cancellable,
+    task.recovery_actions?.map((action) => [action.action, action.enabled, action.recommended]),
+    state.recoveryDiagnostics[task.task_id]
   ]));
   if (!force && signature === state.renderingSignature) return;
   state.renderingSignature = signature;
@@ -2248,8 +2290,20 @@ async function cancelRunningTask() {
 }
 
 async function retryTask(taskId) {
+  return recoverTask(taskId, "retry");
+}
+
+async function recoverTask(taskId, action, agentId = "") {
   try {
-    const task = await window.signalasi.retryDesktopTask(taskId);
+    const response = await window.signalasi.recoverDesktopTask(taskId, action, agentId);
+    if (response?.diagnostic) {
+      state.recoveryDiagnostics[taskId] = response.diagnostic;
+      state.renderingSignature = "";
+      renderConversation(true);
+      return;
+    }
+    const task = response?.task || response;
+    if (!task?.task_id) throw new Error(t("Recovery did not start a task."));
     if (state.tasks.some((item) => item.task_id === task.task_id)) {
       mergeTaskUpdate(task);
     } else {
@@ -2259,7 +2313,7 @@ async function retryTask(taskId) {
     renderHistory();
     renderConversation(true);
   } catch (error) {
-    showToast(`${t("Could not retry task")}: ${error.message || error}`);
+    showToast(`${t("Could not continue task")}: ${error.message || error}`);
   }
 }
 
@@ -2394,6 +2448,15 @@ function bindEvents() {
     const retry = event.target.closest("[data-retry-task]");
     if (retry) {
       await retryTask(retry.dataset.retryTask);
+      return;
+    }
+    const recovery = event.target.closest("[data-recovery-task]");
+    if (recovery) {
+      await recoverTask(
+        recovery.dataset.recoveryTask,
+        recovery.dataset.recoveryAction,
+        recovery.dataset.recoveryAgent || ""
+      );
       return;
     }
     const toggle = event.target.closest("[data-toggle-run]");
