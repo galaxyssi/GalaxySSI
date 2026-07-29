@@ -3860,6 +3860,245 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(descriptor["inputSchema"])
   }
 
+  func testAgentNativeToolRegistryRegistersStableIdsAndCatalogJson() throws {
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.echo",
+      availability: AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: "Contacts permission is disabled",
+        checkedAtEpochMillis: 123
+      ),
+      capabilities: ["phone.local", "contacts.read"],
+      requiredPermissions: [
+        AgentNativePermissionRequirement(id: "ios.permission.contacts", title: "Contacts")
+      ],
+      requiredConsents: [
+        AgentNativeConsentRequirement(id: "contacts.lookup", title: "Look up contact")
+      ]
+    )
+    let definition = AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: "test.executor",
+      provenanceMetadata: ["implementation": "fake"]
+    )
+    let registry = try AgentNativeToolRegistry(definitions: [definition])
+
+    XCTAssertEqual(registry.ids(), Set(["signalasi.test.echo"]))
+    XCTAssertEqual(registry.lookup("signalasi.test.echo"), definition)
+    XCTAssertThrowsError(try registry.register(AgentPhoneNativeToolDefinition(
+      descriptor: try nativeToolDescriptor("signalasi.test.echo"),
+      executorId: "duplicate.executor"
+    )))
+
+    let json = registry.catalogJson()
+    XCTAssertTrue(json.contains("\"contract_version\":\"signalasi.phone-native-tools/1.0\""))
+    XCTAssertTrue(json.contains("\"id\":\"signalasi.test.echo\""))
+    XCTAssertTrue(json.contains("\"input_schema\""))
+    XCTAssertTrue(json.contains("\"output_schema\""))
+    XCTAssertTrue(json.contains("\"required_permissions\""))
+    XCTAssertTrue(json.contains("\"required_consents\""))
+    XCTAssertTrue(json.contains("\"timeout_ms\""))
+    XCTAssertTrue(json.contains("\"checked_at_epoch_ms\":123"))
+    XCTAssertTrue((json.range(of: "contacts.read")?.lowerBound ?? json.endIndex) < (json.range(of: "phone.local")?.lowerBound ?? json.startIndex))
+  }
+
+  func testAgentNativeToolRegistryValidatesJsonSchemaTypesRequiredAndAdditionalProperties() throws {
+    let schema: AgentMcpJSONObject = [
+      "type": .string("object"),
+      "properties": .object([
+        "name": .object(["type": .string("string"), "minLength": .int(2)]),
+        "count": .object(["type": .string("integer"), "minimum": .int(1)]),
+        "mode": .object(["type": .string("string"), "enum": .array([.string("fast"), .string("safe")])]),
+        "tags": .object([
+          "type": .string("array"),
+          "items": .object(["type": .string("string")]),
+          "maxItems": .int(2)
+        ])
+      ]),
+      "required": .array([.string("name"), .string("count")]),
+      "additionalProperties": .bool(false)
+    ]
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(
+        descriptor: try nativeToolDescriptor("signalasi.test.schema", inputSchema: schema),
+        executorId: "test.executor"
+      )
+    ])
+
+    let invalid = registry.validateInput("signalasi.test.schema", input: [
+      "count": .string("one"),
+      "mode": .string("slow"),
+      "tags": .array([.string("a"), .string("b"), .string("c")]),
+      "extra": .bool(true)
+    ])
+    let codes = Set(invalid.issues.map(\.code))
+
+    XCTAssertFalse(invalid.isValid)
+    XCTAssertTrue(codes.contains("required"))
+    XCTAssertTrue(codes.contains("type_mismatch"))
+    XCTAssertTrue(codes.contains("not_in_enum"))
+    XCTAssertTrue(codes.contains("max_items"))
+    XCTAssertTrue(codes.contains("additional_property"))
+    XCTAssertTrue(registry.validateInput("signalasi.test.schema", input: [
+      "name": .string("ok"),
+      "count": .int(1),
+      "mode": .string("safe")
+    ]).isValid)
+    XCTAssertEqual(registry.validateInput("signalasi.missing", input: [:]).issues.first?.code, "unknown_tool")
+  }
+
+  func testAgentNativeToolRegistryAuthorizesAvailabilityPermissionsAndConsents() throws {
+    let permission = AgentNativePermissionRequirement(id: "ios.permission.camera", title: "Camera")
+    let consent = AgentNativeConsentRequirement(id: "camera.capture", title: "Capture camera")
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.camera",
+      requiredPermissions: [permission],
+      requiredConsents: [consent],
+      inputSchema: AgentNativeToolDescriptor.objectSchema()
+    )
+    let setup = try nativeToolDescriptor(
+      "signalasi.test.setup",
+      availability: AgentNativeToolAvailability(status: .requiresSetup, reason: "Needs configuration")
+    )
+    let blocked = try nativeToolDescriptor("signalasi.test.blocked", risk: .blocked)
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
+      AgentPhoneNativeToolDefinition(descriptor: setup, executorId: "test.executor"),
+      AgentPhoneNativeToolDefinition(descriptor: blocked, executorId: "test.executor")
+    ])
+
+    let missingPermission = registry.authorize("signalasi.test.camera", input: [:])
+    let missingConsent = registry.authorize(
+      "signalasi.test.camera",
+      input: [:],
+      context: AgentNativeToolInvocationContext(grantedPermissions: ["ios.permission.camera"])
+    )
+    let ready = registry.authorize(
+      "signalasi.test.camera",
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: ["ios.permission.camera"],
+        grantedConsents: ["camera.capture"]
+      )
+    )
+
+    XCTAssertEqual(missingPermission.code, "missing_permissions")
+    XCTAssertEqual(missingPermission.missingPermissions.map(\.id), ["ios.permission.camera"])
+    XCTAssertEqual(missingConsent.code, "missing_consents")
+    XCTAssertEqual(missingConsent.missingConsents.map(\.id), ["camera.capture"])
+    XCTAssertTrue(ready.allowed)
+    XCTAssertEqual(ready.code, "ok")
+    XCTAssertEqual(registry.authorize("signalasi.test.setup").code, "tool_unavailable")
+    XCTAssertEqual(registry.authorize("signalasi.test.blocked").code, "tool_blocked")
+    XCTAssertEqual(registry.authorize("signalasi.missing").code, "unknown_tool")
+  }
+
+  func testAgentNativeToolRegistryProtectsIdempotencyKeys() throws {
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.idempotent",
+      inputSchema: [
+        "type": .string("object"),
+        "properties": .object(["value": .object(["type": .string("integer")])]),
+        "required": .array([.string("value")]),
+        "additionalProperties": .bool(false)
+      ],
+      idempotency: .idempotencyKeyRequired
+    )
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor")
+    ])
+    let missingKey = registry.authorize("signalasi.test.idempotent", input: ["value": .int(1)])
+    let first = registry.replayDecision(
+      "signalasi.test.idempotent",
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "first", idempotencyKey: "request-1")
+    )
+    let replay = registry.replayDecision(
+      "signalasi.test.idempotent",
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "second", idempotencyKey: "request-1")
+    )
+    let conflict = registry.replayDecision(
+      "signalasi.test.idempotent",
+      input: ["value": .int(2)],
+      context: AgentNativeToolInvocationContext(invocationId: "third", idempotencyKey: "request-1")
+    )
+
+    XCTAssertEqual(missingKey.code, "missing_idempotency_key")
+    XCTAssertEqual(first.code, .accepted)
+    XCTAssertEqual(replay.code, .replay)
+    XCTAssertTrue(replay.replayed)
+    XCTAssertEqual(replay.originalInvocationId, "first")
+    XCTAssertEqual(conflict.code, .conflict)
+  }
+
+  func testAgentNativeToolRegistryAcceptsPhoneCatalogDescriptors() throws {
+    let registry = try AgentNativeToolRegistry(definitions: AgentPhoneNativeToolCatalog.definitions(
+      capabilityStatuses: readyPhoneCapabilityStatuses()
+    ))
+    let workspaceDecision = registry.authorize(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: [
+        "workspace_id": .string("default"),
+        "path": .string("notes/today.txt")
+      ],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceReadConsent]
+      )
+    )
+    let openURL = registry.validateInput(
+      AgentNativeToolAgentActionAdapter.defaultToolId(.openURL),
+      input: [
+        "target": .string("Safari"),
+        "url": .string("https://signalasi.com")
+      ]
+    )
+
+    XCTAssertEqual(registry.ids(), AgentPhoneNativeToolCatalog.toolIds)
+    XCTAssertTrue(workspaceDecision.allowed)
+    XCTAssertTrue(openURL.isValid)
+  }
+
+  func testAgentNativeToolRegistryModelsUseAndroidWireNames() throws {
+    let context = AgentNativeToolInvocationContext(
+      invocationId: "invoke-1",
+      sessionId: "session",
+      conversationId: "conversation",
+      turnId: "turn",
+      idempotencyKey: "key",
+      grantedPermissions: ["permission.b", "permission.a"],
+      grantedConsents: ["consent.a"]
+    )
+    let contextObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(context)) as? [String: Any]
+    )
+    let decision = AgentNativeToolAuthorizationDecision(
+      toolId: "signalasi.test.tool",
+      allowed: false,
+      code: "missing_permissions",
+      message: "Missing",
+      availability: .available,
+      risk: .medium,
+      missingPermissions: [AgentNativePermissionRequirement(id: "permission.a")],
+      missingConsents: [],
+      validationIssues: []
+    )
+    let decisionObject = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(decision)) as? [String: Any]
+    )
+
+    XCTAssertEqual(contextObject["invocation_id"] as? String, "invoke-1")
+    XCTAssertEqual(contextObject["session_id"] as? String, "session")
+    XCTAssertEqual(contextObject["idempotency_key"] as? String, "key")
+    XCTAssertEqual(contextObject["granted_permissions"] as? [String], ["permission.a", "permission.b"])
+    XCTAssertNil(contextObject["invocationId"])
+    XCTAssertEqual(decisionObject["tool_id"] as? String, "signalasi.test.tool")
+    XCTAssertNotNil(decisionObject["missing_permissions"])
+    XCTAssertNotNil(decisionObject["validation_issues"])
+    XCTAssertNil(decisionObject["missingPermissions"])
+  }
+
   func testAgentPlanFactoryCollapsesDuplicateConnectorCallsAndRemapsDependencies() {
     let first = planConnectorAction(id: "codex-1", connectorId: "desktop:codex")
     let duplicate = planConnectorAction(id: "codex-2", connectorId: "desktop:codex")
@@ -10873,7 +11112,11 @@ final class SignalASIStoreTests: XCTestCase {
     availability: AgentNativeToolAvailability = .available,
     capabilities: Set<String> = ["test.execute"],
     requiredPermissions: [AgentNativePermissionRequirement] = [],
-    requiredConsents: [AgentNativeConsentRequirement] = []
+    requiredConsents: [AgentNativeConsentRequirement] = [],
+    inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
+    outputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema(),
+    timeoutMillis: Int64 = AgentNativeToolDescriptor.defaultTimeoutMillis,
+    idempotency: AgentNativeToolIdempotency = .nonIdempotent
   ) throws -> AgentNativeToolDescriptor {
     try AgentNativeToolDescriptor(
       id: id,
@@ -10881,10 +11124,14 @@ final class SignalASIStoreTests: XCTestCase {
       title: id,
       description: "Test capability",
       location: .application,
+      inputSchema: inputSchema,
+      outputSchema: outputSchema,
       risk: risk,
       capabilities: capabilities,
       requiredPermissions: requiredPermissions,
       requiredConsents: requiredConsents,
+      timeoutMillis: timeoutMillis,
+      idempotency: idempotency,
       availability: availability
     )
   }

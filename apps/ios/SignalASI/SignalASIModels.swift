@@ -11407,6 +11407,769 @@ struct AgentPhoneNativeToolDefinition: Codable, Equatable, Identifiable {
   }
 }
 
+struct AgentNativeValidationIssue: Codable, Equatable {
+  var path: String
+  var code: String
+  var message: String
+}
+
+struct AgentNativeValidationResult: Codable, Equatable {
+  var issues: [AgentNativeValidationIssue]
+
+  var isValid: Bool { issues.isEmpty }
+
+  static let valid = AgentNativeValidationResult()
+
+  init(issues: [AgentNativeValidationIssue] = []) {
+    self.issues = issues
+  }
+
+  static func invalid(path: String, code: String, message: String) -> AgentNativeValidationResult {
+    AgentNativeValidationResult(issues: [
+      AgentNativeValidationIssue(path: path, code: code, message: message)
+    ])
+  }
+}
+
+enum AgentNativeJsonSchemaValidator {
+  static func validate(schema: AgentMcpJSONObject, value: AgentMcpJSONValue) -> AgentNativeValidationResult {
+    guard isJSONCompatible(value) else {
+      return .invalid(
+        path: "$",
+        code: "invalid_json_value",
+        message: "Value contains a type that JSON cannot represent"
+      )
+    }
+    var issues: [AgentNativeValidationIssue] = []
+    validateNode(schema: schema, value: value, path: "$", issues: &issues)
+    return AgentNativeValidationResult(issues: issues)
+  }
+
+  static func validateObject(schema: AgentMcpJSONObject, object: AgentMcpJSONObject) -> AgentNativeValidationResult {
+    validate(schema: schema, value: .object(object))
+  }
+
+  private static func validateNode(
+    schema: AgentMcpJSONObject,
+    value: AgentMcpJSONValue,
+    path: String,
+    issues: inout [AgentNativeValidationIssue]
+  ) {
+    let expectedTypes = typeNames(schema["type"])
+    if !expectedTypes.isEmpty && !expectedTypes.contains(where: { matchesType($0, value) }) {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "type_mismatch",
+        message: "Expected \(expectedTypes.joined(separator: " or ")), received \(jsonType(of: value))"
+      ))
+      return
+    }
+
+    if let enumValues = schema["enum"]?.arrayValue, !enumValues.isEmpty,
+       !enumValues.contains(where: { jsonEquals($0, value) }) {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "not_in_enum",
+        message: "Value is not one of the allowed values"
+      ))
+    }
+
+    switch value {
+    case .object(let object):
+      validateObjectNode(schema: schema, value: object, path: path, issues: &issues)
+    case .array(let array):
+      validateArray(schema: schema, value: array, path: path, issues: &issues)
+    case .string(let string):
+      validateString(schema: schema, value: string, path: path, issues: &issues)
+    case .int, .double:
+      validateNumber(schema: schema, value: value, path: path, issues: &issues)
+    case .bool, .null:
+      break
+    }
+  }
+
+  private static func validateObjectNode(
+    schema: AgentMcpJSONObject,
+    value: AgentMcpJSONObject,
+    path: String,
+    issues: inout [AgentNativeValidationIssue]
+  ) {
+    let properties = schema["properties"]?.objectValue ?? [:]
+    let required = schema["required"]?.arrayValue?.compactMap(\.strictStringValue) ?? []
+    for name in required where value[name] == nil {
+      issues.append(AgentNativeValidationIssue(
+        path: childPath(path, name),
+        code: "required",
+        message: "Required property is missing"
+      ))
+    }
+    for (name, propertyValue) in value {
+      if let propertySchema = properties[name]?.objectValue, !propertySchema.isEmpty {
+        validateNode(schema: propertySchema, value: propertyValue, path: childPath(path, name), issues: &issues)
+      } else if schema["additionalProperties"]?.boolValue == false {
+        issues.append(AgentNativeValidationIssue(
+          path: childPath(path, name),
+          code: "additional_property",
+          message: "Additional properties are not allowed"
+        ))
+      } else if let additionalSchema = schema["additionalProperties"]?.objectValue, !additionalSchema.isEmpty {
+        validateNode(schema: additionalSchema, value: propertyValue, path: childPath(path, name), issues: &issues)
+      }
+    }
+  }
+
+  private static func validateArray(
+    schema: AgentMcpJSONObject,
+    value: [AgentMcpJSONValue],
+    path: String,
+    issues: inout [AgentNativeValidationIssue]
+  ) {
+    if let minItems = schema["minItems"]?.integerForSchema, value.count < minItems {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "min_items",
+        message: "Expected at least \(minItems) items"
+      ))
+    }
+    if let maxItems = schema["maxItems"]?.integerForSchema, value.count > maxItems {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "max_items",
+        message: "Expected at most \(maxItems) items"
+      ))
+    }
+    if let itemSchema = schema["items"]?.objectValue, !itemSchema.isEmpty {
+      for (index, item) in value.enumerated() {
+        validateNode(schema: itemSchema, value: item, path: "\(path)[\(index)]", issues: &issues)
+      }
+    }
+  }
+
+  private static func validateString(
+    schema: AgentMcpJSONObject,
+    value: String,
+    path: String,
+    issues: inout [AgentNativeValidationIssue]
+  ) {
+    if let minLength = schema["minLength"]?.integerForSchema, value.count < minLength {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "min_length",
+        message: "Expected at least \(minLength) characters"
+      ))
+    }
+    if let maxLength = schema["maxLength"]?.integerForSchema, value.count > maxLength {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "max_length",
+        message: "Expected at most \(maxLength) characters"
+      ))
+    }
+    if let pattern = schema["pattern"]?.strictStringValue, !pattern.isEmpty,
+       value.range(of: pattern, options: .regularExpression) == nil {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "pattern",
+        message: "Value does not match the required pattern"
+      ))
+    }
+  }
+
+  private static func validateNumber(
+    schema: AgentMcpJSONObject,
+    value: AgentMcpJSONValue,
+    path: String,
+    issues: inout [AgentNativeValidationIssue]
+  ) {
+    guard let number = value.doubleForSchema else { return }
+    if let minimum = schema["minimum"]?.doubleForSchema, number < minimum {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "minimum",
+        message: "Value must be at least \(minimum)"
+      ))
+    }
+    if let maximum = schema["maximum"]?.doubleForSchema, number > maximum {
+      issues.append(AgentNativeValidationIssue(
+        path: path,
+        code: "maximum",
+        message: "Value must be at most \(maximum)"
+      ))
+    }
+  }
+
+  private static func typeNames(_ value: AgentMcpJSONValue?) -> [String] {
+    switch value {
+    case .string(let type):
+      return [type]
+    case .array(let values):
+      return values.compactMap(\.strictStringValue)
+    case .bool, .int, .double, .object, .null, .none:
+      return []
+    }
+  }
+
+  private static func matchesType(_ type: String, _ value: AgentMcpJSONValue) -> Bool {
+    switch type {
+    case "null":
+      if case .null = value { return true }
+      return false
+    case "object":
+      if case .object = value { return true }
+      return false
+    case "array":
+      if case .array = value { return true }
+      return false
+    case "string":
+      if case .string = value { return true }
+      return false
+    case "boolean":
+      if case .bool = value { return true }
+      return false
+    case "number":
+      return value.doubleForSchema?.isFinite == true
+    case "integer":
+      return value.integerForSchema != nil
+    default:
+      return false
+    }
+  }
+
+  private static func jsonType(of value: AgentMcpJSONValue) -> String {
+    switch value {
+    case .null: return "null"
+    case .object: return "object"
+    case .array: return "array"
+    case .string: return "string"
+    case .bool: return "boolean"
+    case .int: return "integer"
+    case .double(let double): return double.rounded(.towardZero) == double ? "integer" : "number"
+    }
+  }
+
+  private static func jsonEquals(_ left: AgentMcpJSONValue, _ right: AgentMcpJSONValue) -> Bool {
+    switch (left, right) {
+    case (.int(let left), .int(let right)):
+      return left == right
+    case (.int(let left), .double(let right)):
+      return Double(left) == right
+    case (.double(let left), .int(let right)):
+      return left == Double(right)
+    case (.double(let left), .double(let right)):
+      return left == right
+    default:
+      return left == right
+    }
+  }
+
+  private static func childPath(_ parent: String, _ child: String) -> String {
+    if child.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil {
+      return "\(parent).\(child)"
+    }
+    return "\(parent)['\(child.replacingOccurrences(of: "'", with: "\\'"))']"
+  }
+
+  private static func isJSONCompatible(_ value: AgentMcpJSONValue) -> Bool {
+    switch value {
+    case .double(let double):
+      return double.isFinite
+    case .array(let values):
+      return values.allSatisfy(isJSONCompatible)
+    case .object(let object):
+      return object.values.allSatisfy(isJSONCompatible)
+    case .string, .int, .bool, .null:
+      return true
+    }
+  }
+}
+
+struct AgentNativeToolInvocationContext: Codable, Equatable {
+  var invocationId: String
+  var sessionId: String
+  var conversationId: String
+  var turnId: String
+  var callerId: String
+  var requestedAtEpochMillis: Int64
+  var deadlineEpochMillis: Int64?
+  var idempotencyKey: String?
+  var grantedPermissions: Set<String>
+  var grantedConsents: Set<String>
+  var attributes: [String: String]
+
+  init(
+    invocationId: String = UUID().uuidString,
+    sessionId: String = "",
+    conversationId: String = "",
+    turnId: String = "",
+    callerId: String = "signalasi.mobile_agent",
+    requestedAtEpochMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000),
+    deadlineEpochMillis: Int64? = nil,
+    idempotencyKey: String? = nil,
+    grantedPermissions: Set<String> = [],
+    grantedConsents: Set<String> = [],
+    attributes: [String: String] = [:]
+  ) {
+    let cleanInvocationId = invocationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanCallerId = callerId.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.invocationId = cleanInvocationId.isEmpty ? UUID().uuidString : cleanInvocationId
+    self.sessionId = sessionId
+    self.conversationId = conversationId
+    self.turnId = turnId
+    self.callerId = cleanCallerId.isEmpty ? "signalasi.mobile_agent" : cleanCallerId
+    self.requestedAtEpochMillis = max(0, requestedAtEpochMillis)
+    self.deadlineEpochMillis = deadlineEpochMillis
+    self.idempotencyKey = idempotencyKey?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    self.grantedPermissions = Set(grantedPermissions.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    self.grantedConsents = Set(grantedConsents.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+    self.attributes = attributes.reduce(into: [:]) { result, entry in
+      let key = entry.key.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !key.isEmpty {
+        result[key] = entry.value
+      }
+    }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case invocationId = "invocation_id"
+    case sessionId = "session_id"
+    case conversationId = "conversation_id"
+    case turnId = "turn_id"
+    case callerId = "caller_id"
+    case requestedAtEpochMillis = "requested_at_epoch_millis"
+    case deadlineEpochMillis = "deadline_epoch_millis"
+    case idempotencyKey = "idempotency_key"
+    case grantedPermissions = "granted_permissions"
+    case grantedConsents = "granted_consents"
+    case attributes
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      invocationId: try container.decodeIfPresent(String.self, forKey: .invocationId) ?? "",
+      sessionId: try container.decodeIfPresent(String.self, forKey: .sessionId) ?? "",
+      conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
+      turnId: try container.decodeIfPresent(String.self, forKey: .turnId) ?? "",
+      callerId: try container.decodeIfPresent(String.self, forKey: .callerId) ?? "signalasi.mobile_agent",
+      requestedAtEpochMillis: try container.decodeIfPresent(Int64.self, forKey: .requestedAtEpochMillis) ?? 0,
+      deadlineEpochMillis: try container.decodeIfPresent(Int64.self, forKey: .deadlineEpochMillis),
+      idempotencyKey: try container.decodeIfPresent(String.self, forKey: .idempotencyKey),
+      grantedPermissions: try container.decodeIfPresent(Set<String>.self, forKey: .grantedPermissions) ?? [],
+      grantedConsents: try container.decodeIfPresent(Set<String>.self, forKey: .grantedConsents) ?? [],
+      attributes: try container.decodeIfPresent([String: String].self, forKey: .attributes) ?? [:]
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(invocationId, forKey: .invocationId)
+    try container.encode(sessionId, forKey: .sessionId)
+    try container.encode(conversationId, forKey: .conversationId)
+    try container.encode(turnId, forKey: .turnId)
+    try container.encode(callerId, forKey: .callerId)
+    try container.encode(requestedAtEpochMillis, forKey: .requestedAtEpochMillis)
+    try container.encodeIfPresent(deadlineEpochMillis, forKey: .deadlineEpochMillis)
+    try container.encodeIfPresent(idempotencyKey, forKey: .idempotencyKey)
+    try container.encode(Array(grantedPermissions).sorted(), forKey: .grantedPermissions)
+    try container.encode(Array(grantedConsents).sorted(), forKey: .grantedConsents)
+    try container.encode(attributes, forKey: .attributes)
+  }
+}
+
+struct AgentNativeToolAuthorizationDecision: Codable, Equatable {
+  var toolId: String
+  var allowed: Bool
+  var code: String
+  var message: String
+  var availability: AgentNativeToolAvailability
+  var risk: AgentNativeToolRisk
+  var missingPermissions: [AgentNativePermissionRequirement]
+  var missingConsents: [AgentNativeConsentRequirement]
+  var validationIssues: [AgentNativeValidationIssue]
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case allowed
+    case code
+    case message
+    case availability
+    case risk
+    case missingPermissions = "missing_permissions"
+    case missingConsents = "missing_consents"
+    case validationIssues = "validation_issues"
+  }
+}
+
+enum AgentNativeToolReplayDecisionCode: String, Codable {
+  case bypassed
+  case accepted
+  case replay
+  case conflict
+  case keyRequired = "key_required"
+  case unknownTool = "unknown_tool"
+}
+
+struct AgentNativeToolReplayDecision: Codable, Equatable {
+  var code: AgentNativeToolReplayDecisionCode
+  var replayed: Bool
+  var originalInvocationId: String?
+  var inputSha256: String
+
+  enum CodingKeys: String, CodingKey {
+    case code
+    case replayed
+    case originalInvocationId = "original_invocation_id"
+    case inputSha256 = "input_sha256"
+  }
+}
+
+struct AgentNativeToolReplayRecord: Codable, Equatable {
+  var toolId: String
+  var idempotencyKey: String
+  var inputSha256: String
+  var invocationId: String
+  var recordedAtEpochMillis: Int64
+
+  enum CodingKeys: String, CodingKey {
+    case toolId = "tool_id"
+    case idempotencyKey = "idempotency_key"
+    case inputSha256 = "input_sha256"
+    case invocationId = "invocation_id"
+    case recordedAtEpochMillis = "recorded_at_epoch_millis"
+  }
+}
+
+final class InMemoryAgentNativeToolReplayStore {
+  private var records: [String: AgentNativeToolReplayRecord] = [:]
+
+  func decide(
+    descriptor: AgentNativeToolDescriptor,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext
+  ) -> AgentNativeToolReplayDecision {
+    guard descriptor.idempotency != .nonIdempotent else {
+      return AgentNativeToolReplayDecision(
+        code: .bypassed,
+        replayed: false,
+        originalInvocationId: nil,
+        inputSha256: AgentMcpJSONCodec.sha256(input)
+      )
+    }
+    guard let key = context.idempotencyKey, !key.isEmpty else {
+      let code: AgentNativeToolReplayDecisionCode = descriptor.idempotency == .idempotencyKeyRequired
+        ? .keyRequired
+        : .accepted
+      return AgentNativeToolReplayDecision(
+        code: code,
+        replayed: false,
+        originalInvocationId: nil,
+        inputSha256: AgentMcpJSONCodec.sha256(input)
+      )
+    }
+
+    let digest = AgentMcpJSONCodec.sha256(input)
+    let storageKey = "\(descriptor.id)\u{001F}\(key)"
+    if let existing = records[storageKey] {
+      return AgentNativeToolReplayDecision(
+        code: existing.inputSha256 == digest ? .replay : .conflict,
+        replayed: existing.inputSha256 == digest,
+        originalInvocationId: existing.invocationId,
+        inputSha256: digest
+      )
+    }
+    records[storageKey] = AgentNativeToolReplayRecord(
+      toolId: descriptor.id,
+      idempotencyKey: key,
+      inputSha256: digest,
+      invocationId: context.invocationId,
+      recordedAtEpochMillis: context.requestedAtEpochMillis
+    )
+    return AgentNativeToolReplayDecision(
+      code: .accepted,
+      replayed: false,
+      originalInvocationId: nil,
+      inputSha256: digest
+    )
+  }
+
+  func snapshot() -> [AgentNativeToolReplayRecord] {
+    records.values.sorted {
+      if $0.toolId != $1.toolId {
+        return $0.toolId < $1.toolId
+      }
+      return $0.idempotencyKey < $1.idempotencyKey
+    }
+  }
+}
+
+enum AgentNativeToolRegistryError: LocalizedError, Equatable {
+  case duplicateTool(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .duplicateTool(let id):
+      return "Native tool id is already registered: \(id)"
+    }
+  }
+}
+
+final class AgentNativeToolRegistry {
+  static let contractVersion = "signalasi.phone-native-tools/1.0"
+
+  private var definitionsById: [String: AgentPhoneNativeToolDefinition] = [:]
+  private let replayStore: InMemoryAgentNativeToolReplayStore
+
+  init(
+    definitions: [AgentPhoneNativeToolDefinition] = [],
+    replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore()
+  ) throws {
+    self.replayStore = replayStore
+    try registerAll(definitions)
+  }
+
+  @discardableResult
+  func register(_ definition: AgentPhoneNativeToolDefinition) throws -> AgentNativeToolRegistry {
+    guard definitionsById[definition.id] == nil else {
+      throw AgentNativeToolRegistryError.duplicateTool(definition.id)
+    }
+    definitionsById[definition.id] = definition
+    return self
+  }
+
+  @discardableResult
+  func registerAll(_ definitions: [AgentPhoneNativeToolDefinition]) throws -> AgentNativeToolRegistry {
+    var incoming: Set<String> = []
+    for definition in definitions {
+      guard incoming.insert(definition.id).inserted else {
+        throw AgentNativeToolRegistryError.duplicateTool(definition.id)
+      }
+      guard definitionsById[definition.id] == nil else {
+        throw AgentNativeToolRegistryError.duplicateTool(definition.id)
+      }
+    }
+    for definition in definitions {
+      definitionsById[definition.id] = definition
+    }
+    return self
+  }
+
+  func lookup(_ id: String) -> AgentPhoneNativeToolDefinition? {
+    definitionsById[id]
+  }
+
+  func ids() -> Set<String> {
+    Set(definitionsById.keys)
+  }
+
+  func descriptors() -> [AgentNativeToolDescriptor] {
+    definitionsById.values.map(\.descriptor).sorted { $0.id < $1.id }
+  }
+
+  func subset(_ predicate: (AgentNativeToolDescriptor) -> Bool) throws -> AgentNativeToolRegistry {
+    try AgentNativeToolRegistry(
+      definitions: definitionsById.values.filter { predicate($0.descriptor) },
+      replayStore: replayStore
+    )
+  }
+
+  func catalogObject() -> AgentMcpJSONObject {
+    [
+      "contract_version": .string(Self.contractVersion),
+      "tools": .array(descriptors().map { .object(catalogValue($0)) })
+    ]
+  }
+
+  func catalogJson() -> String {
+    AgentMcpJSONCodec.stringify(catalogObject())
+  }
+
+  func validateInput(_ id: String, input: AgentMcpJSONObject) -> AgentNativeValidationResult {
+    guard let definition = lookup(id) else {
+      return .invalid(
+        path: "$",
+        code: "unknown_tool",
+        message: "No native tool is registered with id \(id)"
+      )
+    }
+    return AgentNativeJsonSchemaValidator.validateObject(
+      schema: definition.descriptor.inputSchema,
+      object: input
+    )
+  }
+
+  func authorize(
+    _ id: String,
+    input: AgentMcpJSONObject = [:],
+    context: AgentNativeToolInvocationContext = AgentNativeToolInvocationContext()
+  ) -> AgentNativeToolAuthorizationDecision {
+    guard let definition = lookup(id) else {
+      return AgentNativeToolAuthorizationDecision(
+        toolId: id,
+        allowed: false,
+        code: "unknown_tool",
+        message: "No native tool is registered with id \(id)",
+        availability: AgentNativeToolAvailability(status: .unavailable, reason: "Unknown tool"),
+        risk: .blocked,
+        missingPermissions: [],
+        missingConsents: [],
+        validationIssues: []
+      )
+    }
+    let descriptor = definition.descriptor
+    if descriptor.risk == .blocked {
+      return decision(
+        descriptor: descriptor,
+        allowed: false,
+        code: "tool_blocked",
+        message: descriptor.availability.reason.nilIfEmpty ?? "Native tool execution is blocked by host policy"
+      )
+    }
+    if descriptor.availability.status != .available {
+      return decision(
+        descriptor: descriptor,
+        allowed: false,
+        code: "tool_unavailable",
+        message: descriptor.availability.reason.nilIfEmpty ?? "Native tool is not currently available"
+      )
+    }
+    let validation = validateInput(id, input: input)
+    if !validation.isValid {
+      return decision(
+        descriptor: descriptor,
+        allowed: false,
+        code: "invalid_input",
+        message: "Native tool input does not satisfy its JSON schema",
+        validationIssues: validation.issues
+      )
+    }
+    let missingPermissions = descriptor.requiredPermissions
+      .filter { $0.required && !context.grantedPermissions.contains($0.id) }
+      .sorted { $0.id < $1.id }
+    if !missingPermissions.isEmpty {
+      return decision(
+        descriptor: descriptor,
+        allowed: false,
+        code: "missing_permissions",
+        message: "Native tool requires permissions that were not granted",
+        missingPermissions: missingPermissions
+      )
+    }
+    let missingConsents = descriptor.requiredConsents
+      .filter { $0.required && !context.grantedConsents.contains($0.id) }
+      .sorted { $0.id < $1.id }
+    if !missingConsents.isEmpty {
+      return decision(
+        descriptor: descriptor,
+        allowed: false,
+        code: "missing_consents",
+        message: "Native tool requires user consent that was not granted",
+        missingConsents: missingConsents
+      )
+    }
+    if descriptor.idempotency == .idempotencyKeyRequired && context.idempotencyKey == nil {
+      return decision(
+        descriptor: descriptor,
+        allowed: false,
+        code: "missing_idempotency_key",
+        message: "Native tool requires an idempotency key"
+      )
+    }
+    return decision(
+      descriptor: descriptor,
+      allowed: true,
+      code: "ok",
+      message: "Native tool invocation is authorized"
+    )
+  }
+
+  func replayDecision(
+    _ id: String,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext
+  ) -> AgentNativeToolReplayDecision {
+    guard let definition = lookup(id) else {
+      return AgentNativeToolReplayDecision(
+        code: .unknownTool,
+        replayed: false,
+        originalInvocationId: nil,
+        inputSha256: AgentMcpJSONCodec.sha256(input)
+      )
+    }
+    return replayStore.decide(
+      descriptor: definition.descriptor,
+      input: input,
+      context: context
+    )
+  }
+
+  private func decision(
+    descriptor: AgentNativeToolDescriptor,
+    allowed: Bool,
+    code: String,
+    message: String,
+    missingPermissions: [AgentNativePermissionRequirement] = [],
+    missingConsents: [AgentNativeConsentRequirement] = [],
+    validationIssues: [AgentNativeValidationIssue] = []
+  ) -> AgentNativeToolAuthorizationDecision {
+    AgentNativeToolAuthorizationDecision(
+      toolId: descriptor.id,
+      allowed: allowed,
+      code: code,
+      message: message,
+      availability: descriptor.availability,
+      risk: descriptor.risk,
+      missingPermissions: missingPermissions,
+      missingConsents: missingConsents,
+      validationIssues: validationIssues
+    )
+  }
+
+  private func catalogValue(_ descriptor: AgentNativeToolDescriptor) -> AgentMcpJSONObject {
+    [
+      "id": .string(descriptor.id),
+      "version": .string(descriptor.version),
+      "title": .string(descriptor.title),
+      "description": .string(descriptor.description),
+      "location": .string(descriptor.location.rawValue),
+      "input_schema": .object(descriptor.inputSchema),
+      "output_schema": .object(descriptor.outputSchema),
+      "risk": .string(descriptor.risk.rawValue),
+      "capabilities": .array(descriptor.capabilities.sorted().map(AgentMcpJSONValue.string)),
+      "required_permissions": .array(descriptor.requiredPermissions.sorted { $0.id < $1.id }.map {
+        .object(requirementValue($0))
+      }),
+      "required_consents": .array(descriptor.requiredConsents.sorted { $0.id < $1.id }.map {
+        .object(requirementValue($0))
+      }),
+      "timeout_ms": .int(descriptor.timeoutMillis),
+      "idempotency": .string(descriptor.idempotency.rawValue),
+      "availability": .object([
+        "status": .string(descriptor.availability.status.rawValue),
+        "reason": .string(descriptor.availability.reason),
+        "checked_at_epoch_ms": descriptor.availability.checkedAtEpochMillis.map(AgentMcpJSONValue.int) ?? .null
+      ])
+    ]
+  }
+
+  private func requirementValue(_ requirement: AgentNativePermissionRequirement) -> AgentMcpJSONObject {
+    [
+      "id": .string(requirement.id),
+      "title": .string(requirement.title),
+      "description": .string(requirement.description),
+      "required": .bool(requirement.required)
+    ]
+  }
+
+  private func requirementValue(_ requirement: AgentNativeConsentRequirement) -> AgentMcpJSONObject {
+    [
+      "id": .string(requirement.id),
+      "title": .string(requirement.title),
+      "description": .string(requirement.description),
+      "required": .bool(requirement.required)
+    ]
+  }
+}
+
 enum AgentPhoneNativeToolCatalog {
   static let workspaceInitialize = "signalasi.workspace.initialize"
   static let workspaceMkdir = "signalasi.workspace.directory.create"
@@ -14280,6 +15043,50 @@ enum AgentMcpJSONValue: Codable, Equatable {
 }
 
 typealias AgentMcpJSONObject = [String: AgentMcpJSONValue]
+
+private extension AgentMcpJSONValue {
+  var strictStringValue: String? {
+    if case .string(let value) = self {
+      return value
+    }
+    return nil
+  }
+
+  var arrayValue: [AgentMcpJSONValue]? {
+    if case .array(let value) = self {
+      return value
+    }
+    return nil
+  }
+
+  var integerForSchema: Int? {
+    switch self {
+    case .int(let value):
+      return Int(value)
+    case .double(let value) where value.isFinite && value.rounded(.towardZero) == value:
+      return Int(value)
+    default:
+      return nil
+    }
+  }
+
+  var doubleForSchema: Double? {
+    switch self {
+    case .int(let value):
+      return Double(value)
+    case .double(let value) where value.isFinite:
+      return value
+    default:
+      return nil
+    }
+  }
+}
+
+private extension String {
+  var nilIfEmpty: String? {
+    isEmpty ? nil : self
+  }
+}
 
 enum AgentMcpJSONCodec {
   static func stringify(_ value: AgentMcpJSONValue) -> String {
