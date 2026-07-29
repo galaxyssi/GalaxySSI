@@ -462,20 +462,144 @@ struct ServerLink: Codable, Identifiable, Equatable, Hashable {
   }
 }
 
+enum VoiceRoutingMode: String, Codable, CaseIterable, Identifiable {
+  case nativeAgent = "native_agent"
+  case contact
+
+  var id: String { rawValue }
+
+  var displayTitle: String {
+    switch self {
+    case .nativeAgent: return "Native Agent"
+    case .contact: return "Chat Contact"
+    }
+  }
+}
+
 struct VoiceSettings: Codable, Equatable {
   var wakeListeningEnabled: Bool
   var speechRecognitionEnabled: Bool
   var textToSpeechEnabled: Bool
   var autoSendTranscripts: Bool
   var preferredLocaleIdentifier: String
+  var wakeWords: [String]
+  var wakeThreshold: Double
+  var welcomeText: String
+  var targetContactId: String
+  var speakReplies: Bool
+  var routingMode: VoiceRoutingMode
+
+  init(
+    wakeListeningEnabled: Bool,
+    speechRecognitionEnabled: Bool,
+    textToSpeechEnabled: Bool,
+    autoSendTranscripts: Bool,
+    preferredLocaleIdentifier: String,
+    wakeWords: [String] = VoiceSettings.defaultWakeWords,
+    wakeThreshold: Double = 0.5,
+    welcomeText: String = VoiceSettings.defaultWelcomeText,
+    targetContactId: String = "hermes",
+    speakReplies: Bool = true,
+    routingMode: VoiceRoutingMode = .nativeAgent
+  ) {
+    self.wakeListeningEnabled = wakeListeningEnabled
+    self.speechRecognitionEnabled = speechRecognitionEnabled
+    self.textToSpeechEnabled = textToSpeechEnabled
+    self.autoSendTranscripts = autoSendTranscripts
+    self.preferredLocaleIdentifier = preferredLocaleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Locale.current.identifier)
+    self.wakeWords = Self.normalizedWakeWords(wakeWords)
+    self.wakeThreshold = min(max(wakeThreshold, 0.01), 0.99)
+    self.welcomeText = welcomeText.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultWelcomeText)
+    self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
+    self.speakReplies = speakReplies
+    self.routingMode = routingMode
+  }
 
   static let `default` = VoiceSettings(
     wakeListeningEnabled: false,
     speechRecognitionEnabled: true,
     textToSpeechEnabled: true,
     autoSendTranscripts: false,
-    preferredLocaleIdentifier: Locale.current.identifier
+    preferredLocaleIdentifier: Locale.current.identifier,
+    wakeWords: defaultWakeWords,
+    wakeThreshold: 0.5,
+    welcomeText: defaultWelcomeText,
+    targetContactId: "hermes",
+    speakReplies: true,
+    routingMode: .nativeAgent
   )
+
+  static let defaultWakeWords = [
+    "SignalASI",
+    "signal asi",
+    "signal ai",
+    "hello",
+    "hi"
+  ]
+
+  static let defaultWelcomeText = "I am here. Welcome to SignalASI. Say your question or task."
+
+  var wakeWordsText: String {
+    wakeWords.joined(separator: ", ")
+  }
+
+  var normalized: VoiceSettings {
+    VoiceSettings(
+      wakeListeningEnabled: wakeListeningEnabled,
+      speechRecognitionEnabled: speechRecognitionEnabled,
+      textToSpeechEnabled: textToSpeechEnabled,
+      autoSendTranscripts: autoSendTranscripts,
+      preferredLocaleIdentifier: preferredLocaleIdentifier,
+      wakeWords: wakeWords,
+      wakeThreshold: wakeThreshold,
+      welcomeText: welcomeText,
+      targetContactId: targetContactId,
+      speakReplies: speakReplies,
+      routingMode: routingMode
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case wakeListeningEnabled
+    case speechRecognitionEnabled
+    case textToSpeechEnabled
+    case autoSendTranscripts
+    case preferredLocaleIdentifier
+    case wakeWords = "wake_words"
+    case wakeThreshold = "wake_threshold"
+    case welcomeText = "welcome_text"
+    case targetContactId = "target_contact_id"
+    case speakReplies = "speak_replies"
+    case routingMode = "routing_mode"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      wakeListeningEnabled: try container.decodeIfPresent(Bool.self, forKey: .wakeListeningEnabled) ?? false,
+      speechRecognitionEnabled: try container.decodeIfPresent(Bool.self, forKey: .speechRecognitionEnabled) ?? true,
+      textToSpeechEnabled: try container.decodeIfPresent(Bool.self, forKey: .textToSpeechEnabled) ?? true,
+      autoSendTranscripts: try container.decodeIfPresent(Bool.self, forKey: .autoSendTranscripts) ?? false,
+      preferredLocaleIdentifier: try container.decodeIfPresent(String.self, forKey: .preferredLocaleIdentifier) ?? Locale.current.identifier,
+      wakeWords: try container.decodeIfPresent([String].self, forKey: .wakeWords) ?? Self.defaultWakeWords,
+      wakeThreshold: try container.decodeIfPresent(Double.self, forKey: .wakeThreshold) ?? 0.5,
+      welcomeText: try container.decodeIfPresent(String.self, forKey: .welcomeText) ?? Self.defaultWelcomeText,
+      targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",
+      speakReplies: try container.decodeIfPresent(Bool.self, forKey: .speakReplies) ?? true,
+      routingMode: try container.decodeIfPresent(VoiceRoutingMode.self, forKey: .routingMode) ?? .nativeAgent
+    )
+  }
+
+  static func wakeWords(from text: String) -> [String] {
+    normalizedWakeWords(text.split(separator: ",").map(String.init))
+  }
+
+  private static func normalizedWakeWords(_ words: [String]) -> [String] {
+    let normalized = words
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    return normalized.isEmpty ? defaultWakeWords : Array(normalized.prefix(12))
+  }
 }
 
 struct LanguagePolicySettings: Codable, Equatable {

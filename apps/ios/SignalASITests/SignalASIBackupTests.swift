@@ -49,6 +49,12 @@ final class SignalASIBackupTests: XCTestCase {
     store.updateVoiceSettings {
       $0.wakeListeningEnabled = true
       $0.preferredLocaleIdentifier = "en-US"
+      $0.wakeWords = ["SignalASI", "custom wake"]
+      $0.wakeThreshold = 0.72
+      $0.welcomeText = "Ready for voice work."
+      $0.targetContactId = "cloud:openai"
+      $0.speakReplies = false
+      $0.routingMode = .contact
     }
     store.updateLanguagePolicy {
       $0.responseLanguage = "zh-CN"
@@ -77,6 +83,12 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.languagePolicy.responseLanguage, "zh-CN")
     XCTAssertEqual(restored.languagePolicy.ttsLanguage, "zh-TW")
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
+    XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
+    XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)
+    XCTAssertEqual(restored.voiceSettings.welcomeText, "Ready for voice work.")
+    XCTAssertEqual(restored.voiceSettings.targetContactId, "cloud:openai")
+    XCTAssertFalse(restored.voiceSettings.speakReplies)
+    XCTAssertEqual(restored.voiceSettings.routingMode, .contact)
     XCTAssertEqual(restored.serverLinks.first?.desktopId, "desktop-test")
     XCTAssertEqual(restored.messages(for: "hermes").last?.content, "hello desktop")
     XCTAssertEqual(restored.conversationSummary(for: "hermes").unreadCount, 0)
