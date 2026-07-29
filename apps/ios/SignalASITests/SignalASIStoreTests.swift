@@ -11,6 +11,25 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(store.profile.identityFingerprint.count == 64)
   }
 
+  func testContactSearchMatchesAndroidNameAndIdFiltering() throws {
+    let store = makeStore()
+    let request = store.addFriendRequest(makeFriendRequest(signalASIId: "friend-alice", name: "Alice"))
+    XCTAssertTrue(store.approveFriendRequest(id: request.id))
+    _ = try store.addCloudModelContact(
+      displayName: "Model A",
+      provider: "OpenAI",
+      modelId: "gpt-5",
+      endpoint: "https://api.example.com/v1/chat/completions",
+      apiKey: "key-a",
+      apiStyle: .openAICompatible
+    )
+
+    XCTAssertEqual(store.visibleContacts(matching: "alice").map(\.id), ["friend-alice"])
+    XCTAssertEqual(store.visibleContacts(matching: "cloud:openai").map(\.id), ["cloud:openai"])
+    XCTAssertEqual(store.contactList(matching: "gpt-5").map(\.id), ["cloud:openai"])
+    XCTAssertTrue(store.visibleContacts(matching: "missing-contact").isEmpty)
+  }
+
   func testCloudModelContactsAreGroupedByProvider() throws {
     let store = makeStore()
 
