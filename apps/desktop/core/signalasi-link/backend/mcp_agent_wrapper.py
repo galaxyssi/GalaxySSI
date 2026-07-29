@@ -22,6 +22,14 @@ import sys
 import time
 from typing import Any, Callable
 
+from mcp_transport import (
+    DEFAULT_PROTOCOL_VERSION,
+    McpClientConfig,
+    McpTransportError,
+    call_mcp_tool,
+    inspect_mcp,
+)
+
 
 DEFAULT_TIMEOUT = 20.0
 
@@ -186,11 +194,14 @@ def _close_mcp(process: subprocess.Popen) -> None:
 
 
 def list_mcp_tools(args: argparse.Namespace) -> list[dict[str, Any]]:
-    process, tools, _deadline = _open_mcp(args)
-    try:
-        return tools
-    finally:
-        _close_mcp(process)
+    return list(inspect_mcp(_client_config(args)).get("tools") or [])
+
+
+def inspect_mcp_server(
+    args: argparse.Namespace,
+    on_process: Callable[[subprocess.Popen], None] | None = None,
+) -> dict[str, Any]:
+    return inspect_mcp(_client_config(args), on_process=on_process)
 
 
 def call_mcp(
@@ -207,43 +218,58 @@ def call_mcp_detailed(
     on_process: Callable[[subprocess.Popen], None] | None = None,
     before_call: Callable[[dict[str, Any], dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    command, _use_shell = server_command(args)
-    if not command:
-        raise McpError(
-            "No MCP server configured. Set --server, --server-python, "
-            "or SIGNALASI_MCP_SERVER_CMD."
-        )
-
-    process, tools, deadline = _open_mcp(args, on_process=on_process)
     try:
-        tool = next((item for item in tools if item.get("name") == args.tool), None) if args.tool else tools[0]
-        if not tool:
-            names = ", ".join(str(item.get("name")) for item in tools)
-            raise McpError(f"MCP tool not found: {args.tool}. Available: {names}")
-        arguments = tool_arguments(tool, prompt, args.arg_json)
-        if before_call is not None:
-            before_call(tool, arguments)
-        called = request(
-            process,
-            "tools/call",
-            {"name": tool["name"], "arguments": arguments},
-            3,
-            deadline,
+        return call_mcp_tool(
+            _client_config(args),
+            prompt,
+            tool_name=str(getattr(args, "tool", None) or ""),
+            argument_json=str(getattr(args, "arg_json", None) or ""),
+            on_process=on_process,
+            before_call=before_call,
         )
-        return {
-            "text": result_text(called),
-            "tool": tool,
-            "arguments": arguments,
-            "raw_result": called,
-        }
-    finally:
-        _close_mcp(process)
+    except McpTransportError as exc:
+        raise McpError(str(exc)) from exc
+
+
+def _client_config(args: argparse.Namespace) -> McpClientConfig:
+    command, _use_shell = server_command(args)
+    transport = str(getattr(args, "transport", "") or "local_stdio")
+    return McpClientConfig(
+        transport=transport,
+        command=str(command or ""),
+        endpoint=str(getattr(args, "endpoint", "") or ""),
+        request_headers=dict(getattr(args, "request_headers", {}) or {}),
+        working_directory=str(getattr(args, "working_directory", "") or ""),
+        protocol_version=str(
+            getattr(args, "protocol_version", "") or DEFAULT_PROTOCOL_VERSION
+        ),
+        timeout_seconds=float(getattr(args, "timeout", DEFAULT_TIMEOUT)),
+        stdio_framing=str(getattr(args, "stdio_framing", "") or "newline"),
+    )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Expose an MCP stdio server as a SignalASI Custom Agent")
     parser.add_argument("--server", help="MCP server command, for example: python server.py")
     parser.add_argument("--server-python", help="Run this Python MCP server script with the current Python")
+    parser.add_argument(
+        "--transport",
+        choices=("local_stdio", "streamable_http"),
+        default="local_stdio",
+    )
+    parser.add_argument("--endpoint", help="Streamable HTTP MCP endpoint")
+    parser.add_argument("--working-directory", help="Working directory for a local MCP process")
+    parser.add_argument(
+        "--protocol-version",
+        default=DEFAULT_PROTOCOL_VERSION,
+        help="Requested MCP protocol version",
+    )
+    parser.add_argument(
+        "--stdio-framing",
+        choices=("newline", "content_length"),
+        default="newline",
+        help="MCP stdio message framing",
+    )
     parser.add_argument("--tool", help="MCP tool name to call. Defaults to the first listed tool.")
     parser.add_argument("--arg-json", help="JSON object to pass as tool arguments instead of mapping prompt text")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)

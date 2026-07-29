@@ -693,7 +693,14 @@ class DesktopSkillEnabledReq(BaseModel):
 class DesktopMcpReq(BaseModel):
     id: str
     name: str
-    command: str
+    transport: str = "local_stdio"
+    command: str = ""
+    endpoint: str = ""
+    working_directory: str = ""
+    header_env: dict[str, str] = Field(default_factory=dict)
+    protocol_version: str = "2025-11-25"
+    stdio_framing: str = "newline"
+    allow_insecure_http: bool = False
     default_tool: str = ""
     triggers: list[str] = Field(default_factory=list)
     enabled: bool = True

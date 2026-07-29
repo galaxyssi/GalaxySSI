@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from desktop_mcp import DesktopMcpRegistry
@@ -14,25 +18,15 @@ FAKE_SERVER = r'''
 import json
 import sys
 
-source = sys.stdin.buffer
-target = sys.stdout.buffer
+source = sys.stdin
+target = sys.stdout
 
 def read_message():
-    headers = {}
-    while True:
-        line = source.readline()
-        if not line:
-            return None
-        line = line.decode("ascii").strip()
-        if not line:
-            break
-        key, value = line.split(":", 1)
-        headers[key.lower()] = value.strip()
-    return json.loads(source.read(int(headers["content-length"])).decode("utf-8"))
+    line = source.readline()
+    return json.loads(line) if line else None
 
 def send(value):
-    body = json.dumps(value, separators=(",", ":")).encode("utf-8")
-    target.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii") + body)
+    target.write(json.dumps(value, separators=(",", ":")) + "\n")
     target.flush()
 
 while True:
@@ -60,7 +54,95 @@ while True:
 '''
 
 
+class FakeStreamableHttpMcp(BaseHTTPRequestHandler):
+    mcp_protocol_version = "2025-11-25"
+    observations: list[dict] = []
+
+    def log_message(self, _format, *_args):
+        return None
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        message = json.loads(self.rfile.read(length).decode("utf-8"))
+        self.__class__.observations.append(
+            {
+                "method": message.get("method"),
+                "authorization": self.headers.get("Authorization"),
+                "protocol": self.headers.get("MCP-Protocol-Version"),
+                "session": self.headers.get("Mcp-Session-Id"),
+            }
+        )
+        method = message.get("method")
+        request_id = message.get("id")
+        if request_id is None:
+            self.send_response(202)
+            self.end_headers()
+            return
+        if method == "initialize":
+            result = {
+                "protocolVersion": self.mcp_protocol_version,
+                "capabilities": {"tools": {"listChanged": False}},
+                "serverInfo": {
+                    "name": "fake-http",
+                    "title": "Fake HTTP MCP",
+                    "version": "2.1",
+                },
+            }
+        elif method == "tools/list":
+            result = {
+                "tools": [
+                    {
+                        "name": "search",
+                        "description": "Search a private index",
+                        "annotations": {"readOnlyHint": True},
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {"query": {"type": "string"}},
+                        },
+                    }
+                ]
+            }
+        elif method == "tools/call":
+            query = message.get("params", {}).get("arguments", {}).get("query", "")
+            result = {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"HTTP_MCP_OK:{query}",
+                    }
+                ]
+            }
+        else:
+            result = {}
+        response_json = json.dumps(
+            {"jsonrpc": "2.0", "id": request_id, "result": result},
+            separators=(",", ":"),
+        )
+        response = (
+            f"id: tools-page-1\ndata: {response_json}\n\n".encode("utf-8")
+            if method == "tools/list"
+            else response_json.encode("utf-8")
+        )
+        self.send_response(200)
+        self.send_header(
+            "Content-Type",
+            "text/event-stream" if method == "tools/list" else "application/json",
+        )
+        if method == "initialize":
+            self.send_header("Mcp-Session-Id", "test-session")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        self.wfile.write(response)
+
+    def do_DELETE(self):
+        self.send_response(204)
+        self.end_headers()
+
+
 class DesktopMcpRegistryTest(unittest.TestCase):
+    def setUp(self):
+        FakeStreamableHttpMcp.observations = []
+
     def test_configured_stdio_server_can_be_probed_matched_and_called(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -185,6 +267,93 @@ class DesktopMcpRegistryTest(unittest.TestCase):
 
             self.assertIsNone(registry.match("Check my account"))
             self.assertEqual(registry.match("Use Private Tool to check my account").id, "private-tool")
+
+    def test_streamable_http_is_a_typed_connection_with_lifecycle_metadata(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), FakeStreamableHttpMcp)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        previous_token = os.environ.get("SIGNALASI_TEST_MCP_TOKEN")
+        os.environ["SIGNALASI_TEST_MCP_TOKEN"] = "Bearer private-value"
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                path = Path(directory) / "mcp.json"
+                registry = DesktopMcpRegistry(path)
+                endpoint = f"http://127.0.0.1:{server.server_port}/mcp"
+                saved = registry.upsert({
+                    "id": "private-search",
+                    "name": "Private Search",
+                    "transport": "streamable_http",
+                    "endpoint": endpoint,
+                    "header_env": {
+                        "Authorization": "SIGNALASI_TEST_MCP_TOKEN",
+                    },
+                    "default_tool": "search",
+                    "permission_mode": "read_only",
+                    "timeout_seconds": 5,
+                })
+                self.assertEqual(saved["transport"], "streamable_http")
+                self.assertEqual(saved["state"], "configured")
+                self.assertNotIn("private-value", json.dumps(saved))
+
+                probe = registry.probe("private-search")
+                self.assertEqual(probe["status"], "ready")
+                self.assertEqual(probe["server_info"]["name"], "fake-http")
+                self.assertEqual(probe["tools"][0]["name"], "search")
+
+                persisted = DesktopMcpRegistry(path).list(include_configuration=True)[0]
+                self.assertEqual(persisted["state"], "ready")
+                self.assertEqual(persisted["server_name"], "Fake HTTP MCP")
+                self.assertEqual(persisted["server_version"], "2.1")
+                self.assertEqual(persisted["capabilities"], ["tools"])
+                self.assertEqual(persisted["tool_ids"], ["search"])
+
+                result = registry.invoke_prompt("private-search", "latest release")
+                self.assertEqual(result["result"], "HTTP_MCP_OK:latest release")
+                self.assertEqual(result["security"]["risk"], "low")
+                self.assertTrue(
+                    all(
+                        item["authorization"] == "Bearer private-value"
+                        for item in FakeStreamableHttpMcp.observations
+                    )
+                )
+                subsequent = [
+                    item
+                    for item in FakeStreamableHttpMcp.observations
+                    if item["method"] != "initialize"
+                ]
+                self.assertTrue(
+                    all(item["protocol"] == "2025-11-25" for item in subsequent)
+                )
+                self.assertTrue(
+                    all(item["session"] == "test-session" for item in subsequent)
+                )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
+            if previous_token is None:
+                os.environ.pop("SIGNALASI_TEST_MCP_TOKEN", None)
+            else:
+                os.environ["SIGNALASI_TEST_MCP_TOKEN"] = previous_token
+
+    def test_remote_plain_http_requires_an_explicit_lan_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            registry = DesktopMcpRegistry(Path(directory) / "mcp.json")
+            with self.assertRaisesRegex(ValueError, "requires HTTPS"):
+                registry.upsert({
+                    "id": "unsafe-remote",
+                    "name": "Unsafe Remote",
+                    "transport": "streamable_http",
+                    "endpoint": "http://192.168.1.20/mcp",
+                })
+            saved = registry.upsert({
+                "id": "trusted-lan",
+                "name": "Trusted LAN",
+                "transport": "streamable_http",
+                "endpoint": "http://192.168.1.20/mcp",
+                "allow_insecure_http": True,
+            })
+            self.assertTrue(saved["allow_insecure_http"])
 
 
 if __name__ == "__main__":
