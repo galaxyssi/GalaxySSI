@@ -11,6 +11,7 @@ from pairing_access import (
     EXECUTOR_FULL,
     RESTRICTED,
     apply_restricted_agent_boundary,
+    grant_binding,
     grant_for_executor,
     normalize_grant,
 )
@@ -36,6 +37,14 @@ class PairingAccessTests(unittest.TestCase):
         self.assertEqual(RESTRICTED, grant["profile"])
         self.assertFalse(grant["desktop_executor"])
         self.assertNotIn(EXECUTOR_FULL, grant["scopes"])
+
+    def test_grant_binding_changes_when_the_pairing_consent_changes(self) -> None:
+        first = {"access": grant_for_executor(True, issued_at_millis=100)}
+        same = {"access": grant_for_executor(True, issued_at_millis=100)}
+        replacement = {"access": grant_for_executor(True, issued_at_millis=101)}
+
+        self.assertEqual(grant_binding(first), grant_binding(same))
+        self.assertNotEqual(grant_binding(first), grant_binding(replacement))
 
     def test_restricted_prompt_removes_external_paths_but_keeps_task_workspace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

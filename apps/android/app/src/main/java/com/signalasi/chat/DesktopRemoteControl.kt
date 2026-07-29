@@ -10,15 +10,61 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class DesktopControlAuthorization(
     val authorizationId: String,
+    val appInstanceId: String,
+    val appName: String,
+    val appPlatform: String,
     val phoneName: String,
     val phoneFingerprint: String,
+    val grantSource: String,
+    val accessProfile: String,
+    val accessScopes: List<String>,
     val grantedAt: Long,
     val lastUsedAt: Long,
+    val revokedAt: Long,
+    val revokeReason: String,
     val status: String,
     val allowedTools: List<String>,
     val desktopSessionId: String,
     val desktopSessionExpiresAt: Long
 )
+
+internal fun parseDesktopControlAuthorization(json: JSONObject?): DesktopControlAuthorization? {
+    val source = json ?: return null
+    val status = source.optString("status")
+    val id = source.optString("authorization_id")
+    if (id.isBlank() && status != "pending") return null
+    val tools = source.optJSONArray("allowed_tools") ?: JSONArray()
+    return DesktopControlAuthorization(
+        authorizationId = id,
+        appInstanceId = source.optString("app_instance_id"),
+        appName = source.optString("app_name", source.optString("phone_name")),
+        appPlatform = source.optString("app_platform", source.optString("platform")),
+        phoneName = source.optString("phone_name"),
+        phoneFingerprint = source.optString(
+            "app_identity_fingerprint",
+            source.optString("phone_fingerprint")
+        ),
+        grantSource = source.optString("grant_source"),
+        accessProfile = source.optString("access_profile"),
+        accessScopes = source.optJSONArray("access_scopes").let { scopes ->
+            buildList {
+                if (scopes != null) {
+                    for (index in 0 until scopes.length()) add(scopes.optString(index))
+                }
+            }
+        },
+        grantedAt = source.optLong("granted_at"),
+        lastUsedAt = source.optLong("last_used_at"),
+        revokedAt = source.optLong("revoked_at"),
+        revokeReason = source.optString("revoke_reason"),
+        status = status,
+        allowedTools = buildList {
+            for (index in 0 until tools.length()) add(tools.optString(index))
+        },
+        desktopSessionId = source.optString("desktop_session_id"),
+        desktopSessionExpiresAt = source.optLong("desktop_session_expires_at")
+    )
+}
 
 data class DesktopControlScreenshot(
     val jpegBytes: ByteArray,
@@ -46,13 +92,53 @@ data class DesktopControlReceipt(
     val toolId: String,
     val status: String,
     val summary: String,
+    val errorCode: String,
+    val errorRetryable: Boolean,
     val requestSha256: String,
+    val inputSha256: String,
+    val outputSha256: String,
     val evidenceSha256: String,
+    val controllerAppInstanceId: String,
+    val controllerName: String,
+    val controllerPlatform: String,
+    val controllerFingerprint: String,
     val signerId: String,
     val signatureKeyId: String,
+    val startedAt: Long,
     val completedAt: Long,
     val durationMillis: Long
 )
+
+internal fun parseDesktopControlReceipt(source: JSONObject?): DesktopControlReceipt? {
+    val receipt = source ?: return null
+    val receiptId = receipt.optString("receipt_id")
+    if (receiptId.isBlank()) return null
+    return DesktopControlReceipt(
+        receiptId = receiptId,
+        taskId = receipt.optString("task_id"),
+        actionId = receipt.optString("action_id"),
+        authorizationId = receipt.optString("authorization_id"),
+        desktopSessionId = receipt.optString("desktop_session_id"),
+        toolId = receipt.optString("tool_id"),
+        status = receipt.optString("status"),
+        summary = receipt.optString("summary"),
+        errorCode = receipt.optString("error_code"),
+        errorRetryable = receipt.optBoolean("error_retryable"),
+        requestSha256 = receipt.optString("request_sha256"),
+        inputSha256 = receipt.optString("input_sha256"),
+        outputSha256 = receipt.optString("output_sha256"),
+        evidenceSha256 = receipt.optString("evidence_sha256"),
+        controllerAppInstanceId = receipt.optString("controller_app_instance_id"),
+        controllerName = receipt.optString("controller_name"),
+        controllerPlatform = receipt.optString("controller_platform"),
+        controllerFingerprint = receipt.optString("controller_fingerprint"),
+        signerId = receipt.optString("signer_id"),
+        signatureKeyId = receipt.optString("signature_key_id"),
+        startedAt = receipt.optLong("started_at"),
+        completedAt = receipt.optLong("completed_at"),
+        durationMillis = receipt.optLong("duration_ms")
+    )
+}
 
 data class DesktopRemoteControlSnapshot(
     val desktopId: String,
@@ -87,7 +173,7 @@ internal data class DesktopControlPendingRequest(
 
 internal object DesktopControlReceiptProtocol {
     const val CONTRACT_VERSION = "signalasi.desktop-control/1.2"
-    const val RECEIPT_VERSION = 3
+    const val RECEIPT_VERSION = 4
 
     fun pendingRequest(
         payload: JSONObject,
@@ -130,10 +216,26 @@ internal object DesktopControlReceiptProtocol {
         if (payload.optInt("receipt_version") != RECEIPT_VERSION) return false
         val signerId = payload.optString("signer_id")
         val signatureKeyId = payload.optString("signature_key_id").lowercase()
+        val controllerAppInstanceId = payload.optString("controller_app_instance_id")
+        val controllerName = payload.optString("controller_name")
+        val controllerPlatform = payload.optString("controller_platform")
+        val status = payload.optString("status")
+        val toolId = payload.optString("tool_id")
+        val startedAt = payload.optLong("started_at")
+        val completedAt = payload.optLong("completed_at")
+        val durationMillis = payload.optLong("duration_ms")
         if (signerId != expectedSignerId ||
             signatureKeyId != expectedSignatureKeyId.lowercase() ||
             payload.optString("controller_fingerprint").lowercase() !=
             expectedControllerFingerprint.lowercase()
+        ) return false
+        if (controllerAppInstanceId.isBlank() ||
+            controllerName.isBlank() ||
+            controllerPlatform.isBlank() ||
+            status !in setOf("succeeded", "failed") ||
+            startedAt <= 0L ||
+            completedAt < startedAt ||
+            durationMillis != completedAt - startedAt
         ) return false
 
         val requestSha256 = payload.optString("request_sha256")
@@ -150,6 +252,7 @@ internal object DesktopControlReceiptProtocol {
         val evidence = payload.optJSONObject("post_screenshot")
             ?: payload.optJSONObject("output")?.optJSONObject("screenshot")
         val evidenceSha256 = payload.optString("evidence_sha256")
+        if (evidenceSha256.isNotBlank() && !validDigest(evidenceSha256)) return false
         if (evidence != null) {
             evidence.optString("image_base64")
                 .takeIf(String::isNotBlank)
@@ -168,7 +271,7 @@ internal object DesktopControlReceiptProtocol {
         }
         val postScreenshot = payload.optJSONObject("post_screenshot")
         val outputSha256 = digest(JSONObject()
-            .put("status", payload.optString("status", "failed"))
+            .put("status", status)
             .put("summary", payload.optString("summary"))
             .put("error", if (error == null) JSONObject.NULL else JSONObject()
                 .put("code", error.optString("code"))
@@ -199,8 +302,8 @@ internal object DesktopControlReceiptProtocol {
             .put("action_id", payload.optString("action_id"))
             .put("authorization_id", payload.optString("authorization_id"))
             .put("desktop_session_id", payload.optString("desktop_session_id"))
-            .put("tool_id", payload.optString("tool_id"))
-            .put("status", payload.optString("status", "failed"))
+            .put("tool_id", toolId)
+            .put("status", status)
             .put("summary", payload.optString("summary"))
             .put("error_code", payload.optString("error_code"))
             .put("error_retryable", payload.optBoolean("error_retryable"))
@@ -208,10 +311,16 @@ internal object DesktopControlReceiptProtocol {
             .put("input_sha256", inputSha256)
             .put("output_sha256", outputSha256)
             .put("evidence_sha256", evidenceSha256)
+            .put(
+                "controller_app_instance_id",
+                controllerAppInstanceId
+            )
+            .put("controller_name", controllerName)
+            .put("controller_platform", controllerPlatform)
             .put("controller_fingerprint", payload.optString("controller_fingerprint").lowercase())
-            .put("started_at", payload.optLong("started_at"))
-            .put("completed_at", payload.optLong("completed_at"))
-            .put("duration_ms", payload.optLong("duration_ms"))
+            .put("started_at", startedAt)
+            .put("completed_at", completedAt)
+            .put("duration_ms", durationMillis)
             .put("signer_id", signerId)
             .put("signature_key_id", signatureKeyId)
         return verifier.verify(
@@ -387,7 +496,7 @@ object DesktopRemoteControl {
         val item = read(context).optJSONObject(desktopId) ?: JSONObject()
         val link = SignalASILinkProtocol.serverLink(context, desktopId)
         val authorizations = parseAuthorizations(item.optJSONArray("authorizations") ?: JSONArray())
-        val current = parseAuthorization(item.optJSONObject("current_authorization"))
+        val current = parseDesktopControlAuthorization(item.optJSONObject("current_authorization"))
             ?: authorizations.firstOrNull { it.status == "active" }
             ?: authorizations.firstOrNull { it.status == "pending" }
         val live = runtime[desktopId]
@@ -661,7 +770,9 @@ object DesktopRemoteControl {
     }
 
     private fun parseAuthorizations(array: JSONArray): List<DesktopControlAuthorization> = buildList {
-        for (index in 0 until array.length()) parseAuthorization(array.optJSONObject(index))?.let(::add)
+        for (index in 0 until array.length()) {
+            parseDesktopControlAuthorization(array.optJSONObject(index))?.let(::add)
+        }
     }
 
     private fun parseAudit(array: JSONArray): List<DesktopControlAudit> = buildList {
@@ -679,45 +790,8 @@ object DesktopRemoteControl {
 
     private fun parseReceipts(array: JSONArray): List<DesktopControlReceipt> = buildList {
         for (index in 0 until array.length()) {
-            val source = array.optJSONObject(index) ?: continue
-            val receiptId = source.optString("receipt_id")
-            if (receiptId.isBlank()) continue
-            add(DesktopControlReceipt(
-                receiptId = receiptId,
-                taskId = source.optString("task_id"),
-                actionId = source.optString("action_id"),
-                authorizationId = source.optString("authorization_id"),
-                desktopSessionId = source.optString("desktop_session_id"),
-                toolId = source.optString("tool_id"),
-                status = source.optString("status"),
-                summary = source.optString("summary"),
-                requestSha256 = source.optString("request_sha256"),
-                evidenceSha256 = source.optString("evidence_sha256"),
-                signerId = source.optString("signer_id"),
-                signatureKeyId = source.optString("signature_key_id"),
-                completedAt = source.optLong("completed_at"),
-                durationMillis = source.optLong("duration_ms")
-            ))
+            parseDesktopControlReceipt(array.optJSONObject(index))?.let(::add)
         }
-    }
-
-    private fun parseAuthorization(json: JSONObject?): DesktopControlAuthorization? {
-        val source = json ?: return null
-        val status = source.optString("status")
-        val id = source.optString("authorization_id")
-        if (id.isBlank() && status != "pending") return null
-        val tools = source.optJSONArray("allowed_tools") ?: JSONArray()
-        return DesktopControlAuthorization(
-            authorizationId = id,
-            phoneName = source.optString("phone_name"),
-            phoneFingerprint = source.optString("phone_fingerprint"),
-            grantedAt = source.optLong("granted_at"),
-            lastUsedAt = source.optLong("last_used_at"),
-            status = status,
-            allowedTools = buildList { for (index in 0 until tools.length()) add(tools.optString(index)) },
-            desktopSessionId = source.optString("desktop_session_id"),
-            desktopSessionExpiresAt = source.optLong("desktop_session_expires_at")
-        )
     }
 
     private fun read(context: Context): JSONObject {

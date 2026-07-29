@@ -182,8 +182,12 @@ const state = {
     history: [],
     candidates: [],
     evolution: {},
+    visualization: {},
     stats: {},
     view: "overview",
+    visualizationView: "state",
+    selectedGraphNodeId: "",
+    selectedEvidenceChainId: "",
     query: ""
   },
   skills: [],
@@ -1455,8 +1459,102 @@ function formatControlTime(value) {
   }).format(new Date(timestamp));
 }
 
+function desktopControlToolLabel(toolId) {
+  return t({
+    "desktop.screenshot": "View screen",
+    "desktop.click_xy": "Click",
+    "desktop.type_text": "Type text",
+    "desktop.hotkey": "Keyboard shortcut",
+    "desktop.scroll": "Scroll"
+  }[toolId] || "Desktop action");
+}
+
+function receiptDigest(value) {
+  const digest = String(value || "");
+  return digest ? `${digest.slice(0, 12)}...${digest.slice(-8)}` : t("None");
+}
+
+function renderDesktopActionReceipt(receipt) {
+  const controllerName = receipt.controller_name || t("SignalASI App");
+  const controllerPlatform = receipt.controller_platform || t("Unknown");
+  const controllerFingerprint = receipt.controller_fingerprint || "";
+  const status = receipt.status === "succeeded" ? t("Succeeded") : t("Failed");
+  const details = [
+    [t("Who"), `${controllerName} / ${controllerPlatform}`],
+    [t("Identity"), receiptDigest(controllerFingerprint)],
+    [t("Action"), desktopControlToolLabel(receipt.tool_id)],
+    [t("Started"), formatControlTime(receipt.started_at)],
+    [t("Completed"), formatControlTime(receipt.completed_at)],
+    [t("Duration"), formatDuration(receipt.duration_ms)],
+    [t("Result"), `${status} / ${receipt.summary || ""}`],
+    [t("Receipt ID"), receiptDigest(receipt.receipt_id)],
+    [t("Request digest"), receiptDigest(receipt.request_sha256)],
+    [t("Input digest"), receiptDigest(receipt.input_sha256)],
+    [t("Output digest"), receiptDigest(receipt.output_sha256)]
+  ];
+  if (receipt.evidence_sha256) {
+    details.push([t("Visual evidence"), receiptDigest(receipt.evidence_sha256)]);
+  }
+  if (receipt.error_code) {
+    details.push([
+      t("Failure category"),
+      `${receipt.error_code} / ${receipt.error_retryable ? t("Retryable") : t("Final")}`
+    ]);
+  }
+  return `<details class="control-receipt-row">
+    <summary>
+      <span>
+        <strong>${escapeHtml(receipt.summary || desktopControlToolLabel(receipt.tool_id))}</strong>
+        <small>${escapeHtml(`${formatControlTime(receipt.completed_at)} · ${t("Verified receipt")} ${String(receipt.receipt_id || "").slice(0, 8)} · ${status}`)}</small>
+      </span>
+      <span class="receipt-verified">${escapeHtml(t("Verified"))}</span>
+    </summary>
+    <div class="control-receipt-details">
+      ${details.map(([label, value]) => `<div><small>${escapeHtml(label)}</small><span>${escapeHtml(value)}</span></div>`).join("")}
+    </div>
+  </details>`;
+}
+
 function renderDesktopControl() {
   const control = state.desktopControl || { recent_audit: [] };
+  const authorizations = Array.isArray(control.authorizations)
+    ? [...control.authorizations].sort(
+      (left, right) => Number(right.updated_at || 0) - Number(left.updated_at || 0)
+    )
+    : [];
+  $("#authorizedAppList").innerHTML = authorizations.length
+    ? authorizations.map((authorization) => {
+      const active = authorization.status === "active";
+      const appName = authorization.app_name || authorization.phone_name || t("SignalASI phone");
+      const platform = authorization.app_platform || authorization.platform || t("Unknown");
+      const fingerprint = authorization.app_identity_fingerprint
+        || authorization.phone_fingerprint
+        || "";
+      const access = authorization.access_profile === "desktop_executor"
+        ? t("Full Desktop Executor")
+        : t("Restricted access");
+      const timing = [
+        authorization.granted_at
+          ? t("Granted {time}", { time: formatControlTime(authorization.granted_at) })
+          : "",
+        authorization.last_used_at
+          ? t("Last used {time}", { time: formatControlTime(authorization.last_used_at) })
+          : t("Never used")
+      ].filter(Boolean).join(" / ");
+      return `<article class="authorized-app-row">
+        <span class="phone-outline"></span>
+        <div>
+          <strong>${escapeHtml(`${appName} / ${platform}`)}</strong>
+          <small>${escapeHtml(`${fingerprint.slice(0, 16) || t("Verified")} / ${access}`)}</small>
+          <small>${escapeHtml(timing)}</small>
+        </div>
+        <span class="authorized-app-actions">
+          <small class="${active ? "active" : "revoked"}">${escapeHtml(t(active ? "Active" : "Revoked"))}</small>
+          ${active ? `<button data-revoke-authorization="${escapeHtml(authorization.authorization_id || "")}">${escapeHtml(t("Revoke"))}</button>` : ""}
+        </span>
+      </article>`;
+    }).join("")
+    : `<div class="history-empty">${escapeHtml(t("No app has Desktop execution access."))}</div>`;
   const receipts = Array.isArray(control.recent_receipts)
     ? control.recent_receipts.slice(0, 20)
     : [];
@@ -1466,7 +1564,7 @@ function renderDesktopControl() {
       .slice(0, Math.max(0, 20 - receipts.length))
     : [];
   const activity = [
-    ...receipts.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.tool_id || "")}</strong><small>${escapeHtml(`${formatControlTime(row.completed_at)} · ${t("Verified receipt")} ${String(row.receipt_id || "").slice(0, 8)} · ${row.status || ""}`)}</small></article>`),
+    ...receipts.map(renderDesktopActionReceipt),
     ...audit.map((row) => `<article class="control-audit-row"><strong>${escapeHtml(row.summary || row.event_type || "")}</strong><small>${escapeHtml(`${formatControlTime(row.created_at)} · ${row.status || ""}`)}</small></article>`)
   ];
   $("#desktopControlAuditList").innerHTML = activity.length
@@ -1536,6 +1634,23 @@ function memoryNamespaceLabel(value) {
   return scope ? `${label} · ${scope}` : label;
 }
 
+function memoryGraphNodeKindLabel(value) {
+  const labels = {
+    user: "User",
+    device: "Device",
+    application: "Application",
+    feature: "Feature",
+    setting: "Setting",
+    agent: "Agent",
+    model: "Model",
+    tool: "Tool",
+    project: "Project",
+    concept: "Concept",
+    state: "State"
+  };
+  return t(labels[value] || value || "Concept");
+}
+
 function memoryActionLabel(value) {
   const labels = {
     create: "Create",
@@ -1562,6 +1677,8 @@ function memoryFindingLabel(value) {
     unresolved_conflict: "Unresolved memory conflict",
     stale_candidate: "Candidate waiting too long",
     low_confidence_reused: "Low-confidence memory reused",
+    expired: "Expired memory retired",
+    duplicate: "Equivalent memory consolidated",
     missing_evidence: "Memory has no evidence reference",
     broken_supersession_chain: "Supersession evidence chain is incomplete"
   };
@@ -1662,6 +1779,277 @@ function renderAcceptedMemoryRows(memories, query, emptyLabel) {
   }).join("") : `<div class="history-empty">${escapeHtml(t(emptyLabel))}</div>`;
 }
 
+function memoryVisualizationTabs() {
+  const views = [
+    ["state", "State"],
+    ["timeline", "Timeline"],
+    ["graph", "Graph"],
+    ["evidence", "Evidence"]
+  ];
+  return `
+    <div class="memory-visualization-tabs" role="tablist" aria-label="${escapeHtml(t("Memory visualization"))}">
+      ${views.map(([view, label]) => `
+        <button
+          class="${state.memory.visualizationView === view ? "active" : ""}"
+          data-memory-visualization-view="${view}"
+          role="tab"
+          aria-selected="${state.memory.visualizationView === view ? "true" : "false"}"
+        >${escapeHtml(t(label))}</button>
+      `).join("")}
+    </div>`;
+}
+
+function memoryTimelineEventLabel(value) {
+  const labels = {
+    memory_recorded: "Memory recorded",
+    memory_superseded: "Memory replaced",
+    memory_retracted: "Memory removed",
+    candidate_created: "Memory candidate created",
+    candidate_approved: "Memory candidate accepted",
+    candidate_rejected: "Memory candidate rejected",
+    critic_completed: "Memory audit completed",
+    critic_failed: "Memory audit failed"
+  };
+  return t(labels[value] || value || "Memory updated");
+}
+
+function memoryRelationLabel(value) {
+  const normalized = String(value || "related_to").replaceAll("_", " ");
+  return t(normalized.charAt(0).toUpperCase() + normalized.slice(1));
+}
+
+function shortMemoryLabel(value, maximum = 24) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  return clean.length > maximum ? `${clean.slice(0, maximum - 1)}\u2026` : clean;
+}
+
+function renderMemoryTimeline(visualization) {
+  const events = Array.isArray(visualization.timeline) ? visualization.timeline : [];
+  return `
+    <section class="memory-visual-panel" aria-label="${escapeHtml(t("Memory timeline"))}">
+      <div class="memory-section-heading">
+        <strong>${escapeHtml(t("Memory timeline"))}</strong>
+        <span>${escapeHtml(t("{count} lifecycle events", { count: events.length }))}</span>
+      </div>
+      <div class="memory-timeline">
+        ${events.length ? events.map((event) => `
+          <article class="memory-timeline-event ${escapeHtml(event.event_type || "")}">
+            <span class="memory-timeline-marker" aria-hidden="true"></span>
+            <div>
+              <div class="memory-item-heading">
+                <strong>${escapeHtml(memoryTimelineEventLabel(event.event_type))}</strong>
+                <time>${escapeHtml(memoryTime(event.occurred_at))}</time>
+              </div>
+              <p>${escapeHtml(String(event.content || "").slice(0, 500))}</p>
+              <div class="memory-facts">
+                <span>${escapeHtml(memoryNamespaceLabel(event.namespace))}</span>
+                <span>${escapeHtml(memoryStateLabel(event.temporal_state || event.status))}</span>
+                <span>${escapeHtml(t("{count} evidence references", {
+                  count: Number(event.evidence_count || 0)
+                }))}</span>
+              </div>
+            </div>
+          </article>
+        `).join("") : `<div class="history-empty">${escapeHtml(t("No memory lifecycle events yet."))}</div>`}
+      </div>
+    </section>`;
+}
+
+function memoryGraphPositions(nodes, width = 680, height = 350) {
+  const positions = new Map();
+  if (nodes.length === 1) {
+    positions.set(nodes[0].id, { x: width / 2, y: height / 2 });
+    return positions;
+  }
+  nodes.forEach((node, index) => {
+    const outer = index >= 10;
+    const ringIndex = outer ? index - 10 : index;
+    const ringCount = outer ? Math.max(1, nodes.length - 10) : Math.min(10, nodes.length);
+    const radiusX = outer ? 285 : 178;
+    const radiusY = outer ? 135 : 96;
+    const angle = -Math.PI / 2 + (Math.PI * 2 * ringIndex) / ringCount;
+    positions.set(node.id, {
+      x: width / 2 + Math.cos(angle) * radiusX,
+      y: height / 2 + Math.sin(angle) * radiusY
+    });
+  });
+  return positions;
+}
+
+function renderMemoryGraph(visualization) {
+  const graph = visualization.graph || {};
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes.slice(0, 24) : [];
+  const nodeIds = new Set(nodes.map((node) => node.id));
+  const relations = (Array.isArray(graph.relations) ? graph.relations : [])
+    .filter((relation) => nodeIds.has(relation.from_node_id) && nodeIds.has(relation.to_node_id));
+  if (!nodes.length) {
+    return `
+      <section class="memory-visual-panel">
+        <div class="memory-section-heading"><strong>${escapeHtml(t("Relationship graph"))}</strong></div>
+        <div class="history-empty">${escapeHtml(t("No entity relationships yet."))}</div>
+      </section>`;
+  }
+  const selectedId = nodes.some((node) => node.id === state.memory.selectedGraphNodeId)
+    ? state.memory.selectedGraphNodeId
+    : nodes[0].id;
+  const selected = nodes.find((node) => node.id === selectedId);
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const positions = memoryGraphPositions(nodes);
+  const selectedRelations = relations.filter((relation) => (
+    relation.from_node_id === selectedId || relation.to_node_id === selectedId
+  ));
+  return `
+    <section class="memory-visual-panel" aria-label="${escapeHtml(t("Relationship graph"))}">
+      <div class="memory-section-heading">
+        <strong>${escapeHtml(t("Relationship graph"))}</strong>
+        <span>${escapeHtml(t("{nodes} entities - {relations} relationships", {
+          nodes: nodes.length,
+          relations: relations.length
+        }))}</span>
+      </div>
+      <div class="memory-graph-shell">
+        <svg class="memory-graph-canvas" viewBox="0 0 680 350" role="img" aria-label="${escapeHtml(t("Interactive memory relationship graph"))}">
+          <g class="memory-graph-edges">
+            ${relations.map((relation) => {
+              const from = positions.get(relation.from_node_id);
+              const to = positions.get(relation.to_node_id);
+              if (!from || !to) return "";
+              const connected = relation.from_node_id === selectedId || relation.to_node_id === selectedId;
+              return `<line class="${connected ? "selected" : ""}" x1="${from.x.toFixed(1)}" y1="${from.y.toFixed(1)}" x2="${to.x.toFixed(1)}" y2="${to.y.toFixed(1)}"></line>`;
+            }).join("")}
+          </g>
+          <g class="memory-graph-nodes">
+            ${nodes.map((node) => {
+              const position = positions.get(node.id);
+              const selectedClass = node.id === selectedId ? "selected" : "";
+              return `
+                <g
+                  class="memory-graph-node ${escapeHtml(node.temporal_state || "current")} ${selectedClass}"
+                  data-memory-graph-node="${escapeHtml(node.id)}"
+                  role="button"
+                  tabindex="0"
+                  aria-label="${escapeHtml(node.label)}"
+                >
+                  <circle cx="${position.x.toFixed(1)}" cy="${position.y.toFixed(1)}" r="${node.id === selectedId ? 25 : 21}"></circle>
+                  <text x="${position.x.toFixed(1)}" y="${(position.y + 39).toFixed(1)}" text-anchor="middle">${escapeHtml(shortMemoryLabel(node.label, 18))}</text>
+                </g>`;
+            }).join("")}
+          </g>
+        </svg>
+        <aside class="memory-graph-detail">
+          <div class="memory-item-heading">
+            <strong>${escapeHtml(selected?.label || "")}</strong>
+            <span class="memory-status ${escapeHtml(selected?.temporal_state || "current")}">${escapeHtml(memoryStateLabel(selected?.temporal_state))}</span>
+          </div>
+          <p>${escapeHtml(t("{kind} in {namespace}", {
+            kind: memoryGraphNodeKindLabel(selected?.kind),
+            namespace: memoryNamespaceLabel(selected?.namespace)
+          }))}</p>
+          <div class="memory-facts">
+            <span>${escapeHtml(t("{percent}% confidence", {
+              percent: Math.round(Number(selected?.confidence || 0) * 100)
+            }))}</span>
+            <span>${escapeHtml(t("{count} evidence references", {
+              count: Number(selected?.evidence_count || 0)
+            }))}</span>
+          </div>
+          <div class="memory-graph-relations">
+            ${selectedRelations.length ? selectedRelations.map((relation) => {
+              const from = nodeById.get(relation.from_node_id);
+              const to = nodeById.get(relation.to_node_id);
+              return `
+                <button data-memory-graph-node="${escapeHtml(
+                  relation.from_node_id === selectedId ? relation.to_node_id : relation.from_node_id
+                )}">
+                  <span>${escapeHtml(from?.label || "")} \u2192 ${escapeHtml(to?.label || "")}</span>
+                  <small>${escapeHtml(memoryRelationLabel(relation.kind))}</small>
+                </button>`;
+            }).join("") : `<p>${escapeHtml(t("No visible relationships for this entity."))}</p>`}
+          </div>
+        </aside>
+      </div>
+    </section>`;
+}
+
+function renderMemoryEvidence(visualization) {
+  const chains = Array.isArray(visualization.evidence_chains)
+    ? visualization.evidence_chains
+    : [];
+  if (!chains.length) {
+    return `
+      <section class="memory-visual-panel">
+        <div class="memory-section-heading"><strong>${escapeHtml(t("Evidence chains"))}</strong></div>
+        <div class="history-empty">${escapeHtml(t("No evidence chains yet."))}</div>
+      </section>`;
+  }
+  const selectedId = chains.some((chain) => chain.id === state.memory.selectedEvidenceChainId)
+    ? state.memory.selectedEvidenceChainId
+    : chains[0].id;
+  const selected = chains.find((chain) => chain.id === selectedId);
+  return `
+    <section class="memory-visual-panel" aria-label="${escapeHtml(t("Evidence chains"))}">
+      <div class="memory-section-heading">
+        <strong>${escapeHtml(t("Evidence chains"))}</strong>
+        <span>${escapeHtml(t("{count} traceable memories", { count: chains.length }))}</span>
+      </div>
+      <div class="memory-evidence-layout">
+        <div class="memory-evidence-index">
+          ${chains.map((chain) => {
+            const current = chain.versions?.find((version) => version.id === chain.current_memory_id)
+              || chain.versions?.at(-1);
+            return `
+              <button class="${chain.id === selectedId ? "active" : ""}" data-memory-evidence-chain="${escapeHtml(chain.id)}">
+                <strong>${escapeHtml(shortMemoryLabel(current?.content || chain.memory_key, 52))}</strong>
+                <span>${escapeHtml(t("{versions} versions - {evidence} evidence", {
+                  versions: Number(chain.versions?.length || 0),
+                  evidence: Number(chain.evidence?.length || 0)
+                }))}</span>
+              </button>`;
+          }).join("")}
+        </div>
+        <div class="memory-evidence-detail">
+          <div class="memory-item-heading">
+            <strong>${escapeHtml(memoryKindLabel(selected?.kind))}</strong>
+            <span class="memory-status ${escapeHtml(selected?.current_temporal_state || "current")}">${escapeHtml(memoryStateLabel(selected?.current_temporal_state))}</span>
+          </div>
+          <p class="memory-content">${escapeHtml(
+            selected?.versions?.find((version) => version.id === selected.current_memory_id)?.content
+            || selected?.versions?.at(-1)?.content
+            || ""
+          )}</p>
+          <div class="memory-facts">
+            <span>${escapeHtml(memoryNamespaceLabel(selected?.namespace))}</span>
+            <span>${escapeHtml(t("{count} graph references", {
+              count: Number(selected?.graph_node_ids?.length || 0)
+                + Number(selected?.graph_relation_ids?.length || 0)
+            }))}</span>
+          </div>
+          <h4>${escapeHtml(t("Version history"))}</h4>
+          <div class="memory-version-chain">
+            ${(selected?.versions || []).map((version) => `
+              <div>
+                <span class="memory-version-dot ${escapeHtml(version.temporal_state || "current")}"></span>
+                <p><strong>${escapeHtml(shortMemoryLabel(version.content, 90))}</strong><small>${escapeHtml(memoryTime(version.created_at))} - ${escapeHtml(memoryStateLabel(version.status === "active" ? version.temporal_state : version.status))}</small></p>
+              </div>
+            `).join("")}
+          </div>
+          <h4>${escapeHtml(t("Source evidence"))}</h4>
+          <div class="memory-source-evidence">
+            ${(selected?.evidence || []).length ? selected.evidence.map((evidence) => `
+              <div>
+                <strong>${escapeHtml(evidence.source || t("Memory evidence"))}</strong>
+                <span>${escapeHtml(evidence.kind || t("Observation"))}${
+                  evidence.task_id ? ` - ${escapeHtml(shortMemoryLabel(evidence.task_id, 32))}` : ""
+                }</span>
+                <time>${escapeHtml(memoryTime(evidence.observed_at))}</time>
+              </div>
+            `).join("") : `<p>${escapeHtml(t("This memory has no source evidence."))}</p>`}
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
 function renderMemory() {
   const stats = state.memory.stats || {};
   const accepted = Array.isArray(state.memory.memories) ? state.memory.memories : [];
@@ -1718,7 +2106,24 @@ function renderMemory() {
   if (searchField) searchField.hidden = state.memory.view === "overview";
 
   if (state.memory.view === "overview") {
+    const visualization = state.memory.visualization || {};
+    const visualizationTabs = memoryVisualizationTabs();
+    if (state.memory.visualizationView === "timeline") {
+      $("#memoryList").innerHTML = `${visualizationTabs}${renderMemoryTimeline(visualization)}`;
+      return;
+    }
+    if (state.memory.visualizationView === "graph") {
+      $("#memoryList").innerHTML = `${visualizationTabs}${renderMemoryGraph(visualization)}`;
+      return;
+    }
+    if (state.memory.visualizationView === "evidence") {
+      $("#memoryList").innerHTML = `${visualizationTabs}${renderMemoryEvidence(visualization)}`;
+      return;
+    }
     const health = evolution.health || {};
+    const critic = evolution.critic || stats.critic || {};
+    const latestCritic = critic.latest || {};
+    const graph = evolution.graph || stats.graph || {};
     const findings = Array.isArray(health.findings) ? health.findings : [];
     const recent = Array.isArray(evolution.recent_evolution)
       ? evolution.recent_evolution.slice(0, 6)
@@ -1729,7 +2134,7 @@ function renderMemory() {
       ["Pending review", evolutionSummary.pending_review || 0, "pending"],
       ["Conflicts", evolutionSummary.conflicted || 0, "conflicted"]
     ];
-    $("#memoryList").innerHTML = `
+    $("#memoryList").innerHTML = `${visualizationTabs}
       <section class="memory-dashboard-grid" aria-label="${escapeHtml(t("Memory state"))}">
         ${stateMetrics.map(([label, value, tone]) => `
           <button class="memory-metric ${tone}" data-memory-overview-route="${
@@ -1747,9 +2152,22 @@ function renderMemory() {
       </section>
       <section class="memory-health ${health.status === "attention" ? "attention" : "healthy"}">
         <div>
-          <strong>${escapeHtml(t("Memory health"))}</strong>
-          <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
+          <div class="memory-health-heading">
+            <strong>${escapeHtml(t("Memory health"))}</strong>
+            <span>${escapeHtml(health.status === "attention" ? t("Needs attention") : t("Healthy"))}</span>
+          </div>
+          <button class="memory-audit-button" data-run-memory-critic>
+            ${escapeHtml(t("Run audit"))}
+          </button>
         </div>
+        <p>${escapeHtml(
+          critic.last_run_at
+            ? t("Last audit {time} - {actions} safe actions", {
+              time: memoryTime(critic.last_run_at),
+              actions: Number(latestCritic.action_count || 0)
+            })
+            : t("Memory audit has not run yet.")
+        )}</p>
         ${findings.length ? findings.map((finding) => `
           <p><b>${escapeHtml(String(finding.count || 0))}</b> ${escapeHtml(memoryFindingLabel(finding.kind))}</p>
         `).join("") : `<p>${escapeHtml(t("No stale, conflicting, or unsupported memory was found."))}</p>`}
@@ -1763,6 +2181,22 @@ function renderMemory() {
           ${Object.entries(evolution.namespace_counts || {}).map(([namespace, count]) => `
             <div><span>${escapeHtml(memoryNamespaceLabel(namespace))}</span><strong>${escapeHtml(String(count))}</strong></div>
           `).join("") || `<p>${escapeHtml(t("No durable memory yet."))}</p>`}
+        </div>
+      </section>
+      <section class="memory-overview-section">
+        <div class="memory-section-heading">
+          <strong>${escapeHtml(t("Relationship graph"))}</strong>
+          <span>${escapeHtml(t("{nodes} entities · {relations} relationships", {
+            nodes: Number(graph.node_count || 0),
+            relations: Number(graph.relation_count || 0)
+          }))}</span>
+        </div>
+        <div class="memory-namespace-grid">
+          ${Object.entries(graph.node_kinds || {})
+            .filter(([, count]) => Number(count) > 0)
+            .map(([kind, count]) => `
+              <div><span>${escapeHtml(memoryGraphNodeKindLabel(kind))}</span><strong>${escapeHtml(String(count))}</strong></div>
+            `).join("") || `<p>${escapeHtml(t("No entity relationships yet."))}</p>`}
         </div>
       </section>
       <section class="memory-overview-section">
@@ -2157,11 +2591,12 @@ function updateCapabilityCount() {
 }
 
 async function refreshMemory(query = "") {
-  const [current, history, inbox, evolution] = await Promise.all([
+  const [current, history, inbox, evolution, visualization] = await Promise.all([
     window.signalasi.getDesktopMemory(query, 100, "active"),
     window.signalasi.getDesktopMemory("", 100, "history"),
     window.signalasi.getDesktopMemoryInbox(100),
-    window.signalasi.getDesktopMemoryEvolution(100)
+    window.signalasi.getDesktopMemoryEvolution(100),
+    window.signalasi.getDesktopMemoryVisualization(100)
   ]);
   state.memory = {
     ...state.memory,
@@ -2169,6 +2604,7 @@ async function refreshMemory(query = "") {
     history: Array.isArray(history.memories) ? history.memories : [],
     candidates: Array.isArray(inbox.candidates) ? inbox.candidates : [],
     evolution: evolution || {},
+    visualization: visualization || {},
     stats: current.stats || inbox.stats || {},
     query
   };
@@ -2178,11 +2614,12 @@ async function refreshMemory(query = "") {
 
 async function refreshCapabilities() {
   try {
-    const [memory, memoryHistory, memoryInbox, memoryEvolution, marketplace, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
+    const [memory, memoryHistory, memoryInbox, memoryEvolution, memoryVisualization, marketplace, skills, mcp, mcpImportSources, proactive, proactiveRuns] = await Promise.all([
       window.signalasi.getDesktopMemory("", 100, "active"),
       window.signalasi.getDesktopMemory("", 100, "history"),
       window.signalasi.getDesktopMemoryInbox(100),
       window.signalasi.getDesktopMemoryEvolution(100),
+      window.signalasi.getDesktopMemoryVisualization(100),
       window.signalasi.getToolMarketplace(),
       window.signalasi.getDesktopSkills(),
       window.signalasi.getDesktopMcp(),
@@ -2196,6 +2633,7 @@ async function refreshCapabilities() {
       history: Array.isArray(memoryHistory.memories) ? memoryHistory.memories : [],
       candidates: Array.isArray(memoryInbox.candidates) ? memoryInbox.candidates : [],
       evolution: memoryEvolution || {},
+      visualization: memoryVisualization || {},
       stats: memory.stats || memoryInbox.stats || {},
       query: ""
     };
@@ -3331,6 +3769,13 @@ function bindEvents() {
     await refreshGateway();
     await refreshDesktopControl();
   });
+  $("#authorizedAppList").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-revoke-authorization]");
+    if (!button || !window.confirm(t("Revoke execution access for this app?"))) return;
+    await window.signalasi.revokeDesktopAuthorization(button.dataset.revokeAuthorization);
+    await Promise.all([refreshDesktopControl(), refreshGateway()]);
+    showToast(t("App authorization revoked."));
+  });
   $$('[data-capability-tab]').forEach((button) => button.addEventListener("click", () => selectCapabilityTab(button.dataset.capabilityTab)));
   $$("[data-marketplace-kind]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -3413,10 +3858,37 @@ function bindEvents() {
   });
   $("#addMemoryButton").addEventListener("click", () => addMemory().catch((error) => showToast(error.message || String(error))));
   $("#memoryList").addEventListener("click", async (event) => {
+    const visualizationView = event.target.closest("[data-memory-visualization-view]");
+    const graphNode = event.target.closest("[data-memory-graph-node]");
+    const evidenceChain = event.target.closest("[data-memory-evidence-chain]");
+    const runCritic = event.target.closest("[data-run-memory-critic]");
     const overviewRoute = event.target.closest("[data-memory-overview-route]");
     const forget = event.target.closest("[data-forget-memory]");
     const approve = event.target.closest("[data-approve-memory-candidate]");
     const reject = event.target.closest("[data-reject-memory-candidate]");
+    if (visualizationView) {
+      state.memory.visualizationView = visualizationView.dataset.memoryVisualizationView;
+      renderMemory();
+      return;
+    }
+    if (graphNode) {
+      state.memory.selectedGraphNodeId = graphNode.dataset.memoryGraphNode;
+      renderMemory();
+      return;
+    }
+    if (evidenceChain) {
+      state.memory.selectedEvidenceChainId = evidenceChain.dataset.memoryEvidenceChain;
+      renderMemory();
+      return;
+    }
+    if (runCritic) {
+      const result = await window.signalasi.runDesktopMemoryCritic();
+      showToast(t("Memory audit completed with {count} safe actions.", {
+        count: Number(result?.run?.action_count || 0)
+      }));
+      await refreshMemory($("#memorySearch").value.trim());
+      return;
+    }
     if (overviewRoute) {
       selectMemoryView(overviewRoute.dataset.memoryOverviewRoute);
       return;
@@ -3439,6 +3911,14 @@ function bindEvents() {
       return;
     }
     await refreshMemory($("#memorySearch").value.trim());
+  });
+  $("#memoryList").addEventListener("keydown", (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const graphNode = event.target.closest("[data-memory-graph-node]");
+    if (!graphNode) return;
+    event.preventDefault();
+    state.memory.selectedGraphNodeId = graphNode.dataset.memoryGraphNode;
+    renderMemory();
   });
   $("#saveSkillButton").addEventListener("click", () => saveSkill().catch((error) => showToast(error.message || String(error))));
   $("#skillList").addEventListener("click", async (event) => {
