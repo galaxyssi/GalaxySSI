@@ -1137,6 +1137,91 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(encoded.contains(#""rich_output_json":"#))
   }
 
+  func testAgentFastLocalResponseAnswersBoundedBinaryArithmeticLocally() {
+    let context = AgentConversationContext(conversationId: "test", summary: "", turns: [], privateMode: false)
+
+    XCTAssertEqual(
+      AgentFastLocalResponse.reply(goal: "\u{53ea}\u{7ed9}\u{51fa} 37 + 58 \u{7684}\u{7ed3}\u{679c}\u{3002}", context: context),
+      "95"
+    )
+    XCTAssertEqual(AgentFastLocalResponse.reply(goal: "12 / 2", context: context), "6")
+    XCTAssertEqual(AgentFastLocalResponse.reply(goal: "Calculate 3 x -7", context: context), "-21")
+    XCTAssertNil(
+      AgentFastLocalResponse.reply(goal: "Explain why 37 + 58 is useful in this example", context: context)
+    )
+    XCTAssertNil(AgentFastLocalResponse.reply(goal: "Calculate 1 / 0", context: context))
+  }
+
+  func testAgentFastLocalResponseAsksOneQuestionForObjectlessNewConversationRequest() {
+    let goal = "\u{5e2e}\u{6211}\u{5904}\u{7406}\u{4e00}\u{4e0b}\u{3002}"
+    let contextAfterUserAppend = AgentConversationContext(
+      conversationId: "test",
+      summary: "",
+      turns: [AgentTranscriptEntry(id: "current", role: .user, text: goal, timestampMillis: 1)],
+      privateMode: false
+    )
+    let response = AgentFastLocalResponse.reply(goal: goal, context: contextAfterUserAppend)
+
+    XCTAssertEqual(
+      response,
+      "\u{4f60}\u{60f3}\u{8ba9}\u{6211}\u{5904}\u{7406}\u{4ec0}\u{4e48}\u{ff1f}\u{53ef}\u{4ee5}\u{53d1}\u{6587}\u{5b57}\u{3001}\u{6587}\u{4ef6}\u{6216}\u{56fe}\u{7247}\u{ff0c}\u{6216}\u{76f4}\u{63a5}\u{8bf4}\u{8981}\u{6211}\u{67e5}\u{770b}\u{3001}\u{4fee}\u{6539}\u{3001}\u{603b}\u{7ed3}\u{8fd8}\u{662f}\u{6267}\u{884c}\u{3002}"
+    )
+  }
+
+  func testAgentFastLocalResponsePreservesContextualFollowUpForTheModel() {
+    let context = AgentConversationContext(
+      conversationId: "test",
+      summary: "",
+      turns: [AgentTranscriptEntry(id: "1", role: .user, text: "Prior task", timestampMillis: 1)],
+      privateMode: false
+    )
+    let summarizedContext = AgentConversationContext(
+      conversationId: "test",
+      summary: "The user asked for a report review.",
+      turns: [],
+      privateMode: false
+    )
+
+    XCTAssertNil(
+      AgentFastLocalResponse.reply(goal: "\u{5e2e}\u{6211}\u{5904}\u{7406}\u{4e00}\u{4e0b}\u{3002}", context: context)
+    )
+    XCTAssertNil(AgentFastLocalResponse.reply(goal: "Handle this", context: summarizedContext))
+  }
+
+  func testAgentFastLocalResponseRequestsDocumentAuthorizationForRawSharedStoragePaths() {
+    let context = AgentConversationContext(conversationId: "test", summary: "", turns: [], privateMode: false)
+    let chinese = AgentFastLocalResponse.reply(
+      goal: "\u{8bfb}\u{53d6} /storage/emulated/0/Download/report.txt \u{5e76}\u{544a}\u{8bc9}\u{6211}\u{7ed3}\u{679c}\u{3002}",
+      context: context
+    )
+
+    XCTAssertTrue(chinese?.contains("Android \u{4e0d}\u{5141}\u{8bb8} App") == true)
+    XCTAssertTrue(chinese?.contains("\u{91cd}\u{65b0}\u{9009}\u{62e9}\u{8be5}\u{6587}\u{4ef6}") == true)
+    XCTAssertEqual(
+      AgentFastLocalResponse.reply(goal: "Read /sdcard/Download/report.txt", context: context),
+      "Android does not let apps read this raw shared-storage path directly. Select the file again with the input bar's file button; after you grant access, I will process it directly."
+    )
+    XCTAssertNil(AgentFastLocalResponse.reply(goal: "Save the result to /sdcard/Download/report.txt", context: context))
+  }
+
+  func testAgentConversationContextUsesAndroidWireNamesAndGlobalContextRules() throws {
+    let context = AgentConversationContext(
+      conversationId: "conversation-a",
+      summary: "Earlier summary",
+      turns: [AgentTranscriptEntry(id: "1", role: .assistant, text: "Done", timestampMillis: 2)],
+      privateMode: true,
+      globalContext: "Global note",
+      trackingPaused: true
+    )
+    let encoded = String(decoding: try JSONEncoder().encode(context), as: UTF8.self)
+
+    XCTAssertFalse(context.allowsGlobalContext)
+    XCTAssertTrue(encoded.contains(#""conversation_id":"conversation-a""#))
+    XCTAssertTrue(encoded.contains(#""private_mode":true"#))
+    XCTAssertTrue(encoded.contains(#""global_context":"Global note""#))
+    XCTAssertTrue(encoded.contains(#""tracking_paused":true"#))
+  }
+
   func testAgentFinalResponseIdentityCoalescesCanonicalDuplicates() {
     let canonical = finalTranscriptEntry(
       id: "canonical",
