@@ -17809,26 +17809,13 @@ struct AgentMcpPackageInstaller {
       guard isAllowedEntry(entry.path) else {
         throw AgentRuntimeCapabilityError.invalid("MCP package contains unsupported executable content: \(entry.path)")
       }
-      guard entry.method == 0 else {
-        throw AgentRuntimeCapabilityError.invalid("Compressed MCP package entries are not supported on iOS yet: \(entry.path)")
-      }
       let maxBytes: Int
       if entry.path == Self.manifestPath || entry.path == Self.integrityPath {
         maxBytes = Self.maxManifestBytes
       } else {
         maxBytes = Self.maxAssetBytes
       }
-      guard entry.dataLength <= maxBytes,
-            rangeFits(start: entry.dataOffset, length: entry.dataLength, in: data) else {
-        throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
-      }
-      let content = data.subdata(in: entry.dataOffset..<(entry.dataOffset + entry.dataLength))
-      guard Int64(content.count) == entry.uncompressedBytes else {
-        throw AgentRuntimeCapabilityError.invalid("MCP package entry size changed during extraction")
-      }
-      guard crc32(content) == entry.crc32 else {
-        throw AgentRuntimeCapabilityError.invalid("MCP package entry CRC did not match")
-      }
+      let content = try extractEntry(entry, from: data, maxBytes: maxBytes)
       guard let nextBytes = checkedAdd(extractedBytes, Int64(content.count)),
             nextBytes <= Self.maxExtractedBytes else {
         throw AgentRuntimeCapabilityError.invalid("MCP package expands beyond the allowed size")
@@ -17837,6 +17824,289 @@ struct AgentMcpPackageInstaller {
       files[entry.path] = content
     }
     return files
+  }
+
+  private func extractEntry(_ entry: ZipEntry, from data: Data, maxBytes: Int) throws -> Data {
+    guard entry.uncompressedBytes <= Int64(maxBytes),
+          rangeFits(start: entry.dataOffset, length: entry.dataLength, in: data) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+    }
+    let compressed = data.subdata(in: entry.dataOffset..<(entry.dataOffset + entry.dataLength))
+    let content: Data
+    switch entry.method {
+    case 0:
+      guard entry.dataLength <= maxBytes else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+      }
+      content = compressed
+    case 8:
+      content = try inflateDeflate(compressed, expectedBytes: entry.uncompressedBytes, maxBytes: maxBytes)
+    default:
+      throw AgentRuntimeCapabilityError.invalid("MCP package ZIP compression method is not supported on iOS yet")
+    }
+    guard Int64(content.count) == entry.uncompressedBytes else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package entry size changed during extraction")
+    }
+    guard crc32(content) == entry.crc32 else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package entry CRC did not match")
+    }
+    return content
+  }
+
+  private func inflateDeflate(_ compressed: Data, expectedBytes: Int64, maxBytes: Int) throws -> Data {
+    guard expectedBytes <= Int64(maxBytes) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+    }
+    var reader = DeflateBitReader(compressed)
+    var output = Data()
+    var finalBlock = false
+    repeat {
+      finalBlock = try reader.readBits(1) == 1
+      let blockType = try reader.readBits(2)
+      switch blockType {
+      case 0:
+        try inflateStoredBlock(reader: &reader, output: &output, maxBytes: maxBytes)
+      case 1:
+        try inflateCompressedBlock(
+          reader: &reader,
+          literalTable: Self.fixedLiteralLengthTable,
+          distanceTable: Self.fixedDistanceTable,
+          output: &output,
+          maxBytes: maxBytes
+        )
+      case 2:
+        let tables = try dynamicDeflateTables(reader: &reader)
+        try inflateCompressedBlock(
+          reader: &reader,
+          literalTable: tables.literal,
+          distanceTable: tables.distance,
+          output: &output,
+          maxBytes: maxBytes
+        )
+      default:
+        throw AgentRuntimeCapabilityError.invalid("MCP package deflate block type is reserved")
+      }
+    } while !finalBlock
+    guard Int64(output.count) == expectedBytes else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package entry size changed during extraction")
+    }
+    return output
+  }
+
+  private func inflateStoredBlock(
+    reader: inout DeflateBitReader,
+    output: inout Data,
+    maxBytes: Int
+  ) throws {
+    reader.alignToByte()
+    let length = try reader.readBits(16)
+    let inverseLength = try reader.readBits(16)
+    guard UInt16(length) == ~UInt16(inverseLength) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package deflate stored block length is invalid")
+    }
+    guard output.count <= maxBytes - length else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+    }
+    output.append(try reader.readBytes(length))
+  }
+
+  private func inflateCompressedBlock(
+    reader: inout DeflateBitReader,
+    literalTable: DeflateHuffmanTable,
+    distanceTable: DeflateHuffmanTable,
+    output: inout Data,
+    maxBytes: Int
+  ) throws {
+    while true {
+      let symbol = try literalTable.decode(reader: &reader)
+      if symbol < 256 {
+        guard output.count < maxBytes else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+        }
+        output.append(UInt8(symbol))
+      } else if symbol == 256 {
+        return
+      } else {
+        let lengthIndex = symbol - 257
+        guard Self.deflateLengthBases.indices.contains(lengthIndex) else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate length code is invalid")
+        }
+        let length = Self.deflateLengthBases[lengthIndex] + try reader.readBits(Self.deflateLengthExtraBits[lengthIndex])
+        let distanceSymbol = try distanceTable.decode(reader: &reader)
+        guard Self.deflateDistanceBases.indices.contains(distanceSymbol) else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate distance code is invalid")
+        }
+        let distance = Self.deflateDistanceBases[distanceSymbol] + try reader.readBits(Self.deflateDistanceExtraBits[distanceSymbol])
+        try copyDeflateMatch(length: length, distance: distance, output: &output, maxBytes: maxBytes)
+      }
+    }
+  }
+
+  private func copyDeflateMatch(length: Int, distance: Int, output: inout Data, maxBytes: Int) throws {
+    guard distance > 0, distance <= output.count else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package deflate distance is invalid")
+    }
+    guard output.count <= maxBytes - length else {
+      throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
+    }
+    for _ in 0..<length {
+      output.append(output[output.count - distance])
+    }
+  }
+
+  private func dynamicDeflateTables(reader: inout DeflateBitReader) throws -> (literal: DeflateHuffmanTable, distance: DeflateHuffmanTable) {
+    let literalCount = try reader.readBits(5) + 257
+    let distanceCount = try reader.readBits(5) + 1
+    let codeLengthCount = try reader.readBits(4) + 4
+    var codeLengthLengths = Array(repeating: 0, count: 19)
+    for index in 0..<codeLengthCount {
+      codeLengthLengths[Self.deflateCodeLengthOrder[index]] = try reader.readBits(3)
+    }
+    let codeLengthTable = try DeflateHuffmanTable(lengths: codeLengthLengths)
+    var lengths: [Int] = []
+    let totalCount = literalCount + distanceCount
+    while lengths.count < totalCount {
+      let symbol = try codeLengthTable.decode(reader: &reader)
+      switch symbol {
+      case 0...15:
+        lengths.append(symbol)
+      case 16:
+        guard let previous = lengths.last else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate repeat code has no previous length")
+        }
+        let repeatCount = try reader.readBits(2) + 3
+        guard lengths.count <= totalCount - repeatCount else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate code lengths overflow")
+        }
+        lengths.append(contentsOf: Array(repeating: previous, count: repeatCount))
+      case 17:
+        let repeatCount = try reader.readBits(3) + 3
+        guard lengths.count <= totalCount - repeatCount else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate code lengths overflow")
+        }
+        lengths.append(contentsOf: Array(repeating: 0, count: repeatCount))
+      case 18:
+        let repeatCount = try reader.readBits(7) + 11
+        guard lengths.count <= totalCount - repeatCount else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate code lengths overflow")
+        }
+        lengths.append(contentsOf: Array(repeating: 0, count: repeatCount))
+      default:
+        throw AgentRuntimeCapabilityError.invalid("MCP package deflate code length symbol is invalid")
+      }
+    }
+    return (
+      try DeflateHuffmanTable(lengths: Array(lengths.prefix(literalCount))),
+      try DeflateHuffmanTable(lengths: Array(lengths.dropFirst(literalCount)), allowEmpty: true)
+    )
+  }
+
+  private struct DeflateBitReader {
+    private let bytes: [UInt8]
+    private var offset = 0
+    private var bitBuffer: UInt32 = 0
+    private var bitCount = 0
+
+    init(_ data: Data) {
+      self.bytes = Array(data)
+    }
+
+    mutating func readBits(_ count: Int) throws -> Int {
+      guard count >= 0, count <= 16 else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package deflate bit count is invalid")
+      }
+      if count == 0 {
+        return 0
+      }
+      while bitCount < count {
+        guard offset < bytes.count else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate stream ended unexpectedly")
+        }
+        bitBuffer |= UInt32(bytes[offset]) << UInt32(bitCount)
+        bitCount += 8
+        offset += 1
+      }
+      let mask = (UInt32(1) << UInt32(count)) - 1
+      let value = Int(bitBuffer & mask)
+      bitBuffer >>= UInt32(count)
+      bitCount -= count
+      return value
+    }
+
+    mutating func alignToByte() {
+      bitBuffer = 0
+      bitCount = 0
+    }
+
+    mutating func readBytes(_ count: Int) throws -> Data {
+      guard count >= 0, bitCount == 0, offset <= bytes.count, count <= bytes.count - offset else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package deflate byte range is invalid")
+      }
+      let next = offset + count
+      let chunk = Data(bytes[offset..<next])
+      offset = next
+      return chunk
+    }
+  }
+
+  private struct DeflateHuffmanTable {
+    private let symbolsByLengthAndCode: [Int: Int]
+    private let maxBits: Int
+
+    init(lengths: [Int], allowEmpty: Bool = false) throws {
+      let maxBits = lengths.max() ?? 0
+      if maxBits == 0, allowEmpty {
+        self.maxBits = 0
+        self.symbolsByLengthAndCode = [:]
+        return
+      }
+      guard maxBits > 0, maxBits <= 15 else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package deflate Huffman table is invalid")
+      }
+      var counts = Array(repeating: 0, count: maxBits + 1)
+      for length in lengths where length > 0 {
+        guard length <= maxBits else {
+          throw AgentRuntimeCapabilityError.invalid("MCP package deflate Huffman length is invalid")
+        }
+        counts[length] += 1
+      }
+      var code = 0
+      var nextCodes = Array(repeating: 0, count: maxBits + 1)
+      for bitCount in 1...maxBits {
+        code = (code + counts[bitCount - 1]) << 1
+        nextCodes[bitCount] = code
+      }
+      var table: [Int: Int] = [:]
+      for (symbol, length) in lengths.enumerated() where length > 0 {
+        let reversed = Self.reversedBits(nextCodes[length], count: length)
+        table[(length << 16) | reversed] = symbol
+        nextCodes[length] += 1
+      }
+      self.maxBits = maxBits
+      self.symbolsByLengthAndCode = table
+    }
+
+    func decode(reader: inout DeflateBitReader) throws -> Int {
+      guard maxBits > 0 else {
+        throw AgentRuntimeCapabilityError.invalid("MCP package deflate Huffman table is empty")
+      }
+      var code = 0
+      for length in 1...maxBits {
+        code |= try reader.readBits(1) << (length - 1)
+        if let symbol = symbolsByLengthAndCode[(length << 16) | code] {
+          return symbol
+        }
+      }
+      throw AgentRuntimeCapabilityError.invalid("MCP package deflate Huffman code is invalid")
+    }
+
+    private static func reversedBits(_ value: Int, count: Int) -> Int {
+      var result = 0
+      for index in 0..<count {
+        result = (result << 1) | ((value >> index) & 1)
+      }
+      return result
+    }
   }
 
   private func inspectZipData(_ data: Data) throws -> [ZipEntry] {
@@ -18054,6 +18324,45 @@ struct AgentMcpPackageInstaller {
     "py", "js", "mjs", "cjs", "json", "toml", "yaml", "yml", "txt", "md", "sh", "lock"
   ])
   private static let allowedRuntimeFilenames = Set(["package-lock.json", "uv.lock"])
+  private static let fixedLiteralLengthTable: DeflateHuffmanTable = {
+    var lengths = Array(repeating: 8, count: 288)
+    for index in 144...255 {
+      lengths[index] = 9
+    }
+    for index in 256...279 {
+      lengths[index] = 7
+    }
+    for index in 280...287 {
+      lengths[index] = 8
+    }
+    return try! DeflateHuffmanTable(lengths: lengths)
+  }()
+  private static let fixedDistanceTable: DeflateHuffmanTable = try! DeflateHuffmanTable(lengths: Array(repeating: 5, count: 32))
+  private static let deflateCodeLengthOrder = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+  private static let deflateLengthBases = [
+    3, 4, 5, 6, 7, 8, 9, 10,
+    11, 13, 15, 17, 19, 23, 27, 31,
+    35, 43, 51, 59, 67, 83, 99, 115,
+    131, 163, 195, 227, 258
+  ]
+  private static let deflateLengthExtraBits = [
+    0, 0, 0, 0, 0, 0, 0, 0,
+    1, 1, 1, 1, 2, 2, 2, 2,
+    3, 3, 3, 3, 4, 4, 4, 4,
+    5, 5, 5, 5, 0
+  ]
+  private static let deflateDistanceBases = [
+    1, 2, 3, 4, 5, 7, 9, 13,
+    17, 25, 33, 49, 65, 97, 129, 193,
+    257, 385, 513, 769, 1_025, 1_537, 2_049, 3_073,
+    4_097, 6_145, 8_193, 12_289, 16_385, 24_577
+  ]
+  private static let deflateDistanceExtraBits = [
+    0, 0, 0, 0, 1, 1, 2, 2,
+    3, 3, 4, 4, 5, 5, 6, 6,
+    7, 7, 8, 8, 9, 9, 10, 10,
+    11, 11, 12, 12, 13, 13
+  ]
   private static let crc32Table: [UInt32] = {
     (0..<256).map { value -> UInt32 in
       var crc = UInt32(value)
