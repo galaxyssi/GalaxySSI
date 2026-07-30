@@ -32,6 +32,7 @@ MAX_TASK_EVENTS = 256
 MAX_DELIVERY_TRACE_EVENTS = 64
 DEFAULT_TAKEOVER_LEASE_SECONDS = 15 * 60
 MAX_TAKEOVER_LEASE_SECONDS = 60 * 60
+EXECUTION_LOCATION_CONTRACT = "signalasi.execution-location/1.0"
 EventCallback = Callable[[dict], None]
 ExternalRecoveryCallback = Callable[[dict, str], bool]
 
@@ -242,10 +243,15 @@ class AgentTask:
             "takeover": dict(self.takeover),
             "process_id": self.process.pid if self.process is not None and self.process.poll() is None else 0,
             "execution_view": {
+                "contract": EXECUTION_LOCATION_CONTRACT,
                 "executor_id": executor_id,
                 "location_kind": location["kind"],
                 "location_id": location["id"],
                 "location_name": location["name"],
+                "runtime_kind": "desktop_agent",
+                "runtime_id": executor_id,
+                "runtime_name": "",
+                "trusted_source": "paired_desktop",
                 "status": self.status,
                 "current_step": self.current_step,
                 "cancellable": self.status not in TERMINAL_STATES,

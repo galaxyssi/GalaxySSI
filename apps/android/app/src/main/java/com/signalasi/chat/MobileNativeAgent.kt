@@ -6413,6 +6413,16 @@ class MobileNativeAgent(
 
     private fun saveTaskRecord(result: String = lastActionResult?.message.orEmpty()) {
         val plan = currentPlan ?: return
+        val execution = AgentExecutionPresentationPolicy.location(
+            route = plan.route,
+            action = plan.actions.lastOrNull { action ->
+                action.status in setOf(
+                    AgentActionStatus.RUNNING,
+                    AgentActionStatus.WAITING_RESPONSE,
+                    AgentActionStatus.COMPLETED
+                )
+            } ?: plan.actions.firstOrNull()
+        )
         taskStore.upsert(
             AgentTaskRecord(
                 taskId = plan.planId,
@@ -6423,6 +6433,12 @@ class MobileNativeAgent(
                 targetTitle = plan.route.targetTitle.ifBlank { plan.selectedAgentOrModel },
                 risk = plan.safetyReview.risk,
                 blocked = plan.safetyReview.blocked,
+                executionLocationKind = execution.locationKind,
+                executionRuntimeKind = execution.runtimeKind,
+                executionLocationId = execution.locationId,
+                executionLocationName = execution.locationName,
+                executionRuntimeId = execution.runtimeId,
+                executionLocationTrusted = execution.trusted,
                 result = result.ifBlank { plan.safetyReview.reason }.take(MAX_TASK_RESULT_CHARACTERS),
                 verification = plan.verificationResults.lastOrNull()?.let { verification ->
                     "${verification.observedApp}:${verification.observedTitle}:${verification.success}"
@@ -7228,6 +7244,8 @@ class RuleBasedAgentPlanner(private val context: Context? = null) : AgentPlanner
                 "tool_id" to descriptor.id,
                 "tool_version" to descriptor.version,
                 "native_tool_risk" to descriptor.risk.wireValue,
+                "_signalasi_native_tool_location" to descriptor.location.wireValue,
+                "_signalasi_execution_device_id" to input.optString("desktop_id"),
                 "response_language" to configuredResponseLanguageCode(request.goal),
                 "input_json" to input.toString()
             )
@@ -8117,7 +8135,12 @@ object AgentPlanFactory {
             }
         }
         AgentActionKind.CONTROL_DEVICE -> "Device route selected because the goal targets Home Assistant or smart devices."
-        AgentActionKind.CALL_NATIVE_TOOL -> "Phone-native tool route selected from the live, locally validated capability catalog."
+        AgentActionKind.CALL_NATIVE_TOOL ->
+            if (action.isDesktopNativeTool()) {
+                "Paired Desktop tool route selected from the live, locally validated capability catalog."
+            } else {
+                "Phone-native tool route selected from the live, locally validated capability catalog."
+            }
         AgentActionKind.IMPORT_WEB_KNOWLEDGE -> "Knowledge route selected to extract and index a user-approved web page."
         AgentActionKind.READ_SCREEN,
         AgentActionKind.SAVE_SCREEN_KNOWLEDGE,
@@ -8140,6 +8163,13 @@ object AgentPlanFactory {
         AgentActionKind.DRAFT_PLAN -> "Local planning route selected because the task needs clarification or a safe plan first."
     }
 }
+
+private fun AgentAction.isDesktopNativeTool(): Boolean =
+    kind == AgentActionKind.CALL_NATIVE_TOOL &&
+        (
+            parameters["_signalasi_native_tool_location"] == AgentNativeToolLocation.DESKTOP.wireValue ||
+                parameters["tool_id"] in AgentDesktopRemoteNativeTools.toolIds
+            )
 
 object AgentRouteResolver {
     fun resolve(action: AgentAction, targets: List<AgentCallableTarget>): AgentRoute {
@@ -8181,6 +8211,7 @@ object AgentRouteResolver {
             AgentActionKind.REPLY_NOTIFICATION,
             AgentActionKind.COPY_SCREEN_TEXT -> AgentRouteKind.LOCAL_SYSTEM
         }
+        val executionLocation = executionLocationFor(kind, target, action)
         return AgentRoute(
             routeId = connectorId.ifBlank { action.id },
             kind = kind,
@@ -8188,8 +8219,64 @@ object AgentRouteResolver {
             targetTitle = target?.title ?: action.target,
             status = target?.status ?: AgentConnectorStatus.AVAILABLE,
             deliveryMode = deliveryModeFor(kind),
-            capabilities = target?.capabilities ?: emptyList()
+            capabilities = target?.capabilities ?: emptyList(),
+            executionLocationKind = executionLocation,
+            executionRuntimeKind = executionRuntimeFor(kind, target, action),
+            executionDeviceId = action.parameters["_signalasi_execution_device_id"]
+                .orEmpty()
+                .ifBlank { target?.failureDomain.orEmpty() }
+                .takeIf {
+                    executionLocation == AgentExecutionLocationKind.DESKTOP
+                }
+                .orEmpty(),
+            executionDeviceName = target
+                ?.title
+                .orEmpty()
+                .substringAfter(" \u00b7 ", "")
+                .trim()
+                .takeIf { executionLocation == AgentExecutionLocationKind.DESKTOP }
+                .orEmpty()
         )
+    }
+
+    private fun executionLocationFor(
+        kind: AgentRouteKind,
+        target: AgentCallableTarget?,
+        action: AgentAction
+    ): AgentExecutionLocationKind = when {
+        action.isDesktopNativeTool() -> AgentExecutionLocationKind.DESKTOP
+        action.parameters["tool_id"] == AgentOnDeviceRuntimeTools.EXECUTE ->
+            AgentExecutionLocationKind.PHONE
+        kind == AgentRouteKind.DESKTOP_AGENT -> AgentExecutionLocationKind.DESKTOP
+        kind == AgentRouteKind.LOCAL_MODEL && target?.failureDomain.orEmpty().isNotBlank() ->
+            AgentExecutionLocationKind.DESKTOP
+        kind == AgentRouteKind.DEVICE_CONNECTOR -> AgentExecutionLocationKind.CONNECTED_DEVICE
+        kind in setOf(
+            AgentRouteKind.LOCAL_SYSTEM,
+            AgentRouteKind.CLOUD_MODEL,
+            AgentRouteKind.LOCAL_MODEL,
+            AgentRouteKind.KNOWLEDGE
+        ) -> AgentExecutionLocationKind.PHONE
+        else -> AgentExecutionLocationKind.UNKNOWN
+    }
+
+    private fun executionRuntimeFor(
+        kind: AgentRouteKind,
+        target: AgentCallableTarget?,
+        action: AgentAction
+    ): AgentExecutionRuntimeKind = when {
+        action.isDesktopNativeTool() -> AgentExecutionRuntimeKind.DESKTOP_TOOL
+        action.parameters["tool_id"] == AgentOnDeviceRuntimeTools.EXECUTE ->
+            AgentExecutionRuntimeKind.PHONE_LINUX
+        kind == AgentRouteKind.DESKTOP_AGENT -> AgentExecutionRuntimeKind.DESKTOP_AGENT
+        kind == AgentRouteKind.LOCAL_MODEL && target?.failureDomain.orEmpty().isNotBlank() ->
+            AgentExecutionRuntimeKind.DESKTOP_AGENT
+        kind == AgentRouteKind.LOCAL_MODEL -> AgentExecutionRuntimeKind.PHONE_LOCAL_MODEL
+        kind == AgentRouteKind.CLOUD_MODEL -> AgentExecutionRuntimeKind.PHONE_CLOUD_API
+        kind == AgentRouteKind.DEVICE_CONNECTOR -> AgentExecutionRuntimeKind.CONNECTED_DEVICE
+        kind == AgentRouteKind.KNOWLEDGE -> AgentExecutionRuntimeKind.KNOWLEDGE
+        kind == AgentRouteKind.LOCAL_SYSTEM -> AgentExecutionRuntimeKind.PHONE_NATIVE
+        else -> AgentExecutionRuntimeKind.UNKNOWN
     }
 
     private fun deliveryModeFor(kind: AgentRouteKind): String = when (kind) {
@@ -11167,6 +11254,10 @@ class SharedPreferencesAgentSessionStore(
         .put("target_title", route.targetTitle)
         .put("status", route.status.name)
         .put("delivery_mode", route.deliveryMode)
+        .put("execution_location_kind", route.executionLocationKind.name)
+        .put("execution_runtime_kind", route.executionRuntimeKind.name)
+        .put("execution_device_id", route.executionDeviceId)
+        .put("execution_device_name", route.executionDeviceName)
         .put("capabilities", JSONArray().also { array ->
             route.capabilities.forEach { array.put(it.name) }
         })
@@ -11180,7 +11271,17 @@ class SharedPreferencesAgentSessionStore(
             targetTitle = json.optString("target_title"),
             status = enumOrDefault(json.optString("status"), AgentConnectorStatus.DISCONNECTED),
             deliveryMode = json.optString("delivery_mode"),
-            capabilities = decodeCapabilities(json.optJSONArray("capabilities"))
+            capabilities = decodeCapabilities(json.optJSONArray("capabilities")),
+            executionLocationKind = enumOrDefault(
+                json.optString("execution_location_kind"),
+                AgentExecutionLocationKind.UNKNOWN
+            ),
+            executionRuntimeKind = enumOrDefault(
+                json.optString("execution_runtime_kind"),
+                AgentExecutionRuntimeKind.UNKNOWN
+            ),
+            executionDeviceId = json.optString("execution_device_id"),
+            executionDeviceName = json.optString("execution_device_name")
         )
     }
 
@@ -11944,7 +12045,11 @@ data class AgentRoute(
     val targetTitle: String = "",
     val status: AgentConnectorStatus = AgentConnectorStatus.DISCONNECTED,
     val deliveryMode: String = "",
-    val capabilities: List<AgentCapability> = emptyList()
+    val capabilities: List<AgentCapability> = emptyList(),
+    val executionLocationKind: AgentExecutionLocationKind = AgentExecutionLocationKind.UNKNOWN,
+    val executionRuntimeKind: AgentExecutionRuntimeKind = AgentExecutionRuntimeKind.UNKNOWN,
+    val executionDeviceId: String = "",
+    val executionDeviceName: String = ""
 )
 
 data class AgentAction(
