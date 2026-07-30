@@ -87,7 +87,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "hermes": {
                 "enabled": True,
                 "command": "hermes acp",
-                "prewarm": False,
+                "prewarm": True,
             },
             "codex": {
                 "enabled": True,
@@ -97,17 +97,17 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "claude": {
                 "enabled": True,
                 "command": "claude-agent-acp",
-                "prewarm": False,
+                "prewarm": True,
             },
             "gemini": {
                 "enabled": True,
                 "command": "gemini --acp",
-                "prewarm": False,
+                "prewarm": True,
             },
             "openclaw": {
                 "enabled": True,
                 "command": "openclaw acp",
-                "prewarm": False,
+                "prewarm": True,
             },
         },
     },

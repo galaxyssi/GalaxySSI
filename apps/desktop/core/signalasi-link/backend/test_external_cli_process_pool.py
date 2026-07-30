@@ -256,6 +256,65 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
         self.assertEqual(1, released)
         self.assertEqual(0, pool.health()["process_count"])
 
+    def test_keep_alive_target_survives_idle_timeout(self):
+        clock = [100.0]
+        pool = self.pool(idle_timeout_seconds=5, now=lambda: clock[0])
+        pool.prewarm(
+            "custom-agent",
+            command=self.command(),
+            env=self.env(),
+            cwd=self.root,
+        )
+        first_pid = pool.health()["workers"][0]["pid"]
+        clock[0] += 60
+
+        maintained = pool.maintain()
+
+        self.assertEqual(0, maintained["released"])
+        self.assertEqual(0, maintained["started"])
+        self.assertEqual(first_pid, pool.health()["workers"][0]["pid"])
+        self.assertEqual(1, pool.health()["warm_targets"][0]["ready_count"])
+
+    def test_keep_alive_target_restarts_a_crashed_process(self):
+        pool = self.pool()
+        pool.prewarm(
+            "custom-agent",
+            command=self.command(),
+            env=self.env(),
+            cwd=self.root,
+        )
+        first_worker = next(iter(pool._workers.values()))
+        first_pid = first_worker.pid
+        first_worker.process.kill()
+        first_worker.process.wait(timeout=2)
+
+        maintained = pool.maintain()
+        health = pool.health()
+
+        self.assertEqual(1, maintained["released"])
+        self.assertEqual(1, maintained["started"])
+        self.assertNotEqual(first_pid, health["workers"][0]["pid"])
+        self.assertEqual(1, health["metrics"]["prewarm_starts"])
+        self.assertEqual(1, health["metrics"]["keepalive_restarts"])
+
+    def test_optional_prewarm_without_keep_alive_is_released(self):
+        clock = [100.0]
+        pool = self.pool(idle_timeout_seconds=5, now=lambda: clock[0])
+        pool.prewarm(
+            "custom-agent",
+            command=self.command(),
+            env=self.env(),
+            cwd=self.root,
+            keep_alive=False,
+        )
+        clock[0] += 6
+
+        maintained = pool.maintain()
+
+        self.assertEqual(1, maintained["released"])
+        self.assertEqual(0, maintained["started"])
+        self.assertEqual([], pool.health()["warm_targets"])
+
     def test_timeout_kills_only_the_affected_worker(self):
         pool = self.pool()
 

@@ -48,6 +48,7 @@ ACP_CLIENT_VERSION = "0.2"
 MAX_FILE_CALLBACK_BYTES = 2 * 1024 * 1024
 MAX_EVENT_DETAIL_CHARS = 4_000
 STARTUP_BACKOFF_SECONDS = 60
+DEFAULT_MAINTENANCE_INTERVAL_SECONDS = 15
 
 EventSink = Callable[..., None]
 
@@ -134,8 +135,11 @@ class _ProcessEntry:
     generation: int
     started_at: float
     last_used_at: float
+    startup_latency_ms: int
+    ready_at: float
     loaded_sessions: set[str] = field(default_factory=set)
     active_prompts: int = 0
+    warm_reuses: int = 0
 
 
 class _AcpClient:
@@ -230,6 +234,7 @@ class AcpRuntime:
         *,
         state_path: Path | None = None,
         config_loader: Callable[[], dict[str, Any]] = acp_runtime_config,
+        maintenance_interval_seconds: float = DEFAULT_MAINTENANCE_INTERVAL_SECONDS,
     ) -> None:
         self._config_loader = config_loader
         self._state_path = state_path or self._default_state_path()
@@ -245,6 +250,20 @@ class AcpRuntime:
         self._thread: threading.Thread | None = None
         self._loop_ready = threading.Event()
         self._closed = False
+        self._maintenance_interval_seconds = max(
+            0.05,
+            float(maintenance_interval_seconds),
+        )
+        self._metrics = {
+            "process_starts": 0,
+            "cold_starts": 0,
+            "prewarm_starts": 0,
+            "keepalive_restarts": 0,
+            "warm_reuses": 0,
+            "explicit_restarts": 0,
+            "startup_latency_ms_total": 0,
+            "last_startup_latency_ms": 0,
+        }
 
     @staticmethod
     def _default_state_path() -> Path:
@@ -330,7 +349,7 @@ class AcpRuntime:
             return self.agent_health(agent_id)
         self._ensure_loop()
         future = asyncio.run_coroutine_threadsafe(
-            self._ensure_process(agent_id),
+            self._ensure_process(agent_id, reason="prewarm"),
             self._loop,
         )
         try:
@@ -339,8 +358,21 @@ class AcpRuntime:
             self._record_failure(agent_id, str(exc))
         return self.agent_health(agent_id)
 
+    def maintain(self) -> dict[str, Any]:
+        self._ensure_loop()
+        future = asyncio.run_coroutine_threadsafe(
+            self._maintain_prewarmed(),
+            self._loop,
+        )
+        try:
+            future.result(timeout=30)
+        except Exception as exc:
+            log.warning("ACP keep-alive maintenance failed: %s", exc)
+        return self.health()
+
     def restart(self, agent_id: str) -> dict[str, Any]:
         self._ensure_loop()
+        self._metrics["explicit_restarts"] += 1
         future = asyncio.run_coroutine_threadsafe(
             self._restart_async(agent_id),
             self._loop,
@@ -367,6 +399,7 @@ class AcpRuntime:
                 for agent_id in config.get("agents", {})
             ],
             "sessions": len(self._sessions),
+            "metrics": dict(self._metrics),
         }
 
     def agent_health(self, agent_id: str) -> dict[str, Any]:
@@ -385,6 +418,7 @@ class AcpRuntime:
             return {
                 "agent_id": agent_id,
                 "enabled": bool(config["runtime_enabled"] and config["enabled"]),
+                "prewarm": bool(config["prewarm"]),
                 "command": config["command"],
                 "command_available": command_available,
                 "status": (
@@ -403,6 +437,14 @@ class AcpRuntime:
                 "generation": int(entry.generation if entry else 0),
                 "active_prompts": int(entry.active_prompts if entry else 0),
                 "sessions": session_count,
+                "startup_latency_ms": int(
+                    entry.startup_latency_ms if entry else 0
+                ),
+                "idle_seconds": (
+                    max(0.0, time.monotonic() - entry.last_used_at)
+                    if entry and not entry.active_prompts else 0.0
+                ),
+                "warm_reuses": int(entry.warm_reuses if entry else 0),
                 "last_error": str(failure.get("error") or "")[:240],
                 "retry_after": int(float(failure.get("retry_after") or 0) * 1000),
             }
@@ -463,7 +505,7 @@ class AcpRuntime:
             event_sink=event_sink,
         )
         async with session_lock:
-            entry = await self._ensure_process(agent_id)
+            entry = await self._ensure_process(agent_id, reason="execute")
             entry.active_prompts += 1
             try:
                 session_id = await self._ensure_session(
@@ -522,7 +564,12 @@ class AcpRuntime:
                             None,
                         )
 
-    async def _ensure_process(self, agent_id: str) -> _ProcessEntry:
+    async def _ensure_process(
+        self,
+        agent_id: str,
+        *,
+        reason: str,
+    ) -> _ProcessEntry:
         if acp is None:
             raise AcpStartupError("The agent-client-protocol package is not installed")
         config = self._agent_config(agent_id)
@@ -542,8 +589,12 @@ class AcpRuntime:
             and existing.command_digest == digest
             and getattr(existing.process, "returncode", None) is None
         ):
-            existing.last_used_at = time.monotonic()
+            if reason == "execute":
+                existing.last_used_at = time.monotonic()
+                existing.warm_reuses += 1
+                self._metrics["warm_reuses"] += 1
             return existing
+        replacing_dead_process = existing is not None
         if existing is not None:
             await self._stop_process(existing)
         await self._enforce_capacity(agent_id)
@@ -558,6 +609,7 @@ class AcpRuntime:
             cwd=self._state_path.parent,
             transport_kwargs={"stderr": asyncio.subprocess.DEVNULL},
         )
+        startup_started_at = time.perf_counter()
         try:
             connection, process = await context.__aenter__()
             initialized = await asyncio.wait_for(
@@ -584,6 +636,11 @@ class AcpRuntime:
             except Exception:
                 pass
             raise AcpStartupError(f"ACP initialize failed: {exc}") from exc
+        startup_latency_ms = max(
+            0,
+            int((time.perf_counter() - startup_started_at) * 1_000),
+        )
+        ready_at = time.time()
         entry = _ProcessEntry(
             agent_id=agent_id,
             command=tuple(command),
@@ -596,9 +653,20 @@ class AcpRuntime:
             generation=self._generation,
             started_at=time.monotonic(),
             last_used_at=time.monotonic(),
+            startup_latency_ms=startup_latency_ms,
+            ready_at=ready_at,
         )
         with self._snapshot_lock:
             self._processes[agent_id] = entry
+        self._metrics["process_starts"] += 1
+        if reason == "prewarm":
+            self._metrics["prewarm_starts"] += 1
+        elif reason == "keepalive" or replacing_dead_process:
+            self._metrics["keepalive_restarts"] += 1
+        else:
+            self._metrics["cold_starts"] += 1
+        self._metrics["startup_latency_ms_total"] += startup_latency_ms
+        self._metrics["last_startup_latency_ms"] = startup_latency_ms
         self._clear_failure(agent_id)
         return entry
 
@@ -701,11 +769,45 @@ class AcpRuntime:
         stale = [
             entry
             for entry in self._processes.values()
-            if entry.active_prompts == 0 and now - entry.last_used_at >= idle_timeout
+            if entry.active_prompts == 0
+            and not self._agent_config(entry.agent_id)["prewarm"]
+            and now - entry.last_used_at >= idle_timeout
         ]
         for entry in stale:
             self._processes.pop(entry.agent_id, None)
             await self._stop_process(entry)
+
+    async def _maintain_prewarmed(self) -> None:
+        await self._evict_idle_processes()
+        config = self._runtime_config()
+        for agent_id, item in config.get("agents", {}).items():
+            if not item.get("enabled") or not item.get("prewarm"):
+                continue
+            if not self.supports(agent_id):
+                continue
+            try:
+                await self._ensure_process(agent_id, reason="keepalive")
+            except AcpStartupError as exc:
+                self._record_failure(agent_id, str(exc))
+            except Exception as exc:
+                self._record_failure(agent_id, str(exc))
+                log.warning(
+                    "ACP keep-alive failed agent=%s: %s",
+                    agent_id,
+                    exc,
+                )
+
+    async def _maintenance_loop(self) -> None:
+        while not self._closed:
+            await asyncio.sleep(self._maintenance_interval_seconds)
+            if self._closed:
+                return
+            try:
+                await self._maintain_prewarmed()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.debug("ACP maintenance iteration failed: %s", exc)
 
     async def _enforce_capacity(self, incoming_agent_id: str) -> None:
         maximum = int(self._runtime_config().get("max_processes") or 5)
@@ -903,6 +1005,7 @@ class AcpRuntime:
             self._loop = loop
         self._loop_ready.set()
         try:
+            loop.create_task(self._maintenance_loop())
             loop.run_forever()
         finally:
             pending = asyncio.all_tasks(loop)

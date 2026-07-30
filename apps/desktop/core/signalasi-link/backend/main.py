@@ -205,16 +205,23 @@ async def lifespan(app: FastAPI):
         log.info("Agent memory telemetry started")
     except Exception as exc:
         log.warning("Agent memory telemetry start failed: %s", exc)
-    try:
-        prewarm = prewarm_external_cli_agents()
-        log.info("External CLI Runtime ready (prewarmed=%s)", prewarm.get("warmed", {}))
-    except Exception as exc:
-        log.warning("External CLI Runtime start failed: %s", exc)
-    try:
-        prewarm = prewarm_acp_agents()
-        log.info("ACP Runtime ready (prewarmed=%s)", prewarm.get("warmed", {}))
-    except Exception as exc:
-        log.warning("ACP Runtime start failed: %s", exc)
+    if external_services_enabled:
+        try:
+            prewarm = prewarm_external_cli_agents()
+            log.info(
+                "External CLI Runtime ready (prewarmed=%s)",
+                prewarm.get("warmed", {}),
+            )
+        except Exception as exc:
+            log.warning("External CLI Runtime start failed: %s", exc)
+        try:
+            prewarm = prewarm_acp_agents()
+            log.info(
+                "ACP Runtime ready (prewarmed=%s)",
+                prewarm.get("warmed", {}),
+            )
+        except Exception as exc:
+            log.warning("ACP Runtime start failed: %s", exc)
     if external_services_enabled:
         # Start the local Signal Protocol sidecar.
         signal_sidecar_ready = False

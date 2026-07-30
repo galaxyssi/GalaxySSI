@@ -1182,14 +1182,19 @@ function renderAcpRuntime() {
     const command = String(saved.command || "");
     const action = status === "running" ? "restart" : "prewarm";
     const actionLabel = action === "restart" ? "Restart" : "Start";
+    const readiness = status === "running"
+      ? t("Warm in {latency} ms; reused {count} times")
+        .replace("{latency}", String(Number(health.startup_latency_ms || 0)))
+        .replace("{count}", String(Number(health.warm_reuses || 0)))
+      : t("Cold start pending");
     return `<article class="acp-runtime-item" data-acp-agent="${escapeHtml(agentId)}">
       <div class="acp-runtime-heading">
-        <label class="check-row"><input data-acp-enabled type="checkbox" ${enabled ? "checked" : ""}><span><strong>${escapeHtml(name)}</strong><small>ACP</small></span></label>
+        <label class="check-row"><input data-acp-enabled type="checkbox" ${enabled ? "checked" : ""}><span><strong>${escapeHtml(name)}</strong><small>${escapeHtml(`ACP - ${readiness}`)}</small></span></label>
         <span class="state-badge ${status === "running" ? "ok" : (status === "backoff" ? "bad" : "pending")}">${escapeHtml(acpRuntimeStatusLabel(status))}</span>
       </div>
       <label><span>${escapeHtml(t("ACP command"))}</span><input data-acp-command spellcheck="false" value="${escapeHtml(command)}"></label>
       <div class="acp-runtime-actions">
-        <label class="check-row"><input data-acp-prewarm type="checkbox" ${saved.prewarm ? "checked" : ""}><span><strong>${escapeHtml(t("Prewarm on startup"))}</strong></span></label>
+        <label class="check-row"><input data-acp-prewarm type="checkbox" ${saved.prewarm ? "checked" : ""}><span><strong>${escapeHtml(t("Keep Agent ready"))}</strong><small>${escapeHtml(t("Prewarm on startup and recover the process if it exits."))}</small></span></label>
         <button class="secondary-button compact-button" data-acp-action="${action}">${escapeHtml(t(actionLabel))}</button>
       </div>
     </article>`;
