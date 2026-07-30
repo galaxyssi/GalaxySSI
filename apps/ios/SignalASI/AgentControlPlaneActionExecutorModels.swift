@@ -349,6 +349,27 @@ final class ActionExecutorAgentProvider: AgentProvider {
     return nil
   }
 
+  @discardableResult
+  func recordConnectorTransportAccepted(
+    sourceMessageId: Int64,
+    contactId: String,
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentActionResult? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.recordConnectorTransportAccepted(
+        sourceMessageId: sourceMessageId,
+        contactId: contactId,
+        nowMillis: nowMillis
+      ) {
+        return result
+      }
+    }
+    return nil
+  }
+
   func discardPrepared(agentId: String, runId: String) {
     transportIfPresent(agentId: agentId)?.discardPrepared(runId: runId)
   }
@@ -599,6 +620,39 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     resultsByRunId[match.key] = resolved.result
     lock.unlock()
     return record.result
+  }
+
+  func recordConnectorTransportAccepted(
+    sourceMessageId: Int64,
+    contactId: String,
+    nowMillis: Int64
+  ) -> AgentActionResult? {
+    let updated: AgentActionResult
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard item.value.sourceMessageId == sourceMessageId,
+        let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorTransportReceiptRecorder.canAcceptTransport(
+        pending: pending,
+        sourceMessageId: sourceMessageId,
+        contactId: contactId
+      )
+    }), let pending = resultsByRunId[match.key],
+      let result = AgentConnectorTransportReceiptRecorder.recordAccepted(
+        pending: pending,
+        sourceMessageId: sourceMessageId,
+        contactId: contactId,
+        nowMillis: nowMillis
+      ) else {
+      lock.unlock()
+      return nil
+    }
+    updated = result
+    resultsByRunId[match.key] = result
+    lock.unlock()
+    return updated
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {
