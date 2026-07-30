@@ -131,7 +131,8 @@ object AgentPhoneNativeToolCatalog {
             screenProvider = screenProvider,
             capabilityStatusProvider = { AgentPhoneCapabilityCatalog.probe(context) },
             clock = clock,
-            replayStore = EncryptedAgentNativeToolReplayStore(context)
+            replayStore = EncryptedAgentNativeToolReplayStore(context),
+            auditStore = EncryptedAgentNativeToolAuditStore(context)
         )
         return registry.registerAll(
             AgentWebMediaNativeTools.definitions(webMediaServices)
@@ -176,8 +177,9 @@ object AgentPhoneNativeToolCatalog {
         screenProvider: (AgentNativeToolInvocation) -> ScreenContext,
         capabilityStatusProvider: () -> List<AgentPhoneCapabilityStatus> = ::declaredCapabilityStatuses,
         clock: AgentNativeClock = AgentNativeClock.SYSTEM,
-        replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore()
-    ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock, replayStore).registerAll(
+        replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
+        auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore()
+    ): AgentNativeToolRegistry = AgentNativeToolRegistry(clock, replayStore, auditStore).registerAll(
         definitions(
             workspaceFileTools,
             actionExecutor,

@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable, Mapping
 
 from agent_config import (
     acp_runtime_config,
@@ -56,6 +56,11 @@ from desktop_agent_runtime_server import (
 from external_cli_process_pool import (
     ExternalCliProcessPool,
     PersistentCliRequest,
+)
+from tool_call_audit import (
+    ToolCallAuditStore,
+    canonical_digest as tool_audit_digest,
+    desktop_tool_call_audit_store,
 )
 from web_intelligence import (
     FINALIZE_WEB_RESEARCH_PROMPT,
@@ -1031,6 +1036,14 @@ def _ask_cloud_model_for_request(request: AgentAdapterRequest, spec: AgentSpec) 
                 timeout=spec.timeout,
                 messages=messages,
                 raise_errors=True,
+                audit_context={
+                    "task_id": request.run_id,
+                    "conversation_id": request.conversation_id,
+                    "client_route_id": request.checkpoint.get("client_route_id"),
+                    "turn_id": request.checkpoint.get("turn_id"),
+                    "caller_id": spec.id,
+                    "agent_id": spec.id,
+                },
             )
         except ModelHttpError as exc:
             if not is_context_overflow(exc.status_code, exc.detail) or attempt == len(windows) - 1:
@@ -2962,6 +2975,7 @@ def ask_cloud_model(
     timeout: int = 120,
     messages: list[dict[str, str]] | None = None,
     raise_errors: bool = False,
+    audit_context: Mapping[str, object] | None = None,
 ) -> str:
     cfg = cloud_model_config()
     url = cfg["url"] or os.environ.get("SIGNALASI_CLOUD_MODEL_URL", "").strip()
@@ -3045,10 +3059,11 @@ def ask_cloud_model(
                     if not isinstance(arguments, dict):
                         arguments = {}
                     try:
-                        result = execute_cloud_web_tool(
+                        result = _execute_audited_cloud_web_tool(
                             _desktop_cloud_web_service(),
                             name,
                             arguments,
+                            audit_context=audit_context,
                         )
                     except Exception as exc:
                         result = json.dumps(
@@ -3072,10 +3087,11 @@ def ask_cloud_model(
                 executed = []
                 for call in inline_calls[:remaining]:
                     try:
-                        result = execute_cloud_web_tool(
+                        result = _execute_audited_cloud_web_tool(
                             _desktop_cloud_web_service(),
                             call.name,
                             call.arguments,
+                            audit_context=audit_context,
                         )
                     except Exception as exc:
                         result = json.dumps(
@@ -3134,6 +3150,56 @@ def ask_cloud_model(
         if raise_errors:
             raise
         return f"[Cloud Model] \u8c03\u7528\u5931\u8d25\uff1a{str(exc)[:200]}"
+
+
+def _execute_audited_cloud_web_tool(
+    service: WebIntelligenceService,
+    name: str,
+    arguments: Mapping[str, Any],
+    *,
+    audit_context: Mapping[str, object] | None = None,
+    audit_store: ToolCallAuditStore | None = None,
+) -> str:
+    started_at = int(time.time() * 1_000)
+    invocation_id = uuid.uuid4().hex
+    input_sha256 = tool_audit_digest(dict(arguments or {}))
+    store = audit_store or desktop_tool_call_audit_store()
+    try:
+        result = execute_cloud_web_tool(service, name, arguments)
+    except Exception as exc:
+        finished_at = int(time.time() * 1_000)
+        store.append(
+            tool_id=f"signalasi.cloud.{str(name or 'unknown').casefold()}",
+            tool_version="1.0.0",
+            location="desktop",
+            risk="low",
+            confirmation="none",
+            status="failed",
+            started_at=started_at,
+            finished_at=finished_at,
+            input_sha256=input_sha256,
+            output_sha256=tool_audit_digest({}),
+            invocation_id=invocation_id,
+            error_code=type(exc).__name__,
+            context=audit_context,
+        )
+        raise
+    finished_at = int(time.time() * 1_000)
+    store.append(
+        tool_id=f"signalasi.cloud.{str(name or 'unknown').casefold()}",
+        tool_version="1.0.0",
+        location="desktop",
+        risk="low",
+        confirmation="none",
+        status="succeeded",
+        started_at=started_at,
+        finished_at=finished_at,
+        input_sha256=input_sha256,
+        output_sha256=tool_audit_digest(result),
+        invocation_id=invocation_id,
+        context=audit_context,
+    )
+    return result
 
 
 def _messages_as_prompt(messages: list[dict[str, str]] | None) -> str:

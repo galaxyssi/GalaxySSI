@@ -12883,6 +12883,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showAgentAuditOperationsPage() {
         val state = mobileNativeAgent.snapshot()
+        val nativeToolDescriptors = mobileNativeAgent.nativeToolCatalog().associateBy { it.id }
+        val nativeToolRows = mobileNativeAgent.nativeToolAudit(limit = 50).map { record ->
+            val descriptor = nativeToolDescriptors[record.toolId]
+            ControlCenterRowSpec(
+                actionId = "",
+                title = descriptor?.title ?: record.toolId,
+                subtitle = getString(
+                    R.string.cc_tool_audit_detail,
+                    nativeToolAuditStatusLabel(record.status),
+                    record.durationMillis
+                ),
+                iconRes = descriptor?.let(::nativeToolIcon) ?: R.drawable.ic_agent_control,
+                status = securityTime(record.finishedAtEpochMillis),
+                tone = nativeToolAuditTone(record.status),
+                showChevron = false
+            )
+        }
         val auditRows = state.auditTrail.asReversed().take(20).map { entry ->
             ControlCenterRowSpec(
                 actionId = "",
@@ -12910,6 +12927,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ControlCenterPageSpec(
                 sections = listOf(
                     ControlCenterSectionSpec(
+                        getString(R.string.cc_tool_audit_title),
+                        nativeToolRows.ifEmpty {
+                            listOf(
+                                ControlCenterRowSpec(
+                                    "",
+                                    getString(R.string.cc_audit_empty),
+                                    getString(R.string.cc_audit_empty_subtitle),
+                                    R.drawable.ic_info_outline,
+                                    "",
+                                    showChevron = false
+                                )
+                            )
+                        }
+                    ),
+                    ControlCenterSectionSpec(
                         getString(R.string.feature_audit_log),
                         auditRows.ifEmpty { listOf(ControlCenterRowSpec("", getString(R.string.cc_audit_empty), getString(R.string.cc_audit_empty_subtitle), R.drawable.ic_info_outline, "", showChevron = false)) }
                     ),
@@ -12917,6 +12949,28 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 )
             )
         )
+    }
+
+    private fun nativeToolAuditStatusLabel(status: AgentNativeToolResultStatus): String = getString(
+        when (status) {
+            AgentNativeToolResultStatus.SUCCEEDED -> R.string.cc_tool_audit_succeeded
+            AgentNativeToolResultStatus.FAILED -> R.string.cc_tool_audit_failed
+            AgentNativeToolResultStatus.VERIFICATION_FAILED -> R.string.cc_tool_audit_verification_failed
+            AgentNativeToolResultStatus.REJECTED -> R.string.cc_tool_audit_rejected
+            AgentNativeToolResultStatus.UNAVAILABLE -> R.string.cc_tool_audit_unavailable
+            AgentNativeToolResultStatus.CANCELLED -> R.string.cc_tool_audit_cancelled
+            AgentNativeToolResultStatus.TIMED_OUT -> R.string.cc_tool_audit_timed_out
+        }
+    )
+
+    private fun nativeToolAuditTone(status: AgentNativeToolResultStatus): ControlCenterTone = when (status) {
+        AgentNativeToolResultStatus.SUCCEEDED -> ControlCenterTone.GREEN
+        AgentNativeToolResultStatus.CANCELLED,
+        AgentNativeToolResultStatus.UNAVAILABLE -> ControlCenterTone.AMBER
+        AgentNativeToolResultStatus.FAILED,
+        AgentNativeToolResultStatus.VERIFICATION_FAILED,
+        AgentNativeToolResultStatus.REJECTED,
+        AgentNativeToolResultStatus.TIMED_OUT -> ControlCenterTone.RED
     }
 
     private fun controlCenterAuditEventLabel(event: AgentAuditEvent): String = getString(

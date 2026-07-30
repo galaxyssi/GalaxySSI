@@ -143,6 +143,11 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
 
         self.assertEqual("failed", result["status"])
         self.assertEqual("invalid_path", result["error"]["code"])
+        audit = self.registry.audit(limit=1)
+        self.assertEqual(FILE_READ_TEXT, audit[0]["tool_id"])
+        self.assertEqual("failed", audit[0]["status"])
+        self.assertEqual("invalid_path", audit[0]["error_code"])
+        self.assertEqual(_digest({"workspace_id": "task-a", "path": "../secret.txt"}), audit[0]["input_sha256"])
 
     def test_bounded_workspace_write_is_direct_and_replays_same_receipt(self):
         arguments = {
@@ -163,6 +168,11 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         self.assertEqual("hello", (self.workspace() / "src" / "hello.txt").read_text(encoding="utf-8"))
         self.assertTrue(replayed["receipt"]["replayed"])
         self.assertEqual("invocation-1", replayed["receipt"]["original_invocation_id"])
+        audit = self.registry.audit(tool_id=FILE_WRITE_TEXT)
+        self.assertEqual(2, len(audit))
+        self.assertTrue(audit[0]["replayed"])
+        self.assertEqual("invocation-2", audit[0]["invocation_id"])
+        self.assertEqual("invocation-1", audit[0]["original_invocation_id"])
 
     def test_idempotency_key_cannot_be_reused_with_different_input(self):
         first = {"workspace_id": "task-a", "path": "a.txt", "content": "one", "mode": "create"}

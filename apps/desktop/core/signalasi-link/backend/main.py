@@ -1799,6 +1799,25 @@ def api_desktop_native_tools(request: Request):
     return desktop_native_tool_registry().manifest()
 
 
+@app.get("/api/desktop-tools/audit")
+def api_desktop_native_tool_audit(
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+    tool_id: str = Query("", max_length=240),
+    status: str = Query("", max_length=40),
+):
+    require_loopback(request)
+    from desktop_native_tools import desktop_native_tool_registry
+
+    return {
+        "records": desktop_native_tool_registry().audit(
+            limit=limit,
+            tool_id=tool_id,
+            status=status,
+        )
+    }
+
+
 @app.get("/api/desktop-runtime")
 def api_desktop_runtime(request: Request, refresh: bool = Query(False)):
     require_loopback(request)

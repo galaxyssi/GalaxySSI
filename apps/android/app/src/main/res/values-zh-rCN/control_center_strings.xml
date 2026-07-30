@@ -536,6 +536,15 @@
     <string name="cc_entity_state">状态：%1$s</string>
     <string name="cc_audit_empty">还没有操作记录</string>
     <string name="cc_audit_empty_subtitle">使用本机工具或 Agent 执行动作后会显示在这里</string>
+    <string name="cc_tool_audit_title">工具调用</string>
+    <string name="cc_tool_audit_detail">%1$s · %2$d 毫秒</string>
+    <string name="cc_tool_audit_succeeded">成功</string>
+    <string name="cc_tool_audit_failed">失败</string>
+    <string name="cc_tool_audit_verification_failed">验证失败</string>
+    <string name="cc_tool_audit_rejected">已拒绝</string>
+    <string name="cc_tool_audit_unavailable">不可用</string>
+    <string name="cc_tool_audit_cancelled">已取消</string>
+    <string name="cc_tool_audit_timed_out">已超时</string>
     <string name="cc_memory_overview_title">你的私有记忆</string>
     <string name="cc_memory_overview_subtitle">在本机加密保存，按用途组织，并始终由你控制</string>
     <string name="cc_memory_capture_on">自动记忆已开启</string>

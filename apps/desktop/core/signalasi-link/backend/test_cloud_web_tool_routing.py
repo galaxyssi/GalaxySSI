@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import agent_gateway
+from tool_call_audit import ToolCallAuditStore
 
 
 class FakeWebIntelligence:
@@ -27,6 +28,7 @@ class FakeWebIntelligence:
 class CloudWebToolRoutingTests(unittest.TestCase):
     def test_deepseek_inline_tool_call_is_executed_then_synthesized(self):
         service = FakeWebIntelligence()
+        audit_store = ToolCallAuditStore(None)
         payloads = []
         responses = [
             {
@@ -70,6 +72,7 @@ class CloudWebToolRoutingTests(unittest.TestCase):
             ),
             patch.object(agent_gateway, "_post_json", side_effect=fake_post),
             patch.object(agent_gateway, "_desktop_cloud_web_service", return_value=service),
+            patch.object(agent_gateway, "desktop_tool_call_audit_store", return_value=audit_store),
         ):
             answer = agent_gateway.ask_cloud_model(
                 "\u73b0\u5728\u7684\u79d1\u6280\u65b0\u95fb",
@@ -87,9 +90,13 @@ class CloudWebToolRoutingTests(unittest.TestCase):
         self.assertNotIn("Asia/Shanghai", payloads[0]["messages"][0]["content"])
         self.assertIn("untrusted public evidence", payloads[1]["messages"][-1]["content"])
         self.assertNotIn("DSML", answer)
+        audit = audit_store.list()
+        self.assertEqual("signalasi.cloud.web_search", audit[0]["tool_id"])
+        self.assertEqual("succeeded", audit[0]["status"])
 
     def test_repeated_tool_calls_finalize_without_exposing_an_internal_error(self):
         service = FakeWebIntelligence()
+        audit_store = ToolCallAuditStore(None)
         payloads = []
         tool_markup = (
             '<\uff5cDSML\uff5ctool_calls>'
@@ -120,6 +127,7 @@ class CloudWebToolRoutingTests(unittest.TestCase):
             ),
             patch.object(agent_gateway, "_post_json", side_effect=fake_post),
             patch.object(agent_gateway, "_desktop_cloud_web_service", return_value=service),
+            patch.object(agent_gateway, "desktop_tool_call_audit_store", return_value=audit_store),
         ):
             answer = agent_gateway.ask_cloud_model(
                 "\u4eca\u5929\u7684\u79d1\u6280\u65b0\u95fb",
@@ -132,6 +140,7 @@ class CloudWebToolRoutingTests(unittest.TestCase):
         self.assertEqual(5, len(payloads))
         self.assertNotIn("tools", payloads[-1])
         self.assertIn("Return only the final user-facing answer", payloads[-1]["messages"][-1]["content"])
+        self.assertEqual(3, len(audit_store.list()))
 
 
 if __name__ == "__main__":

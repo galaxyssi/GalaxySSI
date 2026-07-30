@@ -324,10 +324,11 @@ class AgentNativeToolRegistryTest {
     @Test
     fun replaysSuccessfulKeyedIdempotentInvocation() {
         val executions = AtomicInteger()
+        val auditStore = InMemoryAgentNativeToolAuditStore()
         val descriptor = descriptor(
             idempotency = AgentNativeToolIdempotency.IDEMPOTENCY_KEY_REQUIRED
         )
-        val registry = AgentNativeToolRegistry().register(
+        val registry = AgentNativeToolRegistry(auditStore = auditStore).register(
             AgentNativeToolDefinition(
                 descriptor,
                 AgentNativeToolExecutor {
@@ -356,6 +357,91 @@ class AgentNativeToolRegistryTest {
         assertTrue(second.receipt.replayed)
         assertEquals("first", second.receipt.originalInvocationId)
         assertEquals("second", second.receipt.invocationId)
+        assertEquals(
+            listOf(true, false, false),
+            auditStore.list().map(AgentNativeToolAuditRecord::replayed)
+        )
+        assertEquals(
+            listOf(
+                AgentNativeToolResultStatus.SUCCEEDED,
+                AgentNativeToolResultStatus.SUCCEEDED,
+                AgentNativeToolResultStatus.REJECTED
+            ),
+            auditStore.list().map(AgentNativeToolAuditRecord::status)
+        )
+    }
+
+    @Test
+    fun persistsSanitizedAuditRecordsForSuccessFailureAndUnknownTools() {
+        val auditStore = InMemoryAgentNativeToolAuditStore()
+        val descriptor = descriptor(
+            inputSchema = AgentNativeJsonSchema.objectSchema(
+                properties = mapOf("secret" to AgentNativeJsonSchema.string()),
+                required = setOf("secret"),
+                additionalProperties = false
+            )
+        )
+        val registry = AgentNativeToolRegistry(auditStore = auditStore).register(
+            AgentNativeToolDefinition(
+                descriptor,
+                AgentNativeToolExecutor {
+                    if (it.input["secret"] == "fail-me") {
+                        AgentNativeToolExecutionResult.failure(
+                            "expected_failure",
+                            "Sensitive value was rejected"
+                        )
+                    } else {
+                        AgentNativeToolExecutionResult.success(mapOf("private_result" to "hidden"))
+                    }
+                }
+            )
+        )
+        val context = AgentNativeToolInvocationContext(
+            callerId = "agent",
+            sessionId = "session-secret",
+            conversationId = "conversation-secret",
+            turnId = "turn-secret",
+            attributes = mapOf("task_id" to "task-secret")
+        )
+
+        registry.invoke(descriptor.id, mapOf("secret" to "keep-private"), context)
+        registry.invoke(descriptor.id, mapOf("secret" to "fail-me"), context)
+        registry.invoke("phone.test.missing", mapOf("secret" to "never-store"), context)
+
+        val records = registry.audit()
+        assertEquals(3, records.size)
+        assertEquals(
+            listOf(
+                AgentNativeToolResultStatus.REJECTED,
+                AgentNativeToolResultStatus.FAILED,
+                AgentNativeToolResultStatus.SUCCEEDED
+            ),
+            records.map(AgentNativeToolAuditRecord::status)
+        )
+        assertEquals("expected_failure", records[1].errorCode)
+        assertEquals(
+            1,
+            registry.audit(
+                toolId = descriptor.id,
+                status = AgentNativeToolResultStatus.SUCCEEDED
+            ).size
+        )
+        val serialized = records.joinToString()
+        assertFalse(serialized.contains("keep-private"))
+        assertFalse(serialized.contains("hidden"))
+        assertFalse(serialized.contains("session-secret"))
+        assertFalse(serialized.contains("conversation-secret"))
+        assertTrue(records.all { it.inputSha256.isNotBlank() && it.recordSha256.isNotBlank() })
+        assertTrue(
+            records[1].identityHashes.keys.containsAll(
+                listOf(
+                    "session_id_sha256",
+                    "conversation_id_sha256",
+                    "turn_id_sha256",
+                    "task_id_sha256"
+                )
+            )
+        )
     }
 
     @Test
