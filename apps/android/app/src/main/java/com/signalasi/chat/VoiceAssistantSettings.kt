@@ -74,7 +74,8 @@ object VoiceAssistantSettings {
                 ?: "tiny",
             asrLanguage = languagePolicy.asrLanguage,
             ttsProvider = prefs.getString(KEY_TTS_PROVIDER, PROVIDER_MICROSOFT_EDGE).orEmpty()
-                .ifBlank { PROVIDER_MICROSOFT_EDGE },
+                .takeIf { it == PROVIDER_ANDROID || it == PROVIDER_MICROSOFT_EDGE }
+                ?: PROVIDER_MICROSOFT_EDGE,
             ttsLanguage = languagePolicy.ttsLanguage,
             responseLanguage = languagePolicy.responseLanguage,
             microsoftVoice = prefs.getString(KEY_MICROSOFT_VOICE, "zh-CN-XiaoxiaoNeural").orEmpty()
@@ -134,7 +135,12 @@ object VoiceAssistantSettings {
     }
 
     fun setTtsProvider(context: Context, value: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_TTS_PROVIDER, value).apply()
+        val provider = value.takeIf {
+            it == PROVIDER_ANDROID || it == PROVIDER_MICROSOFT_EDGE
+        } ?: PROVIDER_MICROSOFT_EDGE
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_TTS_PROVIDER, provider)
+            .apply()
     }
 
     fun setMicrosoftVoice(context: Context, value: String) {
