@@ -2169,6 +2169,181 @@ final class SignalASIStoreTests: XCTestCase {
     }
   }
 
+  func testAgentMcpClientManagerListsCallsRemoteAndAudits() async throws {
+    let root = try temporaryDirectory("mcp-client-manager-remote")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let connection = try registry.addRemote(
+      displayName: "Relay MCP",
+      endpoint: "https://mcp.example/rpc",
+      authProfile: try AgentMcpAuthProfile(.none),
+      id: "relay-remote"
+    )
+    let auditStore = InMemoryAgentMcpAuditStore()
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"update_document","title":"Update document","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":false}}]}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"updated"}],"structuredContent":{"ok":true}}}"#
+      )
+    ])
+    let manager = AgentMcpClientManager(
+      registry: registry,
+      packageRepository: repository,
+      auditStore: auditStore,
+      remoteSessionFactory: { connection, headers in
+        XCTAssertEqual(connection.id, "relay-remote")
+        XCTAssertTrue(headers.isEmpty)
+        let transport = try AgentMcpStreamableHTTPTransport(
+          endpoint: connection.endpoint,
+          requestHeaders: headers,
+          networking: networking
+        )
+        return AgentMcpRemoteSession(transport: transport)
+      },
+      nowMillis: { 10_000 }
+    )
+
+    let tools = try await manager.listTools(connectionId: connection.id)
+    let result = await manager.callTool(
+      connectionId: connection.id,
+      toolName: "update_document",
+      arguments: ["content": .string("new")],
+      context: AgentNativeToolInvocationContext(attributes: ["explicit_user_approval": "true", "task_id": "task-1"])
+    )
+    let audit = try XCTUnwrap(manager.audit(connectionId: connection.id, limit: 10).first)
+
+    XCTAssertEqual(tools.map(\.name), ["update_document"])
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.message, "updated")
+    XCTAssertEqual(result.output["structured_content"]?.objectValue?["ok"], .bool(true))
+    XCTAssertEqual(result.metadata["mcp_permission_decision"], .string("allowed_explicit_change"))
+    XCTAssertNotNil(result.metadata["mcp_security"]?.objectValue)
+    XCTAssertEqual(result.metadata["mcp_audit_id"], .string(audit.auditId))
+    XCTAssertEqual(audit.status, "succeeded")
+    XCTAssertEqual(audit.taskId, "task-1")
+    XCTAssertEqual(audit.permissionDecision, "allowed_explicit_change")
+    XCTAssertEqual(registry.get(connection.id)?.state, .connected)
+    XCTAssertEqual(networking.requests.count, 4)
+  }
+
+  func testAgentMcpClientManagerDeniesUnapprovedMutatingCallAndAudits() async throws {
+    let root = try temporaryDirectory("mcp-client-manager-denied")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let connection = try registry.addRemote(
+      displayName: "Relay MCP",
+      endpoint: "https://mcp.example/rpc",
+      authProfile: try AgentMcpAuthProfile(.none),
+      id: "relay-denied"
+    )
+    let auditStore = InMemoryAgentMcpAuditStore()
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"update_document","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":false}}]}}"#
+      )
+    ])
+    let manager = AgentMcpClientManager(
+      registry: registry,
+      packageRepository: repository,
+      auditStore: auditStore,
+      remoteSessionFactory: { connection, headers in
+        let transport = try AgentMcpStreamableHTTPTransport(
+          endpoint: connection.endpoint,
+          requestHeaders: headers,
+          networking: networking
+        )
+        return AgentMcpRemoteSession(transport: transport)
+      },
+      nowMillis: { 10_000 }
+    )
+
+    let result = await manager.callTool(
+      connectionId: connection.id,
+      toolName: "update_document",
+      arguments: ["content": .string("new")]
+    )
+    let audit = try XCTUnwrap(manager.audit(connectionId: connection.id, limit: 10).first)
+
+    XCTAssertFalse(result.isSuccess)
+    XCTAssertEqual(result.error?.code, "mcp_approval_required")
+    XCTAssertEqual(result.error?.details["required_user_action"], .string("approve_tool_call"))
+    XCTAssertEqual(result.metadata["mcp_permission_decision"], .string("mcp_approval_required"))
+    XCTAssertEqual(audit.status, "denied")
+    XCTAssertEqual(audit.errorCode, "mcp_approval_required")
+    XCTAssertEqual(networking.requests.count, 3)
+  }
+
+  func testAgentMcpClientManagerReturnsAuthenticationFailureForDeclarativeHttp() async throws {
+    let root = try temporaryDirectory("mcp-client-manager-declarative-auth")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpDeclarativePackageManifest())
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let installed = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    _ = try registry.beginAuthentication(installed.id)
+    let authenticated = try registry.submitAuthenticationStep(
+      installed.id,
+      values: ["username": "alice", "password": "pw", "access_token": "expired-token"]
+    )
+    let auditStore = InMemoryAgentMcpAuditStore()
+    let transport = FakeMcpDeclarativeHTTPTransport([
+      AgentMcpDeclarativeHTTPResponse(statusCode: 401, body: #"{"error":"expired"}"#)
+    ])
+    let declarative = AgentMcpDeclarativeHTTPClient(
+      registry: registry,
+      packageRepository: repository,
+      transport: transport,
+      nowMillis: { 10_000 }
+    )
+    let manager = AgentMcpClientManager(
+      registry: registry,
+      packageRepository: repository,
+      auditStore: auditStore,
+      declarativeHTTPClient: declarative,
+      nowMillis: { 10_000 }
+    )
+
+    let result = await manager.callTool(
+      connectionId: authenticated.id,
+      toolName: "relay.switch",
+      arguments: ["device_id": .string("relay-1"), "enabled": .bool(true)],
+      context: AgentNativeToolInvocationContext(attributes: ["explicit_user_approval": "true"])
+    )
+    let audit = try XCTUnwrap(manager.audit(connectionId: authenticated.id, limit: 10).first)
+
+    XCTAssertFalse(result.isSuccess)
+    XCTAssertEqual(result.error?.code, "mcp_authentication_required")
+    XCTAssertEqual(audit.status, "failed")
+    XCTAssertEqual(audit.errorCode, "mcp_authentication_required")
+    XCTAssertEqual(registry.get(authenticated.id)?.state, .needsSetup)
+    XCTAssertEqual(registry.get(authenticated.id)?.authState, .reauthenticationRequired)
+  }
+
   func testAgentMcpLocalRuntimeResponseCodecDecodesLastStructuredBridgeResult() throws {
     let result = try AgentMcpLocalRuntimeResponseCodec.decode(
       """
