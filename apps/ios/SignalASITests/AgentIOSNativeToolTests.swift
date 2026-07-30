@@ -280,6 +280,62 @@ extension SignalASIStoreTests {
     XCTAssertTrue((json.range(of: "contacts.read")?.lowerBound ?? json.endIndex) < (json.range(of: "phone.local")?.lowerBound ?? json.startIndex))
   }
 
+  func testAgentPhoneNativeToolCatalogCreateRegistryRegistersExecutorsAndSharedStores() throws {
+    let replayStore = InMemoryAgentNativeToolReplayStore()
+    let auditStore = InMemoryAgentNativeToolAuditStore()
+    let registry = try AgentPhoneNativeToolCatalog.createRegistry(
+      workspaceStore: AgentWorkspaceNativeToolExecutor(nowMillis: { 1_000 }),
+      actionExecutor: TestAgentActionExecutor { action, _ in
+        AgentActionResult(actionId: action.id, success: true, message: "Executed")
+      },
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatuses: readyPhoneCapabilityStatuses(),
+      replayStore: replayStore,
+      auditStore: auditStore,
+      nowMillis: { 1_000 }
+    )
+
+    XCTAssertEqual(registry.ids(), AgentPhoneNativeToolCatalog.toolIds)
+    XCTAssertNotNil(registry.executable(AgentPhoneNativeToolCatalog.workspaceInitialize))
+    XCTAssertNotNil(registry.executable(AgentIOSSystemNativeToolCatalog.smsSend))
+    XCTAssertNotNil(registry.executable(AgentIOSHardwareNativeToolCatalog.batteryStatus))
+    XCTAssertNotNil(registry.executable(AgentMcpNativeTools.callTool))
+
+    let first = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("factory")],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "factory-first",
+        idempotencyKey: "factory-request",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+    let replay = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("factory")],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "factory-second",
+        idempotencyKey: "factory-request",
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    )
+
+    XCTAssertTrue(first.toJson(), first.isSuccess)
+    XCTAssertEqual(replay.output, first.output)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(replay.receipt.originalInvocationId, "factory-first")
+    XCTAssertEqual(
+      auditStore.list(
+        limit: 10,
+        toolId: AgentPhoneNativeToolCatalog.workspaceInitialize,
+        status: .succeeded
+      ).map(\.replayed),
+      [true, false]
+    )
+  }
+
   func testAgentNativeToolRegistryValidatesJsonSchemaTypesRequiredAndAdditionalProperties() throws {
     let schema: AgentMcpJSONObject = [
       "type": .string("object"),
