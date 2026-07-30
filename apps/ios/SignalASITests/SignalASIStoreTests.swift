@@ -1827,6 +1827,133 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(encoded.contains("session-token"))
   }
 
+  func testAgentMcpAuthenticationCoordinatorSubmitsExchangeAndMapsToken() async throws {
+    let root = try temporaryDirectory("mcp-auth-exchange-submit")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
+      ("mcp.json", mcpDeclarativePackageManifest())
+    ))
+    try repository.save(inspection)
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let installed = try registry.installPackage(inspection.manifest, packageSha256: inspection.packageSha256)
+    _ = try registry.beginAuthentication(installed.id)
+    let transport = FakeMcpDeclarativeHTTPTransport([
+      AgentMcpDeclarativeHTTPResponse(statusCode: 201, body: #"{"session":{"access_token":"mapped-token"}}"#)
+    ])
+    let coordinator = AgentMcpAuthenticationCoordinator(
+      registry: registry,
+      transport: transport,
+      nowMillis: { 10_000 }
+    )
+
+    let authenticated = try await coordinator.submitStep(
+      connectionId: installed.id,
+      values: ["username": "alice", "password": "pw"]
+    )
+    let request = try XCTUnwrap(transport.requests.first)
+    let headers = try registry.requestHeaders(installed.id)
+
+    XCTAssertEqual(authenticated.authState, .authenticated)
+    XCTAssertEqual(request.method, "POST")
+    XCTAssertEqual(request.url, "https://relay.example/api/login")
+    XCTAssertEqual(request.headers["Accept"], "application/json")
+    XCTAssertEqual(request.body, #"{"username":"alice","password":"pw"}"#)
+    XCTAssertEqual(headers["Authorization"], "Bearer mapped-token")
+    XCTAssertTrue(authenticated.expiresAtMillis > 10_000)
+  }
+
+  func testAgentMcpAuthenticationCoordinatorRejectsEscapedExchangeAndMarksReauth() async throws {
+    let exchange = try AgentMcpAuthExchangeSpec(
+      method: "POST",
+      pathTemplate: "//evil.example/login",
+      bodyTemplate: #"{"username":{{field.username}}}"#,
+      responseMappings: ["access_token": "$.token"]
+    )
+    let step = try AgentMcpAuthStepSpec(
+      id: "login",
+      title: "Sign in",
+      fields: [try AgentMcpAuthFieldSpec(id: "username", label: "Username", type: .text)],
+      exchange: exchange
+    )
+    let profile = try AgentMcpAuthProfile(.dynamic, steps: [step])
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { 10_000 })
+    let connection = try registry.addRemote(
+      displayName: "Relay",
+      endpoint: "https://relay.example/api/",
+      authProfile: profile,
+      id: "relay-escaped-auth"
+    )
+    _ = try registry.beginAuthentication(connection.id)
+    let transport = FakeMcpDeclarativeHTTPTransport([])
+    let coordinator = AgentMcpAuthenticationCoordinator(
+      registry: registry,
+      transport: transport,
+      nowMillis: { 10_000 }
+    )
+
+    do {
+      _ = try await coordinator.submitStep(connectionId: connection.id, values: ["username": "alice"])
+      XCTFail("Expected escaped MCP authentication exchange to be rejected")
+    } catch {
+      let stored = try XCTUnwrap(registry.get(connection.id))
+      XCTAssertEqual(transport.requests.count, 0)
+      XCTAssertEqual(stored.state, .needsSetup)
+      XCTAssertEqual(stored.authState, .reauthenticationRequired)
+      XCTAssertTrue(stored.lastError.contains("configured server"))
+    }
+  }
+
+  func testAgentMcpAuthenticationCoordinatorRefreshesWhenTokenNearExpiry() async throws {
+    var now: Int64 = 10_000
+    let refreshExchange = try AgentMcpAuthExchangeSpec(
+      method: "POST",
+      pathTemplate: "/oauth/refresh",
+      headerTemplates: ["Authorization": "Bearer {{auth.access_token}}"],
+      bodyTemplate: #"{"refresh":{{auth.refresh_token}}}"#,
+      responseMappings: ["access_token": "$.access_token"]
+    )
+    let profile = try AgentMcpAuthProfile(
+      .bearerToken,
+      accessTokenTtlMillis: 10_000,
+      refreshLeadMillis: 2_000,
+      supportsRefresh: true,
+      refreshExchange: refreshExchange
+    )
+    let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { now })
+    let connection = try registry.addRemote(
+      displayName: "Relay",
+      endpoint: "https://relay.example/api/",
+      authProfile: profile,
+      id: "relay-refresh"
+    )
+    _ = try registry.beginAuthentication(connection.id)
+    let authenticated = try registry.submitAuthenticationStep(
+      connection.id,
+      values: ["access_token": "old-token", "refresh_token": "refresh-1"]
+    )
+    now = authenticated.refreshAtMillis
+    let transport = FakeMcpDeclarativeHTTPTransport([
+      AgentMcpDeclarativeHTTPResponse(statusCode: 200, body: #"{"access_token":"fresh-token"}"#)
+    ])
+    let coordinator = AgentMcpAuthenticationCoordinator(
+      registry: registry,
+      transport: transport,
+      nowMillis: { now }
+    )
+
+    let refreshed = try await coordinator.refreshIfNeeded(connectionId: connection.id)
+    let request = try XCTUnwrap(transport.requests.first)
+    let headers = try registry.requestHeaders(connection.id)
+
+    XCTAssertEqual(request.url, "https://relay.example/oauth/refresh")
+    XCTAssertEqual(request.headers["Authorization"], "Bearer old-token")
+    XCTAssertEqual(request.body, #"{"refresh":"refresh-1"}"#)
+    XCTAssertEqual(refreshed.authState, .authenticated)
+    XCTAssertEqual(headers["Authorization"], "Bearer fresh-token")
+    XCTAssertTrue(refreshed.expiresAtMillis > now)
+  }
+
   func testAgentMcpLocalRuntimeResponseCodecDecodesLastStructuredBridgeResult() throws {
     let result = try AgentMcpLocalRuntimeResponseCodec.decode(
       """
