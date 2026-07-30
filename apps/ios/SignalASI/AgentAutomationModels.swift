@@ -159,18 +159,7 @@ enum AgentExecutionPresentationPolicy {
   }
 
   static func phaseForRemoteStatus(_ status: String) -> AgentPhase {
-    switch trim(status).lowercased() {
-    case "waiting_input", "waiting_approval":
-      return .paused
-    case "completed":
-      return .completed
-    case "failed", "timed_out", "not_found":
-      return .failed
-    case "cancelled":
-      return .cancelled
-    default:
-      return .executing
-    }
+    AgentRemoteTaskStatusPolicy.phase(status)
   }
 
   private static func locationKindForRemoteValue(_ value: String) -> AgentExecutionLocationKind {
