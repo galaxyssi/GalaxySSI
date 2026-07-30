@@ -134,6 +134,10 @@ Android uses libsignal-backed Signal sessions after the encrypted pairing claim 
 
 The deployment target is iOS 15.0. Newer platform affordances are avoided unless guarded by the app layer.
 
+## Source Layout
+
+Swift source is split by functional domain rather than by a fixed size rule. Keep new iOS parity work in the closest existing domain file, or add a new domain file when a feature grows independently; `SignalASIModels.swift` should stay limited to shared foundation types.
+
 ## Build And Test
 
 On macOS with Xcode installed:
