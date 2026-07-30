@@ -7,6 +7,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var contactsProvider: AgentIOSContactsSearchProviding
   var contactsWriteProvider: AgentIOSContactsWriteProviding
   var communicationHandoffProvider: AgentIOSCommunicationHandoffProviding
+  var devicePolicyProvider: AgentIOSDevicePolicyStatusProviding
   var downloadProvider: AgentIOSDownloadManaging
   var telephonyProvider: AgentIOSTelephonyStatusProviding
   var vpnProvider: AgentIOSVPNStatusProviding
@@ -21,6 +22,7 @@ struct AgentIOSSystemNativeToolExecutor {
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
     contactsWriteProvider: AgentIOSContactsWriteProviding = AgentIOSDefaultContactsWriteProvider(),
     communicationHandoffProvider: AgentIOSCommunicationHandoffProviding = AgentIOSDefaultCommunicationHandoffProvider(),
+    devicePolicyProvider: AgentIOSDevicePolicyStatusProviding = AgentIOSDefaultDevicePolicyStatusProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
     telephonyProvider: AgentIOSTelephonyStatusProviding = AgentIOSDefaultTelephonyStatusProvider(),
     vpnProvider: AgentIOSVPNStatusProviding = AgentIOSDefaultVPNStatusProvider(),
@@ -34,6 +36,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.contactsProvider = contactsProvider
     self.contactsWriteProvider = contactsWriteProvider
     self.communicationHandoffProvider = communicationHandoffProvider
+    self.devicePolicyProvider = devicePolicyProvider
     self.downloadProvider = downloadProvider
     self.telephonyProvider = telephonyProvider
     self.vpnProvider = vpnProvider
@@ -82,6 +85,8 @@ struct AgentIOSSystemNativeToolExecutor {
       return downloadQuery(invocation)
     case AgentIOSSystemNativeToolCatalog.downloadRemove:
       return downloadRemove(invocation)
+    case AgentIOSSystemNativeToolCatalog.devicePolicyStatus:
+      return devicePolicyStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiStatus:
       return wifiStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.audioStatus:
@@ -270,6 +275,18 @@ struct AgentIOSSystemNativeToolExecutor {
       nowMillis: max(0, nowMillis())
     )
     return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func devicePolicyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: devicePolicyProvider.devicePolicyStatus(nowMillis: max(0, nowMillis())),
+      message: "Device policy status read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
+        "settings_changed": .bool(false)
+      ]
+    )
   }
 
   private func wifiStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
