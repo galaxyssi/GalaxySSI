@@ -70,6 +70,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style agent execution loop timeline policy for run-control events, recovery actions, and progress placeholders
 - Android-style agent run recovery policy for terminal run-state reduction, local wait restore, and durable desktop reconnects
 - Android-style agent run start receipts for cross-end idempotency keys, durable accepted handles, unknown outcomes, cancellation marking, and bounded snapshots
+- Android-style Agent control plane protocol negotiation, control messages, recoverable run handles, registration provider profiles, and cross-Agent handoff ledger recovery
 - Android-style workspace file policy for scoped paths, archive entry guards, exact patch replacements, and diff summaries
 - Android-style explicit tool handle registry for opaque scoped stateful tool references, TTLs, releases, and resource revocation
 - Android-style private data inventory for encrypted backup manifests, export eligibility, erase coverage, and identity rotation audits
