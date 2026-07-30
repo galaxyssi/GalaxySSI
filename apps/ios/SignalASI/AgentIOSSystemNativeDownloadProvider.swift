@@ -1,0 +1,304 @@
+import Foundation
+
+protocol AgentIOSDownloadManaging {
+  func enqueueDownload(
+    url: String,
+    title: String,
+    description: String,
+    nowMillis: Int64
+  ) -> AgentNativeToolExecutionResult
+  func queryDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
+  func removeDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
+}
+
+final class AgentIOSDefaultDownloadProvider: AgentIOSDownloadManaging {
+  static let shared = AgentIOSDefaultDownloadProvider()
+
+  private struct DownloadRecord {
+    var id: Int64
+    var url: String
+    var title: String
+    var description: String
+    var status: Int64
+    var reason: Int64
+    var bytesDownloaded: Int64
+    var totalBytes: Int64
+    var localFileURL: URL?
+    var mediaType: String
+    var createdAtEpochMillis: Int64
+    var updatedAtEpochMillis: Int64
+
+    func output(observedAtEpochMillis: Int64) -> AgentMcpJSONObject {
+      [
+        "download_id": .int(id),
+        "url": .string(url),
+        "status": .int(status),
+        "reason": .int(reason),
+        "bytes_downloaded": .int(bytesDownloaded),
+        "total_bytes": .int(totalBytes),
+        "local_uri": .string(localFileURL?.absoluteString ?? ""),
+        "media_type": .string(mediaType),
+        "title": .string(title),
+        "description": .string(description),
+        "platform": .string("ios"),
+        "scope": .string("ios_app_cache_download"),
+        "created_at_epoch_ms": .int(createdAtEpochMillis),
+        "updated_at_epoch_ms": .int(updatedAtEpochMillis),
+        "observed_at_epoch_ms": .int(observedAtEpochMillis)
+      ]
+    }
+  }
+
+  private enum Status {
+    static let pending: Int64 = 1
+    static let running: Int64 = 2
+    static let paused: Int64 = 4
+    static let successful: Int64 = 8
+    static let failed: Int64 = 16
+  }
+
+  private let queue = DispatchQueue(label: "signalasi.ios.system.downloads")
+  private let session: URLSession
+  private let storageDirectory: URL
+  private var nextId: Int64 = 1
+  private var records: [Int64: DownloadRecord] = [:]
+  private var tasks: [Int64: URLSessionDownloadTask] = [:]
+
+  init(
+    session: URLSession = .shared,
+    storageDirectory: URL? = nil
+  ) {
+    self.session = session
+    if let storageDirectory {
+      self.storageDirectory = storageDirectory
+    } else {
+      let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+        ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+      self.storageDirectory = base.appendingPathComponent("SignalASIDownloads", isDirectory: true)
+    }
+  }
+
+  func enqueueDownload(
+    url: String,
+    title: String,
+    description: String,
+    nowMillis: Int64
+  ) -> AgentNativeToolExecutionResult {
+    guard let downloadURL = validatedHTTPSURL(url) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_download_url",
+        message: "Only HTTPS downloads are allowed"
+      )
+    }
+
+    let downloadId = queue.sync { () -> Int64 in
+      let id = nextId
+      nextId += 1
+      records[id] = DownloadRecord(
+        id: id,
+        url: downloadURL.absoluteString,
+        title: bounded(title, 240),
+        description: bounded(description, 500),
+        status: Status.pending,
+        reason: 0,
+        bytesDownloaded: 0,
+        totalBytes: -1,
+        localFileURL: nil,
+        mediaType: "",
+        createdAtEpochMillis: nowMillis,
+        updatedAtEpochMillis: nowMillis
+      )
+      return id
+    }
+
+    let task = session.downloadTask(with: downloadURL) { [weak self] temporaryURL, response, error in
+      self?.finishDownload(
+        id: downloadId,
+        originalURL: downloadURL,
+        temporaryURL: temporaryURL,
+        response: response,
+        error: error
+      )
+    }
+    queue.sync {
+      tasks[downloadId] = task
+      records[downloadId]?.status = Status.running
+      records[downloadId]?.updatedAtEpochMillis = currentMillis()
+    }
+    task.resume()
+
+    let record = queue.sync { records[downloadId] }
+    return AgentNativeToolExecutionResult.success(
+      output: record?.output(observedAtEpochMillis: nowMillis) ?? [
+        "download_id": .int(downloadId),
+        "url": .string(downloadURL.absoluteString)
+      ],
+      message: "Download enqueued",
+      metadata: [
+        "implementation": .string("URLSession"),
+        "storage_scope": .string("ios_app_caches"),
+        "android_status_compatible": .bool(true)
+      ]
+    )
+  }
+
+  func queryDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    guard id > 0 else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_download_id",
+        message: "Download id must be positive."
+      )
+    }
+    guard let record = queue.sync(execute: { records[id] }) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "download_not_found",
+        message: "Download record was not found"
+      )
+    }
+    return AgentNativeToolExecutionResult.success(
+      output: record.output(observedAtEpochMillis: nowMillis),
+      message: "Download status read",
+      metadata: [
+        "implementation": .string("URLSession"),
+        "storage_scope": .string("ios_app_caches"),
+        "android_status_compatible": .bool(true)
+      ]
+    )
+  }
+
+  func removeDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    guard id > 0 else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_download_id",
+        message: "Download id must be positive."
+      )
+    }
+    let removed = queue.sync { () -> (count: Int64, task: URLSessionDownloadTask?, fileURL: URL?) in
+      guard let record = records.removeValue(forKey: id) else {
+        return (0, nil, nil)
+      }
+      return (1, tasks.removeValue(forKey: id), record.localFileURL)
+    }
+    removed.task?.cancel()
+    if let fileURL = removed.fileURL {
+      try? FileManager.default.removeItem(at: fileURL)
+    }
+    return AgentNativeToolExecutionResult.success(
+      output: [
+        "download_id": .int(id),
+        "removed": .int(removed.count),
+        "platform": .string("ios"),
+        "scope": .string("ios_app_cache_download"),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ],
+      message: "Download remove completed",
+      metadata: [
+        "implementation": .string("URLSession"),
+        "storage_scope": .string("ios_app_caches"),
+        "file_deleted": .bool(removed.fileURL != nil)
+      ]
+    )
+  }
+
+  private func finishDownload(
+    id: Int64,
+    originalURL: URL,
+    temporaryURL: URL?,
+    response: URLResponse?,
+    error: Error?
+  ) {
+    queue.async {
+      guard var record = self.records[id] else {
+        return
+      }
+      defer {
+        self.tasks.removeValue(forKey: id)
+      }
+      record.updatedAtEpochMillis = self.currentMillis()
+      record.mediaType = self.bounded(response?.mimeType ?? "", 255)
+
+      if let error {
+        record.status = Status.failed
+        record.reason = Int64((error as NSError).code)
+        self.records[id] = record
+        return
+      }
+
+      if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        record.status = Status.failed
+        record.reason = Int64(http.statusCode)
+        self.records[id] = record
+        return
+      }
+
+      guard let temporaryURL else {
+        record.status = Status.failed
+        record.reason = -1
+        self.records[id] = record
+        return
+      }
+
+      do {
+        try FileManager.default.createDirectory(
+          at: self.storageDirectory,
+          withIntermediateDirectories: true
+        )
+        let destination = self.storageDirectory.appendingPathComponent(
+          self.safeFilename(id: id, response: response, originalURL: originalURL),
+          isDirectory: false
+        )
+        if FileManager.default.fileExists(atPath: destination.path) {
+          try FileManager.default.removeItem(at: destination)
+        }
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        let size = self.fileSize(destination)
+        record.status = Status.successful
+        record.reason = 0
+        record.bytesDownloaded = size
+        let expected = response?.expectedContentLength ?? -1
+        record.totalBytes = expected >= 0 ? expected : size
+        record.localFileURL = destination
+        self.records[id] = record
+      } catch {
+        record.status = Status.failed
+        record.reason = Int64((error as NSError).code)
+        self.records[id] = record
+      }
+    }
+  }
+
+  private func validatedHTTPSURL(_ value: String) -> URL? {
+    let trimmed = bounded(value, 4_096)
+    guard let components = URLComponents(string: trimmed),
+          components.scheme?.lowercased() == "https",
+          let host = components.host,
+          !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+          let url = components.url else {
+      return nil
+    }
+    return url
+  }
+
+  private func safeFilename(id: Int64, response: URLResponse?, originalURL: URL) -> String {
+    let candidate = response?.suggestedFilename ?? originalURL.lastPathComponent
+    let sanitized = bounded(candidate, 160)
+      .replacingOccurrences(of: #"[^A-Za-z0-9._-]+"#, with: "_", options: .regularExpression)
+      .trimmingCharacters(in: CharacterSet(charactersIn: "._-"))
+    let suffix = sanitized.isEmpty ? "download" : String(sanitized.prefix(120))
+    return "download-\(id)-\(suffix)"
+  }
+
+  private func fileSize(_ url: URL) -> Int64 {
+    let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+    let size = attributes?[.size] as? NSNumber
+    return max(0, size?.int64Value ?? 0)
+  }
+
+  private func currentMillis() -> Int64 {
+    Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+  }
+
+  private func bounded(_ value: String, _ limit: Int) -> String {
+    String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
+  }
+}

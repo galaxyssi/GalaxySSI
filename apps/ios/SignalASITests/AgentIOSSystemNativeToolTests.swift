@@ -35,6 +35,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("Contacts"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "contacts_search_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.downloadToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("URLSession"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "url_session_download_manager_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.wifiStatus {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("NWPath"), descriptor.id)
@@ -88,6 +92,13 @@ extension SignalASIStoreTests {
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
         }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.downloadToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosDownloadPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
       } else {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -107,6 +118,17 @@ extension SignalASIStoreTests {
     XCTAssertTrue(smsSend.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.sms.send" })
     XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("phone_number")))
     XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("message")))
+
+    let downloadEnqueue = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.downloadEnqueue })
+    let downloadRemove = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.downloadRemove })
+    XCTAssertEqual(downloadEnqueue.descriptor.risk, .medium)
+    XCTAssertEqual(downloadEnqueue.descriptor.idempotency, .nonIdempotent)
+    XCTAssertTrue(downloadEnqueue.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosDownloadPermission
+    })
+    XCTAssertTrue(downloadEnqueue.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.download" })
+    XCTAssertEqual(downloadRemove.descriptor.risk, .high)
+    XCTAssertEqual(downloadRemove.descriptor.idempotency, .idempotencyKeyRequired)
 
     let registry = try AgentNativeToolRegistry(definitions: definitions)
     let unavailable = registry.authorize(
@@ -441,6 +463,150 @@ extension SignalASIStoreTests {
     XCTAssertEqual(provider.capturedNow, 55_000)
     XCTAssertEqual(events.output["events"]?.arrayValue?.first?.objectValue?["title"], .string("Planning"))
     XCTAssertEqual(events.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorManagesDownloads() throws {
+    final class FakeDownloadProvider: AgentIOSDownloadManaging {
+      var capturedURL = ""
+      var capturedTitle = ""
+      var capturedDescription = ""
+      var capturedEnqueueNow: Int64 = 0
+      var capturedQueryId: Int64 = 0
+      var capturedRemoveId: Int64 = 0
+
+      func enqueueDownload(
+        url: String,
+        title: String,
+        description: String,
+        nowMillis: Int64
+      ) -> AgentNativeToolExecutionResult {
+        capturedURL = url
+        capturedTitle = title
+        capturedDescription = description
+        capturedEnqueueNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "download_id": .int(99),
+            "url": .string(url),
+            "status": .int(2),
+            "reason": .int(0),
+            "bytes_downloaded": .int(0),
+            "total_bytes": .int(-1),
+            "local_uri": .string(""),
+            "media_type": .string(""),
+            "platform": .string("ios"),
+            "scope": .string("ios_app_cache_download"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Download enqueued"
+        )
+      }
+
+      func queryDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedQueryId = id
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "download_id": .int(id),
+            "status": .int(8),
+            "reason": .int(0),
+            "bytes_downloaded": .int(12),
+            "total_bytes": .int(12),
+            "local_uri": .string("file:///cache/download-99.txt"),
+            "media_type": .string("text/plain"),
+            "platform": .string("ios"),
+            "scope": .string("ios_app_cache_download"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Download status read"
+        )
+      }
+
+      func removeDownload(id: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedRemoveId = id
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "download_id": .int(id),
+            "removed": .int(1),
+            "platform": .string("ios"),
+            "scope": .string("ios_app_cache_download"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Download remove completed"
+        )
+      }
+    }
+    let provider = FakeDownloadProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          downloadProvider: provider,
+          nowMillis: { 66_000 }
+        )
+      )
+    )
+    let downloadContext = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDownloadPermission],
+      grantedConsents: ["signalasi.consent.download"]
+    )
+    let removeContext = AgentNativeToolInvocationContext(
+      idempotencyKey: "remove-download-99",
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDownloadPermission],
+      grantedConsents: ["signalasi.consent.download"]
+    )
+
+    let enqueued = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.downloadEnqueue,
+      input: [
+        "url": .string("https://signalasi.example/file.txt"),
+        "title": .string("File"),
+        "description": .string("Example")
+      ],
+      context: downloadContext
+    )
+    let invalidURL = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.downloadEnqueue,
+      input: ["url": .string("http://signalasi.example/file.txt")],
+      context: downloadContext
+    )
+    let queried = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.downloadQuery,
+      input: ["download_id": .int(99)],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDownloadPermission]
+      )
+    )
+    let missingRemoveKey = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.downloadRemove,
+      input: ["download_id": .int(99)],
+      context: downloadContext
+    )
+    let removed = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.downloadRemove,
+      input: ["download_id": .int(99)],
+      context: removeContext
+    )
+
+    XCTAssertTrue(enqueued.isSuccess)
+    XCTAssertEqual(provider.capturedURL, "https://signalasi.example/file.txt")
+    XCTAssertEqual(provider.capturedTitle, "File")
+    XCTAssertEqual(provider.capturedDescription, "Example")
+    XCTAssertEqual(provider.capturedEnqueueNow, 66_000)
+    XCTAssertEqual(enqueued.output["download_id"], .int(99))
+    XCTAssertEqual(enqueued.output["status"], .int(2))
+    XCTAssertEqual(enqueued.metadata["executor_id"], .string(AgentIOSSystemNativeToolCatalog.executorId))
+
+    XCTAssertEqual(invalidURL.status, .failed)
+    XCTAssertEqual(invalidURL.error?.code, "invalid_download_url")
+    XCTAssertTrue(queried.isSuccess)
+    XCTAssertEqual(provider.capturedQueryId, 99)
+    XCTAssertEqual(queried.output["local_uri"], .string("file:///cache/download-99.txt"))
+    XCTAssertEqual(queried.output["media_type"], .string("text/plain"))
+    XCTAssertEqual(missingRemoveKey.status, .rejected)
+    XCTAssertEqual(missingRemoveKey.error?.code, "missing_idempotency_key")
+    XCTAssertTrue(removed.isSuccess)
+    XCTAssertEqual(provider.capturedRemoveId, 99)
+    XCTAssertEqual(removed.output["removed"], .int(1))
+    XCTAssertEqual(removed.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorBuildsUserVisibleHandoffs() throws {

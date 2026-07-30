@@ -4,6 +4,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
   var calendarProvider: AgentIOSCalendarReadProviding
   var contactsProvider: AgentIOSContactsSearchProviding
+  var downloadProvider: AgentIOSDownloadManaging
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
@@ -12,6 +13,7 @@ struct AgentIOSSystemNativeToolExecutor {
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
     calendarProvider: AgentIOSCalendarReadProviding = AgentIOSDefaultCalendarReadProvider(),
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
+    downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
@@ -19,6 +21,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.audioProvider = audioProvider
     self.calendarProvider = calendarProvider
     self.contactsProvider = contactsProvider
+    self.downloadProvider = downloadProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
@@ -44,6 +47,12 @@ struct AgentIOSSystemNativeToolExecutor {
       return calendarEventsQuery(invocation)
     case AgentIOSSystemNativeToolCatalog.contactsSearch:
       return contactsSearch(invocation)
+    case AgentIOSSystemNativeToolCatalog.downloadEnqueue:
+      return downloadEnqueue(invocation)
+    case AgentIOSSystemNativeToolCatalog.downloadQuery:
+      return downloadQuery(invocation)
+    case AgentIOSSystemNativeToolCatalog.downloadRemove:
+      return downloadRemove(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiStatus:
       return wifiStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.audioStatus:
@@ -121,6 +130,41 @@ struct AgentIOSSystemNativeToolExecutor {
     )
   }
 
+  private func downloadEnqueue(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let url = boundedString(invocation.input["url"]?.stringValue, limit: 4_096)
+    guard isHTTPSURL(url) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_download_url",
+        message: "Only HTTPS downloads are allowed"
+      )
+    }
+    let result = downloadProvider.enqueueDownload(
+      url: url,
+      title: boundedString(invocation.input["title"]?.stringValue, limit: 240),
+      description: boundedString(invocation.input["description"]?.stringValue, limit: 500),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedDownloadResult(result, invocation: invocation)
+  }
+
+  private func downloadQuery(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let id = invocation.input["download_id"]?.intValue ?? 0
+    let result = downloadProvider.queryDownload(
+      id: id,
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedDownloadResult(result, invocation: invocation)
+  }
+
+  private func downloadRemove(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let id = invocation.input["download_id"]?.intValue ?? 0
+    let result = downloadProvider.removeDownload(
+      id: id,
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedDownloadResult(result, invocation: invocation)
+  }
+
   private func wifiStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     AgentNativeToolExecutionResult.success(
       output: wifiProvider.wifiStatus(nowMillis: max(0, nowMillis())),
@@ -145,6 +189,17 @@ struct AgentIOSSystemNativeToolExecutor {
         "identifiers_included": .bool(false)
       ]
     )
+  }
+
+  private func annotatedDownloadResult(
+    _ result: AgentNativeToolExecutionResult,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    var result = result
+    result.metadata["executor_id"] = .string(AgentIOSSystemNativeToolCatalog.executorId)
+    result.metadata["tool_id"] = .string(invocation.descriptor.id)
+    result.metadata["platform"] = result.metadata["platform"] ?? .string("ios")
+    return result
   }
 
   private func dialHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -237,5 +292,19 @@ struct AgentIOSSystemNativeToolExecutor {
       return nil
     }
     return normalized
+  }
+
+  private func isHTTPSURL(_ value: String) -> Bool {
+    guard let components = URLComponents(string: value),
+          components.scheme?.lowercased() == "https",
+          let host = components.host,
+          !host.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return false
+    }
+    return true
+  }
+
+  private func boundedString(_ value: String?, limit: Int) -> String {
+    String((value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
   }
 }
