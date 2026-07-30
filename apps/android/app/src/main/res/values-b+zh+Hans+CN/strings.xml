@@ -188,6 +188,15 @@
     <string name="local_model_thermal_emergency">紧急温度状态</string>
     <string name="local_model_thermal_shutdown">温度关机状态</string>
     <string name="local_model_thermal_unknown">无法读取温度状态</string>
+    <string name="local_model_acceleration_section">加速后端</string>
+    <string name="local_model_accelerator_cpu">CPU 后端</string>
+    <string name="local_model_accelerator_gpu">GPU delegate</string>
+    <string name="local_model_accelerator_nnapi">NNAPI</string>
+    <string name="local_model_accelerator_vendor">厂商 SDK</string>
+    <string name="local_model_accelerator_detail">%1$s\n%2$s</string>
+    <string name="local_model_accelerator_ready">可用</string>
+    <string name="local_model_accelerator_hardware_only">仅硬件可用</string>
+    <string name="local_model_accelerator_unavailable">不可用</string>
     <string name="local_model_section_inference">推理能力</string>
     <string name="local_model_enable">启用本地模型</string>
     <string name="local_model_enable_subtitle">离线处理敏感设备和任务</string>
