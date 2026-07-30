@@ -2113,6 +2113,63 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(networking.requests[3].body.contains(#""method":"tools/call""#))
   }
 
+  func testAgentMcpRemoteSessionListsReadsResourcesAndPrompts() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"resources":{},"prompts":{}}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":2,"result":{"resources":[{"uri":"file:///README.md","name":"README.md","title":"Project readme","mimeType":"text/markdown","size":42,"annotations":{"priority":0.8}}]}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":3,"result":{"contents":[{"uri":"file:///README.md","mimeType":"text/markdown","text":"# SignalASI"}]}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":4,"result":{"prompts":[{"name":"review","title":"Review","arguments":[{"name":"focus","description":"Review focus","required":true}]}],"nextCursor":"prompt-page-2"}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":5,"result":{"description":"Focused review","messages":[{"role":"user","content":{"type":"text","text":"Review cancellation behavior"}},{"role":"assistant","content":{"type":"resource","resource":{"uri":"file:///README.md","mimeType":"text/markdown","text":"# SignalASI"}}}]}}"#
+      )
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+    let session = AgentMcpRemoteSession(transport: transport)
+    _ = try await session.initialize(clientInfo: AgentMcpImplementationInfo(name: "SignalASI iOS", version: "1"))
+
+    let resources = try await session.listResources()
+    let resource = try await session.readResource(uri: "file:///README.md")
+    let prompts = try await session.listPrompts(cursor: "prompt-page-1")
+    let prompt = try await session.getPrompt(name: "review", arguments: ["focus": "cancellation"])
+
+    XCTAssertEqual(resources.items.first?.name, "README.md")
+    XCTAssertEqual(resources.items.first?.size, 42)
+    XCTAssertEqual(resources.items.first?.annotations?["priority"], .double(0.8))
+    XCTAssertEqual(resource.contents.first?.text, "# SignalASI")
+    XCTAssertNil(resource.contents.first?.blob)
+    XCTAssertEqual(prompts.nextCursor, "prompt-page-2")
+    XCTAssertEqual(prompts.items.first?.arguments.first?.required, true)
+    XCTAssertEqual(prompt.description, "Focused review")
+    XCTAssertEqual(prompt.messages.first?.role, "user")
+    XCTAssertEqual(prompt.messages.first?.content.text, "Review cancellation behavior")
+    XCTAssertEqual(prompt.messages.last?.content.resource?.uri, "file:///README.md")
+    XCTAssertEqual(prompt.messages.last?.content.resource?.text, "# SignalASI")
+    XCTAssertEqual(networking.requests.count, 6)
+    XCTAssertTrue(networking.requests[4].body.contains(#""method":"prompts/list""#))
+    XCTAssertTrue(networking.requests[4].body.contains(#""cursor":"prompt-page-1""#))
+    XCTAssertTrue(networking.requests[5].body.contains(#""method":"prompts/get""#))
+    XCTAssertTrue(networking.requests[5].body.contains(#""focus":"cancellation""#))
+  }
+
   func testAgentMcpRemoteSessionMapsJsonRpcError() async throws {
     let networking = FakeMcpStreamableHTTPNetworking([
       AgentMcpStreamableHTTPResponse(
@@ -2165,6 +2222,16 @@ final class SignalASIStoreTests: XCTestCase {
       let sessionError = try XCTUnwrap(error as? AgentMcpRemoteSessionError)
       XCTAssertEqual(sessionError.kind, .capabilityNotNegotiated)
       XCTAssertEqual(sessionError.method, "tools/list")
+      XCTAssertEqual(networking.requests.count, 2)
+    }
+
+    do {
+      _ = try await session.listResources()
+      XCTFail("Expected missing resources capability to reject resources/list")
+    } catch {
+      let sessionError = try XCTUnwrap(error as? AgentMcpRemoteSessionError)
+      XCTAssertEqual(sessionError.kind, .capabilityNotNegotiated)
+      XCTAssertEqual(sessionError.method, "resources/list")
       XCTAssertEqual(networking.requests.count, 2)
     }
   }

@@ -18757,6 +18757,48 @@ struct AgentMcpPage<Element: Equatable>: Equatable {
   var raw: AgentMcpJSONObject
 }
 
+struct AgentMcpResource: Codable, Equatable {
+  var uri: String
+  var name: String
+  var title: String?
+  var description: String?
+  var mimeType: String?
+  var size: Int64?
+  var annotations: AgentMcpJSONObject?
+  var raw: AgentMcpJSONObject
+}
+
+struct AgentMcpResourceContent: Codable, Equatable {
+  var uri: String
+  var mimeType: String?
+  var text: String?
+  var blob: String?
+  var annotations: AgentMcpJSONObject?
+  var raw: AgentMcpJSONObject
+}
+
+struct AgentMcpResourceReadResult: Codable, Equatable {
+  var requestId: Int64
+  var contents: [AgentMcpResourceContent]
+  var raw: AgentMcpJSONObject
+}
+
+struct AgentMcpPromptArgument: Codable, Equatable {
+  var name: String
+  var title: String?
+  var description: String?
+  var required: Bool
+  var raw: AgentMcpJSONObject
+}
+
+struct AgentMcpPrompt: Codable, Equatable {
+  var name: String
+  var title: String?
+  var description: String?
+  var arguments: [AgentMcpPromptArgument]
+  var raw: AgentMcpJSONObject
+}
+
 struct AgentMcpContent: Codable, Equatable {
   var type: String
   var text: String?
@@ -18764,6 +18806,7 @@ struct AgentMcpContent: Codable, Equatable {
   var mimeType: String?
   var uri: String?
   var name: String?
+  var resource: AgentMcpResourceContent?
   var raw: AgentMcpJSONObject
 }
 
@@ -18772,6 +18815,19 @@ struct AgentMcpToolCallResult: Codable, Equatable {
   var content: [AgentMcpContent]
   var structuredContent: AgentMcpJSONObject?
   var isError: Bool
+  var raw: AgentMcpJSONObject
+}
+
+struct AgentMcpPromptMessage: Codable, Equatable {
+  var role: String
+  var content: AgentMcpContent
+  var raw: AgentMcpJSONObject
+}
+
+struct AgentMcpPromptGetResult: Codable, Equatable {
+  var requestId: Int64
+  var description: String?
+  var messages: [AgentMcpPromptMessage]
   var raw: AgentMcpJSONObject
 }
 
@@ -18841,10 +18897,7 @@ final class AgentMcpRemoteSession {
 
   func listTools(cursor: String? = nil) async throws -> AgentMcpPage<AgentMcpTool> {
     try requireCapability("tools", method: "tools/list")
-    var params: AgentMcpJSONObject = [:]
-    if let cursor, !cursor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-      params["cursor"] = .string(cursor)
-    }
+    let params = try cursorParams(cursor, method: "tools/list")
     let response = try await request(method: "tools/list", params: params)
     let result = try resultObject(response, method: "tools/list")
     let tools = try requiredArray(result, "tools", method: "tools/list").enumerated().map { index, value in
@@ -18872,7 +18925,11 @@ final class AgentMcpRemoteSession {
     )
     let result = try resultObject(response, method: "tools/call")
     let content = try requiredArray(result, "content", method: "tools/call").enumerated().map { index, value in
-      try parseContent(try requiredObject(value, "content[\(index)]", method: "tools/call"))
+      try parseContent(
+        try requiredObject(value, "content[\(index)]", method: "tools/call"),
+        context: "content[\(index)]",
+        method: "tools/call"
+      )
     }
     let structured: AgentMcpJSONObject?
     if let value = result["structuredContent"] {
@@ -18888,6 +18945,92 @@ final class AgentMcpRemoteSession {
       content: content,
       structuredContent: structured,
       isError: result["isError"]?.boolValue ?? false,
+      raw: result
+    )
+  }
+
+  func listResources(cursor: String? = nil) async throws -> AgentMcpPage<AgentMcpResource> {
+    try requireCapability("resources", method: "resources/list")
+    let params = try cursorParams(cursor, method: "resources/list")
+    let response = try await request(method: "resources/list", params: params)
+    let result = try resultObject(response, method: "resources/list")
+    let resources = try requiredArray(result, "resources", method: "resources/list").enumerated().map { index, value in
+      try parseResource(try requiredObject(value, "resources[\(index)]", method: "resources/list"))
+    }
+    return AgentMcpPage(
+      requestId: response.requestId,
+      items: resources,
+      nextCursor: result["nextCursor"]?.stringValue?.nilIfEmpty,
+      raw: result
+    )
+  }
+
+  func readResource(uri: String) async throws -> AgentMcpResourceReadResult {
+    guard !uri.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw sessionError(.invalidResult, "Resource URI must not be blank", method: "resources/read")
+    }
+    try requireCapability("resources", method: "resources/read")
+    let response = try await request(method: "resources/read", params: ["uri": .string(uri)])
+    let result = try resultObject(response, method: "resources/read")
+    let contents = try requiredArray(result, "contents", method: "resources/read").enumerated().map { index, value in
+      try parseResourceContent(
+        try requiredObject(value, "contents[\(index)]", method: "resources/read"),
+        context: "contents[\(index)]",
+        method: "resources/read"
+      )
+    }
+    return AgentMcpResourceReadResult(requestId: response.requestId, contents: contents, raw: result)
+  }
+
+  func listPrompts(cursor: String? = nil) async throws -> AgentMcpPage<AgentMcpPrompt> {
+    try requireCapability("prompts", method: "prompts/list")
+    let params = try cursorParams(cursor, method: "prompts/list")
+    let response = try await request(method: "prompts/list", params: params)
+    let result = try resultObject(response, method: "prompts/list")
+    let prompts = try requiredArray(result, "prompts", method: "prompts/list").enumerated().map { index, value in
+      try parsePrompt(try requiredObject(value, "prompts[\(index)]", method: "prompts/list"))
+    }
+    return AgentMcpPage(
+      requestId: response.requestId,
+      items: prompts,
+      nextCursor: result["nextCursor"]?.stringValue?.nilIfEmpty,
+      raw: result
+    )
+  }
+
+  func getPrompt(name: String, arguments: [String: String] = [:]) async throws -> AgentMcpPromptGetResult {
+    guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw sessionError(.invalidResult, "Prompt name must not be blank", method: "prompts/get")
+    }
+    try requireCapability("prompts", method: "prompts/get")
+    let response = try await request(
+      method: "prompts/get",
+      params: [
+        "name": .string(name),
+        "arguments": .object(arguments.mapValues { .string($0) })
+      ]
+    )
+    let result = try resultObject(response, method: "prompts/get")
+    let messages = try requiredArray(result, "messages", method: "prompts/get").enumerated().map { index, value in
+      let raw = try requiredObject(value, "messages[\(index)]", method: "prompts/get")
+      let role = try requiredString(raw, "role", requestId: response.requestId, method: "prompts/get")
+      guard role == "user" || role == "assistant" else {
+        throw sessionError(.invalidResult, "messages[\(index)].role must be user or assistant", requestId: response.requestId, method: "prompts/get")
+      }
+      return AgentMcpPromptMessage(
+        role: role,
+        content: try parseContent(
+          try requiredObject(raw["content"], "messages[\(index)].content", method: "prompts/get"),
+          context: "messages[\(index)].content",
+          method: "prompts/get"
+        ),
+        raw: raw
+      )
+    }
+    return AgentMcpPromptGetResult(
+      requestId: response.requestId,
+      description: result["description"]?.stringValue,
+      messages: messages,
       raw: result
     )
   }
@@ -19024,20 +19167,117 @@ final class AgentMcpRemoteSession {
       title: raw["title"]?.stringValue,
       description: raw["description"]?.stringValue,
       inputSchema: try requiredObject(raw["inputSchema"], "tool.inputSchema", method: "tools/list"),
-      outputSchema: raw["outputSchema"]?.objectValue,
-      annotations: raw["annotations"]?.objectValue,
+      outputSchema: try optionalObject(raw, "outputSchema", method: "tools/list"),
+      annotations: try optionalObject(raw, "annotations", method: "tools/list"),
       raw: raw
     )
   }
 
-  private func parseContent(_ raw: AgentMcpJSONObject) throws -> AgentMcpContent {
-    AgentMcpContent(
-      type: try requiredString(raw, "type", method: "tools/call"),
+  private func parseContent(_ raw: AgentMcpJSONObject, context: String, method: String) throws -> AgentMcpContent {
+    let type = try requiredString(raw, "type", method: method)
+    let text = raw["text"]?.stringValue
+    let data = raw["data"]?.stringValue
+    let mimeType = raw["mimeType"]?.stringValue
+    var resource: AgentMcpResourceContent?
+    switch type {
+    case "text":
+      guard text != nil else {
+        throw sessionError(.invalidResult, "\(context).text is required for text content", method: method)
+      }
+    case "image", "audio":
+      guard data != nil, mimeType != nil else {
+        throw sessionError(.invalidResult, "\(context) requires data and mimeType for \(type) content", method: method)
+      }
+    case "resource":
+      resource = try parseResourceContent(
+        try requiredObject(raw["resource"], "\(context).resource", method: method),
+        context: "\(context).resource",
+        method: method
+      )
+    case "resource_link":
+      _ = try requiredString(raw, "uri", method: method)
+      _ = try requiredString(raw, "name", method: method)
+    default:
+      break
+    }
+    return AgentMcpContent(
+      type: type,
       text: raw["text"]?.stringValue,
       data: raw["data"]?.stringValue,
       mimeType: raw["mimeType"]?.stringValue,
       uri: raw["uri"]?.stringValue,
       name: raw["name"]?.stringValue,
+      resource: resource,
+      raw: raw
+    )
+  }
+
+  private func parseResource(_ raw: AgentMcpJSONObject) throws -> AgentMcpResource {
+    let size: Int64?
+    if let value = raw["size"] {
+      guard let parsed = value.intValue, parsed >= 0 else {
+        throw sessionError(.invalidResult, "resource.size must be a non-negative integer", method: "resources/list")
+      }
+      size = parsed
+    } else {
+      size = nil
+    }
+    return AgentMcpResource(
+      uri: try requiredString(raw, "uri", method: "resources/list"),
+      name: try requiredString(raw, "name", method: "resources/list"),
+      title: raw["title"]?.stringValue,
+      description: raw["description"]?.stringValue,
+      mimeType: raw["mimeType"]?.stringValue,
+      size: size,
+      annotations: try optionalObject(raw, "annotations", method: "resources/list"),
+      raw: raw
+    )
+  }
+
+  private func parseResourceContent(
+    _ raw: AgentMcpJSONObject,
+    context: String,
+    method: String
+  ) throws -> AgentMcpResourceContent {
+    let text = raw["text"]?.stringValue
+    let blob = raw["blob"]?.stringValue
+    guard (text == nil) != (blob == nil) else {
+      throw sessionError(.invalidResult, "\(context) must contain exactly one of text or blob", method: method)
+    }
+    return AgentMcpResourceContent(
+      uri: try requiredString(raw, "uri", method: method),
+      mimeType: raw["mimeType"]?.stringValue,
+      text: text,
+      blob: blob,
+      annotations: try optionalObject(raw, "annotations", method: method),
+      raw: raw
+    )
+  }
+
+  private func parsePrompt(_ raw: AgentMcpJSONObject) throws -> AgentMcpPrompt {
+    let arguments: [AgentMcpPromptArgument]
+    if let value = raw["arguments"] {
+      guard let array = value.arrayValue else {
+        throw sessionError(.invalidResult, "prompt.arguments must be an array", method: "prompts/list")
+      }
+      arguments = try array.enumerated().map { index, value in
+        let item = try requiredObject(value, "prompt.arguments[\(index)]", method: "prompts/list")
+        return AgentMcpPromptArgument(
+          name: try requiredString(item, "name", method: "prompts/list"),
+          title: item["title"]?.stringValue,
+          description: item["description"]?.stringValue,
+          required: try optionalBoolean(item, "required", defaultValue: false, method: "prompts/list"),
+          raw: item
+        )
+      }
+    } else {
+      arguments = []
+    }
+    return AgentMcpPrompt(
+      name: try requiredString(raw, "name", method: "prompts/list"),
+      title: raw["title"]?.stringValue,
+      description: raw["description"]?.stringValue,
+      arguments: arguments,
       raw: raw
     )
   }
@@ -19063,6 +19303,31 @@ final class AgentMcpRemoteSession {
     return array
   }
 
+  private func optionalObject(_ object: AgentMcpJSONObject, _ key: String, method: String) throws -> AgentMcpJSONObject? {
+    guard let value = object[key] else {
+      return nil
+    }
+    guard let raw = value.objectValue else {
+      throw sessionError(.invalidResult, "\(key) must be an object", method: method)
+    }
+    return raw
+  }
+
+  private func optionalBoolean(
+    _ object: AgentMcpJSONObject,
+    _ key: String,
+    defaultValue: Bool,
+    method: String
+  ) throws -> Bool {
+    guard let value = object[key] else {
+      return defaultValue
+    }
+    guard let raw = value.boolValue else {
+      throw sessionError(.invalidResult, "\(key) must be a boolean", method: method)
+    }
+    return raw
+  }
+
   private func requiredString(
     _ object: AgentMcpJSONObject,
     _ key: String,
@@ -19073,6 +19338,17 @@ final class AgentMcpRemoteSession {
       throw sessionError(.invalidResult, "\(key) must be a non-empty string", requestId: requestId, method: method)
     }
     return value
+  }
+
+  private func cursorParams(_ cursor: String?, method: String) throws -> AgentMcpJSONObject {
+    guard let cursor else {
+      return [:]
+    }
+    let cleanCursor = cursor.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !cleanCursor.isEmpty else {
+      throw sessionError(.invalidResult, "Cursor must not be blank", method: method)
+    }
+    return ["cursor": .string(cursor)]
   }
 
   private func requireCapability(_ capability: String, method: String) throws {
