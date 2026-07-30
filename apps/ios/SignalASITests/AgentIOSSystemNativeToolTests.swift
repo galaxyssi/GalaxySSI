@@ -26,6 +26,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "handoff_request_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.wifiStatus {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("NWPath"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "nw_path_wifi_status_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("AVAudioSession"), descriptor.id)
@@ -42,6 +46,13 @@ extension SignalASIStoreTests {
       if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.wifiStatus {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosWifiStatusPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -192,6 +203,53 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["authentication_prompted"], .bool(false))
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(22_000))
     XCTAssertEqual(result.metadata["authentication_prompted"], .bool(false))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReadsIdentifierFreeWifiStatus() throws {
+    let provider = AgentIOSDefaultWifiStatusProvider(networkProbeProvider: {
+      AgentMediaNetworkProbe(
+        networkPresent: true,
+        internetCapable: true,
+        validated: true,
+        metered: false,
+        roaming: false,
+        restricted: false,
+        congested: false,
+        cellular: false,
+        transports: ["wifi"],
+        downstreamKbps: 0,
+        upstreamKbps: 0
+      )
+    })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          wifiProvider: provider,
+          nowMillis: { 33_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosWifiStatusPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.wifiStatus,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["wifi_enabled"], .bool(true))
+    XCTAssertEqual(result.output["active_wifi_transport"], .bool(true))
+    XCTAssertEqual(result.output["validated"], .bool(true))
+    XCTAssertEqual(result.output["ssid"], .string(""))
+    XCTAssertEqual(result.output["bssid"], .string(""))
+    XCTAssertEqual(result.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(result.output["scope"], .string("app_visible_ios_no_wifi_identifiers"))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(33_000))
+    XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
