@@ -476,6 +476,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var androidTtsInitialized = false
     private var androidTtsReady = false
     private lateinit var microsoftTts: MicrosoftEdgeTts
+    private data class VoiceHealthRowBinding(
+        val subtitle: TextView,
+        val status: TextView
+    )
+    private val voiceHealthRows =
+        mutableMapOf<VoiceHealthComponent, VoiceHealthRowBinding>()
+    private val voiceHealthRefresh = object : Runnable {
+        override fun run() {
+            if (!voiceHealthSurfaceVisible()) {
+                voiceHealthRows.clear()
+                return
+            }
+            refreshVoiceHealthRows()
+            handler.postDelayed(this, 2_000L)
+        }
+    }
     private var lastDebugSendKey: String? = null
     @Volatile private var lastHistoryLoadedAt = 0L
     private var pendingAsrModelSelection: String? = null
@@ -584,12 +600,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (androidTtsReady) {
                 configureAndroidTtsLanguage()
                 androidTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onStart(utteranceId: String?) {
+                        VoiceRuntimeHealthRegistry.begin(
+                            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
+                        )
+                    }
                     override fun onDone(utteranceId: String?) {
+                        VoiceRuntimeHealthRegistry.success(
+                            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
+                        )
                         runOnUiThread { onVoiceSpeechFinished() }
                     }
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
+                        VoiceRuntimeHealthRegistry.failure(
+                            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
+                            "Android TTS utterance failed"
+                        )
                         runOnUiThread { onVoiceSpeechFinished() }
                     }
                 })
@@ -947,6 +974,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     override fun onDestroy() {
         DesktopRemoteControl.stopAllScreenshotStreams()
         handler.removeCallbacks(asrModelDownloadPoll)
+        handler.removeCallbacks(voiceHealthRefresh)
         handler.removeCallbacks(agentStartupMaintenanceRunnable)
         stopVoiceAssistant()
         voiceAssistantScope.cancel()
@@ -6082,10 +6110,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun startVoiceAssistant() {
         val config = VoiceAssistantSettings.get(this)
         if (!config.enabled) {
+            VoiceRuntimeHealthRegistry.idle(wakeRuntimeChannel(config))
             updateWakeVoiceUi(getString(R.string.voice_status_disabled), getString(R.string.voice_status_disabled_detail))
             return
         }
         if (!ensureRecordPermission()) {
+            VoiceRuntimeHealthRegistry.failure(
+                wakeRuntimeChannel(config),
+                "Microphone permission is required"
+            )
             updateWakeVoiceUi(getString(R.string.voice_status_permission_required), getString(R.string.voice_status_permission_detail))
             return
         }
@@ -6096,6 +6129,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            VoiceRuntimeHealthRegistry.failure(
+                VoiceRuntimeChannel.ANDROID_WAKE_ASR,
+                "Android speech recognition is unavailable"
+            )
             updateWakeVoiceUi(getString(R.string.voice_status_asr_unavailable), getString(R.string.voice_status_asr_unavailable_detail))
             return
         }
@@ -6119,6 +6156,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         speechRecognizer = null
         microsoftTts.stop()
         androidTts?.stop()
+        VoiceRuntimeChannel.entries.forEach(VoiceRuntimeHealthRegistry::idle)
     }
 
     private fun ensureSpeechRecognizer() {
@@ -6127,6 +6165,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {
                     voiceAssistantListening = true
+                    VoiceRuntimeHealthRegistry.begin(
+                        VoiceRuntimeChannel.ANDROID_SYSTEM_ASR
+                    )
+                    if (
+                        VoiceAssistantSettings.get(this@MainActivity).wakeProvider ==
+                        VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR
+                    ) {
+                        VoiceRuntimeHealthRegistry.begin(
+                            VoiceRuntimeChannel.ANDROID_WAKE_ASR
+                        )
+                    }
                     Log.i("SignalASIVoice", "ASR ready, awake=$voiceAssistantAwake")
                 }
                 override fun onBeginningOfSpeech() = Unit
@@ -6134,14 +6183,40 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 override fun onBufferReceived(buffer: ByteArray?) = Unit
                 override fun onEndOfSpeech() {
                     voiceAssistantListening = false
+                    VoiceRuntimeHealthRegistry.idle(
+                        VoiceRuntimeChannel.ANDROID_SYSTEM_ASR
+                    )
+                    VoiceRuntimeHealthRegistry.idle(
+                        VoiceRuntimeChannel.ANDROID_WAKE_ASR
+                    )
                 }
                 override fun onError(error: Int) {
                     Log.w("SignalASIVoice", "ASR error=$error awake=$voiceAssistantAwake")
                     voiceAssistantListening = false
+                    val errorDetail = speechErrorDetail(error)
+                    val routineStop = error == SpeechRecognizer.ERROR_CLIENT ||
+                        error == SpeechRecognizer.ERROR_NO_MATCH ||
+                        error == SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+                    val channels = buildList {
+                        add(VoiceRuntimeChannel.ANDROID_SYSTEM_ASR)
+                        if (
+                            VoiceAssistantSettings.get(this@MainActivity).wakeProvider ==
+                            VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR
+                        ) {
+                            add(VoiceRuntimeChannel.ANDROID_WAKE_ASR)
+                        }
+                    }
+                    channels.forEach { channel ->
+                        if (routineStop) {
+                            VoiceRuntimeHealthRegistry.idle(channel)
+                        } else {
+                            VoiceRuntimeHealthRegistry.failure(channel, errorDetail)
+                        }
+                    }
                     if (agentVoiceListening) {
                         agentVoiceListening = false
                         agentVoiceButton.text = getString(R.string.agent_voice_button)
-                        Toast.makeText(this@MainActivity, speechErrorDetail(error), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, errorDetail, Toast.LENGTH_SHORT).show()
                         return
                     }
                     if (activeMainTab == PAGE_VOICE && !voiceAssistantSpeaking) {
@@ -6155,6 +6230,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 override fun onResults(results: Bundle?) {
                     voiceAssistantListening = false
                     val text = bestSpeechResult(results)
+                    VoiceRuntimeHealthRegistry.success(
+                        VoiceRuntimeChannel.ANDROID_SYSTEM_ASR
+                    )
+                    if (
+                        VoiceAssistantSettings.get(this@MainActivity).wakeProvider ==
+                        VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR
+                    ) {
+                        VoiceRuntimeHealthRegistry.success(
+                            VoiceRuntimeChannel.ANDROID_WAKE_ASR
+                        )
+                    }
                     Log.i("SignalASIVoice", "ASR result=$text awake=$voiceAssistantAwake")
                     if (agentVoiceListening) {
                         handleAgentVoiceResult(text)
@@ -6208,9 +6294,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             engine.start()
             voiceAssistantListening = true
+            VoiceRuntimeHealthRegistry.begin(
+                VoiceRuntimeChannel.OPEN_WAKE_WORD
+            )
             Log.i("SignalASIVoice", "openWakeWord started model=${config.wakeModel} threshold=${config.wakeThreshold}")
         }.onFailure {
             voiceAssistantListening = false
+            VoiceRuntimeHealthRegistry.failure(
+                VoiceRuntimeChannel.OPEN_WAKE_WORD,
+                it.message ?: it.javaClass.simpleName
+            )
             Log.e("SignalASIVoice", "openWakeWord start failed", it)
             updateWakeVoiceUi(getString(R.string.voice_status_local_wake_failed), it.message ?: getString(R.string.voice_status_check_model_permission))
         }
@@ -6222,6 +6315,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         runCatching { wakeWordEngine?.release() }
         wakeWordEngine = null
         voiceAssistantListening = false
+        VoiceRuntimeHealthRegistry.idle(
+            VoiceRuntimeChannel.OPEN_WAKE_WORD
+        )
     }
 
     private fun startWakeListening() {
@@ -6409,6 +6505,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         }.onFailure {
             voiceAssistantListening = false
+            VoiceRuntimeHealthRegistry.failure(
+                VoiceRuntimeChannel.ANDROID_SYSTEM_ASR,
+                it.message ?: it.javaClass.simpleName
+            )
+            if (config.wakeProvider == VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR) {
+                VoiceRuntimeHealthRegistry.failure(
+                    VoiceRuntimeChannel.ANDROID_WAKE_ASR,
+                    it.message ?: it.javaClass.simpleName
+                )
+            }
             Log.e("SignalASIVoice", "ASR start failed", it)
             updateWakeVoiceUi(getString(R.string.voice_status_asr_start_failed), it.message ?: getString(R.string.voice_status_retry_later))
             scheduleVoiceRestart(1200L)
@@ -6433,6 +6539,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun onVoiceWakeDetected(text: String) {
+        VoiceRuntimeHealthRegistry.success(
+            wakeRuntimeChannel(VoiceAssistantSettings.get(this))
+        )
         voiceAssistantAwake = true
         updateWakeVoiceUi(getString(R.string.voice_status_awake), text)
         speakWakeWelcomeThenListen(VoiceAssistantSettings.get(this).welcomeText)
@@ -6671,28 +6780,46 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         updateWakeVoiceUi(getString(R.string.voice_status_speaking), text.take(60))
         val config = VoiceAssistantSettings.get(this)
         if (config.ttsProvider == VoiceAssistantSettings.PROVIDER_MICROSOFT_EDGE) {
+            VoiceRuntimeHealthRegistry.begin(
+                VoiceRuntimeChannel.MICROSOFT_EDGE_TTS
+            )
             var completed = false
             handler.postDelayed({
                 if (!completed && voiceAssistantSpeaking) {
                     completed = true
                     microsoftTts.stop()
+                    VoiceRuntimeHealthRegistry.failure(
+                        VoiceRuntimeChannel.MICROSOFT_EDGE_TTS,
+                        "Microsoft Edge TTS timed out"
+                    )
                     voiceAssistantSpeaking = false
                     after()
                 }
             }, timeoutMs)
             val voice = LanguagePolicySettings.microsoftVoice(config.ttsLanguage, config.microsoftVoice)
-            microsoftTts.speak(text, voice) { success, _ ->
+            microsoftTts.speak(text, voice) { success, error ->
                 runOnUiThread {
                     if (completed) return@runOnUiThread
                     if (success) {
                         completed = true
+                        VoiceRuntimeHealthRegistry.success(
+                            VoiceRuntimeChannel.MICROSOFT_EDGE_TTS
+                        )
                         voiceAssistantSpeaking = false
                         after()
                     } else if (fallbackToAndroid) {
                         completed = true
+                        VoiceRuntimeHealthRegistry.failure(
+                            VoiceRuntimeChannel.MICROSOFT_EDGE_TTS,
+                            error ?: "Microsoft Edge TTS failed"
+                        )
                         speakWithAndroidTts(text, after)
                     } else {
                         completed = true
+                        VoiceRuntimeHealthRegistry.failure(
+                            VoiceRuntimeChannel.MICROSOFT_EDGE_TTS,
+                            error ?: "Microsoft Edge TTS failed"
+                        )
                         voiceAssistantSpeaking = false
                         after()
                     }
@@ -6705,15 +6832,40 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun speakWithAndroidTts(text: String, after: () -> Unit) {
         if (!androidTtsReady) {
+            VoiceRuntimeHealthRegistry.failure(
+                VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
+                "Android TTS is not ready"
+            )
             voiceAssistantSpeaking = false
             after()
             return
         }
+        VoiceRuntimeHealthRegistry.begin(
+            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
+        )
         val utteranceId = "signalasi_voice_${System.currentTimeMillis()}"
         configureAndroidTtsLanguage()
-        androidTts?.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), utteranceId)
+        val speakResult = androidTts?.speak(
+            text,
+            TextToSpeech.QUEUE_FLUSH,
+            Bundle(),
+            utteranceId
+        )
+        if (speakResult == TextToSpeech.ERROR) {
+            VoiceRuntimeHealthRegistry.failure(
+                VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
+                "Android TTS rejected the utterance"
+            )
+            voiceAssistantSpeaking = false
+            after()
+            return
+        }
         handler.postDelayed({
             if (voiceAssistantSpeaking) {
+                VoiceRuntimeHealthRegistry.failure(
+                    VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
+                    "Android TTS timed out"
+                )
                 voiceAssistantSpeaking = false
                 after()
             }
@@ -18393,14 +18545,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         onFailure: () -> Unit = {}
     ) {
         val language = LanguagePolicySettings.resolvedAsrLanguage(this)
+        VoiceRuntimeHealthRegistry.begin(
+            VoiceRuntimeChannel.LOCAL_WHISPER_ASR
+        )
         voiceAssistantScope.launch {
             val result = runCatching { LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language) }
             sourceFile.delete()
             runOnUiThread {
                 val transcript = result.getOrNull().orEmpty().trim()
                 if (transcript.isNotBlank()) {
+                    VoiceRuntimeHealthRegistry.success(
+                        VoiceRuntimeChannel.LOCAL_WHISPER_ASR
+                    )
                     onSuccess(transcript)
                 } else {
+                    VoiceRuntimeHealthRegistry.failure(
+                        VoiceRuntimeChannel.LOCAL_WHISPER_ASR,
+                        result.exceptionOrNull()?.message
+                            ?: getString(R.string.voice_status_transcription_failed)
+                    )
                     Log.e("SignalASILocalASR", "Local transcription failed", result.exceptionOrNull())
                     Toast.makeText(
                         this@MainActivity,
@@ -22626,6 +22789,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "#00EFDE",
             onOffLabel(config.enabled)
         ))
+        voiceHealthRows.clear()
+        addSectionTitle(getString(R.string.voice_health_section))
+        val health = voiceRealtimeHealth(config)
+        VoiceHealthComponent.entries.forEach { component ->
+            featureContent.addView(voiceHealthRow(health[component]))
+        }
+        startVoiceHealthMonitoring()
         addSectionTitle(getString(R.string.voice_section_listening))
         featureContent.addView(featureRow(getString(R.string.voice_low_power_monitor), getString(R.string.voice_low_power_monitor_subtitle), R.drawable.ic_input_voice, onOffLabel(config.enabled)).apply {
             setOnClickListener {
@@ -22983,6 +23153,180 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             VoiceProviderCapabilityId.MICROSOFT_EDGE_TTS
         }
     ]
+
+    private fun voiceRealtimeHealth(
+        config: VoiceAssistantConfig = VoiceAssistantSettings.get(this)
+    ): VoiceRealtimeHealthSnapshot = VoiceRealtimeHealthDetector.detect(
+        context = this,
+        config = config,
+        capabilities = voiceProviderCapabilities(config)
+    )
+
+    private fun voiceHealthRow(entry: VoiceHealthEntry): View {
+        val row = featureRow(
+            voiceHealthTitle(entry.component),
+            voiceHealthDetail(entry),
+            when (entry.component) {
+                VoiceHealthComponent.WAKE_WORD -> R.drawable.ic_input_voice
+                VoiceHealthComponent.ASR -> R.drawable.ic_agent_node
+                VoiceHealthComponent.TTS -> R.drawable.ic_send_plane
+            },
+            voiceHealthStatus(entry.state)
+        ) as LinearLayout
+        val textGroup = row.getChildAt(1) as LinearLayout
+        val subtitle = textGroup.getChildAt(1) as TextView
+        val status = row.getChildAt(2) as TextView
+        status.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            dp(34)
+        ).apply {
+            marginStart = dp(6)
+        }
+        status.minWidth = dp(72)
+        status.setPadding(dp(4), 0, dp(4), 0)
+        voiceHealthRows[entry.component] = VoiceHealthRowBinding(subtitle, status)
+        updateVoiceHealthBinding(entry, voiceHealthRows.getValue(entry.component))
+        row.setOnClickListener {
+            when (entry.component) {
+                VoiceHealthComponent.WAKE_WORD -> refreshVoiceHealthRows()
+                VoiceHealthComponent.ASR -> showAsrProviderPage()
+                VoiceHealthComponent.TTS -> showTtsProviderPage()
+            }
+        }
+        return row
+    }
+
+    private fun startVoiceHealthMonitoring() {
+        handler.removeCallbacks(voiceHealthRefresh)
+        refreshVoiceHealthRows()
+        handler.postDelayed(voiceHealthRefresh, 2_000L)
+    }
+
+    private fun refreshVoiceHealthRows() {
+        if (voiceHealthRows.isEmpty()) return
+        val snapshot = voiceRealtimeHealth()
+        snapshot.entries.forEach { entry ->
+            voiceHealthRows[entry.component]?.let { binding ->
+                updateVoiceHealthBinding(entry, binding)
+            }
+        }
+    }
+
+    private fun updateVoiceHealthBinding(
+        entry: VoiceHealthEntry,
+        binding: VoiceHealthRowBinding
+    ) {
+        binding.subtitle.text = voiceHealthDetail(entry)
+        binding.status.text = voiceHealthStatus(entry.state)
+        binding.status.setTextColor(
+            when (entry.state) {
+                VoiceHealthState.ACTIVE,
+                VoiceHealthState.HEALTHY,
+                VoiceHealthState.READY -> getColorCompat(R.color.signalasi_green)
+                VoiceHealthState.DEGRADED,
+                VoiceHealthState.BLOCKED -> Color.parseColor("#D48B18")
+                VoiceHealthState.CHECKING,
+                VoiceHealthState.DISABLED -> getColorCompat(R.color.text_secondary)
+            }
+        )
+    }
+
+    private fun voiceHealthSurfaceVisible(): Boolean =
+        ::featurePage.isInitialized &&
+            featurePage.visibility == View.VISIBLE &&
+            featureTitle.text == getString(R.string.voice_settings_title) &&
+            voiceHealthRows.isNotEmpty()
+
+    private fun voiceHealthTitle(component: VoiceHealthComponent): String = getString(
+        when (component) {
+            VoiceHealthComponent.WAKE_WORD -> R.string.voice_health_wake
+            VoiceHealthComponent.ASR -> R.string.voice_health_asr
+            VoiceHealthComponent.TTS -> R.string.voice_health_tts
+        }
+    )
+
+    private fun voiceHealthStatus(state: VoiceHealthState): String = getString(
+        when (state) {
+            VoiceHealthState.ACTIVE -> R.string.voice_health_active
+            VoiceHealthState.HEALTHY -> R.string.voice_health_healthy
+            VoiceHealthState.READY -> R.string.voice_health_ready
+            VoiceHealthState.CHECKING -> R.string.voice_health_checking
+            VoiceHealthState.DEGRADED -> R.string.voice_health_degraded
+            VoiceHealthState.BLOCKED -> R.string.voice_health_action_needed
+            VoiceHealthState.DISABLED -> R.string.voice_health_disabled
+        }
+    )
+
+    private fun voiceHealthDetail(entry: VoiceHealthEntry): String {
+        val detail = when (entry.state) {
+            VoiceHealthState.ACTIVE -> getString(
+                R.string.voice_health_active_detail,
+                voiceHealthAge(entry.runtime.startedAtMillis)
+            )
+            VoiceHealthState.HEALTHY -> getString(
+                R.string.voice_health_success_detail,
+                voiceHealthAge(entry.runtime.lastSuccessAtMillis)
+            )
+            VoiceHealthState.READY -> getString(R.string.voice_health_ready_detail)
+            VoiceHealthState.CHECKING -> getString(R.string.voice_provider_checking_detail)
+            VoiceHealthState.DEGRADED -> getString(
+                R.string.voice_health_failure_detail,
+                entry.runtime.lastFailureReason.ifBlank {
+                    getString(R.string.voice_health_runtime_failure)
+                }
+            )
+            VoiceHealthState.BLOCKED -> voiceHealthIssueDetail(entry.issue)
+            VoiceHealthState.DISABLED -> getString(R.string.voice_health_disabled_detail)
+        }
+        return getString(R.string.voice_health_provider_detail, entry.provider, detail)
+    }
+
+    private fun voiceHealthIssueDetail(issue: VoiceHealthIssue): String = getString(
+        when (issue) {
+            VoiceHealthIssue.MICROPHONE_MISSING ->
+                R.string.voice_capability_microphone_missing
+            VoiceHealthIssue.PERMISSION_REQUIRED ->
+                R.string.voice_capability_microphone_permission
+            VoiceHealthIssue.RUNTIME_MISSING ->
+                R.string.voice_health_runtime_missing
+            VoiceHealthIssue.MODEL_MISSING ->
+                R.string.voice_health_model_missing
+            VoiceHealthIssue.NETWORK_REQUIRED ->
+                R.string.voice_capability_network_required
+            VoiceHealthIssue.LANGUAGE_UNSUPPORTED ->
+                R.string.voice_health_language_unsupported
+            VoiceHealthIssue.CHECKING ->
+                R.string.voice_provider_checking_detail
+            VoiceHealthIssue.PROVIDER_UNAVAILABLE ->
+                R.string.voice_health_provider_unavailable
+            VoiceHealthIssue.RECENT_FAILURE ->
+                R.string.voice_health_runtime_failure
+            VoiceHealthIssue.DISABLED ->
+                R.string.voice_health_disabled_detail
+            VoiceHealthIssue.NONE ->
+                R.string.voice_health_ready_detail
+        }
+    )
+
+    private fun voiceHealthAge(timestampMillis: Long): String {
+        if (timestampMillis <= 0L) return getString(R.string.voice_health_now)
+        val seconds = ((System.currentTimeMillis() - timestampMillis).coerceAtLeast(0L) / 1_000L)
+        return when {
+            seconds < 1L -> getString(R.string.voice_health_now)
+            seconds < 60L -> getString(R.string.voice_health_seconds, seconds)
+            seconds < 3_600L -> getString(R.string.voice_health_minutes, seconds / 60L)
+            else -> getString(R.string.voice_health_hours, seconds / 3_600L)
+        }
+    }
+
+    private fun wakeRuntimeChannel(
+        config: VoiceAssistantConfig = VoiceAssistantSettings.get(this)
+    ): VoiceRuntimeChannel =
+        if (config.wakeProvider == VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR) {
+            VoiceRuntimeChannel.ANDROID_WAKE_ASR
+        } else {
+            VoiceRuntimeChannel.OPEN_WAKE_WORD
+        }
 
     private fun voiceCapabilityTitle(id: VoiceProviderCapabilityId): String = getString(
         when (id) {
@@ -24227,6 +24571,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showFeaturePage(title: String, preserveDesktopControlId: String? = null) {
+        handler.removeCallbacks(voiceHealthRefresh)
+        voiceHealthRows.clear()
         activeDesktopControlId
             ?.takeIf { it != preserveDesktopControlId }
             ?.let(DesktopRemoteControl::stopScreenshotStream)
