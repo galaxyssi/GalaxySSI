@@ -86,7 +86,7 @@ enum AgentIOSHomeAssistantNativeToolCatalog {
   static let toolIds: Set<String> = [connectionStatus, entitiesList, entityRead, serviceCall]
 
   static func definitions(
-    provider: AgentIOSHomeAssistantToolProviding = AgentIOSUnavailableHomeAssistantToolProvider()
+    provider: AgentIOSHomeAssistantToolProviding = AgentIOSConfiguredHomeAssistantToolProvider()
   ) -> [AgentPhoneNativeToolDefinition] {
     [
       definition(

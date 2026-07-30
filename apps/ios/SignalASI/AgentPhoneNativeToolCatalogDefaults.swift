@@ -13,7 +13,8 @@ extension AgentPhoneNativeToolCatalog {
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
-    homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSUnavailableHomeAssistantToolProvider(),
+    homeAssistantSettingsProvider: @escaping () -> HomeAssistantSettings = { .default },
+    homeAssistantProvider: AgentIOSHomeAssistantToolProviding? = nil,
     notificationProvider: AgentIOSNotificationToolProviding = AgentIOSUnavailableNotificationToolProvider(),
     visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSUnavailableVisibleCaptureToolProvider(),
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSUnavailableWebMediaToolProvider(),
@@ -33,6 +34,9 @@ extension AgentPhoneNativeToolCatalog {
       nowMillis: nowMillis,
       stateStore: stores.workspaceStateStore
     )
+    let resolvedHomeAssistantProvider = homeAssistantProvider ?? AgentIOSConfiguredHomeAssistantToolProvider(
+      settingsProvider: homeAssistantSettingsProvider
+    )
     return try createRegistry(
       workspaceStore: resolvedWorkspaceStore,
       actionExecutor: actionExecutor,
@@ -41,7 +45,7 @@ extension AgentPhoneNativeToolCatalog {
       replayStore: stores.replayStore,
       auditStore: stores.auditStore,
       nowMillis: nowMillis,
-      homeAssistantProvider: homeAssistantProvider,
+      homeAssistantProvider: resolvedHomeAssistantProvider,
       notificationProvider: notificationProvider,
       visibleCaptureProvider: visibleCaptureProvider,
       webMediaProvider: webMediaProvider,
@@ -65,7 +69,8 @@ extension AgentPhoneNativeToolCatalog {
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    }
+    },
+    homeAssistantSettingsProvider: @escaping () -> HomeAssistantSettings = { .default }
   ) throws -> AgentNativeToolRegistry {
     try defaultRegistry(
       workspaceStore: workspaceStore,
@@ -74,7 +79,8 @@ extension AgentPhoneNativeToolCatalog {
       capabilityStatusProvider: capabilityStatusProvider,
       storageRootURL: storageRootURL,
       fileManager: fileManager,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      homeAssistantSettingsProvider: homeAssistantSettingsProvider
     )
   }
 }

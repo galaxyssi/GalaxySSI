@@ -204,4 +204,160 @@ extension SignalASIStoreTests {
     XCTAssertEqual(secret.status, .failed)
     XCTAssertEqual(secret.error?.code, "invalid_service_data")
   }
+
+  func testAgentIOSHomeAssistantRESTProviderUsesConfiguredSettingsAndRedactsSecrets() throws {
+    let settings = HomeAssistantSettings(
+      enabled: true,
+      baseUrl: "http://homeassistant.local:8123/",
+      accessToken: "ha-token",
+      defaultEntityId: "light.office"
+    )
+    let transport = TestHomeAssistantRESTTransport(responses: [
+      "GET /api/": [#"{"message":"API running."}"#],
+      "GET /api/states": [
+        #"""
+        [
+          {"entity_id":"lock.front_door","state":"locked","attributes":{"friendly_name":"Front Door"}},
+          {"entity_id":"light.office","state":"on","attributes":{"friendly_name":"Office"}},
+          {"entity_id":"switch.fan","state":"off","attributes":{"friendly_name":"Fan"}}
+        ]
+        """#
+      ],
+      "GET /api/states/lock.front_door": [
+        #"{"entity_id":"lock.front_door","state":"locked","attributes":{"friendly_name":"Front Door"}}"#
+      ],
+      "GET /api/states/light.office": [
+        #"{"entity_id":"light.office","state":"off","attributes":{"friendly_name":"Office"}}"#,
+        #"{"entity_id":"light.office","state":"on","attributes":{"friendly_name":"Office"}}"#
+      ],
+      "POST /api/services/homeassistant/turn_on": [
+        #"[{"entity_id":"light.office","state":"on"}]"#
+      ]
+    ])
+    let provider = AgentIOSConfiguredHomeAssistantToolProvider(
+      settingsProvider: { settings },
+      transport: transport,
+      stateVerificationRetries: 0
+    )
+
+    let connection = provider.connectionStatus(nowMillis: 10_000)
+    let listed = provider.listEntities(query: "office", domains: ["light", "lock"], limit: 10, nowMillis: 10_001)
+    let protectedRead = provider.readEntity(entityId: "LOCK.FRONT_DOOR", nowMillis: 10_002)
+    let service = provider.callService(
+      serviceDomain: "homeassistant",
+      service: "turn_on",
+      entityId: "light.office",
+      serviceData: ["brightness": .int(128)],
+      nowMillis: 10_003
+    )
+
+    XCTAssertEqual(provider.availability().status, .available)
+    XCTAssertTrue(connection.toJson(), connection.isSuccess)
+    XCTAssertEqual(connection.output["connected"], .bool(true))
+    XCTAssertEqual(connection.metadata["access_token_exposed"], .bool(false))
+    XCTAssertEqual(connection.metadata["base_url_exposed"], .bool(false))
+
+    XCTAssertTrue(listed.toJson(), listed.isSuccess)
+    XCTAssertEqual(listed.output["result_count"], .int(1))
+    XCTAssertEqual(listed.output["total_matched"], .int(1))
+    let listedEntity = try XCTUnwrap(listed.output["entities"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(listedEntity["entity_id"], .string("light.office"))
+    XCTAssertEqual(listedEntity["state"], .string("on"))
+    XCTAssertEqual(listed.output["protected_state_count"], .int(0))
+
+    XCTAssertTrue(protectedRead.toJson(), protectedRead.isSuccess)
+    let protectedEntity = try XCTUnwrap(protectedRead.output["entity"]?.objectValue)
+    XCTAssertEqual(protectedEntity["entity_id"], .string("lock.front_door"))
+    XCTAssertEqual(protectedEntity["state"], .string("protected"))
+    XCTAssertEqual(protectedRead.metadata["protected_state_redacted"], .bool(true))
+
+    XCTAssertTrue(service.toJson(), service.isSuccess)
+    XCTAssertEqual(service.output["request_accepted"], .bool(true))
+    XCTAssertEqual(service.output["controller_state_verified"], .bool(true))
+    XCTAssertEqual(service.output["previous_state"], .string("off"))
+    XCTAssertEqual(service.output["current_state"], .string("on"))
+    XCTAssertEqual(service.output["changed_state_count"], .int(1))
+    XCTAssertEqual(service.metadata["single_entity_scope"], .bool(true))
+    XCTAssertEqual(service.metadata["access_token_exposed"], .bool(false))
+    let postRequest = try XCTUnwrap(transport.requests.first { $0.method.testName == "POST" })
+    XCTAssertEqual(postRequest.body["entity_id"], .string("light.office"))
+    XCTAssertEqual(postRequest.body["brightness"], .int(128))
+    XCTAssertEqual(transport.requestKeys, [
+      "GET /api/",
+      "GET /api/states",
+      "GET /api/states/lock.front_door",
+      "GET /api/states/light.office",
+      "POST /api/services/homeassistant/turn_on",
+      "GET /api/states/light.office"
+    ])
+  }
+
+  func testAgentPhoneNativeToolCatalogDefaultRegistryUsesHomeAssistantSettingsProvider() throws {
+    let root = try temporaryDirectory("native-tool-home-assistant-default")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let actionExecutor = TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: true, message: "Executed")
+    }
+
+    let registry = try AgentPhoneNativeToolCatalog.defaultRegistry(
+      actionExecutor: actionExecutor,
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
+      storageRootURL: root,
+      homeAssistantSettingsProvider: {
+        HomeAssistantSettings(
+          enabled: true,
+          baseUrl: "http://homeassistant.local:8123",
+          accessToken: "ha-token",
+          defaultEntityId: "light.office"
+        )
+      }
+    )
+    let definition = try XCTUnwrap(registry.lookup(AgentIOSHomeAssistantNativeToolCatalog.connectionStatus))
+
+    XCTAssertEqual(definition.provenanceMetadata["implementation"], "signalasi.ios.home_assistant_rest")
+    XCTAssertEqual(definition.descriptor.availability.status, .available)
+    XCTAssertEqual(definition.provenanceMetadata["credential_exposure"], "none")
+  }
+}
+
+private final class TestHomeAssistantRESTTransport: AgentIOSHomeAssistantRESTTransport {
+  private var responses: [String: [Data]]
+  private(set) var requests: [AgentIOSHomeAssistantHTTPRequest] = []
+
+  var requestKeys: [String] {
+    requests.map { "\($0.method.testName) \($0.path)" }
+  }
+
+  init(responses: [String: [String]]) {
+    self.responses = responses.mapValues { values in
+      values.map { Data($0.utf8) }
+    }
+  }
+
+  func send(_ request: AgentIOSHomeAssistantHTTPRequest, settings: HomeAssistantSettings) throws -> Data {
+    guard settings.baseUrl == "http://homeassistant.local:8123",
+          settings.accessToken == "ha-token" else {
+      throw AgentIOSHomeAssistantRESTError.invalidURL
+    }
+    requests.append(request)
+    let key = "\(request.method.testName) \(request.path)"
+    guard var values = responses[key], !values.isEmpty else {
+      throw AgentIOSHomeAssistantRESTError.httpStatus(404)
+    }
+    let data = values.removeFirst()
+    responses[key] = values
+    return data
+  }
+}
+
+private extension AgentIOSHomeAssistantHTTPRequest.Method {
+  var testName: String {
+    switch self {
+    case .get:
+      return "GET"
+    case .post:
+      return "POST"
+    }
+  }
 }

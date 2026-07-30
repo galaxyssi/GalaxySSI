@@ -132,7 +132,7 @@ enum AgentPhoneNativeToolCatalog {
     replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
     auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
-    homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSUnavailableHomeAssistantToolProvider(),
+    homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSConfiguredHomeAssistantToolProvider(),
     notificationProvider: AgentIOSNotificationToolProviding = AgentIOSUnavailableNotificationToolProvider(),
     visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSUnavailableVisibleCaptureToolProvider(),
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSUnavailableWebMediaToolProvider(),
