@@ -2068,6 +2068,107 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(transport.receive())
   }
 
+  func testAgentMcpRemoteSessionInitializesListsAndCallsTools() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}},"instructions":"ready"}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"relay.switch","title":"Switch relay","description":"Turns relay on","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":false}}],"nextCursor":"next-page"}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"done"}],"structuredContent":{"state":"on"},"isError":false}}"#
+      )
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+    let session = AgentMcpRemoteSession(transport: transport)
+
+    let initialized = try await session.initialize(
+      clientInfo: AgentMcpImplementationInfo(name: "SignalASI iOS", version: "1")
+    )
+    let tools = try await session.listTools()
+    let call = try await session.callTool(name: "relay.switch", arguments: ["enabled": .bool(true)])
+
+    XCTAssertEqual(session.state, .active)
+    XCTAssertEqual(initialized.protocolVersion, "2025-06-18")
+    XCTAssertEqual(initialized.serverInfo.name, "relay-mcp")
+    XCTAssertTrue(initialized.capabilities.tools)
+    XCTAssertEqual(tools.items.map(\.name), ["relay.switch"])
+    XCTAssertEqual(tools.nextCursor, "next-page")
+    XCTAssertEqual(tools.items.first?.inputSchema["type"], .string("object"))
+    XCTAssertEqual(tools.items.first?.annotations?["readOnlyHint"], .bool(false))
+    XCTAssertEqual(call.content.first?.text, "done")
+    XCTAssertEqual(call.structuredContent?["state"], .string("on"))
+    XCTAssertEqual(networking.requests.count, 4)
+    XCTAssertTrue(networking.requests[0].body.contains(#""method":"initialize""#))
+    XCTAssertTrue(networking.requests[1].body.contains(#""method":"notifications/initialized""#))
+    XCTAssertTrue(networking.requests[2].body.contains(#""method":"tools/list""#))
+    XCTAssertTrue(networking.requests[3].body.contains(#""method":"tools/call""#))
+  }
+
+  func testAgentMcpRemoteSessionMapsJsonRpcError() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"tools unavailable","data":{"reason":"disabled"}}}"#
+      )
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+    let session = AgentMcpRemoteSession(transport: transport)
+    _ = try await session.initialize(clientInfo: AgentMcpImplementationInfo(name: "SignalASI iOS", version: "1"))
+
+    do {
+      _ = try await session.listTools()
+      XCTFail("Expected JSON-RPC error from MCP tools/list")
+    } catch {
+      let sessionError = try XCTUnwrap(error as? AgentMcpRemoteSessionError)
+      XCTAssertEqual(sessionError.kind, .remote)
+      XCTAssertEqual(sessionError.requestId, 2)
+      XCTAssertEqual(sessionError.method, "tools/list")
+      XCTAssertEqual(sessionError.rpcCode, -32601)
+      XCTAssertEqual(sessionError.data?.objectValue?["reason"], .string("disabled"))
+      XCTAssertEqual(sessionError.message, "tools unavailable")
+    }
+  }
+
+  func testAgentMcpRemoteSessionRequiresNegotiatedToolsCapability() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: "")
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+    let session = AgentMcpRemoteSession(transport: transport)
+    _ = try await session.initialize(clientInfo: AgentMcpImplementationInfo(name: "SignalASI iOS", version: "1"))
+
+    do {
+      _ = try await session.listTools()
+      XCTFail("Expected missing tools capability to reject tools/list")
+    } catch {
+      let sessionError = try XCTUnwrap(error as? AgentMcpRemoteSessionError)
+      XCTAssertEqual(sessionError.kind, .capabilityNotNegotiated)
+      XCTAssertEqual(sessionError.method, "tools/list")
+      XCTAssertEqual(networking.requests.count, 2)
+    }
+  }
+
   func testAgentMcpLocalRuntimeResponseCodecDecodesLastStructuredBridgeResult() throws {
     let result = try AgentMcpLocalRuntimeResponseCodec.decode(
       """
