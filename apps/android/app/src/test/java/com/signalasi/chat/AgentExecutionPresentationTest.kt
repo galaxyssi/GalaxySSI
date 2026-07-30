@@ -44,8 +44,159 @@ class AgentExecutionPresentationTest {
 
         assertEquals(AgentExecutionLocationKind.PHONE, phone.locationKind)
         assertEquals("SignalASI", phone.executorLabel)
-        assertEquals(AgentExecutionLocationKind.CLOUD, cloud.locationKind)
+        assertEquals(AgentExecutionLocationKind.PHONE, cloud.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.PHONE_CLOUD_API, cloud.runtimeKind)
         assertEquals("DeepSeek", cloud.executorLabel)
+    }
+
+    @Test
+    fun phoneCloudApiRemainsPhoneHosted() {
+        val presentation = AgentExecutionPresentationPolicy.local(
+            route = AgentRoute(
+                kind = AgentRouteKind.CLOUD_MODEL,
+                targetId = "deepseek",
+                targetTitle = "DeepSeek",
+                deliveryMode = "mobile_cloud_api",
+                executionLocationKind = AgentExecutionLocationKind.PHONE,
+                executionRuntimeKind = AgentExecutionRuntimeKind.PHONE_CLOUD_API
+            ),
+            action = AgentAction(
+                id = "cloud",
+                kind = AgentActionKind.CALL_CONNECTOR,
+                target = "DeepSeek",
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.WAITING_RESPONSE,
+                description = "Ask DeepSeek"
+            ),
+            selectedAgentOrModel = "DeepSeek",
+            phase = AgentPhase.WAITING_RESPONSE,
+            currentStep = "Waiting for model",
+            startedAtMillis = 1_000L
+        )
+
+        assertEquals(AgentExecutionLocationKind.PHONE, presentation.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.PHONE_CLOUD_API, presentation.runtimeKind)
+    }
+
+    @Test
+    fun phoneLinuxIsDerivedFromValidatedToolIdentity() {
+        val location = AgentExecutionPresentationPolicy.location(
+            route = AgentRoute(kind = AgentRouteKind.LOCAL_SYSTEM),
+            action = AgentAction(
+                id = "runtime",
+                kind = AgentActionKind.CALL_NATIVE_TOOL,
+                target = "Phone Linux",
+                risk = AgentRisk.MEDIUM,
+                status = AgentActionStatus.RUNNING,
+                description = "Run Python",
+                parameters = mapOf("tool_id" to AgentOnDeviceRuntimeTools.EXECUTE)
+            )
+        )
+
+        assertEquals(AgentExecutionLocationKind.PHONE, location.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.PHONE_LINUX, location.runtimeKind)
+        assertEquals(AgentOnDeviceRuntimeTools.EXECUTE, location.runtimeId)
+    }
+
+    @Test
+    fun desktopNativeToolUsesDesktopExecutionHost() {
+        val route = AgentRouteResolver.resolve(
+            action = AgentAction(
+                id = "desktop-file",
+                kind = AgentActionKind.CALL_NATIVE_TOOL,
+                target = "Read Desktop workspace text",
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.RUNNING,
+                description = "Read a Desktop file",
+                parameters = mapOf(
+                    "tool_id" to AgentDesktopRemoteNativeTools.FILE_READ_TEXT,
+                    "_signalasi_native_tool_location" to AgentNativeToolLocation.DESKTOP.wireValue,
+                    "_signalasi_execution_device_id" to "desktop-1"
+                )
+            ),
+            targets = emptyList()
+        )
+
+        assertEquals(AgentRouteKind.LOCAL_SYSTEM, route.kind)
+        assertEquals(AgentExecutionLocationKind.DESKTOP, route.executionLocationKind)
+        assertEquals(AgentExecutionRuntimeKind.DESKTOP_TOOL, route.executionRuntimeKind)
+        assertEquals("desktop-1", route.executionDeviceId)
+    }
+
+    @Test
+    fun pairedDesktopContractProducesTrustedDesktopLocation() {
+        val presentation = AgentExecutionPresentationPolicy.remote(
+            executorId = "codex",
+            executorLabel = "Codex",
+            locationKind = "desktop",
+            locationId = "desktop-1",
+            locationName = "WORKSTATION",
+            runtimeKind = "desktop_agent",
+            runtimeId = "codex",
+            contract = AgentExecutionLocationContract.VERSION,
+            status = "running",
+            currentStep = "Reading files",
+            startedAtMillis = 1_000L,
+            completedAtMillis = 0L,
+            advertisedCancellable = true
+        )
+
+        assertEquals(AgentExecutionLocationKind.DESKTOP, presentation.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.DESKTOP_AGENT, presentation.runtimeKind)
+        assertEquals("codex", presentation.runtimeId)
+        assertTrue(presentation.locationTrusted)
+    }
+
+    @Test
+    fun remotePayloadCannotClaimPhoneExecution() {
+        val presentation = AgentExecutionPresentationPolicy.remote(
+            executorId = "codex",
+            executorLabel = "Codex",
+            locationKind = "phone",
+            locationId = "phone-1",
+            locationName = "This phone",
+            runtimeKind = "phone_native",
+            contract = AgentExecutionLocationContract.VERSION,
+            status = "running",
+            currentStep = "Running",
+            startedAtMillis = 1_000L,
+            completedAtMillis = 0L,
+            advertisedCancellable = true
+        )
+
+        assertEquals(AgentExecutionLocationKind.DESKTOP, presentation.locationKind)
+        assertEquals(AgentExecutionRuntimeKind.DESKTOP_AGENT, presentation.runtimeKind)
+        assertFalse(presentation.locationTrusted)
+    }
+
+    @Test
+    fun desktopLocalModelUsesDesktopExecutionHost() {
+        val route = AgentRouteResolver.resolve(
+            action = AgentAction(
+                id = "local-model",
+                kind = AgentActionKind.CALL_CONNECTOR,
+                target = "Local LLM",
+                risk = AgentRisk.LOW,
+                status = AgentActionStatus.WAITING_RESPONSE,
+                description = "Ask local model",
+                parameters = mapOf("connector_id" to "local-llm")
+            ),
+            targets = listOf(
+                AgentCallableTarget(
+                    id = "local-llm",
+                    title = "Local LLM",
+                    kind = AgentConnectorKind.MODEL,
+                    status = AgentConnectorStatus.AVAILABLE,
+                    capabilities = listOf(AgentCapability.LOCAL_INFERENCE),
+                    failureDomain = "desktop-1"
+                )
+            )
+        )
+
+        assertEquals(AgentRouteKind.LOCAL_MODEL, route.kind)
+        assertEquals(AgentExecutionLocationKind.DESKTOP, route.executionLocationKind)
+        assertEquals(AgentExecutionRuntimeKind.DESKTOP_AGENT, route.executionRuntimeKind)
+        assertEquals("desktop-1", route.executionDeviceId)
     }
 
     @Test

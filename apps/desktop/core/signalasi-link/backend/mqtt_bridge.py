@@ -23,6 +23,7 @@ import paho.mqtt.client as mqtt
 from api_response import api_error, api_ok
 from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync
 from agent_task_manager import (
+    EXECUTION_LOCATION_CONTRACT,
     MAX_DELIVERY_TRACE_EVENTS,
     TERMINAL_STATES,
     agent_task_manager,
@@ -5105,6 +5106,12 @@ def capability_manifest(client_route_id: str = "") -> dict:
                 "browser_session",
             ],
         },
+        "execution_location": {
+            "contract": EXECUTION_LOCATION_CONTRACT,
+            "host": "desktop",
+            "location_id": desktop_id(),
+            "location_name": desktop_name(),
+        },
         "features": [
             "tasks",
             "task_events",
@@ -5135,6 +5142,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "agent_reputation_snapshots_v1",
             "provider_profile_v1",
             "provider_performance_observations_v1",
+            "explicit_execution_location_v1",
         ],
         "limits": {
             "max_parallel_tasks": int(os.environ.get("SIGNALASI_MAX_PARALLEL_TASKS", "4")),

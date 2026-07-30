@@ -153,10 +153,17 @@ class AgentTaskStoreTests(unittest.TestCase):
 
             execution = manager.get(task.task_id).public()["execution_view"]
 
+            self.assertEqual(
+                "signalasi.execution-location/1.0",
+                execution["contract"],
+            )
             self.assertEqual("codex", execution["executor_id"])
             self.assertEqual("desktop", execution["location_kind"])
             self.assertTrue(execution["location_id"])
             self.assertTrue(execution["location_name"])
+            self.assertEqual("desktop_agent", execution["runtime_kind"])
+            self.assertEqual("codex", execution["runtime_id"])
+            self.assertEqual("paired_desktop", execution["trusted_source"])
             self.assertEqual("Reading source files", execution["current_step"])
             self.assertTrue(execution["cancellable"])
 

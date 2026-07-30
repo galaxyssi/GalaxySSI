@@ -275,6 +275,12 @@ internal class AgentTaskDatabase(
             .put("target_title", record.targetTitle)
             .put("risk", record.risk.name)
             .put("blocked", record.blocked)
+            .put("execution_location_kind", record.executionLocationKind.name)
+            .put("execution_runtime_kind", record.executionRuntimeKind.name)
+            .put("execution_location_id", record.executionLocationId)
+            .put("execution_location_name", record.executionLocationName)
+            .put("execution_runtime_id", record.executionRuntimeId)
+            .put("execution_location_trusted", record.executionLocationTrusted)
             .put("result", record.result)
             .put("verification", record.verification)
             .put("output_files", JSONArray(record.outputFiles))
@@ -292,6 +298,18 @@ internal class AgentTaskDatabase(
             targetTitle = json.optString("target_title"),
             risk = enumOrDefault(json.optString("risk"), AgentRisk.LOW),
             blocked = json.optBoolean("blocked"),
+            executionLocationKind = enumOrDefault(
+                json.optString("execution_location_kind"),
+                AgentExecutionLocationKind.UNKNOWN
+            ),
+            executionRuntimeKind = enumOrDefault(
+                json.optString("execution_runtime_kind"),
+                AgentExecutionRuntimeKind.UNKNOWN
+            ),
+            executionLocationId = json.optString("execution_location_id"),
+            executionLocationName = json.optString("execution_location_name"),
+            executionRuntimeId = json.optString("execution_runtime_id"),
+            executionLocationTrusted = json.optBoolean("execution_location_trusted", true),
             result = json.optString("result"),
             verification = json.optString("verification"),
             outputFiles = json.optJSONArray("output_files").strings(),
@@ -320,6 +338,9 @@ internal class AgentTaskDatabase(
             record.executionLog.joinToString("\n"),
             record.phase.name,
             record.routeKind.name,
+            record.executionLocationKind.name,
+            record.executionRuntimeKind.name,
+            record.executionLocationName,
             record.risk.name
         ).joinToString("\n").lowercase()
         var total = if (haystack.contains(normalizedQuery)) 10 else 0

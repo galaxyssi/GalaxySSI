@@ -115,7 +115,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val state: AgentUiState,
         val conversation: AgentConversation,
         val transcriptPage: AgentTranscriptPage,
-        val insightCount: Int
+        val insightCount: Int,
+        val tasks: List<AgentTaskRecord>
     )
 
     private data class ControlCenterDestination(
@@ -755,10 +756,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         pageSize = INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS
                     )
                     val insightCount = globalSuperAgentRuntime.newProactiveInsightCount()
-                    AgentInitialHydration(state, conversation, transcriptPage, insightCount)
+                    AgentInitialHydration(state, conversation, transcriptPage, insightCount, tasks)
                 }
                 runOnUiThread {
                     outcome.onSuccess { hydration ->
+                        hydration.tasks.forEach { task ->
+                            rememberAgentExecutionPresentation(
+                                task.taskId,
+                                AgentExecutionPresentationPolicy.local(
+                                    routeKind = task.routeKind,
+                                    targetTitle = task.targetTitle,
+                                    selectedAgentOrModel = task.targetTitle,
+                                    phase = task.phase,
+                                    currentStep = task.executionLog.lastOrNull().orEmpty(),
+                                    startedAtMillis = task.createdAtMillis,
+                                    completedAtMillis = task.updatedAtMillis.takeIf {
+                                        task.phase in setOf(
+                                            AgentPhase.COMPLETED,
+                                            AgentPhase.FAILED,
+                                            AgentPhase.CANCELLED,
+                                            AgentPhase.BLOCKED
+                                        )
+                                    } ?: 0L,
+                                    resolvedLocation =
+                                        AgentExecutionPresentationPolicy.location(task)
+                                )
+                            )
+                        }
                         resetAgentTranscriptRendering(hydration.conversation.id)
                         agentTranscriptWindow.replace(
                             hydration.conversation.id,
@@ -1833,10 +1857,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ?.optString("location_kind")
                     .orEmpty()
                     .ifBlank { "desktop" },
+                locationId = executionView
+                    ?.optString("location_id")
+                    .orEmpty(),
                 locationName = executionView
                     ?.optString("location_name")
                     .orEmpty()
                     .ifBlank { envelope.optString("desktop_name") },
+                runtimeKind = executionView
+                    ?.optString("runtime_kind")
+                    .orEmpty(),
+                runtimeId = executionView
+                    ?.optString("runtime_id")
+                    .orEmpty(),
+                runtimeName = executionView
+                    ?.optString("runtime_name")
+                    .orEmpty(),
+                contract = executionView
+                    ?.optString("contract")
+                    .orEmpty(),
                 status = status,
                 currentStep = currentStep.ifBlank { statusLabel },
                 startedAtMillis = executionView
@@ -2118,6 +2157,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentTaskPersistenceExecutor.execute {
             val taskStore = SQLiteAgentTaskStore(applicationContext)
             val existingTask = taskStore.find(taskId)
+            val executionView = envelope.optJSONObject("execution_view")
+            val execution = AgentExecutionPresentationPolicy.remote(
+                executorId = executionView?.optString("executor_id").orEmpty()
+                    .ifBlank { envelope.optString("agent_id") },
+                executorLabel = targetName,
+                locationKind = executionView?.optString("location_kind").orEmpty()
+                    .ifBlank { "desktop" },
+                locationId = executionView?.optString("location_id").orEmpty(),
+                locationName = executionView?.optString("location_name").orEmpty()
+                    .ifBlank { envelope.optString("desktop_name") },
+                runtimeKind = executionView?.optString("runtime_kind").orEmpty(),
+                runtimeId = executionView?.optString("runtime_id").orEmpty(),
+                runtimeName = executionView?.optString("runtime_name").orEmpty(),
+                contract = executionView?.optString("contract").orEmpty(),
+                status = status,
+                currentStep = envelope.optString("current_step"),
+                startedAtMillis = executionView?.optLong("started_at")
+                    ?.takeIf { it > 0L }
+                    ?: envelope.optLong("started_at", envelope.optLong("created_at")),
+                completedAtMillis = executionView?.optLong("completed_at")
+                    ?: envelope.optLong("completed_at"),
+                advertisedCancellable = executionView?.optBoolean("cancellable", true) ?: true
+            )
             val outputFiles = buildList {
                 val files = envelope.optJSONArray("output_files") ?: org.json.JSONArray()
                 for (index in 0 until files.length()) {
@@ -2147,6 +2209,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     targetTitle = targetName,
                     risk = existingTask?.risk ?: AgentRisk.LOW,
                     blocked = status == "waiting_approval",
+                    executionLocationKind = execution.locationKind,
+                    executionRuntimeKind = execution.runtimeKind,
+                    executionLocationId = execution.locationId,
+                    executionLocationName = execution.locationLabelHint,
+                    executionRuntimeId = execution.runtimeId.ifBlank { execution.executorId },
+                    executionLocationTrusted = execution.locationTrusted,
                     result = envelope.optString("error").ifBlank { existingTask?.result.orEmpty() },
                     verification = existingTask?.verification.orEmpty(),
                     outputFiles = if (outputFiles.isNotEmpty()) {
@@ -3476,8 +3544,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             .ifBlank { agentExecutionPhaseText(phase) }
         return AgentExecutionPresentationPolicy.local(
-            routeKind = route?.kind ?: AgentRouteKind.UNKNOWN,
-            targetTitle = route?.targetTitle.orEmpty(),
+            route = route ?: AgentRoute(),
+            action = state?.pendingAction ?: state?.plan?.actions?.lastOrNull { action ->
+                action.status in setOf(
+                    AgentActionStatus.RUNNING,
+                    AgentActionStatus.WAITING_RESPONSE,
+                    AgentActionStatus.COMPLETED
+                )
+            },
             selectedAgentOrModel = state?.plan?.selectedAgentOrModel.orEmpty(),
             phase = phase,
             currentStep = localizedAgentProcessText(latestStep),
@@ -3486,18 +3560,58 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
     }
 
-    private fun agentExecutionLocationText(
-        presentation: AgentExecutionPresentation
-    ): String = presentation.locationLabelHint.ifBlank {
-        getString(when (presentation.locationKind) {
-            AgentExecutionLocationKind.PHONE -> R.string.agent_execution_location_phone
-            AgentExecutionLocationKind.DESKTOP -> R.string.agent_execution_location_desktop
-            AgentExecutionLocationKind.CLOUD -> R.string.agent_execution_location_cloud
-            AgentExecutionLocationKind.CONNECTED_DEVICE ->
-                R.string.agent_execution_location_connected_device
-            AgentExecutionLocationKind.UNKNOWN -> R.string.agent_execution_location_automatic
+    private fun agentExecutionHostText(kind: AgentExecutionLocationKind): String =
+        getString(when (kind) {
+            AgentExecutionLocationKind.PHONE -> R.string.agent_execution_host_phone
+            AgentExecutionLocationKind.DESKTOP -> R.string.agent_execution_host_desktop
+            AgentExecutionLocationKind.CLOUD -> R.string.agent_execution_host_cloud
+            AgentExecutionLocationKind.CONNECTED_DEVICE -> R.string.agent_execution_host_device
+            AgentExecutionLocationKind.UNKNOWN -> R.string.agent_execution_host_automatic
         })
+
+    private fun agentExecutionRuntimeText(
+        presentation: AgentExecutionPresentation
+    ): String = presentation.runtimeLabelHint.ifBlank {
+        agentExecutionRuntimeText(presentation.runtimeKind)
     }
+
+    private fun agentExecutionRuntimeText(kind: AgentExecutionRuntimeKind): String =
+        getString(when (kind) {
+            AgentExecutionRuntimeKind.PHONE_NATIVE -> R.string.agent_execution_runtime_android
+            AgentExecutionRuntimeKind.PHONE_LINUX -> R.string.agent_execution_runtime_linux
+            AgentExecutionRuntimeKind.PHONE_LOCAL_MODEL ->
+                R.string.agent_execution_runtime_local_model
+            AgentExecutionRuntimeKind.PHONE_CLOUD_API ->
+                R.string.agent_execution_runtime_cloud_api
+            AgentExecutionRuntimeKind.DESKTOP_AGENT ->
+                R.string.agent_execution_runtime_desktop_agent
+            AgentExecutionRuntimeKind.DESKTOP_TOOL ->
+                R.string.agent_execution_runtime_desktop_tool
+            AgentExecutionRuntimeKind.CONNECTED_DEVICE ->
+                R.string.agent_execution_runtime_connected_device
+            AgentExecutionRuntimeKind.KNOWLEDGE ->
+                R.string.agent_execution_runtime_knowledge
+            AgentExecutionRuntimeKind.UNKNOWN ->
+                R.string.agent_execution_runtime_automatic
+        })
+
+    private fun agentExecutionHostTextColor(kind: AgentExecutionLocationKind): Int =
+        Color.parseColor(when (kind) {
+            AgentExecutionLocationKind.PHONE -> "#16875B"
+            AgentExecutionLocationKind.DESKTOP -> "#2268C8"
+            AgentExecutionLocationKind.CLOUD -> "#6250C5"
+            AgentExecutionLocationKind.CONNECTED_DEVICE -> "#9A6200"
+            AgentExecutionLocationKind.UNKNOWN -> "#66717C"
+        })
+
+    private fun agentExecutionHostBackgroundColor(kind: AgentExecutionLocationKind): Int =
+        Color.parseColor(when (kind) {
+            AgentExecutionLocationKind.PHONE -> "#EAF7F0"
+            AgentExecutionLocationKind.DESKTOP -> "#EAF2FF"
+            AgentExecutionLocationKind.CLOUD -> "#F0EEFF"
+            AgentExecutionLocationKind.CONNECTED_DEVICE -> "#FFF4E5"
+            AgentExecutionLocationKind.UNKNOWN -> "#F0F2F4"
+        })
 
     private fun agentExecutionPhaseText(phase: AgentPhase): String = getString(when (phase) {
         AgentPhase.OBSERVING -> R.string.agent_status_observing
@@ -12419,6 +12533,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val agentId = state.plan?.route?.targetId.orEmpty()
             .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() }
             .ifBlank { "signalasi-mobile" }
+        val execution = AgentExecutionPresentationPolicy.location(state.plan?.route, action)
         appendRunControlEvent(
             run = run,
             messageId = turnId,
@@ -12428,7 +12543,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             payload = mapOf(
                 "phase" to state.phase.name.lowercase(Locale.ROOT),
                 "action_kind" to action?.kind?.name.orEmpty().lowercase(Locale.ROOT),
-                "delivery_mode" to state.plan?.route?.deliveryMode.orEmpty()
+                "delivery_mode" to state.plan?.route?.deliveryMode.orEmpty(),
+                "execution_contract" to execution.contract,
+                "execution_location_kind" to execution.locationKind.name.lowercase(Locale.ROOT),
+                "execution_runtime_kind" to execution.runtimeKind.name.lowercase(Locale.ROOT),
+                "execution_location_id" to execution.locationId,
+                "execution_location_name" to execution.locationName,
+                "execution_runtime_id" to execution.runtimeId
             ),
             stepId = stepId,
             toolCallId = toolCallId
@@ -12450,6 +12571,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (toAgentId.isBlank() || toAgentId == fromAgentId) return
         val sourceMessageId = state.lastActionResult?.metadata
             ?.get("source_message_id")?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+        val execution = AgentExecutionPresentationPolicy.location(route, action)
         val handoffId = AgentHandoffLifecycle.stableId(run.runId, action.id, fromAgentId, toAgentId)
         val mutation = agentHandoffStore.beginActive(
             AgentHandoffRequest(
@@ -12476,7 +12598,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     "turn_id" to turnId,
                     "step_id" to action.id,
                     "route_kind" to route?.kind?.name.orEmpty(),
-                    "delivery_mode" to route?.deliveryMode.orEmpty()
+                    "delivery_mode" to route?.deliveryMode.orEmpty(),
+                    "execution_contract" to execution.contract,
+                    "execution_location_kind" to execution.locationKind.name.lowercase(Locale.ROOT),
+                    "execution_runtime_kind" to execution.runtimeKind.name.lowercase(Locale.ROOT),
+                    "execution_location_id" to execution.locationId,
+                    "execution_location_name" to execution.locationName
                 )
             ),
             sourceMessageId = sourceMessageId
@@ -12496,7 +12623,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 "reason" to mutation.record.request.reason,
                 "delivery_mode" to mutation.record.request.deliveryMode.name.lowercase(Locale.ROOT),
                 "source_message_id" to sourceMessageId,
-                "artifact_ids" to mutation.record.request.artifactIds
+                "artifact_ids" to mutation.record.request.artifactIds,
+                "execution_contract" to execution.contract,
+                "execution_location_kind" to execution.locationKind.name.lowercase(Locale.ROOT),
+                "execution_runtime_kind" to execution.runtimeKind.name.lowercase(Locale.ROOT),
+                "execution_location_id" to execution.locationId,
+                "execution_location_name" to execution.locationName
             ),
             stepId = action.id,
             toolCallId = action.id
@@ -12934,17 +13066,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun agentTranscriptRow(entry: AgentTranscriptEntry): View {
         val content = when (entry.role) {
             AgentTranscriptRole.USER -> agentUserTranscriptRow(entry)
-            AgentTranscriptRole.ASSISTANT -> AgentRichContentView(
-                activity = this,
-                onTextViewReady = { textView -> attachAgentTranscriptActions(textView, entry) },
-                onAction = { action -> handleAgentRichAction(entry, action) },
-                onFormSubmit = { block, values -> handleAgentRichForm(entry, block, values) }
-            ).create(entry.copy(
-                text = CodexStyleResponsePolicy.sanitizeAssistantText(
-                    localizedAgentAssistantText(entry.text)
-                ),
-                richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(entry.richOutputJson)
-            ))
+            AgentTranscriptRole.ASSISTANT -> agentAssistantTranscriptRow(entry)
             AgentTranscriptRole.PROCESS -> agentProcessTranscriptRow(entry)
         }
         if (entry.sourceConversationId.isBlank() || entry.role == AgentTranscriptRole.PROCESS) return content
@@ -12966,6 +13088,50 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 setPadding(dp(2), dp(8), dp(2), 0)
             })
             addView(content)
+        }
+    }
+
+    private fun agentAssistantTranscriptRow(entry: AgentTranscriptEntry): View {
+        val content = AgentRichContentView(
+            activity = this,
+            onTextViewReady = { textView -> attachAgentTranscriptActions(textView, entry) },
+            onAction = { action -> handleAgentRichAction(entry, action) },
+            onFormSubmit = { block, values -> handleAgentRichForm(entry, block, values) }
+        ).create(entry.copy(
+            text = CodexStyleResponsePolicy.sanitizeAssistantText(
+                localizedAgentAssistantText(entry.text)
+            ),
+            richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(entry.richOutputJson)
+        ))
+        val execution = agentExecutionPresentations[entry.taskId]
+            ?.takeUnless { isAgentApprovalEntry(entry) || entry.dedupeKey.startsWith("agent-recovery:") }
+            ?: return content
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            addView(content)
+            addView(TextView(this@MainActivity).apply {
+                text = buildString {
+                    append(execution.executorLabel)
+                    append(" \u00b7 ")
+                    append(agentExecutionHostText(execution.locationKind))
+                    append(" \u00b7 ")
+                    append(agentExecutionRuntimeText(execution))
+                    execution.locationLabelHint.takeIf(String::isNotBlank)?.let {
+                        append(" \u00b7 ")
+                        append(it)
+                    }
+                }
+                setTextColor(getColorCompat(R.color.text_secondary))
+                textSize = 10f
+                includeFontPadding = false
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(dp(2), dp(5), dp(2), 0)
+            })
         }
     }
 
@@ -13056,15 +13222,45 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 })
                 addView(LinearLayout(this@MainActivity).apply {
                     orientation = LinearLayout.VERTICAL
-                    addView(TextView(this@MainActivity).apply {
-                        text = execution.executorLabel
-                        setTextColor(getColorCompat(R.color.text_primary))
-                        textSize = 14f
-                        setTypeface(typeface, android.graphics.Typeface.BOLD)
-                        includeFontPadding = false
-                        maxLines = 1
-                        ellipsize = android.text.TextUtils.TruncateAt.END
-                    })
+                    addView(LinearLayout(this@MainActivity).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        addView(TextView(this@MainActivity).apply {
+                            text = execution.executorLabel
+                            setTextColor(getColorCompat(R.color.text_primary))
+                            textSize = 14f
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            includeFontPadding = false
+                            maxLines = 1
+                            ellipsize = android.text.TextUtils.TruncateAt.END
+                        }, LinearLayout.LayoutParams(
+                            0,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            1f
+                        ))
+                        addView(TextView(this@MainActivity).apply {
+                            text = agentExecutionHostText(execution.locationKind)
+                            setTextColor(agentExecutionHostTextColor(execution.locationKind))
+                            textSize = 10f
+                            setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            includeFontPadding = false
+                            gravity = Gravity.CENTER
+                            minHeight = dp(22)
+                            setPadding(dp(7), 0, dp(7), 0)
+                            background = GradientDrawable().apply {
+                                cornerRadius = dp(5).toFloat()
+                                setColor(agentExecutionHostBackgroundColor(execution.locationKind))
+                            }
+                        }, LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            dp(22)
+                        ).apply {
+                            marginStart = dp(8)
+                        })
+                    }, LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ))
                     addView(TextView(this@MainActivity).apply {
                         setTextColor(getColorCompat(R.color.text_secondary))
                         textSize = 11f
@@ -13079,7 +13275,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                     (completedAt ?: System.currentTimeMillis()) - startedAt
                                 ).coerceAtLeast(0L)
                                 statusView.text = buildString {
-                                    append(agentExecutionLocationText(execution))
+                                    append(agentExecutionRuntimeText(execution))
+                                    execution.locationLabelHint
+                                        .takeIf(String::isNotBlank)
+                                        ?.let {
+                                            append(" \u00b7 ")
+                                            append(it)
+                                        }
                                     append(" \u00b7 ")
                                     append(
                                         execution.currentStep.ifBlank {
@@ -15697,6 +15899,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun agentRecentTaskRow(task: AgentTaskRecord, index: Int): View {
         val statusText = agentTaskStatusText(task)
+        val execution = AgentExecutionPresentationPolicy.location(task)
         val statusColor = when {
             task.blocked -> getColorCompat(R.color.unread_red)
             task.phase == AgentPhase.COMPLETED -> getColorCompat(R.color.wechat_green)
@@ -15749,12 +15952,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     textSize = 12f
                     maxLines = 1
                     ellipsize = android.text.TextUtils.TruncateAt.END
-                    text = getString(
-                        R.string.agent_recent_meta,
-                        task.routeKind.name.lowercase(Locale.US).replace('_', ' '),
-                        task.targetTitle.ifBlank { "-" },
+                    text = listOf(
+                        agentExecutionHostText(execution.locationKind),
+                        agentExecutionRuntimeText(execution.runtimeKind),
+                        execution.locationName,
                         task.risk.name.lowercase(Locale.US)
-                    )
+                    ).filter(String::isNotBlank).joinToString(" \u00b7 ")
                 })
             })
 
@@ -15771,10 +15974,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showAgentTaskDetails(task: AgentTaskRecord) {
+        val execution = AgentExecutionPresentationPolicy.location(task)
         val detail = buildString {
             appendLine(task.goal)
             appendLine()
             appendLine("${getString(R.string.agent_task_detail_status)}: ${agentTaskStatusText(task)}")
+            appendLine(
+                "${getString(R.string.agent_task_detail_execution)}: " +
+                    listOf(
+                        agentExecutionHostText(execution.locationKind),
+                        agentExecutionRuntimeText(execution.runtimeKind),
+                        execution.locationName
+                    ).filter(String::isNotBlank).joinToString(" \u00b7 ")
+            )
             appendLine("${getString(R.string.agent_task_detail_route)}: ${task.routeKind.name.lowercase(Locale.US).replace('_', ' ')}")
             appendLine("${getString(R.string.agent_task_detail_target)}: ${task.targetTitle.ifBlank { "-" }}")
             appendLine("${getString(R.string.agent_task_detail_risk)}: ${task.risk.name.lowercase(Locale.US)}")

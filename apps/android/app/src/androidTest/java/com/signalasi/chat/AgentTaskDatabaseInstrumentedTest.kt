@@ -62,6 +62,10 @@ class AgentTaskDatabaseInstrumentedTest {
         val restored = database.find("task-0001")!!
         assertEquals(files, restored.outputFiles)
         assertEquals(timeline, restored.executionLog)
+        assertEquals(AgentExecutionLocationKind.DESKTOP, restored.executionLocationKind)
+        assertEquals(AgentExecutionRuntimeKind.DESKTOP_AGENT, restored.executionRuntimeKind)
+        assertEquals("desktop-test", restored.executionLocationId)
+        assertEquals("WORKSTATION", restored.executionLocationName)
         val encrypted = database.encryptedPayloadForTest("task-0001").orEmpty()
         assertTrue(encrypted.startsWith("enc:v1:"))
         assertFalse(encrypted.contains(marker))
@@ -123,6 +127,11 @@ class AgentTaskDatabaseInstrumentedTest {
             targetTitle = "Codex",
             risk = AgentRisk.LOW,
             blocked = false,
+            executionLocationKind = AgentExecutionLocationKind.DESKTOP,
+            executionRuntimeKind = AgentExecutionRuntimeKind.DESKTOP_AGENT,
+            executionLocationId = "desktop-test",
+            executionLocationName = "WORKSTATION",
+            executionRuntimeId = "codex",
             result = "result $index",
             verification = "verified",
             outputFiles = listOf("output-$index.txt"),
