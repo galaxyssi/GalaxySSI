@@ -19783,13 +19783,116 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showLocalModelFeaturePage() {
+        val profile = LocalModelRuntimeSettings.selectedProfile(this)
+        val contextTokens = LocalModelRuntimeSettings.contextTokens(this)
+        val estimate = LocalModelRuntimePreflight.estimate(this, profile, contextTokens)
         showFeaturePage(getString(R.string.local_model_title))
-        featureContent.addView(localModelStatusCard())
+        featureContent.addView(localModelStatusCard(profile, estimate))
         addSectionTitle(getString(R.string.local_model_section_manage))
-        featureContent.addView(featureValueRow(getString(R.string.local_model_select), "", R.drawable.ic_local_model, "Qwen 7B (4bit)"))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_select),
+            getString(R.string.local_model_select_subtitle),
+            R.drawable.ic_local_model,
+            profile.displayName
+        ).apply {
+            setOnClickListener {
+                val options = LocalModelRuntimeProfiles.all.map(LocalModelRuntimeProfile::displayName)
+                showChoiceDialog(
+                    getString(R.string.local_model_select),
+                    options,
+                    profile.displayName
+                ) { selected ->
+                    LocalModelRuntimeProfiles.all.firstOrNull { it.displayName == selected }?.let {
+                        LocalModelRuntimeSettings.setSelectedProfile(this@MainActivity, it.id)
+                    }
+                    showLocalModelFeaturePage()
+                }
+            }
+        })
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_context_window),
+            getString(R.string.local_model_context_window_subtitle),
+            R.drawable.ic_agent_history,
+            getString(R.string.local_model_context_tokens, contextTokens)
+        ).apply {
+            setOnClickListener {
+                val choices = listOf(2_048, 4_096, 8_192, 16_384, 32_768)
+                val labels = choices.map { getString(R.string.local_model_context_tokens, it) }
+                showChoiceDialog(
+                    getString(R.string.local_model_context_window),
+                    labels,
+                    getString(R.string.local_model_context_tokens, contextTokens)
+                ) { selected ->
+                    labels.indexOf(selected).takeIf { it >= 0 }?.let { index ->
+                        LocalModelRuntimeSettings.setContextTokens(this@MainActivity, choices[index])
+                    }
+                    showLocalModelFeaturePage()
+                }
+            }
+        })
         featureContent.addView(featureValueRow(getString(R.string.local_model_vision), "", R.drawable.ic_import, ""))
-        addSectionTitle(getString(R.string.local_model_section_inference))
-        featureContent.addView(featureSwitchRow(getString(R.string.local_model_enable), getString(R.string.local_model_enable_subtitle), R.drawable.ic_protocol_link, true))
+        addSectionTitle(getString(R.string.local_model_preflight_section))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_file_estimate),
+            profile.quantizationLabel,
+            R.drawable.ic_local_model,
+            formatBytes(estimate.modelFileBytes)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_kv_cache),
+            getString(
+                R.string.local_model_kv_cache_subtitle,
+                estimate.recommendedContextTokens
+            ),
+            R.drawable.ic_agent_memory,
+            formatBytes(estimate.kvCacheBytes)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_safe_memory),
+            getString(R.string.local_model_safe_memory_subtitle),
+            R.drawable.ic_agent_memory,
+            getString(
+                R.string.local_model_memory_required_value,
+                formatBytes(estimate.totalRequiredBytes),
+                formatBytes(estimate.safeMemoryBudgetBytes)
+            )
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_threads),
+            getString(
+                R.string.local_model_threads_subtitle,
+                estimate.device.cpuCoreCount
+            ),
+            R.drawable.ic_local_model,
+            estimate.recommendedThreads.toString()
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_temperature),
+            localModelThermalDetail(estimate.device),
+            R.drawable.ic_resource_battery,
+            localModelThermalValue(estimate.device)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_battery),
+            getString(
+                if (estimate.device.charging) {
+                    R.string.local_model_battery_charging
+                } else {
+                    R.string.local_model_battery_not_charging
+                }
+            ),
+            R.drawable.ic_resource_battery,
+            estimate.device.batteryPercent?.let { "$it%" }
+                ?: getString(R.string.status_unknown)
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.local_model_refresh_preflight),
+            getString(R.string.local_model_refresh_preflight_subtitle),
+            R.drawable.ic_agent_history,
+            getString(R.string.voice_provider_recheck_action)
+        ).apply {
+            setOnClickListener { showLocalModelFeaturePage() }
+        })
         addSectionTitle(getString(R.string.local_model_section_permissions))
         featureContent.addView(featureValueRow(getString(R.string.on_device_agent_microphone), "", R.drawable.ic_agent_node, getString(R.string.permission_allowed)))
         featureContent.addView(featureValueRow(getString(R.string.on_device_agent_camera), "", R.drawable.ic_scan, getString(R.string.permission_allowed)))
@@ -24337,7 +24440,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun localModelStatusCard(): View {
+    private fun localModelStatusCard(
+        profile: LocalModelRuntimeProfile,
+        estimate: LocalModelRuntimeEstimate
+    ): View {
+        val readinessColor = when (estimate.readiness) {
+            LocalModelRuntimeReadiness.READY -> getColorCompat(R.color.signalasi_green)
+            LocalModelRuntimeReadiness.CAUTION -> Color.parseColor("#D48B18")
+            LocalModelRuntimeReadiness.BLOCKED -> Color.parseColor("#D14343")
+        }
+        val memoryProgress = if (estimate.safeMemoryBudgetBytes > 0L) {
+            ((estimate.totalRequiredBytes * 100L) / estimate.safeMemoryBudgetBytes)
+                .coerceIn(0L, 100L)
+                .toInt()
+        } else {
+            100
+        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(14), dp(16), dp(14))
@@ -24351,10 +24469,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     textSize = 15.5f
                     setTypeface(typeface, android.graphics.Typeface.BOLD)
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-                addView(statusPill(getString(R.string.status_running), getColorCompat(R.color.signalasi_green)))
+                addView(statusPill(localModelReadinessLabel(estimate.readiness), readinessColor))
             })
-            addView(localModelMetric("Qwen 7B (4bit)", getString(R.string.local_model_memory_usage), "3.2GB / 6GB", 53))
-            addView(localModelMetric(getString(R.string.local_model_inference_speed), "", "", 72))
+            addView(TextView(this@MainActivity).apply {
+                text = localModelPreflightSummary(estimate)
+                setTextColor(getColorCompat(R.color.text_secondary))
+                textSize = 12.5f
+                setPadding(0, dp(7), 0, 0)
+            })
+            addView(localModelMetric(
+                profile.displayName,
+                getString(R.string.local_model_memory_usage),
+                getString(
+                    R.string.local_model_memory_required_value,
+                    formatBytes(estimate.totalRequiredBytes),
+                    formatBytes(estimate.safeMemoryBudgetBytes)
+                ),
+                memoryProgress,
+                readinessColor
+            ))
+            addView(localModelMetric(
+                getString(R.string.local_model_kv_cache),
+                getString(R.string.local_model_context_tokens, estimate.recommendedContextTokens),
+                formatBytes(estimate.kvCacheBytes),
+                ((estimate.recommendedContextTokens * 100L) /
+                    estimate.requestedContextTokens.coerceAtLeast(1)).coerceIn(0L, 100L).toInt(),
+                readinessColor
+            ))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -24362,7 +24503,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun localModelMetric(left: String, middle: String, right: String, progress: Int): View {
+    private fun localModelMetric(
+        left: String,
+        middle: String,
+        right: String,
+        progress: Int,
+        progressColor: Int = getColorCompat(R.color.signalasi_green)
+    ): View {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(10), 0, 0)
@@ -24393,7 +24540,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             addView(ProgressBar(this@MainActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
                 max = 100
                 this.progress = progress
-                progressTintList = android.content.res.ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
+                progressTintList = android.content.res.ColorStateList.valueOf(progressColor)
                 progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E5E7EB"))
             }, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -24401,6 +24548,73 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ).apply { topMargin = dp(7) })
         }
     }
+
+    private fun localModelReadinessLabel(readiness: LocalModelRuntimeReadiness): String = getString(
+        when (readiness) {
+            LocalModelRuntimeReadiness.READY -> R.string.local_model_preflight_ready
+            LocalModelRuntimeReadiness.CAUTION -> R.string.local_model_preflight_caution
+            LocalModelRuntimeReadiness.BLOCKED -> R.string.local_model_preflight_blocked
+        }
+    )
+
+    private fun localModelPreflightSummary(estimate: LocalModelRuntimeEstimate): String {
+        val issue = listOf(
+            LocalModelRuntimeIssue.MODEL_FILE_MISSING,
+            LocalModelRuntimeIssue.MODEL_FILE_INVALID,
+            LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY,
+            LocalModelRuntimeIssue.INSUFFICIENT_MEMORY,
+            LocalModelRuntimeIssue.DEVICE_TOO_HOT,
+            LocalModelRuntimeIssue.CRITICAL_BATTERY,
+            LocalModelRuntimeIssue.CONTEXT_REDUCED,
+            LocalModelRuntimeIssue.THERMAL_PRESSURE,
+            LocalModelRuntimeIssue.LOW_BATTERY,
+            LocalModelRuntimeIssue.POWER_SAVE_MODE
+        ).firstOrNull(estimate.issues::contains)
+        return getString(
+            when (issue) {
+                LocalModelRuntimeIssue.MODEL_FILE_MISSING ->
+                    R.string.local_model_issue_file_missing
+                LocalModelRuntimeIssue.MODEL_FILE_INVALID ->
+                    R.string.local_model_issue_file_invalid
+                LocalModelRuntimeIssue.SYSTEM_LOW_MEMORY ->
+                    R.string.local_model_issue_system_low_memory
+                LocalModelRuntimeIssue.INSUFFICIENT_MEMORY ->
+                    R.string.local_model_issue_insufficient_memory
+                LocalModelRuntimeIssue.DEVICE_TOO_HOT ->
+                    R.string.local_model_issue_device_hot
+                LocalModelRuntimeIssue.CRITICAL_BATTERY ->
+                    R.string.local_model_issue_critical_battery
+                LocalModelRuntimeIssue.CONTEXT_REDUCED ->
+                    R.string.local_model_issue_context_reduced
+                LocalModelRuntimeIssue.THERMAL_PRESSURE ->
+                    R.string.local_model_issue_thermal_pressure
+                LocalModelRuntimeIssue.LOW_BATTERY ->
+                    R.string.local_model_issue_low_battery
+                LocalModelRuntimeIssue.POWER_SAVE_MODE ->
+                    R.string.local_model_issue_power_save
+                null -> R.string.local_model_preflight_ready_detail
+            },
+            estimate.recommendedContextTokens
+        )
+    }
+
+    private fun localModelThermalValue(device: LocalModelDeviceSnapshot): String =
+        device.batteryTemperatureCelsius?.let {
+            String.format(Locale.US, "%.1f °C", it)
+        } ?: getString(R.string.status_unknown)
+
+    private fun localModelThermalDetail(device: LocalModelDeviceSnapshot): String = getString(
+        when (device.thermalStatus) {
+            0 -> R.string.local_model_thermal_none
+            1 -> R.string.local_model_thermal_light
+            2 -> R.string.local_model_thermal_moderate
+            3 -> R.string.local_model_thermal_severe
+            4 -> R.string.local_model_thermal_critical
+            5 -> R.string.local_model_thermal_emergency
+            6 -> R.string.local_model_thermal_shutdown
+            else -> R.string.local_model_thermal_unknown
+        }
+    )
 
     private fun featureValueRow(title: String, subtitle: String, iconRes: Int, value: String): View {
         return LinearLayout(this).apply {
