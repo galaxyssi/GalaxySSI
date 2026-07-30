@@ -30,6 +30,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("AVAudioSession"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "av_audio_session_status_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.biometricStatus {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("LocalAuthentication"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "local_authentication_status_on_ios15")
       } else {
         XCTAssertEqual(descriptor.availability.status, .unavailable)
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
@@ -38,6 +42,13 @@ extension SignalASIStoreTests {
       if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.biometricStatus {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosBiometricStatusPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -137,6 +148,50 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["identifiers_included"], .bool(false))
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(12_345))
     XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReadsBiometricStatus() throws {
+    struct FakeBiometricProvider: AgentIOSBiometricStatusProviding {
+      func biometricStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        [
+          "device_secure": .bool(true),
+          "can_authenticate": .bool(true),
+          "can_authenticate_code": .int(0),
+          "biometry_type": .string("face_id"),
+          "framework": .string("LocalAuthentication"),
+          "authentication_prompted": .bool(false),
+          "scope": .string("app_visible_ios"),
+          "identifiers_included": .bool(false),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+    }
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          biometricProvider: FakeBiometricProvider(),
+          nowMillis: { 22_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosBiometricStatusPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.biometricStatus,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["device_secure"], .bool(true))
+    XCTAssertEqual(result.output["can_authenticate"], .bool(true))
+    XCTAssertEqual(result.output["biometry_type"], .string("face_id"))
+    XCTAssertEqual(result.output["authentication_prompted"], .bool(false))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(22_000))
+    XCTAssertEqual(result.metadata["authentication_prompted"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
