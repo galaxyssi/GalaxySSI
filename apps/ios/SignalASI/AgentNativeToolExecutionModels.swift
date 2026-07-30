@@ -1352,7 +1352,7 @@ enum AgentPhoneNativeToolCatalog {
     executor: AgentIOSSystemNativeToolExecutor = AgentIOSSystemNativeToolExecutor()
   ) -> [AgentNativeToolExecutableDefinition] {
     AgentIOSSystemNativeToolCatalog.definitions()
-      .filter { AgentIOSSystemNativeToolCatalog.handoffToolIds.contains($0.id) }
+      .filter { AgentIOSSystemNativeToolCatalog.executableToolIds.contains($0.id) }
       .map(executor.executableDefinition)
   }
 
