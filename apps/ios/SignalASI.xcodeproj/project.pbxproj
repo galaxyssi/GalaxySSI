@@ -91,6 +91,7 @@
     A10000000000000000000167 /* CloudModelNativeToolAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */; };
     A10000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */; };
     A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */; };
+    A10000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -129,6 +130,7 @@
     A10000000000000000000236 /* AgentModelPlannerContactResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000236 /* AgentModelPlannerContactResolverTests.swift */; };
     A10000000000000000000237 /* SignalASILinkTransportDiagnosticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000237 /* SignalASILinkTransportDiagnosticsTests.swift */; };
     A10000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift */; };
+    A10000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -218,6 +220,7 @@
     A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelNativeToolAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelToolLoopAgentPlanningProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTaskStatusPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTerminalStatusResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -256,6 +259,7 @@
     A20000000000000000000236 /* AgentModelPlannerContactResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlannerContactResolverTests.swift; sourceTree = "<group>"; };
     A20000000000000000000237 /* SignalASILinkTransportDiagnosticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkTransportDiagnosticsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelToolLoopAgentPlanningProviderTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTerminalStatusResolverTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -346,6 +350,7 @@
         A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */,
         A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */,
         A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */,
+        A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -405,6 +410,7 @@
         A20000000000000000000236 /* AgentModelPlannerContactResolverTests.swift */,
         A20000000000000000000237 /* SignalASILinkTransportDiagnosticsTests.swift */,
         A20000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift */,
+        A20000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -571,6 +577,7 @@
         A10000000000000000000167 /* CloudModelNativeToolAdapter.swift in Sources */,
         A10000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift in Sources */,
         A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */,
+        A10000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -630,6 +637,7 @@
         A10000000000000000000236 /* AgentModelPlannerContactResolverTests.swift in Sources */,
         A10000000000000000000237 /* SignalASILinkTransportDiagnosticsTests.swift in Sources */,
         A10000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift in Sources */,
+        A10000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };

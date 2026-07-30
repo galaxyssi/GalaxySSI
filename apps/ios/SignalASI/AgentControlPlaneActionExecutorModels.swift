@@ -283,6 +283,40 @@ final class ActionExecutorAgentProvider: AgentProvider {
     transportIfPresent(agentId: agentId)?.result(runId: runId)
   }
 
+  @discardableResult
+  func acceptConnectorTerminalStatus(
+    sourceMessageId: Int64,
+    contactId: String,
+    taskId: String,
+    taskStatus: String,
+    statusSeq: Int64,
+    message: String,
+    conversationId: String = "",
+    turnId: String = "",
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentActionResult? {
+    let envelope = AgentConnectorTerminalStatusEnvelope(
+      sourceMessageId: sourceMessageId,
+      contactId: contactId,
+      taskId: taskId,
+      taskStatus: taskStatus,
+      statusSeq: statusSeq,
+      message: message,
+      conversationId: conversationId,
+      turnId: turnId,
+      nowMillis: nowMillis
+    )
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.acceptConnectorTerminalStatus(envelope) {
+        return result
+      }
+    }
+    return nil
+  }
+
   func discardPrepared(agentId: String, runId: String) {
     transportIfPresent(agentId: agentId)?.discardPrepared(runId: runId)
   }
@@ -477,6 +511,42 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         payload: ["message": .string("Agent Run cancelled")]
       )
     }
+  }
+
+  func acceptConnectorTerminalStatus(_ envelope: AgentConnectorTerminalStatusEnvelope) -> AgentActionResult? {
+    let runId: String
+    let active: ActiveRun
+    let settlement: AgentConnectorTerminalStatusSettlement
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard item.value.sourceMessageId == envelope.sourceMessageId,
+        let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorTerminalStatusResolver.canAccept(pending: pending, envelope: envelope)
+    }), let pending = resultsByRunId[match.key],
+      let resolved = AgentConnectorTerminalStatusResolver.settle(pending: pending, envelope: envelope) else {
+      lock.unlock()
+      return nil
+    }
+    runId = match.key
+    active = match.value
+    settlement = resolved
+    resultsByRunId[runId] = resolved.result
+    if resolved.shouldDeactivateRun {
+      activeByRunId.removeValue(forKey: runId)
+    }
+    lock.unlock()
+    if let eventType = settlement.eventType {
+      emit(
+        request: active.request,
+        registration: active.registration,
+        type: eventType,
+        sequence: max(3, envelope.statusSeq),
+        payload: settlement.eventPayload
+      )
+    }
+    return settlement.result
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {
