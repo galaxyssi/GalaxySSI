@@ -3,6 +3,7 @@ package com.signalasi.chat
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
 
@@ -14,6 +15,10 @@ object SignalASILinkDeliveryStore {
     private const val KEY_TRANSPORT_EPOCH = "transport_epoch"
     private const val PENDING_INBOUND_PREFIX = "pending:"
     private const val CIPHERTEXT_PREFIX = "ciphertext:"
+    private const val WIRE_PAYLOAD_FILE = "wire_payload_file"
+    private const val BLOCKED_BY_ATTACHMENT_TRANSFERS = "blocked_by_attachment_transfers"
+    private const val FILE_BACKED_WIRE_THRESHOLD_BYTES = 64 * 1024
+    private const val OUTBOX_DIRECTORY = "signalasi-link-outbox-v1"
     private const val MAX_INBOX_IDS = 4096
     private const val MAX_PENDING_INBOUND = 256
     private const val MAX_CIPHERTEXT_BINDINGS = 4096
@@ -25,6 +30,8 @@ object SignalASILinkDeliveryStore {
     private val CIPHERTEXT_LOCK = Any()
     private var pendingWritesSincePrune = 0
     private var ciphertextWritesSincePrune = 0
+    private val SHA256 = Regex("[a-f0-9]{64}")
+    private val WIRE_PAYLOAD_NAME = Regex("[a-f0-9]{64}\\.wire")
 
     enum class IncomingStageResult { STAGED, PENDING, COMPLETED, INVALID }
 
@@ -53,6 +60,7 @@ object SignalASILinkDeliveryStore {
         require(epoch.isNotBlank()) { "Transport epoch is required" }
         val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (preferences.getString(KEY_TRANSPORT_EPOCH, "") == epoch) return false
+        clearOutboxFiles(context)
         preferences.edit()
             .putString(KEY_OUTBOX, "[]")
             .putString(KEY_TRANSPORT_EPOCH, epoch)
@@ -66,25 +74,108 @@ object SignalASILinkDeliveryStore {
         messageId: String,
         topic: String,
         wirePayload: String,
-        requiresValidatedNetwork: Boolean = false
+        requiresValidatedNetwork: Boolean = false,
+        blockedByAttachmentTransferIds: Collection<String> = emptyList()
     ) {
         val values = outboxArray(context)
         for (index in 0 until values.length()) {
             if (values.optJSONObject(index)?.optString("message_id") == messageId) return
         }
-        values.put(
-            JSONObject()
-                .put("message_id", messageId)
-                .put("topic", topic)
-                .put("wire_payload", wirePayload)
-                .put("status", "queued")
-                .put("attempts", 0)
-                .put("requires_validated_network", requiresValidatedNetwork)
-                .put("next_attempt_at", System.currentTimeMillis())
-                .put("created_at", System.currentTimeMillis())
-                .put("updated_at", System.currentTimeMillis())
-        )
+        val item = JSONObject()
+            .put("message_id", messageId)
+            .put("topic", topic)
+            .put("status", "queued")
+            .put("attempts", 0)
+            .put("requires_validated_network", requiresValidatedNetwork)
+            .put("next_attempt_at", System.currentTimeMillis())
+            .put("created_at", System.currentTimeMillis())
+            .put("updated_at", System.currentTimeMillis())
+        if (wirePayload.toByteArray(Charsets.UTF_8).size > FILE_BACKED_WIRE_THRESHOLD_BYTES) {
+            item.put(WIRE_PAYLOAD_FILE, writeWirePayload(context, messageId, wirePayload))
+        } else {
+            item.put("wire_payload", wirePayload)
+        }
+        val dependencies = blockedByAttachmentTransferIds
+            .map(String::lowercase)
+            .distinct()
+            .also { values ->
+                require(values.all { it.matches(SHA256) }) {
+                    "Attachment transfer dependency is invalid"
+                }
+            }
+        if (dependencies.isNotEmpty()) {
+            item.put(BLOCKED_BY_ATTACHMENT_TRANSFERS, JSONArray(dependencies))
+        }
+        values.put(item)
         writeArray(context, KEY_OUTBOX, values)
+    }
+
+    @Synchronized
+    fun releaseAttachmentDependency(
+        context: Context,
+        transferId: String
+    ): Int {
+        val normalized = transferId.lowercase()
+        if (!normalized.matches(SHA256)) return 0
+        val values = outboxArray(context)
+        val now = System.currentTimeMillis()
+        var released = 0
+        var changed = false
+        for (index in 0 until values.length()) {
+            val item = values.optJSONObject(index) ?: continue
+            val dependencies = item.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS) ?: continue
+            val remaining = JSONArray()
+            var removed = false
+            for (dependencyIndex in 0 until dependencies.length()) {
+                val dependency = dependencies.optString(dependencyIndex).lowercase()
+                if (dependency == normalized) {
+                    removed = true
+                } else if (dependency.isNotBlank()) {
+                    remaining.put(dependency)
+                }
+            }
+            if (!removed) continue
+            changed = true
+            if (remaining.length() == 0) {
+                item.remove(BLOCKED_BY_ATTACHMENT_TRANSFERS)
+                item.put("status", "queued")
+                    .put("next_attempt_at", now)
+                    .put("updated_at", now)
+                released += 1
+            } else {
+                item.put(BLOCKED_BY_ATTACHMENT_TRANSFERS, remaining)
+            }
+        }
+        if (changed) writeArray(context, KEY_OUTBOX, values)
+        return released
+    }
+
+    @Synchronized
+    fun discardBlockedByAttachmentTransfers(
+        context: Context,
+        transferIds: Collection<String>
+    ): Int {
+        val blockedIds = transferIds.map(String::lowercase).toSet()
+        if (blockedIds.isEmpty()) return 0
+        val source = outboxArray(context)
+        val kept = JSONArray()
+        var removed = 0
+        for (index in 0 until source.length()) {
+            val item = source.optJSONObject(index) ?: continue
+            val dependencies = item.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS)
+            val blocked = dependencies != null &&
+                (0 until dependencies.length()).any {
+                    dependencies.optString(it).lowercase() in blockedIds
+                }
+            if (blocked) {
+                deleteWirePayload(context, item)
+                removed += 1
+            } else {
+                kept.put(item)
+            }
+        }
+        if (removed > 0) writeArray(context, KEY_OUTBOX, kept)
+        return removed
     }
 
     @Synchronized
@@ -119,7 +210,11 @@ object SignalASILinkDeliveryStore {
         val kept = JSONArray()
         for (index in 0 until source.length()) {
             val item = source.optJSONObject(index) ?: continue
-            if (item.optString("message_id") != messageId) kept.put(item)
+            if (item.optString("message_id") == messageId) {
+                deleteWirePayload(context, item)
+            } else {
+                kept.put(item)
+            }
         }
         writeArray(context, KEY_OUTBOX, kept)
     }
@@ -128,6 +223,10 @@ object SignalASILinkDeliveryStore {
     fun discardRoutes(context: Context, routes: SignalASILinkProtocol.Routes): Int {
         val source = outboxArray(context)
         val discardedTopics = setOf(routes.up, routes.down, routes.control, routes.pairing)
+        for (index in 0 until source.length()) {
+            val item = source.optJSONObject(index) ?: continue
+            if (item.optString("topic") in discardedTopics) deleteWirePayload(context, item)
+        }
         val kept = retainMessagesOutsideTopics(source, discardedTopics)
         val removed = source.length() - kept.length()
         if (removed > 0) writeArray(context, KEY_OUTBOX, kept)
@@ -142,7 +241,11 @@ object SignalASILinkDeliveryStore {
         outboxArray(context),
         System.currentTimeMillis(),
         allowValidatedNetworkMessages
-    )
+    ) { item ->
+        item.optString("wire_payload").ifBlank {
+            readWirePayload(context, item.optString(WIRE_PAYLOAD_FILE))
+        }
+    }
 
     @Synchronized
     fun nextRetryDelayMillis(
@@ -165,6 +268,7 @@ object SignalASILinkDeliveryStore {
         var earliest: Long? = null
         for (index in 0 until values.length()) {
             val item = values.optJSONObject(index) ?: continue
+            if (hasAttachmentDependencies(item)) continue
             if (
                 item.optBoolean("requires_validated_network", false) &&
                 !allowValidatedNetworkMessages
@@ -195,11 +299,13 @@ object SignalASILinkDeliveryStore {
     internal fun pendingFromArray(
         values: JSONArray,
         nowMillis: Long,
-        allowValidatedNetworkMessages: Boolean = true
+        allowValidatedNetworkMessages: Boolean = true,
+        wirePayload: (JSONObject) -> String = { it.optString("wire_payload") }
     ): List<PendingMessage> =
         buildList {
             for (index in 0 until values.length()) {
                 val item = values.optJSONObject(index) ?: continue
+                if (hasAttachmentDependencies(item)) continue
                 if (
                     item.optBoolean("requires_validated_network", false) &&
                     !allowValidatedNetworkMessages
@@ -209,7 +315,7 @@ object SignalASILinkDeliveryStore {
                     PendingMessage(
                         item.optString("message_id"),
                         item.optString("topic"),
-                        item.optString("wire_payload"),
+                        wirePayload(item),
                         item.optInt("attempts"),
                         item.optLong("created_at"),
                         item.optBoolean("requires_validated_network", false)
@@ -342,6 +448,7 @@ object SignalASILinkDeliveryStore {
 
     @Synchronized
     fun clear(context: Context) {
+        clearOutboxFiles(context)
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
         inboundDatabase(context).clear()
     }
@@ -412,6 +519,46 @@ object SignalASILinkDeliveryStore {
     private fun writeArray(context: Context, key: String, value: JSONArray) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value.toString()).commit()
     }
+
+    private fun writeWirePayload(context: Context, messageId: String, payload: String): String {
+        val directory = outboxDirectory(context)
+        val name = MessageDigest.getInstance("SHA-256")
+            .digest(messageId.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) } + ".wire"
+        val target = File(directory, name)
+        val temporary = File(directory, ".$name.tmp")
+        temporary.writeText(payload, Charsets.UTF_8)
+        check(temporary.renameTo(target)) { "Encrypted outbox payload could not be committed" }
+        return name
+    }
+
+    private fun readWirePayload(context: Context, name: String): String {
+        if (!name.matches(WIRE_PAYLOAD_NAME)) return ""
+        val directory = outboxDirectory(context).canonicalFile
+        val target = File(directory, name).canonicalFile
+        if (!target.path.startsWith(directory.path + File.separator) || !target.isFile) return ""
+        return runCatching { target.readText(Charsets.UTF_8) }.getOrDefault("")
+    }
+
+    private fun deleteWirePayload(context: Context, item: JSONObject) {
+        val name = item.optString(WIRE_PAYLOAD_FILE)
+        if (!name.matches(WIRE_PAYLOAD_NAME)) return
+        val directory = outboxDirectory(context).canonicalFile
+        val target = File(directory, name).canonicalFile
+        if (target.path.startsWith(directory.path + File.separator)) target.delete()
+    }
+
+    private fun clearOutboxFiles(context: Context) {
+        outboxDirectory(context).deleteRecursively()
+    }
+
+    private fun outboxDirectory(context: Context): File =
+        File(context.applicationContext.filesDir, OUTBOX_DIRECTORY).apply {
+            check(mkdirs() || isDirectory) { "Encrypted outbox directory is unavailable" }
+        }
+
+    private fun hasAttachmentDependencies(item: JSONObject): Boolean =
+        item.optJSONArray(BLOCKED_BY_ATTACHMENT_TRANSFERS)?.length()?.let { it > 0 } == true
 
     internal fun retainMessagesOutsideTopics(source: JSONArray, discardedTopics: Set<String>): JSONArray {
         if (discardedTopics.isEmpty()) return JSONArray(source.toString())

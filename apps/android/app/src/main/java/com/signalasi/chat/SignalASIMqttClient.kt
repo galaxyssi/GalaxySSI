@@ -109,7 +109,7 @@ internal class MqttSubscriptionRecoveryState {
 object SignalASIMqttClient {
     private const val TAG = "SignalASILink"
     private const val SERVER_URI = "ssl://broker.emqx.io:8883"
-    private const val MQTT_TRANSPORT_EPOCH = "v7-flow-control"
+    private const val MQTT_TRANSPORT_EPOCH = "v8-resumable-attachments"
     private const val MQTT_QOS = 1
     private const val MAX_INLINE_ATTACHMENT_BYTES = 320 * 1024
     private const val PAIRING_CLAIM_MAX_AGE_MILLIS = 9 * 60_000L
@@ -146,6 +146,9 @@ object SignalASIMqttClient {
     private val inboundReplayScheduled = AtomicBoolean(false)
     private val inboundReplayExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "signalasi-inbound-replay").apply { isDaemon = true }
+    }
+    private val attachmentTransferExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "signalasi-link-attachments").apply { isDaemon = true }
     }
     private val retryHandler = Handler(Looper.getMainLooper())
     private val connectionRetryPolicy = MqttConnectionRetryPolicy()
@@ -602,12 +605,41 @@ object SignalASIMqttClient {
                 .put("response_language_preference", policy.responseLanguage)
         }
         clientMessageId?.let { payload.put("client_message_id", it) }
+        var outboundAttachments: List<AgentPreparedOutboundAttachment> = emptyList()
         if (context != null) {
             val attachments = AgentTurnAttachmentRegistry.get(resolvedTurnId)
             val mediaProfile = AgentMediaNetworkDetector.detect(context)
-            inlineTurnAttachments(context, attachments, mediaProfile)
-                .takeIf { it.length() > 0 }
-                ?.let { payload.put("attachments", it) }
+            if (attachments.isNotEmpty() && usesPcConnectorTunnel(contactId)) {
+                val desktopId = AppStore.desktopIdForContact(context, contactId)
+                val link = SignalASILinkProtocol.serverLink(context, desktopId)
+                    ?: return MqttPublishResult.FAILED
+                outboundAttachments = runCatching {
+                    AgentOutboundAttachmentTransferStore.prepare(
+                        context = context,
+                        scope = AgentAttachmentTransferScope(
+                            contactId = contactId,
+                            desktopId = desktopId,
+                            clientRouteId = link.routes.clientRouteId,
+                            conversationId = resolvedConversationId,
+                            taskId = resolvedTaskId,
+                            turnId = resolvedTurnId,
+                            clientMessageId = clientMessageId
+                        ),
+                        attachments = attachments,
+                        mediaProfile = mediaProfile
+                    )
+                }.onFailure {
+                    Log.e(TAG, "Agent attachment transfer preparation failed", it)
+                }.getOrNull() ?: return MqttPublishResult.FAILED
+                payload.put(
+                    "attachments",
+                    JSONArray(outboundAttachments.map(AgentPreparedOutboundAttachment::descriptor))
+                )
+            } else {
+                inlineTurnAttachments(context, attachments, mediaProfile)
+                    .takeIf { it.length() > 0 }
+                    ?.let { payload.put("attachments", it) }
+            }
             if (attachments.any { attachment -> attachment.isTransportMedia() }) {
                 payload
                     .put("media_network_profile", mediaProfile.id)
@@ -623,7 +655,37 @@ object SignalASIMqttClient {
                     .put("desktop_name", contact.optString("desktop_name"))
             }
         }
-        return publishJsonResult(payload, topicOverride ?: outgoingTopic(contactId), contactId)
+        val topic = topicOverride ?: outgoingTopic(contactId)
+        if (outboundAttachments.isNotEmpty()) {
+            val queuedTask = publishJsonResult(
+                payload,
+                topic,
+                contactId,
+                queueOnly = true,
+                blockedByAttachmentTransferIds = outboundAttachments.map { it.transferId }
+            )
+            if (!queuedTask.accepted) return MqttPublishResult.FAILED
+            for (attachment in outboundAttachments) {
+                if (!publishJsonResult(
+                        attachment.manifestPayload(resume = false),
+                        topic,
+                        contactId,
+                        queueOnly = true
+                    ).accepted
+                ) return MqttPublishResult.FAILED
+                for (chunkIndex in 0 until attachment.chunkCount) {
+                    if (!publishJsonResult(
+                            attachment.chunkPayload(chunkIndex),
+                            topic,
+                            contactId,
+                            queueOnly = true
+                        ).accepted
+                    ) return MqttPublishResult.FAILED
+                }
+            }
+            return queuedTask
+        }
+        return publishJsonResult(payload, topic, contactId)
     }
 
     private fun inlineTurnAttachments(
@@ -932,7 +994,9 @@ object SignalASIMqttClient {
     private fun publishJsonResult(
         payload: JSONObject,
         topic: String?,
-        contactId: String = "hermes"
+        contactId: String = "hermes",
+        queueOnly: Boolean = false,
+        blockedByAttachmentTransferIds: Collection<String> = emptyList()
     ): MqttPublishResult {
         if (topic.isNullOrBlank()) {
             Log.w(TAG, "Publish rejected: target topic is blank")
@@ -1039,8 +1103,14 @@ object SignalASIMqttClient {
             messageId,
             topic,
             wirePayload,
-            requiresValidatedNetwork = deferMediaUpload
+            requiresValidatedNetwork = deferMediaUpload,
+            blockedByAttachmentTransferIds = blockedByAttachmentTransferIds
         )
+        if (queueOnly) {
+            if (client?.isConnected != true) connect(context)
+            scheduleOutboxRetries()
+            return MqttPublishResult.QUEUED
+        }
         if (deferMediaUpload) {
             Log.i(
                 TAG,
@@ -1542,6 +1612,13 @@ object SignalASIMqttClient {
             SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
             return
         }
+        if (payload.optString("type") == "input_attachment_receipt") {
+            attachmentTransferExecutor.execute {
+                handleInputAttachmentReceipt(context, payload, sourceDesktopId)
+            }
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
         if (payload.optString("type") == "proactive_task_event") {
             AgentRemoteProactiveEventStore(context).ingest(payload, sourceDesktopId)
             SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
@@ -1683,6 +1760,64 @@ object SignalASIMqttClient {
         setSecureReady(SignalASILinkProtocol.allServerLinks(context).any { link ->
             link.paired && SignalASICrypto.hasDesktopSession(context, link.desktopId)
         })
+        resumePendingAttachmentTransfers(context)
+    }
+
+    private fun resumePendingAttachmentTransfers(context: Context) {
+        attachmentTransferExecutor.execute {
+            AgentOutboundAttachmentTransferStore.pending(context).forEach { attachment ->
+                val link = SignalASILinkProtocol.serverLink(context, attachment.scope.desktopId)
+                    ?: return@forEach
+                if (
+                    !link.paired ||
+                    link.routes.clientRouteId != attachment.scope.clientRouteId
+                ) return@forEach
+                publishJsonResult(
+                    attachment.manifestPayload(resume = true),
+                    link.routes.up,
+                    attachment.scope.contactId
+                )
+            }
+        }
+    }
+
+    private fun handleInputAttachmentReceipt(
+        context: Context,
+        payload: JSONObject,
+        sourceDesktopId: String
+    ) {
+        val transfer = AgentOutboundAttachmentTransferStore.find(
+            context,
+            payload.optString("transfer_id").lowercase()
+        ) ?: return
+        if (
+            transfer.scope.desktopId != sourceDesktopId ||
+            payload.optString("client_route_id") != transfer.scope.clientRouteId
+        ) return
+        if (payload.optString("status") == "stored") {
+            if (AgentOutboundAttachmentTransferStore.acknowledgeStored(context, payload)) {
+                scheduleOutboxRetries()
+            }
+            return
+        }
+        if (payload.optString("status") != "missing") return
+        val requested = runCatching {
+            AgentAttachmentTransferProtocol.expandMissingRanges(
+                payload.optJSONArray("missing_ranges"),
+                transfer.chunkCount
+            )
+        }.onFailure {
+            Log.w(TAG, "Rejected invalid attachment resume request", it)
+        }.getOrNull() ?: return
+        val link = SignalASILinkProtocol.serverLink(context, sourceDesktopId) ?: return
+        if (!link.paired || link.routes.clientRouteId != transfer.scope.clientRouteId) return
+        requested.forEach { index ->
+            publishJsonResult(
+                transfer.chunkPayload(index),
+                link.routes.up,
+                transfer.scope.contactId
+            )
+        }
     }
 
     private fun scheduleConnectorStatusRequest() {

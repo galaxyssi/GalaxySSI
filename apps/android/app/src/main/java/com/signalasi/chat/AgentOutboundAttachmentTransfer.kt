@@ -1,0 +1,435 @@
+package com.signalasi.chat
+
+import android.content.Context
+import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.io.RandomAccessFile
+import java.security.MessageDigest
+import java.util.UUID
+
+internal data class AgentAttachmentTransferScope(
+    val contactId: String,
+    val desktopId: String,
+    val clientRouteId: String,
+    val conversationId: String,
+    val taskId: String,
+    val turnId: String,
+    val clientMessageId: Long?
+) {
+    init {
+        require(contactId.isNotBlank() && contactId.length <= 256)
+        require(desktopId.isNotBlank() && desktopId.length <= 256)
+        require(SignalASILinkProtocol.validRouteId(clientRouteId))
+        require(conversationId.isNotBlank() && conversationId.length <= 256)
+        require(taskId.isNotBlank() && taskId.length <= 256)
+        require(turnId.isNotBlank() && turnId.length <= 256)
+    }
+}
+
+internal data class AgentPreparedOutboundAttachment(
+    val transferId: String,
+    val attachmentId: String,
+    val ordinal: Int,
+    val name: String,
+    val originalName: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val originalSizeBytes: Long,
+    val sha256: String,
+    val chunkCount: Int,
+    val transportProfile: String,
+    val requiresValidatedNetwork: Boolean,
+    val scope: AgentAttachmentTransferScope,
+    private val dataFile: File
+) {
+    fun descriptor(): JSONObject = JSONObject()
+        .put("id", attachmentId)
+        .put("transfer_id", transferId)
+        .put("name", name)
+        .put("original_name", originalName)
+        .put("mime_type", mimeType)
+        .put("size", sizeBytes)
+        .put("transport_size", sizeBytes)
+        .put("original_size", originalSizeBytes)
+        .put("sha256", sha256)
+        .put("chunk_count", chunkCount)
+        .put("chunk_size_bytes", AgentOutboundAttachmentTransferStore.CHUNK_BYTES)
+        .put("transport_profile", transportProfile)
+        .put("transport_status", "chunked")
+
+    fun manifestPayload(resume: Boolean): JSONObject = commonPayload("input_attachment_manifest")
+        .put("resume", resume)
+
+    fun chunkPayload(index: Int): JSONObject {
+        require(index in 0 until chunkCount) { "Attachment chunk index is invalid" }
+        val start = index.toLong() * AgentOutboundAttachmentTransferStore.CHUNK_BYTES
+        val expected = minOf(
+            AgentOutboundAttachmentTransferStore.CHUNK_BYTES.toLong(),
+            sizeBytes - start
+        ).toInt()
+        require(expected > 0) { "Attachment chunk is empty" }
+        val bytes = ByteArray(expected)
+        RandomAccessFile(dataFile, "r").use { source ->
+            source.seek(start)
+            source.readFully(bytes)
+        }
+        return commonPayload("input_attachment_chunk")
+            .put("chunk_index", index)
+            .put("chunk_size", bytes.size)
+            .put("chunk_sha256", AgentAttachmentTransferProtocol.sha256(bytes))
+            .put("data_b64", Base64.encodeToString(bytes, Base64.NO_WRAP))
+    }
+
+    private fun commonPayload(type: String): JSONObject = JSONObject()
+        .put("type", type)
+        .put("transfer_id", transferId)
+        .put("attachment_id", attachmentId)
+        .put("attachment_ordinal", ordinal)
+        .put("name", name)
+        .put("original_name", originalName)
+        .put("mime_type", mimeType)
+        .put("size_bytes", sizeBytes)
+        .put("original_size_bytes", originalSizeBytes)
+        .put("sha256", sha256)
+        .put("chunk_count", chunkCount)
+        .put("chunk_size_bytes", AgentOutboundAttachmentTransferStore.CHUNK_BYTES)
+        .put("transport_profile", transportProfile)
+        .put("contact_id", scope.contactId)
+        .put("desktop_id", scope.desktopId)
+        .put("client_route_id", scope.clientRouteId)
+        .put("conversation_id", scope.conversationId)
+        .put("task_id", scope.taskId)
+        .put("turn_id", scope.turnId)
+        .put("time", System.currentTimeMillis())
+        .also { payload ->
+            scope.clientMessageId?.let { payload.put("client_message_id", it) }
+            if (requiresValidatedNetwork) payload.put("defer_media_upload", true)
+        }
+}
+
+internal object AgentAttachmentTransferProtocol {
+    private val SHA256 = Regex("[a-f0-9]{64}")
+
+    fun transferId(
+        scope: AgentAttachmentTransferScope,
+        attachmentId: String,
+        sha256: String
+    ): String {
+        require(sha256.matches(SHA256))
+        val canonical = listOf(
+            scope.clientRouteId,
+            scope.conversationId,
+            scope.taskId,
+            scope.turnId,
+            attachmentId,
+            sha256
+        ).joinToString("\u0000")
+        return sha256(canonical.toByteArray(Charsets.UTF_8))
+    }
+
+    fun missingRanges(indices: Collection<Int>): JSONArray {
+        val ordered = indices.distinct().sorted()
+        val ranges = JSONArray()
+        var start: Int? = null
+        var previous: Int? = null
+        ordered.forEach { value ->
+            require(value >= 0)
+            if (start == null) {
+                start = value
+                previous = value
+            } else if (value == previous!! + 1) {
+                previous = value
+            } else {
+                ranges.put(JSONArray().put(start).put(previous))
+                start = value
+                previous = value
+            }
+        }
+        if (start != null) ranges.put(JSONArray().put(start).put(previous))
+        return ranges
+    }
+
+    fun expandMissingRanges(ranges: JSONArray?, chunkCount: Int): List<Int> {
+        require(chunkCount in 1..AgentOutboundAttachmentTransferStore.MAX_CHUNKS)
+        if (ranges == null) return emptyList()
+        val result = linkedSetOf<Int>()
+        for (index in 0 until ranges.length()) {
+            val range = ranges.optJSONArray(index)
+                ?: throw IllegalArgumentException("Attachment missing range is invalid")
+            val start = range.optInt(0, -1)
+            val end = range.optInt(1, -1)
+            require(start in 0 until chunkCount && end in start until chunkCount) {
+                "Attachment missing range is out of bounds"
+            }
+            for (value in start..end) result += value
+        }
+        return result.toList()
+    }
+
+    fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+}
+
+internal object AgentOutboundAttachmentTransferStore {
+    const val CHUNK_BYTES = 256 * 1024
+    const val MAX_ATTACHMENT_BYTES = 64L * 1024L * 1024L
+    const val MAX_CHUNKS = (MAX_ATTACHMENT_BYTES / CHUNK_BYTES).toInt()
+    private const val MAX_ATTACHMENTS_PER_TURN = 10
+    private const val ROOT_DIRECTORY = "agent-link-outgoing-attachments-v1"
+    private const val MANIFEST_FILE = "manifest.json"
+    private const val DATA_FILE = "data.bin"
+    private const val MAX_AGE_MILLIS = 7L * 24L * 60L * 60L * 1_000L
+    private val SHA256 = Regex("[a-f0-9]{64}")
+
+    @Synchronized
+    fun prepare(
+        context: Context,
+        scope: AgentAttachmentTransferScope,
+        attachments: List<AgentInputAttachment>,
+        mediaProfile: AgentMediaDeliveryProfile
+    ): List<AgentPreparedOutboundAttachment> {
+        require(attachments.size <= MAX_ATTACHMENTS_PER_TURN) { "Too many Agent attachments" }
+        prune(context)
+        return attachments.mapIndexed { ordinal, attachment ->
+            prepareOne(context.applicationContext, scope, attachment, ordinal, mediaProfile)
+        }
+    }
+
+    @Synchronized
+    fun pending(context: Context): List<AgentPreparedOutboundAttachment> {
+        prune(context)
+        return root(context).listFiles()
+            .orEmpty()
+            .filter(File::isDirectory)
+            .mapNotNull(::readPrepared)
+            .sortedBy { it.transferId }
+    }
+
+    @Synchronized
+    fun find(context: Context, transferId: String): AgentPreparedOutboundAttachment? {
+        if (!transferId.matches(SHA256)) return null
+        return readPrepared(File(root(context), transferId))
+    }
+
+    @Synchronized
+    fun acknowledgeStored(context: Context, payload: JSONObject): Boolean {
+        if (payload.optString("status") != "stored") return false
+        val transfer = find(context, payload.optString("transfer_id").lowercase()) ?: return false
+        if (
+            payload.optString("sha256").lowercase() != transfer.sha256 ||
+            payload.optString("client_route_id") != transfer.scope.clientRouteId ||
+            payload.optString("conversation_id") != transfer.scope.conversationId ||
+            payload.optString("task_id") != transfer.scope.taskId ||
+            payload.optString("turn_id") != transfer.scope.turnId ||
+            payload.optString("contact_id") != transfer.scope.contactId ||
+            (
+                transfer.scope.clientMessageId != null &&
+                    payload.optString("source_message_id") !=
+                    transfer.scope.clientMessageId.toString()
+            )
+        ) return false
+        SignalASILinkDeliveryStore.releaseAttachmentDependency(context, transfer.transferId)
+        transferDirectory(context, transfer.transferId).deleteRecursively()
+        return true
+    }
+
+    private fun prepareOne(
+        context: Context,
+        scope: AgentAttachmentTransferScope,
+        attachment: AgentInputAttachment,
+        ordinal: Int,
+        mediaProfile: AgentMediaDeliveryProfile
+    ): AgentPreparedOutboundAttachment {
+        require(attachment.id.isNotBlank() && attachment.id.length <= 256)
+        require(attachment.sizeBytes <= MAX_ATTACHMENT_BYTES) { "Agent attachment is too large" }
+        val preparing = File(root(context), ".preparing-${UUID.randomUUID()}")
+        check(preparing.mkdirs()) { "Attachment transfer staging is unavailable" }
+        val temporaryData = File(preparing, DATA_FILE)
+        var transportName = attachment.displayName.ifBlank { "attachment-${ordinal + 1}" }
+        var transportMime = attachment.mimeType.ifBlank { "application/octet-stream" }
+        var transportSize = 0L
+        val digest = MessageDigest.getInstance("SHA-256")
+        try {
+            if (attachment.isImage) {
+                val encoded = AgentImagePipeline.encodeForTransport(
+                    context,
+                    attachment,
+                    mediaProfile.imageTargetBytes
+                ) ?: error("Image attachment could not be prepared")
+                require(encoded.bytes.isNotEmpty())
+                transportName = encoded.transportName(transportName)
+                transportMime = encoded.mimeType
+                temporaryData.outputStream().buffered().use { output ->
+                    output.write(encoded.bytes)
+                }
+                digest.update(encoded.bytes)
+                transportSize = encoded.bytes.size.toLong()
+            } else {
+                val input = context.contentResolver.openInputStream(attachment.uri)
+                    ?: error("Attachment content is unavailable")
+                input.buffered().use { source ->
+                    temporaryData.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val read = source.read(buffer)
+                            if (read < 0) break
+                            transportSize += read
+                            require(transportSize <= MAX_ATTACHMENT_BYTES) {
+                                "Agent attachment exceeds the transfer limit"
+                            }
+                            digest.update(buffer, 0, read)
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+            }
+            require(transportSize in 1..MAX_ATTACHMENT_BYTES) { "Agent attachment is empty" }
+            val fullHash = digest.digest().joinToString("") { "%02x".format(it) }
+            val transferId = AgentAttachmentTransferProtocol.transferId(
+                scope,
+                attachment.id,
+                fullHash
+            )
+            val destination = transferDirectory(context, transferId)
+            readPrepared(destination)?.let { existing ->
+                preparing.deleteRecursively()
+                return existing
+            }
+            destination.deleteRecursively()
+            check(destination.mkdirs()) { "Attachment transfer directory is unavailable" }
+            val data = File(destination, DATA_FILE)
+            check(temporaryData.renameTo(data)) { "Attachment transfer data could not be committed" }
+            val chunkCount = ((transportSize + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt()
+            require(chunkCount in 1..MAX_CHUNKS)
+            val manifest = JSONObject()
+                .put("transfer_id", transferId)
+                .put("attachment_id", attachment.id)
+                .put("attachment_ordinal", ordinal)
+                .put("name", transportName)
+                .put("original_name", attachment.displayName)
+                .put("mime_type", transportMime)
+                .put("size_bytes", transportSize)
+                .put("original_size_bytes", attachment.sizeBytes)
+                .put("sha256", fullHash)
+                .put("chunk_count", chunkCount)
+                .put("transport_profile", mediaProfile.id)
+                .put(
+                    "requires_validated_network",
+                    mediaProfile.deferMediaUpload && attachment.isTransportMedia()
+                )
+                .put("contact_id", scope.contactId)
+                .put("desktop_id", scope.desktopId)
+                .put("client_route_id", scope.clientRouteId)
+                .put("conversation_id", scope.conversationId)
+                .put("task_id", scope.taskId)
+                .put("turn_id", scope.turnId)
+                .put("client_message_id", scope.clientMessageId)
+                .put("created_at", System.currentTimeMillis())
+            writeManifest(destination, manifest)
+            return readPrepared(destination) ?: error("Attachment transfer manifest is invalid")
+        } finally {
+            preparing.deleteRecursively()
+        }
+    }
+
+    private fun readPrepared(directory: File): AgentPreparedOutboundAttachment? = runCatching {
+        if (!directory.isDirectory || !directory.name.matches(SHA256)) return@runCatching null
+        val manifest = JSONObject(File(directory, MANIFEST_FILE).readText(Charsets.UTF_8))
+        val data = File(directory, DATA_FILE)
+        val transferId = manifest.getString("transfer_id").lowercase()
+        val size = manifest.getLong("size_bytes")
+        val chunkCount = manifest.getInt("chunk_count")
+        val digest = manifest.getString("sha256").lowercase()
+        require(
+            transferId == directory.name &&
+                transferId.matches(SHA256) &&
+                digest.matches(SHA256) &&
+                size in 1..MAX_ATTACHMENT_BYTES &&
+                data.isFile &&
+                data.length() == size &&
+                chunkCount == ((size + CHUNK_BYTES - 1) / CHUNK_BYTES).toInt() &&
+                chunkCount in 1..MAX_CHUNKS
+        )
+        val prepared = AgentPreparedOutboundAttachment(
+            transferId = transferId,
+            attachmentId = manifest.getString("attachment_id"),
+            ordinal = manifest.getInt("attachment_ordinal"),
+            name = manifest.getString("name"),
+            originalName = manifest.optString("original_name"),
+            mimeType = manifest.getString("mime_type"),
+            sizeBytes = size,
+            originalSizeBytes = manifest.optLong("original_size_bytes", size),
+            sha256 = digest,
+            chunkCount = chunkCount,
+            transportProfile = manifest.optString("transport_profile", "standard"),
+            requiresValidatedNetwork = manifest.optBoolean("requires_validated_network"),
+            scope = AgentAttachmentTransferScope(
+                contactId = manifest.getString("contact_id"),
+                desktopId = manifest.getString("desktop_id"),
+                clientRouteId = manifest.getString("client_route_id"),
+                conversationId = manifest.getString("conversation_id"),
+                taskId = manifest.getString("task_id"),
+                turnId = manifest.getString("turn_id"),
+                clientMessageId = manifest.optLong("client_message_id", -1L).takeIf { it >= 0L }
+            ),
+            dataFile = data
+        )
+        require(
+            AgentAttachmentTransferProtocol.transferId(
+                prepared.scope,
+                prepared.attachmentId,
+                prepared.sha256
+            ) == prepared.transferId
+        )
+        prepared
+    }.getOrNull()
+
+    private fun writeManifest(directory: File, manifest: JSONObject) {
+        val temporary = File(directory, ".$MANIFEST_FILE.tmp")
+        val target = File(directory, MANIFEST_FILE)
+        temporary.writeText(manifest.toString(), Charsets.UTF_8)
+        check(temporary.renameTo(target)) { "Attachment transfer manifest could not be committed" }
+    }
+
+    private fun prune(context: Context) {
+        val cutoff = System.currentTimeMillis() - MAX_AGE_MILLIS
+        val discardedTransferIds = mutableSetOf<String>()
+        root(context).listFiles().orEmpty().forEach { entry ->
+            val createdAt = runCatching {
+                JSONObject(File(entry, MANIFEST_FILE).readText(Charsets.UTF_8))
+                    .optLong("created_at", entry.lastModified())
+            }.getOrDefault(entry.lastModified())
+            if (
+                entry.name.startsWith(".preparing-") ||
+                createdAt < cutoff ||
+                (entry.isDirectory && readPrepared(entry) == null)
+            ) {
+                if (entry.name.matches(SHA256)) discardedTransferIds += entry.name
+                entry.deleteRecursively()
+            }
+        }
+        if (discardedTransferIds.isNotEmpty()) {
+            SignalASILinkDeliveryStore.discardBlockedByAttachmentTransfers(
+                context,
+                discardedTransferIds
+            )
+        }
+    }
+
+    private fun transferDirectory(context: Context, transferId: String): File =
+        File(root(context), transferId)
+
+    private fun root(context: Context): File =
+        File(context.applicationContext.filesDir, ROOT_DIRECTORY).apply {
+            check(mkdirs() || isDirectory) { "Attachment transfer root is unavailable" }
+        }
+
+    private fun AgentInputAttachment.isTransportMedia(): Boolean =
+        mimeType.startsWith("image/", ignoreCase = true) ||
+            mimeType.startsWith("audio/", ignoreCase = true) ||
+            mimeType.startsWith("video/", ignoreCase = true)
+}

@@ -216,7 +216,18 @@ A client removing a server performs the symmetric operation. Re-pairing creates 
 
 ## Files and Voice
 
-MQTT carries only metadata or small inline voice payloads within the configured limit. Larger content uses an authenticated encrypted file service. Each object has a random object ID, independent content key, SHA-256 digest, size, MIME type, expiry, and authorization bound to the paired relationship. Temporary objects are deleted after expiry or task cleanup.
+Small voice payloads may be inline. Agent input attachments and output artifacts use resumable encrypted chunks over the relationship route. Attachment transfer is scoped by `client_route_id`, `conversation_id`, `task_id`, and `turn_id`; a transfer cannot be reused in another task.
+
+The sender publishes an `input_attachment_manifest`, followed by durable `input_attachment_chunk` messages. Default limits are 64 MiB per attachment, ten attachments per task, and 256 KiB per attachment chunk. Every chunk includes its index, exact length, and SHA-256 digest. The manifest includes the complete byte length, chunk count, and whole-file SHA-256 digest.
+
+The receiver stores chunks in the isolated task workspace. It verifies each chunk before committing it, accepts identical duplicates idempotently, rejects conflicting duplicates, and exposes the file to an Agent only after exact-length and whole-file hash verification. Partial state survives process and network restarts.
+
+On reconnect, the sender republishes the manifest with `resume: true`. The receiver answers with an encrypted `input_attachment_receipt` whose status is either:
+
+- `missing`, with compact inclusive chunk ranges that must be resent.
+- `stored`, after full verification and atomic commit.
+
+The sender retains its private transfer copy until the signed relationship returns `stored`. The corresponding task message remains durably queued but blocked until every declared attachment has reached that state, so an Agent cannot start against an incomplete file. Large encrypted outbox entries are file-backed instead of being embedded in preference storage. Output artifacts use the symmetric durable delivery path and remain phone-owned unless the user explicitly authorizes Desktop retention. Temporary transfer state is removed after acknowledgement, seven-day expiry, or task cleanup.
 
 ## Groups and Peer-to-Peer Extension
 

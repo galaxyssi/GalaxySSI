@@ -162,6 +162,9 @@ DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE = "desktop_control_authorization_chan
 DESKTOP_CONTROL_REQUEST_SLOTS = threading.BoundedSemaphore(4)
 ARTIFACT_CHUNK_TYPE = "artifact_chunk"
 ARTIFACT_RECEIPT_TYPE = "artifact_receipt"
+INPUT_ATTACHMENT_MANIFEST_TYPE = "input_attachment_manifest"
+INPUT_ATTACHMENT_CHUNK_TYPE = "input_attachment_chunk"
+INPUT_ATTACHMENT_RECEIPT_TYPE = "input_attachment_receipt"
 EVOLUTION_TASK_EVENT_TYPE = "evolution_task_event"
 EVOLUTION_TASK_SNAPSHOT_TYPE = "evolution_task_snapshot"
 EVOLUTION_TASK_CREATE_TYPE = "evolution_task_create"
@@ -1901,6 +1904,7 @@ def _publish_phone_payload(
         "delivery_ack", "agent_task_event", "pairing_revoked", "connector_status", "capability_manifest",
         "agent_task_approval_result",
         ARTIFACT_RECEIPT_TYPE,
+        INPUT_ATTACHMENT_RECEIPT_TYPE,
         DESKTOP_TOOL_CALL_RESULT_TYPE, DESKTOP_TOOL_CANCEL_ACK_TYPE,
         DESKTOP_EXECUTOR_EVENT_TYPE, DESKTOP_ACTION_RECEIPT_TYPE,
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
@@ -3051,6 +3055,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     def content_with_attachments(task_id: str, base_content: str | None = None) -> str:
         task_content = effective_content if base_content is None else base_content
         attachments = payload.get("attachments") or []
+        from input_attachment_transfer import resolved_attachment_path
         from task_workspace import task_workspace
         attachment_root = task_workspace(task_id, agent_id) / "downloads" / "input"
         attachment_root.mkdir(parents=True, exist_ok=True)
@@ -3062,6 +3067,20 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             if not isinstance(attachment, dict):
                 continue
             name = Path(str(attachment.get("name") or f"attachment-{index + 1}")).name[:180]
+            transferred = resolved_attachment_path(
+                attachment,
+                client_route_id=client_route_id,
+                conversation_id=client_conversation_id,
+                task_id=task_id,
+                turn_id=client_turn_id,
+            )
+            if transferred is not None:
+                materialized.append(str(transferred))
+                continue
+            if str(attachment.get("transfer_id") or "").strip():
+                raise RuntimeError(
+                    f"Input attachment transfer is not verified: {name}"
+                )
             encoded = str(attachment.get("data_b64") or "")
             if not encoded:
                 if name not in existing_names:
@@ -4566,6 +4585,36 @@ def _process_message(mqttc, userdata, msg):
                     str(payload.get("artifact_id") or "")[:12],
                     client_route_id[-8:],
                 )
+            return
+
+        if payload.get("type") in {
+            INPUT_ATTACHMENT_MANIFEST_TYPE,
+            INPUT_ATTACHMENT_CHUNK_TYPE,
+        }:
+            from input_attachment_transfer import (
+                ingest_chunk,
+                ingest_manifest,
+                resume_after_rejection,
+            )
+
+            receipt = None
+            try:
+                if payload.get("type") == INPUT_ATTACHMENT_MANIFEST_TYPE:
+                    receipt = ingest_manifest(payload, client_route_id=client_route_id)
+                else:
+                    receipt = ingest_chunk(payload, client_route_id=client_route_id)
+            except ValueError as exc:
+                log.warning(
+                    "Rejected input attachment transfer transfer=%s reason=%s",
+                    str(payload.get("transfer_id") or "")[:12],
+                    exc,
+                )
+                receipt = resume_after_rejection(
+                    payload,
+                    client_route_id=client_route_id,
+                )
+            if receipt is not None:
+                _publish_phone_payload(mqttc, wire_payload, receipt.payload())
             return
 
         if _route_desktop_control_payload(
