@@ -125,6 +125,7 @@
     A10000000000000000000269 /* AgentConnectorResponseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000269 /* AgentConnectorResponseModels.swift */; };
     A10000000000000000000270 /* AgentManagedResponseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000270 /* AgentManagedResponseModels.swift */; };
     A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000273 /* AgentTeamExecutionModels.swift */; };
+    A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000275 /* AgentPolicyFirewallModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -319,6 +320,7 @@
     A20000000000000000000269 /* AgentConnectorResponseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorResponseModels.swift; sourceTree = "<group>"; };
     A20000000000000000000270 /* AgentManagedResponseModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentManagedResponseModels.swift; sourceTree = "<group>"; };
     A20000000000000000000273 /* AgentTeamExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamExecutionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000275 /* AgentPolicyFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPolicyFirewallModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -514,6 +516,7 @@
         A20000000000000000000269 /* AgentConnectorResponseModels.swift */,
         A20000000000000000000270 /* AgentManagedResponseModels.swift */,
         A20000000000000000000273 /* AgentTeamExecutionModels.swift */,
+        A20000000000000000000275 /* AgentPolicyFirewallModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -806,6 +809,7 @@
         A10000000000000000000269 /* AgentConnectorResponseModels.swift in Sources */,
         A10000000000000000000270 /* AgentManagedResponseModels.swift in Sources */,
         A10000000000000000000273 /* AgentTeamExecutionModels.swift in Sources */,
+        A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
