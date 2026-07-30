@@ -63,7 +63,8 @@ data class AgentMemoryPssSnapshot(
     val sampleCount: Int = 0,
     val byAgent: List<AgentMemoryDimensionStats> = emptyList(),
     val bySession: List<AgentMemoryDimensionStats> = emptyList(),
-    val byProvider: List<AgentMemoryDimensionStats> = emptyList()
+    val byProvider: List<AgentMemoryDimensionStats> = emptyList(),
+    val sessionBudget: AgentSessionMemoryBudgetSnapshot = AgentSessionMemoryBudgetSnapshot()
 )
 
 fun interface AgentMemoryPssSampler {
@@ -372,6 +373,7 @@ object AgentMemoryPssRuntime {
     @Synchronized
     fun start(context: Context, activeWorkspaces: () -> List<AgentWorkspace>) {
         workspaces = activeWorkspaces
+        AgentSessionMemoryBudgetRuntime.start(context.applicationContext)
         if (monitor == null) {
             monitor = AgentMemoryPssMonitor(
                 sampler = AndroidAgentMemoryPssSampler(),
@@ -404,7 +406,9 @@ object AgentMemoryPssRuntime {
 
     fun snapshot(): AgentMemoryPssSnapshot {
         requestCapture()
-        return monitor?.snapshot() ?: AgentMemoryPssSnapshot()
+        return (monitor?.snapshot() ?: AgentMemoryPssSnapshot()).copy(
+            sessionBudget = AgentSessionMemoryBudgetRuntime.snapshot()
+        )
     }
 
     private fun captureSafely() {

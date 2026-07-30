@@ -1186,6 +1186,11 @@ def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
     provider = desktop_agent_provider()
     with _agent_runtime_server_lock:
         if _agent_runtime_server is None:
+            from agent_memory_telemetry import (
+                agent_memory_telemetry_runtime,
+                process_memory_reading,
+            )
+
             configured_workers = os.environ.get("SIGNALASI_AGENT_RUNTIME_WORKERS", "4")
             try:
                 max_workers = int(configured_workers)
@@ -1212,6 +1217,12 @@ def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
                 )
             except ValueError:
                 failure_cooldown = 30.0
+            memory_telemetry = agent_memory_telemetry_runtime()
+
+            def read_runtime_memory() -> tuple[int, str]:
+                reading = process_memory_reading(os.getpid())
+                return reading.resident_bytes, reading.measurement_kind
+
             _agent_runtime_server = DesktopAgentRuntimeServer(
                 provider=provider,
                 store=DesktopAgentRuntimeStore(_agent_runtime_server_state_path()),
@@ -1221,6 +1232,8 @@ def desktop_agent_runtime_server() -> DesktopAgentRuntimeServer:
                     failure_threshold=failure_threshold,
                     cooldown_seconds=failure_cooldown,
                 ),
+                session_memory_reader=read_runtime_memory,
+                session_memory_observer=memory_telemetry.observe_session_created,
             )
         return _agent_runtime_server
 

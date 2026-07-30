@@ -722,4 +722,15 @@
     <string name="cc_memory_risk_low">低风险</string>
     <string name="cc_memory_risk_review">需要审核</string>
     <string name="cc_memory_risk_private">私密内容已拦截</string>
+    <string name="cc_agent_session_memory_section">新会话内存预算</string>
+    <string name="cc_agent_session_memory_latest">最近会话开销</string>
+    <string name="cc_agent_session_memory_latest_subtitle">创建会话后 SignalASI 进程新增的 PSS</string>
+    <string name="cc_agent_session_memory_peak">会话开销峰值</string>
+    <string name="cc_agent_session_memory_peak_subtitle">会话外壳实测的最高内存增量</string>
+    <string name="cc_agent_session_memory_average">会话平均开销</string>
+    <string name="cc_agent_session_memory_average_subtitle">共 %1$d 次测量 · %2$d 次超出预算</string>
+    <string name="cc_agent_session_memory_target">低于 %1$s 目标</string>
+    <string name="cc_agent_session_memory_over">超过 %1$s 目标</string>
+    <string name="cc_agent_session_memory_unmeasured">尚未测量</string>
+    <string name="cc_agent_session_memory_notice">这里只测量 SignalASI 会话外壳。Codex、Claude Code、Hermes、OpenClaw 和模型等外部进程会单独统计。</string>
 </resources>

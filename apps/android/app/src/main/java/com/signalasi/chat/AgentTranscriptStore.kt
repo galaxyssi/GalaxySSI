@@ -592,6 +592,10 @@ class AgentTranscriptStore(context: Context) {
     private var draftConversation: AgentConversation? = null
     private var emptyConversationsPruned = false
 
+    init {
+        AgentSessionMemoryBudgetRuntime.start(appContext)
+    }
+
     @Synchronized
     fun conversations(includeArchived: Boolean = false): List<AgentConversation> {
         if (!emptyConversationsPruned) {
@@ -619,6 +623,7 @@ class AgentTranscriptStore(context: Context) {
 
     @Synchronized
     fun createConversation(title: String = ""): AgentConversation {
+        val memoryBaseline = AgentSessionMemoryBudgetRuntime.begin()
         val now = System.currentTimeMillis()
         val conversation = AgentConversation(
             id = UUID.randomUUID().toString(),
@@ -629,6 +634,7 @@ class AgentTranscriptStore(context: Context) {
         draftConversation = conversation
         saveDraftConversation(conversation)
         preferences.remove(KEY_ACTIVE_CONVERSATION)
+        AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
         return conversation
     }
 
@@ -638,6 +644,7 @@ class AgentTranscriptStore(context: Context) {
         parentConversationId: String = "",
         globalTopicKey: String = ""
     ): AgentConversation {
+        val memoryBaseline = AgentSessionMemoryBudgetRuntime.begin()
         val now = System.currentTimeMillis()
         val conversation = AgentConversation(
             id = UUID.randomUUID().toString(),
@@ -652,6 +659,7 @@ class AgentTranscriptStore(context: Context) {
         saveConversations(all + conversation)
         emptyConversationsPruned = false
         GlobalConversationEventBus.publishConversationCreated(appContext, conversation)
+        AgentSessionMemoryBudgetRuntime.complete(conversation.id, memoryBaseline)
         return conversation
     }
 

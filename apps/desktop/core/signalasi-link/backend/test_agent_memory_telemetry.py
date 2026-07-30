@@ -8,10 +8,13 @@ from unittest.mock import patch
 
 from agent_memory_telemetry import (
     AgentMemorySample,
+    AgentSessionMemorySample,
     AgentMemoryTelemetryRuntime,
     AgentMemoryTelemetryStore,
+    DEFAULT_SESSION_MEMORY_TARGET_BYTES,
     ProcessMemoryReading,
     aggregate_memory_samples,
+    aggregate_session_memory_samples,
     default_database_path,
     measurement_kind,
     process_memory_reading,
@@ -204,6 +207,51 @@ class AgentMemoryTelemetryTest(unittest.TestCase):
         self.assertEqual(measurement_kind(), reading.measurement_kind)
         self.assertGreater(reading.resident_bytes, 0)
 
+    def test_session_budget_uses_incremental_process_memory(self):
+        snapshot = aggregate_session_memory_samples([
+            session_sample("one", 1_000, 100, 109),
+            session_sample("two", 2_000, 109, 121),
+        ])
+
+        self.assertEqual(12 * MIB, snapshot["latest_incremental_bytes"])
+        self.assertEqual(12 * MIB, snapshot["peak_incremental_bytes"])
+        self.assertEqual(2, snapshot["sample_count"])
+        self.assertEqual(0, snapshot["exceeded_count"])
+        self.assertTrue(snapshot["within_budget"])
+        self.assertEqual(DEFAULT_SESSION_MEMORY_TARGET_BYTES, snapshot["target_bytes"])
+
+    def test_runtime_persists_new_session_budget_separately_from_agent_processes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = AgentMemoryTelemetryStore(
+                Path(directory) / "memory.sqlite3",
+                max_samples=100,
+            )
+            runtime = AgentMemoryTelemetryRuntime(
+                lambda: [],
+                store=store,
+                process_sampler=lambda pid: ProcessMemoryReading(
+                    140 * MIB,
+                    "windows_working_set",
+                    pid,
+                ),
+            )
+
+            runtime.observe_session_created({
+                "sampled_at": int(time.time() * 1000),
+                "session_id": "session-new",
+                "agent_id": "codex",
+                "conversation_id": "conversation-new",
+                "before_bytes": 140 * MIB,
+                "after_bytes": 151 * MIB,
+                "measurement_kind": "windows_working_set",
+            })
+            snapshot = runtime.snapshot()
+
+            self.assertEqual(11 * MIB, snapshot["session_budget"]["latest_incremental_bytes"])
+            self.assertEqual("session-new", snapshot["session_budget"]["latest_session_id"])
+            self.assertTrue(snapshot["session_budget"]["within_budget"])
+            self.assertEqual(1, len(store.recent_sessions()))
+
 
 def sample(
     sample_id: str,
@@ -226,6 +274,25 @@ def sample(
         session_id=f"session-{agent}" if agent else "",
         provider_id=agent,
         task_id=f"task-{agent}" if agent else "",
+    )
+
+
+def session_sample(
+    sample_id: str,
+    at: int,
+    before_mib: int,
+    after_mib: int,
+) -> AgentSessionMemorySample:
+    return AgentSessionMemorySample(
+        sample_id=sample_id,
+        sampled_at=at,
+        session_id=f"session-{sample_id}",
+        agent_id="codex",
+        conversation_id=f"conversation-{sample_id}",
+        before_bytes=before_mib * MIB,
+        after_bytes=after_mib * MIB,
+        incremental_bytes=max(0, after_mib - before_mib) * MIB,
+        measurement_kind="windows_working_set",
     )
 
 
