@@ -57,6 +57,8 @@ struct AgentIOSSystemNativeToolExecutor {
       return telephonyStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.telephonyCallState:
       return telephonyCallState(invocation)
+    case AgentIOSSystemNativeToolCatalog.telephonyCallStateObserve:
+      return telephonyCallStateObserve(invocation)
     case AgentIOSSystemNativeToolCatalog.calendarsList:
       return calendarProvider.listCalendars(nowMillis: max(0, nowMillis()))
     case AgentIOSSystemNativeToolCatalog.calendarEventsQuery:
@@ -156,6 +158,15 @@ struct AgentIOSSystemNativeToolExecutor {
         "identifiers_included": .bool(false)
       ]
     )
+  }
+
+  private func telephonyCallStateObserve(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let timeout = invocation.input["timeout_ms"]?.intValue ?? 10_000
+    let result = telephonyProvider.observeCallState(
+      timeoutMillis: max(1_000, min(30_000, timeout)),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func calendarEventsQuery(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {

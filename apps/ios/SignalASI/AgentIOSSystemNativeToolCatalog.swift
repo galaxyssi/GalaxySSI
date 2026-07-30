@@ -40,7 +40,8 @@ enum AgentIOSSystemNativeToolCatalog {
 
   static let telephonyReadToolIds: Set<String> = [
     telephonyStatus,
-    telephonyCallState
+    telephonyCallState,
+    telephonyCallStateObserve
   ]
 
   static let handoffToolIds: Set<String> = [
@@ -77,6 +78,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let executableToolIds: Set<String> = handoffToolIds.union([
     telephonyStatus,
     telephonyCallState,
+    telephonyCallStateObserve,
     calendarsList,
     calendarEventsQuery,
     contactsSearch,
@@ -139,7 +141,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       telephonyCallStateObserve,
       "Observe call state transition",
-      "Android bounded call-state observer descriptor retained for planning; iOS does not provide this app-sandboxed listener.",
+      "Observes one bounded iOS CallKit call-state transition without registering an unbounded background listener.",
       .low,
       ["telephony.call_state.observe"],
       ["android.permission.READ_PHONE_STATE"],
