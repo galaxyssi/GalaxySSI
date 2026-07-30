@@ -49,6 +49,23 @@ private final class FakeMcpDeclarativeHTTPTransport: AgentMcpDeclarativeHTTPTran
   }
 }
 
+private final class FakeMcpStreamableHTTPNetworking: AgentMcpStreamableHTTPNetworking {
+  var requests: [AgentMcpStreamableHTTPRequest] = []
+  private var responses: [AgentMcpStreamableHTTPResponse]
+
+  init(_ responses: [AgentMcpStreamableHTTPResponse]) {
+    self.responses = responses
+  }
+
+  func post(_ request: AgentMcpStreamableHTTPRequest) async throws -> AgentMcpStreamableHTTPResponse {
+    requests.append(request)
+    guard !responses.isEmpty else {
+      throw AgentRuntimeCapabilityError.invalid("No fake MCP streamable HTTP response is queued")
+    }
+    return responses.removeFirst()
+  }
+}
+
 private extension AgentRuntimePackCatalogEntry {
   func with(
     version: String? = nil,
@@ -1952,6 +1969,103 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(refreshed.authState, .authenticated)
     XCTAssertEqual(headers["Authorization"], "Bearer fresh-token")
     XCTAssertTrue(refreshed.expiresAtMillis > now)
+  }
+
+  func testAgentMcpStreamableHTTPTransportSendsHeadersAndReceivesJson() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: [
+          "Mcp-Session-Id": " session-1 ",
+          "Content-Type": "application/json"
+        ],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: "")
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(
+      endpoint: "https://mcp.example/rpc",
+      requestHeaders: [
+        "Authorization": "Bearer token",
+        "Content-Length": "999",
+        "Bad\nName": "drop",
+        "X-Unsafe": "line\nbreak"
+      ],
+      networking: networking
+    )
+
+    try transport.open()
+    transport.onProtocolVersionNegotiated("2025-06-18")
+    try await transport.send(#"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+    try await transport.send(#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#)
+
+    XCTAssertEqual(networking.requests.count, 2)
+    XCTAssertEqual(networking.requests[0].endpoint, "https://mcp.example/rpc")
+    XCTAssertEqual(networking.requests[0].headers["Accept"], "application/json, text/event-stream")
+    XCTAssertEqual(networking.requests[0].headers["Content-Type"], "application/json")
+    XCTAssertEqual(networking.requests[0].headers["User-Agent"], "SignalASI-iOS-MCP/1")
+    XCTAssertEqual(networking.requests[0].headers["Authorization"], "Bearer token")
+    XCTAssertEqual(networking.requests[0].headers["MCP-Protocol-Version"], "2025-06-18")
+    XCTAssertNil(networking.requests[0].headers["Content-Length"])
+    XCTAssertNil(networking.requests[0].headers["Bad\nName"])
+    XCTAssertNil(networking.requests[0].headers["X-Unsafe"])
+    XCTAssertEqual(networking.requests[0].body, #"{"jsonrpc":"2.0","id":1,"method":"initialize"}"#)
+    XCTAssertEqual(transport.receive(), #"{"jsonrpc":"2.0","id":1,"result":{}}"#)
+    XCTAssertNil(transport.receive())
+    XCTAssertEqual(transport.currentSessionId, "session-1")
+    XCTAssertEqual(networking.requests[1].headers["Mcp-Session-Id"], "session-1")
+  }
+
+  func testAgentMcpStreamableHTTPTransportParsesSseDataEvents() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["content-type": "text/event-stream; charset=utf-8"],
+        body: """
+        : keepalive
+        data: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}
+
+        data: {"jsonrpc":"2.0","method":"tools/list_changed"}
+
+        """
+      )
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+
+    try transport.open()
+    try await transport.send(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
+
+    XCTAssertEqual(transport.receive(), #"{"jsonrpc":"2.0","id":1,"result":{"ok":true}}"#)
+    XCTAssertEqual(transport.receive(), #"{"jsonrpc":"2.0","method":"tools/list_changed"}"#)
+    XCTAssertNil(transport.receive())
+  }
+
+  func testAgentMcpStreamableHTTPTransportRejectsClosedStateAndHttpFailure() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(statusCode: 401, headers: [:], body: "expired")
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+
+    do {
+      try await transport.send("{}")
+      XCTFail("Expected unopened MCP streamable transport to reject sends")
+    } catch {
+      XCTAssertEqual(error as? AgentRuntimeCapabilityError, .invalid("MCP transport is not open"))
+    }
+
+    try transport.open()
+    do {
+      try await transport.send("{}")
+      XCTFail("Expected HTTP failure from MCP streamable transport")
+    } catch {
+      let http = try XCTUnwrap(error as? AgentMcpStreamableHTTPError)
+      XCTAssertEqual(http.statusCode, 401)
+      XCTAssertEqual(http.authenticationFailure, true)
+      XCTAssertTrue(http.message.contains("expired"))
+    }
+
+    transport.close()
+    XCTAssertNil(transport.receive())
   }
 
   func testAgentMcpLocalRuntimeResponseCodecDecodesLastStructuredBridgeResult() throws {
