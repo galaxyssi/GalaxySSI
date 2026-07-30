@@ -48,6 +48,7 @@
     A10000000000000000000124 /* GlobalCapabilityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000124 /* GlobalCapabilityModels.swift */; };
     A10000000000000000000125 /* AgentMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000125 /* AgentMemoryModels.swift */; };
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
+    A10000000000000000000127 /* GlobalMemoryContextModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000127 /* GlobalMemoryContextModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -57,6 +58,7 @@
     A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000207 /* AgentConversationRuntimeTests.swift */; };
     A10000000000000000000208 /* AgentMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000208 /* AgentMemoryTests.swift */; };
     A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000209 /* GlobalMemoryTests.swift */; };
+    A10000000000000000000210 /* GlobalMemoryContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000210 /* GlobalMemoryContextTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -103,6 +105,7 @@
     A20000000000000000000124 /* GlobalCapabilityModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityModels.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000127 /* GlobalMemoryContextModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryContextModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -112,6 +115,7 @@
     A20000000000000000000207 /* AgentConversationRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000208 /* AgentMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000209 /* GlobalMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000210 /* GlobalMemoryContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryContextTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +163,7 @@
         A20000000000000000000124 /* GlobalCapabilityModels.swift */,
         A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000126 /* GlobalMemoryModels.swift */,
+        A20000000000000000000127 /* GlobalMemoryContextModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -189,6 +194,7 @@
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000209 /* GlobalMemoryTests.swift */,
+        A20000000000000000000210 /* GlobalMemoryContextTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -312,6 +318,7 @@
         A10000000000000000000124 /* GlobalCapabilityModels.swift in Sources */,
         A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */,
+        A10000000000000000000127 /* GlobalMemoryContextModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -342,6 +349,7 @@
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */,
+        A10000000000000000000210 /* GlobalMemoryContextTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
