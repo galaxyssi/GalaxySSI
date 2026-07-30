@@ -3,12 +3,14 @@ import Foundation
 struct AgentNativeToolPersistentStores {
   var replayStore: AgentNativeToolReplayStore
   var auditStore: AgentNativeToolAuditStore
+  var workspaceStateStore: AgentWorkspaceNativeToolStateStore
 }
 
 struct AgentNativeToolDefaultStorePaths: Equatable {
   static let directoryName = "agent-native-tools"
   static let replayFileName = "replay_entries.json"
   static let auditFileName = "audit_records.json"
+  static let workspaceFileName = "workspace_state.json"
 
   var rootURL: URL
 
@@ -18,6 +20,10 @@ struct AgentNativeToolDefaultStorePaths: Equatable {
 
   var auditFileURL: URL {
     rootURL.appendingPathComponent(Self.auditFileName)
+  }
+
+  var workspaceFileURL: URL {
+    rootURL.appendingPathComponent(Self.workspaceFileName)
   }
 
   static func applicationSupportRootURL(fileManager: FileManager = .default) -> URL {
@@ -47,6 +53,10 @@ enum AgentNativeToolDefaultStores {
       ),
       auditStore: FileAgentNativeToolAuditStore(
         fileURL: paths.auditFileURL,
+        fileManager: fileManager
+      ),
+      workspaceStateStore: FileAgentWorkspaceNativeToolStateStore(
+        fileURL: paths.workspaceFileURL,
         fileManager: fileManager
       )
     )

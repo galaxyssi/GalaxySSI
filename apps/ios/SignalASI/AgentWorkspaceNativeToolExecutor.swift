@@ -39,15 +39,19 @@ final class AgentWorkspaceNativeToolExecutor {
   private var workspaces: [String: [String: Entry]] = [:]
   private let policy: AgentWorkspaceFilePolicy
   private let nowMillis: () -> Int64
+  private let stateStore: AgentWorkspaceNativeToolStateStore?
 
   init(
     policy: AgentWorkspaceFilePolicy = AgentWorkspaceFilePolicy(),
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
-    }
+    },
+    stateStore: AgentWorkspaceNativeToolStateStore? = nil
   ) {
     self.policy = policy
     self.nowMillis = nowMillis
+    self.stateStore = stateStore
+    self.workspaces = Self.restoreWorkspaces(stateStore?.load() ?? [:])
   }
 
   func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
@@ -204,6 +208,7 @@ final class AgentWorkspaceNativeToolExecutor {
     let existed = workspaces[cleanId] != nil
     if !existed {
       workspaces[cleanId] = ["": Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())]
+      persistWorkspaces()
     }
     return .success(mutationObject(
       kind: .initialize,
@@ -242,7 +247,7 @@ final class AgentWorkspaceNativeToolExecutor {
         affected += 1
       }
     }
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success(mutationObject(
       kind: .mkdir,
       path: normalized,
@@ -362,7 +367,7 @@ final class AgentWorkspaceNativeToolExecutor {
       return failure(.alreadyExists, kind.rawValue.lowercased(), normalized, "Workspace file already exists")
     }
     workspace[normalized] = Entry(type: .file, data: data, modifiedAtMillis: nowMillis())
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success(mutationObject(
       kind: kind,
       path: normalized,
@@ -396,7 +401,7 @@ final class AgentWorkspaceNativeToolExecutor {
     existing.data.append(data)
     existing.modifiedAtMillis = nowMillis()
     workspace[normalized] = existing
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success(mutationObject(
       kind: .append,
       path: normalized,
@@ -449,7 +454,7 @@ final class AgentWorkspaceNativeToolExecutor {
         workspace.removeValue(forKey: oldPath)
       }
     }
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success(mutationObject(
       kind: kind,
       path: destination,
@@ -486,7 +491,7 @@ final class AgentWorkspaceNativeToolExecutor {
       }
       workspace.removeValue(forKey: item)
     }
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success(mutationObject(kind: .delete, path: normalized, affectedEntries: paths.count, affectedBytes: bytes))
   }
 
@@ -691,7 +696,7 @@ final class AgentWorkspaceNativeToolExecutor {
       return failure(.invalidArchive, "zip_create", archive, "Created ZIP archive failed validation")
     }
     workspace[archive] = Entry(type: .file, data: archiveData, modifiedAtMillis: nowMillis())
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success(zipListingObject(inspection))
   }
 
@@ -809,7 +814,7 @@ final class AgentWorkspaceNativeToolExecutor {
         modifiedAtMillis: entry.lastModifiedMillis > 0 ? entry.lastModifiedMillis : nowMillis()
       )
     }
-    workspaces[cleanWorkspaceId] = workspace
+    saveWorkspace(workspace, id: cleanWorkspaceId)
     return .success([
       "archive_path": .string(archive),
       "destination_path": .string(destination),
@@ -1094,8 +1099,53 @@ final class AgentWorkspaceNativeToolExecutor {
     }
     if workspaces[cleanId] == nil {
       workspaces[cleanId] = ["": Entry(type: .directory, data: Data(), modifiedAtMillis: nowMillis())]
+      persistWorkspaces()
     }
     return workspaces[cleanId]
+  }
+
+  private func saveWorkspace(_ workspace: [String: Entry], id: String) {
+    workspaces[id] = workspace
+    persistWorkspaces()
+  }
+
+  private func persistWorkspaces() {
+    stateStore?.save(workspaces.mapValues { workspace in
+      workspace.mapValues { entry in
+        AgentWorkspaceNativeToolStoredEntry(
+          type: entry.type,
+          data: entry.data,
+          modifiedAtMillis: entry.modifiedAtMillis
+        )
+      }
+    })
+  }
+
+  private static func restoreWorkspaces(
+    _ stored: [String: [String: AgentWorkspaceNativeToolStoredEntry]]
+  ) -> [String: [String: Entry]] {
+    stored.reduce(into: [:]) { result, workspace in
+      guard case .success(let cleanWorkspaceId) = AgentWorkspaceFilePathPolicy.workspaceDirectoryName(workspace.key) else {
+        return
+      }
+      var entries: [String: Entry] = [:]
+      for item in workspace.value {
+        guard case .success(let segments) = AgentWorkspaceFilePathPolicy.normalizeRelativePath(item.key, allowRoot: true),
+              let data = item.value.data() else {
+          continue
+        }
+        let path = segments.joined(separator: "/")
+        entries[path] = Entry(
+          type: item.value.type,
+          data: item.value.type == .file ? data : Data(),
+          modifiedAtMillis: item.value.modifiedAtMillis
+        )
+      }
+      if entries[""]?.type != .directory {
+        entries[""] = Entry(type: .directory, data: Data(), modifiedAtMillis: 0)
+      }
+      result[cleanWorkspaceId] = entries
+    }
   }
 
   private func canonicalWorkspaceId(_ workspaceId: String) -> String? {
