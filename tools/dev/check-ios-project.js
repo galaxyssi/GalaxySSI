@@ -125,6 +125,7 @@ const requiredProjectSnippets = [
   "AgentModelPlannerContactResolverTests.swift in Sources",
   "SignalASILinkTransportDiagnostics.swift in Sources",
   "SignalASILinkTransportDiagnosticsTests.swift in Sources",
+  "SignalASILinkDiagnosticsView.swift in Sources",
 ];
 
 const requiredSourceSnippets = [
@@ -1215,8 +1216,12 @@ const requiredSourceSnippets = [
   [models, "fragment_rejected"],
   [models, "anonymizedReference"],
   [models, "classifyDecryptionFailure"],
+  [models, "SignalASILinkDiagnosticsView"],
+  [models, "Recent Events"],
   [services, "recordLinkDiagnostic"],
   [services, "classifyFragmentFailure"],
+  [views, "linkDiagnosticsSummary"],
+  [views, "SignalASILinkDiagnosticsView"],
   [services, "var accepted: Bool"],
   [backup, "static let iterations = 180_000"],
   [backup, "pbkdf2-hmac-sha256"],

@@ -887,6 +887,7 @@ struct SettingsView: View {
   @State private var backupStatusIsError = false
   @State private var showingResetPrivateData = false
   @State private var privacyStatus = ""
+  @State private var linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
 
   var body: some View {
     NavigationView {
@@ -1008,6 +1009,16 @@ struct SettingsView: View {
             Label("Add Model", systemImage: "plus.circle")
           }
         }
+        Section("SignalASI Link") {
+          NavigationLink(destination: SignalASILinkDiagnosticsView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Link Diagnostics")
+              Text(linkDiagnosticsSummary)
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
+        }
         Section("Backup") {
           SecureField("Password", text: $backupPassword)
             .textInputAutocapitalization(.never)
@@ -1093,6 +1104,7 @@ struct SettingsView: View {
           setBackupStatus(error.localizedDescription, isError: true)
         }
       }
+      .onAppear(perform: refreshLinkDiagnostics)
     }
   }
 
@@ -1185,6 +1197,18 @@ struct SettingsView: View {
     if settings.configured { return "Configured and enabled" }
     if settings.credentialsConfigured { return "Configured, disabled" }
     return "Not configured"
+  }
+
+  private var linkDiagnosticsSummary: String {
+    let snapshot = linkDiagnosticsSnapshot
+    if snapshot.totalEvents == 0 {
+      return "Stable / 0 events"
+    }
+    return "\(snapshot.totalEvents) events / \(snapshot.replayCount) replay / \(snapshot.failureCount) failures"
+  }
+
+  private func refreshLinkDiagnostics() {
+    linkDiagnosticsSnapshot = SignalASILinkTransportDiagnostics.snapshot()
   }
 }
 
