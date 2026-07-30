@@ -8,9 +8,17 @@ import LocalAuthentication
 #if canImport(Contacts)
 import Contacts
 #endif
+#if canImport(EventKit)
+import EventKit
+#endif
 
 protocol AgentIOSAudioStatusProviding {
   func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject
+}
+
+protocol AgentIOSCalendarReadProviding {
+  func listCalendars(nowMillis: Int64) -> AgentNativeToolExecutionResult
+  func queryEvents(startEpochMillis: Int64, endEpochMillis: Int64, limit: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
 protocol AgentIOSContactsSearchProviding {
@@ -286,6 +294,148 @@ struct AgentIOSDefaultContactsSearchProvider: AgentIOSContactsSearchProviding {
   }
 }
 
+struct AgentIOSDefaultCalendarReadProvider: AgentIOSCalendarReadProviding {
+  func listCalendars(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    #if canImport(EventKit)
+    let authorization = EKEventStore.authorizationStatus(for: .event)
+    guard isCalendarReadable(authorization) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "calendar_permission_required",
+        message: "iOS Calendar permission is required before calendars can be listed."
+      )
+    }
+    let store = EKEventStore()
+    let calendars = store.calendars(for: .event)
+      .sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+      .prefix(100)
+      .map { calendar in
+        AgentMcpJSONValue.object([
+          "calendar_id": .int(syntheticCalendarId(calendar.calendarIdentifier)),
+          "display_name": .string(bounded(calendar.title, 160)),
+          "account_name": .string(bounded(calendar.source.title, 160)),
+          "visible": .bool(true),
+          "platform": .string("ios")
+        ])
+      }
+    return AgentNativeToolExecutionResult.success(
+      output: [
+        "calendars": .array(Array(calendars)),
+        "count": .int(Int64(calendars.count)),
+        "authorization_status": .string(authorizationStatus(authorization)),
+        "scope": .string("ios_calendar_read"),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ],
+      message: "Calendars listed"
+    )
+    #else
+    return AgentNativeToolExecutionResult.failure(
+      code: "eventkit_unavailable",
+      message: "EventKit is unavailable on this platform."
+    )
+    #endif
+  }
+
+  func queryEvents(
+    startEpochMillis: Int64,
+    endEpochMillis: Int64,
+    limit: Int,
+    nowMillis: Int64
+  ) -> AgentNativeToolExecutionResult {
+    guard startEpochMillis > 0, endEpochMillis > startEpochMillis else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_time_range",
+        message: "Calendar time range is invalid."
+      )
+    }
+    #if canImport(EventKit)
+    let authorization = EKEventStore.authorizationStatus(for: .event)
+    guard isCalendarReadable(authorization) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "calendar_permission_required",
+        message: "iOS Calendar permission is required before events can be queried."
+      )
+    }
+    let store = EKEventStore()
+    let start = Date(timeIntervalSince1970: TimeInterval(startEpochMillis) / 1_000)
+    let end = Date(timeIntervalSince1970: TimeInterval(endEpochMillis) / 1_000)
+    let clampedLimit = max(1, min(200, limit))
+    let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+    let events = store.events(matching: predicate)
+      .sorted { $0.startDate < $1.startDate }
+      .prefix(clampedLimit)
+      .map { event in
+        AgentMcpJSONValue.object([
+          "event_id": .int(syntheticCalendarId(event.eventIdentifier ?? "\(event.startDate.timeIntervalSince1970)|\(event.title ?? "")")),
+          "title": .string(bounded(event.title ?? "", 240)),
+          "start_epoch_ms": .int(epochMillis(event.startDate)),
+          "end_epoch_ms": .int(epochMillis(event.endDate)),
+          "location": .string(bounded(event.location ?? "", 240)),
+          "calendar_id": .int(syntheticCalendarId(event.calendar.calendarIdentifier)),
+          "platform": .string("ios")
+        ])
+      }
+    return AgentNativeToolExecutionResult.success(
+      output: [
+        "events": .array(Array(events)),
+        "count": .int(Int64(events.count)),
+        "start_epoch_ms": .int(startEpochMillis),
+        "end_epoch_ms": .int(endEpochMillis),
+        "limit": .int(Int64(clampedLimit)),
+        "authorization_status": .string(authorizationStatus(authorization)),
+        "scope": .string("ios_calendar_read"),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ],
+      message: "Calendar events queried"
+    )
+    #else
+    return AgentNativeToolExecutionResult.failure(
+      code: "eventkit_unavailable",
+      message: "EventKit is unavailable on this platform."
+    )
+    #endif
+  }
+
+  #if canImport(EventKit)
+  private func isCalendarReadable(_ status: EKAuthorizationStatus) -> Bool {
+    status == .authorized || String(describing: status).lowercased().contains("full")
+  }
+
+  private func authorizationStatus(_ status: EKAuthorizationStatus) -> String {
+    switch status {
+    case .notDetermined:
+      return "not_determined"
+    case .restricted:
+      return "restricted"
+    case .denied:
+      return "denied"
+    case .authorized:
+      return "authorized"
+    @unknown default:
+      return String(describing: status)
+        .replacingOccurrences(of: " ", with: "_")
+        .lowercased()
+    }
+  }
+
+  private func epochMillis(_ date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1_000).rounded())
+  }
+  #endif
+
+  private func syntheticCalendarId(_ identifier: String) -> Int64 {
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for byte in identifier.utf8 {
+      hash ^= UInt64(byte)
+      hash &*= 1_099_511_628_211
+    }
+    return Int64(hash & 0x7fff_ffff_ffff_ffff)
+  }
+
+  private func bounded(_ value: String, _ limit: Int) -> String {
+    String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
+  }
+}
+
 struct AgentIOSDefaultBiometricStatusProvider: AgentIOSBiometricStatusProviding {
   func biometricStatus(nowMillis: Int64) -> AgentMcpJSONObject {
     #if canImport(LocalAuthentication)
@@ -388,6 +538,8 @@ enum AgentIOSSystemNativeToolCatalog {
   ]
 
   static let executableToolIds: Set<String> = handoffToolIds.union([
+    calendarsList,
+    calendarEventsQuery,
     contactsSearch,
     wifiStatus,
     audioStatus,
@@ -518,7 +670,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       calendarsList,
       "List Android calendars",
-      "Android calendar list descriptor retained for planning; iOS requires an EventKit executor and permission gate.",
+      "Lists iOS EventKit calendars after the app-visible Calendar permission gate.",
       .low,
       ["calendar.read"],
       ["android.permission.READ_CALENDAR"]
@@ -526,7 +678,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       calendarEventsQuery,
       "Query Android calendar events",
-      "Android calendar query descriptor retained for planning; iOS requires an EventKit executor and permission gate.",
+      "Queries iOS EventKit calendar events in a bounded time range after the Calendar permission gate.",
       .low,
       ["calendar.read"],
       ["android.permission.READ_CALENDAR"],
@@ -818,6 +970,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if specification.id == calendarsList || specification.id == calendarEventsQuery {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosCalendarReadPermission,
+          title: "Read iOS Calendars",
+          description: "Allows bounded EventKit calendar and event reads without writes."
+        )
+      ]
+    }
     if specification.id == biometricStatus {
       return [
         AgentNativePermissionRequirement(
@@ -869,6 +1030,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == contactsSearch {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Contacts search executor."
     }
+    if id == calendarsList || id == calendarEventsQuery {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Calendar read executor."
+    }
     if id == biometricStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS biometric status executor."
     }
@@ -888,6 +1052,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == contactsSearch {
       return contactsSearchAvailability
     }
+    if id == calendarsList || id == calendarEventsQuery {
+      return calendarReadAvailability
+    }
     if id == biometricStatus {
       return biometricStatusAvailability
     }
@@ -906,6 +1073,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == contactsSearch {
       return "contacts_search_on_ios15"
+    }
+    if id == calendarsList || id == calendarEventsQuery {
+      return "eventkit_calendar_read_on_ios15"
     }
     if id == biometricStatus {
       return "local_authentication_status_on_ios15"
@@ -945,6 +1115,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor searches Contacts after the Contacts permission gate."
+    )
+  }
+
+  private static var calendarReadAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor reads EventKit calendars and events after the Calendar permission gate."
     )
   }
 
@@ -1014,6 +1191,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
   static let iosWifiStatusPermission = "signalasi.scope.ios_app_visible_wifi_status"
   static let iosContactsReadPermission = "signalasi.scope.ios_contacts_read"
+  static let iosCalendarReadPermission = "signalasi.scope.ios_calendar_read"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
@@ -1026,6 +1204,7 @@ enum AgentIOSSystemNativeToolCatalog {
 
 struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
+  var calendarProvider: AgentIOSCalendarReadProviding
   var contactsProvider: AgentIOSContactsSearchProviding
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
@@ -1033,12 +1212,14 @@ struct AgentIOSSystemNativeToolExecutor {
 
   init(
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
+    calendarProvider: AgentIOSCalendarReadProviding = AgentIOSDefaultCalendarReadProvider(),
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.audioProvider = audioProvider
+    self.calendarProvider = calendarProvider
     self.contactsProvider = contactsProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
@@ -1059,6 +1240,10 @@ struct AgentIOSSystemNativeToolExecutor {
 
   private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     switch invocation.descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.calendarsList:
+      return calendarProvider.listCalendars(nowMillis: max(0, nowMillis()))
+    case AgentIOSSystemNativeToolCatalog.calendarEventsQuery:
+      return calendarEventsQuery(invocation)
     case AgentIOSSystemNativeToolCatalog.contactsSearch:
       return contactsSearch(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiStatus:
@@ -1113,6 +1298,18 @@ struct AgentIOSSystemNativeToolExecutor {
         "identifiers_included": .bool(false),
         "settings_changed": .bool(false)
       ]
+    )
+  }
+
+  private func calendarEventsQuery(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let start = invocation.input["start_epoch_ms"]?.intValue ?? 0
+    let end = invocation.input["end_epoch_ms"]?.intValue ?? 0
+    let limit = Int(invocation.input["limit"]?.intValue ?? 50)
+    return calendarProvider.queryEvents(
+      startEpochMillis: start,
+      endEpochMillis: end,
+      limit: max(1, min(200, limit)),
+      nowMillis: max(0, nowMillis())
     )
   }
 
