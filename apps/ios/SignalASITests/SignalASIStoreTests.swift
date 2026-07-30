@@ -11358,6 +11358,24 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(bounded.clear(connectionId: ""), 1_000)
   }
 
+  func testFileAgentMcpAuditStorePersistsAndRecoversRecords() throws {
+    let root = try temporaryDirectory("mcp-audit-store")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = root.appendingPathComponent("audit/records.json", isDirectory: false)
+    let store = FileAgentMcpAuditStore(fileURL: fileURL)
+
+    store.append(mcpAuditRecord("audit-1", connectionId: "conn-a", timestampMillis: 1))
+    store.append(mcpAuditRecord("audit-2", connectionId: "conn-b", timestampMillis: 2))
+    let restored = FileAgentMcpAuditStore(fileURL: fileURL)
+
+    XCTAssertEqual(restored.list(limit: 10).map(\.auditId), ["audit-2", "audit-1"])
+    XCTAssertEqual(restored.clear(connectionId: "conn-a"), 1)
+    XCTAssertEqual(FileAgentMcpAuditStore(fileURL: fileURL).list(limit: 10).map(\.auditId), ["audit-2"])
+
+    try "not-json".write(to: fileURL, atomically: true, encoding: .utf8)
+    XCTAssertEqual(FileAgentMcpAuditStore(fileURL: fileURL).list(limit: 10), [])
+  }
+
   func testAgentMcpAuditRecordFactoryAndCodecUseAndroidWireNames() throws {
     let connection = AgentMcpConnection(
       id: "conn-a",
