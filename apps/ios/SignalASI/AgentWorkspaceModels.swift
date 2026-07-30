@@ -365,13 +365,19 @@ struct AgentWorkspaceEvent: Codable, Equatable {
     case timestampMillis = "timestamp_millis"
   }
 
+  private enum LegacyCodingKeys: String, CodingKey {
+    case timestamp
+  }
+
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     sequence = try container.decodeIfPresent(Int64.self, forKey: .sequence) ?? 0
     kind = try container.decodeIfPresent(String.self, forKey: .kind) ?? ""
     message = try container.decodeIfPresent(String.self, forKey: .message) ?? ""
     payloadJson = try container.decodeIfPresent(String.self, forKey: .payloadJson) ?? ""
-    timestampMillis = try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ?? 0
+    let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+    timestampMillis = try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ??
+      legacyContainer.decodeIfPresent(Int64.self, forKey: .timestamp) ?? 0
   }
 }
 
@@ -381,9 +387,24 @@ struct AgentWorkspace: Codable, Equatable, Identifiable {
   var conversationId: String
   var taskId: String
   var goal: String
+  var parentRunId: String
+  var agentId: String
+  var deviceId: String
+  var remoteRunId: String
+  var deliveryMode: String
   var status: AgentWorkspaceStatus
+  var currentPlanSnapshot: String
+  var resultJson: String
+  var errorMessage: String
+  var permissionGrantIds: [String]
+  var permissionScopes: [String]
+  var handoffIds: [String]
+  var lastRemoteEventSequence: Int64
   var eventSequence: Int64
   var eventJournal: [AgentWorkspaceEvent]
+  var toolCalls: [AgentWorkspaceToolCallRecord]
+  var checkpoints: [AgentWorkspaceCheckpoint]
+  var artifacts: [AgentWorkspaceArtifactReference]
   var cancellationRequested: Bool
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
@@ -406,9 +427,24 @@ struct AgentWorkspace: Codable, Equatable, Identifiable {
     conversationId: String,
     taskId: String,
     goal: String = "",
+    parentRunId: String = "",
+    agentId: String = "",
+    deviceId: String = "",
+    remoteRunId: String = "",
+    deliveryMode: String = AgentDeliveryMode.respond.rawValue,
     status: AgentWorkspaceStatus = .created,
+    currentPlanSnapshot: String = "",
+    resultJson: String = "{}",
+    errorMessage: String = "",
+    permissionGrantIds: [String] = [],
+    permissionScopes: [String] = [],
+    handoffIds: [String] = [],
+    lastRemoteEventSequence: Int64 = 0,
     eventSequence: Int64 = 0,
     eventJournal: [AgentWorkspaceEvent] = [],
+    toolCalls: [AgentWorkspaceToolCallRecord] = [],
+    checkpoints: [AgentWorkspaceCheckpoint] = [],
+    artifacts: [AgentWorkspaceArtifactReference] = [],
     cancellationRequested: Bool = false,
     createdAtMillis: Int64 = 0,
     updatedAtMillis: Int64 = 0,
@@ -419,9 +455,26 @@ struct AgentWorkspace: Codable, Equatable, Identifiable {
     self.conversationId = conversationId
     self.taskId = taskId
     self.goal = goal
+    self.parentRunId = parentRunId
+    self.agentId = agentId
+    self.deviceId = deviceId
+    self.remoteRunId = remoteRunId
+    self.deliveryMode = deliveryMode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? AgentDeliveryMode.respond.rawValue
+      : deliveryMode.trimmingCharacters(in: .whitespacesAndNewlines)
     self.status = status
+    self.currentPlanSnapshot = currentPlanSnapshot
+    self.resultJson = resultJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{}" : resultJson
+    self.errorMessage = errorMessage
+    self.permissionGrantIds = Self.cleanList(permissionGrantIds)
+    self.permissionScopes = Self.cleanList(permissionScopes)
+    self.handoffIds = Self.cleanList(handoffIds)
+    self.lastRemoteEventSequence = max(lastRemoteEventSequence, 0)
     self.eventSequence = eventSequence
     self.eventJournal = eventJournal
+    self.toolCalls = toolCalls
+    self.checkpoints = checkpoints
+    self.artifacts = artifacts
     self.cancellationRequested = cancellationRequested
     self.createdAtMillis = createdAtMillis
     self.updatedAtMillis = updatedAtMillis
@@ -434,13 +487,33 @@ struct AgentWorkspace: Codable, Equatable, Identifiable {
     case conversationId = "conversation_id"
     case taskId = "task_id"
     case goal
+    case parentRunId = "parent_run_id"
+    case agentId = "agent_id"
+    case deviceId = "device_id"
+    case remoteRunId = "remote_run_id"
+    case deliveryMode = "delivery_mode"
     case status
+    case currentPlanSnapshot = "current_plan_snapshot"
+    case resultJson = "result_json"
+    case errorMessage = "error_message"
+    case permissionGrantIds = "permission_grant_ids"
+    case permissionScopes = "permission_scopes"
+    case handoffIds = "handoff_ids"
+    case lastRemoteEventSequence = "last_remote_event_sequence"
     case eventSequence = "event_sequence"
     case eventJournal = "event_journal"
+    case toolCalls = "tool_calls"
+    case checkpoints
+    case artifacts
     case cancellationRequested = "cancellation_requested"
     case createdAtMillis = "created_at_millis"
     case updatedAtMillis = "updated_at_millis"
     case revision
+  }
+
+  private enum LegacyCodingKeys: String, CodingKey {
+    case createdAt = "created_at"
+    case updatedAt = "updated_at"
   }
 
   init(from decoder: Decoder) throws {
@@ -450,13 +523,41 @@ struct AgentWorkspace: Codable, Equatable, Identifiable {
     conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId) ?? ""
     taskId = try container.decodeIfPresent(String.self, forKey: .taskId) ?? ""
     goal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
+    parentRunId = try container.decodeIfPresent(String.self, forKey: .parentRunId) ?? ""
+    agentId = try container.decodeIfPresent(String.self, forKey: .agentId) ?? ""
+    deviceId = try container.decodeIfPresent(String.self, forKey: .deviceId) ?? ""
+    remoteRunId = try container.decodeIfPresent(String.self, forKey: .remoteRunId) ?? ""
+    let rawDeliveryMode = try container.decodeIfPresent(String.self, forKey: .deliveryMode) ?? ""
+    deliveryMode = rawDeliveryMode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      ? AgentDeliveryMode.respond.rawValue
+      : rawDeliveryMode.trimmingCharacters(in: .whitespacesAndNewlines)
     status = try container.decodeIfPresent(AgentWorkspaceStatus.self, forKey: .status) ?? .created
+    currentPlanSnapshot = try container.decodeIfPresent(String.self, forKey: .currentPlanSnapshot) ?? ""
+    let rawResultJson = try container.decodeIfPresent(String.self, forKey: .resultJson) ?? ""
+    resultJson = rawResultJson.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "{}" : rawResultJson
+    errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? ""
+    permissionGrantIds = Self.cleanList(try container.decodeIfPresent([String].self, forKey: .permissionGrantIds) ?? [])
+    permissionScopes = Self.cleanList(try container.decodeIfPresent([String].self, forKey: .permissionScopes) ?? [])
+    handoffIds = Self.cleanList(try container.decodeIfPresent([String].self, forKey: .handoffIds) ?? [])
+    lastRemoteEventSequence = max(try container.decodeIfPresent(Int64.self, forKey: .lastRemoteEventSequence) ?? 0, 0)
     eventSequence = try container.decodeIfPresent(Int64.self, forKey: .eventSequence) ?? 0
     eventJournal = try container.decodeIfPresent([AgentWorkspaceEvent].self, forKey: .eventJournal) ?? []
+    toolCalls = try container.decodeIfPresent([AgentWorkspaceToolCallRecord].self, forKey: .toolCalls) ?? []
+    checkpoints = try container.decodeIfPresent([AgentWorkspaceCheckpoint].self, forKey: .checkpoints) ?? []
+    artifacts = try container.decodeIfPresent([AgentWorkspaceArtifactReference].self, forKey: .artifacts) ?? []
     cancellationRequested = try container.decodeIfPresent(Bool.self, forKey: .cancellationRequested) ?? false
-    createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0
-    updatedAtMillis = try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
+    let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+    createdAtMillis = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ??
+      legacyContainer.decodeIfPresent(Int64.self, forKey: .createdAt) ?? 0
+    updatedAtMillis = try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ??
+      legacyContainer.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? 0
     revision = try container.decodeIfPresent(Int64.self, forKey: .revision) ?? 0
+  }
+
+  private static func cleanList(_ values: [String]) -> [String] {
+    values
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
   }
 }
 
