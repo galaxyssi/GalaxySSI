@@ -122,6 +122,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style Skill execution engine and version manager for ordered native tool invocation, failure fallback, use-count recording, learned Skill upgrades, and rollback to earlier installed versions
 - Android-style Skill package installer/exporter for signed manifest ZIP inspection, safe entry validation, executable-content rejection, unsigned local approval, and disabled-by-default third-party installation
 - Android-style Agent learning engine for preference capture, correction detection, repeated-failure memory, trusted runtime execution evidence, reviewed Skill proposals, and approved Skill upgrades
+- Android-style model tool-loop context compactor for preserving assistant tool-call/result pairs, summarizing older tool activity, keeping unresolved calls, and shrinking oversized tool outputs under token pressure
 - Android-style agent plan factory for connector dedupe, empty-plan reasoning fallback, route resolution, and paired-contact permission projection
 - Android-style native tool registry for descriptor lookup, JSON-schema input validation, permission and consent gates, deterministic catalog export, and idempotency-key replay protection
 - Android-style AgentAction native tool adapter for legacy phone action calls, receipts, provenance, result metadata, and preflight rejection results

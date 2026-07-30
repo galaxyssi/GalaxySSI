@@ -99,6 +99,8 @@ const requiredProjectSnippets = [
   "AgentSkillPackageInstallerTests.swift in Sources",
   "AgentLearningEngineModels.swift in Sources",
   "AgentLearningEngineTests.swift in Sources",
+  "AgentModelContextCompactorModels.swift in Sources",
+  "AgentModelContextCompactorTests.swift in Sources",
 ];
 
 const requiredSourceSnippets = [
@@ -976,6 +978,10 @@ const requiredSourceSnippets = [
   [models, "AgentLearningEngine"],
   [models, "explicitPreference"],
   [models, "hasTrustedExecutionEvidence"],
+  [models, "AgentModelContextCompactor"],
+  [models, "AgentModelMessage"],
+  [models, "ConversationContextBudget"],
+  [models, "CompactedAgentModelContext"],
   [models, "skill_explicit_match"],
   [models, "trigger_examples"],
   [models, "additional_properties"],
@@ -1511,6 +1517,9 @@ const requiredSourceSnippets = [
   [tests, "testAgentLearningAnalyzerTrustsCompletedRuntimeReceiptAndRejectsUnsafeEvidence"],
   [tests, "testAgentLearningEngineCreatesMemoryAndSkillProposalThenReviews"],
   [tests, "testAgentLearningEngineCreatesSkillUpgradeProposalFromFeedback"],
+  [tests, "testAgentModelContextCompactorCompactsOldToolBlocksWithoutBreakingPairs"],
+  [tests, "testAgentModelContextCompactorKeepsUnresolvedToolCalls"],
+  [tests, "testAgentModelContextCompactorModelsUseAndroidWireNames"],
   [tests, "testAgentNativeToolResultModelsUseAndroidWireNames"],
   [tests, "testAgentNativeToolReplayStoreEvictsOldestAndClears"],
   [tests, "testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults"],
