@@ -1,0 +1,250 @@
+import Foundation
+
+enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
+  case pending = "PENDING"
+  case running = "RUNNING"
+  case succeeded = "SUCCEEDED"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+  case interrupted = "INTERRUPTED"
+
+  var id: String { rawValue }
+}
+
+enum AgentTeamExecutionState: String, Codable, CaseIterable, Identifiable {
+  case created = "CREATED"
+  case running = "RUNNING"
+  case waitingResponse = "WAITING_RESPONSE"
+  case succeeded = "SUCCEEDED"
+  case completedWithFailures = "COMPLETED_WITH_FAILURES"
+  case failed = "FAILED"
+  case cancelled = "CANCELLED"
+  case interrupted = "INTERRUPTED"
+
+  var id: String { rawValue }
+
+  var deliverable: Bool {
+    [.succeeded, .completedWithFailures, .failed, .cancelled].contains(self)
+  }
+}
+
+struct AgentTeamMemberSnapshot: Codable, Equatable {
+  static let maxErrorCharacters = 1_000
+
+  var agentId: String
+  var role: String
+  var deliveryMode: AgentDeliveryMode
+  var status: AgentSubagentStatus
+  var output: String
+  var errorMessage: String
+  var updatedAtMillis: Int64
+
+  init(
+    agentId: String,
+    role: String = "",
+    deliveryMode: AgentDeliveryMode = .observe,
+    status: AgentSubagentStatus = .pending,
+    output: String = "",
+    errorMessage: String = "",
+    updatedAtMillis: Int64 = 0
+  ) {
+    self.agentId = agentId
+    self.role = role
+    self.deliveryMode = deliveryMode
+    self.status = status
+    self.output = String(output.prefix(AgentConnectorResponse.maxContentCharacters))
+    self.errorMessage = String(errorMessage.prefix(Self.maxErrorCharacters))
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case agentId = "agent_id"
+    case role
+    case deliveryMode = "delivery_mode"
+    case status
+    case output
+    case errorMessage = "error_message"
+    case updatedAtMillis = "updated_at_millis"
+  }
+}
+
+struct AgentTeamExecutionSnapshot: Codable, Equatable {
+  var supervisorRunId: String
+  var teamId: String
+  var conversationId: String
+  var taskId: String
+  var primaryAgentId: String
+  var goal: String
+  var visibilityMode: AgentTeamVisibilityMode
+  var state: AgentTeamExecutionState
+  var members: [AgentTeamMemberSnapshot]
+  var finalOutput: String
+  var updatedAtMillis: Int64
+
+  init(
+    supervisorRunId: String,
+    teamId: String,
+    conversationId: String = "",
+    taskId: String = "",
+    primaryAgentId: String,
+    goal: String = "",
+    visibilityMode: AgentTeamVisibilityMode = .background,
+    state: AgentTeamExecutionState,
+    members: [AgentTeamMemberSnapshot] = [],
+    finalOutput: String = "",
+    updatedAtMillis: Int64 = 0
+  ) {
+    self.supervisorRunId = supervisorRunId
+    self.teamId = teamId
+    self.conversationId = conversationId
+    self.taskId = taskId
+    self.primaryAgentId = primaryAgentId
+    self.goal = goal
+    self.visibilityMode = visibilityMode
+    self.state = state
+    self.members = members
+    self.finalOutput = String(finalOutput.prefix(AgentConnectorResponse.maxContentCharacters))
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case supervisorRunId = "supervisor_run_id"
+    case teamId = "team_id"
+    case conversationId = "conversation_id"
+    case taskId = "task_id"
+    case primaryAgentId = "primary_agent_id"
+    case goal
+    case visibilityMode = "visibility_mode"
+    case state
+    case members
+    case finalOutput = "final_output"
+    case updatedAtMillis = "updated_at_millis"
+  }
+}
+
+protocol AgentTeamCompletionSink: AnyObject {
+  @discardableResult
+  func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool
+  func remove(supervisorRunId: String)
+  func clear()
+}
+
+extension AgentTeamCompletionSink {
+  func remove(supervisorRunId: String) {}
+  func clear() {}
+}
+
+final class AgentConnectorTeamCompletionSink: AgentTeamCompletionSink {
+  static let maxErrorCharacters = AgentTeamMemberSnapshot.maxErrorCharacters
+
+  private let responseStore: AgentConnectorResponseSink
+  private let ledger: AgentTeamCompletionDeliveryLedger
+  private let nowMillis: () -> Int64
+
+  init(
+    responseStore: AgentConnectorResponseSink,
+    ledger: AgentTeamCompletionDeliveryLedger = AgentTeamCompletionDeliveryLedger(),
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
+  ) {
+    self.responseStore = responseStore
+    self.ledger = ledger
+    self.nowMillis = nowMillis
+  }
+
+  @discardableResult
+  func publish(_ snapshot: AgentTeamExecutionSnapshot) -> Bool {
+    guard snapshot.state.deliverable,
+      !ledger.contains(snapshot.supervisorRunId) else {
+      return false
+    }
+    let output = snapshot.finalOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    let successful = !output.isEmpty && [.succeeded, .completedWithFailures].contains(snapshot.state)
+    let content: String
+    if successful {
+      content = output
+    } else if let error = snapshot.members.map(\.errorMessage).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+      content = "Agent team failed: \(String(error.prefix(Self.maxErrorCharacters)))"
+    } else {
+      content = "Agent team failed."
+    }
+    responseStore.publish(AgentConnectorResponse(
+      sourceMessageId: AgentTeamDispatchIds.sourceMessageId(supervisorRunId: snapshot.supervisorRunId),
+      contactId: AgentTeamDispatchIds.responseContactId(teamId: snapshot.teamId),
+      content: content,
+      conversationId: snapshot.conversationId,
+      turnId: snapshot.taskId,
+      taskId: snapshot.taskId,
+      success: successful,
+      receivedAtMillis: max(snapshot.updatedAtMillis, nowMillis())
+    ))
+    ledger.mark(snapshot.supervisorRunId)
+    return true
+  }
+
+  func remove(supervisorRunId: String) {
+    ledger.remove(supervisorRunId)
+  }
+
+  func clear() {
+    ledger.clear()
+  }
+}
+
+final class AgentTeamCompletionDeliveryLedger {
+  private let lock = NSRecursiveLock()
+  private var delivered: [String]
+  private let maximumRecords: Int
+
+  init(delivered: [String] = [], maxRecords: Int = 512) {
+    let limit = Swift.max(maxRecords, 1)
+    self.delivered = delivered
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .stableDistinct()
+      .suffix(limit)
+      .map { $0 }
+    self.maximumRecords = limit
+  }
+
+  func contains(_ supervisorRunId: String) -> Bool {
+    let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+    lock.lock()
+    defer { lock.unlock() }
+    return delivered.contains(clean)
+  }
+
+  func mark(_ supervisorRunId: String) {
+    let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      return
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    delivered = delivered.filter { $0 != clean } + [clean]
+    if delivered.count > maximumRecords {
+      delivered = Array(delivered.suffix(maximumRecords))
+    }
+  }
+
+  func remove(_ supervisorRunId: String) {
+    let clean = supervisorRunId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clean.isEmpty else {
+      return
+    }
+    lock.lock()
+    defer { lock.unlock() }
+    delivered.removeAll { $0 == clean }
+  }
+
+  func clear() {
+    lock.lock()
+    defer { lock.unlock() }
+    delivered.removeAll()
+  }
+
+  func snapshot() -> [String] {
+    lock.lock()
+    defer { lock.unlock() }
+    return delivered
+  }
+}
