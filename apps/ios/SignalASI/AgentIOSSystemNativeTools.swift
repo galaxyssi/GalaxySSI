@@ -9,6 +9,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var communicationHandoffProvider: AgentIOSCommunicationHandoffProviding
   var downloadProvider: AgentIOSDownloadManaging
   var telephonyProvider: AgentIOSTelephonyStatusProviding
+  var vpnProvider: AgentIOSVPNStatusProviding
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
@@ -22,6 +23,7 @@ struct AgentIOSSystemNativeToolExecutor {
     communicationHandoffProvider: AgentIOSCommunicationHandoffProviding = AgentIOSDefaultCommunicationHandoffProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
     telephonyProvider: AgentIOSTelephonyStatusProviding = AgentIOSDefaultTelephonyStatusProvider(),
+    vpnProvider: AgentIOSVPNStatusProviding = AgentIOSDefaultVPNStatusProvider(),
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
@@ -34,6 +36,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.communicationHandoffProvider = communicationHandoffProvider
     self.downloadProvider = downloadProvider
     self.telephonyProvider = telephonyProvider
+    self.vpnProvider = vpnProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
@@ -85,6 +88,8 @@ struct AgentIOSSystemNativeToolExecutor {
       return audioStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.biometricStatus:
       return biometricStatus(invocation)
+    case AgentIOSSystemNativeToolCatalog.vpnStatus:
+      return vpnStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.telephonyDialHandoff:
       return dialHandoff(invocation)
     case AgentIOSSystemNativeToolCatalog.smsSend:
@@ -288,6 +293,18 @@ struct AgentIOSSystemNativeToolExecutor {
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
         "authentication_prompted": .bool(false),
+        "identifiers_included": .bool(false)
+      ]
+    )
+  }
+
+  private func vpnStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: vpnProvider.vpnStatus(nowMillis: max(0, nowMillis())),
+      message: "VPN status read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
         "identifiers_included": .bool(false)
       ]
     )
