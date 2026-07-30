@@ -676,10 +676,17 @@ final class AgentNativeToolRegistry {
   }
 
   func subset(_ predicate: (AgentNativeToolDescriptor) -> Bool) throws -> AgentNativeToolRegistry {
-    try AgentNativeToolRegistry(
-      definitions: definitionsById.values.filter { predicate($0.descriptor) },
-      replayStore: replayStore
-    )
+    let matchingDefinitions = definitionsById.values.filter { predicate($0.descriptor) }
+    let matchingIds = Set(matchingDefinitions.map(\.id))
+    let matchingExecutables = executableById.values.filter { matchingIds.contains($0.id) }
+    let registry = try AgentNativeToolRegistry(replayStore: replayStore)
+    if matchingExecutables.isEmpty {
+      return try registry.registerAll(matchingDefinitions)
+    }
+    let executableIds = Set(matchingExecutables.map(\.id))
+    let definitionOnly = matchingDefinitions.filter { !executableIds.contains($0.id) }
+    try registry.registerExecutables(matchingExecutables)
+    return try registry.registerAll(definitionOnly)
   }
 
   func catalogObject() -> AgentMcpJSONObject {

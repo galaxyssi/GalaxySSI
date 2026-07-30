@@ -3,7 +3,7 @@ import XCTest
 @testable import SignalASI
 
 final class AgentModelToolLoopTests: XCTestCase {
-  func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() throws {
+  func testAgentModelToolLoopCompletesIterativeToolCallWithManifestAndEvents() async throws {
     var capturedContexts: [AgentNativeToolInvocationContext] = []
     let registry = try registry(idempotency: .idempotent) { invocation in
       capturedContexts.append(invocation.context)
@@ -19,7 +19,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     var streamedEvents: [AgentModelToolLoopEvent] = []
     let loop = loop(adapter: adapter, registry: registry)
 
-    let outcome = loop.run(request(eventSink: AgentModelToolLoopEventSink { streamedEvents.append($0) }))
+    let outcome = await loop.run(request(eventSink: AgentModelToolLoopEventSink { streamedEvents.append($0) }))
 
     XCTAssertEqual(outcome.status, .completed)
     XCTAssertEqual(outcome.assistantText, "The phone echoed hello.")
@@ -47,7 +47,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(toolResult?.nativeResult?.provenance.toolId, Self.toolId)
   }
 
-  func testAgentModelToolLoopPausesForConsentAndResumesWithSingleUseApproval() throws {
+  func testAgentModelToolLoopPausesForConsentAndResumesWithSingleUseApproval() async throws {
     var executions = 0
     var invocationContext: AgentNativeToolInvocationContext?
     let clock = MutableClock(now: 1_000)
@@ -64,7 +64,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     )
     let loop = loop(adapter: adapter, registry: registry, clock: clock)
 
-    let paused = loop.run(request())
+    let paused = await loop.run(request())
 
     XCTAssertEqual(paused.status, .waitingForApproval)
     XCTAssertFalse(paused.isTerminal)
@@ -76,7 +76,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(handle.requiredConsentIds, ["contacts.lookup"])
     XCTAssertEqual(handle.toolManifestSha256, paused.toolManifestSha256)
 
-    let completed = try loop.resume(handle, decision: .approved)
+    let completed = try await loop.resume(handle, decision: .approved)
 
     XCTAssertEqual(completed.status, .completed)
     XCTAssertEqual(executions, 1)
@@ -84,10 +84,15 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(invocationContext?.attributes["confirmation_id"], handle.confirmationId)
     XCTAssertTrue(completed.events.contains { $0.type == .approvalDecided })
     XCTAssertTrue(completed.events.contains { $0.type == .loopResumed })
-    XCTAssertThrowsError(try loop.resume(handle, decision: .approved))
+    do {
+      _ = try await loop.resume(handle, decision: .approved)
+      XCTFail("Expected approval handle to be single-use.")
+    } catch {
+      XCTAssertTrue(true)
+    }
   }
 
-  func testAgentModelToolLoopStopsBeforeExecutionWhenTokenBudgetIsExceeded() throws {
+  func testAgentModelToolLoopStopsBeforeExecutionWhenTokenBudgetIsExceeded() async throws {
     var executions = 0
     let registry = try registry { _ in
       executions += 1
@@ -102,7 +107,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     )
     let loop = loop(adapter: adapter, registry: registry)
 
-    let outcome = loop.run(request(budget: AgentModelToolLoopBudget(maxTokens: 10)))
+    let outcome = await loop.run(request(budget: AgentModelToolLoopBudget(maxTokens: 10)))
 
     XCTAssertEqual(outcome.status, .budgetExceeded)
     XCTAssertEqual(outcome.error?.code, "max_tokens")
@@ -111,7 +116,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(outcome.events.last?.type, .budgetExceeded)
   }
 
-  func testAgentModelToolLoopReturnsInvalidCallToModelWithoutInvokingUnknownTool() throws {
+  func testAgentModelToolLoopReturnsInvalidCallToModelWithoutInvokingUnknownTool() async throws {
     let registry = try AgentNativeToolRegistry()
     let adapter = ScriptedModelAdapter(
       AgentModelResponse(toolCalls: [
@@ -120,7 +125,7 @@ final class AgentModelToolLoopTests: XCTestCase {
       AgentModelResponse(assistantText: "That phone tool is unavailable.")
     )
 
-    let outcome = loop(adapter: adapter, registry: registry).run(request())
+    let outcome = await loop(adapter: adapter, registry: registry).run(request())
 
     XCTAssertEqual(outcome.status, .completed)
     let result = try outcome.messages.filter { $0.role == .tool }.singleValue().toolResult
@@ -129,7 +134,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(outcome.events.contains { $0.type == .toolCallRejected })
   }
 
-  func testAgentModelToolLoopDetectsRepeatedCallSignatureBeforeSecondExecution() throws {
+  func testAgentModelToolLoopDetectsRepeatedCallSignatureBeforeSecondExecution() async throws {
     var executions = 0
     let registry = try registry { _ in
       executions += 1
@@ -140,7 +145,7 @@ final class AgentModelToolLoopTests: XCTestCase {
       AgentModelResponse(toolCalls: [call("repeat-2", arguments: ["value": .string("same")])])
     )
 
-    let outcome = loop(adapter: adapter, registry: registry).run(request())
+    let outcome = await loop(adapter: adapter, registry: registry).run(request())
 
     XCTAssertEqual(outcome.status, .loopDetected)
     XCTAssertEqual(outcome.error?.code, "repeated_tool_call")
@@ -148,7 +153,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(outcome.events.last?.type, .loopDetected)
   }
 
-  func testAgentModelToolLoopRetriesOnlyRetryableIdempotentToolFailures() throws {
+  func testAgentModelToolLoopRetriesOnlyRetryableIdempotentToolFailures() async throws {
     var executions = 0
     let registry = try registry(idempotency: .idempotent) { _ in
       executions += 1
@@ -162,7 +167,7 @@ final class AgentModelToolLoopTests: XCTestCase {
       AgentModelResponse(assistantText: "Recovered after a safe retry.")
     )
 
-    let outcome = loop(adapter: adapter, registry: registry).run(request())
+    let outcome = await loop(adapter: adapter, registry: registry).run(request())
 
     XCTAssertEqual(outcome.status, .completed)
     XCTAssertEqual(executions, 2)
@@ -173,7 +178,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertTrue(outcome.events.contains { $0.type == .toolRetryScheduled })
   }
 
-  func testAgentModelToolLoopPropagatesCancellationIntoActiveNativeTool() throws {
+  func testAgentModelToolLoopPropagatesCancellationIntoActiveNativeTool() async throws {
     let cancellation = AgentModelToolLoopCancellationSource()
     var executions = 0
     let registry = try registry { invocation in
@@ -187,7 +192,7 @@ final class AgentModelToolLoopTests: XCTestCase {
       AgentModelResponse(assistantText: "This response must not be requested.")
     )
 
-    let outcome = loop(adapter: adapter, registry: registry)
+    let outcome = await loop(adapter: adapter, registry: registry)
       .run(request(cancellationToken: cancellation.token))
 
     XCTAssertEqual(outcome.status, .cancelled)
@@ -197,7 +202,7 @@ final class AgentModelToolLoopTests: XCTestCase {
     XCTAssertEqual(outcome.events.last?.type, .loopCancelled)
   }
 
-  func testAgentModelToolLoopBindsWorkspaceToolCallsToCurrentWorkspace() throws {
+  func testAgentModelToolLoopBindsWorkspaceToolCallsToCurrentWorkspace() async throws {
     var receivedWorkspace = ""
     let toolId = "signalasi.workspace.file.read.text"
     let registry = try AgentNativeToolRegistry().registerExecutable(
@@ -235,7 +240,7 @@ final class AgentModelToolLoopTests: XCTestCase {
       AgentModelResponse(assistantText: "Read the project file.")
     )
 
-    let outcome = loop(adapter: adapter, registry: registry).run(request())
+    let outcome = await loop(adapter: adapter, registry: registry).run(request())
 
     XCTAssertEqual(outcome.status, .completed)
     let toolResult = try outcome.messages.filter { $0.role == .tool }.singleValue().toolResult
@@ -402,7 +407,7 @@ private final class ScriptedModelAdapter: AgentModelAdapter {
     self.remaining = responses
   }
 
-  func complete(_ request: AgentModelRequest) throws -> AgentModelResponse {
+  func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
     requests.append(request)
     return remaining.removeFirst()
   }

@@ -18,7 +18,7 @@ struct AgentModelRequest {
 }
 
 protocol AgentModelAdapter {
-  func complete(_ request: AgentModelRequest) throws -> AgentModelResponse
+  func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse
 }
 
 struct AgentModelToolLoopBudget: Codable, Equatable {

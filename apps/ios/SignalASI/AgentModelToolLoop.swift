@@ -20,7 +20,7 @@ final class AgentModelToolLoop {
     self.idFactory = idFactory
   }
 
-  func run(_ request: AgentModelToolLoopRequest) -> AgentModelToolLoopOutcome {
+  func run(_ request: AgentModelToolLoopRequest) async -> AgentModelToolLoopOutcome {
     let startedAt = clock.nowEpochMillis()
     let manifestJson = toolRegistry.catalogJson()
     let state = LoopState(
@@ -32,13 +32,13 @@ final class AgentModelToolLoop {
       deadlineEpochMillis: AgentModelToolLoopValidation.safeAdd(startedAt, request.budget.maxDurationMillis)
     )
     emit(state, .loopStarted)
-    return advance(state, initialCalls: [])
+    return await advance(state, initialCalls: [])
   }
 
   func resume(
     _ handle: AgentModelToolApprovalHandle,
     decision: AgentModelToolApprovalDecision
-  ) throws -> AgentModelToolLoopOutcome {
+  ) async throws -> AgentModelToolLoopOutcome {
     approvalLock.lock()
     guard let pending = pendingApprovals[handle.confirmationId],
           pending.handle.nonce == handle.nonce else {
@@ -95,13 +95,13 @@ final class AgentModelToolLoop {
     if case .terminal(let outcome) = resumed {
       return outcome
     }
-    return advance(state, initialCalls: pending.remainingCalls)
+    return await advance(state, initialCalls: pending.remainingCalls)
   }
 
   private func advance(
     _ state: LoopState,
     initialCalls: [AgentModelToolCall]
-  ) -> AgentModelToolLoopOutcome {
+  ) async -> AgentModelToolLoopOutcome {
     var calls = initialCalls
     while true {
       if let terminal = terminalGuard(state) {
@@ -145,7 +145,7 @@ final class AgentModelToolLoop {
 
       let response: AgentModelResponse
       do {
-        response = try modelAdapter.complete(modelRequest)
+        response = try await modelAdapter.complete(modelRequest)
       } catch {
         if state.request.cancellationToken.isCancellationRequested {
           return cancelled(state)

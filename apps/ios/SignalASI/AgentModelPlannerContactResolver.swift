@@ -35,6 +35,25 @@ struct AgentModelPlannerContactResolver {
   }
 
   @MainActor
+  func makeToolLoopPlanningProvider(
+    settings: AgentModelPlannerSettings,
+    toolRegistry: AgentNativeToolRegistry,
+    structuredSender: CloudModelStructuredSending = CloudModelClient(),
+    nativeToolSender: CloudModelNativeToolSending = CloudModelClient()
+  ) -> CloudModelToolLoopAgentPlanningProvider? {
+    guard let resolution = resolve(settings: settings) else {
+      return nil
+    }
+    return CloudModelToolLoopAgentPlanningProvider(
+      contact: resolution.contact,
+      store: store,
+      toolRegistry: toolRegistry,
+      structuredSender: structuredSender,
+      nativeToolSender: nativeToolSender
+    )
+  }
+
+  @MainActor
   func makePlanner(
     settings: AgentModelPlannerSettings,
     sender: CloudModelStructuredSending = CloudModelClient()
@@ -43,6 +62,26 @@ struct AgentModelPlannerContactResolver {
       return nil
     }
     let provider = CloudModelAgentPlanningProvider(contact: resolution.contact, store: store, sender: sender)
+    return GuardedModelAgentPlanner(provider: provider, modelProfile: resolution.modelProfile)
+  }
+
+  @MainActor
+  func makeToolLoopPlanner(
+    settings: AgentModelPlannerSettings,
+    toolRegistry: AgentNativeToolRegistry,
+    structuredSender: CloudModelStructuredSending = CloudModelClient(),
+    nativeToolSender: CloudModelNativeToolSending = CloudModelClient()
+  ) -> GuardedModelAgentPlanner? {
+    guard let resolution = resolve(settings: settings) else {
+      return nil
+    }
+    let provider = CloudModelToolLoopAgentPlanningProvider(
+      contact: resolution.contact,
+      store: store,
+      toolRegistry: toolRegistry,
+      structuredSender: structuredSender,
+      nativeToolSender: nativeToolSender
+    )
     return GuardedModelAgentPlanner(provider: provider, modelProfile: resolution.modelProfile)
   }
 
