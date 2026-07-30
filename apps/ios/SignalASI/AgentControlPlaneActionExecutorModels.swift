@@ -391,6 +391,35 @@ final class ActionExecutorAgentProvider: AgentProvider {
     return nil
   }
 
+  @discardableResult
+  func acceptConnectorSteered(
+    sourceMessageId: Int64,
+    contactId: String,
+    mergedIntoTaskId: String,
+    conversationId: String = "",
+    turnId: String = "",
+    taskId: String = "",
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentActionResult? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.acceptConnectorSteered(
+        sourceMessageId: sourceMessageId,
+        contactId: contactId,
+        mergedIntoTaskId: mergedIntoTaskId,
+        conversationId: conversationId,
+        turnId: turnId,
+        taskId: taskId,
+        nowMillis: nowMillis
+      ) {
+        return result
+      }
+    }
+    return nil
+  }
+
   func discardPrepared(agentId: String, runId: String) {
     transportIfPresent(agentId: agentId)?.discardPrepared(runId: runId)
   }
@@ -720,6 +749,60 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       payload: timeout.eventPayload
     )
     return timeout.result
+  }
+
+  func acceptConnectorSteered(
+    sourceMessageId: Int64,
+    contactId: String,
+    mergedIntoTaskId: String,
+    conversationId: String,
+    turnId: String,
+    taskId: String,
+    nowMillis: Int64
+  ) -> AgentActionResult? {
+    let active: ActiveRun
+    let steered: AgentConnectorSteeredResult
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard item.value.sourceMessageId == sourceMessageId,
+        let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorSteeredResultResolver.canAccept(
+        pending: pending,
+        sourceMessageId: sourceMessageId,
+        contactId: contactId,
+        conversationId: conversationId,
+        turnId: turnId,
+        taskId: taskId
+      )
+    }), let pending = resultsByRunId[match.key],
+      let resolved = AgentConnectorSteeredResultResolver.resolve(
+        pending: pending,
+        sourceMessageId: sourceMessageId,
+        contactId: contactId,
+        mergedIntoTaskId: mergedIntoTaskId,
+        conversationId: conversationId,
+        turnId: turnId,
+        taskId: taskId,
+        nowMillis: nowMillis
+      ) else {
+      lock.unlock()
+      return nil
+    }
+    active = match.value
+    steered = resolved
+    resultsByRunId[match.key] = resolved.result
+    activeByRunId.removeValue(forKey: match.key)
+    lock.unlock()
+    emit(
+      request: active.request,
+      registration: active.registration,
+      type: .runCompleted,
+      sequence: 3,
+      payload: steered.eventPayload
+    )
+    return steered.result
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {
