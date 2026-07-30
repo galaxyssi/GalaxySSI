@@ -18233,6 +18233,423 @@ struct AgentDesktopControlPendingRequest: Equatable {
   var streamFrame: Bool
 }
 
+struct AgentDesktopControlRequestRoutingContext: Equatable {
+  var clientRouteId: String
+  var controllerFingerprint: String
+  var controllerSignalName: String
+}
+
+struct AgentDesktopControlActionRequest: Equatable {
+  var desktopId: String
+  var toolId: String
+  var input: AgentMcpJSONObject
+  var payload: AgentMcpJSONObject
+  var pendingRequest: AgentDesktopControlPendingRequest
+  var durable: Bool
+  var resetsSurfaceState: Bool
+
+  var actionId: String { pendingRequest.actionId }
+  var expiresAt: Int64 { pendingRequest.expiresAt }
+  var updatesRuntimeStatus: Bool { !pendingRequest.streamFrame }
+}
+
+enum AgentDesktopControlRequestFactory {
+  static let actionTTLMillis: Int64 = 30_000
+
+  static func screenshot(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.screenshot,
+      input: [:],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func screenshotStreamFrame(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    fps: Int,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard let normalized = AgentDesktopScreenshotStreamPolicy.normalizeFps(fps) else {
+      return nil
+    }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.screenshot,
+      input: [
+        "stream_frame": .bool(true),
+        "stream_fps": .int(Int64(normalized))
+      ],
+      actionId: actionId,
+      nowMillis: nowMillis,
+      durable: false
+    )
+  }
+
+  static func perception(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.perceive,
+      input: [
+        "include_screenshot": .bool(true),
+        "include_ocr": .bool(true),
+        "include_ui_tree": .bool(true),
+        "max_elements": .int(80),
+        "max_depth": .int(8),
+        "max_ocr_chars": .int(12_000)
+      ],
+      actionId: actionId,
+      nowMillis: nowMillis,
+      durable: false
+    )
+  }
+
+  static func surfaces(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.surfaceList,
+      input: [:],
+      actionId: actionId,
+      nowMillis: nowMillis,
+      durable: false
+    )
+  }
+
+  static func selectDisplay(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    displayId: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !displayId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.surfaceSelect,
+      input: ["display_id": .string(displayId)],
+      actionId: actionId,
+      nowMillis: nowMillis,
+      durable: false,
+      resetsSurfaceState: true
+    )
+  }
+
+  static func selectWindow(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    windowId: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !windowId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.surfaceSelect,
+      input: ["window_id": .string(windowId)],
+      actionId: actionId,
+      nowMillis: nowMillis,
+      durable: false,
+      resetsSurfaceState: true
+    )
+  }
+
+  static func activateWindow(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    windowId: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !windowId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.windowActivate,
+      input: ["window_id": .string(windowId)],
+      actionId: actionId,
+      nowMillis: nowMillis,
+      resetsSurfaceState: true
+    )
+  }
+
+  static func click(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    x: Int,
+    y: Int,
+    coordinateWidth: Int = 0,
+    coordinateHeight: Int = 0,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    var input: AgentMcpJSONObject = [
+      "x": .int(Int64(x)),
+      "y": .int(Int64(y)),
+      "button": .string("left")
+    ]
+    if coordinateWidth > 0 && coordinateHeight > 0 {
+      input["coordinate_width"] = .int(Int64(coordinateWidth))
+      input["coordinate_height"] = .int(Int64(coordinateHeight))
+    }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.clickXY,
+      input: input,
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func typeText(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    text: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !text.isBlank,
+          text.count <= 4_096 else {
+      return nil
+    }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.typeText,
+      input: ["text": .string(text)],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func hotkey(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    keys: [String],
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !keys.isEmpty,
+          keys.count <= 4 else {
+      return nil
+    }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.hotkey,
+      input: ["keys": .array(keys.map { .string($0) })],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func scroll(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    delta: Int,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard delta != 0,
+          (-2_400...2_400).contains(delta) else {
+      return nil
+    }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.scroll,
+      input: ["delta": .int(Int64(delta))],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func windowSwitch(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    previous: Bool = false,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.windowSwitch,
+      input: ["direction": .string(previous ? "previous" : "next")],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func selectFile(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    path: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !path.isBlank,
+          path.count <= 32_767 else {
+      return nil
+    }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.fileSelect,
+      input: ["path": .string(path)],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func pauseTask(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    taskId: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !taskId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.taskPause,
+      input: ["task_id": .string(taskId)],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func takeOverTask(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    taskId: String,
+    leaseSeconds: Int = 900,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !taskId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.taskTakeover,
+      input: [
+        "task_id": .string(taskId),
+        "lease_seconds": .int(Int64(leaseSeconds.clamped(to: 30...3_600)))
+      ],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func continueTask(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    taskId: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !taskId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.taskContinue,
+      input: ["task_id": .string(taskId)],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func releaseTask(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    taskId: String,
+    actionId: String = UUID().uuidString,
+    nowMillis: Int64
+  ) -> AgentDesktopControlActionRequest? {
+    guard !taskId.isBlank else { return nil }
+    return requestAction(
+      snapshot: snapshot,
+      routing: routing,
+      toolId: AgentDesktopControlAction.taskRelease,
+      input: ["task_id": .string(taskId)],
+      actionId: actionId,
+      nowMillis: nowMillis
+    )
+  }
+
+  private static func requestAction(
+    snapshot: AgentDesktopRemoteControlSnapshot,
+    routing: AgentDesktopControlRequestRoutingContext,
+    toolId: String,
+    input: AgentMcpJSONObject,
+    actionId: String,
+    nowMillis: Int64,
+    durable: Bool = true,
+    resetsSurfaceState: Bool = false
+  ) -> AgentDesktopControlActionRequest? {
+    guard !snapshot.desktopId.isBlank,
+          let authorization = snapshot.currentAuthorization,
+          authorization.status == "active",
+          !authorization.desktopSessionId.isBlank,
+          authorization.desktopSessionExpiresAt > nowMillis else {
+      return nil
+    }
+    let expiresAt = nowMillis + actionTTLMillis
+    let payload: AgentMcpJSONObject = [
+      "type": .string("desktop_executor_request"),
+      "task_id": .string("desktop-control-\(actionId)"),
+      "action_id": .string(actionId),
+      "authorization_id": .string(authorization.authorizationId),
+      "desktop_session_id": .string(authorization.desktopSessionId),
+      "tool_id": .string(toolId),
+      "input": .object(input),
+      "sent_at": .int(nowMillis),
+      "expires_at": .int(expiresAt)
+    ]
+    let pending = AgentDesktopControlReceiptProtocol.pendingRequest(
+      payload: payload,
+      clientRouteId: routing.clientRouteId,
+      controllerFingerprint: routing.controllerFingerprint,
+      controllerSignalName: routing.controllerSignalName,
+      desktopId: snapshot.desktopId
+    )
+    return AgentDesktopControlActionRequest(
+      desktopId: snapshot.desktopId,
+      toolId: toolId,
+      input: input,
+      payload: payload,
+      pendingRequest: pending,
+      durable: durable,
+      resetsSurfaceState: resetsSurfaceState
+    )
+  }
+}
+
 final class AgentDesktopScreenshotRequestGate {
   private struct Pending {
     var actionId: String

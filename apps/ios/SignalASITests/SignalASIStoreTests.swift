@@ -6811,6 +6811,216 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(AgentDesktopRemoteControlSnapshot.parse(nil))
   }
 
+  func testAgentDesktopControlRequestFactoryBuildsAndroidExecutorPayloads() throws {
+    let now: Int64 = 1_800_000_000_000
+    let routing = AgentDesktopControlRequestRoutingContext(
+      clientRouteId: "client-route-1",
+      controllerFingerprint: "Controller-Fingerprint",
+      controllerSignalName: "signalasi:phone"
+    )
+    func snapshot(status: String = "active", expiresAt: Int64 = now + 60_000) throws -> AgentDesktopRemoteControlSnapshot {
+      try XCTUnwrap(AgentDesktopRemoteControlSnapshot.parse([
+        "desktop_id": .string("desktop-1"),
+        "current_authorization": .object([
+          "authorization_id": .string("auth-1"),
+          "status": .string(status),
+          "desktop_session_id": .string("session-1"),
+          "desktop_session_expires_at": .int(expiresAt)
+        ])
+      ]))
+    }
+
+    let active = try snapshot()
+    let screenshot = try XCTUnwrap(AgentDesktopControlRequestFactory.screenshot(
+      snapshot: active,
+      routing: routing,
+      actionId: "action-screenshot",
+      nowMillis: now
+    ))
+    let perception = try XCTUnwrap(AgentDesktopControlRequestFactory.perception(
+      snapshot: active,
+      routing: routing,
+      actionId: "action-perceive",
+      nowMillis: now
+    ))
+    let stream = try XCTUnwrap(AgentDesktopControlRequestFactory.screenshotStreamFrame(
+      snapshot: active,
+      routing: routing,
+      fps: 2,
+      actionId: "action-stream",
+      nowMillis: now
+    ))
+    let displaySelect = try XCTUnwrap(AgentDesktopControlRequestFactory.selectDisplay(
+      snapshot: active,
+      routing: routing,
+      displayId: "display:primary",
+      actionId: "action-display",
+      nowMillis: now
+    ))
+    let windowActivate = try XCTUnwrap(AgentDesktopControlRequestFactory.activateWindow(
+      snapshot: active,
+      routing: routing,
+      windowId: "window:browser",
+      actionId: "action-window",
+      nowMillis: now
+    ))
+    let click = try XCTUnwrap(AgentDesktopControlRequestFactory.click(
+      snapshot: active,
+      routing: routing,
+      x: 12,
+      y: 34,
+      coordinateWidth: 640,
+      coordinateHeight: 360,
+      actionId: "action-click",
+      nowMillis: now
+    ))
+    let takeover = try XCTUnwrap(AgentDesktopControlRequestFactory.takeOverTask(
+      snapshot: active,
+      routing: routing,
+      taskId: "task-1",
+      leaseSeconds: 9_000,
+      actionId: "action-takeover",
+      nowMillis: now
+    ))
+
+    XCTAssertEqual(AgentDesktopControlRequestFactory.actionTTLMillis, 30_000)
+    XCTAssertEqual(screenshot.payload["type"], .string("desktop_executor_request"))
+    XCTAssertEqual(screenshot.payload["task_id"], .string("desktop-control-action-screenshot"))
+    XCTAssertEqual(screenshot.payload["action_id"], .string("action-screenshot"))
+    XCTAssertEqual(screenshot.payload["authorization_id"], .string("auth-1"))
+    XCTAssertEqual(screenshot.payload["desktop_session_id"], .string("session-1"))
+    XCTAssertEqual(screenshot.payload["tool_id"], .string(AgentDesktopControlAction.screenshot))
+    XCTAssertEqual(screenshot.payload["input"], .object([:]))
+    XCTAssertEqual(screenshot.payload["sent_at"], .int(now))
+    XCTAssertEqual(screenshot.payload["expires_at"], .int(now + 30_000))
+    XCTAssertEqual(screenshot.pendingRequest.desktopId, "desktop-1")
+    XCTAssertEqual(screenshot.pendingRequest.toolId, AgentDesktopControlAction.screenshot)
+    XCTAssertEqual(screenshot.pendingRequest.expiresAt, now + 30_000)
+    XCTAssertTrue(screenshot.durable)
+    XCTAssertTrue(screenshot.updatesRuntimeStatus)
+
+    XCTAssertFalse(perception.durable)
+    XCTAssertEqual(perception.input["include_screenshot"], .bool(true))
+    XCTAssertEqual(perception.input["include_ocr"], .bool(true))
+    XCTAssertEqual(perception.input["include_ui_tree"], .bool(true))
+    XCTAssertEqual(perception.input["max_elements"], .int(80))
+    XCTAssertEqual(perception.input["max_depth"], .int(8))
+    XCTAssertEqual(perception.input["max_ocr_chars"], .int(12_000))
+    XCTAssertFalse(stream.durable)
+    XCTAssertFalse(stream.updatesRuntimeStatus)
+    XCTAssertTrue(stream.pendingRequest.streamFrame)
+    XCTAssertEqual(stream.input["stream_fps"], .int(2))
+    XCTAssertFalse(displaySelect.durable)
+    XCTAssertTrue(displaySelect.resetsSurfaceState)
+    XCTAssertEqual(displaySelect.input["display_id"], .string("display:primary"))
+    XCTAssertTrue(windowActivate.durable)
+    XCTAssertTrue(windowActivate.resetsSurfaceState)
+    XCTAssertEqual(windowActivate.input["window_id"], .string("window:browser"))
+    XCTAssertEqual(click.input["button"], .string("left"))
+    XCTAssertEqual(click.input["coordinate_width"], .int(640))
+    XCTAssertEqual(click.input["coordinate_height"], .int(360))
+    XCTAssertEqual(takeover.input["task_id"], .string("task-1"))
+    XCTAssertEqual(takeover.input["lease_seconds"], .int(3_600))
+    XCTAssertNotEqual(screenshot.pendingRequest.requestSha256, perception.pendingRequest.requestSha256)
+
+    XCTAssertEqual(AgentDesktopControlRequestFactory.hotkey(
+      snapshot: active,
+      routing: routing,
+      keys: ["ctrl", "tab"],
+      actionId: "action-hotkey",
+      nowMillis: now
+    )?.input["keys"], .array([.string("ctrl"), .string("tab")]))
+    XCTAssertEqual(AgentDesktopControlRequestFactory.windowSwitch(
+      snapshot: active,
+      routing: routing,
+      previous: true,
+      actionId: "action-window-switch",
+      nowMillis: now
+    )?.input["direction"], .string("previous"))
+    XCTAssertEqual(AgentDesktopControlRequestFactory.selectFile(
+      snapshot: active,
+      routing: routing,
+      path: "C:\\Users\\agent\\Desktop\\report.txt",
+      actionId: "action-file",
+      nowMillis: now
+    )?.toolId, AgentDesktopControlAction.fileSelect)
+    XCTAssertEqual(AgentDesktopControlRequestFactory.pauseTask(
+      snapshot: active,
+      routing: routing,
+      taskId: "task-1",
+      actionId: "action-pause",
+      nowMillis: now
+    )?.toolId, AgentDesktopControlAction.taskPause)
+    XCTAssertEqual(AgentDesktopControlRequestFactory.continueTask(
+      snapshot: active,
+      routing: routing,
+      taskId: "task-1",
+      actionId: "action-continue",
+      nowMillis: now
+    )?.toolId, AgentDesktopControlAction.taskContinue)
+    XCTAssertEqual(AgentDesktopControlRequestFactory.releaseTask(
+      snapshot: active,
+      routing: routing,
+      taskId: "task-1",
+      actionId: "action-release",
+      nowMillis: now
+    )?.toolId, AgentDesktopControlAction.taskRelease)
+    XCTAssertNil(AgentDesktopControlRequestFactory.screenshotStreamFrame(
+      snapshot: active,
+      routing: routing,
+      fps: 4,
+      actionId: "action-bad-stream",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.typeText(
+      snapshot: active,
+      routing: routing,
+      text: " ",
+      actionId: "action-empty-type",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.typeText(
+      snapshot: active,
+      routing: routing,
+      text: String(repeating: "x", count: 4_097),
+      actionId: "action-long-type",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.hotkey(
+      snapshot: active,
+      routing: routing,
+      keys: ["a", "b", "c", "d", "e"],
+      actionId: "action-many-keys",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.scroll(
+      snapshot: active,
+      routing: routing,
+      delta: 2_401,
+      actionId: "action-scroll",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.selectDisplay(
+      snapshot: active,
+      routing: routing,
+      displayId: "",
+      actionId: "action-empty-display",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.screenshot(
+      snapshot: try snapshot(status: "pending"),
+      routing: routing,
+      actionId: "action-pending",
+      nowMillis: now
+    ))
+    XCTAssertNil(AgentDesktopControlRequestFactory.screenshot(
+      snapshot: try snapshot(expiresAt: now),
+      routing: routing,
+      actionId: "action-expired",
+      nowMillis: now
+    ))
+  }
+
   func testAgentDesktopControlReceiptProtocolVerifiesSignedScreenshotEvidence() throws {
     let signerId = "desktop_test"
     let desktopSessionId = "sth_desktops_00000000000000000000000000000000"
