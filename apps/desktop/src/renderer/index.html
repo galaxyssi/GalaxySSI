@@ -110,6 +110,24 @@
         <button id="refreshAgentsButton" class="secondary-button" data-i18n="Refresh">Refresh</button>
       </div>
       <div id="agentContactList" class="agent-contact-list"></div>
+      <section class="agent-performance-lab" aria-labelledby="agentPerformanceTitle">
+        <header class="agent-performance-heading">
+          <div>
+            <strong id="agentPerformanceTitle" data-i18n="Performance lab">Performance lab</strong>
+            <p data-i18n="Compare real local Agent executions without storing prompt content.">Compare real local Agent executions without storing prompt content.</p>
+          </div>
+          <button id="refreshAgentPerformanceButton" class="icon-button performance-refresh" aria-label="Refresh performance" title="Refresh performance">↻</button>
+        </header>
+        <div class="performance-window-tabs" role="tablist" aria-label="Performance window">
+          <button data-performance-window="24h">24h</button>
+          <button class="active" data-performance-window="7d">7d</button>
+          <button data-performance-window="30d">30d</button>
+          <button data-performance-window="all" data-i18n="All">All</button>
+        </div>
+        <div id="agentPerformanceSummary" class="agent-performance-summary" aria-live="polite"></div>
+        <div id="agentPerformanceList" class="agent-performance-list"></div>
+        <p class="performance-evidence-note" data-i18n="Ranks available Agents by success rate, then successful response latency.">Ranks available Agents by success rate, then successful response latency.</p>
+      </section>
       <details class="drawer-details">
         <summary data-i18n="Add custom agent">Add custom agent</summary>
         <div class="form-stack">
