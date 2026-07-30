@@ -849,6 +849,47 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(restored.serializedSnapshot(), "[]")
   }
 
+  func testFileAgentNativeToolReplayStorePersistsPrunesAndClears() throws {
+    var now: Int64 = 5_000
+    let root = try temporaryDirectory("native-tool-replay-file")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = relativeFile("replay/entries.json", under: root)
+    let key = AgentNativeToolReplayKey(
+      toolId: "signalasi.test.native",
+      toolVersion: "1.0.0",
+      idempotencyKey: "file-replay"
+    )
+    let store = FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now })
+
+    try store.put(key, result: nativeToolResult(invocationId: "stored", idempotencyKey: "file-replay"))
+
+    let restored = FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now })
+    let replayed = try XCTUnwrap(restored.get(key))
+
+    XCTAssertEqual(replayed.receipt.invocationId, "stored")
+    XCTAssertThrowsError(
+      try restored.put(
+        AgentNativeToolReplayKey(toolId: "signalasi.test.native", toolVersion: "1.0.0", idempotencyKey: "failed"),
+        result: nativeToolResult(status: .failed, invocationId: "failed", idempotencyKey: "failed")
+      )
+    ) { error in
+      XCTAssertEqual(error as? AgentNativeToolReplayError, .unsuccessfulResult)
+    }
+
+    now += AgentNativeToolReplaySnapshotStore.retentionMillis + 1
+
+    XCTAssertNil(restored.get(key))
+    XCTAssertEqual((try? String(contentsOf: fileURL, encoding: .utf8)) ?? "", "[]")
+
+    try restored.put(key, result: nativeToolResult(invocationId: "fresh", idempotencyKey: "file-replay"))
+    XCTAssertNotNil(FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now }).get(key))
+
+    restored.clear()
+
+    XCTAssertNil(FileAgentNativeToolReplayStore(fileURL: fileURL, nowMillis: { now }).get(key))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+  }
+
   func testAgentNativeToolReplayJsonCodecSkipsMalformedEntries() throws {
     let key = AgentNativeToolReplayKey(
       toolId: "signalasi.test.native",

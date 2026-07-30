@@ -33,6 +33,7 @@
     A10000000000000000000109 /* AgentIOSRuntimeNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */; };
     A10000000000000000000110 /* AgentNativeToolExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */; };
     A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000311 /* AgentNativeToolAuditStore.swift */; };
+    A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */; };
     A10000000000000000000111 /* AgentObservationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000111 /* AgentObservationModels.swift */; };
     A10000000000000000000112 /* AgentMcpCoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000112 /* AgentMcpCoreModels.swift */; };
     A10000000000000000000113 /* AgentMcpPackageModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000113 /* AgentMcpPackageModels.swift */; };
@@ -264,6 +265,7 @@
     A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSRuntimeNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolExecutionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000311 /* AgentNativeToolAuditStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolAuditStore.swift; sourceTree = "<group>"; };
+    A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolReplayFileStore.swift; sourceTree = "<group>"; };
     A20000000000000000000111 /* AgentObservationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentObservationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000112 /* AgentMcpCoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpCoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000113 /* AgentMcpPackageModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpPackageModels.swift; sourceTree = "<group>"; };
@@ -496,6 +498,7 @@
         A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */,
         A20000000000000000000110 /* AgentNativeToolExecutionModels.swift */,
         A20000000000000000000311 /* AgentNativeToolAuditStore.swift */,
+        A20000000000000000000312 /* AgentNativeToolReplayFileStore.swift */,
         A20000000000000000000111 /* AgentObservationModels.swift */,
         A20000000000000000000112 /* AgentMcpCoreModels.swift */,
         A20000000000000000000113 /* AgentMcpPackageModels.swift */,
@@ -825,6 +828,7 @@
         A10000000000000000000109 /* AgentIOSRuntimeNativeTools.swift in Sources */,
         A10000000000000000000110 /* AgentNativeToolExecutionModels.swift in Sources */,
         A10000000000000000000311 /* AgentNativeToolAuditStore.swift in Sources */,
+        A10000000000000000000312 /* AgentNativeToolReplayFileStore.swift in Sources */,
         A10000000000000000000111 /* AgentObservationModels.swift in Sources */,
         A10000000000000000000112 /* AgentMcpCoreModels.swift in Sources */,
         A10000000000000000000113 /* AgentMcpPackageModels.swift in Sources */,
