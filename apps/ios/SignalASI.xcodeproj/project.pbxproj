@@ -106,6 +106,7 @@
     A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */; };
     A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */; };
     A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */; };
+    A10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -159,6 +160,7 @@
     A10000000000000000000251 /* AgentConnectorLateResponseReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000251 /* AgentConnectorLateResponseReducerTests.swift */; };
     A10000000000000000000252 /* AgentWorkspaceExecutionSnapshotReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000252 /* AgentWorkspaceExecutionSnapshotReducerTests.swift */; };
     A10000000000000000000253 /* AgentWorkspaceCheckpointReducerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000253 /* AgentWorkspaceCheckpointReducerTests.swift */; };
+    A10000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -263,6 +265,7 @@
     A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorLateResponseReducer.swift; sourceTree = "<group>"; };
     A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceExecutionSnapshotReducer.swift; sourceTree = "<group>"; };
     A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceCheckpointReducer.swift; sourceTree = "<group>"; };
+    A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -316,6 +319,7 @@
     A20000000000000000000251 /* AgentConnectorLateResponseReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorLateResponseReducerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000252 /* AgentWorkspaceExecutionSnapshotReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceExecutionSnapshotReducerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000253 /* AgentWorkspaceCheckpointReducerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceCheckpointReducerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -421,6 +425,7 @@
         A20000000000000000000182 /* AgentConnectorLateResponseReducer.swift */,
         A20000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift */,
         A20000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift */,
+        A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -495,6 +500,7 @@
         A20000000000000000000251 /* AgentConnectorLateResponseReducerTests.swift */,
         A20000000000000000000252 /* AgentWorkspaceExecutionSnapshotReducerTests.swift */,
         A20000000000000000000253 /* AgentWorkspaceCheckpointReducerTests.swift */,
+        A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -676,6 +682,7 @@
         A10000000000000000000182 /* AgentConnectorLateResponseReducer.swift in Sources */,
         A10000000000000000000183 /* AgentWorkspaceExecutionSnapshotReducer.swift in Sources */,
         A10000000000000000000184 /* AgentWorkspaceCheckpointReducer.swift in Sources */,
+        A10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -750,6 +757,7 @@
         A10000000000000000000251 /* AgentConnectorLateResponseReducerTests.swift in Sources */,
         A10000000000000000000252 /* AgentWorkspaceExecutionSnapshotReducerTests.swift in Sources */,
         A10000000000000000000253 /* AgentWorkspaceCheckpointReducerTests.swift in Sources */,
+        A10000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
