@@ -370,6 +370,27 @@ final class ActionExecutorAgentProvider: AgentProvider {
     return nil
   }
 
+  @discardableResult
+  func handleConnectorTimeout(
+    sourceMessageId: Int64,
+    stage: AgentConnectorTimeoutStage,
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentActionResult? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.handleConnectorTimeout(
+        sourceMessageId: sourceMessageId,
+        stage: stage,
+        nowMillis: nowMillis
+      ) {
+        return result
+      }
+    }
+    return nil
+  }
+
   func discardPrepared(agentId: String, runId: String) {
     transportIfPresent(agentId: agentId)?.discardPrepared(runId: runId)
   }
@@ -653,6 +674,52 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     resultsByRunId[match.key] = result
     lock.unlock()
     return updated
+  }
+
+  func handleConnectorTimeout(
+    sourceMessageId: Int64,
+    stage: AgentConnectorTimeoutStage,
+    nowMillis: Int64
+  ) -> AgentActionResult? {
+    let active: ActiveRun
+    let timeout: AgentConnectorTimeoutResolution
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard item.value.sourceMessageId == sourceMessageId,
+        let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorTimeoutResolver.resolve(
+        pending: pending,
+        sourceMessageId: sourceMessageId,
+        stage: stage,
+        nowMillis: nowMillis
+      ) != nil
+    }), let pending = resultsByRunId[match.key],
+      let resolved = AgentConnectorTimeoutResolver.resolve(
+        pending: pending,
+        sourceMessageId: sourceMessageId,
+        stage: stage,
+        nowMillis: nowMillis
+      ) else {
+      lock.unlock()
+      return nil
+    }
+    active = match.value
+    timeout = resolved
+    resultsByRunId[match.key] = resolved.result
+    if resolved.shouldDeactivateRun {
+      activeByRunId.removeValue(forKey: match.key)
+    }
+    lock.unlock()
+    emit(
+      request: active.request,
+      registration: active.registration,
+      type: .runFailed,
+      sequence: 3,
+      payload: timeout.eventPayload
+    )
+    return timeout.result
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {
