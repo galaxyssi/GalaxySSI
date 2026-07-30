@@ -389,6 +389,13 @@ def api_agent_memory_telemetry(request: Request):
     runtime.request_capture()
     return runtime.snapshot()
 
+@app.get("/api/link/transport-diagnostics")
+def api_link_transport_diagnostics(request: Request):
+    require_loopback(request)
+    from link_transport_diagnostics import link_transport_diagnostics
+
+    return link_transport_diagnostics().snapshot()
+
 
 @app.get("/api/provider-profiles")
 def api_provider_profiles():

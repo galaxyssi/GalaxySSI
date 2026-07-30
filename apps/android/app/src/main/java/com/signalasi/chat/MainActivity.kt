@@ -22996,7 +22996,72 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             R.drawable.ic_device_node,
             getString(if (secureSessionReady) R.string.protocol_badge_online else R.string.status_disconnected)
         ))
+        val diagnostics = SignalASILinkTransportDiagnostics.snapshot(this)
+        addSectionTitle(getString(R.string.protocol_transport_diagnostics))
+        featureContent.addView(featureRow(
+            getString(R.string.protocol_replay_events),
+            getString(R.string.protocol_replay_events_subtitle),
+            R.drawable.ic_protocol_link,
+            diagnostics.replayCount.toString()
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.protocol_duplicate_events),
+            getString(R.string.protocol_duplicate_events_subtitle),
+            R.drawable.ic_device_node,
+            diagnostics.duplicateCount.toString()
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.protocol_old_counter_events),
+            getString(R.string.protocol_old_counter_events_subtitle),
+            R.drawable.ic_security_shield,
+            diagnostics.oldCounterCount.toString()
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.protocol_transport_failures),
+            getString(R.string.protocol_transport_failures_subtitle),
+            R.drawable.ic_security_shield,
+            diagnostics.failureCount.toString()
+        ))
+        addSectionTitle(getString(R.string.protocol_recent_transport_events))
+        if (diagnostics.recentEvents.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.protocol_no_transport_anomalies),
+                getString(R.string.protocol_no_transport_anomalies_subtitle),
+                R.drawable.ic_security_shield,
+                getString(R.string.protocol_badge_stable)
+            ))
+        } else {
+            diagnostics.recentEvents.take(5).forEach { event ->
+                val references = listOf(event.endpointRef, event.messageRef)
+                    .filter(String::isNotBlank)
+                    .joinToString(" / ")
+                    .ifBlank { getString(R.string.status_unknown) }
+                featureContent.addView(featureRow(
+                    protocolDiagnosticEventLabel(event.kind),
+                    getString(
+                        R.string.protocol_transport_event_subtitle,
+                        securityTime(event.recordedAtMillis),
+                        references
+                    ),
+                    R.drawable.ic_protocol_link,
+                    getString(R.string.protocol_diagnostic_recorded)
+                ))
+            }
+        }
     }
+
+    private fun protocolDiagnosticEventLabel(kind: SignalASILinkDiagnosticKind): String = getString(
+        when (kind) {
+            SignalASILinkDiagnosticKind.ENCRYPTED_REPLAY -> R.string.protocol_event_encrypted_replay
+            SignalASILinkDiagnosticKind.PENDING_REPLAY -> R.string.protocol_event_pending_replay
+            SignalASILinkDiagnosticKind.DUPLICATE_MESSAGE -> R.string.protocol_event_duplicate_message
+            SignalASILinkDiagnosticKind.DUPLICATE_RECEIPT -> R.string.protocol_event_duplicate_receipt
+            SignalASILinkDiagnosticKind.OLD_COUNTER -> R.string.protocol_event_old_counter
+            SignalASILinkDiagnosticKind.DECRYPT_FAILURE -> R.string.protocol_event_decrypt_failure
+            SignalASILinkDiagnosticKind.CHUNK_DUPLICATE -> R.string.protocol_event_chunk_duplicate
+            SignalASILinkDiagnosticKind.FRAGMENT_REJECTED -> R.string.protocol_event_fragment_rejected
+        }
+    )
 
     private fun showAdvancedOptionsFeaturePage() {
         renderControlCenterAdvancedPage()

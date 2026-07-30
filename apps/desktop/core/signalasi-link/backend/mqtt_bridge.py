@@ -51,6 +51,11 @@ from link_delivery import (
     remove_task_result,
 )
 from link_protocol import LinkTopics, PROTOCOL_NAME, PROTOCOL_VERSION, decrypt_pairing_claim, make_envelope, parse_topic, validate_envelope, valid_route_id
+from link_transport_diagnostics import (
+    classify_decryption_error,
+    classify_fragment_error,
+    link_transport_diagnostics,
+)
 from mqtt_wire_chunking import (
     MAX_PACKET_BYTES as MAX_MQTT_PACKET_BYTES,
     MqttWireChunkAssembler,
@@ -4417,6 +4422,12 @@ def _process_message(mqttc, userdata, msg):
                     wire_payload,
                 )
             except ValueError as exc:
+                link_transport_diagnostics().record(
+                    classify_fragment_error(exc),
+                    route_id=client_route_id,
+                    message_id=str(wire_payload.get("transfer_id") or ""),
+                    detail_code=exc.__class__.__name__,
+                )
                 log.warning("Rejected MQTT fragmented transfer: %s", exc)
                 return
             if assembled is None:
@@ -4443,6 +4454,12 @@ def _process_message(mqttc, userdata, msg):
             ciphertext_digest = _signal_ciphertext_digest(wire_payload)
             replay_message_id = message_for_ciphertext(client_route_id, ciphertext_digest)
             if replay_message_id:
+                link_transport_diagnostics().record(
+                    "encrypted_replay",
+                    route_id=client_route_id,
+                    message_id=replay_message_id,
+                    detail_code="pre_decrypt",
+                )
                 previous = previous_acknowledgement(client_route_id, replay_message_id)
                 client_source_message_id = str(
                     previous.get("client_source_message_id") or ""
@@ -4463,7 +4480,19 @@ def _process_message(mqttc, userdata, msg):
                 )
                 return
             decrypt_started_at = int(time.time() * 1000)
-            application_envelope = decrypt_signal_envelope(wire_payload, remote_name=paired_client["signal_name"])
+            try:
+                application_envelope = decrypt_signal_envelope(
+                    wire_payload,
+                    remote_name=paired_client["signal_name"],
+                )
+            except Exception as exc:
+                link_transport_diagnostics().record(
+                    classify_decryption_error(exc),
+                    route_id=client_route_id,
+                    message_id=ciphertext_digest,
+                    detail_code=exc.__class__.__name__,
+                )
+                raise
             validate_envelope(application_envelope)
             if application_envelope["source_id"] != paired_client["signal_name"]:
                 log.warning("Rejected MQTT message: application sender does not match paired identity")
@@ -4471,7 +4500,14 @@ def _process_message(mqttc, userdata, msg):
             message_id = str(application_envelope["message_id"])
             bind_ciphertext(client_route_id, ciphertext_digest, message_id)
             if not claim_message(client_route_id, message_id):
-                if application_envelope.get("payload", {}).get("type") == "delivery_ack":
+                duplicate_type = application_envelope.get("payload", {}).get("type")
+                link_transport_diagnostics().record(
+                    "duplicate_receipt" if duplicate_type == "delivery_ack" else "duplicate_message",
+                    route_id=client_route_id,
+                    message_id=message_id,
+                    detail_code="delivery_ack" if duplicate_type == "delivery_ack" else "claimed",
+                )
+                if duplicate_type == "delivery_ack":
                     return
                 previous = previous_acknowledgement(client_route_id, message_id)
                 client_source_message_id = str(

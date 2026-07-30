@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld("signalasi", {
   clearPairing: (clientRouteId = "") => ipcRenderer.invoke("pairing:clear", clientRouteId),
   detectAgents: () => ipcRenderer.invoke("agents:detect"),
   getAgentDiagnostics: () => ipcRenderer.invoke("agents:diagnostics"),
+  getLinkTransportDiagnostics: () => ipcRenderer.invoke("link:transport-diagnostics"),
   getAgentExecutionLog: (limit) => ipcRenderer.invoke("agents:execution-log", limit),
   getAgentTasks: (limit) => ipcRenderer.invoke("agents:tasks", limit),
   getAgentMemoryTelemetry: () => ipcRenderer.invoke("agents:memory-telemetry"),
