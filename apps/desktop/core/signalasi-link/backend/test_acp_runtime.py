@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -182,6 +183,7 @@ class AcpRuntimeTest(unittest.TestCase):
         self.runtime = AcpRuntime(
             state_path=self.root / "acp-runtime.json",
             config_loader=lambda: self.config,
+            maintenance_interval_seconds=60,
         )
 
     def tearDown(self) -> None:
@@ -314,6 +316,67 @@ class AcpRuntimeTest(unittest.TestCase):
         self.config["agents"]["hermes"]["command"] = "missing-signalasi-acp"
         self.assertIsNone(self.execute("hello"))
         self.assertEqual("needs_setup", self.runtime.agent_health("hermes")["status"])
+
+    def test_prewarmed_process_is_kept_past_idle_timeout(self) -> None:
+        self.config["idle_timeout_seconds"] = 1
+        self.config["agents"]["hermes"]["prewarm"] = True
+        first = self.runtime.prewarm("hermes")
+        first_pid = first["pid"]
+        self.runtime._processes["hermes"].last_used_at -= 60
+
+        health = self.runtime.maintain()
+        current = next(
+            item
+            for item in health["processes"]
+            if item["agent_id"] == "hermes"
+        )
+
+        self.assertEqual(first_pid, current["pid"])
+        self.assertEqual("running", current["status"])
+        self.assertTrue(current["prewarm"])
+
+    def test_keep_alive_restarts_crashed_prewarmed_process(self) -> None:
+        self.config["agents"]["hermes"]["prewarm"] = True
+        first = self.runtime.prewarm("hermes")
+        first_pid = first["pid"]
+
+        async def stop_process() -> None:
+            process = self.runtime._processes["hermes"].process
+            process.kill()
+            await process.wait()
+
+        future = asyncio.run_coroutine_threadsafe(
+            stop_process(),
+            self.runtime._loop,
+        )
+        future.result(timeout=5)
+
+        health = self.runtime.maintain()
+        current = next(
+            item
+            for item in health["processes"]
+            if item["agent_id"] == "hermes"
+        )
+
+        self.assertNotEqual(first_pid, current["pid"])
+        self.assertEqual("running", current["status"])
+        self.assertEqual(1, health["metrics"]["prewarm_starts"])
+        self.assertEqual(1, health["metrics"]["keepalive_restarts"])
+
+    def test_execute_reports_warm_reuse_after_prewarm(self) -> None:
+        self.runtime.prewarm("hermes")
+
+        self.assertEqual("reply:hello", self.execute("hello"))
+        health = self.runtime.health()
+        current = next(
+            item
+            for item in health["processes"]
+            if item["agent_id"] == "hermes"
+        )
+
+        self.assertEqual(1, current["warm_reuses"])
+        self.assertEqual(1, health["metrics"]["warm_reuses"])
+        self.assertGreaterEqual(current["startup_latency_ms"], 0)
 
     def test_hermes_acp_uses_safe_mode_by_default(self) -> None:
         previous = os.environ.pop(

@@ -223,6 +223,13 @@ def test_coordinator_pause_takeover_continue_lifecycle(tmp_path):
     interrupted: list[str] = []
     published_events: list[dict] = []
     published_results: list[dict] = []
+    terminal_event_published = threading.Event()
+
+    def record_event(event: dict) -> None:
+        published_events.append(event)
+        if event.get("status") in TERMINAL_STATES:
+            terminal_event_published.set()
+
     task = manager.create_external(
         agent_id="codex",
         contact_id="codex",
@@ -241,7 +248,7 @@ def test_coordinator_pause_takeover_continue_lifecycle(tmp_path):
             "grounding": "Active window: Editor",
         },
         runner_factory=lambda _task, _checkpoint: lambda _current: "continued result",
-        event_handler=published_events.append,
+        event_handler=record_event,
         result_handler=published_results.append,
     )
     controller = {
@@ -265,6 +272,7 @@ def test_coordinator_pause_takeover_continue_lifecycle(tmp_path):
     assert completed.result == "continued result"
     assert completed.execution_checkpoint["capture_id"] == "capture-1"
     assert completed.status in TERMINAL_STATES
+    assert terminal_event_published.wait(timeout=1)
     published_statuses = [event["status"] for event in published_events]
     assert "paused" in published_statuses
     assert "takeover" in published_statuses

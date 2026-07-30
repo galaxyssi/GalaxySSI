@@ -78,6 +78,20 @@ class PersistentCliResult:
     artifacts: tuple[dict, ...] = ()
 
 
+@dataclass(frozen=True)
+class _WarmTarget:
+    agent_id: str
+    command: tuple[str, ...]
+    environment_key: str
+    env: dict[str, str] = field(repr=False, compare=False)
+    cwd: Path
+    count: int
+
+    @property
+    def key(self) -> tuple[str, tuple[str, ...], str]:
+        return self.agent_id, self.command, self.environment_key
+
+
 class _PersistentJsonlWorker:
     def __init__(
         self,
@@ -353,6 +367,10 @@ class ExternalCliProcessPool:
         self._popen_factory = popen_factory
         self._condition = threading.Condition(threading.RLock())
         self._workers: dict[str, _PersistentJsonlWorker] = {}
+        self._warm_targets: dict[
+            tuple[str, tuple[str, ...], str],
+            _WarmTarget,
+        ] = {}
         self._active_tasks: dict[str, str] = {}
         self._foreground_waiters = 0
         self._closed = False
@@ -366,6 +384,11 @@ class ExternalCliProcessPool:
             "foreground_requests": 0,
             "background_requests": 0,
             "foreground_bursts": 0,
+            "cold_starts": 0,
+            "prewarm_starts": 0,
+            "keepalive_restarts": 0,
+            "startup_latency_ms_total": 0,
+            "last_startup_latency_ms": 0,
         }
         self._janitor_stop = threading.Event()
         self._janitor_thread: threading.Thread | None = None
@@ -438,6 +461,7 @@ class ExternalCliProcessPool:
                     current.last_used_at = self._now()
                     if current.request_count >= self.max_requests_per_process:
                         self._retire_locked(current.worker_id)
+                self._replenish_warm_targets_locked()
                 self._condition.notify_all()
 
     def prewarm(
@@ -448,6 +472,7 @@ class ExternalCliProcessPool:
         env: dict[str, str],
         cwd: Path,
         count: int = 1,
+        keep_alive: bool = True,
     ) -> int:
         normalized_command = tuple(str(item) for item in command if str(item))
         if not normalized_command:
@@ -457,19 +482,37 @@ class ExternalCliProcessPool:
         with self._condition:
             self._ensure_open_locked()
             self._prune_locked()
+            target = _WarmTarget(
+                agent_id=str(agent_id),
+                command=normalized_command,
+                environment_key=environment_key,
+                env=dict(env),
+                cwd=Path(cwd),
+                count=max(
+                    0,
+                    min(int(count or 1), self.max_processes_per_agent),
+                ),
+            )
+            if keep_alive and target.count:
+                self._warm_targets[target.key] = target
+            elif not keep_alive:
+                self._warm_targets.pop(target.key, None)
             existing = self._matching_workers_locked(
                 agent_id,
                 normalized_command,
                 environment_key,
             )
-            target = max(0, min(int(count or 1), self.max_processes_per_agent))
-            while len(existing) < target and len(self._workers) < self.max_processes:
+            while (
+                len(existing) < target.count
+                and len(self._workers) < self.max_processes
+            ):
                 worker = self._spawn_locked(
                     agent_id,
                     normalized_command,
                     environment_key,
                     dict(env),
                     Path(cwd),
+                    reason="prewarm",
                 )
                 existing.append(worker)
                 warmed += 1
@@ -487,7 +530,19 @@ class ExternalCliProcessPool:
 
     def reap_idle(self) -> int:
         with self._condition:
-            return self._prune_locked()
+            released = self._prune_locked()
+            self._replenish_warm_targets_locked()
+            return released
+
+    def maintain(self) -> dict:
+        with self._condition:
+            released = self._prune_locked()
+            started = self._replenish_warm_targets_locked()
+            return {
+                "released": released,
+                "started": started,
+                "health": self.health(),
+            }
 
     def health(self) -> dict:
         with self._condition:
@@ -516,6 +571,20 @@ class ExternalCliProcessPool:
                 "busy_count": sum(1 for item in workers if item["state"] == "busy"),
                 "idle_count": sum(1 for item in workers if item["state"] == "idle"),
                 "workers": workers,
+                "warm_targets": [
+                    {
+                        "agent_id": target.agent_id,
+                        "target_count": target.count,
+                        "ready_count": len(
+                            self._matching_workers_locked(
+                                target.agent_id,
+                                target.command,
+                                target.environment_key,
+                            )
+                        ),
+                    }
+                    for target in self._warm_targets.values()
+                ],
                 "metrics": dict(self._metrics),
                 "foreground_waiters": self._foreground_waiters,
             }
@@ -526,6 +595,7 @@ class ExternalCliProcessPool:
             if self._closed:
                 return
             self._closed = True
+            self._warm_targets.clear()
             worker_ids = list(self._workers)
             for worker_id in worker_ids:
                 self._retire_locked(worker_id, kill=True)
@@ -615,6 +685,7 @@ class ExternalCliProcessPool:
                             environment_key,
                             env,
                             cwd,
+                            reason="cold",
                         )
                         self._activate_locked(
                             worker,
@@ -673,8 +744,11 @@ class ExternalCliProcessPool:
         environment_key: str,
         env: dict[str, str],
         cwd: Path,
+        *,
+        reason: str,
     ) -> _PersistentJsonlWorker:
         worker_id = f"cli-{uuid.uuid4().hex[:16]}"
+        started_at = time.perf_counter()
         worker = _PersistentJsonlWorker(
             worker_id=worker_id,
             agent_id=agent_id,
@@ -685,8 +759,19 @@ class ExternalCliProcessPool:
             now=self._now,
             popen_factory=self._popen_factory,
         )
+        startup_latency_ms = max(
+            0,
+            int((time.perf_counter() - started_at) * 1_000),
+        )
         self._workers[worker_id] = worker
         self._metrics["process_starts"] += 1
+        metric = {
+            "prewarm": "prewarm_starts",
+            "keepalive": "keepalive_restarts",
+        }.get(reason, "cold_starts")
+        self._metrics[metric] += 1
+        self._metrics["startup_latency_ms_total"] += startup_latency_ms
+        self._metrics["last_startup_latency_ms"] = startup_latency_ms
         return worker
 
     def _matching_workers_locked(
@@ -715,6 +800,7 @@ class ExternalCliProcessPool:
 
     def _prune_locked(self) -> int:
         now = self._now()
+        protected = self._protected_warm_workers_locked()
         candidates = [
             worker.worker_id
             for worker in self._workers.values()
@@ -722,13 +808,64 @@ class ExternalCliProcessPool:
             and (
                 not worker.alive()
                 or worker.request_count >= self.max_requests_per_process
-                or now - worker.last_used_at >= self.idle_timeout_seconds
+                or (
+                    now - worker.last_used_at >= self.idle_timeout_seconds
+                    and worker.worker_id not in protected
+                )
             )
         ]
         for worker_id in candidates:
             self._retire_locked(worker_id, kill=not self._workers[worker_id].alive())
             self._metrics["idle_releases"] += 1
         return len(candidates)
+
+    def _protected_warm_workers_locked(self) -> set[str]:
+        protected: set[str] = set()
+        for target in self._warm_targets.values():
+            eligible = sorted(
+                (
+                    worker
+                    for worker in self._matching_workers_locked(
+                        target.agent_id,
+                        target.command,
+                        target.environment_key,
+                    )
+                    if worker.alive()
+                    and worker.request_count < self.max_requests_per_process
+                ),
+                key=lambda item: (item.busy, item.last_used_at),
+                reverse=True,
+            )
+            protected.update(
+                worker.worker_id
+                for worker in eligible[:target.count]
+            )
+        return protected
+
+    def _replenish_warm_targets_locked(self) -> int:
+        started = 0
+        for target in self._warm_targets.values():
+            matching = self._matching_workers_locked(
+                target.agent_id,
+                target.command,
+                target.environment_key,
+            )
+            while (
+                len(matching) < target.count
+                and len(self._workers) < self.max_processes
+            ):
+                matching.append(
+                    self._spawn_locked(
+                        target.agent_id,
+                        target.command,
+                        target.environment_key,
+                        dict(target.env),
+                        target.cwd,
+                        reason="keepalive",
+                    )
+                )
+                started += 1
+        return started
 
     def _retire_locked(self, worker_id: str, *, kill: bool = False) -> None:
         worker = self._workers.pop(worker_id, None)
@@ -751,7 +888,7 @@ class ExternalCliProcessPool:
         interval = max(1.0, min(self.idle_timeout_seconds / 2, 30.0))
         while not self._janitor_stop.wait(interval):
             try:
-                self.reap_idle()
+                self.maintain()
             except Exception:
                 pass
 
