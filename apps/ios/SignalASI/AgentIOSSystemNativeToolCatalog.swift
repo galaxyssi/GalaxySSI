@@ -80,6 +80,11 @@ enum AgentIOSSystemNativeToolCatalog {
     wifiScanStart
   ]
 
+  static let audioControlBoundaryToolIds: Set<String> = [
+    audioVolumeSet,
+    audioMuteSet
+  ]
+
   static let executableToolIds: Set<String> = handoffToolIds.union([
     telephonyStatus,
     telephonyCallState,
@@ -99,6 +104,8 @@ enum AgentIOSSystemNativeToolCatalog {
     wifiScanResults,
     wifiScanStart,
     audioStatus,
+    audioVolumeSet,
+    audioMuteSet,
     vpnStatus,
     biometricStatus
   ])
@@ -323,7 +330,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       audioVolumeSet,
       "Set Android stream volume",
-      "Android stream-volume descriptor retained for planning; iOS apps cannot set global system stream volumes directly.",
+      "Returns a structured iOS audio-control boundary result; iOS cannot set global system stream volumes directly.",
       .medium,
       ["audio.volume"],
       [],
@@ -333,7 +340,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       audioMuteSet,
       "Set Android stream mute",
-      "Android stream-mute descriptor retained for planning; iOS apps cannot mute arbitrary system audio streams directly.",
+      "Returns a structured iOS audio-control boundary result; iOS cannot mute arbitrary global audio streams directly.",
       .medium,
       ["audio.mute"],
       [],
@@ -527,6 +534,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if audioControlBoundaryToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosAudioControlBoundaryPermission,
+          title: "iOS audio control boundary",
+          description: "Limits execution to a structured iOS platform-boundary result; global audio controls are not exposed."
+        )
+      ]
+    }
     if specification.id == wifiStatus {
       return [
         AgentNativePermissionRequirement(
@@ -659,6 +675,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == audioStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
     }
+    if audioControlBoundaryToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a structured iOS audio-control boundary executor."
+    }
     if id == wifiStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Wi-Fi status executor."
     }
@@ -705,6 +724,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == audioStatus {
       return audioStatusAvailability
     }
+    if audioControlBoundaryToolIds.contains(id) {
+      return audioControlBoundaryAvailability
+    }
     if id == wifiStatus {
       return wifiStatusAvailability
     }
@@ -750,6 +772,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == audioStatus {
       return "av_audio_session_status_on_ios15"
+    }
+    if audioControlBoundaryToolIds.contains(id) {
+      return "ios_audio_control_boundary_on_ios15"
     }
     if id == wifiStatus {
       return "nw_path_wifi_status_on_ios15"
@@ -816,6 +841,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads bounded AVAudioSession status without changing audio settings."
+    )
+  }
+
+  private static var audioControlBoundaryAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor returns a structured audio-control boundary result because global stream volume and mute are not exposed to normal apps."
     )
   }
 
@@ -952,6 +984,7 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
+  static let iosAudioControlBoundaryPermission = "signalasi.scope.ios_audio_control_boundary"
   static let iosWifiStatusPermission = "signalasi.scope.ios_app_visible_wifi_status"
   static let iosWifiScanBoundaryPermission = "signalasi.scope.ios_wifi_scan_boundary"
   static let iosContactsReadPermission = "signalasi.scope.ios_contacts_read"

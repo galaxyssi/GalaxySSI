@@ -67,6 +67,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("AVAudioSession"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "av_audio_session_status_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.audioControlBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("audio-control boundary"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "ios_audio_control_boundary_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.biometricStatus {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("LocalAuthentication"), descriptor.id)
@@ -101,6 +105,13 @@ extension SignalASIStoreTests {
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.audioControlBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosAudioControlBoundaryPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -253,6 +264,21 @@ extension SignalASIStoreTests {
     XCTAssertTrue(downloadEnqueue.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.download" })
     XCTAssertEqual(downloadRemove.descriptor.risk, .high)
     XCTAssertEqual(downloadRemove.descriptor.idempotency, .idempotencyKeyRequired)
+
+    let audioVolumeSet = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.audioVolumeSet })
+    let audioMuteSet = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.audioMuteSet })
+    XCTAssertEqual(audioVolumeSet.descriptor.risk, .medium)
+    XCTAssertEqual(audioVolumeSet.descriptor.availability.status, .available)
+    XCTAssertTrue(audioVolumeSet.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosAudioControlBoundaryPermission
+    })
+    XCTAssertTrue(audioVolumeSet.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.audio.change" })
+    XCTAssertEqual(audioMuteSet.descriptor.risk, .medium)
+    XCTAssertEqual(audioMuteSet.descriptor.availability.status, .available)
+    XCTAssertTrue(audioMuteSet.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosAudioControlBoundaryPermission
+    })
+    XCTAssertTrue(audioMuteSet.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.audio.change" })
 
     let vpnStatus = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.vpnStatus })
     XCTAssertEqual(vpnStatus.descriptor.risk, .low)
@@ -491,6 +517,108 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(12_345))
     XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReturnsAudioControlBoundary() throws {
+    final class FakeAudioControlProvider: AgentIOSAudioControlProviding {
+      var capturedVolumeStream = ""
+      var capturedPercent = 0
+      var capturedVolumeNow: Int64 = 0
+      var capturedMuteStream = ""
+      var capturedMuted = false
+      var capturedMuteNow: Int64 = 0
+
+      func setVolume(stream: String, percent: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedVolumeStream = stream
+        capturedPercent = percent
+        capturedVolumeNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "stream": .string("music"),
+            "percent": .int(Int64(percent)),
+            "volume": .null,
+            "max": .int(100),
+            "changed": .bool(false),
+            "settings_changed": .bool(false),
+            "global_volume_supported": .bool(false),
+            "app_visible_output_volume_read_only": .bool(true),
+            "platform": .string("ios"),
+            "scope": .string("ios_audio_control_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "iOS does not allow normal apps to set global stream volume."
+        )
+      }
+
+      func setMute(stream: String, muted: Bool, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedMuteStream = stream
+        capturedMuted = muted
+        capturedMuteNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "stream": .string("ring"),
+            "muted": .bool(muted),
+            "changed": .bool(false),
+            "settings_changed": .bool(false),
+            "global_mute_supported": .bool(false),
+            "platform": .string("ios"),
+            "scope": .string("ios_audio_control_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "iOS does not allow normal apps to mute arbitrary global audio streams."
+        )
+      }
+    }
+    let provider = FakeAudioControlProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          audioControlProvider: provider,
+          nowMillis: { 43_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosAudioControlBoundaryPermission],
+      grantedConsents: ["signalasi.consent.audio.change"]
+    )
+
+    let volume = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.audioVolumeSet,
+      input: [
+        "stream": .string("music"),
+        "percent": .int(75)
+      ],
+      context: context
+    )
+    let mute = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.audioMuteSet,
+      input: [
+        "stream": .string("ring"),
+        "muted": .bool(true)
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(volume.isSuccess)
+    XCTAssertEqual(provider.capturedVolumeStream, "music")
+    XCTAssertEqual(provider.capturedPercent, 75)
+    XCTAssertEqual(provider.capturedVolumeNow, 43_000)
+    XCTAssertEqual(volume.output["changed"], .bool(false))
+    XCTAssertEqual(volume.output["settings_changed"], .bool(false))
+    XCTAssertEqual(volume.output["global_volume_supported"], .bool(false))
+    XCTAssertEqual(volume.output["observed_at_epoch_ms"], .int(43_000))
+    XCTAssertEqual(volume.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+
+    XCTAssertTrue(mute.isSuccess)
+    XCTAssertEqual(provider.capturedMuteStream, "ring")
+    XCTAssertEqual(provider.capturedMuted, true)
+    XCTAssertEqual(provider.capturedMuteNow, 43_000)
+    XCTAssertEqual(mute.output["muted"], .bool(true))
+    XCTAssertEqual(mute.output["changed"], .bool(false))
+    XCTAssertEqual(mute.output["global_mute_supported"], .bool(false))
+    XCTAssertEqual(mute.output["observed_at_epoch_ms"], .int(43_000))
+    XCTAssertEqual(mute.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorReadsBiometricStatus() throws {

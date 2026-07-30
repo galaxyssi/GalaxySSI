@@ -2,6 +2,7 @@ import Foundation
 
 struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
+  var audioControlProvider: AgentIOSAudioControlProviding
   var calendarProvider: AgentIOSCalendarReadProviding
   var calendarWriteProvider: AgentIOSCalendarWriteProviding
   var contactsProvider: AgentIOSContactsSearchProviding
@@ -18,6 +19,7 @@ struct AgentIOSSystemNativeToolExecutor {
 
   init(
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
+    audioControlProvider: AgentIOSAudioControlProviding = AgentIOSDefaultAudioControlProvider(),
     calendarProvider: AgentIOSCalendarReadProviding = AgentIOSDefaultCalendarReadProvider(),
     calendarWriteProvider: AgentIOSCalendarWriteProviding = AgentIOSDefaultCalendarWriteProvider(),
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
@@ -33,6 +35,7 @@ struct AgentIOSSystemNativeToolExecutor {
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.audioProvider = audioProvider
+    self.audioControlProvider = audioControlProvider
     self.calendarProvider = calendarProvider
     self.calendarWriteProvider = calendarWriteProvider
     self.contactsProvider = contactsProvider
@@ -98,6 +101,10 @@ struct AgentIOSSystemNativeToolExecutor {
       return wifiScanStart(invocation)
     case AgentIOSSystemNativeToolCatalog.audioStatus:
       return audioStatus(invocation)
+    case AgentIOSSystemNativeToolCatalog.audioVolumeSet:
+      return audioVolumeSet(invocation)
+    case AgentIOSSystemNativeToolCatalog.audioMuteSet:
+      return audioMuteSet(invocation)
     case AgentIOSSystemNativeToolCatalog.biometricStatus:
       return biometricStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.vpnStatus:
@@ -151,6 +158,24 @@ struct AgentIOSSystemNativeToolExecutor {
         "settings_changed": .bool(false)
       ]
     )
+  }
+
+  private func audioVolumeSet(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = audioControlProvider.setVolume(
+      stream: boundedString(invocation.input["stream"]?.stringValue, limit: 32),
+      percent: Int(invocation.input["percent"]?.intValue ?? 50),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func audioMuteSet(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = audioControlProvider.setMute(
+      stream: boundedString(invocation.input["stream"]?.stringValue, limit: 32),
+      muted: invocation.input["muted"]?.boolValue ?? false,
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func telephonyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
