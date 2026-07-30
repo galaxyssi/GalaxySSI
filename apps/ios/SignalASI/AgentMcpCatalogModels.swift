@@ -78,36 +78,156 @@ struct AgentSkillManifest: Codable, Equatable {
   var name: String
   var version: String
   var summary: String
+  var instructions: String
   var nativeTools: Set<String>
   var permissions: Set<String>
   var mcpCatalogIds: Set<String>
+  var resources: [AgentSkillResource]
+  var parameters: AgentSkillParameterSchema
+  var steps: [AgentSkillStep]
+  var formatVersion: Int
+  var description: String
+  var author: String
+  var source: String
+  var autoInvoke: Bool
+  var triggerExamples: [String]
+  var negativeExamples: [String]
+  var renderSpec: AgentMcpJSONObject
+  var tests: [AgentSkillTestCase]
 
   init(
     id: String,
     name: String,
     version: String,
     summary: String,
+    instructions: String = "",
     nativeTools: Set<String> = [],
     permissions: Set<String> = [],
-    mcpCatalogIds: Set<String> = []
+    mcpCatalogIds: Set<String> = [],
+    resources: [AgentSkillResource] = [],
+    parameters: AgentSkillParameterSchema = AgentSkillParameterSchema.objectSchema(),
+    steps: [AgentSkillStep] = [],
+    formatVersion: Int = AgentSkillLimits.supportedFormatVersion,
+    description: String = "",
+    author: String = "SignalASI",
+    source: String = "built_in",
+    autoInvoke: Bool = false,
+    triggerExamples: [String] = [],
+    negativeExamples: [String] = [],
+    renderSpec: AgentMcpJSONObject = [:],
+    tests: [AgentSkillTestCase] = []
   ) {
-    self.id = id
-    self.name = name
-    self.version = version
-    self.summary = summary
+    self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
+    self.name = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxTitleCharacters))
+    self.version = String(version.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxVersionCharacters))
+    self.summary = String(summary.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxInstructionsCharacters))
+    self.instructions = String(instructions.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxInstructionsCharacters))
+      .ifBlank(self.summary)
     self.nativeTools = nativeTools
     self.permissions = permissions
     self.mcpCatalogIds = mcpCatalogIds
+    self.resources = Array(resources.prefix(AgentSkillLimits.maxResources))
+    self.parameters = parameters
+    self.steps = Array(steps.prefix(AgentSkillLimits.maxSteps))
+    self.formatVersion = formatVersion
+    self.description = String(description.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxInstructionsCharacters))
+      .ifBlank(self.summary)
+    self.author = String(author.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxTitleCharacters))
+      .ifBlank("SignalASI")
+    self.source = String(source.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
+      .ifBlank("built_in")
+    self.autoInvoke = autoInvoke
+    self.triggerExamples = triggerExamples.prefix(AgentSkillLimits.maxExamples).map {
+      String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxRequestCharacters))
+    }.filter { !$0.isEmpty }
+    self.negativeExamples = negativeExamples.prefix(AgentSkillLimits.maxExamples).map {
+      String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxRequestCharacters))
+    }.filter { !$0.isEmpty }
+    self.renderSpec = renderSpec
+    self.tests = Array(tests.prefix(AgentSkillLimits.maxTests))
   }
 
   enum CodingKeys: String, CodingKey {
     case id
     case name
+    case title
     case version
     case summary
+    case instructions
     case nativeTools = "native_tools"
     case permissions
     case mcpCatalogIds = "mcp_catalog_ids"
+    case resources
+    case parameters
+    case steps
+    case formatVersion = "format_version"
+    case description
+    case author
+    case source
+    case autoInvoke = "auto_invoke"
+    case triggerExamples = "trigger_examples"
+    case negativeExamples = "negative_examples"
+    case renderSpec = "render_spec"
+    case tests
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let decodedName = try container.decodeIfPresent(String.self, forKey: .name)
+    let decodedTitle = try container.decodeIfPresent(String.self, forKey: .title)
+    let decodedSummary = try container.decodeIfPresent(String.self, forKey: .summary)
+    let decodedDescription = try container.decodeIfPresent(String.self, forKey: .description)
+    let name = decodedName ?? decodedTitle ?? ""
+    let summary = decodedSummary ?? decodedDescription ?? ""
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? "",
+      name: name,
+      version: try container.decodeIfPresent(String.self, forKey: .version) ?? "1.0.0",
+      summary: summary,
+      instructions: try container.decodeIfPresent(String.self, forKey: .instructions) ?? "",
+      nativeTools: try container.decodeIfPresent(Set<String>.self, forKey: .nativeTools) ?? [],
+      permissions: try container.decodeIfPresent(Set<String>.self, forKey: .permissions) ?? [],
+      mcpCatalogIds: try container.decodeIfPresent(Set<String>.self, forKey: .mcpCatalogIds) ?? [],
+      resources: try container.decodeIfPresent([AgentSkillResource].self, forKey: .resources) ?? [],
+      parameters: try container.decodeIfPresent(AgentSkillParameterSchema.self, forKey: .parameters) ??
+        AgentSkillParameterSchema.objectSchema(),
+      steps: try container.decodeIfPresent([AgentSkillStep].self, forKey: .steps) ?? [],
+      formatVersion: try container.decodeIfPresent(Int.self, forKey: .formatVersion) ??
+        AgentSkillLimits.supportedFormatVersion,
+      description: try container.decodeIfPresent(String.self, forKey: .description) ?? "",
+      author: try container.decodeIfPresent(String.self, forKey: .author) ?? "SignalASI",
+      source: try container.decodeIfPresent(String.self, forKey: .source) ?? "built_in",
+      autoInvoke: try container.decodeIfPresent(Bool.self, forKey: .autoInvoke) ?? false,
+      triggerExamples: try container.decodeIfPresent([String].self, forKey: .triggerExamples) ?? [],
+      negativeExamples: try container.decodeIfPresent([String].self, forKey: .negativeExamples) ?? [],
+      renderSpec: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .renderSpec) ?? [:],
+      tests: try container.decodeIfPresent([AgentSkillTestCase].self, forKey: .tests) ?? []
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(name, forKey: .name)
+    try container.encode(name, forKey: .title)
+    try container.encode(version, forKey: .version)
+    try container.encode(summary, forKey: .summary)
+    try container.encode(instructions, forKey: .instructions)
+    try container.encode(nativeTools.sorted(), forKey: .nativeTools)
+    try container.encode(permissions.sorted(), forKey: .permissions)
+    try container.encode(mcpCatalogIds.sorted(), forKey: .mcpCatalogIds)
+    try container.encode(resources, forKey: .resources)
+    try container.encode(parameters, forKey: .parameters)
+    try container.encode(steps, forKey: .steps)
+    try container.encode(formatVersion, forKey: .formatVersion)
+    try container.encode(description, forKey: .description)
+    try container.encode(author, forKey: .author)
+    try container.encode(source, forKey: .source)
+    try container.encode(autoInvoke, forKey: .autoInvoke)
+    try container.encode(triggerExamples, forKey: .triggerExamples)
+    try container.encode(negativeExamples, forKey: .negativeExamples)
+    try container.encode(renderSpec, forKey: .renderSpec)
+    try container.encode(tests, forKey: .tests)
   }
 }
 
@@ -134,9 +254,76 @@ struct AgentSkillCatalogEntry: Codable, Equatable, Identifiable {
 struct AgentSkillInstallation: Codable, Equatable, Identifiable {
   var manifest: AgentSkillManifest
   var enabled: Bool
+  var installedAtMillis: Int64
+  var updatedAtMillis: Int64
+  var useCount: Int64
+  var lastUsedAtMillis: Int64
+  var autoInvokeOverride: Bool?
 
   var id: String { manifest.id }
   var version: String { manifest.version }
+  var autoInvoke: Bool { autoInvokeOverride ?? manifest.autoInvoke }
+
+  init(
+    manifest: AgentSkillManifest,
+    enabled: Bool = true,
+    installedAtMillis: Int64 = 0,
+    updatedAtMillis: Int64? = nil,
+    useCount: Int64 = 0,
+    lastUsedAtMillis: Int64 = 0,
+    autoInvokeOverride: Bool? = nil
+  ) {
+    self.manifest = manifest
+    self.enabled = enabled
+    self.installedAtMillis = max(installedAtMillis, 0)
+    self.updatedAtMillis = max(updatedAtMillis ?? installedAtMillis, 0)
+    self.useCount = max(useCount, 0)
+    self.lastUsedAtMillis = max(lastUsedAtMillis, 0)
+    self.autoInvokeOverride = autoInvokeOverride
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case manifest
+    case enabled
+    case installedAtMillis = "installed_at"
+    case updatedAtMillis = "updated_at"
+    case useCount = "use_count"
+    case lastUsedAtMillis = "last_used_at"
+    case autoInvokeOverride = "auto_invoke_override"
+    case installedAtMillisLegacy = "installed_at_millis"
+    case updatedAtMillisLegacy = "updated_at_millis"
+    case lastUsedAtMillisLegacy = "last_used_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let installedAt = try container.decodeIfPresent(Int64.self, forKey: .installedAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .installedAtMillisLegacy)) ?? 0
+    let updatedAt = try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillisLegacy)) ?? installedAt
+    let lastUsedAt = try container.decodeIfPresent(Int64.self, forKey: .lastUsedAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .lastUsedAtMillisLegacy)) ?? 0
+    self.init(
+      manifest: try container.decode(AgentSkillManifest.self, forKey: .manifest),
+      enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true,
+      installedAtMillis: installedAt,
+      updatedAtMillis: updatedAt,
+      useCount: try container.decodeIfPresent(Int64.self, forKey: .useCount) ?? 0,
+      lastUsedAtMillis: lastUsedAt,
+      autoInvokeOverride: try container.decodeIfPresent(Bool.self, forKey: .autoInvokeOverride)
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(manifest, forKey: .manifest)
+    try container.encode(enabled, forKey: .enabled)
+    try container.encode(installedAtMillis, forKey: .installedAtMillis)
+    try container.encode(updatedAtMillis, forKey: .updatedAtMillis)
+    try container.encode(useCount, forKey: .useCount)
+    try container.encode(lastUsedAtMillis, forKey: .lastUsedAtMillis)
+    try container.encodeIfPresent(autoInvokeOverride, forKey: .autoInvokeOverride)
+  }
 }
 
 struct AgentMcpConnection: Codable, Equatable, Identifiable {
