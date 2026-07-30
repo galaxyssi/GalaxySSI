@@ -22,7 +22,11 @@ extension SignalASIStoreTests {
       let descriptor = definition.descriptor
       XCTAssertEqual(definition.executorId, AgentIOSSystemNativeToolCatalog.executorId)
       XCTAssertEqual(descriptor.location, .androidSystem)
-      if AgentIOSSystemNativeToolCatalog.handoffToolIds.contains(descriptor.id) {
+      if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("Messages compose handoff"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "sms_compose_handoff_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.handoffToolIds.contains(descriptor.id) {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "handoff_request_on_ios15")
@@ -64,7 +68,14 @@ extension SignalASIStoreTests {
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "descriptor_only_unavailable_on_ios15")
       }
-      if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
+      if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosSMSComposePermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
         }, descriptor.id)
@@ -136,7 +147,11 @@ extension SignalASIStoreTests {
     let smsSend = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.smsSend })
     XCTAssertEqual(smsSend.descriptor.risk, .high)
     XCTAssertEqual(smsSend.descriptor.idempotency, .idempotencyKeyRequired)
-    XCTAssertTrue(smsSend.descriptor.requiredPermissions.contains { $0.id == "android.permission.SEND_SMS" })
+    XCTAssertEqual(smsSend.descriptor.availability.status, .available)
+    XCTAssertTrue(smsSend.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosSMSComposePermission
+    })
+    XCTAssertFalse(smsSend.descriptor.requiredPermissions.contains { $0.id == "android.permission.SEND_SMS" })
     XCTAssertTrue(smsSend.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.sms.send" })
     XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("phone_number")))
     XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("message")))
@@ -175,7 +190,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(downloadRemove.descriptor.idempotency, .idempotencyKeyRequired)
 
     let registry = try AgentNativeToolRegistry(definitions: definitions)
-    let unavailable = registry.authorize(
+    let authorized = registry.authorize(
       AgentIOSSystemNativeToolCatalog.smsSend,
       input: [
         "phone_number": .string("+15551234567"),
@@ -183,10 +198,7 @@ extension SignalASIStoreTests {
       ],
       context: AgentNativeToolInvocationContext(
         idempotencyKey: "sms-1",
-        grantedPermissions: [
-          AgentIOSSystemNativeToolCatalog.androidSystemPermission,
-          "android.permission.SEND_SMS"
-        ],
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosSMSComposePermission],
         grantedConsents: ["signalasi.consent.sms.send"]
       )
     )
@@ -195,8 +207,7 @@ extension SignalASIStoreTests {
       input: ["phone_number": .string("+15551234567")]
     )
 
-    XCTAssertEqual(unavailable.code, "tool_unavailable")
-    XCTAssertFalse(unavailable.allowed)
+    XCTAssertTrue(authorized.allowed)
     XCTAssertFalse(invalid.isValid)
   }
 
@@ -954,16 +965,26 @@ extension SignalASIStoreTests {
 
   func testAgentIOSSystemNativeToolExecutorBuildsUserVisibleHandoffs() throws {
     let registry = try AgentNativeToolRegistry().registerExecutables(
-      AgentPhoneNativeToolCatalog.systemExecutableDefinitions()
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(nowMillis: { 99_000 })
+      )
     )
-    let context = AgentNativeToolInvocationContext(
+    let systemHandoffContext = AgentNativeToolInvocationContext(
       grantedPermissions: [AgentIOSSystemNativeToolCatalog.androidSystemPermission]
+    )
+    let smsComposeContext = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosSMSComposePermission]
+    )
+    let smsSendContext = AgentNativeToolInvocationContext(
+      idempotencyKey: "sms-send-1",
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosSMSComposePermission],
+      grantedConsents: ["signalasi.consent.sms.send"]
     )
 
     let dial = registry.invoke(
       AgentIOSSystemNativeToolCatalog.telephonyDialHandoff,
       input: ["phone_number": .string("+1 (555) 123-4567")],
-      context: context
+      context: systemHandoffContext
     )
     let sms = registry.invoke(
       AgentIOSSystemNativeToolCatalog.smsComposeHandoff,
@@ -971,17 +992,44 @@ extension SignalASIStoreTests {
         "phone_number": .string("+1-555-123-4567"),
         "message": .string("hello")
       ],
-      context: context
+      context: smsComposeContext
+    )
+    let directSend = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.smsSend,
+      input: [
+        "phone_number": .string("+1-555-123-4567"),
+        "message": .string("send this")
+      ],
+      context: smsSendContext
+    )
+    let missingSendKey = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.smsSend,
+      input: [
+        "phone_number": .string("+1-555-123-4567"),
+        "message": .string("send this")
+      ],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosSMSComposePermission],
+        grantedConsents: ["signalasi.consent.sms.send"]
+      )
+    )
+    let emptyDirectMessage = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.smsSend,
+      input: [
+        "phone_number": .string("+1-555-123-4567"),
+        "message": .string("   ")
+      ],
+      context: smsSendContext
     )
     let wifi = registry.invoke(
       AgentIOSSystemNativeToolCatalog.wifiPanelOpen,
       input: [:],
-      context: context
+      context: systemHandoffContext
     )
     let invalidDial = registry.invoke(
       AgentIOSSystemNativeToolCatalog.telephonyDialHandoff,
       input: ["phone_number": .string("call-me")],
-      context: context
+      context: systemHandoffContext
     )
 
     XCTAssertEqual(registry.ids(), AgentIOSSystemNativeToolCatalog.executableToolIds)
@@ -997,6 +1045,24 @@ extension SignalASIStoreTests {
     XCTAssertEqual(sms.output["url"], .string("sms:+15551234567"))
     XCTAssertEqual(sms.output["prefill_body"], .string("hello"))
     XCTAssertEqual(sms.output["body_in_url"], .bool(false))
+    XCTAssertEqual(sms.output["requested_direct_send"], .bool(false))
+    XCTAssertEqual(sms.output["direct_send_supported"], .bool(false))
+    XCTAssertEqual(sms.output["submitted_to_system"], .bool(false))
+    XCTAssertEqual(sms.output["observed_at_epoch_ms"], .int(99_000))
+
+    XCTAssertTrue(directSend.isSuccess)
+    XCTAssertEqual(directSend.output["handoff_kind"], .string("sms_compose"))
+    XCTAssertEqual(directSend.output["url"], .string("sms:+15551234567"))
+    XCTAssertEqual(directSend.output["prefill_body"], .string("send this"))
+    XCTAssertEqual(directSend.output["requested_direct_send"], .bool(true))
+    XCTAssertEqual(directSend.output["direct_send_supported"], .bool(false))
+    XCTAssertEqual(directSend.output["requires_user_action"], .bool(true))
+    XCTAssertEqual(directSend.output["completion_untrusted"], .bool(true))
+    XCTAssertEqual(directSend.metadata["handoff_required"], .bool(true))
+    XCTAssertEqual(missingSendKey.status, .rejected)
+    XCTAssertEqual(missingSendKey.error?.code, "missing_idempotency_key")
+    XCTAssertEqual(emptyDirectMessage.status, .failed)
+    XCTAssertEqual(emptyDirectMessage.error?.code, "invalid_message")
 
     XCTAssertTrue(wifi.isSuccess)
     XCTAssertEqual(wifi.output["handoff_kind"], .string("settings"))
