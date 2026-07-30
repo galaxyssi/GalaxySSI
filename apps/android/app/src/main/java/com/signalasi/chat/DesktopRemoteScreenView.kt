@@ -67,8 +67,16 @@ class DesktopRemoteScreenView(context: Context) : FrameLayout(context) {
     }
 
     fun setScreenshot(bitmap: Bitmap) {
+        setScreenshot(bitmap, preserveTransform = false)
+    }
+
+    fun setScreenshot(bitmap: Bitmap, preserveTransform: Boolean) {
         imageView.setImageBitmap(bitmap)
-        resetTransform()
+        if (preserveTransform) {
+            applyTransform()
+        } else {
+            resetTransform()
+        }
     }
 
     fun setScreenContentDescription(description: CharSequence) {

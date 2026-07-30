@@ -278,6 +278,61 @@ class DesktopControlTests(unittest.TestCase):
         state_text = (Path(self.temporary.name) / "control.json").read_text(encoding="utf-8")
         self.assertNotIn("/9j/2Q==", state_text)
 
+    def test_low_rate_stream_frame_is_signed_without_persisting_activity(self):
+        authorization = self.authorize()
+        before = self.manager.status(self.client["client_route_id"])
+        events = []
+        request = self.request(
+            authorization,
+            SCREENSHOT,
+            {"stream_frame": True, "stream_fps": 3},
+        )
+
+        receipt = self.manager.execute_request(
+            request,
+            self.client,
+            on_running=events.append,
+        )
+
+        after = self.manager.status(self.client["client_route_id"])
+        self.assertEqual("succeeded", receipt["status"])
+        self.assertTrue(receipt["output"]["stream_frame"])
+        self.assertEqual(3, receipt["output"]["stream_fps"])
+        self.assertTrue(self.identity.verify(receipt))
+        self.assertEqual([], events)
+        self.assertEqual(before["recent_receipts"], after["recent_receipts"])
+        self.assertEqual(before["recent_audit"], after["recent_audit"])
+        replay = self.manager.execute_request(request, self.client)
+        self.assertTrue(replay["replayed"])
+        self.assertTrue(self.identity.verify(replay))
+        self.assertEqual(1, self.screenshot_calls)
+
+    def test_low_rate_stream_rejects_invalid_rate_and_non_screenshot_tool(self):
+        authorization = self.authorize()
+
+        for fps in (0, 4, "fast"):
+            with self.subTest(fps=fps), self.assertRaises(DesktopControlError) as raised:
+                self.manager.execute_request(
+                    self.request(
+                        authorization,
+                        SCREENSHOT,
+                        {"stream_frame": True, "stream_fps": fps},
+                    ),
+                    self.client,
+                )
+            self.assertEqual("invalid_input", raised.exception.code)
+
+        with self.assertRaises(DesktopControlError) as raised:
+            self.manager.execute_request(
+                self.request(
+                    authorization,
+                    TYPE_TEXT,
+                    {"text": "private", "stream_frame": True, "stream_fps": 1},
+                ),
+                self.client,
+            )
+        self.assertEqual("invalid_input", raised.exception.code)
+
     def test_duplicate_action_with_different_input_is_rejected(self):
         authorization = self.authorize()
         action_id = str(uuid.uuid4())

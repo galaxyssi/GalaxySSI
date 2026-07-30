@@ -286,6 +286,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var featureContent: LinearLayout
     private lateinit var featureBackButton: TextView
     private var activeDesktopControlId: String? = null
+    private var activeDesktopScreenView: DesktopRemoteScreenView? = null
+    private var activeDesktopScreenPlaceholder: TextView? = null
     private lateinit var mainTitle: TextView
     private lateinit var mainActionButton: TextView
     private lateinit var chatPage: LinearLayout
@@ -910,6 +912,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onDestroy() {
+        DesktopRemoteControl.stopAllScreenshotStreams()
         handler.removeCallbacks(asrModelDownloadPoll)
         handler.removeCallbacks(agentStartupMaintenanceRunnable)
         stopVoiceAssistant()
@@ -986,6 +989,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (!initialResume) maintainMcpCredentials()
         traceResume("mcp")
         if (!initialResume) refreshGlobalAgentCognition()
+        activeDesktopControlId
+            ?.takeIf { featurePage.visibility == View.VISIBLE }
+            ?.let(DesktopRemoteControl::resumeScreenshotStream)
         traceResume("complete")
     }
 
@@ -1008,6 +1014,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onPause() {
+        DesktopRemoteControl.pauseScreenshotStreams()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
@@ -19747,7 +19754,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showDesktopRemoteControlPage(device: DesktopSecuritySummary) {
         val snapshot = DesktopRemoteControl.snapshot(this, device.id)
-        showFeaturePage(getString(R.string.desktop_control_title))
+        showFeaturePage(getString(R.string.desktop_control_title), device.id)
         activeDesktopControlId = device.id
         setFeatureBackAction { showDesktopControlPicker() }
         featureContent.addView(featureHeroCard(
@@ -19781,6 +19788,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val screenshotView = DesktopRemoteScreenView(this).apply {
             setScreenContentDescription(getString(R.string.desktop_control_screen_content_description))
         }
+        activeDesktopScreenView = screenshotView
         screenshotFrame.addView(screenshotView, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
@@ -19797,6 +19805,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setTextColor(Color.parseColor("#AAB3BD"))
             textSize = 14f
         }
+        activeDesktopScreenPlaceholder = placeholder
         screenshotFrame.addView(placeholder, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
@@ -19808,26 +19817,28 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 screenshot.jpegBytes.size
             )?.let(screenshotView::setScreenshot)
             placeholder.visibility = View.GONE
-            if (snapshot.authorized) {
-                screenshotView.onImageTap = { xRatio, yRatio ->
-                    val x = (xRatio * screenshot.originalWidth).roundToInt()
-                        .coerceIn(0, screenshot.originalWidth - 1)
-                    val y = (yRatio * screenshot.originalHeight).roundToInt()
-                        .coerceIn(0, screenshot.originalHeight - 1)
-                    if (DesktopRemoteControl.click(
-                            device.id,
-                            x,
-                            y,
-                            screenshot.originalWidth,
-                            screenshot.originalHeight
-                        )
-                    ) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            getString(R.string.desktop_control_click_sent, x, y),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+        }
+        if (snapshot.authorized) {
+            screenshotView.onImageTap = tap@ { xRatio, yRatio ->
+                val latest = DesktopRemoteControl.snapshot(this, device.id).screenshot
+                    ?: return@tap
+                val x = (xRatio * latest.originalWidth).roundToInt()
+                    .coerceIn(0, latest.originalWidth - 1)
+                val y = (yRatio * latest.originalHeight).roundToInt()
+                    .coerceIn(0, latest.originalHeight - 1)
+                if (DesktopRemoteControl.click(
+                        device.id,
+                        x,
+                        y,
+                        latest.originalWidth,
+                        latest.originalHeight
+                    )
+                ) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.desktop_control_click_sent, x, y),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -19857,6 +19868,43 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 if (DesktopRemoteControl.requestScreenshot(device.id)) {
                     Toast.makeText(this@MainActivity, getString(R.string.desktop_control_request_sent), Toast.LENGTH_SHORT).show()
                 }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_stream_title),
+            getString(R.string.desktop_control_stream_subtitle),
+            R.drawable.ic_agent_screen,
+            if (snapshot.streamFps > 0) {
+                getString(R.string.desktop_control_stream_rate, snapshot.streamFps)
+            } else {
+                getString(R.string.common_off)
+            }
+        ).apply {
+            isEnabled = snapshot.authorized
+            alpha = if (snapshot.authorized) 1f else 0.5f
+            setOnClickListener {
+                val labels = arrayOf(
+                    getString(R.string.common_off),
+                    getString(R.string.desktop_control_stream_rate, 1),
+                    getString(R.string.desktop_control_stream_rate, 2),
+                    getString(R.string.desktop_control_stream_rate, 3)
+                )
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle(getString(R.string.desktop_control_stream_dialog_title))
+                    .setSingleChoiceItems(
+                        labels,
+                        snapshot.streamFps.coerceIn(0, DESKTOP_SCREENSHOT_STREAM_MAX_FPS)
+                    ) { dialog, selected ->
+                        if (selected == 0) {
+                            DesktopRemoteControl.stopScreenshotStream(device.id)
+                        } else {
+                            DesktopRemoteControl.startScreenshotStream(device.id, selected)
+                        }
+                        dialog.dismiss()
+                        showDesktopRemoteControlPage(device)
+                    }
+                    .setNegativeButton(getString(R.string.common_cancel), null)
+                    .show()
             }
         })
 
@@ -20409,8 +20457,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ) return false
         val desktopId = payload.optString("desktop_id")
         if (desktopId.isNotBlank() && activeDesktopControlId == desktopId && featurePage.visibility == View.VISIBLE) {
+            val streamFrame = payload.optString("type") == "desktop_action_receipt" &&
+                payload.optJSONObject("output")?.optBoolean("stream_frame", false) == true
+            if (streamFrame && updateActiveDesktopScreenshot(desktopId)) return true
             desktopControlDevices().firstOrNull { it.id == desktopId }?.let(::showDesktopRemoteControlPage)
         }
+        return true
+    }
+
+    private fun updateActiveDesktopScreenshot(desktopId: String): Boolean {
+        val view = activeDesktopScreenView ?: return false
+        val screenshot = DesktopRemoteControl.snapshot(this, desktopId).screenshot ?: return false
+        val bitmap = android.graphics.BitmapFactory.decodeByteArray(
+            screenshot.jpegBytes,
+            0,
+            screenshot.jpegBytes.size
+        ) ?: return false
+        view.setScreenshot(bitmap, preserveTransform = true)
+        activeDesktopScreenPlaceholder?.visibility = View.GONE
         return true
     }
 
@@ -23149,8 +23213,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .show()
     }
 
-    private fun showFeaturePage(title: String) {
-        activeDesktopControlId = null
+    private fun showFeaturePage(title: String, preserveDesktopControlId: String? = null) {
+        activeDesktopControlId
+            ?.takeIf { it != preserveDesktopControlId }
+            ?.let(DesktopRemoteControl::stopScreenshotStream)
+        activeDesktopControlId = preserveDesktopControlId
+        activeDesktopScreenView = null
+        activeDesktopScreenPlaceholder = null
         if (!renderingControlCenterDestination &&
             featurePage.visibility == View.VISIBLE &&
             controlCenterDestination != null
@@ -23187,6 +23256,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun hideFeaturePage() {
+        activeDesktopControlId?.let(DesktopRemoteControl::stopScreenshotStream)
+        activeDesktopControlId = null
+        activeDesktopScreenView = null
+        activeDesktopScreenPlaceholder = null
         featureBackAction = null
         controlCenterDestination = null
         controlCenterBackStack.clear()

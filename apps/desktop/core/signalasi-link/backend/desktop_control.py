@@ -37,7 +37,7 @@ from tool_handle_registry import (
 )
 
 
-CONTRACT_VERSION = "signalasi.desktop-control/1.2"
+CONTRACT_VERSION = "signalasi.desktop-control/1.3"
 AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
 RECEIPT_VERSION = 4
@@ -46,8 +46,11 @@ ACTION_TTL_MILLIS = 30_000
 DESKTOP_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 MAX_CLOCK_SKEW_MILLIS = 30_000
 MAX_SCREENSHOT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
+MIN_SCREENSHOT_STREAM_FPS = 1
+MAX_SCREENSHOT_STREAM_FPS = 3
 MAX_AUDIT_EVENTS = 1_000
 MAX_RECENT_ACTIONS = 256
+MAX_RECENT_STREAM_ACTIONS = 16
 MAX_VISIBLE_RECEIPTS = 50
 
 SCREENSHOT = "desktop.screenshot"
@@ -182,6 +185,7 @@ class DesktopControlManager:
         self._lock = threading.RLock()
         self._input_lock = threading.Lock()
         self._offers: dict[str, dict[str, Any]] = {}
+        self._recent_stream_actions: dict[str, dict[str, Any]] = {}
         self._state = self._load()
         self._screenshot_provider = screenshot_provider or capture_desktop_screenshot
         self._input = input_controller or WindowsInputController()
@@ -469,26 +473,55 @@ class DesktopControlManager:
             arguments,
             request_digest,
         ) = self._validate_request(payload, paired_client)
-        with self._lock:
-            previous = self._state["recent_actions"].get(action_id)
-            if isinstance(previous, dict):
-                if not secrets.compare_digest(str(previous.get("request_sha256") or ""), request_digest):
-                    raise DesktopControlError("duplicate_action_conflict", "Action ID was already used for different input")
-                receipt = dict(previous.get("receipt") or {})
-                receipt["replayed"] = True
-                receipt["post_screenshot"] = None
-                return receipt
-            self._state["recent_actions"][action_id] = {
-                "request_sha256": request_digest,
-                "status": "running",
-                "created_at": int(self.now() * 1_000),
-                "receipt": {},
-            }
-            self._prune_recent_actions_locked()
-            self._save_locked()
+        stream_fps = self._screenshot_stream_fps(tool_id, arguments)
+        stream_frame = stream_fps is not None
+        if stream_frame:
+            with self._lock:
+                previous = self._recent_stream_actions.get(action_id)
+                if isinstance(previous, dict):
+                    if not secrets.compare_digest(
+                        str(previous.get("request_sha256") or ""),
+                        request_digest,
+                    ):
+                        raise DesktopControlError(
+                            "duplicate_action_conflict",
+                            "Action ID was already used for different input",
+                        )
+                    receipt = dict(previous.get("receipt") or {})
+                    receipt["replayed"] = True
+                    receipt["post_screenshot"] = None
+                    return receipt
+                self._recent_stream_actions[action_id] = {
+                    "request_sha256": request_digest,
+                    "status": "running",
+                    "receipt": {},
+                }
+                while len(self._recent_stream_actions) > MAX_RECENT_STREAM_ACTIONS:
+                    self._recent_stream_actions.pop(next(iter(self._recent_stream_actions)))
+        else:
+            with self._lock:
+                previous = self._state["recent_actions"].get(action_id)
+                if isinstance(previous, dict):
+                    if not secrets.compare_digest(str(previous.get("request_sha256") or ""), request_digest):
+                        raise DesktopControlError(
+                            "duplicate_action_conflict",
+                            "Action ID was already used for different input",
+                        )
+                    receipt = dict(previous.get("receipt") or {})
+                    receipt["replayed"] = True
+                    receipt["post_screenshot"] = None
+                    return receipt
+                self._state["recent_actions"][action_id] = {
+                    "request_sha256": request_digest,
+                    "status": "running",
+                    "created_at": int(self.now() * 1_000),
+                    "receipt": {},
+                }
+                self._prune_recent_actions_locked()
+                self._save_locked()
 
         started_at = int(self.now() * 1_000)
-        if on_running:
+        if on_running and not stream_frame:
             on_running({
                 "type": "desktop_executor_event",
                 "task_id": str(payload.get("task_id") or ""),
@@ -519,6 +552,11 @@ class DesktopControlManager:
                 if tool_id == SCREENSHOT:
                     screenshot = self._screenshot_provider()
                     output = {"screenshot": screenshot}
+                    if stream_frame:
+                        output.update({
+                            "stream_frame": True,
+                            "stream_fps": stream_fps,
+                        })
                 elif tool_id == CLICK_XY:
                     x = self._bounded_int(arguments.get("x"), "x", 0, 100_000)
                     y = self._bounded_int(arguments.get("y"), "y", 0, 100_000)
@@ -636,20 +674,24 @@ class DesktopControlManager:
                 "replayed": False,
                 "post_screenshot": screenshot if tool_id != SCREENSHOT else None,
             }, request_digest, arguments, paired_client)
-            with self._lock:
-                authorization["last_used_at"] = completed_at
-                authorization["updated_at"] = completed_at
-                self._complete_action_locked(action_id, request_digest, receipt)
-                self._append_audit_locked(
-                    "desktop_action",
-                    authorization_id=str(authorization["authorization_id"]),
-                    client_route_id=str(authorization["client_route_id"]),
-                    phone_fingerprint=str(authorization["phone_identity_fingerprint"]),
-                    tool_id=tool_id,
-                    status="succeeded",
-                    summary=self._audit_summary(tool_id, arguments),
-                )
-                self._save_locked()
+            if stream_frame:
+                with self._lock:
+                    self._complete_stream_action_locked(action_id, request_digest, receipt)
+            else:
+                with self._lock:
+                    authorization["last_used_at"] = completed_at
+                    authorization["updated_at"] = completed_at
+                    self._complete_action_locked(action_id, request_digest, receipt)
+                    self._append_audit_locked(
+                        "desktop_action",
+                        authorization_id=str(authorization["authorization_id"]),
+                        client_route_id=str(authorization["client_route_id"]),
+                        phone_fingerprint=str(authorization["phone_identity_fingerprint"]),
+                        tool_id=tool_id,
+                        status="succeeded",
+                        summary=self._audit_summary(tool_id, arguments),
+                    )
+                    self._save_locked()
             return receipt
         except DesktopControlError as exc:
             receipt = self._failure_receipt(
@@ -662,18 +704,22 @@ class DesktopControlManager:
                 arguments=arguments,
                 paired_client=paired_client,
             )
-            with self._lock:
-                self._complete_action_locked(action_id, request_digest, receipt)
-                self._append_audit_locked(
-                    "desktop_action",
-                    authorization_id=str(authorization.get("authorization_id") or ""),
-                    client_route_id=str(authorization.get("client_route_id") or ""),
-                    phone_fingerprint=str(authorization.get("phone_identity_fingerprint") or ""),
-                    tool_id=tool_id,
-                    status="failed",
-                    summary=f"{exc.code}: {str(exc)[:240]}",
-                )
-                self._save_locked()
+            if stream_frame:
+                with self._lock:
+                    self._complete_stream_action_locked(action_id, request_digest, receipt)
+            else:
+                with self._lock:
+                    self._complete_action_locked(action_id, request_digest, receipt)
+                    self._append_audit_locked(
+                        "desktop_action",
+                        authorization_id=str(authorization.get("authorization_id") or ""),
+                        client_route_id=str(authorization.get("client_route_id") or ""),
+                        phone_fingerprint=str(authorization.get("phone_identity_fingerprint") or ""),
+                        tool_id=tool_id,
+                        status="failed",
+                        summary=f"{exc.code}: {str(exc)[:240]}",
+                    )
+                    self._save_locked()
             return receipt
         except Exception as exc:
             wrapped = DesktopControlError("input_execution_failed", str(exc) or "Desktop input execution failed")
@@ -687,18 +733,22 @@ class DesktopControlManager:
                 arguments=arguments,
                 paired_client=paired_client,
             )
-            with self._lock:
-                self._complete_action_locked(action_id, request_digest, receipt)
-                self._append_audit_locked(
-                    "desktop_action",
-                    authorization_id=str(authorization.get("authorization_id") or ""),
-                    client_route_id=str(authorization.get("client_route_id") or ""),
-                    phone_fingerprint=str(authorization.get("phone_identity_fingerprint") or ""),
-                    tool_id=tool_id,
-                    status="failed",
-                    summary=f"input_execution_failed: {str(exc)[:240]}",
-                )
-                self._save_locked()
+            if stream_frame:
+                with self._lock:
+                    self._complete_stream_action_locked(action_id, request_digest, receipt)
+            else:
+                with self._lock:
+                    self._complete_action_locked(action_id, request_digest, receipt)
+                    self._append_audit_locked(
+                        "desktop_action",
+                        authorization_id=str(authorization.get("authorization_id") or ""),
+                        client_route_id=str(authorization.get("client_route_id") or ""),
+                        phone_fingerprint=str(authorization.get("phone_identity_fingerprint") or ""),
+                        tool_id=tool_id,
+                        status="failed",
+                        summary=f"input_execution_failed: {str(exc)[:240]}",
+                    )
+                    self._save_locked()
             return receipt
 
     def _validate_request(
@@ -1213,6 +1263,20 @@ class DesktopControlManager:
         for key in ordered[: len(rows) - MAX_RECENT_ACTIONS]:
             rows.pop(key, None)
 
+    def _complete_stream_action_locked(
+        self,
+        action_id: str,
+        request_digest: str,
+        receipt: Mapping[str, Any],
+    ) -> None:
+        self._recent_stream_actions[action_id] = {
+            "request_sha256": request_digest,
+            "status": str(receipt.get("status") or "failed"),
+            "receipt": dict(receipt),
+        }
+        while len(self._recent_stream_actions) > MAX_RECENT_STREAM_ACTIONS:
+            self._recent_stream_actions.pop(next(iter(self._recent_stream_actions)))
+
     def _prune_offers_locked(self, now: float) -> None:
         self._offers = {
             key: value for key, value in self._offers.items()
@@ -1230,6 +1294,33 @@ class DesktopControlManager:
         if result < minimum or result > maximum:
             raise DesktopControlError("invalid_input", f"{field} is outside the allowed range")
         return result
+
+    def _screenshot_stream_fps(
+        self,
+        tool_id: str,
+        arguments: Mapping[str, Any],
+    ) -> int | None:
+        stream_frame = arguments.get("stream_frame", False)
+        if not isinstance(stream_frame, bool):
+            raise DesktopControlError("invalid_input", "stream_frame must be a boolean")
+        if not stream_frame:
+            if "stream_fps" in arguments:
+                raise DesktopControlError(
+                    "invalid_input",
+                    "stream_fps requires stream_frame",
+                )
+            return None
+        if tool_id != SCREENSHOT:
+            raise DesktopControlError(
+                "invalid_input",
+                "stream_frame is only valid for desktop screenshots",
+            )
+        return self._bounded_int(
+            arguments.get("stream_fps"),
+            "stream_fps",
+            MIN_SCREENSHOT_STREAM_FPS,
+            MAX_SCREENSHOT_STREAM_FPS,
+        )
 
     @staticmethod
     def _action_summary(tool_id: str, arguments: Mapping[str, Any], *, running: bool = False) -> str:

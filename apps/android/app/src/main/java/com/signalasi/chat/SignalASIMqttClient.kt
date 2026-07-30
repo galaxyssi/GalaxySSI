@@ -254,8 +254,11 @@ object SignalASIMqttClient {
     fun publishDesktopToolCall(desktopId: String, payload: JSONObject): Boolean =
         publishDesktopControlPayload(desktopId, payload)
 
-    fun publishDesktopExecutorRequest(desktopId: String, payload: JSONObject): Boolean =
-        publishDesktopControlPayload(desktopId, payload)
+    fun publishDesktopExecutorRequest(
+        desktopId: String,
+        payload: JSONObject,
+        durable: Boolean = true
+    ): Boolean = publishDesktopControlPayload(desktopId, payload, durable)
 
     fun publishDesktopControlAuthorizationsRequest(desktopId: String): Boolean =
         publishDesktopControlPayload(
@@ -360,7 +363,11 @@ object SignalASIMqttClient {
             .put("time", System.currentTimeMillis())
     )
 
-    private fun publishDesktopControlPayload(desktopId: String, payload: JSONObject): Boolean {
+    private fun publishDesktopControlPayload(
+        desktopId: String,
+        payload: JSONObject,
+        durable: Boolean = true
+    ): Boolean {
         val context = appContext ?: return false
         val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
         val mqtt = client ?: return false
@@ -372,8 +379,10 @@ object SignalASIMqttClient {
         val encrypted = SignalASICrypto.encryptPayloadForDesktop(desktopId, envelope) ?: return false
         val messageId = envelope.getString("message_id")
         val wirePayload = encrypted.toString()
-        SignalASILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload)
-        SignalASILinkDeliveryStore.markAttempt(context, messageId)
+        if (durable) {
+            SignalASILinkDeliveryStore.enqueue(context, messageId, link.routes.control, wirePayload)
+            SignalASILinkDeliveryStore.markAttempt(context, messageId)
+        }
         if (!publishWirePayload(
             mqtt,
             link.routes.control,
@@ -381,8 +390,11 @@ object SignalASIMqttClient {
             "desktop_control",
             messageId
         )) {
-            scheduleOutboxRetries()
-            return true
+            if (durable) {
+                scheduleOutboxRetries()
+                return true
+            }
+            return false
         }
         return true
     }
