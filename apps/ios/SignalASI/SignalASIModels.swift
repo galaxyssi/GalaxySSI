@@ -18425,6 +18425,223 @@ struct URLSessionAgentMcpDeclarativeHTTPTransport: AgentMcpDeclarativeHTTPTransp
   }
 }
 
+struct AgentMcpStreamableHTTPRequest: Codable, Equatable {
+  var endpoint: String
+  var body: String
+  var headers: [String: String]
+}
+
+struct AgentMcpStreamableHTTPResponse: Codable, Equatable {
+  var statusCode: Int
+  var headers: [String: String]
+  var body: String
+
+  enum CodingKeys: String, CodingKey {
+    case statusCode = "status_code"
+    case headers
+    case body
+  }
+}
+
+struct AgentMcpStreamableHTTPError: LocalizedError, Equatable {
+  var statusCode: Int
+  var message: String
+  var authenticationFailure: Bool
+
+  var errorDescription: String? { message }
+}
+
+protocol AgentMcpStreamableHTTPNetworking {
+  func post(_ request: AgentMcpStreamableHTTPRequest) async throws -> AgentMcpStreamableHTTPResponse
+}
+
+struct URLSessionAgentMcpStreamableHTTPNetworking: AgentMcpStreamableHTTPNetworking {
+  var session: URLSession = .shared
+
+  func post(_ request: AgentMcpStreamableHTTPRequest) async throws -> AgentMcpStreamableHTTPResponse {
+    guard let url = URL(string: request.endpoint) else {
+      throw AgentRuntimeCapabilityError.invalid("MCP streamable HTTP endpoint is invalid")
+    }
+    var urlRequest = URLRequest(url: url)
+    urlRequest.httpMethod = "POST"
+    request.headers.forEach { key, value in
+      urlRequest.setValue(value, forHTTPHeaderField: key)
+    }
+    urlRequest.httpBody = Data(request.body.utf8)
+    let (data, response) = try await session.data(for: urlRequest)
+    guard let http = response as? HTTPURLResponse else {
+      throw AgentRuntimeCapabilityError.invalid("MCP streamable HTTP endpoint returned a non-HTTP response")
+    }
+    return AgentMcpStreamableHTTPResponse(
+      statusCode: http.statusCode,
+      headers: http.allHeaderFields.reduce(into: [String: String]()) { result, item in
+        if let key = item.key as? String {
+          result[key] = "\(item.value)"
+        }
+      },
+      body: String(data: data, encoding: .utf8) ?? ""
+    )
+  }
+}
+
+final class AgentMcpStreamableHTTPTransport {
+  private let endpoint: String
+  private let requestHeaders: [String: String]
+  private let networking: AgentMcpStreamableHTTPNetworking
+  private let lock = NSRecursiveLock()
+  private var incoming: [String] = []
+  private var opened = false
+  private var closed = false
+  private var protocolVersion = ""
+  private var sessionId = ""
+
+  var currentSessionId: String {
+    synchronized { sessionId }
+  }
+
+  init(
+    endpoint: String,
+    requestHeaders: [String: String] = [:],
+    networking: AgentMcpStreamableHTTPNetworking = URLSessionAgentMcpStreamableHTTPNetworking()
+  ) throws {
+    self.endpoint = try AgentMcpEndpointPolicy.normalize(endpoint)
+    self.requestHeaders = requestHeaders
+    self.networking = networking
+  }
+
+  func open() throws {
+    try synchronized {
+      guard !closed else {
+        throw AgentRuntimeCapabilityError.invalid("MCP transport is closed")
+      }
+      opened = true
+    }
+  }
+
+  func send(_ message: String) async throws {
+    let request = try synchronized {
+      guard opened, !closed else {
+        throw AgentRuntimeCapabilityError.invalid("MCP transport is not open")
+      }
+      return AgentMcpStreamableHTTPRequest(endpoint: endpoint, body: message, headers: requestHeaderSnapshot())
+    }
+    let response = try await networking.post(request)
+    try synchronized {
+      if let nextSessionId = header("Mcp-Session-Id", in: response.headers)?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .nilIfEmpty {
+        sessionId = nextSessionId
+      }
+      guard (200...299).contains(response.statusCode) else {
+        let detail = response.body
+          .trimmingCharacters(in: .whitespacesAndNewlines)
+          .prefix(Self.maxErrorBodyCharacters)
+        throw AgentMcpStreamableHTTPError(
+          statusCode: response.statusCode,
+          message: "MCP server returned HTTP \(response.statusCode)\(detail.isEmpty ? "" : ": \(detail)")",
+          authenticationFailure: [401, 403].contains(response.statusCode)
+        )
+      }
+      let trimmed = response.body.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else {
+        return
+      }
+      let contentType = header("Content-Type", in: response.headers)?.lowercased() ?? ""
+      let messages = contentType.contains("text/event-stream") ? parseSse(response.body) : [trimmed]
+      incoming.append(contentsOf: messages.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+    }
+  }
+
+  func receive() -> String? {
+    synchronized {
+      incoming.isEmpty ? nil : incoming.removeFirst()
+    }
+  }
+
+  func onProtocolVersionNegotiated(_ version: String) {
+    synchronized {
+      protocolVersion = version.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+  }
+
+  func close() {
+    synchronized {
+      guard !closed else {
+        return
+      }
+      closed = true
+      incoming.removeAll()
+    }
+  }
+
+  func parseSse(_ document: String) -> [String] {
+    var messages: [String] = []
+    var data: [String] = []
+    func flush() {
+      if !data.isEmpty {
+        messages.append(data.joined(separator: "\n"))
+      }
+      data.removeAll()
+    }
+    for raw in document.components(separatedBy: .newlines) {
+      let line = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
+      if line.isEmpty {
+        flush()
+      } else if line.hasPrefix(":") {
+        continue
+      } else if line.hasPrefix("data:") {
+        var value = String(line.dropFirst("data:".count))
+        if value.hasPrefix(" ") {
+          value.removeFirst()
+        }
+        data.append(value)
+      }
+    }
+    flush()
+    return messages
+  }
+
+  private func requestHeaderSnapshot() -> [String: String] {
+    var headers = [
+      "Accept": "application/json, text/event-stream",
+      "Content-Type": "application/json",
+      "User-Agent": "SignalASI-iOS-MCP/1"
+    ]
+    for (key, value) in requestHeaders where Self.isSafeHeader(name: key, value: value) {
+      headers[key] = value
+    }
+    if !protocolVersion.isEmpty {
+      headers["MCP-Protocol-Version"] = protocolVersion
+    }
+    if !sessionId.isEmpty {
+      headers["Mcp-Session-Id"] = sessionId
+    }
+    return headers
+  }
+
+  private func header(_ name: String, in headers: [String: String]) -> String? {
+    headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+  }
+
+  private func synchronized<T>(_ body: () throws -> T) rethrows -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return try body()
+  }
+
+  private static func isSafeHeader(name: String, value: String) -> Bool {
+    name.range(of: #"^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$"#, options: .regularExpression) != nil &&
+      value.count <= maxHeaderValueCharacters &&
+      !value.contains("\r") &&
+      !value.contains("\n") &&
+      name.caseInsensitiveCompare("Host") != .orderedSame &&
+      name.caseInsensitiveCompare("Content-Length") != .orderedSame
+  }
+
+  private static let maxHeaderValueCharacters = 8_192
+  private static let maxErrorBodyCharacters = 240
+}
+
 final class AgentMcpLocalRuntimeClient {
   private let registry: AgentMcpRegistry
   private let packageRepository: AgentMcpPackageRepository
