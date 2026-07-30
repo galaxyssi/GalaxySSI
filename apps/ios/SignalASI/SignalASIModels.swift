@@ -16627,6 +16627,468 @@ struct AgentIOSDesktopRemoteNativeToolExecutor {
   }
 }
 
+enum AgentIOSOnDeviceRuntimeToolOperation: String, Codable, CaseIterable, Identifiable {
+  case status
+  case workspaceStatus = "workspace.status"
+  case workspaceRollback = "workspace.rollback"
+  case listPacks = "packs.list"
+  case installPack = "packs.install"
+  case execute
+
+  var id: String { rawValue }
+}
+
+protocol AgentIOSOnDeviceRuntimeToolProviding {
+  var implementationId: String { get }
+  func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability
+  func invoke(
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult
+}
+
+struct AgentIOSUnavailableOnDeviceRuntimeToolProvider: AgentIOSOnDeviceRuntimeToolProviding {
+  var implementationId: String = "signalasi.ios.runtime_unconfigured"
+
+  func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .requiresSetup,
+      reason: "iOS on-device runtime provider is not connected"
+    )
+  }
+
+  func invoke(
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.failure(
+      code: "runtime_provider_unavailable",
+      message: "iOS on-device runtime provider is not connected",
+      retryable: true
+    )
+  }
+}
+
+enum AgentIOSOnDeviceRuntimeNativeToolCatalog {
+  static let status = "signalasi.runtime.status"
+  static let workspaceStatus = "signalasi.runtime.workspace.status"
+  static let workspaceRollback = "signalasi.runtime.workspace.rollback"
+  static let listPacks = "signalasi.runtime.packs.list"
+  static let installPack = "signalasi.runtime.packs.install"
+  static let execute = "signalasi.runtime.execute"
+
+  static let brokerExecutorId = "signalasi.ios_runtime_broker"
+  static let workspaceExecutorId = "signalasi.ios_runtime_workspace"
+  static let packManagerExecutorId = "signalasi.ios_runtime_pack_manager"
+  static let runtimePermission = "signalasi.scope.ios_on_device_runtime"
+  static let workspacePermission = "signalasi.scope.runtime_workspace"
+  static let packInstallPermission = "signalasi.scope.signed_runtime_pack_install"
+  static let noAdditionalConsent = "signalasi.consent.none"
+
+  static let maxTimeoutMillis: Int64 = 30 * 60_000
+  static let orderedToolIds = [
+    status,
+    workspaceStatus,
+    workspaceRollback,
+    listPacks,
+    installPack,
+    execute
+  ]
+  static let toolIds: Set<String> = Set(orderedToolIds)
+  static let requiredPacks = [
+    "linux-base",
+    "python-uv",
+    "node-js",
+    "go",
+    "rust",
+    "cpp",
+    "java",
+    "browser-automation",
+    "ffmpeg"
+  ]
+
+  static func definitions(
+    provider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+  ) -> [AgentPhoneNativeToolDefinition] {
+    AgentIOSOnDeviceRuntimeToolOperation.allCases.map { operation in
+      definition(provider: provider, operation: operation)
+    }
+  }
+
+  static func operation(for toolId: String) -> AgentIOSOnDeviceRuntimeToolOperation? {
+    switch toolId {
+    case status:
+      return .status
+    case workspaceStatus:
+      return .workspaceStatus
+    case workspaceRollback:
+      return .workspaceRollback
+    case listPacks:
+      return .listPacks
+    case installPack:
+      return .installPack
+    case execute:
+      return .execute
+    default:
+      return nil
+    }
+  }
+
+  static func toolId(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> String {
+    switch operation {
+    case .status:
+      return status
+    case .workspaceStatus:
+      return workspaceStatus
+    case .workspaceRollback:
+      return workspaceRollback
+    case .listPacks:
+      return listPacks
+    case .installPack:
+      return installPack
+    case .execute:
+      return execute
+    }
+  }
+
+  static func title(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> String {
+    switch operation {
+    case .status:
+      return "Inspect on-device runtime"
+    case .workspaceStatus:
+      return "Inspect the on-device project workspace"
+    case .workspaceRollback:
+      return "Restore an on-device project checkpoint"
+    case .listPacks:
+      return "List on-device runtime packs"
+    case .installPack:
+      return "Install a trusted on-device runtime pack"
+    case .execute:
+      return "Execute in the on-device Linux sandbox"
+    }
+  }
+
+  private static func definition(
+    provider: AgentIOSOnDeviceRuntimeToolProviding,
+    operation: AgentIOSOnDeviceRuntimeToolOperation
+  ) -> AgentPhoneNativeToolDefinition {
+    let descriptor = try! AgentNativeToolDescriptor(
+      id: toolId(operation),
+      version: AgentPhoneNativeToolCatalog.version,
+      title: title(operation),
+      description: description(operation),
+      location: .application,
+      inputSchema: inputSchema(operation),
+      outputSchema: outputSchema(operation),
+      risk: risk(operation),
+      capabilities: ["runtime.ios_local", "runtime.linux", "runtime.sandboxed"],
+      requiredPermissions: permissionRequirements(operation),
+      requiredConsents: [
+        AgentNativeConsentRequirement(
+          id: noAdditionalConsent,
+          title: "No additional consent",
+          description: "Runtime execution policy is enforced by the runtime broker and task workspace scope.",
+          required: false
+        )
+      ],
+      timeoutMillis: timeoutMillis(operation),
+      idempotency: .nonIdempotent,
+      availability: provider.availability(operation: operation)
+    )
+    var metadata = provenance(operation)
+    metadata["implementation"] = provider.implementationId
+    return AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: executorId(operation),
+      provenanceMetadata: metadata
+    )
+  }
+
+  private static func description(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> String {
+    switch operation {
+    case .status:
+      return "Reports iOS-local Linux backend, language, toolchain, and media-pack readiness."
+    case .workspaceStatus:
+      return "Reports the current conversation project size and durable recovery checkpoints without exposing host paths."
+    case .workspaceRollback:
+      return "Atomically restores this conversation project from a durable checkpoint after an execution failure or unwanted change."
+    case .listPacks:
+      return "Lists iOS-local Linux, language, FFmpeg, and toolchain pack state."
+    case .installPack:
+      return "Downloads, verifies, and installs a signed Linux, language, or media runtime pack and its dependencies."
+    case .execute:
+      return "Runs bounded shell, language, build, test, or FFmpeg work in a persistent conversation project inside the iOS-local Linux runtime."
+    }
+  }
+
+  private static func risk(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolRisk {
+    switch operation {
+    case .status, .workspaceStatus, .listPacks:
+      return .low
+    case .workspaceRollback, .installPack, .execute:
+      return .medium
+    }
+  }
+
+  private static func timeoutMillis(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> Int64 {
+    switch operation {
+    case .installPack, .execute:
+      return maxTimeoutMillis
+    case .status, .workspaceStatus, .workspaceRollback, .listPacks:
+      return 30_000
+    }
+  }
+
+  private static func executorId(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> String {
+    switch operation {
+    case .workspaceStatus, .workspaceRollback:
+      return workspaceExecutorId
+    case .installPack:
+      return packManagerExecutorId
+    case .status, .listPacks, .execute:
+      return brokerExecutorId
+    }
+  }
+
+  private static func provenance(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> [String: String] {
+    var value = [
+      "platform": "ios",
+      "compatibility_source": "AgentOnDeviceRuntimeTools",
+      "sandbox": "ios_local_linux_guest",
+      "network_default": "disabled"
+    ]
+    if operation == .workspaceRollback {
+      value["operation"] = "atomic_checkpoint_restore"
+    }
+    if operation == .installPack {
+      value["verification"] = "signed_catalog_and_pack"
+    }
+    return value
+  }
+
+  private static func permissionRequirements(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> [AgentNativePermissionRequirement] {
+    var requirements = [
+      AgentNativePermissionRequirement(
+        id: runtimePermission,
+        title: "iOS on-device runtime",
+        description: "Requires a configured local sandboxed runtime broker."
+      )
+    ]
+    if operation == .workspaceStatus || operation == .workspaceRollback || operation == .execute {
+      requirements.append(
+        AgentNativePermissionRequirement(
+          id: workspacePermission,
+          title: "Runtime task workspace",
+          description: "Restricts runtime files and checkpoints to the current conversation project workspace."
+        )
+      )
+    }
+    if operation == .installPack {
+      requirements.append(
+        AgentNativePermissionRequirement(
+          id: packInstallPermission,
+          title: "Signed runtime pack install",
+          description: "Requires signed runtime catalogs and verified pack archives."
+        )
+      )
+    }
+    return requirements.sorted { $0.id < $1.id }
+  }
+
+  private static func inputSchema(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentMcpJSONObject {
+    switch operation {
+    case .status, .workspaceStatus, .listPacks:
+      return objectSchema()
+    case .workspaceRollback:
+      return objectSchema([
+        "checkpoint_id": stringSchema(maxLength: 128)
+      ], required: ["checkpoint_id"])
+    case .installPack:
+      return objectSchema([
+        "pack_id": stringSchema(enumValues: requiredPacks)
+      ], required: ["pack_id"])
+    case .execute:
+      return objectSchema([
+        "language": stringSchema(enumValues: AgentRuntimeLanguage.allCases.map(\.rawValue)),
+        "source": stringSchema(maxLength: 256 * 1_024),
+        "arguments": arraySchema(itemSchema: stringSchema(maxLength: 8 * 1_024), maxItems: 256),
+        "timeout_ms": integerSchema(minimum: 100, maximum: maxTimeoutMillis),
+        "network_enabled": boolSchema(),
+        "allowed_network_domains": arraySchema(itemSchema: stringSchema(maxLength: 253), maxItems: 64),
+        "artifact_paths": arraySchema(itemSchema: stringSchema(maxLength: 1_024), maxItems: 32)
+      ], required: ["language", "source"])
+    }
+  }
+
+  private static func outputSchema(_ operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentMcpJSONObject {
+    switch operation {
+    case .status:
+      return objectSchema([
+        "backend": stringSchema(maxLength: 64),
+        "backend_ready": boolSchema(),
+        "reason": stringSchema(maxLength: 2_048),
+        "packs": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128),
+        "languages": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
+      ], additionalProperties: true)
+    case .workspaceStatus:
+      return objectSchema([
+        "workspace_id": stringSchema(maxLength: 128),
+        "workspace_file_count": integerSchema(minimum: 0),
+        "workspace_bytes": integerSchema(minimum: 0),
+        "checkpoints": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
+      ], additionalProperties: true)
+    case .workspaceRollback:
+      return objectSchema([
+        "checkpoint_id": stringSchema(maxLength: 128),
+        "workspace_file_count": integerSchema(minimum: 0),
+        "workspace_bytes": integerSchema(minimum: 0),
+        "workspace_disposition": stringSchema(maxLength: 64)
+      ], additionalProperties: true)
+    case .listPacks:
+      return objectSchema([
+        "packs": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
+      ], required: ["packs"], additionalProperties: true)
+    case .installPack:
+      return objectSchema([
+        "requested_pack": stringSchema(enumValues: requiredPacks),
+        "installed": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 128)
+      ], additionalProperties: true)
+    case .execute:
+      return objectSchema([
+        "exit_code": integerSchema(minimum: -1),
+        "stdout": stringSchema(maxLength: 1_048_576),
+        "stderr": stringSchema(maxLength: 1_048_576),
+        "duration_ms": integerSchema(minimum: 0),
+        "workspace_file_count": integerSchema(minimum: 0),
+        "workspace_bytes": integerSchema(minimum: 0),
+        "checkpoint_id": stringSchema(maxLength: 128),
+        "workspace_disposition": stringSchema(maxLength: 64),
+        "artifacts": arraySchema(itemSchema: objectSchema(additionalProperties: true), maxItems: 256),
+        "execution_receipt": objectSchema(additionalProperties: true)
+      ], additionalProperties: true)
+    }
+  }
+
+  private static func objectSchema(
+    _ properties: [String: AgentMcpJSONObject] = [:],
+    required: [String] = [],
+    additionalProperties: Bool = false
+  ) -> AgentMcpJSONObject {
+    [
+      "type": .string("object"),
+      "properties": .object(properties.mapValues { .object($0) }),
+      "required": .array(required.map(AgentMcpJSONValue.string)),
+      "additionalProperties": .bool(additionalProperties)
+    ]
+  }
+
+  private static func stringSchema(
+    maxLength: Int64? = nil,
+    enumValues: [String] = []
+  ) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = ["type": .string("string")]
+    if let maxLength { schema["maxLength"] = .int(maxLength) }
+    if !enumValues.isEmpty {
+      schema["enum"] = .array(enumValues.map(AgentMcpJSONValue.string))
+    }
+    return schema
+  }
+
+  private static func integerSchema(minimum: Int64, maximum: Int64? = nil) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = [
+      "type": .string("integer"),
+      "minimum": .int(minimum)
+    ]
+    if let maximum { schema["maximum"] = .int(maximum) }
+    return schema
+  }
+
+  private static func boolSchema() -> AgentMcpJSONObject {
+    ["type": .string("boolean")]
+  }
+
+  private static func arraySchema(itemSchema: AgentMcpJSONObject, maxItems: Int64) -> AgentMcpJSONObject {
+    [
+      "type": .string("array"),
+      "items": .object(itemSchema),
+      "maxItems": .int(maxItems)
+    ]
+  }
+}
+
+struct AgentIOSOnDeviceRuntimeNativeToolExecutor {
+  var provider: AgentIOSOnDeviceRuntimeToolProviding
+
+  func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
+    AgentNativeToolExecutableDefinition(
+      definition: definition,
+      executor: { invocation in
+        try invocation.checkpoint()
+        let result = try self.execute(invocation)
+        try invocation.checkpoint()
+        return result
+      }
+    )
+  }
+
+  private func execute(_ invocation: AgentNativeToolInvocation) throws -> AgentNativeToolExecutionResult {
+    guard let operation = AgentIOSOnDeviceRuntimeNativeToolCatalog.operation(for: invocation.descriptor.id) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "runtime_unknown_tool",
+        message: "Unknown on-device runtime native tool."
+      )
+    }
+    try invocation.reportProgress(
+      stage: "runtime",
+      message: AgentIOSOnDeviceRuntimeNativeToolCatalog.title(operation),
+      percent: 10
+    )
+    let execution = provider.invoke(operation: operation, input: invocation.input, invocation: invocation)
+    guard execution.isSuccess else { return execution }
+    var output = execution.output
+    let workspace = workspaceId(invocation.context)
+    switch operation {
+    case .workspaceStatus, .workspaceRollback, .execute:
+      output["workspace_id"] = output["workspace_id"] ?? .string(workspace)
+    case .listPacks:
+      output["packs"] = output["packs"] ?? .array([])
+    case .installPack:
+      output["requested_pack"] = output["requested_pack"] ?? invocation.input["pack_id"] ?? .string("")
+      output["installed"] = output["installed"] ?? .array([])
+    case .status:
+      output["backend"] = output["backend"] ?? .string("ios_local")
+    }
+    if operation == .execute {
+      output["artifacts"] = output["artifacts"] ?? .array([])
+      output["workspace_disposition"] = output["workspace_disposition"] ?? .string("preserved")
+    }
+    var metadata = execution.metadata
+    metadata["implementation"] = metadata["implementation"] ?? .string(provider.implementationId)
+    metadata["platform"] = metadata["platform"] ?? .string("ios")
+    metadata["sandbox"] = metadata["sandbox"] ?? .string("ios_local_linux_guest")
+    metadata["network_default"] = metadata["network_default"] ?? .string("disabled")
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: execution.message.isEmpty ? "\(AgentIOSOnDeviceRuntimeNativeToolCatalog.title(operation)) completed" : execution.message,
+      metadata: metadata
+    )
+  }
+
+  private func workspaceId(_ context: AgentNativeToolInvocationContext) -> String {
+    let values = [
+      context.attributes["workspace_id"],
+      context.turnId,
+      context.conversationId,
+      context.invocationId
+    ]
+    return values
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty } ?? "default"
+  }
+}
+
 struct AgentNativeValidationIssue: Codable, Equatable {
   var path: String
   var code: String
@@ -17922,6 +18384,7 @@ enum AgentPhoneNativeToolCatalog {
     .union(AgentIOSSelfEvolutionNativeToolCatalog.toolIds)
     .union(AgentIOSDesktopRemoteNativeToolCatalog.toolIds)
     .union(AgentMcpNativeTools.toolIds)
+    .union(AgentIOSOnDeviceRuntimeNativeToolCatalog.toolIds)
 
   static let defaultToolIds: Set<String> = toolIds
     .union(AgentPhoneCapabilityNativeCoverage.coveredToolIds)
@@ -17931,7 +18394,7 @@ enum AgentPhoneNativeToolCatalog {
     .union(AgentIOSSelfEvolutionNativeToolCatalog.toolIds)
     .union(AgentIOSDesktopRemoteNativeToolCatalog.toolIds)
     .union(AgentMcpNativeTools.toolIds)
-    .union(onDeviceRuntimeToolIds)
+    .union(AgentIOSOnDeviceRuntimeNativeToolCatalog.toolIds)
 
   static func definitions(
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
@@ -17947,7 +18410,8 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSMediaNativeToolCatalog.definitions() +
       AgentIOSSelfEvolutionNativeToolCatalog.definitions() +
       AgentIOSDesktopRemoteNativeToolCatalog.definitions() +
-      AgentMcpNativeTools.definitions()
+      AgentMcpNativeTools.definitions() +
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions()
   }
 
   static func descriptors(
@@ -18036,6 +18500,13 @@ enum AgentPhoneNativeToolCatalog {
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSMcpNativeToolExecutor(provider: provider)
     return AgentMcpNativeTools.definitions(provider: provider).map(executor.executableDefinition)
+  }
+
+  static func onDeviceRuntimeExecutableDefinitions(
+    provider: AgentIOSOnDeviceRuntimeToolProviding
+  ) -> [AgentNativeToolExecutableDefinition] {
+    let executor = AgentIOSOnDeviceRuntimeNativeToolExecutor(provider: provider)
+    return AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
   }
 
   static func actionExecutableDefinitions(
@@ -18689,10 +19160,6 @@ enum AgentPhoneNativeToolCatalog {
     workspaceZipCreate,
     workspaceZipList,
     workspaceZipExtract
-  ]
-  private static let onDeviceRuntimeToolIds: Set<String> = [
-    "signalasi.runtime.execute",
-    "signalasi.runtime.packs.install"
   ]
 }
 

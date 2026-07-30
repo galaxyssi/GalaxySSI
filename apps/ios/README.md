@@ -103,6 +103,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style iOS self-evolution native tool catalog and provider-backed executor for Android wire-compatible `signalasi.evolution.*` task status, task creation/listing, isolated candidate prepare/patch/rollback, self-evolution consent, and review-only patch receipts
 - Android-style iOS Desktop remote native tool catalog and provider-backed executor for paired Desktop Windows status/process, task workspace file/archive, terminal, and Office document operations with SignalASI Link receipts and remote verification evidence
 - Android-style iOS MCP native tool catalog and provider-backed executor for `signalasi.mcp.connections.list`, `signalasi.mcp.tools.list`, and `signalasi.mcp.tool.call` with MCP host policy/audit metadata
+- Android-style iOS on-device runtime native tool catalog and provider-backed executor for `signalasi.runtime.*` status, workspace checkpoint, trusted pack listing/installation, and bounded sandbox execution receipts
 - Android-style agent plan factory for connector dedupe, empty-plan reasoning fallback, route resolution, and paired-contact permission projection
 - Android-style native tool registry for descriptor lookup, JSON-schema input validation, permission and consent gates, deterministic catalog export, and idempotency-key replay protection
 - Android-style AgentAction native tool adapter for legacy phone action calls, receipts, provenance, result metadata, and preflight rejection results
