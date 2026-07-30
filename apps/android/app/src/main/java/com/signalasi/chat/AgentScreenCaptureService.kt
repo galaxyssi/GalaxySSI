@@ -171,7 +171,7 @@ class AgentScreenCaptureService : Service() {
 
     private fun captureSize(): Pair<Int, Int> {
         val windowManager = getSystemService(WindowManager::class.java)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val displaySize = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val bounds = windowManager.maximumWindowMetrics.bounds
             bounds.width().coerceAtLeast(MIN_CAPTURE_SIZE) to bounds.height().coerceAtLeast(MIN_CAPTURE_SIZE)
         } else {
@@ -179,6 +179,8 @@ class AgentScreenCaptureService : Service() {
             resources.displayMetrics.widthPixels.coerceAtLeast(MIN_CAPTURE_SIZE) to
                 resources.displayMetrics.heightPixels.coerceAtLeast(MIN_CAPTURE_SIZE)
         }
+        return AgentDeviceProfileDetector.detect(this)
+            .constrainCaptureSize(displaySize.first, displaySize.second)
     }
 
     private fun releaseProjection() {

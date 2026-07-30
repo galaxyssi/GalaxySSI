@@ -100,7 +100,7 @@ object AgentMediaNetworkDetector {
         }
         val backgroundRestricted = manager?.restrictBackgroundStatus ==
             ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED
-        return AgentMediaNetworkPolicy.evaluate(
+        val networkProfile = AgentMediaNetworkPolicy.evaluate(
             AgentMediaNetworkProbe(
                 networkPresent = network != null && capabilities != null,
                 internetCapable = capabilities?.hasCapability(
@@ -124,6 +124,7 @@ object AgentMediaNetworkDetector {
                 upstreamKbps = capabilities?.linkUpstreamBandwidthKbps ?: 0
             )
         )
+        return AgentDeviceProfileDetector.detect(context).adaptMedia(networkProfile)
     }
 }
 

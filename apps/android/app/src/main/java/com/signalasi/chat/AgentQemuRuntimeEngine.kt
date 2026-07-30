@@ -154,13 +154,16 @@ class AgentQemuRuntimeEngineController(
         rotateLog()
         secureWrite(sessionFile, spec.sessionKey)
         secureWrite(configFile, runtimeConfig(spec).toString().toByteArray(Charsets.UTF_8))
+        val deviceProfile = AgentDeviceProfileDetector.detect(appContext)
         val plan = AgentQemuLaunchPlanBuilder.build(
             spec = spec,
             sessionFile = sessionFile,
             configFile = configFile,
             logFile = logFile,
-            memoryMegabytes = runtimeMemoryMegabytes(),
-            cpuCount = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
+            memoryMegabytes = runtimeMemoryMegabytes()
+                .coerceAtMost(deviceProfile.maxQemuMemoryMegabytes),
+            cpuCount = Runtime.getRuntime().availableProcessors()
+                .coerceIn(1, deviceProfile.maxQemuCpuCount)
         )
         val child = try {
             ProcessBuilder(plan.command).apply {

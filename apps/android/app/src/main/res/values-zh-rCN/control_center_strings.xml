@@ -72,6 +72,11 @@
     <string name="cc_agent_identity_title">智能体身份</string>
     <string name="cc_agent_identity_subtitle">此设备可作为自主执行节点</string>
     <string name="cc_device_info_title">设备信息</string>
+    <string name="cc_device_profile_phone">手机配置</string>
+    <string name="cc_device_profile_tablet">平板配置</string>
+    <string name="cc_device_profile_automotive">车机配置</string>
+    <string name="cc_device_profile_legacy_samsung_phone">旧三星手机兼容配置</string>
+    <string name="cc_device_profile_legacy_samsung_tablet">旧三星平板兼容配置</string>
     <string name="cc_identity_recovery_title">身份恢复包</string>
     <string name="cc_identity_recovery_subtitle">导出加密身份与信任关系</string>
 
