@@ -1407,6 +1407,52 @@ enum AgentPhoneNativeToolCatalog {
     definitions(capabilityStatuses: capabilityStatuses).map(\.descriptor)
   }
 
+  static func createRegistry(
+    workspaceStore: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor(),
+    actionExecutor: AgentActionExecutor,
+    screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
+    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
+    replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
+    auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
+    homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSUnavailableHomeAssistantToolProvider(),
+    notificationProvider: AgentIOSNotificationToolProviding = AgentIOSUnavailableNotificationToolProvider(),
+    visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSUnavailableVisibleCaptureToolProvider(),
+    webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSUnavailableWebMediaToolProvider(),
+    webIntelligenceProvider: AgentIOSWebIntelligenceToolProviding = AgentIOSUnavailableWebIntelligenceToolProvider(),
+    mediaProvider: AgentIOSMediaNativeToolProviding = AgentIOSUnavailableMediaNativeToolProvider(),
+    selfEvolutionProvider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider(),
+    desktopRemoteProvider: AgentIOSDesktopRemoteToolProviding = AgentIOSUnavailableDesktopRemoteToolProvider(),
+    mcpProvider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider(),
+    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
+  ) throws -> AgentNativeToolRegistry {
+    let registry = try AgentNativeToolRegistry(
+      replayStore: replayStore,
+      auditStore: auditStore,
+      nowMillis: nowMillis
+    )
+    let executables =
+      workspaceExecutableDefinitions(store: workspaceStore) +
+      actionExecutableDefinitions(
+        delegate: actionExecutor,
+        screenProvider: screenProvider,
+        capabilityStatuses: capabilityStatuses
+      ) +
+      systemExecutableDefinitions() +
+      hardwareExecutableDefinitions() +
+      homeAssistantExecutableDefinitions(provider: homeAssistantProvider, nowMillis: nowMillis) +
+      notificationExecutableDefinitions(provider: notificationProvider, nowMillis: nowMillis) +
+      visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider) +
+      webMediaExecutableDefinitions(provider: webMediaProvider) +
+      webIntelligenceExecutableDefinitions(provider: webIntelligenceProvider) +
+      mediaExecutableDefinitions(provider: mediaProvider, nowMillis: nowMillis) +
+      selfEvolutionExecutableDefinitions(provider: selfEvolutionProvider, nowMillis: nowMillis) +
+      desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
+      mcpExecutableDefinitions(provider: mcpProvider) +
+      onDeviceRuntimeExecutableDefinitions(provider: onDeviceRuntimeProvider)
+    return try registry.registerExecutables(executables)
+  }
+
   static func workspaceExecutableDefinitions(
     store: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor()
   ) -> [AgentNativeToolExecutableDefinition] {
