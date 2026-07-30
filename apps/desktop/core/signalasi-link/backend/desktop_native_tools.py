@@ -32,6 +32,7 @@ from urllib.parse import urlsplit
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from desktop_perception import DesktopPerceptionError, DesktopPerceptionService
 from desktop_runtime import DesktopRuntimeManager, desktop_runtime_manager
 from web_intelligence import (
     TOOL_OPERATIONS as WEB_INTELLIGENCE_OPERATIONS,
@@ -40,8 +41,8 @@ from web_intelligence import (
 )
 
 
-CONTRACT_VERSION = "signalasi.desktop-native-tools/1.1"
-TOOL_VERSION = "1.1.0"
+CONTRACT_VERSION = "signalasi.desktop-native-tools/1.2"
+TOOL_VERSION = "1.2.0"
 MAX_JSON_BYTES = 256 * 1024
 MAX_TEXT_BYTES = 128 * 1024
 MAX_WRITE_BYTES = 1024 * 1024
@@ -69,6 +70,7 @@ ARCHIVE_CREATE = "signalasi.desktop.workspace.archive.create"
 TERMINAL_RUN = "signalasi.desktop.terminal.run"
 OFFICE_INSPECT = "signalasi.desktop.office.document.inspect"
 OFFICE_CONVERT = "signalasi.desktop.office.document.convert"
+PERCEPTION_SNAPSHOT = "signalasi.desktop.perception.snapshot"
 
 
 class DesktopNativeToolError(RuntimeError):
@@ -293,6 +295,26 @@ def _specs() -> tuple[DesktopToolSpec, ...]:
             _object_schema({"name": _string(max_length=160)}, ("name",)),
             capabilities=("windows.app.launch",),
             idempotency="non_idempotent",
+            availability=_windows_availability,
+        ),
+        DesktopToolSpec(
+            PERCEPTION_SNAPSHOT,
+            "Perceive foreground Desktop window",
+            "Captures a bounded screenshot, OCR text, and Windows UI Automation tree for the foreground window.",
+            _object_schema({
+                "include_screenshot": {"type": "boolean"},
+                "include_ocr": {"type": "boolean"},
+                "include_ui_tree": {"type": "boolean"},
+                "max_elements": _integer(1, 120),
+                "max_depth": _integer(1, 12),
+                "max_ocr_chars": _integer(0, 24_000),
+            }),
+            capabilities=(
+                "desktop.perception.screenshot",
+                "desktop.perception.ocr",
+                "desktop.perception.ui_tree",
+            ),
+            timeout_ms=20_000,
             availability=_windows_availability,
         ),
         DesktopToolSpec(
@@ -644,8 +666,8 @@ def _validate(schema: Mapping[str, Any], value: Any, path: str = "$") -> None:
 
 
 class DesktopToolReceiptStore:
-    def __init__(self, path: Path) -> None:
-        self.path = Path(path)
+    def __init__(self, path: Path | None) -> None:
+        self.path = Path(path) if path is not None else None
         self._lock = threading.RLock()
         self._rows = self._load()
 
@@ -703,6 +725,8 @@ class DesktopToolReceiptStore:
                 self._save()
 
     def _load(self) -> dict[str, dict[str, Any]]:
+        if self.path is None:
+            return {}
         try:
             value = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(value, dict):
@@ -725,6 +749,8 @@ class DesktopToolReceiptStore:
                 self._rows.pop(key, None)
 
     def _save(self) -> None:
+        if self.path is None:
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.path.with_suffix(self.path.suffix + ".tmp")
         temporary.write_text(_canonical_json(self._rows), encoding="utf-8")
@@ -743,6 +769,7 @@ class DesktopNativeToolRegistry:
         browser_opener: Callable[[str], bool] | None = None,
         runtime_manager: DesktopRuntimeManager | None = None,
         web_intelligence_service: WebIntelligenceService | None = None,
+        perception_service: DesktopPerceptionService | None = None,
     ) -> None:
         root = Path(state_root) if state_root else Path(
             os.environ.get("SIGNALASI_STATE_DIR") or Path(os.environ.get("APPDATA") or Path.home()) / "SignalASI"
@@ -755,6 +782,7 @@ class DesktopNativeToolRegistry:
             self.workspace_root = signalasi_workspace_root() / "tasks"
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.receipts = DesktopToolReceiptStore(root / "desktop-native-tool-receipts.json")
+        self.transient_receipts = DesktopToolReceiptStore(None)
         self.now = now
         self.known_roots = dict(known_roots or self._default_known_roots())
         self.app_catalog = app_catalog or self._windows_app_catalog
@@ -764,6 +792,11 @@ class DesktopNativeToolRegistry:
         self.web_intelligence = web_intelligence_service or WebIntelligenceService(
             root / "web-intelligence"
         )
+        if perception_service is None:
+            from desktop_control import capture_desktop_screenshot
+
+            perception_service = DesktopPerceptionService(capture_desktop_screenshot)
+        self.perception = perception_service
         self.specs = {spec.tool_id: spec for spec in _specs()}
         self.handlers: dict[str, Callable[[dict[str, Any], dict[str, Any]], DesktopToolExecution]] = {
             SYSTEM_STATUS: self._system_status,
@@ -771,6 +804,7 @@ class DesktopNativeToolRegistry:
             PROCESS_LIST: self._process_list,
             APP_LIST: self._app_list,
             APP_LAUNCH: self._app_launch,
+            PERCEPTION_SNAPSHOT: self._perception_snapshot,
             HOST_FILE_SEARCH: self._host_file_search,
             BROWSER_OPEN: self._browser_open,
             WEB_FETCH: self._web_fetch,
@@ -820,6 +854,7 @@ class DesktopNativeToolRegistry:
         execution_slot = False
         side_effect_slot = False
         receipt_claimed = False
+        receipt_store = self.receipts
         workspace_capture = None
         invocation_id = self._identifier(context.get("invocation_id") or uuid.uuid4(), "invocation_id")
         started_at = int(self.now() * 1_000)
@@ -831,6 +866,8 @@ class DesktopNativeToolRegistry:
         try:
             if spec is None:
                 raise DesktopNativeToolError("unknown_tool", f"Unknown Desktop native tool: {tool_id}")
+            if spec.tool_id == PERCEPTION_SNAPSHOT:
+                receipt_store = self.transient_receipts
             if str(context.get("tool_version") or TOOL_VERSION) != TOOL_VERSION:
                 raise DesktopNativeToolError("unsupported_tool_version", "Desktop tool version is not supported")
             availability, reason = spec.availability()
@@ -848,7 +885,7 @@ class DesktopNativeToolRegistry:
                 side_effect_slot = self._side_effect_slot.acquire(blocking=False)
                 if not side_effect_slot:
                     raise DesktopNativeToolError("desktop_side_effect_busy", "Another Desktop side effect is running", retryable=True)
-            replay = self.receipts.claim(receipt_key, input_sha256, invocation_id, spec.tool_id)
+            replay = receipt_store.claim(receipt_key, input_sha256, invocation_id, spec.tool_id)
             if replay is not None:
                 return replay
             receipt_claimed = bool(receipt_key)
@@ -896,11 +933,11 @@ class DesktopNativeToolRegistry:
                 },
                 artifacts=list(execution.artifacts),
             )
-            self.receipts.complete(receipt_key, result)
+            receipt_store.complete(receipt_key, result)
             return result
         except DesktopNativeToolError as exc:
             if receipt_claimed:
-                self.receipts.fail(receipt_key)
+                receipt_store.fail(receipt_key)
             status = "cancelled" if exc.code == "cancelled" else "failed"
             return self._result(
                 spec,
@@ -918,7 +955,7 @@ class DesktopNativeToolRegistry:
             )
         except Exception as exc:
             if receipt_claimed:
-                self.receipts.fail(receipt_key)
+                receipt_store.fail(receipt_key)
             return self._result(
                 spec,
                 invocation_id,
@@ -1258,6 +1295,37 @@ class DesktopNativeToolRegistry:
             "memory_available_bytes": memory_available,
         }
         return DesktopToolExecution(output, "Windows system status read", verification_evidence=output)
+
+    def _perception_snapshot(
+        self,
+        arguments: dict[str, Any],
+        _context: dict[str, Any],
+    ) -> DesktopToolExecution:
+        try:
+            output = self.perception.capture(
+                include_screenshot=bool(arguments.get("include_screenshot", True)),
+                include_ocr=bool(arguments.get("include_ocr", True)),
+                include_ui_tree=bool(arguments.get("include_ui_tree", True)),
+                max_elements=int(arguments.get("max_elements", 80)),
+                max_depth=int(arguments.get("max_depth", 8)),
+                max_ocr_chars=int(arguments.get("max_ocr_chars", 12_000)),
+            )
+        except DesktopPerceptionError as exc:
+            raise DesktopNativeToolError(
+                exc.code,
+                str(exc),
+                retryable=exc.retryable,
+            ) from exc
+        available_layers = list(output.get("available_layers") or [])
+        return DesktopToolExecution(
+            output,
+            "Desktop perception captured",
+            verification_evidence={
+                "capture_id": output.get("capture_id"),
+                "available_layers": available_layers,
+                "preferred_grounding": output.get("preferred_grounding"),
+            },
+        )
 
     def _process_list(self, arguments: dict[str, Any], context: dict[str, Any]) -> DesktopToolExecution:
         query = str(arguments.get("query") or "").casefold()

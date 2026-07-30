@@ -74,7 +74,7 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         manifest = self.registry.manifest()
         tools = {item["id"]: item for item in manifest["tools"]}
 
-        self.assertEqual("signalasi.desktop-native-tools/1.1", manifest["contract_version"])
+        self.assertEqual("signalasi.desktop-native-tools/1.2", manifest["contract_version"])
         for tool_id in (
             SYSTEM_STATUS, RUNTIME_STATUS, PROCESS_LIST, FILE_LIST, FILE_READ_TEXT, FILE_WRITE_TEXT,
             FILE_SHA256, ARCHIVE_CREATE, TERMINAL_RUN, OFFICE_INSPECT, OFFICE_CONVERT,

@@ -90,6 +90,122 @@ data class DesktopControlScreenshot(
     val capturedAt: Long
 )
 
+data class DesktopPerceptionElement(
+    val id: String,
+    val parentId: String,
+    val depth: Int,
+    val name: String,
+    val controlType: String,
+    val automationId: String,
+    val className: String,
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
+    val enabled: Boolean,
+    val focused: Boolean,
+    val offscreen: Boolean,
+    val password: Boolean,
+    val actions: List<String>
+)
+
+data class DesktopPerceptionSnapshot(
+    val captureId: String,
+    val capturedAt: Long,
+    val durationMillis: Long,
+    val activeWindowTitle: String,
+    val activeWindowProcessId: Int,
+    val availableLayers: List<String>,
+    val preferredGrounding: String,
+    val screenshotStatus: String,
+    val uiTreeStatus: String,
+    val uiTreeError: String,
+    val uiElements: List<DesktopPerceptionElement>,
+    val uiElementCount: Int,
+    val uiTreeTruncated: Boolean,
+    val ocrStatus: String,
+    val ocrError: String,
+    val ocrText: String,
+    val ocrCharacterCount: Int,
+    val ocrLineCount: Int,
+    val ocrTruncated: Boolean
+)
+
+internal fun parseDesktopPerceptionSnapshot(source: JSONObject?): DesktopPerceptionSnapshot? {
+    val root = source ?: return null
+    if (root.optString("contract_version") != "signalasi.desktop-perception/1.0") return null
+    val captureId = root.optString("capture_id")
+    val capturedAt = root.optLong("captured_at")
+    if (captureId.isBlank() || capturedAt <= 0L || !root.optBoolean("untrusted_evidence")) {
+        return null
+    }
+    val activeWindow = root.optJSONObject("active_window") ?: JSONObject()
+    val uiTree = root.optJSONObject("ui_tree") ?: JSONObject()
+    val ocr = root.optJSONObject("ocr") ?: JSONObject()
+    val screenshotLayer = root.optJSONObject("screenshot_layer") ?: JSONObject()
+    val elements = uiTree.optJSONArray("elements") ?: JSONArray()
+    val parsedElements = buildList {
+        for (index in 0 until minOf(elements.length(), 120)) {
+            val element = elements.optJSONObject(index) ?: continue
+            val bounds = element.optJSONObject("bounds") ?: JSONObject()
+            val actions = element.optJSONArray("actions") ?: JSONArray()
+            add(DesktopPerceptionElement(
+                id = element.optString("id").take(160),
+                parentId = element.optString("parent_id").take(160),
+                depth = element.optInt("depth").coerceIn(0, 12),
+                name = element.optString("name").take(500),
+                controlType = element.optString("control_type").take(120),
+                automationId = element.optString("automation_id").take(240),
+                className = element.optString("class_name").take(240),
+                left = bounds.optInt("left"),
+                top = bounds.optInt("top"),
+                width = bounds.optInt("width").coerceAtLeast(0),
+                height = bounds.optInt("height").coerceAtLeast(0),
+                enabled = element.optBoolean("enabled"),
+                focused = element.optBoolean("focused"),
+                offscreen = element.optBoolean("offscreen"),
+                password = element.optBoolean("password"),
+                actions = buildList {
+                    for (actionIndex in 0 until minOf(actions.length(), 12)) {
+                        actions.optString(actionIndex).take(64)
+                            .takeIf(String::isNotBlank)
+                            ?.let(::add)
+                    }
+                }
+            ))
+        }
+    }
+    val availableLayers = root.optJSONArray("available_layers") ?: JSONArray()
+    return DesktopPerceptionSnapshot(
+        captureId = captureId,
+        capturedAt = capturedAt,
+        durationMillis = root.optLong("duration_ms").coerceAtLeast(0L),
+        activeWindowTitle = activeWindow.optString("title").take(500),
+        activeWindowProcessId = activeWindow.optInt("process_id").coerceAtLeast(0),
+        availableLayers = buildList {
+            for (index in 0 until availableLayers.length()) {
+                availableLayers.optString(index).take(40)
+                    .takeIf(String::isNotBlank)
+                    ?.let(::add)
+            }
+        },
+        preferredGrounding = root.optString("preferred_grounding").take(40),
+        screenshotStatus = screenshotLayer.optString("status").take(40),
+        uiTreeStatus = uiTree.optString("status").take(40),
+        uiTreeError = uiTree.optJSONObject("error")?.optString("message").orEmpty().take(500),
+        uiElements = parsedElements,
+        uiElementCount = uiTree.optInt("element_count", parsedElements.size)
+            .coerceAtLeast(parsedElements.size),
+        uiTreeTruncated = uiTree.optBoolean("truncated"),
+        ocrStatus = ocr.optString("status").take(40),
+        ocrError = ocr.optJSONObject("error")?.optString("message").orEmpty().take(500),
+        ocrText = ocr.optString("text").take(24_000),
+        ocrCharacterCount = ocr.optInt("character_count").coerceAtLeast(0),
+        ocrLineCount = ocr.optInt("line_count").coerceAtLeast(0),
+        ocrTruncated = ocr.optBoolean("truncated")
+    )
+}
+
 internal fun shouldApplyDesktopScreenshot(
     current: DesktopControlScreenshot?,
     candidate: DesktopControlScreenshot
@@ -176,6 +292,7 @@ data class DesktopRemoteControlSnapshot(
     val lastActionSummary: String,
     val lastActionAt: Long,
     val screenshot: DesktopControlScreenshot?,
+    val perception: DesktopPerceptionSnapshot?,
     val streamFps: Int,
     val streamActive: Boolean
 ) {
@@ -221,7 +338,7 @@ internal class DesktopScreenshotRequestGate {
 }
 
 internal object DesktopControlReceiptProtocol {
-    const val CONTRACT_VERSION = "signalasi.desktop-control/1.3"
+    const val CONTRACT_VERSION = "signalasi.desktop-control/1.4"
     const val RECEIPT_VERSION = 4
 
     fun pendingRequest(
@@ -409,6 +526,7 @@ internal object DesktopControlReceiptProtocol {
 
 object DesktopRemoteControl {
     const val SCREENSHOT = "desktop.screenshot"
+    const val PERCEIVE = "desktop.perceive"
     const val CLICK_XY = "desktop.click_xy"
     const val TYPE_TEXT = "desktop.type_text"
     const val HOTKEY = "desktop.hotkey"
@@ -425,7 +543,8 @@ object DesktopRemoteControl {
         var status: String = "",
         var summary: String = "",
         var at: Long = 0L,
-        var screenshot: DesktopControlScreenshot? = null
+        var screenshot: DesktopControlScreenshot? = null,
+        var perception: DesktopPerceptionSnapshot? = null
     )
 
     private data class ScreenshotStreamState(
@@ -436,6 +555,7 @@ object DesktopRemoteControl {
     private val runtime = ConcurrentHashMap<String, RuntimeState>()
     private val pendingActions = ConcurrentHashMap<String, DesktopControlPendingRequest>()
     private val screenshotRequestGate = DesktopScreenshotRequestGate()
+    private val perceptionRequestGate = DesktopScreenshotRequestGate()
     private val screenshotStreamLock = Any()
     private val screenshotStreams = mutableMapOf<String, ScreenshotStreamState>()
     private val screenshotStreamExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -513,6 +633,9 @@ object DesktopRemoteControl {
                 pending?.takeIf { it.toolId == SCREENSHOT }?.let {
                     screenshotRequestGate.release(it.desktopId, actionId)
                 }
+                pending?.takeIf { it.toolId == PERCEIVE }?.let {
+                    perceptionRequestGate.release(it.desktopId, actionId)
+                }
                 val verified = link != null && DesktopControlReceiptProtocol.verify(
                     payload = payload,
                     expectedSignerId = link.signalName,
@@ -556,10 +679,20 @@ object DesktopRemoteControl {
                             state.screenshot = candidate
                         }
                     }
+                if (!streamFrame &&
+                    payload.optString("tool_id") == PERCEIVE &&
+                    payload.optString("status") == "succeeded"
+                ) {
+                    parseDesktopPerceptionSnapshot(payload.optJSONObject("output"))?.let {
+                        state.perception = it
+                    }
+                }
                 if (!streamFrame && payload.optString("status") == "succeeded") {
                     touchAuthorization(context, desktopId, state.at)
                 }
-                if (!streamFrame) storeVerifiedReceipt(context, desktopId, payload)
+                if (!streamFrame && payload.optString("tool_id") != PERCEIVE) {
+                    storeVerifiedReceipt(context, desktopId, payload)
+                }
             }
         }
         return true
@@ -611,6 +744,7 @@ object DesktopRemoteControl {
             lastActionSummary = live?.summary.orEmpty(),
             lastActionAt = live?.at ?: 0L,
             screenshot = live?.screenshot,
+            perception = live?.perception,
             streamFps = stream?.fps ?: 0,
             streamActive = stream?.future?.let {
                 !it.isCancelled && !it.isDone
@@ -623,6 +757,20 @@ object DesktopRemoteControl {
 
     fun requestScreenshot(desktopId: String): Boolean =
         requestAction(desktopId, SCREENSHOT, JSONObject())
+
+    fun requestPerception(desktopId: String): Boolean =
+        requestAction(
+            desktopId,
+            PERCEIVE,
+            JSONObject()
+                .put("include_screenshot", true)
+                .put("include_ocr", true)
+                .put("include_ui_tree", true)
+                .put("max_elements", 80)
+                .put("max_depth", 8)
+                .put("max_ocr_chars", 12_000),
+            durable = false
+        )
 
     fun startScreenshotStream(desktopId: String, fps: Int): Boolean {
         val normalized = DesktopScreenshotStreamPolicy.normalizeFps(fps) ?: return false
@@ -739,6 +887,7 @@ object DesktopRemoteControl {
         write(context, root)
         runtime.remove(desktopId)
         screenshotRequestGate.clear(desktopId)
+        perceptionRequestGate.clear(desktopId)
         pendingActions.entries.removeIf { it.value.desktopId == desktopId }
     }
 
@@ -764,6 +913,9 @@ object DesktopRemoteControl {
         val expiresAt = now + ACTION_TTL_MS
         if (toolId == SCREENSHOT &&
             !screenshotRequestGate.claim(desktopId, actionId, expiresAt, now)
+        ) return true
+        if (toolId == PERCEIVE &&
+            !perceptionRequestGate.claim(desktopId, actionId, expiresAt, now)
         ) return true
         val payload = JSONObject()
             .put("type", "desktop_executor_request")
@@ -798,6 +950,7 @@ object DesktopRemoteControl {
         if (!published) {
             pendingActions.remove(actionId)
             if (toolId == SCREENSHOT) screenshotRequestGate.release(desktopId, actionId)
+            if (toolId == PERCEIVE) perceptionRequestGate.release(desktopId, actionId)
         }
         return published
     }

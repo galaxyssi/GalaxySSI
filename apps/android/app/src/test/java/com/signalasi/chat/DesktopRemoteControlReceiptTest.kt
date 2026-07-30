@@ -27,7 +27,7 @@ class DesktopRemoteControlReceiptTest {
         val receipt = receipt(request, pending)
 
         assertEquals(
-            "81004d85121c63e3d5c0352bd805ba46c11c298a00b2d4030b1552ee880ba847",
+            "ddf1181c7021616a86e361a9a5f929ff443570b11095b3503e172e5a467107aa",
             pending.requestSha256
         )
         assertTrue(verify(receipt, pending))
@@ -201,6 +201,81 @@ class DesktopRemoteControlReceiptTest {
         assertFalse(still.streamFrame)
         assertNotEquals(live.inputSha256, still.inputSha256)
         assertNotEquals(live.requestSha256, still.requestSha256)
+    }
+
+    @Test
+    fun parsesBoundedThreeLayerPerceptionSnapshot() {
+        val source = JSONObject()
+            .put("contract_version", "signalasi.desktop-perception/1.0")
+            .put("capture_id", "capture-1")
+            .put("captured_at", 1_800_000_001_000L)
+            .put("duration_ms", 237L)
+            .put("untrusted_evidence", true)
+            .put("preferred_grounding", "ui_tree")
+            .put("available_layers", org.json.JSONArray(listOf("ui_tree", "ocr", "screenshot")))
+            .put(
+                "active_window",
+                JSONObject()
+                    .put("title", "SignalASI")
+                    .put("process_id", 42)
+            )
+            .put("screenshot_layer", JSONObject().put("status", "available"))
+            .put(
+                "ui_tree",
+                JSONObject()
+                    .put("status", "available")
+                    .put("element_count", 1)
+                    .put("truncated", false)
+                    .put(
+                        "elements",
+                        org.json.JSONArray().put(
+                            JSONObject()
+                                .put("id", "42.1")
+                                .put("parent_id", "")
+                                .put("depth", 0)
+                                .put("name", "Send")
+                                .put("control_type", "Button")
+                                .put("enabled", true)
+                                .put("focused", false)
+                                .put("offscreen", false)
+                                .put("password", false)
+                                .put(
+                                    "bounds",
+                                    JSONObject()
+                                        .put("left", 10)
+                                        .put("top", 20)
+                                        .put("width", 80)
+                                        .put("height", 40)
+                                )
+                                .put("actions", org.json.JSONArray(listOf("invoke")))
+                        )
+                    )
+            )
+            .put(
+                "ocr",
+                JSONObject()
+                    .put("status", "available")
+                    .put("text", "Send a message")
+                    .put("character_count", 14)
+                    .put("line_count", 1)
+                    .put("truncated", false)
+            )
+
+        val parsed = requireNotNull(parseDesktopPerceptionSnapshot(source))
+
+        assertEquals("capture-1", parsed.captureId)
+        assertEquals("SignalASI", parsed.activeWindowTitle)
+        assertEquals(1, parsed.uiElementCount)
+        assertEquals("Send", parsed.uiElements.single().name)
+        assertEquals(listOf("invoke"), parsed.uiElements.single().actions)
+        assertEquals("Send a message", parsed.ocrText)
+        assertEquals(listOf("ui_tree", "ocr", "screenshot"), parsed.availableLayers)
+        assertEquals(
+            null,
+            parseDesktopPerceptionSnapshot(
+                JSONObject(source.toString()).put("untrusted_evidence", false)
+            )
+        )
     }
 
     private fun request(): JSONObject = JSONObject()

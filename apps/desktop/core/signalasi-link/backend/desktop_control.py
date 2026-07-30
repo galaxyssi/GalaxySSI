@@ -19,6 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from desktop_perception import DesktopPerceptionError, DesktopPerceptionService
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_access import (
     DESKTOP_EXECUTOR,
@@ -37,7 +38,7 @@ from tool_handle_registry import (
 )
 
 
-CONTRACT_VERSION = "signalasi.desktop-control/1.3"
+CONTRACT_VERSION = "signalasi.desktop-control/1.4"
 AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
 RECEIPT_VERSION = 4
@@ -50,7 +51,7 @@ MIN_SCREENSHOT_STREAM_FPS = 1
 MAX_SCREENSHOT_STREAM_FPS = 3
 MAX_AUDIT_EVENTS = 1_000
 MAX_RECENT_ACTIONS = 256
-MAX_RECENT_STREAM_ACTIONS = 16
+MAX_RECENT_TRANSIENT_ACTIONS = 16
 MAX_VISIBLE_RECEIPTS = 50
 
 SCREENSHOT = "desktop.screenshot"
@@ -60,6 +61,7 @@ HOTKEY = "desktop.hotkey"
 SCROLL = "desktop.scroll"
 WINDOW_SWITCH = "desktop.window_switch"
 FILE_SELECT = "desktop.file_select"
+PERCEIVE = "desktop.perceive"
 
 DEFAULT_ALLOWED_TOOLS = (
     SCREENSHOT,
@@ -69,6 +71,7 @@ DEFAULT_ALLOWED_TOOLS = (
     SCROLL,
     WINDOW_SWITCH,
     FILE_SELECT,
+    PERCEIVE,
 )
 RECEIPT_SIGNED_FIELDS = (
     "receipt_version",
@@ -179,15 +182,20 @@ class DesktopControlManager:
         identity_provider: IdentityProvider = _default_identity,
         receipt_signer: ReceiptSigner = sign_signal_identity,
         handle_registry: ToolHandleRegistry | None = None,
+        perception_service: DesktopPerceptionService | None = None,
     ) -> None:
         self.state_path = Path(state_path or DATA_DIR / "desktop_control.json")
         self.now = now
         self._lock = threading.RLock()
         self._input_lock = threading.Lock()
         self._offers: dict[str, dict[str, Any]] = {}
-        self._recent_stream_actions: dict[str, dict[str, Any]] = {}
+        self._recent_transient_actions: dict[str, dict[str, Any]] = {}
         self._state = self._load()
         self._screenshot_provider = screenshot_provider or capture_desktop_screenshot
+        self._perception = perception_service or DesktopPerceptionService(
+            self._screenshot_provider,
+            now=now,
+        )
         self._input = input_controller or WindowsInputController()
         self._identity_provider = identity_provider
         self._receipt_signer = receipt_signer
@@ -475,9 +483,10 @@ class DesktopControlManager:
         ) = self._validate_request(payload, paired_client)
         stream_fps = self._screenshot_stream_fps(tool_id, arguments)
         stream_frame = stream_fps is not None
-        if stream_frame:
+        transient_action = stream_frame or tool_id == PERCEIVE
+        if transient_action:
             with self._lock:
-                previous = self._recent_stream_actions.get(action_id)
+                previous = self._recent_transient_actions.get(action_id)
                 if isinstance(previous, dict):
                     if not secrets.compare_digest(
                         str(previous.get("request_sha256") or ""),
@@ -491,13 +500,13 @@ class DesktopControlManager:
                     receipt["replayed"] = True
                     receipt["post_screenshot"] = None
                     return receipt
-                self._recent_stream_actions[action_id] = {
+                self._recent_transient_actions[action_id] = {
                     "request_sha256": request_digest,
                     "status": "running",
                     "receipt": {},
                 }
-                while len(self._recent_stream_actions) > MAX_RECENT_STREAM_ACTIONS:
-                    self._recent_stream_actions.pop(next(iter(self._recent_stream_actions)))
+                while len(self._recent_transient_actions) > MAX_RECENT_TRANSIENT_ACTIONS:
+                    self._recent_transient_actions.pop(next(iter(self._recent_transient_actions)))
         else:
             with self._lock:
                 previous = self._state["recent_actions"].get(action_id)
@@ -557,6 +566,51 @@ class DesktopControlManager:
                             "stream_frame": True,
                             "stream_fps": stream_fps,
                         })
+                elif tool_id == PERCEIVE:
+                    try:
+                        output = self._perception.capture(
+                            include_screenshot=self._bounded_bool(
+                                arguments.get("include_screenshot", True),
+                                "include_screenshot",
+                            ),
+                            include_ocr=self._bounded_bool(
+                                arguments.get("include_ocr", True),
+                                "include_ocr",
+                            ),
+                            include_ui_tree=self._bounded_bool(
+                                arguments.get("include_ui_tree", True),
+                                "include_ui_tree",
+                            ),
+                            max_elements=self._bounded_int(
+                                arguments.get("max_elements", 80),
+                                "max_elements",
+                                1,
+                                120,
+                            ),
+                            max_depth=self._bounded_int(
+                                arguments.get("max_depth", 8),
+                                "max_depth",
+                                1,
+                                12,
+                            ),
+                            max_ocr_chars=self._bounded_int(
+                                arguments.get("max_ocr_chars", 12_000),
+                                "max_ocr_chars",
+                                0,
+                                24_000,
+                            ),
+                        )
+                    except DesktopPerceptionError as exc:
+                        raise DesktopControlError(
+                            exc.code,
+                            str(exc),
+                            retryable=exc.retryable,
+                        ) from exc
+                    screenshot = (
+                        output.get("screenshot")
+                        if isinstance(output.get("screenshot"), dict)
+                        else None
+                    )
                 elif tool_id == CLICK_XY:
                     x = self._bounded_int(arguments.get("x"), "x", 0, 100_000)
                     y = self._bounded_int(arguments.get("y"), "y", 0, 100_000)
@@ -672,16 +726,17 @@ class DesktopControlManager:
                 "completed_at": completed_at,
                 "duration_ms": max(0, completed_at - started_at),
                 "replayed": False,
-                "post_screenshot": screenshot if tool_id != SCREENSHOT else None,
+                "post_screenshot": screenshot if tool_id not in {SCREENSHOT, PERCEIVE} else None,
             }, request_digest, arguments, paired_client)
-            if stream_frame:
+            if transient_action:
                 with self._lock:
-                    self._complete_stream_action_locked(action_id, request_digest, receipt)
-            else:
+                    self._complete_transient_action_locked(action_id, request_digest, receipt)
+            if not stream_frame:
                 with self._lock:
                     authorization["last_used_at"] = completed_at
                     authorization["updated_at"] = completed_at
-                    self._complete_action_locked(action_id, request_digest, receipt)
+                    if not transient_action:
+                        self._complete_action_locked(action_id, request_digest, receipt)
                     self._append_audit_locked(
                         "desktop_action",
                         authorization_id=str(authorization["authorization_id"]),
@@ -704,12 +759,13 @@ class DesktopControlManager:
                 arguments=arguments,
                 paired_client=paired_client,
             )
-            if stream_frame:
+            if transient_action:
                 with self._lock:
-                    self._complete_stream_action_locked(action_id, request_digest, receipt)
-            else:
+                    self._complete_transient_action_locked(action_id, request_digest, receipt)
+            if not stream_frame:
                 with self._lock:
-                    self._complete_action_locked(action_id, request_digest, receipt)
+                    if not transient_action:
+                        self._complete_action_locked(action_id, request_digest, receipt)
                     self._append_audit_locked(
                         "desktop_action",
                         authorization_id=str(authorization.get("authorization_id") or ""),
@@ -733,12 +789,13 @@ class DesktopControlManager:
                 arguments=arguments,
                 paired_client=paired_client,
             )
-            if stream_frame:
+            if transient_action:
                 with self._lock:
-                    self._complete_stream_action_locked(action_id, request_digest, receipt)
-            else:
+                    self._complete_transient_action_locked(action_id, request_digest, receipt)
+            if not stream_frame:
                 with self._lock:
-                    self._complete_action_locked(action_id, request_digest, receipt)
+                    if not transient_action:
+                        self._complete_action_locked(action_id, request_digest, receipt)
                     self._append_audit_locked(
                         "desktop_action",
                         authorization_id=str(authorization.get("authorization_id") or ""),
@@ -1263,19 +1320,19 @@ class DesktopControlManager:
         for key in ordered[: len(rows) - MAX_RECENT_ACTIONS]:
             rows.pop(key, None)
 
-    def _complete_stream_action_locked(
+    def _complete_transient_action_locked(
         self,
         action_id: str,
         request_digest: str,
         receipt: Mapping[str, Any],
     ) -> None:
-        self._recent_stream_actions[action_id] = {
+        self._recent_transient_actions[action_id] = {
             "request_sha256": request_digest,
             "status": str(receipt.get("status") or "failed"),
             "receipt": dict(receipt),
         }
-        while len(self._recent_stream_actions) > MAX_RECENT_STREAM_ACTIONS:
-            self._recent_stream_actions.pop(next(iter(self._recent_stream_actions)))
+        while len(self._recent_transient_actions) > MAX_RECENT_TRANSIENT_ACTIONS:
+            self._recent_transient_actions.pop(next(iter(self._recent_transient_actions)))
 
     def _prune_offers_locked(self, now: float) -> None:
         self._offers = {
@@ -1294,6 +1351,12 @@ class DesktopControlManager:
         if result < minimum or result > maximum:
             raise DesktopControlError("invalid_input", f"{field} is outside the allowed range")
         return result
+
+    @staticmethod
+    def _bounded_bool(value: Any, field: str) -> bool:
+        if not isinstance(value, bool):
+            raise DesktopControlError("invalid_input", f"{field} must be a boolean")
+        return value
 
     def _screenshot_stream_fps(
         self,
@@ -1327,6 +1390,8 @@ class DesktopControlManager:
         prefix = "Executing" if running else "Executed"
         if tool_id == SCREENSHOT:
             return f"{prefix} desktop screenshot"
+        if tool_id == PERCEIVE:
+            return f"{prefix} Desktop perception"
         if tool_id == CLICK_XY:
             return f"{prefix} click at {arguments.get('x')}, {arguments.get('y')}"
         if tool_id == TYPE_TEXT:
@@ -1347,6 +1412,8 @@ class DesktopControlManager:
             return f"typed {len(str(arguments.get('text') or ''))} chars"
         if tool_id == SCREENSHOT:
             return "captured screen; image not retained"
+        if tool_id == PERCEIVE:
+            return "captured screenshot, OCR, and UI tree; evidence not retained"
         if tool_id == CLICK_XY:
             return f"clicked {arguments.get('button', 'left')} at {arguments.get('x')}, {arguments.get('y')}"
         if tool_id == HOTKEY:

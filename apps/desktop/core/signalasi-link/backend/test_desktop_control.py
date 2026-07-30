@@ -11,6 +11,7 @@ from desktop_control import (
     CLICK_XY,
     DEFAULT_ALLOWED_TOOLS,
     FILE_SELECT,
+    PERCEIVE,
     SCREENSHOT,
     TYPE_TEXT,
     WINDOW_SWITCH,
@@ -332,6 +333,64 @@ class DesktopControlTests(unittest.TestCase):
                 self.client,
             )
         self.assertEqual("invalid_input", raised.exception.code)
+
+    def test_perception_receipt_is_signed_but_sensitive_layers_are_not_persisted(self):
+        authorization = self.authorize()
+        before = self.manager.status(self.client["client_route_id"])
+        calls = []
+
+        class FakePerception:
+            def capture(self, **options):
+                calls.append(dict(options))
+                return {
+                    "contract_version": "signalasi.desktop-perception/1.0",
+                    "capture_id": "capture-1",
+                    "captured_at": 1_800_000_000_000,
+                    "available_layers": ["ui_tree", "ocr", "screenshot"],
+                    "preferred_grounding": "ui_tree",
+                    "untrusted_evidence": True,
+                    "active_window": {"title": "Private window"},
+                    "ui_tree": {
+                        "status": "available",
+                        "element_count": 1,
+                        "elements": [{"name": "Private control"}],
+                    },
+                    "ocr": {
+                        "status": "available",
+                        "character_count": 11,
+                        "text": "Private OCR",
+                    },
+                    "screenshot_layer": {"status": "available"},
+                    "screenshot": {
+                        "image_mime": "image/jpeg",
+                        "image_base64": "/9j/2Q==",
+                        "width": 960,
+                        "height": 540,
+                        "original_width": 1920,
+                        "original_height": 1080,
+                        "bytes": 4,
+                        "captured_at": 1_800_000_000_000,
+                    },
+                }
+
+        self.manager._perception = FakePerception()
+        request = self.request(authorization, PERCEIVE, {})
+        receipt = self.manager.execute_request(request, self.client)
+        after = self.manager.status(self.client["client_route_id"])
+
+        self.assertEqual("succeeded", receipt["status"])
+        self.assertTrue(self.identity.verify(receipt))
+        self.assertEqual("Private OCR", receipt["output"]["ocr"]["text"])
+        self.assertEqual(1, len(calls))
+        self.assertEqual(before["recent_receipts"], after["recent_receipts"])
+        self.assertEqual(len(before["recent_audit"]) + 1, len(after["recent_audit"]))
+        replay = self.manager.execute_request(request, self.client)
+        self.assertTrue(replay["replayed"])
+        self.assertEqual(1, len(calls))
+        persisted = (Path(self.temporary.name) / "control.json").read_text(encoding="utf-8")
+        self.assertNotIn("Private OCR", persisted)
+        self.assertNotIn("Private control", persisted)
+        self.assertNotIn("Private window", persisted)
 
     def test_duplicate_action_with_different_input_is_rejected(self):
         authorization = self.authorize()

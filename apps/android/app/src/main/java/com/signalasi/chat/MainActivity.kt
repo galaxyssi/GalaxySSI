@@ -286,6 +286,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var featureContent: LinearLayout
     private lateinit var featureBackButton: TextView
     private var activeDesktopControlId: String? = null
+    private var activeDesktopPerceptionId: String? = null
     private var activeDesktopScreenView: DesktopRemoteScreenView? = null
     private var activeDesktopScreenPlaceholder: TextView? = null
     private lateinit var mainTitle: TextView
@@ -19756,6 +19757,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val snapshot = DesktopRemoteControl.snapshot(this, device.id)
         showFeaturePage(getString(R.string.desktop_control_title), device.id)
         activeDesktopControlId = device.id
+        activeDesktopPerceptionId = null
         setFeatureBackAction { showDesktopControlPicker() }
         featureContent.addView(featureHeroCard(
             device.name,
@@ -19905,6 +19907,48 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                     .setNegativeButton(getString(R.string.common_cancel), null)
                     .show()
+            }
+        })
+
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_perception_title),
+            snapshot.perception?.let {
+                getString(
+                    R.string.desktop_perception_summary,
+                    it.uiElementCount,
+                    it.ocrCharacterCount,
+                    securityTime(it.capturedAt)
+                )
+            } ?: getString(R.string.desktop_perception_subtitle),
+            R.drawable.ic_agent_screen,
+            getString(
+                if (snapshot.perception == null) {
+                    R.string.desktop_perception_capture_action
+                } else {
+                    R.string.common_view
+                }
+            )
+        ).apply {
+            isEnabled = snapshot.authorized
+            alpha = if (snapshot.authorized) 1f else 0.5f
+            setOnClickListener {
+                if (snapshot.perception == null) {
+                    if (DesktopRemoteControl.requestPerception(device.id)) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.desktop_control_request_sent),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.desktop_control_request_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } else {
+                    showDesktopPerceptionPage(device)
+                }
             }
         })
 
@@ -20077,6 +20121,191 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
     }
 
+    private fun showDesktopPerceptionPage(device: DesktopSecuritySummary) {
+        val remote = DesktopRemoteControl.snapshot(this, device.id)
+        val perception = remote.perception
+        showFeaturePage(getString(R.string.desktop_perception_detail), device.id)
+        activeDesktopControlId = device.id
+        activeDesktopPerceptionId = device.id
+        setFeatureBackAction { showDesktopRemoteControlPage(device) }
+
+        featureContent.addView(featureHeroCard(
+            perception?.activeWindowTitle
+                ?.takeIf(String::isNotBlank)
+                ?.take(90)
+                ?: getString(R.string.desktop_perception_empty),
+            perception?.let {
+                getString(
+                    R.string.desktop_perception_capture_summary,
+                    securityTime(it.capturedAt),
+                    it.durationMillis,
+                    it.preferredGrounding
+                )
+            } ?: getString(R.string.desktop_perception_subtitle),
+            R.drawable.ic_agent_screen,
+            if (perception == null) "#8A939B" else "#14C66A",
+            getString(
+                if (perception == null) {
+                    R.string.desktop_perception_unavailable
+                } else {
+                    R.string.desktop_perception_available
+                }
+            )
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_perception_refresh),
+            getString(R.string.desktop_perception_refresh_subtitle),
+            R.drawable.ic_import,
+            getString(R.string.desktop_perception_refresh_action)
+        ).apply {
+            isEnabled = remote.authorized
+            alpha = if (remote.authorized) 1f else 0.5f
+            setOnClickListener {
+                if (!DesktopRemoteControl.requestPerception(device.id)) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.desktop_control_request_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
+        if (perception == null) {
+            featureContent.addView(TextView(this).apply {
+                text = getString(R.string.desktop_perception_evidence_notice)
+                setTextColor(getColorCompat(R.color.text_secondary))
+                textSize = 12f
+                setPadding(dp(4), dp(12), dp(4), dp(20))
+            })
+            return
+        }
+
+        addSectionTitle(getString(R.string.desktop_perception_layers))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_perception_screenshot_layer),
+            getString(R.string.desktop_perception_screenshot_subtitle),
+            R.drawable.ic_agent_screen,
+            desktopPerceptionLayerLabel(perception.screenshotStatus)
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_perception_ui_tree),
+            perception.uiTreeError.ifBlank {
+                getString(
+                    R.string.desktop_perception_ui_tree_summary,
+                    perception.uiElementCount,
+                    getString(
+                        if (perception.uiTreeTruncated) {
+                            R.string.desktop_perception_truncated
+                        } else {
+                            R.string.desktop_perception_complete
+                        }
+                    )
+                )
+            },
+            R.drawable.ic_agent_control,
+            desktopPerceptionLayerLabel(perception.uiTreeStatus)
+        ))
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_perception_ocr),
+            perception.ocrError.ifBlank {
+                getString(
+                    R.string.desktop_perception_ocr_summary,
+                    perception.ocrCharacterCount,
+                    perception.ocrLineCount,
+                    getString(
+                        if (perception.ocrTruncated) {
+                            R.string.desktop_perception_truncated
+                        } else {
+                            R.string.desktop_perception_complete
+                        }
+                    )
+                )
+            },
+            R.drawable.ic_agent_memory,
+            desktopPerceptionLayerLabel(perception.ocrStatus)
+        ))
+
+        addSectionTitle(getString(R.string.desktop_perception_recognized_text))
+        featureContent.addView(TextView(this).apply {
+            text = perception.ocrText.ifBlank {
+                getString(R.string.desktop_perception_no_text)
+            }
+            setTextColor(getColorCompat(R.color.text_primary))
+            textSize = 14f
+            setTextIsSelectable(true)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = getDrawable(R.drawable.glass_card_background)
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            bottomMargin = dp(12)
+        })
+
+        addSectionTitle(getString(R.string.desktop_perception_ui_elements))
+        val visibleElements = perception.uiElements
+            .asSequence()
+            .filter { !it.offscreen && (it.name.isNotBlank() || it.actions.isNotEmpty()) }
+            .take(40)
+            .toList()
+        if (visibleElements.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.desktop_perception_no_elements),
+                "",
+                R.drawable.ic_agent_control,
+                ""
+            ))
+        } else {
+            visibleElements.forEach { element ->
+                val elementTitle = element.name
+                    .takeIf(String::isNotBlank)
+                    ?: element.controlType
+                    .takeIf(String::isNotBlank)
+                    ?: element.id
+                val details = buildList {
+                    add(getString(
+                        R.string.desktop_perception_element_bounds,
+                        element.controlType.ifBlank { element.className },
+                        element.left,
+                        element.top,
+                        element.width,
+                        element.height
+                    ))
+                    element.actions.takeIf { it.isNotEmpty() }
+                        ?.joinToString(" · ")
+                        ?.let(::add)
+                }.joinToString("\n")
+                featureContent.addView(featureRow(
+                    elementTitle.take(120),
+                    details,
+                    R.drawable.ic_agent_control,
+                    if (element.actions.isEmpty()) {
+                        ""
+                    } else {
+                        getString(
+                            R.string.desktop_perception_element_actions,
+                            element.actions.size
+                        )
+                    }
+                ))
+            }
+        }
+        featureContent.addView(TextView(this).apply {
+            text = getString(R.string.desktop_perception_evidence_notice)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 12f
+            setPadding(dp(4), dp(12), dp(4), dp(20))
+        })
+    }
+
+    private fun desktopPerceptionLayerLabel(status: String): String = getString(
+        when (status) {
+            "available" -> R.string.desktop_perception_available
+            "disabled" -> R.string.desktop_perception_disabled
+            else -> R.string.desktop_perception_unavailable
+        }
+    )
+
     private fun showDesktopAuthorizationRecordPage(
         device: DesktopSecuritySummary,
         authorization: DesktopControlAuthorization
@@ -20235,6 +20464,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun desktopControlActionLabel(tool: String): String = getString(
         when (tool) {
             DesktopRemoteControl.SCREENSHOT -> R.string.desktop_control_action_view_screen
+            DesktopRemoteControl.PERCEIVE -> R.string.desktop_control_action_perceive
             DesktopRemoteControl.CLICK_XY -> R.string.desktop_control_action_click
             DesktopRemoteControl.TYPE_TEXT -> R.string.desktop_control_action_type
             DesktopRemoteControl.HOTKEY -> R.string.desktop_control_action_hotkey
@@ -20460,7 +20690,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             val streamFrame = payload.optString("type") == "desktop_action_receipt" &&
                 payload.optJSONObject("output")?.optBoolean("stream_frame", false) == true
             if (streamFrame && updateActiveDesktopScreenshot(desktopId)) return true
-            desktopControlDevices().firstOrNull { it.id == desktopId }?.let(::showDesktopRemoteControlPage)
+            desktopControlDevices().firstOrNull { it.id == desktopId }?.let { device ->
+                if (activeDesktopPerceptionId == desktopId) {
+                    showDesktopPerceptionPage(device)
+                } else {
+                    showDesktopRemoteControlPage(device)
+                }
+            }
         }
         return true
     }
@@ -23218,6 +23454,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ?.takeIf { it != preserveDesktopControlId }
             ?.let(DesktopRemoteControl::stopScreenshotStream)
         activeDesktopControlId = preserveDesktopControlId
+        activeDesktopPerceptionId = null
         activeDesktopScreenView = null
         activeDesktopScreenPlaceholder = null
         if (!renderingControlCenterDestination &&
@@ -23258,6 +23495,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun hideFeaturePage() {
         activeDesktopControlId?.let(DesktopRemoteControl::stopScreenshotStream)
         activeDesktopControlId = null
+        activeDesktopPerceptionId = null
         activeDesktopScreenView = null
         activeDesktopScreenPlaceholder = null
         featureBackAction = null
