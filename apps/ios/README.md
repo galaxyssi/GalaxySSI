@@ -125,6 +125,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style global capability observations for local-only authorization, MCP, agent, Home Assistant, custom-device, and resource-health lifecycle events
 - Android-style Global Memory durable context compiler with topic/project graph relevance, entity relation expansion, temporal world selection, untrusted evidence prompt sections, conflict notices, and bounded output
 - Android-style Global Memory evolution safeguards for approval/rejection application, supersession chain integrity, inbox candidate isolation, private-candidate redaction, review/audit outcome records, and strengthened evidence merging
+- Android-style Global Memory critic audit for expired memory retirement, duplicate consolidation, unresolved conflict and stale candidate findings, theme clustering, and audit scheduling
 - Android-compatible encrypted `.hcbak` backup envelope with iOS local state, Link peers, voice settings, messages, and cloud API secrets restore
 - QR scanning with AVFoundation
 - Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, and voice routing preferences

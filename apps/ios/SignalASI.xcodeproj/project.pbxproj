@@ -50,6 +50,7 @@
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
     A10000000000000000000127 /* GlobalMemoryContextModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000127 /* GlobalMemoryContextModels.swift */; };
     A10000000000000000000128 /* GlobalMemoryEvolutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000128 /* GlobalMemoryEvolutionModels.swift */; };
+    A10000000000000000000129 /* GlobalMemoryAuditModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000129 /* GlobalMemoryAuditModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -61,6 +62,7 @@
     A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000209 /* GlobalMemoryTests.swift */; };
     A10000000000000000000210 /* GlobalMemoryContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000210 /* GlobalMemoryContextTests.swift */; };
     A10000000000000000000211 /* GlobalMemoryEvolutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000211 /* GlobalMemoryEvolutionTests.swift */; };
+    A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000212 /* GlobalMemoryAuditTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -109,6 +111,7 @@
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000127 /* GlobalMemoryContextModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryContextModels.swift; sourceTree = "<group>"; };
     A20000000000000000000128 /* GlobalMemoryEvolutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryEvolutionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000129 /* GlobalMemoryAuditModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryAuditModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -120,6 +123,7 @@
     A20000000000000000000209 /* GlobalMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000210 /* GlobalMemoryContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryContextTests.swift; sourceTree = "<group>"; };
     A20000000000000000000211 /* GlobalMemoryEvolutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryEvolutionTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000212 /* GlobalMemoryAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryAuditTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -169,6 +173,7 @@
         A20000000000000000000126 /* GlobalMemoryModels.swift */,
         A20000000000000000000127 /* GlobalMemoryContextModels.swift */,
         A20000000000000000000128 /* GlobalMemoryEvolutionModels.swift */,
+        A20000000000000000000129 /* GlobalMemoryAuditModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -201,6 +206,7 @@
         A20000000000000000000209 /* GlobalMemoryTests.swift */,
         A20000000000000000000210 /* GlobalMemoryContextTests.swift */,
         A20000000000000000000211 /* GlobalMemoryEvolutionTests.swift */,
+        A20000000000000000000212 /* GlobalMemoryAuditTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -326,6 +332,7 @@
         A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */,
         A10000000000000000000127 /* GlobalMemoryContextModels.swift in Sources */,
         A10000000000000000000128 /* GlobalMemoryEvolutionModels.swift in Sources */,
+        A10000000000000000000129 /* GlobalMemoryAuditModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -358,6 +365,7 @@
         A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */,
         A10000000000000000000210 /* GlobalMemoryContextTests.swift in Sources */,
         A10000000000000000000211 /* GlobalMemoryEvolutionTests.swift in Sources */,
+        A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
