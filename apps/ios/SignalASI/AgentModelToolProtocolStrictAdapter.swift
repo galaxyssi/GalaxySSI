@@ -324,9 +324,20 @@ class StrictAgentModelToolProtocolAdapter: AgentModelToolProtocolAdapter {
       "output": .object(result.output),
       "message": .string(result.message)
     ]
-    if !result.errorMessage.isBlank {
+    if let error = result.error {
+      object["error"] = .object([
+        "code": .string(error.code),
+        "message": .string(error.message),
+        "retryable": .bool(error.retryable),
+        "details": .object(error.details)
+      ])
+    } else if !result.errorMessage.isBlank {
       object["error"] = .string(result.errorMessage)
     }
+    if let invocationId = result.invocationId {
+      object["invocation_id"] = .string(invocationId)
+    }
+    object["retry_count"] = .int(Int64(result.retryCount))
     if let nativeResult = result.nativeResult {
       object["native_result"] = nativeResult.toJsonValue()
     }
