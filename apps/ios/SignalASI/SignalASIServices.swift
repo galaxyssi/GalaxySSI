@@ -451,7 +451,7 @@ struct CloudModelClient {
     throw SignalASIError.unsupportedResponse
   }
 
-  private func jsonRequest(url: String, apiKey: String) throws -> URLRequest {
+  func jsonRequest(url: String, apiKey: String) throws -> URLRequest {
     guard let endpoint = URL(string: url) else {
       throw SignalASIError.invalidPayload("Cloud endpoint is not a URL.")
     }
@@ -466,7 +466,7 @@ struct CloudModelClient {
     return request
   }
 
-  private func responseObject(for request: URLRequest) async throws -> [String: Any] {
+  func responseObject(for request: URLRequest) async throws -> [String: Any] {
     let (data, response) = try await URLSession.shared.data(for: request)
     if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
       let body = String(data: data, encoding: .utf8) ?? ""

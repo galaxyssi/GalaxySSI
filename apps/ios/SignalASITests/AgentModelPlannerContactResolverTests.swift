@@ -28,6 +28,14 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
     let resolution = resolver.resolve(settings: settings)
     let provider = resolver.makePlanningProvider(settings: settings)
     let planner = resolver.makePlanner(settings: settings)
+    let toolLoopProvider = try resolver.makeToolLoopPlanningProvider(
+      settings: settings,
+      toolRegistry: AgentNativeToolRegistry()
+    )
+    let toolLoopPlanner = try resolver.makeToolLoopPlanner(
+      settings: settings,
+      toolRegistry: AgentNativeToolRegistry()
+    )
 
     XCTAssertEqual(resolution?.contact.id, "cloud:anthropic")
     XCTAssertEqual(resolution?.contactId, "cloud:anthropic")
@@ -35,6 +43,8 @@ final class AgentModelPlannerContactResolverTests: XCTestCase {
     XCTAssertEqual(resolution?.modelProfile, "claude-planner")
     XCTAssertEqual(provider?.contact.id, "cloud:anthropic")
     XCTAssertEqual(planner?.modelProfile, "claude-planner")
+    XCTAssertNotNil(toolLoopProvider)
+    XCTAssertEqual(toolLoopPlanner?.modelProfile, "claude-planner")
   }
 
   func testAgentModelPlannerContactResolverFallsBackToFirstReadyStoredContact() {

@@ -28,6 +28,52 @@ final class CloudModelAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(call.prompt, "planner prompt")
   }
 
+  func testCloudModelNativeToolAdapterForwardsNativeToolTurns() async throws {
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+    let contact = try store.addCloudModelContact(
+      displayName: "Planner",
+      provider: "OpenAI",
+      modelId: "planner-model",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-live-key",
+      apiStyle: .openAICompatible
+    )
+    let catalog = [try nativeToolDescriptor(id: "phone.test.echo")]
+    let sender = RecordingNativeToolSender(response: AgentModelResponse(assistantText: "Done"))
+    let adapter = CloudModelNativeToolAdapter(
+      contact: contact,
+      store: store,
+      catalog: catalog,
+      sender: sender
+    )
+    let request = AgentModelRequest(
+      sessionId: "session-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      taskId: "task-1",
+      workspaceId: "workspace-1",
+      round: 1,
+      messages: [.user("Use the phone tool.")],
+      toolManifestJson: "{}",
+      toolManifestSha256: "hash",
+      remainingToolCalls: 4,
+      remainingTokens: 1_000,
+      remainingTimeMillis: 10_000,
+      maxDepth: 2,
+      cancellationToken: .none
+    )
+
+    let response = try await adapter.complete(request)
+
+    let call = try sender.calls.singleValue()
+    XCTAssertEqual(response.assistantText, "Done")
+    XCTAssertEqual(call.contact.id, contact.id)
+    XCTAssertTrue(call.store === store)
+    XCTAssertEqual(call.request.turnId, "turn-1")
+    XCTAssertEqual(call.catalog.map(\.id), ["phone.test.echo"])
+  }
+
   func testCloudModelClientStructuredRejectsPlaceholderCredentialBeforeNetwork() async throws {
     let secrets = InMemorySecretStore()
     let store = makeStore(secrets: secrets)
@@ -79,6 +125,19 @@ final class CloudModelAgentPlanningProviderTests: XCTestCase {
     defaults.removePersistentDomain(forName: suite)
     return SignalASIStore(defaults: defaults, secrets: secrets)
   }
+
+  private func nativeToolDescriptor(id: String) throws -> AgentNativeToolDescriptor {
+    try AgentNativeToolDescriptor(
+      id: id,
+      version: "1.0.0",
+      title: id,
+      description: "Cloud native tool adapter test tool.",
+      location: .phone,
+      inputSchema: AgentNativeToolDescriptor.objectSchema(),
+      outputSchema: AgentNativeToolDescriptor.objectSchema(),
+      risk: .low
+    )
+  }
 }
 
 private final class RecordingStructuredSender: CloudModelStructuredSending {
@@ -104,6 +163,32 @@ private final class RecordingStructuredSender: CloudModelStructuredSending {
   ) async throws -> String {
     calls.append(Call(contact: contact, store: store, systemPrompt: systemPrompt, prompt: prompt))
     return raw
+  }
+}
+
+private final class RecordingNativeToolSender: CloudModelNativeToolSending {
+  struct Call {
+    var contact: SignalASIContact
+    var store: SignalASIStore
+    var request: AgentModelRequest
+    var catalog: [AgentNativeToolDescriptor]
+  }
+
+  var response: AgentModelResponse
+  var calls: [Call] = []
+
+  init(response: AgentModelResponse) {
+    self.response = response
+  }
+
+  func sendNativeToolTurn(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    request: AgentModelRequest,
+    catalog: [AgentNativeToolDescriptor]
+  ) async throws -> AgentModelResponse {
+    calls.append(Call(contact: contact, store: store, request: request, catalog: catalog))
+    return response
   }
 }
 
