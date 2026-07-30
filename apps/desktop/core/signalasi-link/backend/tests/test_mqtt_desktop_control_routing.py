@@ -86,6 +86,13 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             "access": grant_for_executor(True),
         }
         self.published: list[dict] = []
+        self.publish_durability: list[bool | None] = []
+
+        def capture_publish(_mqtt, _wire, payload, *, durable=None):
+            self.published.append(dict(payload))
+            self.publish_durability.append(durable)
+            return True
+
         self.patches = [
             patch.object(desktop_control, "desktop_control_manager", return_value=self.manager),
             patch.object(mqtt_bridge, "desktop_id", return_value="desktop-test"),
@@ -99,7 +106,7 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             patch.object(
                 mqtt_bridge,
                 "_publish_phone_payload",
-                side_effect=lambda _mqtt, _wire, payload: self.published.append(dict(payload)) or True,
+                side_effect=capture_publish,
             ),
         ]
         for item in self.patches:
@@ -159,8 +166,32 @@ class MqttDesktopControlRoutingTests(unittest.TestCase):
             [item["type"] for item in self.published],
         )
         self.assertEqual("succeeded", self.published[-1]["status"])
-        self.assertEqual(3, self.published[-1]["receipt_version"])
+        self.assertEqual(4, self.published[-1]["receipt_version"])
         self.assertTrue(self.published[-1]["signature"])
+
+    def test_low_rate_screen_frame_is_non_durable_and_omits_running_event(self) -> None:
+        authorization = self.authorize()
+        request = self.request(authorization)
+        request.update({
+            "tool_id": desktop_control.SCREENSHOT,
+            "input": {"stream_frame": True, "stream_fps": 2},
+        })
+
+        handled = mqtt_bridge._route_desktop_control_payload(
+            object(),
+            self.client,
+            self.envelope(),
+            request,
+            "control",
+        )
+
+        self.assertTrue(handled)
+        self.assertEqual([mqtt_bridge.DESKTOP_ACTION_RECEIPT_TYPE], [
+            item["type"] for item in self.published
+        ])
+        self.assertEqual([False], self.publish_durability)
+        self.assertTrue(self.published[0]["output"]["stream_frame"])
+        self.assertEqual(2, self.published[0]["output"]["stream_fps"])
 
     def test_unapproved_phone_receives_failure_without_execution(self) -> None:
         self.manager.update_settings(enabled=True)

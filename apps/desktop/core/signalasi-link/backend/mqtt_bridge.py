@@ -976,6 +976,12 @@ def _route_desktop_control_payload(
         return True
 
     wire_payload = {"_client_route_id": paired_client["client_route_id"], "scheme": "signal"}
+    stream_frame = (
+        message_type == DESKTOP_EXECUTOR_REQUEST_TYPE
+        and isinstance(payload.get("input"), dict)
+        and payload["input"].get("stream_frame") is True
+    )
+    durable_reply = not stream_frame
     if not has_scope(paired_client, DESKTOP_CONTROL):
         receipt = _desktop_control_failure_receipt(
             payload,
@@ -989,7 +995,7 @@ def _route_desktop_control_payload(
             "sender": "system",
             "time": time.time(),
         })
-        _publish_phone_payload(mqttc, wire_payload, receipt)
+        _publish_phone_payload(mqttc, wire_payload, receipt, durable=durable_reply)
         return True
     if not DESKTOP_CONTROL_REQUEST_SLOTS.acquire(blocking=False):
         receipt = _desktop_control_failure_receipt(
@@ -1000,7 +1006,7 @@ def _route_desktop_control_payload(
             retryable=True,
         )
         receipt.update({"desktop_id": desktop_id(), "desktop_name": desktop_name(), "sender": "system", "time": time.time()})
-        _publish_phone_payload(mqttc, wire_payload, receipt)
+        _publish_phone_payload(mqttc, wire_payload, receipt, durable=durable_reply)
         return True
 
     def execute() -> None:
@@ -1036,7 +1042,7 @@ def _route_desktop_control_payload(
                 "sender": "system",
                 "time": time.time(),
             })
-            _publish_phone_payload(mqttc, wire_payload, receipt)
+            _publish_phone_payload(mqttc, wire_payload, receipt, durable=durable_reply)
         except Exception as exc:
             log.warning("Desktop control request failed action=%s: %s", payload.get("action_id"), exc)
             receipt = _desktop_control_failure_receipt(
@@ -1046,7 +1052,7 @@ def _route_desktop_control_payload(
                 str(exc),
             )
             receipt.update({"desktop_id": desktop_id(), "desktop_name": desktop_name(), "sender": "system", "time": time.time()})
-            _publish_phone_payload(mqttc, wire_payload, receipt)
+            _publish_phone_payload(mqttc, wire_payload, receipt, durable=durable_reply)
         finally:
             DESKTOP_CONTROL_REQUEST_SLOTS.release()
 

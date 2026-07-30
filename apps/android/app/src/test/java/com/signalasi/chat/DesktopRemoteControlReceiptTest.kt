@@ -27,7 +27,7 @@ class DesktopRemoteControlReceiptTest {
         val receipt = receipt(request, pending)
 
         assertEquals(
-            "320b5809d533c2407684646af17dfae82422b4bd17ce4784909a72898629cee7",
+            "81004d85121c63e3d5c0352bd805ba46c11c298a00b2d4030b1552ee880ba847",
             pending.requestSha256
         )
         assertTrue(verify(receipt, pending))
@@ -161,6 +161,46 @@ class DesktopRemoteControlReceiptTest {
         assertTrue(gate.claim("desktop-1", "action-6", 3_500L, 2_501L))
         gate.clear("desktop-1")
         assertTrue(gate.claim("desktop-1", "action-7", 4_000L, 3_000L))
+    }
+
+    @Test
+    fun lowRateStreamPolicyAcceptsOnlyOneToThreeFramesPerSecond() {
+        assertEquals(null, DesktopScreenshotStreamPolicy.normalizeFps(0))
+        assertEquals(1, DesktopScreenshotStreamPolicy.normalizeFps(1))
+        assertEquals(2, DesktopScreenshotStreamPolicy.normalizeFps(2))
+        assertEquals(3, DesktopScreenshotStreamPolicy.normalizeFps(3))
+        assertEquals(null, DesktopScreenshotStreamPolicy.normalizeFps(4))
+        assertEquals(1_000L, DesktopScreenshotStreamPolicy.intervalMillis(1))
+        assertEquals(500L, DesktopScreenshotStreamPolicy.intervalMillis(2))
+        assertEquals(333L, DesktopScreenshotStreamPolicy.intervalMillis(3))
+    }
+
+    @Test
+    fun pendingRequestBindsLiveFrameModeAndRate() {
+        val liveRequest = JSONObject(request().toString())
+            .put(
+                "input",
+                JSONObject()
+                    .put("stream_frame", true)
+                    .put("stream_fps", 3)
+            )
+        val live = DesktopControlReceiptProtocol.pendingRequest(
+            liveRequest,
+            "client-route-1",
+            controllerFingerprint,
+            "signalasi:phone"
+        )
+        val still = DesktopControlReceiptProtocol.pendingRequest(
+            request(),
+            "client-route-1",
+            controllerFingerprint,
+            "signalasi:phone"
+        )
+
+        assertTrue(live.streamFrame)
+        assertFalse(still.streamFrame)
+        assertNotEquals(live.inputSha256, still.inputSha256)
+        assertNotEquals(live.requestSha256, still.requestSha256)
     }
 
     private fun request(): JSONObject = JSONObject()

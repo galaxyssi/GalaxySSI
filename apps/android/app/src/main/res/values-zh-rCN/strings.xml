@@ -231,6 +231,10 @@
     <string name="desktop_control_repair_executor_required">请重新配对，并勾选“启动桌面执行器”</string>
     <string name="desktop_control_refresh_screen">刷新画面</string>
     <string name="desktop_control_refresh_screen_subtitle">获取一张压缩后的电脑画面</string>
+    <string name="desktop_control_stream_title">低帧率实时画面</string>
+    <string name="desktop_control_stream_subtitle">加密自适应刷新，进入后台后暂停</string>
+    <string name="desktop_control_stream_dialog_title">刷新帧率</string>
+    <string name="desktop_control_stream_rate">%1$d FPS</string>
     <string name="desktop_control_screen_metadata">%1$dx%2$d · %3$.1f KB · %4$s</string>
     <string name="desktop_control_request_sent">加密请求已发送</string>
     <string name="desktop_control_request_failed">远程控制请求发送失败</string>
@@ -309,7 +313,7 @@
     <string name="desktop_control_copied_output_digest">已复制输出摘要</string>
     <string name="desktop_control_copied_evidence_digest">已复制证据摘要</string>
     <string name="desktop_control_no_recent_activity">暂无远程控制记录</string>
-    <string name="desktop_control_security_footer">MQTT 只负责传输。每个动作都会端到端加密、绑定设备身份、防止重放，并写入电脑本地审计记录。</string>
+    <string name="desktop_control_security_footer">MQTT 只负责传输。控制动作会端到端加密、绑定设备身份、防止重放并写入审计；实时画面帧经过签名、仅临时传输且不会留存。</string>
     <string name="automation_title">自动化</string>
     <string name="automation_hero_title">任务自动化</string>
     <string name="automation_hero_subtitle">让 AI 主动处理固定任务</string>

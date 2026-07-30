@@ -7,8 +7,21 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 
 internal const val DESKTOP_SCREENSHOT_BYTE_LIMIT = 100_000
+internal const val DESKTOP_SCREENSHOT_STREAM_MIN_FPS = 1
+internal const val DESKTOP_SCREENSHOT_STREAM_MAX_FPS = 3
+
+internal object DesktopScreenshotStreamPolicy {
+    fun normalizeFps(fps: Int): Int? =
+        fps.takeIf { it in DESKTOP_SCREENSHOT_STREAM_MIN_FPS..DESKTOP_SCREENSHOT_STREAM_MAX_FPS }
+
+    fun intervalMillis(fps: Int): Long =
+        1_000L / requireNotNull(normalizeFps(fps))
+}
 
 data class DesktopControlAuthorization(
     val authorizationId: String,
@@ -162,7 +175,9 @@ data class DesktopRemoteControlSnapshot(
     val lastActionStatus: String,
     val lastActionSummary: String,
     val lastActionAt: Long,
-    val screenshot: DesktopControlScreenshot?
+    val screenshot: DesktopControlScreenshot?,
+    val streamFps: Int,
+    val streamActive: Boolean
 ) {
     val authorized: Boolean
         get() = fullDesktopExecutor && enabled && currentAuthorization?.status == "active"
@@ -177,7 +192,8 @@ internal data class DesktopControlPendingRequest(
     val desktopSessionId: String,
     val requestSha256: String,
     val inputSha256: String,
-    val expiresAt: Long
+    val expiresAt: Long,
+    val streamFrame: Boolean
 )
 
 internal class DesktopScreenshotRequestGate {
@@ -205,7 +221,7 @@ internal class DesktopScreenshotRequestGate {
 }
 
 internal object DesktopControlReceiptProtocol {
-    const val CONTRACT_VERSION = "signalasi.desktop-control/1.2"
+    const val CONTRACT_VERSION = "signalasi.desktop-control/1.3"
     const val RECEIPT_VERSION = 4
 
     fun pendingRequest(
@@ -224,6 +240,7 @@ internal object DesktopControlReceiptProtocol {
             desktopSessionId = payload.optString("desktop_session_id"),
             inputSha256 = digest(input),
             expiresAt = payload.optLong("expires_at"),
+            streamFrame = input.optBoolean("stream_frame", false),
             requestSha256 = digest(JSONObject()
                 .put("contract_version", CONTRACT_VERSION)
                 .put("type", "desktop_executor_request")
@@ -411,9 +428,19 @@ object DesktopRemoteControl {
         var screenshot: DesktopControlScreenshot? = null
     )
 
+    private data class ScreenshotStreamState(
+        val fps: Int,
+        var future: ScheduledFuture<*>? = null
+    )
+
     private val runtime = ConcurrentHashMap<String, RuntimeState>()
     private val pendingActions = ConcurrentHashMap<String, DesktopControlPendingRequest>()
     private val screenshotRequestGate = DesktopScreenshotRequestGate()
+    private val screenshotStreamLock = Any()
+    private val screenshotStreams = mutableMapOf<String, ScreenshotStreamState>()
+    private val screenshotStreamExecutor = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "signalasi-desktop-screen-stream").apply { isDaemon = true }
+    }
 
     fun handleInbound(context: Context, payload: JSONObject): Boolean {
         val type = payload.optString("type")
@@ -463,6 +490,9 @@ object DesktopRemoteControl {
             "desktop_control_authorization_changed" -> {
                 val authorization = payload.optJSONObject("authorization")
                 mergeAuthorization(context, desktopId, payload.optString("desktop_name"), authorization)
+                if (authorization?.optString("status") != "active") {
+                    stopScreenshotStream(desktopId)
+                }
                 runtime.computeIfAbsent(desktopId) { RuntimeState() }.apply {
                     status = authorization?.optString("status").orEmpty()
                     summary = payload.optString("reason")
@@ -479,6 +509,10 @@ object DesktopRemoteControl {
                 val actionId = payload.optString("action_id")
                 val link = SignalASILinkProtocol.serverLink(context, desktopId)
                 val pending = pendingActions[actionId]
+                pendingActions.remove(actionId)
+                pending?.takeIf { it.toolId == SCREENSHOT }?.let {
+                    screenshotRequestGate.release(it.desktopId, actionId)
+                }
                 val verified = link != null && DesktopControlReceiptProtocol.verify(
                     payload = payload,
                     expectedSignerId = link.signalName,
@@ -496,18 +530,24 @@ object DesktopRemoteControl {
                     }
                 )
                 if (!verified) {
+                    if (pending?.streamFrame == true) stopScreenshotStream(desktopId)
                     state.status = "unverified"
                     state.summary = "desktop_action_receipt_unverified"
                     state.at = System.currentTimeMillis()
                     return true
                 }
-                pendingActions.remove(actionId)
-                pending?.takeIf { it.toolId == SCREENSHOT }?.let {
-                    screenshotRequestGate.release(it.desktopId, actionId)
+                val streamFrame = pending?.streamFrame == true ||
+                    payload.optJSONObject("output")?.optBoolean("stream_frame", false) == true
+                if (streamFrame && payload.optString("status") != "succeeded") {
+                    stopScreenshotStream(desktopId)
+                    state.status = payload.optString("status")
+                    state.summary = payload.optString("summary")
+                    state.at = payload.optLong("completed_at", System.currentTimeMillis())
+                } else if (!streamFrame) {
+                    state.status = payload.optString("status")
+                    state.summary = payload.optString("summary")
+                    state.at = payload.optLong("completed_at", System.currentTimeMillis())
                 }
-                state.status = payload.optString("status")
-                state.summary = payload.optString("summary")
-                state.at = payload.optLong("completed_at", System.currentTimeMillis())
                 (
                     screenshotFrom(payload.optJSONObject("post_screenshot"))
                         ?: screenshotFrom(payload.optJSONObject("output")?.optJSONObject("screenshot"))
@@ -516,10 +556,10 @@ object DesktopRemoteControl {
                             state.screenshot = candidate
                         }
                     }
-                if (payload.optString("status") == "succeeded") {
+                if (!streamFrame && payload.optString("status") == "succeeded") {
                     touchAuthorization(context, desktopId, state.at)
                 }
-                storeVerifiedReceipt(context, desktopId, payload)
+                if (!streamFrame) storeVerifiedReceipt(context, desktopId, payload)
             }
         }
         return true
@@ -550,6 +590,7 @@ object DesktopRemoteControl {
             ?: authorizations.firstOrNull { it.status == "active" }
             ?: authorizations.firstOrNull { it.status == "pending" }
         val live = runtime[desktopId]
+        val stream = streamState(desktopId)
         return DesktopRemoteControlSnapshot(
             desktopId = desktopId,
             desktopName = item.optString("desktop_name", "SignalASI Desktop"),
@@ -569,14 +610,73 @@ object DesktopRemoteControl {
             lastActionStatus = live?.status.orEmpty(),
             lastActionSummary = live?.summary.orEmpty(),
             lastActionAt = live?.at ?: 0L,
-            screenshot = live?.screenshot
+            screenshot = live?.screenshot,
+            streamFps = stream?.fps ?: 0,
+            streamActive = stream?.future?.let {
+                !it.isCancelled && !it.isDone
+            } == true
         )
     }
 
     fun requestAuthorizations(desktopId: String): Boolean =
         SignalASIMqttClient.publishDesktopControlAuthorizationsRequest(desktopId)
 
-    fun requestScreenshot(desktopId: String): Boolean = requestAction(desktopId, SCREENSHOT, JSONObject())
+    fun requestScreenshot(desktopId: String): Boolean =
+        requestAction(desktopId, SCREENSHOT, JSONObject())
+
+    fun startScreenshotStream(desktopId: String, fps: Int): Boolean {
+        val normalized = DesktopScreenshotStreamPolicy.normalizeFps(fps) ?: return false
+        val context = SignalASIMqttClient.applicationContext() ?: return false
+        if (!snapshot(context, desktopId).authorized) return false
+        synchronized(screenshotStreamLock) {
+            screenshotStreams.remove(desktopId)?.future?.cancel(false)
+            val state = ScreenshotStreamState(normalized)
+            screenshotStreams[desktopId] = state
+            scheduleScreenshotStreamLocked(desktopId, state)
+        }
+        return true
+    }
+
+    fun stopScreenshotStream(desktopId: String) {
+        synchronized(screenshotStreamLock) {
+            screenshotStreams.remove(desktopId)?.future?.cancel(false)
+        }
+        clearPendingStreamFrames(desktopId)
+    }
+
+    fun pauseScreenshotStreams() {
+        val desktopIds = synchronized(screenshotStreamLock) {
+            screenshotStreams.values.forEach { state ->
+                state.future?.cancel(false)
+                state.future = null
+            }
+            screenshotStreams.keys.toList()
+        }
+        desktopIds.forEach { desktopId ->
+            clearPendingStreamFrames(desktopId)
+        }
+    }
+
+    fun resumeScreenshotStream(desktopId: String): Boolean = synchronized(screenshotStreamLock) {
+        val state = screenshotStreams[desktopId] ?: return@synchronized false
+        if (state.future?.let { !it.isCancelled && !it.isDone } == true) {
+            return@synchronized true
+        }
+        scheduleScreenshotStreamLocked(desktopId, state)
+        true
+    }
+
+    fun stopAllScreenshotStreams() {
+        val desktopIds = synchronized(screenshotStreamLock) {
+            val ids = screenshotStreams.keys.toList()
+            screenshotStreams.values.forEach { it.future?.cancel(false) }
+            screenshotStreams.clear()
+            ids
+        }
+        desktopIds.forEach { desktopId ->
+            clearPendingStreamFrames(desktopId)
+        }
+    }
 
     fun click(
         desktopId: String,
@@ -633,6 +733,7 @@ object DesktopRemoteControl {
         )
 
     fun clearDesktop(context: Context, desktopId: String) {
+        stopScreenshotStream(desktopId)
         val root = read(context)
         root.remove(desktopId)
         write(context, root)
@@ -641,7 +742,12 @@ object DesktopRemoteControl {
         pendingActions.entries.removeIf { it.value.desktopId == desktopId }
     }
 
-    private fun requestAction(desktopId: String, toolId: String, input: JSONObject): Boolean {
+    private fun requestAction(
+        desktopId: String,
+        toolId: String,
+        input: JSONObject,
+        durable: Boolean = true
+    ): Boolean {
         val context = SignalASIMqttClient.applicationContext() ?: return false
         val link = SignalASILinkProtocol.serverLink(context, desktopId) ?: return false
         val authorization = snapshot(context, desktopId).currentAuthorization
@@ -677,17 +783,67 @@ object DesktopRemoteControl {
             desktopId
         )
         pendingActions[actionId] = pending
-        runtime.computeIfAbsent(desktopId) { RuntimeState() }.apply {
-            status = "sending"
-            summary = toolId
-            at = now
+        if (!pending.streamFrame) {
+            runtime.computeIfAbsent(desktopId) { RuntimeState() }.apply {
+                status = "sending"
+                summary = toolId
+                at = now
+            }
         }
-        val published = SignalASIMqttClient.publishDesktopExecutorRequest(desktopId, payload)
+        val published = SignalASIMqttClient.publishDesktopExecutorRequest(
+            desktopId,
+            payload,
+            durable = durable
+        )
         if (!published) {
             pendingActions.remove(actionId)
             if (toolId == SCREENSHOT) screenshotRequestGate.release(desktopId, actionId)
         }
         return published
+    }
+
+    private fun scheduleScreenshotStreamLocked(
+        desktopId: String,
+        state: ScreenshotStreamState
+    ) {
+        state.future = screenshotStreamExecutor.scheduleWithFixedDelay(
+            {
+                if (!SignalASIMqttClient.isConnected()) return@scheduleWithFixedDelay
+                val context = SignalASIMqttClient.applicationContext()
+                    ?: return@scheduleWithFixedDelay
+                val snapshot = snapshot(context, desktopId)
+                val sessionValid = snapshot.currentAuthorization?.desktopSessionExpiresAt
+                    ?.let { it > System.currentTimeMillis() } == true
+                if (!snapshot.authorized || !sessionValid) {
+                    stopScreenshotStream(desktopId)
+                    return@scheduleWithFixedDelay
+                }
+                requestAction(
+                    desktopId,
+                    SCREENSHOT,
+                    JSONObject()
+                        .put("stream_frame", true)
+                        .put("stream_fps", state.fps),
+                    durable = false
+                )
+            },
+            0L,
+            DesktopScreenshotStreamPolicy.intervalMillis(state.fps),
+            TimeUnit.MILLISECONDS
+        )
+    }
+
+    private fun streamState(desktopId: String): ScreenshotStreamState? =
+        synchronized(screenshotStreamLock) { screenshotStreams[desktopId] }
+
+    private fun clearPendingStreamFrames(desktopId: String) {
+        pendingActions.entries
+            .filter { it.value.desktopId == desktopId && it.value.streamFrame }
+            .forEach { entry ->
+                if (pendingActions.remove(entry.key, entry.value)) {
+                    screenshotRequestGate.release(desktopId, entry.key)
+                }
+            }
     }
 
     private fun updateDesktopState(
