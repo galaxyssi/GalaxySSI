@@ -89,6 +89,7 @@ enum AgentIOSSystemNativeToolCatalog {
     downloadEnqueue,
     downloadQuery,
     downloadRemove,
+    devicePolicyStatus,
     wifiStatus,
     audioStatus,
     vpnStatus,
@@ -392,7 +393,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       devicePolicyStatus,
       "Read device policy status",
-      "Android device-policy descriptor retained for planning; iOS supervised MDM state is not available to normal apps.",
+      "Reads app-visible iOS device policy boundary status and reports that Android device-owner operations are unavailable.",
       .low,
       ["device_policy.status"]
     ),
@@ -582,6 +583,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if specification.id == devicePolicyStatus {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosDevicePolicyStatusPermission,
+          title: "App-visible iOS device policy status",
+          description: "Limits execution to device policy boundaries visible from the SignalASI iOS app sandbox."
+        )
+      ]
+    }
     if downloadToolIds.contains(specification.id) {
       return [
         AgentNativePermissionRequirement(
@@ -657,6 +667,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == vpnStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS NetworkExtension VPN status executor."
     }
+    if id == devicePolicyStatus {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS app-visible device policy status executor."
+    }
     return "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor."
   }
 
@@ -697,6 +710,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == vpnStatus {
       return vpnStatusAvailability
     }
+    if id == devicePolicyStatus {
+      return devicePolicyStatusAvailability
+    }
     return unavailableAvailability
   }
 
@@ -736,6 +752,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == vpnStatus {
       return "network_extension_vpn_status_on_ios15"
+    }
+    if id == devicePolicyStatus {
+      return "ios_app_visible_device_policy_status_on_ios15"
     }
     return "descriptor_only_unavailable_on_ios15"
   }
@@ -831,6 +850,13 @@ enum AgentIOSSystemNativeToolCatalog {
     )
   }
 
+  private static var devicePolicyStatusAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor reports app-visible device policy boundaries; lock and reboot remain unavailable to normal iOS apps."
+    )
+  }
+
   private static func handoffOutputSchema() -> AgentMcpJSONObject {
     input([
       "handoff_kind": stringSchema(maxLength: 64),
@@ -904,6 +930,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosSMSComposePermission = "signalasi.scope.ios_user_visible_sms_compose"
   static let iosTelephonyStatusPermission = "signalasi.scope.ios_app_visible_telephony_status"
   static let iosVPNStatusPermission = "signalasi.scope.ios_app_managed_vpn_status"
+  static let iosDevicePolicyStatusPermission = "signalasi.scope.ios_app_visible_device_policy_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"

@@ -71,6 +71,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("NetworkExtension"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "network_extension_vpn_status_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.devicePolicyStatus {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("device policy boundaries"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "ios_app_visible_device_policy_status_on_ios15")
       } else {
         XCTAssertEqual(descriptor.availability.status, .unavailable)
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
@@ -143,6 +147,13 @@ extension SignalASIStoreTests {
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.vpnStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosVPNStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.devicePolicyStatus {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -237,6 +248,15 @@ extension SignalASIStoreTests {
     XCTAssertEqual(vpnStatus.descriptor.availability.status, .available)
     XCTAssertTrue(vpnStatus.descriptor.requiredPermissions.contains {
       $0.id == AgentIOSSystemNativeToolCatalog.iosVPNStatusPermission
+    })
+
+    let devicePolicyStatus = try XCTUnwrap(definitions.first {
+      $0.id == AgentIOSSystemNativeToolCatalog.devicePolicyStatus
+    })
+    XCTAssertEqual(devicePolicyStatus.descriptor.risk, .low)
+    XCTAssertEqual(devicePolicyStatus.descriptor.availability.status, .available)
+    XCTAssertTrue(devicePolicyStatus.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission
     })
 
     let registry = try AgentNativeToolRegistry(definitions: definitions)
@@ -543,6 +563,55 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["identifiers_included"], .bool(false))
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(23_000))
     XCTAssertEqual(result.metadata["identifiers_included"], .bool(false))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReadsDevicePolicyStatus() throws {
+    struct FakeDevicePolicyProvider: AgentIOSDevicePolicyStatusProviding {
+      func devicePolicyStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        [
+          "admin_active": .bool(false),
+          "device_owner": .bool(false),
+          "profile_owner": .bool(false),
+          "lock_supported": .bool(false),
+          "reboot_supported": .bool(false),
+          "supervised_mdm_status_available": .bool(false),
+          "managed_configuration_visible": .bool(false),
+          "protected_data_available": .bool(true),
+          "platform_management_model": .string("ios_app_sandbox"),
+          "framework": .string("UIKit"),
+          "scope": .string("ios_app_visible_device_policy_status"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+    }
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          devicePolicyProvider: FakeDevicePolicyProvider(),
+          nowMillis: { 24_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.devicePolicyStatus,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["admin_active"], .bool(false))
+    XCTAssertEqual(result.output["device_owner"], .bool(false))
+    XCTAssertEqual(result.output["profile_owner"], .bool(false))
+    XCTAssertEqual(result.output["lock_supported"], .bool(false))
+    XCTAssertEqual(result.output["reboot_supported"], .bool(false))
+    XCTAssertEqual(result.output["platform_management_model"], .string("ios_app_sandbox"))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(24_000))
+    XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
