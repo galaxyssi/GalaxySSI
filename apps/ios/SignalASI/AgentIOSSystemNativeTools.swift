@@ -14,6 +14,10 @@ protocol AgentIOSBiometricStatusProviding {
   func biometricStatus(nowMillis: Int64) -> AgentMcpJSONObject
 }
 
+protocol AgentIOSWifiStatusProviding {
+  func wifiStatus(nowMillis: Int64) -> AgentMcpJSONObject
+}
+
 struct AgentIOSDefaultAudioStatusProvider: AgentIOSAudioStatusProviding {
   func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject {
     #if canImport(AVFoundation)
@@ -99,6 +103,34 @@ struct AgentIOSDefaultAudioStatusProvider: AgentIOSAudioStatusProviding {
     return "other"
   }
   #endif
+}
+
+struct AgentIOSDefaultWifiStatusProvider: AgentIOSWifiStatusProviding {
+  var networkProbeProvider: () -> AgentMediaNetworkProbe
+
+  init(networkProbeProvider: @escaping () -> AgentMediaNetworkProbe = { AgentMediaNetworkDetector.shared.currentProbe }) {
+    self.networkProbeProvider = networkProbeProvider
+  }
+
+  func wifiStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    let probe = networkProbeProvider()
+    let activeWifi = probe.transports.contains("wifi")
+    return [
+      "wifi_enabled": activeWifi ? .bool(true) : .null,
+      "ssid": .string(""),
+      "bssid": .string(""),
+      "rssi": .null,
+      "link_speed_mbps": .null,
+      "active_wifi_transport": .bool(activeWifi),
+      "validated": .bool(activeWifi && probe.validated),
+      "metered": .bool(probe.metered),
+      "constrained": .bool(probe.restricted),
+      "internet_capable": .bool(probe.internetCapable),
+      "identifiers_included": .bool(false),
+      "scope": .string("app_visible_ios_no_wifi_identifiers"),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
 }
 
 struct AgentIOSDefaultBiometricStatusProvider: AgentIOSBiometricStatusProviding {
@@ -202,7 +234,7 @@ enum AgentIOSSystemNativeToolCatalog {
     vpnConsentOpen
   ]
 
-  static let executableToolIds: Set<String> = handoffToolIds.union([audioStatus, biometricStatus])
+  static let executableToolIds: Set<String> = handoffToolIds.union([wifiStatus, audioStatus, biometricStatus])
 
   static var orderedToolIds: [String] {
     specifications.map(\.id)
@@ -378,7 +410,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       wifiStatus,
       "Read Wi-Fi status",
-      "Android Wi-Fi status descriptor retained for planning; iOS exposes only limited network path state through a separate native executor.",
+      "Reads iOS app-visible Wi-Fi transport status without SSID, BSSID, RSSI, or traffic capture.",
       .low,
       ["wifi.status"],
       ["android.permission.ACCESS_WIFI_STATE"]
@@ -610,6 +642,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if specification.id == wifiStatus {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosWifiStatusPermission,
+          title: "App-visible iOS Wi-Fi status",
+          description: "Limits execution to identifier-free NWPath Wi-Fi transport status."
+        )
+      ]
+    }
     if specification.id == biometricStatus {
       return [
         AgentNativePermissionRequirement(
@@ -655,6 +696,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == audioStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
     }
+    if id == wifiStatus {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Wi-Fi status executor."
+    }
     if id == biometricStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS biometric status executor."
     }
@@ -668,6 +712,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == audioStatus {
       return audioStatusAvailability
     }
+    if id == wifiStatus {
+      return wifiStatusAvailability
+    }
     if id == biometricStatus {
       return biometricStatusAvailability
     }
@@ -680,6 +727,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == audioStatus {
       return "av_audio_session_status_on_ios15"
+    }
+    if id == wifiStatus {
+      return "nw_path_wifi_status_on_ios15"
     }
     if id == biometricStatus {
       return "local_authentication_status_on_ios15"
@@ -705,6 +755,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads bounded AVAudioSession status without changing audio settings."
+    )
+  }
+
+  private static var wifiStatusAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor reads bounded NWPath Wi-Fi transport status without network identifiers."
     )
   }
 
@@ -772,6 +829,7 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
+  static let iosWifiStatusPermission = "signalasi.scope.ios_app_visible_wifi_status"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
@@ -784,15 +842,18 @@ enum AgentIOSSystemNativeToolCatalog {
 
 struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
+  var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
 
   init(
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
+    wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.audioProvider = audioProvider
+    self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
   }
@@ -811,6 +872,8 @@ struct AgentIOSSystemNativeToolExecutor {
 
   private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     switch invocation.descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.wifiStatus:
+      return wifiStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.audioStatus:
       return audioStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.biometricStatus:
@@ -855,6 +918,19 @@ struct AgentIOSSystemNativeToolExecutor {
     AgentNativeToolExecutionResult.success(
       output: audioProvider.audioStatus(nowMillis: max(0, nowMillis())),
       message: "Audio status read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
+        "identifiers_included": .bool(false),
+        "settings_changed": .bool(false)
+      ]
+    )
+  }
+
+  private func wifiStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: wifiProvider.wifiStatus(nowMillis: max(0, nowMillis())),
+      message: "Wi-Fi status read",
       metadata: [
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
         "tool_id": .string(invocation.descriptor.id),
