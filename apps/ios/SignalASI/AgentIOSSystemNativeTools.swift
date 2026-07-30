@@ -98,6 +98,10 @@ struct AgentIOSSystemNativeToolExecutor {
       return downloadRemove(invocation)
     case AgentIOSSystemNativeToolCatalog.devicePolicyStatus:
       return devicePolicyStatus(invocation)
+    case AgentIOSSystemNativeToolCatalog.devicePolicyLock:
+      return devicePolicyLock(invocation)
+    case AgentIOSSystemNativeToolCatalog.devicePolicyReboot:
+      return devicePolicyReboot(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiStatus:
       return wifiStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiScanResults:
@@ -334,6 +338,16 @@ struct AgentIOSSystemNativeToolExecutor {
         "settings_changed": .bool(false)
       ]
     )
+  }
+
+  private func devicePolicyLock(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = devicePolicyProvider.lockDevice(nowMillis: max(0, nowMillis()))
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func devicePolicyReboot(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = devicePolicyProvider.rebootDevice(nowMillis: max(0, nowMillis()))
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func wifiStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
