@@ -2,9 +2,16 @@ import Foundation
 #if canImport(AVFoundation)
 import AVFoundation
 #endif
+#if canImport(LocalAuthentication)
+import LocalAuthentication
+#endif
 
 protocol AgentIOSAudioStatusProviding {
   func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject
+}
+
+protocol AgentIOSBiometricStatusProviding {
+  func biometricStatus(nowMillis: Int64) -> AgentMcpJSONObject
 }
 
 struct AgentIOSDefaultAudioStatusProvider: AgentIOSAudioStatusProviding {
@@ -94,6 +101,60 @@ struct AgentIOSDefaultAudioStatusProvider: AgentIOSAudioStatusProviding {
   #endif
 }
 
+struct AgentIOSDefaultBiometricStatusProvider: AgentIOSBiometricStatusProviding {
+  func biometricStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    #if canImport(LocalAuthentication)
+    let biometricContext = LAContext()
+    var biometricError: NSError?
+    let canAuthenticate = biometricContext.canEvaluatePolicy(
+      .deviceOwnerAuthenticationWithBiometrics,
+      error: &biometricError
+    )
+    let deviceContext = LAContext()
+    var deviceError: NSError?
+    let deviceSecure = deviceContext.canEvaluatePolicy(.deviceOwnerAuthentication, error: &deviceError)
+    return [
+      "device_secure": .bool(deviceSecure),
+      "can_authenticate": .bool(canAuthenticate),
+      "can_authenticate_code": .int(Int64(biometricError?.code ?? 0)),
+      "biometry_type": .string(biometryType(biometricContext.biometryType)),
+      "framework": .string("LocalAuthentication"),
+      "authentication_prompted": .bool(false),
+      "scope": .string("app_visible_ios"),
+      "identifiers_included": .bool(false),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+    #else
+    return [
+      "device_secure": .bool(false),
+      "can_authenticate": .bool(false),
+      "can_authenticate_code": .int(-1),
+      "biometry_type": .string("unknown"),
+      "framework": .string("unavailable"),
+      "authentication_prompted": .bool(false),
+      "scope": .string("app_visible_ios_unavailable"),
+      "identifiers_included": .bool(false),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+    #endif
+  }
+
+  #if canImport(LocalAuthentication)
+  private func biometryType(_ type: LABiometryType) -> String {
+    switch type {
+    case .none:
+      return "none"
+    case .touchID:
+      return "touch_id"
+    case .faceID:
+      return "face_id"
+    @unknown default:
+      return "unknown"
+    }
+  }
+  #endif
+}
+
 enum AgentIOSSystemNativeToolCatalog {
   static let telephonyStatus = "signalasi.android.telephony.status"
   static let telephonyCallState = "signalasi.android.telephony.call_state"
@@ -141,7 +202,7 @@ enum AgentIOSSystemNativeToolCatalog {
     vpnConsentOpen
   ]
 
-  static let executableToolIds: Set<String> = handoffToolIds.union([audioStatus])
+  static let executableToolIds: Set<String> = handoffToolIds.union([audioStatus, biometricStatus])
 
   static var orderedToolIds: [String] {
     specifications.map(\.id)
@@ -411,7 +472,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       biometricStatus,
       "Read biometric capability",
-      "Android biometric status descriptor retained for planning; iOS requires a LocalAuthentication-backed status executor.",
+      "Reads iOS LocalAuthentication biometric capability without starting an authentication prompt.",
       .low,
       ["biometric.status"],
       ["android.permission.USE_BIOMETRIC"]
@@ -549,6 +610,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if specification.id == biometricStatus {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosBiometricStatusPermission,
+          title: "App-visible iOS biometric status",
+          description: "Limits execution to LocalAuthentication capability checks without starting authentication."
+        )
+      ]
+    }
     let platform = AgentNativePermissionRequirement(
       id: androidSystemPermission,
       title: "Android system API",
@@ -568,9 +638,7 @@ enum AgentIOSSystemNativeToolCatalog {
     let compatibility = AgentNativeConsentRequirement(
       id: compatibilityConsent,
       title: "Android compatibility boundary",
-      description: specification.id == audioStatus
-        ? "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
-        : "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor.",
+      description: compatibilityConsentDescription(specification.id),
       required: false
     )
     let mirrored = specification.consents.map { consent in
@@ -583,12 +651,25 @@ enum AgentIOSSystemNativeToolCatalog {
     return ([compatibility] + mirrored).sorted { $0.id < $1.id }
   }
 
+  private static func compatibilityConsentDescription(_ id: String) -> String {
+    if id == audioStatus {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
+    }
+    if id == biometricStatus {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS biometric status executor."
+    }
+    return "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor."
+  }
+
   private static func availability(_ id: String) -> AgentNativeToolAvailability {
     if handoffToolIds.contains(id) {
       return handoffAvailability
     }
     if id == audioStatus {
       return audioStatusAvailability
+    }
+    if id == biometricStatus {
+      return biometricStatusAvailability
     }
     return unavailableAvailability
   }
@@ -599,6 +680,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == audioStatus {
       return "av_audio_session_status_on_ios15"
+    }
+    if id == biometricStatus {
+      return "local_authentication_status_on_ios15"
     }
     return "descriptor_only_unavailable_on_ios15"
   }
@@ -621,6 +705,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads bounded AVAudioSession status without changing audio settings."
+    )
+  }
+
+  private static var biometricStatusAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor checks LocalAuthentication biometric capability without prompting."
     )
   }
 
@@ -681,6 +772,7 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
+  static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"
@@ -692,13 +784,16 @@ enum AgentIOSSystemNativeToolCatalog {
 
 struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
+  var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
 
   init(
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
+    biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.audioProvider = audioProvider
+    self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
   }
 
@@ -718,6 +813,8 @@ struct AgentIOSSystemNativeToolExecutor {
     switch invocation.descriptor.id {
     case AgentIOSSystemNativeToolCatalog.audioStatus:
       return audioStatus(invocation)
+    case AgentIOSSystemNativeToolCatalog.biometricStatus:
+      return biometricStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.telephonyDialHandoff:
       return dialHandoff(invocation)
     case AgentIOSSystemNativeToolCatalog.smsComposeHandoff:
@@ -763,6 +860,19 @@ struct AgentIOSSystemNativeToolExecutor {
         "tool_id": .string(invocation.descriptor.id),
         "identifiers_included": .bool(false),
         "settings_changed": .bool(false)
+      ]
+    )
+  }
+
+  private func biometricStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: biometricProvider.biometricStatus(nowMillis: max(0, nowMillis())),
+      message: "Biometric capability read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
+        "authentication_prompted": .bool(false),
+        "identifiers_included": .bool(false)
       ]
     )
   }
