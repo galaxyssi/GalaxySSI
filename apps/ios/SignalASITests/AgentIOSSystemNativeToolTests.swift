@@ -35,6 +35,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("Contacts"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "contacts_search_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.contactsWriteToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("CNSaveRequest"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "contacts_write_on_ios15")
       } else if AgentIOSSystemNativeToolCatalog.downloadToolIds.contains(descriptor.id) {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("URLSession"), descriptor.id)
@@ -74,6 +78,13 @@ extension SignalASIStoreTests {
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.contactsSearch {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosContactsReadPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.contactsWriteToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosContactsWritePermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -118,6 +129,17 @@ extension SignalASIStoreTests {
     XCTAssertTrue(smsSend.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.sms.send" })
     XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("phone_number")))
     XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("message")))
+
+    let contactsUpsert = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.contactsUpsert })
+    let contactsDelete = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.contactsDelete })
+    XCTAssertEqual(contactsUpsert.descriptor.risk, .high)
+    XCTAssertEqual(contactsUpsert.descriptor.idempotency, .idempotencyKeyRequired)
+    XCTAssertTrue(contactsUpsert.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosContactsWritePermission
+    })
+    XCTAssertTrue(contactsUpsert.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.contacts.write" })
+    XCTAssertEqual(contactsDelete.descriptor.risk, .high)
+    XCTAssertEqual(contactsDelete.descriptor.idempotency, .idempotencyKeyRequired)
 
     let downloadEnqueue = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.downloadEnqueue })
     let downloadRemove = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.downloadRemove })
@@ -360,6 +382,134 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["contacts"]?.arrayValue?.first?.objectValue?["display_name"], .string("Alice Example"))
     XCTAssertEqual(result.output["contacts"]?.arrayValue?.first?.objectValue?["phone_number"], .string("+15551234567"))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorWritesContacts() throws {
+    final class FakeContactsWriteProvider: AgentIOSContactsWriteProviding {
+      var upsertCalls: [(contactId: Int64, displayName: String, phoneNumber: String, nowMillis: Int64)] = []
+      var deleteCalls: [(contactId: Int64, nowMillis: Int64)] = []
+
+      func upsertContact(
+        contactId: Int64,
+        displayName: String,
+        phoneNumber: String,
+        nowMillis: Int64
+      ) -> AgentNativeToolExecutionResult {
+        upsertCalls.append((contactId, displayName, phoneNumber, nowMillis))
+        if contactId <= 0 {
+          return AgentNativeToolExecutionResult.success(
+            output: [
+              "raw_contact_id": .int(303),
+              "contact_id": .int(303),
+              "display_name": .string(displayName),
+              "phone_number": .string(phoneNumber),
+              "created": .bool(true),
+              "authorization_status": .string("authorized"),
+              "scope": .string("ios_contacts_write"),
+              "platform": .string("ios"),
+              "observed_at_epoch_ms": .int(nowMillis)
+            ],
+            message: "Contact created"
+          )
+        }
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "contact_id": .int(contactId),
+            "display_name": .string(displayName),
+            "phone_number": .string(phoneNumber),
+            "updated_name_rows": .int(1),
+            "updated_phone_rows": .int(1),
+            "contact_found": .bool(true),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_contacts_write"),
+            "platform": .string("ios"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Contact updated"
+        )
+      }
+
+      func deleteContact(contactId: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        deleteCalls.append((contactId, nowMillis))
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "contact_id": .int(contactId),
+            "deleted_rows": .int(1),
+            "contact_found": .bool(true),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_contacts_write"),
+            "platform": .string("ios"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Contact delete completed"
+        )
+      }
+    }
+    let provider = FakeContactsWriteProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          contactsWriteProvider: provider,
+          nowMillis: { 77_000 }
+        )
+      )
+    )
+    func context(_ key: String) -> AgentNativeToolInvocationContext {
+      AgentNativeToolInvocationContext(
+        idempotencyKey: key,
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosContactsWritePermission],
+        grantedConsents: ["signalasi.consent.contacts.write"]
+      )
+    }
+
+    let created = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.contactsUpsert,
+      input: [
+        "display_name": .string("Alice Example"),
+        "phone_number": .string("+15551234567")
+      ],
+      context: context("contacts-create-1")
+    )
+    let updated = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.contactsUpsert,
+      input: [
+        "contact_id": .int(101),
+        "display_name": .string("Alice Updated"),
+        "phone_number": .string("+15557654321")
+      ],
+      context: context("contacts-update-1")
+    )
+    let missingKey = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.contactsUpsert,
+      input: ["display_name": .string("No Key")],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosContactsWritePermission],
+        grantedConsents: ["signalasi.consent.contacts.write"]
+      )
+    )
+    let deleted = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.contactsDelete,
+      input: ["contact_id": .int(101)],
+      context: context("contacts-delete-1")
+    )
+
+    XCTAssertTrue(created.isSuccess)
+    XCTAssertEqual(created.output["created"], .bool(true))
+    XCTAssertEqual(created.output["raw_contact_id"], .int(303))
+    XCTAssertEqual(created.metadata["executor_id"], .string(AgentIOSSystemNativeToolCatalog.executorId))
+    XCTAssertTrue(updated.isSuccess)
+    XCTAssertEqual(updated.output["updated_name_rows"], .int(1))
+    XCTAssertEqual(updated.output["updated_phone_rows"], .int(1))
+    XCTAssertEqual(provider.upsertCalls.count, 2)
+    XCTAssertEqual(provider.upsertCalls.first?.displayName, "Alice Example")
+    XCTAssertEqual(provider.upsertCalls.last?.contactId, 101)
+    XCTAssertEqual(provider.upsertCalls.last?.nowMillis, 77_000)
+    XCTAssertEqual(missingKey.status, .rejected)
+    XCTAssertEqual(missingKey.error?.code, "missing_idempotency_key")
+    XCTAssertTrue(deleted.isSuccess)
+    XCTAssertEqual(deleted.output["deleted_rows"], .int(1))
+    XCTAssertEqual(provider.deleteCalls.first?.contactId, 101)
+    XCTAssertEqual(deleted.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorReadsCalendarsAndEvents() throws {

@@ -4,6 +4,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
   var calendarProvider: AgentIOSCalendarReadProviding
   var contactsProvider: AgentIOSContactsSearchProviding
+  var contactsWriteProvider: AgentIOSContactsWriteProviding
   var downloadProvider: AgentIOSDownloadManaging
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
@@ -13,6 +14,7 @@ struct AgentIOSSystemNativeToolExecutor {
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
     calendarProvider: AgentIOSCalendarReadProviding = AgentIOSDefaultCalendarReadProvider(),
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
+    contactsWriteProvider: AgentIOSContactsWriteProviding = AgentIOSDefaultContactsWriteProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
@@ -21,6 +23,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.audioProvider = audioProvider
     self.calendarProvider = calendarProvider
     self.contactsProvider = contactsProvider
+    self.contactsWriteProvider = contactsWriteProvider
     self.downloadProvider = downloadProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
@@ -47,6 +50,10 @@ struct AgentIOSSystemNativeToolExecutor {
       return calendarEventsQuery(invocation)
     case AgentIOSSystemNativeToolCatalog.contactsSearch:
       return contactsSearch(invocation)
+    case AgentIOSSystemNativeToolCatalog.contactsUpsert:
+      return contactsUpsert(invocation)
+    case AgentIOSSystemNativeToolCatalog.contactsDelete:
+      return contactsDelete(invocation)
     case AgentIOSSystemNativeToolCatalog.downloadEnqueue:
       return downloadEnqueue(invocation)
     case AgentIOSSystemNativeToolCatalog.downloadQuery:
@@ -130,6 +137,24 @@ struct AgentIOSSystemNativeToolExecutor {
     )
   }
 
+  private func contactsUpsert(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = contactsWriteProvider.upsertContact(
+      contactId: invocation.input["contact_id"]?.intValue ?? 0,
+      displayName: boundedString(invocation.input["display_name"]?.stringValue, limit: 160),
+      phoneNumber: boundedString(invocation.input["phone_number"]?.stringValue, limit: 64),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func contactsDelete(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = contactsWriteProvider.deleteContact(
+      contactId: invocation.input["contact_id"]?.intValue ?? 0,
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
   private func downloadEnqueue(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     let url = boundedString(invocation.input["url"]?.stringValue, limit: 4_096)
     guard isHTTPSURL(url) else {
@@ -144,7 +169,7 @@ struct AgentIOSSystemNativeToolExecutor {
       description: boundedString(invocation.input["description"]?.stringValue, limit: 500),
       nowMillis: max(0, nowMillis())
     )
-    return annotatedDownloadResult(result, invocation: invocation)
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func downloadQuery(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -153,7 +178,7 @@ struct AgentIOSSystemNativeToolExecutor {
       id: id,
       nowMillis: max(0, nowMillis())
     )
-    return annotatedDownloadResult(result, invocation: invocation)
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func downloadRemove(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -162,7 +187,7 @@ struct AgentIOSSystemNativeToolExecutor {
       id: id,
       nowMillis: max(0, nowMillis())
     )
-    return annotatedDownloadResult(result, invocation: invocation)
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func wifiStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
@@ -191,7 +216,7 @@ struct AgentIOSSystemNativeToolExecutor {
     )
   }
 
-  private func annotatedDownloadResult(
+  private func annotatedSystemResult(
     _ result: AgentNativeToolExecutionResult,
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
