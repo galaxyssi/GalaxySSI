@@ -1,4 +1,98 @@
 import Foundation
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
+
+protocol AgentIOSAudioStatusProviding {
+  func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject
+}
+
+struct AgentIOSDefaultAudioStatusProvider: AgentIOSAudioStatusProviding {
+  func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    #if canImport(AVFoundation)
+    let session = AVAudioSession.sharedInstance()
+    let volumePercent = Int64(max(0, min(100, Int((session.outputVolume * 100).rounded()))))
+    let routes = boundedRoutes(session.currentRoute.outputs.map { routeName($0.portType) })
+    return [
+      "ringer_mode": .string("not_exposed_ios"),
+      "mode": .string(session.mode.rawValue),
+      "category": .string(session.category.rawValue),
+      "speakerphone_on": .bool(routes.contains("speaker")),
+      "microphone_muted": .null,
+      "streams": .object([
+        "media": .object([
+          "current": .int(volumePercent),
+          "max": .int(100),
+          "muted": .bool(volumePercent == 0),
+          "scope": .string("app_visible_output_volume")
+        ])
+      ]),
+      "routes": .array(routes.map(AgentMcpJSONValue.string)),
+      "secondary_audio_silenced": .bool(session.secondaryAudioShouldBeSilencedHint),
+      "output_volume_percent": .int(volumePercent),
+      "scope": .string("app_visible_ios"),
+      "identifiers_included": .bool(false),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+    #else
+    return [
+      "ringer_mode": .string("unknown"),
+      "mode": .string("unknown"),
+      "category": .string("unknown"),
+      "speakerphone_on": .bool(false),
+      "microphone_muted": .null,
+      "streams": .object([:]),
+      "routes": .array([]),
+      "output_volume_percent": .null,
+      "scope": .string("app_visible_ios_unavailable"),
+      "identifiers_included": .bool(false),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+    #endif
+  }
+
+  private func boundedRoutes(_ routes: [String]) -> [String] {
+    var seen: Set<String> = []
+    return Array(routes.filter { route in
+      guard !seen.contains(route) else {
+        return false
+      }
+      seen.insert(route)
+      return true
+    }.prefix(8))
+  }
+
+  #if canImport(AVFoundation)
+  private func routeName(_ port: AVAudioSession.Port) -> String {
+    let raw = port.rawValue.lowercased()
+    if raw.contains("speaker") {
+      return "speaker"
+    }
+    if raw.contains("receiver") {
+      return "receiver"
+    }
+    if raw.contains("headphone") || raw.contains("headset") {
+      return "headphones"
+    }
+    if raw.contains("bluetooth") {
+      return "bluetooth"
+    }
+    if raw.contains("airplay") {
+      return "airplay"
+    }
+    if raw.contains("hdmi") {
+      return "hdmi"
+    }
+    if raw.contains("car") {
+      return "car_audio"
+    }
+    if raw.contains("usb") {
+      return "usb"
+    }
+    return "other"
+  }
+  #endif
+}
 
 enum AgentIOSSystemNativeToolCatalog {
   static let telephonyStatus = "signalasi.android.telephony.status"
@@ -46,6 +140,8 @@ enum AgentIOSSystemNativeToolCatalog {
     biometricEnrollmentOpen,
     vpnConsentOpen
   ]
+
+  static let executableToolIds: Set<String> = handoffToolIds.union([audioStatus])
 
   static var orderedToolIds: [String] {
     specifications.map(\.id)
@@ -260,7 +356,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       audioStatus,
       "Read audio status",
-      "Android audio status descriptor retained for planning; iOS requires a separate AVAudioSession-backed status executor.",
+      "Reads app-visible iOS audio session status without changing global volume, mute, route, or ringer settings.",
       .low,
       ["audio.status"]
     ),
@@ -381,11 +477,11 @@ enum AgentIOSSystemNativeToolCatalog {
         : AgentNativeToolDescriptor.objectSchema(),
       risk: specification.risk,
       capabilities: specification.capabilities,
-      requiredPermissions: permissionRequirements(specification.permissions),
-      requiredConsents: consentRequirements(specification.consents),
+      requiredPermissions: permissionRequirements(specification),
+      requiredConsents: consentRequirements(specification),
       timeoutMillis: 30_000,
       idempotency: specification.risk == .high ? .idempotencyKeyRequired : .nonIdempotent,
-      availability: handoffToolIds.contains(specification.id) ? handoffAvailability : unavailableAvailability
+      availability: availability(specification.id)
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -394,9 +490,7 @@ enum AgentIOSSystemNativeToolCatalog {
         "platform": "ios",
         "compatibility_source": "AgentAndroidSystemNativeTools",
         "contract": "bounded-system-api-v1",
-        "execution_policy": handoffToolIds.contains(specification.id)
-          ? "handoff_request_on_ios15"
-          : "descriptor_only_unavailable_on_ios15"
+        "execution_policy": executionPolicy(specification.id)
       ]
     )
   }
@@ -445,13 +539,22 @@ enum AgentIOSSystemNativeToolCatalog {
     )
   }
 
-  private static func permissionRequirements(_ androidPermissions: [String]) -> [AgentNativePermissionRequirement] {
+  private static func permissionRequirements(_ specification: Specification) -> [AgentNativePermissionRequirement] {
+    if specification.id == audioStatus {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosAudioStatusPermission,
+          title: "App-visible iOS audio status",
+          description: "Limits execution to AVAudioSession status fields visible to the SignalASI app process."
+        )
+      ]
+    }
     let platform = AgentNativePermissionRequirement(
       id: androidSystemPermission,
       title: "Android system API",
       description: "This Android framework tool is cataloged for planning but is unavailable inside the iOS 15+ app sandbox."
     )
-    let mirrored = androidPermissions.map { permission in
+    let mirrored = specification.permissions.map { permission in
       AgentNativePermissionRequirement(
         id: permission,
         title: permission.replacingOccurrences(of: "android.permission.", with: ""),
@@ -461,14 +564,16 @@ enum AgentIOSSystemNativeToolCatalog {
     return ([platform] + mirrored).sorted { $0.id < $1.id }
   }
 
-  private static func consentRequirements(_ androidConsents: [String]) -> [AgentNativeConsentRequirement] {
+  private static func consentRequirements(_ specification: Specification) -> [AgentNativeConsentRequirement] {
     let compatibility = AgentNativeConsentRequirement(
       id: compatibilityConsent,
       title: "Android compatibility boundary",
-      description: "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor.",
+      description: specification.id == audioStatus
+        ? "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
+        : "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor.",
       required: false
     )
-    let mirrored = androidConsents.map { consent in
+    let mirrored = specification.consents.map { consent in
       AgentNativeConsentRequirement(
         id: consent,
         title: consent.replacingOccurrences(of: "signalasi.consent.", with: "").replacingOccurrences(of: "_", with: " "),
@@ -476,6 +581,26 @@ enum AgentIOSSystemNativeToolCatalog {
       )
     }
     return ([compatibility] + mirrored).sorted { $0.id < $1.id }
+  }
+
+  private static func availability(_ id: String) -> AgentNativeToolAvailability {
+    if handoffToolIds.contains(id) {
+      return handoffAvailability
+    }
+    if id == audioStatus {
+      return audioStatusAvailability
+    }
+    return unavailableAvailability
+  }
+
+  private static func executionPolicy(_ id: String) -> String {
+    if handoffToolIds.contains(id) {
+      return "handoff_request_on_ios15"
+    }
+    if id == audioStatus {
+      return "av_audio_session_status_on_ios15"
+    }
+    return "descriptor_only_unavailable_on_ios15"
   }
 
   private static var unavailableAvailability: AgentNativeToolAvailability {
@@ -489,6 +614,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor returns a user-visible handoff request; the app UI must present the system URL or settings surface."
+    )
+  }
+
+  private static var audioStatusAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor reads bounded AVAudioSession status without changing audio settings."
     )
   }
 
@@ -548,6 +680,8 @@ enum AgentIOSSystemNativeToolCatalog {
     ["type": .string("boolean")]
   }
 
+  static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
+
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"
   private static let consentCalendarWrite = "signalasi.consent.calendar.write"
@@ -557,6 +691,17 @@ enum AgentIOSSystemNativeToolCatalog {
 }
 
 struct AgentIOSSystemNativeToolExecutor {
+  var audioProvider: AgentIOSAudioStatusProviding
+  var nowMillis: () -> Int64
+
+  init(
+    audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+  ) {
+    self.audioProvider = audioProvider
+    self.nowMillis = nowMillis
+  }
+
   func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
     AgentNativeToolExecutableDefinition(
       definition: definition,
@@ -571,6 +716,8 @@ struct AgentIOSSystemNativeToolExecutor {
 
   private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     switch invocation.descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.audioStatus:
+      return audioStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.telephonyDialHandoff:
       return dialHandoff(invocation)
     case AgentIOSSystemNativeToolCatalog.smsComposeHandoff:
@@ -605,6 +752,19 @@ struct AgentIOSSystemNativeToolExecutor {
         message: "This Android system native tool has no iOS handoff executor."
       )
     }
+  }
+
+  private func audioStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: audioProvider.audioStatus(nowMillis: max(0, nowMillis())),
+      message: "Audio status read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
+        "identifiers_included": .bool(false),
+        "settings_changed": .bool(false)
+      ]
+    )
   }
 
   private func dialHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {

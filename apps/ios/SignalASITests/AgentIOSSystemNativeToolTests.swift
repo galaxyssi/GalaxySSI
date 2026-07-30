@@ -26,14 +26,27 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "handoff_request_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("AVAudioSession"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "av_audio_session_status_on_ios15")
       } else {
         XCTAssertEqual(descriptor.availability.status, .unavailable)
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "descriptor_only_unavailable_on_ios15")
       }
-      XCTAssertTrue(descriptor.requiredPermissions.contains {
-        $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
-      }, descriptor.id)
+      if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      }
       XCTAssertTrue(descriptor.requiredConsents.contains {
         $0.id == AgentIOSSystemNativeToolCatalog.compatibilityConsent
       }, descriptor.id)
@@ -75,6 +88,58 @@ extension SignalASIStoreTests {
     XCTAssertFalse(invalid.isValid)
   }
 
+  func testAgentIOSSystemNativeToolExecutorReadsAudioStatus() throws {
+    struct FakeAudioProvider: AgentIOSAudioStatusProviding {
+      func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        [
+          "ringer_mode": .string("not_exposed_ios"),
+          "mode": .string("default"),
+          "category": .string("playback"),
+          "speakerphone_on": .bool(true),
+          "microphone_muted": .null,
+          "streams": .object([
+            "media": .object([
+              "current": .int(42),
+              "max": .int(100),
+              "muted": .bool(false),
+              "scope": .string("app_visible_output_volume")
+            ])
+          ]),
+          "routes": .array([.string("speaker")]),
+          "output_volume_percent": .int(42),
+          "scope": .string("app_visible_ios"),
+          "identifiers_included": .bool(false),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+    }
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          audioProvider: FakeAudioProvider(),
+          nowMillis: { 12_345 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.audioStatus,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["output_volume_percent"], .int(42))
+    XCTAssertEqual(result.output["routes"], .array([.string("speaker")]))
+    XCTAssertEqual(result.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(12_345))
+    XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
   func testAgentIOSSystemNativeToolExecutorBuildsUserVisibleHandoffs() throws {
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.systemExecutableDefinitions()
@@ -107,7 +172,7 @@ extension SignalASIStoreTests {
       context: context
     )
 
-    XCTAssertEqual(registry.ids(), AgentIOSSystemNativeToolCatalog.handoffToolIds)
+    XCTAssertEqual(registry.ids(), AgentIOSSystemNativeToolCatalog.executableToolIds)
     XCTAssertTrue(dial.isSuccess)
     XCTAssertEqual(dial.output["handoff_kind"], .string("dial"))
     XCTAssertEqual(dial.output["url"], .string("tel:+15551234567"))
