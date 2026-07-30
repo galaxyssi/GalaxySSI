@@ -2594,6 +2594,20 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(inspection.runtimeFiles["runtime/server.py"], Data(runtime.utf8))
   }
 
+  func testAgentMcpPackageInstallerAcceptsDeflatedZipEntries() throws {
+    let manifest = mcpLocalStdioPackageManifest()
+    let runtime = "print('server')"
+    let inspection = try AgentMcpPackageInstaller().inspect(deflatedMcpPackage(
+      ("mcp.json", manifest),
+      ("integrity.json", mcpPackageIntegrity(for: manifest)),
+      ("runtime/server.py", runtime)
+    ))
+
+    XCTAssertTrue(inspection.integrityVerified)
+    XCTAssertEqual(inspection.archiveEntries, ["integrity.json", "mcp.json", "runtime/server.py"])
+    XCTAssertEqual(inspection.runtimeFiles["runtime/server.py"], Data(runtime.utf8))
+  }
+
   func testAgentMcpPackageInstallerAcceptsUnsignedPackageButReportsItForReview() throws {
     let inspection = try AgentMcpPackageInstaller().inspect(storedMcpPackage(
       ("mcp.json", mcpDeclarativePackageManifest())
@@ -14025,6 +14039,79 @@ final class SignalASIStoreTests: XCTestCase {
     appendMcpZipUInt32LE(UInt32(centralSize), to: &output)
     appendMcpZipUInt32LE(UInt32(centralStart), to: &output)
     appendMcpZipUInt16LE(0, to: &output)
+    return output
+  }
+
+  private func deflatedMcpPackage(_ files: (String, String)...) -> Data {
+    var output = Data()
+    var centralRecords: [(name: String, body: Data, compressed: Data, crc32: UInt32, localOffset: Int)] = []
+    for file in files {
+      let nameBytes = Data(file.0.utf8)
+      let body = Data(file.1.utf8)
+      let compressed = rawDeflateStoredBlocks(body)
+      let crc = mcpPackageCRC32(body)
+      let localOffset = output.count
+      appendMcpZipUInt32LE(0x04034b50, to: &output)
+      appendMcpZipUInt16LE(20, to: &output)
+      appendMcpZipUInt16LE(0x0800, to: &output)
+      appendMcpZipUInt16LE(8, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt32LE(crc, to: &output)
+      appendMcpZipUInt32LE(UInt32(compressed.count), to: &output)
+      appendMcpZipUInt32LE(UInt32(body.count), to: &output)
+      appendMcpZipUInt16LE(UInt16(nameBytes.count), to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      output.append(nameBytes)
+      output.append(compressed)
+      centralRecords.append((file.0, body, compressed, crc, localOffset))
+    }
+    let centralStart = output.count
+    for record in centralRecords {
+      let nameBytes = Data(record.name.utf8)
+      appendMcpZipUInt32LE(0x02014b50, to: &output)
+      appendMcpZipUInt16LE(20, to: &output)
+      appendMcpZipUInt16LE(20, to: &output)
+      appendMcpZipUInt16LE(0x0800, to: &output)
+      appendMcpZipUInt16LE(8, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt32LE(record.crc32, to: &output)
+      appendMcpZipUInt32LE(UInt32(record.compressed.count), to: &output)
+      appendMcpZipUInt32LE(UInt32(record.body.count), to: &output)
+      appendMcpZipUInt16LE(UInt16(nameBytes.count), to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt16LE(0, to: &output)
+      appendMcpZipUInt32LE(0, to: &output)
+      appendMcpZipUInt32LE(UInt32(record.localOffset), to: &output)
+      output.append(nameBytes)
+    }
+    let centralSize = output.count - centralStart
+    appendMcpZipUInt32LE(0x06054b50, to: &output)
+    appendMcpZipUInt16LE(0, to: &output)
+    appendMcpZipUInt16LE(0, to: &output)
+    appendMcpZipUInt16LE(UInt16(centralRecords.count), to: &output)
+    appendMcpZipUInt16LE(UInt16(centralRecords.count), to: &output)
+    appendMcpZipUInt32LE(UInt32(centralSize), to: &output)
+    appendMcpZipUInt32LE(UInt32(centralStart), to: &output)
+    appendMcpZipUInt16LE(0, to: &output)
+    return output
+  }
+
+  private func rawDeflateStoredBlocks(_ data: Data) -> Data {
+    var output = Data()
+    var offset = 0
+    repeat {
+      let count = min(data.count - offset, 0xffff)
+      let finalBlock = offset + count == data.count
+      output.append(finalBlock ? 0x01 : 0x00)
+      appendMcpZipUInt16LE(UInt16(count), to: &output)
+      appendMcpZipUInt16LE(~UInt16(count), to: &output)
+      output.append(data.subdata(in: offset..<(offset + count)))
+      offset += count
+    } while offset < data.count
     return output
   }
 
