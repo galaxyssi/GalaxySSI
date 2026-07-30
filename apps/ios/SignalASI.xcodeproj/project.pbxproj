@@ -113,6 +113,7 @@
     A10000000000000000000189 /* GlobalBackgroundExecutionBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000189 /* GlobalBackgroundExecutionBudgetModels.swift */; };
     A10000000000000000000190 /* GlobalModelCallBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000190 /* GlobalModelCallBudgetModels.swift */; };
     A10000000000000000000191 /* AgentAutonomyGuardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000191 /* AgentAutonomyGuardModels.swift */; };
+    A10000000000000000000192 /* AgentConfirmationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000192 /* AgentConfirmationPolicy.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -173,6 +174,7 @@
     A10000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift */; };
     A10000000000000000000259 /* GlobalModelCallBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */; };
     A10000000000000000000260 /* AgentAutonomyGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000260 /* AgentAutonomyGuardTests.swift */; };
+    A10000000000000000000261 /* AgentConfirmationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000261 /* AgentConfirmationPolicyTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -284,6 +286,7 @@
     A20000000000000000000189 /* GlobalBackgroundExecutionBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalBackgroundExecutionBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000190 /* GlobalModelCallBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalModelCallBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000191 /* AgentAutonomyGuardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutonomyGuardModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000192 /* AgentConfirmationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConfirmationPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -344,6 +347,7 @@
     A20000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalBackgroundExecutionBudgetTests.swift; sourceTree = "<group>"; };
     A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalModelCallBudgetTests.swift; sourceTree = "<group>"; };
     A20000000000000000000260 /* AgentAutonomyGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutonomyGuardTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000261 /* AgentConfirmationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConfirmationPolicyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -456,6 +460,7 @@
         A20000000000000000000189 /* GlobalBackgroundExecutionBudgetModels.swift */,
         A20000000000000000000190 /* GlobalModelCallBudgetModels.swift */,
         A20000000000000000000191 /* AgentAutonomyGuardModels.swift */,
+        A20000000000000000000192 /* AgentConfirmationPolicy.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -537,6 +542,7 @@
         A20000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift */,
         A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */,
         A20000000000000000000260 /* AgentAutonomyGuardTests.swift */,
+        A20000000000000000000261 /* AgentConfirmationPolicyTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -725,6 +731,7 @@
         A10000000000000000000189 /* GlobalBackgroundExecutionBudgetModels.swift in Sources */,
         A10000000000000000000190 /* GlobalModelCallBudgetModels.swift in Sources */,
         A10000000000000000000191 /* AgentAutonomyGuardModels.swift in Sources */,
+        A10000000000000000000192 /* AgentConfirmationPolicy.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -806,6 +813,7 @@
         A10000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift in Sources */,
         A10000000000000000000259 /* GlobalModelCallBudgetTests.swift in Sources */,
         A10000000000000000000260 /* AgentAutonomyGuardTests.swift in Sources */,
+        A10000000000000000000261 /* AgentConfirmationPolicyTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
