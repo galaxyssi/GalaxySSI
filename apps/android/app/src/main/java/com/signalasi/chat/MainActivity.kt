@@ -473,6 +473,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var wakeWordEngine: WakeWordEngine? = null
     private var wakeWordDetectionJob: Job? = null
     private var androidTts: TextToSpeech? = null
+    private var androidTtsInitialized = false
     private var androidTtsReady = false
     private lateinit var microsoftTts: MicrosoftEdgeTts
     private var lastDebugSendKey: String? = null
@@ -578,6 +579,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         traceStartup("agent_stores")
         microsoftTts = MicrosoftEdgeTts(applicationContext)
         androidTts = TextToSpeech(this) { status ->
+            androidTtsInitialized = true
             androidTtsReady = status == TextToSpeech.SUCCESS
             if (androidTtsReady) {
                 configureAndroidTtsLanguage()
@@ -597,6 +599,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 controlCenterDestination?.route == ControlCenterRoute.VOICE
             ) {
                 runOnUiThread { renderCurrentControlCenterDestination() }
+            } else if (
+                ::featurePage.isInitialized &&
+                featurePage.visibility == View.VISIBLE &&
+                featureTitle.text == getString(R.string.voice_tts_provider)
+            ) {
+                runOnUiThread { showTtsProviderPage() }
             }
         }
 
@@ -2960,8 +2968,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 pendingVoiceEnableFromControlCenter = false
             }
             if (featurePage.visibility == View.VISIBLE) {
-                if (controlCenterDestination != null) renderCurrentControlCenterDestination()
-                else showOnDeviceAgentFeaturePage()
+                when {
+                    featureTitle.text == getString(R.string.voice_asr_provider) -> showAsrProviderPage()
+                    featureTitle.text == getString(R.string.voice_tts_provider) -> showTtsProviderPage()
+                    controlCenterDestination != null -> renderCurrentControlCenterDestination()
+                    else -> showOnDeviceAgentFeaturePage()
+                }
             }
             return
         }
@@ -7500,6 +7512,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "audit.operations" -> openExistingControlCenterPage { showAgentAuditOperationsPage() }
             "voice.settings" -> openExistingControlCenterPage { showVoiceAssistantSettingsPage() }
             "voice.asr" -> openExistingControlCenterPage { showAsrProviderPage() }
+            "voice.tts" -> openExistingControlCenterPage { showTtsProviderPage() }
             "voice.toggle_enabled" -> {
                 val next = !VoiceAssistantSettings.get(this).enabled
                 if (next && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -11711,14 +11724,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun renderControlCenterVoicePage() {
         val config = VoiceAssistantSettings.get(this)
         val selectedModel = WhisperModelManager.model(config.asrModel)
-        val microphoneAllowed = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val modelAvailable = WhisperModelManager.isAvailable(this, selectedModel)
-        val asrReady = microphoneAllowed && modelAvailable
-        val ttsReady = if (config.ttsProvider == VoiceAssistantSettings.PROVIDER_ANDROID) {
-            androidTtsReady
-        } else {
-            validatedInternetAvailable()
-        }
+        val capabilities = voiceProviderCapabilities(config)
+        val asrCapability = capabilities[VoiceProviderCapabilityId.WHISPER_CPP]
+        val ttsCapability = activeTtsCapability(config, capabilities)
         showControlCenterFeature(
             getString(R.string.cc_voice_title),
             ControlCenterPageSpec(
@@ -11729,7 +11737,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     actionId = "voice.settings",
                     badges = listOf(
                         ControlCenterBadgeSpec(getString(if (config.enabled) R.string.status_enabled else R.string.common_off), if (config.enabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL),
-                        ControlCenterBadgeSpec(getString(if (asrReady) R.string.cc_status_ready else R.string.status_needs_setup), if (asrReady) ControlCenterTone.BLUE else ControlCenterTone.AMBER),
+                        ControlCenterBadgeSpec(
+                            voiceCapabilityStatus(asrCapability),
+                            voiceCapabilityTone(asrCapability)
+                        ),
                         ControlCenterBadgeSpec("TTS", ControlCenterTone.VIOLET)
                     )
                 ),
@@ -11750,10 +11761,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 getString(R.string.voice_asr_provider),
                                 selectedModel.displayName,
                                 R.drawable.ic_settings_voice,
-                                getString(if (asrReady) R.string.cc_status_ready else R.string.status_needs_setup),
-                                if (asrReady) ControlCenterTone.GREEN else ControlCenterTone.AMBER
+                                voiceCapabilityStatus(asrCapability),
+                                voiceCapabilityTone(asrCapability)
                             ),
-                            ControlCenterRowSpec("voice.settings", getString(R.string.voice_tts_provider), ttsProviderLabel(config.ttsProvider), R.drawable.ic_send_plane, getString(if (ttsReady) R.string.cc_status_available else R.string.status_needs_setup), if (ttsReady) ControlCenterTone.VIOLET else ControlCenterTone.AMBER)
+                            ControlCenterRowSpec(
+                                "voice.tts",
+                                getString(R.string.voice_tts_provider),
+                                ttsProviderLabel(config.ttsProvider),
+                                R.drawable.ic_send_plane,
+                                voiceCapabilityStatus(ttsCapability),
+                                voiceCapabilityTone(ttsCapability)
+                            ),
                         )
                     ),
                     ControlCenterSectionSpec(
@@ -22552,16 +22570,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
 
         addSectionTitle(getString(R.string.voice_section_tts))
-        featureContent.addView(featureRow(getString(R.string.voice_tts_provider), ttsProviderLabel(config.ttsProvider), R.drawable.ic_send_plane, getString(R.string.common_select)).apply {
-            setOnClickListener {
-                val microsoft = getString(R.string.voice_tts_microsoft)
-                val androidTts = getString(R.string.voice_tts_android)
-                showChoiceDialog(getString(R.string.voice_tts_provider), listOf(microsoft, androidTts), ttsProviderLabel(config.ttsProvider)) {
-                    val provider = if (it == microsoft) VoiceAssistantSettings.PROVIDER_MICROSOFT_EDGE else VoiceAssistantSettings.PROVIDER_ANDROID
-                    VoiceAssistantSettings.setTtsProvider(this@MainActivity, provider)
-                    showVoiceAssistantSettingsPage()
-                }
-            }
+        featureContent.addView(featureRow(
+            getString(R.string.voice_tts_provider),
+            ttsProviderLabel(config.ttsProvider),
+            R.drawable.ic_send_plane,
+            voiceCapabilityStatus(activeTtsCapability(config))
+        ).apply {
+            setOnClickListener { showTtsProviderPage() }
         })
         featureContent.addView(featureRow(getString(R.string.language_policy_tts_language), languagePolicyLabel(config.ttsLanguage), R.drawable.ic_settings_language, getString(R.string.common_select)).apply {
             setOnClickListener {
@@ -22654,15 +22669,44 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         handler.removeCallbacks(asrModelDownloadPoll)
         val config = VoiceAssistantSettings.get(this)
         val selected = WhisperModelManager.model(config.asrModel)
+        val capabilities = voiceProviderCapabilities(config)
+        val whisperCapability = capabilities[VoiceProviderCapabilityId.WHISPER_CPP]
         showFeaturePage(getString(R.string.voice_asr_provider))
         setFeatureBackAction { showVoiceAssistantSettingsPage() }
         featureContent.addView(featureHeroCard(
             getString(R.string.voice_asr_local_title),
             getString(R.string.voice_asr_local_subtitle),
             R.drawable.ic_agent_node,
-            "#14C66A",
-            selected.displayName
+            if (whisperCapability.ready) "#14C66A" else "#D48B18",
+            voiceCapabilityStatus(whisperCapability)
         ))
+        addSectionTitle(getString(R.string.voice_provider_device_capabilities))
+        listOf(
+            VoiceProviderCapabilityId.WHISPER_CPP to R.drawable.ic_local_model,
+            VoiceProviderCapabilityId.ANDROID_SYSTEM_ASR to R.drawable.ic_input_voice,
+            VoiceProviderCapabilityId.ANDROID_OFFLINE_ASR to R.drawable.ic_security_shield,
+            VoiceProviderCapabilityId.CLOUD_ASR to R.drawable.ic_avatar_cloud_model
+        ).forEach { (id, icon) ->
+            val capability = capabilities[id]
+            featureContent.addView(featureRow(
+                voiceCapabilityTitle(id),
+                voiceCapabilityDetail(capability),
+                icon,
+                voiceCapabilityStatus(capability)
+            ).apply {
+                if (capability.state == VoiceProviderCapabilityState.NEEDS_PERMISSION) {
+                    setOnClickListener {
+                        requestPermissions(
+                            arrayOf(android.Manifest.permission.RECORD_AUDIO),
+                            REQUEST_CONTROL_CENTER_PERMISSION
+                        )
+                    }
+                } else {
+                    isClickable = false
+                    isFocusable = false
+                }
+            })
+        }
         addSectionTitle(getString(R.string.voice_asr_model_section))
         var hasActiveDownload = false
         WhisperModelManager.models.forEach { model ->
@@ -22715,6 +22759,187 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
         if (hasActiveDownload) handler.postDelayed(asrModelDownloadPoll, 1_000L)
     }
+
+    private fun showTtsProviderPage() {
+        val config = VoiceAssistantSettings.get(this)
+        val capabilities = voiceProviderCapabilities(config)
+        val active = activeTtsCapability(config, capabilities)
+        showFeaturePage(getString(R.string.voice_tts_provider))
+        setFeatureBackAction { showVoiceAssistantSettingsPage() }
+        featureContent.addView(featureHeroCard(
+            ttsProviderLabel(config.ttsProvider),
+            getString(R.string.voice_tts_provider_subtitle),
+            R.drawable.ic_send_plane,
+            if (active.ready) "#6B5CE7" else "#D48B18",
+            voiceCapabilityStatus(active)
+        ))
+        addSectionTitle(getString(R.string.voice_provider_device_capabilities))
+        listOf(
+            VoiceAssistantSettings.PROVIDER_ANDROID to VoiceProviderCapabilityId.ANDROID_SYSTEM_TTS,
+            VoiceAssistantSettings.PROVIDER_MICROSOFT_EDGE to VoiceProviderCapabilityId.MICROSOFT_EDGE_TTS
+        ).forEach { (provider, capabilityId) ->
+            val capability = capabilities[capabilityId]
+            val selected = config.ttsProvider == provider
+            val action = when {
+                selected -> getString(R.string.section_current)
+                capability.ready -> getString(R.string.settings_language_use)
+                else -> voiceCapabilityStatus(capability)
+            }
+            featureContent.addView(featureRow(
+                voiceCapabilityTitle(capabilityId),
+                voiceCapabilityDetail(capability),
+                R.drawable.ic_send_plane,
+                action
+            ).apply {
+                isClickable = capability.ready && !selected
+                isFocusable = isClickable
+                setOnClickListener(if (isClickable) View.OnClickListener {
+                    VoiceAssistantSettings.setTtsProvider(this@MainActivity, provider)
+                    showTtsProviderPage()
+                } else null)
+            })
+        }
+        addSectionTitle(getString(R.string.voice_provider_device_check))
+        featureContent.addView(featureRow(
+            getString(R.string.language_policy_tts_language),
+            languagePolicyLabel(config.ttsLanguage),
+            R.drawable.ic_settings_language,
+            voiceCapabilityStatus(capabilities[VoiceProviderCapabilityId.ANDROID_SYSTEM_TTS])
+        ).apply {
+            setOnClickListener {
+                showLanguagePolicyDialog(
+                    getString(R.string.language_policy_tts_language),
+                    config.ttsLanguage
+                ) {
+                    VoiceAssistantSettings.setTtsLanguage(this@MainActivity, it)
+                    configureAndroidTtsLanguage()
+                    showTtsProviderPage()
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.voice_provider_recheck),
+            getString(R.string.voice_provider_recheck_subtitle),
+            R.drawable.ic_agent_history,
+            getString(R.string.voice_provider_recheck_action)
+        ).apply {
+            setOnClickListener { showTtsProviderPage() }
+        })
+    }
+
+    private fun voiceProviderCapabilities(
+        config: VoiceAssistantConfig = VoiceAssistantSettings.get(this)
+    ): VoiceProviderCapabilitySnapshot {
+        val engineCount = if (androidTtsInitialized) {
+            runCatching { androidTts?.engines?.size ?: 0 }.getOrDefault(0)
+        } else {
+            0
+        }
+        val languageTag = LanguagePolicySettings.resolve(config.ttsLanguage)
+        val languageSupported = androidTtsReady && runCatching {
+            val locale = Locale.forLanguageTag(languageTag)
+            (androidTts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED) >=
+                TextToSpeech.LANG_AVAILABLE
+        }.getOrDefault(false)
+        return VoiceProviderCapabilityDetector.detect(
+            context = this,
+            config = config,
+            ttsInitialized = androidTtsInitialized,
+            ttsReady = androidTtsReady,
+            ttsEngineCount = engineCount,
+            ttsLanguageSupported = languageSupported
+        )
+    }
+
+    private fun activeTtsCapability(
+        config: VoiceAssistantConfig,
+        capabilities: VoiceProviderCapabilitySnapshot = voiceProviderCapabilities(config)
+    ): VoiceProviderCapability = capabilities[
+        if (config.ttsProvider == VoiceAssistantSettings.PROVIDER_ANDROID) {
+            VoiceProviderCapabilityId.ANDROID_SYSTEM_TTS
+        } else {
+            VoiceProviderCapabilityId.MICROSOFT_EDGE_TTS
+        }
+    ]
+
+    private fun voiceCapabilityTitle(id: VoiceProviderCapabilityId): String = getString(
+        when (id) {
+            VoiceProviderCapabilityId.WHISPER_CPP -> R.string.voice_asr_local_title
+            VoiceProviderCapabilityId.ANDROID_SYSTEM_ASR -> R.string.voice_asr_system_title
+            VoiceProviderCapabilityId.ANDROID_OFFLINE_ASR -> R.string.voice_asr_offline_title
+            VoiceProviderCapabilityId.CLOUD_ASR -> R.string.voice_asr_cloud_title
+            VoiceProviderCapabilityId.ANDROID_SYSTEM_TTS -> R.string.voice_tts_android
+            VoiceProviderCapabilityId.MICROSOFT_EDGE_TTS -> R.string.voice_tts_microsoft
+        }
+    )
+
+    private fun voiceCapabilityStatus(capability: VoiceProviderCapability): String = getString(
+        when (capability.state) {
+            VoiceProviderCapabilityState.READY -> R.string.voice_provider_ready
+            VoiceProviderCapabilityState.CHECKING -> R.string.voice_provider_checking
+            VoiceProviderCapabilityState.NEEDS_PERMISSION -> R.string.voice_provider_permission_required
+            VoiceProviderCapabilityState.NEEDS_DOWNLOAD -> R.string.voice_provider_download_required
+            VoiceProviderCapabilityState.NEEDS_NETWORK -> R.string.voice_provider_network_required
+            VoiceProviderCapabilityState.UNAVAILABLE -> R.string.voice_provider_unavailable
+        }
+    )
+
+    private fun voiceCapabilityTone(capability: VoiceProviderCapability): ControlCenterTone =
+        when (capability.state) {
+            VoiceProviderCapabilityState.READY -> ControlCenterTone.GREEN
+            VoiceProviderCapabilityState.CHECKING -> ControlCenterTone.NEUTRAL
+            VoiceProviderCapabilityState.NEEDS_PERMISSION,
+            VoiceProviderCapabilityState.NEEDS_DOWNLOAD,
+            VoiceProviderCapabilityState.NEEDS_NETWORK -> ControlCenterTone.AMBER
+            VoiceProviderCapabilityState.UNAVAILABLE -> ControlCenterTone.NEUTRAL
+        }
+
+    private fun voiceCapabilityDetail(capability: VoiceProviderCapability): String = getString(
+        when (capability.reason) {
+            VoiceProviderCapabilityReason.READY -> when (capability.id) {
+                VoiceProviderCapabilityId.WHISPER_CPP -> R.string.voice_asr_whisper_ready_detail
+                VoiceProviderCapabilityId.ANDROID_SYSTEM_ASR -> R.string.voice_asr_system_ready_detail
+                VoiceProviderCapabilityId.ANDROID_OFFLINE_ASR -> R.string.voice_asr_offline_ready_detail
+                VoiceProviderCapabilityId.CLOUD_ASR -> R.string.voice_asr_cloud_ready_detail
+                VoiceProviderCapabilityId.ANDROID_SYSTEM_TTS -> R.string.voice_tts_system_ready_detail
+                VoiceProviderCapabilityId.MICROSOFT_EDGE_TTS -> R.string.voice_tts_cloud_ready_detail
+            }
+            VoiceProviderCapabilityReason.CHECKING -> R.string.voice_provider_checking_detail
+            VoiceProviderCapabilityReason.MICROPHONE_MISSING ->
+                R.string.voice_capability_microphone_missing
+            VoiceProviderCapabilityReason.MICROPHONE_PERMISSION_REQUIRED ->
+                R.string.voice_capability_microphone_permission
+            VoiceProviderCapabilityReason.WHISPER_RUNTIME_MISSING ->
+                R.string.voice_capability_whisper_runtime_missing
+            VoiceProviderCapabilityReason.WHISPER_MODEL_MISSING ->
+                R.string.voice_capability_whisper_model_missing
+            VoiceProviderCapabilityReason.SYSTEM_RECOGNIZER_MISSING ->
+                R.string.voice_capability_system_asr_missing
+            VoiceProviderCapabilityReason.OFFLINE_RECOGNIZER_MISSING ->
+                R.string.voice_capability_offline_asr_missing
+            VoiceProviderCapabilityReason.NETWORK_REQUIRED ->
+                R.string.voice_capability_network_required
+            VoiceProviderCapabilityReason.TTS_ENGINE_MISSING ->
+                R.string.voice_capability_tts_engine_missing
+            VoiceProviderCapabilityReason.TTS_LANGUAGE_UNSUPPORTED ->
+                R.string.voice_capability_tts_language_unsupported
+        },
+        when (capability.reason) {
+            VoiceProviderCapabilityReason.READY ->
+                if (capability.id == VoiceProviderCapabilityId.WHISPER_CPP) {
+                    capability.metadata["model_name"].orEmpty()
+                } else if (capability.id == VoiceProviderCapabilityId.ANDROID_SYSTEM_TTS) {
+                    capability.metadata["engine_count"].orEmpty()
+                } else {
+                    ""
+                }
+            VoiceProviderCapabilityReason.WHISPER_MODEL_MISSING ->
+                capability.metadata["model_name"].orEmpty()
+            VoiceProviderCapabilityReason.TTS_LANGUAGE_UNSUPPORTED ->
+                languagePolicyLabel(capability.metadata["language"].orEmpty())
+            else -> ""
+        }
+    )
 
     private fun wakeProviderLabel(provider: String): String =
         if (provider == VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR) getString(R.string.voice_wake_engine_android_asr) else getString(R.string.voice_wake_engine_openwakeword)
