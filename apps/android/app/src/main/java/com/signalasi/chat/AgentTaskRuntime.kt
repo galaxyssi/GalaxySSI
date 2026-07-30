@@ -11,8 +11,10 @@ object AgentTaskRuntime {
     fun supervisor(context: Context): AgentTaskSupervisor {
         supervisor?.let { return it }
         return synchronized(this) {
+            val deviceProfile = AgentDeviceProfileDetector.detect(context.applicationContext)
             supervisor ?: AgentTaskSupervisor(
                 workspaceStore = EncryptedAgentWorkspaceStore(context.applicationContext),
+                maxConcurrentReadReasoningTasks = deviceProfile.maxReadReasoningTasks,
                 livenessListener = AgentTaskLivenessListener(::publishLivenessSignal)
             ).also { supervisor = it }
         }

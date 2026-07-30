@@ -688,7 +688,10 @@ class AgentProductionTeamController(
     private val reputationRegistrationSource: () -> List<AgentRegistration> = {
         AppStoreAgentConnectorRegistry(context).registrations()
     },
-    limits: AgentSubagentLimits = AgentSubagentLimits(maxChildren = 12, maxConcurrency = 4)
+    limits: AgentSubagentLimits = AgentSubagentLimits(
+        maxChildren = 12,
+        maxConcurrency = AgentDeviceProfileDetector.detect(context).maxTeamConcurrency
+    )
 ) : Closeable {
     private val runtime = AgentTeamExecutionRuntime(store, limits)
     private val crossTeamDelegations = AgentCrossTeamDelegationCoordinator(

@@ -72,6 +72,11 @@
     <string name="cc_agent_identity_title">Agent Identity</string>
     <string name="cc_agent_identity_subtitle">This device can execute autonomous tasks</string>
     <string name="cc_device_info_title">Device Information</string>
+    <string name="cc_device_profile_phone">Phone profile</string>
+    <string name="cc_device_profile_tablet">Tablet profile</string>
+    <string name="cc_device_profile_automotive">Automotive profile</string>
+    <string name="cc_device_profile_legacy_samsung_phone">Legacy Samsung phone profile</string>
+    <string name="cc_device_profile_legacy_samsung_tablet">Legacy Samsung tablet profile</string>
     <string name="cc_identity_recovery_title">Identity Recovery Package</string>
     <string name="cc_identity_recovery_subtitle">Export encrypted identity and trust relationships</string>
 

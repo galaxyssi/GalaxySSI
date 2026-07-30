@@ -10,6 +10,7 @@ import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.database.Cursor
@@ -99,6 +100,7 @@ private class BaselineShiftSpan(private val shiftPx: Int) : CharacterStyle(), Up
 }
 
 class MainActivity : Activity(), SignalASIMqttClient.Listener {
+    private lateinit var deviceProfile: AgentDeviceProfile
 
     private data class PendingDirectSystemAction(
         val action: AgentAction,
@@ -165,6 +167,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val AGENT_BRAND_LOGO_BASE_DP = 39
         private const val AGENT_BRAND_LOGO_MIN_DP = 32
         private const val AGENT_BRAND_LOGO_MAX_DP = 56
+        private const val AUTOMOTIVE_VOICE_BUTTON_WIDTH_DP = 160
         private const val EXTRA_REOPEN_CONTROL_CENTER_CHILD = "signalasi_reopen_control_center_child"
         private const val CONTROL_CENTER_CHILD_TEXT_SIZE = "text_size"
         private const val CAPABILITY_KIND_NATIVE_TOOL = "native_tool"
@@ -546,6 +549,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         AppDisplaySettings.applyToResources(this)
         super.onCreate(savedInstanceState)
+        deviceProfile = AgentDeviceProfileDetector.detect(this)
+        applyDeviceProfileWindowPolicy()
         configureSystemBars()
         setContentView(R.layout.activity_main)
         traceStartup("content_view")
@@ -713,6 +718,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         meIdText = findViewById(R.id.meIdText)
         meAvatar = findViewById(R.id.meAvatar)
         chatInputBar = findViewById(R.id.chatInputBar)
+        applyDeviceProfileInputTargets()
         messageList = findViewById(R.id.messageList)
         val backButton2 = findViewById<TextView>(R.id.backButton)
         traceStartup("view_binding")
@@ -968,6 +974,54 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 flags = flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
             }
             window.decorView.systemUiVisibility = flags
+        }
+    }
+
+    private fun applyDeviceProfileWindowPolicy() {
+        requestedOrientation = when (deviceProfile.kind) {
+            AgentDeviceProfileKind.TABLET,
+            AgentDeviceProfileKind.AUTOMOTIVE,
+            AgentDeviceProfileKind.LEGACY_SAMSUNG_TABLET ->
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            AgentDeviceProfileKind.PHONE,
+            AgentDeviceProfileKind.LEGACY_SAMSUNG_PHONE ->
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
+        if (deviceProfile.reduceMotion) {
+            val attributes = window.attributes
+            attributes.windowAnimations = 0
+            window.attributes = attributes
+        }
+        Log.i(
+            "SignalASIDeviceProfile",
+            "profile=${deviceProfile.id} read=${deviceProfile.maxReadReasoningTasks} " +
+                "team=${deviceProfile.maxTeamConcurrency} qemuCpu=${deviceProfile.maxQemuCpuCount}"
+        )
+    }
+
+    private fun applyDeviceProfileInputTargets() {
+        val targetPx = dp(deviceProfile.minimumTouchTargetDp)
+        listOf(
+            agentVoiceButton,
+            agentAttachButton,
+            agentSubmitButton,
+            imageButton,
+            voiceButton,
+            emojiButton,
+            sendButton
+        ).forEach { view ->
+            view.minimumWidth = targetPx
+            view.minimumHeight = targetPx
+            val params = view.layoutParams
+            if (params.width in 1 until targetPx) params.width = targetPx
+            if (params.height in 1 until targetPx) params.height = targetPx
+            view.layoutParams = params
+        }
+        pressToTalkButton.minimumHeight = targetPx
+        if (deviceProfile.voiceFirst) {
+            val params = agentVoiceButton.layoutParams
+            params.width = maxOf(params.width, dp(AUTOMOTIVE_VOICE_BUTTON_WIDTH_DP))
+            agentVoiceButton.layoutParams = params
         }
     }
 
@@ -8780,6 +8834,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderControlCenterProfilePage() {
         val profile = AppStore.profile(this)
+        val deviceProfile = AgentDeviceProfileDetector.detect(this)
         val nickname = profile.optString("name", getString(R.string.settings_profile_me))
         val signalasiId = SignalASICrypto.localSignalasiId()
         val fingerprint = SignalASICrypto.localIdentitySha256().filter(Char::isLetterOrDigit)
@@ -8813,7 +8868,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         getString(R.string.common_status),
                         listOf(
                             ControlCenterRowSpec(routeAction(ControlCenterRoute.AGENT_CORE), getString(R.string.cc_agent_identity_title), getString(R.string.cc_agent_identity_subtitle), R.drawable.ic_agent_node, getString(if (safety.executionPaused) R.string.on_device_agent_status_paused else R.string.status_enabled), if (safety.executionPaused) ControlCenterTone.AMBER else ControlCenterTone.VIOLET),
-                            ControlCenterRowSpec("", getString(R.string.cc_device_info_title), "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}", R.drawable.ic_device_node, showChevron = false)
+                            ControlCenterRowSpec(
+                                "",
+                                getString(R.string.cc_device_info_title),
+                                "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} · ${deviceProfileLabel(deviceProfile)}",
+                                R.drawable.ic_device_node,
+                                showChevron = false
+                            )
                         )
                     ),
                     ControlCenterSectionSpec(
@@ -8824,6 +8885,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         )
     }
+
+    private fun deviceProfileLabel(profile: AgentDeviceProfile): String = getString(
+        when (profile.kind) {
+            AgentDeviceProfileKind.PHONE -> R.string.cc_device_profile_phone
+            AgentDeviceProfileKind.TABLET -> R.string.cc_device_profile_tablet
+            AgentDeviceProfileKind.AUTOMOTIVE -> R.string.cc_device_profile_automotive
+            AgentDeviceProfileKind.LEGACY_SAMSUNG_PHONE ->
+                R.string.cc_device_profile_legacy_samsung_phone
+            AgentDeviceProfileKind.LEGACY_SAMSUNG_TABLET ->
+                R.string.cc_device_profile_legacy_samsung_tablet
+        }
+    )
 
     private fun renderControlCenterSystemStatusPage() {
         val state = mobileNativeAgent.snapshot()
