@@ -10,6 +10,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var communicationHandoffProvider: AgentIOSCommunicationHandoffProviding
   var devicePolicyProvider: AgentIOSDevicePolicyStatusProviding
   var downloadProvider: AgentIOSDownloadManaging
+  var smsInboxProvider: AgentIOSSMSInboxProviding
   var telephonyProvider: AgentIOSTelephonyStatusProviding
   var vpnProvider: AgentIOSVPNStatusProviding
   var wifiScanProvider: AgentIOSWifiScanProviding
@@ -27,6 +28,7 @@ struct AgentIOSSystemNativeToolExecutor {
     communicationHandoffProvider: AgentIOSCommunicationHandoffProviding = AgentIOSDefaultCommunicationHandoffProvider(),
     devicePolicyProvider: AgentIOSDevicePolicyStatusProviding = AgentIOSDefaultDevicePolicyStatusProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
+    smsInboxProvider: AgentIOSSMSInboxProviding = AgentIOSDefaultSMSInboxProvider(),
     telephonyProvider: AgentIOSTelephonyStatusProviding = AgentIOSDefaultTelephonyStatusProvider(),
     vpnProvider: AgentIOSVPNStatusProviding = AgentIOSDefaultVPNStatusProvider(),
     wifiScanProvider: AgentIOSWifiScanProviding = AgentIOSDefaultWifiScanProvider(),
@@ -43,6 +45,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.communicationHandoffProvider = communicationHandoffProvider
     self.devicePolicyProvider = devicePolicyProvider
     self.downloadProvider = downloadProvider
+    self.smsInboxProvider = smsInboxProvider
     self.telephonyProvider = telephonyProvider
     self.vpnProvider = vpnProvider
     self.wifiScanProvider = wifiScanProvider
@@ -71,6 +74,8 @@ struct AgentIOSSystemNativeToolExecutor {
       return telephonyCallState(invocation)
     case AgentIOSSystemNativeToolCatalog.telephonyCallStateObserve:
       return telephonyCallStateObserve(invocation)
+    case AgentIOSSystemNativeToolCatalog.smsList:
+      return smsList(invocation)
     case AgentIOSSystemNativeToolCatalog.calendarsList:
       return calendarProvider.listCalendars(nowMillis: max(0, nowMillis()))
     case AgentIOSSystemNativeToolCatalog.calendarEventsQuery:
@@ -206,6 +211,16 @@ struct AgentIOSSystemNativeToolExecutor {
     let timeout = invocation.input["timeout_ms"]?.intValue ?? 10_000
     let result = telephonyProvider.observeCallState(
       timeoutMillis: max(1_000, min(30_000, timeout)),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func smsList(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let limit = Int(invocation.input["limit"]?.intValue ?? 20)
+    let result = smsInboxProvider.listMessages(
+      limit: max(1, min(100, limit)),
+      address: boundedString(invocation.input["address"]?.stringValue, limit: 128),
       nowMillis: max(0, nowMillis())
     )
     return annotatedSystemResult(result, invocation: invocation)

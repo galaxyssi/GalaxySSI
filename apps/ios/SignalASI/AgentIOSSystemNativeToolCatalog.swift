@@ -59,6 +59,10 @@ enum AgentIOSSystemNativeToolCatalog {
     smsComposeHandoff
   ]
 
+  static let smsInboxBoundaryToolIds: Set<String> = [
+    smsList
+  ]
+
   static let downloadToolIds: Set<String> = [
     downloadEnqueue,
     downloadQuery,
@@ -89,6 +93,7 @@ enum AgentIOSSystemNativeToolCatalog {
     telephonyStatus,
     telephonyCallState,
     telephonyCallStateObserve,
+    smsList,
     calendarsList,
     calendarEventsQuery,
     contactsSearch,
@@ -174,7 +179,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       smsList,
       "Read recent SMS messages",
-      "Android SMS inbox descriptor retained for planning; iOS cannot read the user's SMS database.",
+      "Returns a structured iOS SMS inbox boundary result; iOS cannot read the user's SMS database for normal apps.",
       .low,
       ["sms.read"],
       ["android.permission.READ_SMS"],
@@ -525,6 +530,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if smsInboxBoundaryToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosSMSInboxBoundaryPermission,
+          title: "iOS SMS inbox boundary",
+          description: "Limits execution to a structured iOS platform-boundary result; SMS database reads are not exposed."
+        )
+      ]
+    }
     if specification.id == audioStatus {
       return [
         AgentNativePermissionRequirement(
@@ -672,6 +686,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if smsHandoffToolIds.contains(id) {
       return "Acknowledges that this Android wire tool is fulfilled by a user-visible iOS Messages compose handoff."
     }
+    if smsInboxBoundaryToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a structured iOS SMS inbox boundary executor."
+    }
     if id == audioStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
     }
@@ -717,6 +734,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if smsHandoffToolIds.contains(id) {
       return smsHandoffAvailability
+    }
+    if smsInboxBoundaryToolIds.contains(id) {
+      return smsInboxBoundaryAvailability
     }
     if handoffToolIds.contains(id) {
       return handoffAvailability
@@ -766,6 +786,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if smsHandoffToolIds.contains(id) {
       return "sms_compose_handoff_on_ios15"
+    }
+    if smsInboxBoundaryToolIds.contains(id) {
+      return "ios_sms_inbox_boundary_on_ios15"
     }
     if handoffToolIds.contains(id) {
       return "handoff_request_on_ios15"
@@ -827,6 +850,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor returns a user-visible Messages compose handoff; direct background SMS send is not available on iOS."
+    )
+  }
+
+  private static var smsInboxBoundaryAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor returns a structured SMS inbox boundary result because SMS database reads are not exposed to normal apps."
     )
   }
 
@@ -994,6 +1024,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosDownloadPermission = "signalasi.scope.ios_app_managed_downloads"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
   static let iosSMSComposePermission = "signalasi.scope.ios_user_visible_sms_compose"
+  static let iosSMSInboxBoundaryPermission = "signalasi.scope.ios_sms_inbox_boundary"
   static let iosTelephonyStatusPermission = "signalasi.scope.ios_app_visible_telephony_status"
   static let iosVPNStatusPermission = "signalasi.scope.ios_app_managed_vpn_status"
   static let iosDevicePolicyStatusPermission = "signalasi.scope.ios_app_visible_device_policy_status"
