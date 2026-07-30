@@ -18124,6 +18124,104 @@ struct AgentDesktopRunSummary: Codable, Equatable, Identifiable {
   }
 }
 
+struct AgentDesktopRemoteControlSnapshot: Equatable {
+  var desktopId: String
+  var desktopName: String
+  var desktopFingerprint: String
+  var serverRouteId: String
+  var fullDesktopExecutor: Bool
+  var enabled: Bool
+  var requireUnlocked: Bool
+  var currentAuthorization: AgentDesktopControlAuthorization?
+  var authorizations: [AgentDesktopControlAuthorization]
+  var recentAudit: [AgentDesktopControlAudit]
+  var recentReceipts: [AgentDesktopControlReceipt]
+  var activeRuns: [AgentDesktopRunSummary]
+  var lastActionStatus: String
+  var lastActionSummary: String
+  var lastActionAt: Int64
+  var screenshot: AgentDesktopControlScreenshot?
+  var perception: AgentDesktopPerceptionSnapshot?
+  var surfaceCatalog: AgentDesktopSurfaceCatalog?
+  var streamFps: Int
+  var streamActive: Bool
+
+  var authorized: Bool {
+    fullDesktopExecutor && enabled && currentAuthorization?.status == "active"
+  }
+
+  var pending: Bool {
+    fullDesktopExecutor && currentAuthorization?.status == "pending"
+  }
+
+  static func parse(_ source: AgentMcpJSONObject?) -> AgentDesktopRemoteControlSnapshot? {
+    guard let source else { return nil }
+    let authorizations = parseAuthorizations(source["authorizations"])
+    let currentAuthorization = AgentDesktopControlAuthorization.parse(source.object("current_authorization"))
+      ?? authorizations.first { $0.status == "active" }
+      ?? authorizations.first { $0.status == "pending" }
+    let fps = Int(source.int64("stream_fps"))
+    return AgentDesktopRemoteControlSnapshot(
+      desktopId: source.string("desktop_id"),
+      desktopName: source.string("desktop_name").nonEmpty ?? "SignalASI Desktop",
+      desktopFingerprint: source.string("desktop_fingerprint"),
+      serverRouteId: source.string("server_route_id"),
+      fullDesktopExecutor: source.bool("full_desktop_executor"),
+      enabled: source.bool("enabled"),
+      requireUnlocked: source.bool("require_unlocked"),
+      currentAuthorization: currentAuthorization,
+      authorizations: authorizations,
+      recentAudit: parseAudit(source["recent_audit"]),
+      recentReceipts: parseReceipts(source["recent_receipts"]),
+      activeRuns: AgentDesktopRunSummary.parseSummaries(source["active_runs"]),
+      lastActionStatus: source.string("last_action_status"),
+      lastActionSummary: source.string("last_action_summary"),
+      lastActionAt: source.int64("last_action_at"),
+      screenshot: AgentDesktopControlScreenshot.parse(
+        source.object("screenshot"),
+        defaultCapturedAt: source.int64("last_action_at")
+      ),
+      perception: AgentDesktopPerceptionSnapshot.parse(source.object("perception")),
+      surfaceCatalog: AgentDesktopSurfaceCatalog.parse(source.object("surface_catalog")),
+      streamFps: AgentDesktopScreenshotStreamPolicy.normalizeFps(fps) ?? 0,
+      streamActive: source.bool("stream_active")
+    )
+  }
+
+  static func parseAuthorizations(_ value: AgentMcpJSONValue?) -> [AgentDesktopControlAuthorization] {
+    switch value {
+    case .some(.array(let values)):
+      return values.compactMap { AgentDesktopControlAuthorization.parse($0.objectValue) }
+    case .some(.object(let object)):
+      return AgentDesktopControlAuthorization.parse(object).map { [$0] } ?? []
+    case .some(.string), .some(.int), .some(.double), .some(.bool), .some(.null), .none:
+      return []
+    }
+  }
+
+  static func parseAudit(_ value: AgentMcpJSONValue?) -> [AgentDesktopControlAudit] {
+    switch value {
+    case .some(.array(let values)):
+      return values.compactMap { AgentDesktopControlAudit.parse($0.objectValue) }
+    case .some(.object(let object)):
+      return AgentDesktopControlAudit.parse(object).map { [$0] } ?? []
+    case .some(.string), .some(.int), .some(.double), .some(.bool), .some(.null), .none:
+      return []
+    }
+  }
+
+  static func parseReceipts(_ value: AgentMcpJSONValue?) -> [AgentDesktopControlReceipt] {
+    switch value {
+    case .some(.array(let values)):
+      return values.compactMap { AgentDesktopControlReceipt.parse($0.objectValue) }
+    case .some(.object(let object)):
+      return AgentDesktopControlReceipt.parse(object).map { [$0] } ?? []
+    case .some(.string), .some(.int), .some(.double), .some(.bool), .some(.null), .none:
+      return []
+    }
+  }
+}
+
 struct AgentDesktopControlPendingRequest: Equatable {
   var actionId: String
   var desktopId: String
