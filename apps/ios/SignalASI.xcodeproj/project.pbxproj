@@ -46,6 +46,7 @@
     A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */; };
     A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000123 /* CustomDeviceHomeModels.swift */; };
     A10000000000000000000124 /* GlobalCapabilityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000124 /* GlobalCapabilityModels.swift */; };
+    A10000000000000000000125 /* AgentMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000125 /* AgentMemoryModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -53,6 +54,7 @@
     A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000205 /* AgentTeamDelegationTests.swift */; };
     A10000000000000000000206 /* AgentRunPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000206 /* AgentRunPolicyTests.swift */; };
     A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000207 /* AgentConversationRuntimeTests.swift */; };
+    A10000000000000000000208 /* AgentMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000208 /* AgentMemoryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -97,6 +99,7 @@
     A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionsBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000123 /* CustomDeviceHomeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDeviceHomeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000124 /* GlobalCapabilityModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -104,6 +107,7 @@
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
     A20000000000000000000206 /* AgentRunPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000207 /* AgentConversationRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationRuntimeTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000208 /* AgentMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -149,6 +153,7 @@
         A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */,
         A20000000000000000000123 /* CustomDeviceHomeModels.swift */,
         A20000000000000000000124 /* GlobalCapabilityModels.swift */,
+        A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -177,6 +182,7 @@
         A20000000000000000000205 /* AgentTeamDelegationTests.swift */,
         A20000000000000000000206 /* AgentRunPolicyTests.swift */,
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
+        A20000000000000000000208 /* AgentMemoryTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -298,6 +304,7 @@
         A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */,
         A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */,
         A10000000000000000000124 /* GlobalCapabilityModels.swift in Sources */,
+        A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -326,6 +333,7 @@
         A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */,
         A10000000000000000000206 /* AgentRunPolicyTests.swift in Sources */,
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
+        A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
