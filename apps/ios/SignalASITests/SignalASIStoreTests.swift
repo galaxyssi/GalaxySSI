@@ -6681,6 +6681,136 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNotEqual(windowSelect.requestSha256, windowActivate.requestSha256)
   }
 
+  func testAgentDesktopRemoteControlSnapshotCombinesAndroidState() throws {
+    let screenshotBytes = Data([0xff, 0xd8, 0xff, 0xd9])
+    let snapshot = try XCTUnwrap(AgentDesktopRemoteControlSnapshot.parse([
+      "desktop_id": .string("desktop-1"),
+      "desktop_name": .string("Workstation"),
+      "desktop_fingerprint": .string("desktop-fingerprint"),
+      "server_route_id": .string("server-route-1"),
+      "full_desktop_executor": .bool(true),
+      "enabled": .bool(true),
+      "require_unlocked": .bool(true),
+      "authorizations": .array([
+        .object([
+          "status": .string("pending")
+        ]),
+        .object([
+          "authorization_id": .string("auth-active"),
+          "status": .string("active"),
+          "desktop_session_id": .string("session-1"),
+          "desktop_session_expires_at": .int(1_800_000_030_000)
+        ])
+      ]),
+      "recent_audit": .array([
+        .object([
+          "event_type": .string("desktop_control_action"),
+          "tool_id": .string(AgentDesktopControlAction.screenshot),
+          "status": .string("succeeded"),
+          "summary": .string("Captured screen"),
+          "created_at": .int(1_800_000_000_100)
+        ])
+      ]),
+      "recent_receipts": .array([
+        .object([
+          "receipt_id": .string("receipt-1"),
+          "tool_id": .string(AgentDesktopControlAction.screenshot),
+          "status": .string("succeeded"),
+          "summary": .string("Captured screen")
+        ])
+      ]),
+      "active_runs": .array([
+        .object([
+          "task_id": .string("task-1"),
+          "conversation_id": .string("conversation-1"),
+          "turn_id": .string("turn-1"),
+          "agent_id": .string("agent-1"),
+          "status": .string("running"),
+          "prompt": .string("Review desktop"),
+          "current_step": .string("observing"),
+          "updated_at": .int(1_800_000_000_200),
+          "execution_view": .object([
+            "pausable": .bool(true),
+            "takeover_available": .bool(true)
+          ])
+        ])
+      ]),
+      "last_action_status": .string("succeeded"),
+      "last_action_summary": .string("Captured screen"),
+      "last_action_at": .int(1_800_000_000_300),
+      "screenshot": .object([
+        "image_mime": .string("image/jpeg"),
+        "image_base64": .string(screenshotBytes.base64EncodedString()),
+        "bytes": .int(Int64(screenshotBytes.count)),
+        "width": .int(640),
+        "height": .int(360),
+        "original_width": .int(1_920),
+        "original_height": .int(1_080)
+      ]),
+      "perception": .object([
+        "contract_version": .string(AgentDesktopPerceptionSnapshot.contractVersion),
+        "capture_id": .string("capture-1"),
+        "captured_at": .int(1_800_000_000_400),
+        "untrusted_evidence": .bool(true),
+        "available_layers": .array([.string("screenshot"), .string("ui_tree")]),
+        "ui_tree": .object([
+          "status": .string("ok"),
+          "element_count": .int(0),
+          "elements": .array([])
+        ])
+      ]),
+      "surface_catalog": .object([
+        "surface_contract": .string(AgentDesktopSurfaceCatalog.contractVersion),
+        "displays": .array([
+          .object([
+            "display_id": .string("display:primary"),
+            "name": .string("Display 1"),
+            "primary": .bool(true),
+            "bounds": .object(["width": .int(1_920), "height": .int(1_080)])
+          ])
+        ]),
+        "selection": .object([
+          "selected_display_id": .string("display:primary"),
+          "target_kind": .string("display")
+        ]),
+        "target": .object([
+          "title": .string("Display 1"),
+          "bounds": .object(["width": .int(1_920), "height": .int(1_080)])
+        ])
+      ]),
+      "stream_fps": .int(3),
+      "stream_active": .bool(true)
+    ]))
+    let pending = try XCTUnwrap(AgentDesktopRemoteControlSnapshot.parse([
+      "full_desktop_executor": .bool(true),
+      "current_authorization": .object([
+        "status": .string("pending")
+      ]),
+      "stream_fps": .int(4)
+    ]))
+
+    XCTAssertEqual(snapshot.desktopId, "desktop-1")
+    XCTAssertEqual(snapshot.desktopName, "Workstation")
+    XCTAssertEqual(snapshot.currentAuthorization?.authorizationId, "auth-active")
+    XCTAssertEqual(snapshot.authorizations.count, 2)
+    XCTAssertTrue(snapshot.authorized)
+    XCTAssertFalse(snapshot.pending)
+    XCTAssertTrue(snapshot.requireUnlocked)
+    XCTAssertEqual(snapshot.recentAudit.first?.summary, "Captured screen")
+    XCTAssertEqual(snapshot.recentReceipts.first?.receiptId, "receipt-1")
+    XCTAssertEqual(snapshot.activeRuns.first?.taskId, "task-1")
+    XCTAssertEqual(snapshot.screenshot?.capturedAt, 1_800_000_000_300)
+    XCTAssertEqual(snapshot.perception?.captureId, "capture-1")
+    XCTAssertEqual(snapshot.surfaceCatalog?.selection.displayId, "display:primary")
+    XCTAssertEqual(snapshot.streamFps, 3)
+    XCTAssertTrue(snapshot.streamActive)
+    XCTAssertEqual(pending.desktopName, "SignalASI Desktop")
+    XCTAssertTrue(pending.pending)
+    XCTAssertFalse(pending.authorized)
+    XCTAssertEqual(pending.streamFps, 0)
+    XCTAssertNil(AgentDesktopRemoteControlSnapshot.parse(nil))
+  }
+
   func testAgentDesktopControlReceiptProtocolVerifiesSignedScreenshotEvidence() throws {
     let signerId = "desktop_test"
     let desktopSessionId = "sth_desktops_00000000000000000000000000000000"
