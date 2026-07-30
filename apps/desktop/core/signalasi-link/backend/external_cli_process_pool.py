@@ -58,6 +58,7 @@ class PersistentCliRequest:
     working_directory: str = ""
     response_language: str = ""
     timeout_seconds: float = 120
+    priority: str = "foreground"
     metadata: dict = field(default_factory=dict)
     on_process: Callable[[subprocess.Popen], None] | None = field(
         default=None,
@@ -104,6 +105,7 @@ class _PersistentJsonlWorker:
         self.last_used_at = self.created_at
         self.request_count = 0
         self.busy = False
+        self.active_priority = ""
         self.retiring = False
         creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         self.process = popen_factory(
@@ -159,6 +161,7 @@ class _PersistentJsonlWorker:
                 "client_route_id": request.client_route_id,
                 "working_directory": request.working_directory,
                 "response_language": request.response_language,
+                "priority": str(request.priority or "foreground").strip().lower(),
                 "metadata": dict(request.metadata),
             },
         }
@@ -351,6 +354,7 @@ class ExternalCliProcessPool:
         self._condition = threading.Condition(threading.RLock())
         self._workers: dict[str, _PersistentJsonlWorker] = {}
         self._active_tasks: dict[str, str] = {}
+        self._foreground_waiters = 0
         self._closed = False
         self._metrics = {
             "process_starts": 0,
@@ -359,6 +363,9 @@ class ExternalCliProcessPool:
             "failures": 0,
             "cancellations": 0,
             "idle_releases": 0,
+            "foreground_requests": 0,
+            "background_requests": 0,
+            "foreground_bursts": 0,
         }
         self._janitor_stop = threading.Event()
         self._janitor_thread: threading.Thread | None = None
@@ -391,6 +398,7 @@ class ExternalCliProcessPool:
                 self.max_processes,
             ),
         )
+        priority = self._normalize_priority(request.priority)
         worker, reused = self._acquire(
             request.agent_id,
             normalized_command,
@@ -400,6 +408,7 @@ class ExternalCliProcessPool:
             task_id=request.task_id,
             process_limit=effective_process_limit,
             timeout_seconds=request.timeout_seconds,
+            priority=priority,
         )
         try:
             if request.on_process is not None:
@@ -425,6 +434,7 @@ class ExternalCliProcessPool:
                 current = self._workers.get(worker.worker_id)
                 if current is not None:
                     current.busy = False
+                    current.active_priority = ""
                     current.last_used_at = self._now()
                     if current.request_count >= self.max_requests_per_process:
                         self._retire_locked(current.worker_id)
@@ -489,6 +499,7 @@ class ExternalCliProcessPool:
                     "agent_id": worker.agent_id,
                     "pid": worker.pid,
                     "state": "busy" if worker.busy else "idle",
+                    "priority": worker.active_priority,
                     "alive": worker.alive(),
                     "request_count": worker.request_count,
                     "age_seconds": max(0.0, now - worker.created_at),
@@ -506,6 +517,7 @@ class ExternalCliProcessPool:
                 "idle_count": sum(1 for item in workers if item["state"] == "idle"),
                 "workers": workers,
                 "metrics": dict(self._metrics),
+                "foreground_waiters": self._foreground_waiters,
             }
 
     def shutdown(self) -> None:
@@ -532,6 +544,7 @@ class ExternalCliProcessPool:
         task_id: str,
         process_limit: int,
         timeout_seconds: float,
+        priority: str,
     ) -> tuple[_PersistentJsonlWorker, bool]:
         deadline = self._now() + max(0.1, float(timeout_seconds or 120))
         normalized_task_id = str(task_id or "").strip()
@@ -542,44 +555,97 @@ class ExternalCliProcessPool:
                 raise ExternalCliPoolError(
                     f"Persistent Agent task is already active: {normalized_task_id}"
                 )
-            while True:
-                self._ensure_open_locked()
-                self._prune_locked()
-                matching = self._matching_workers_locked(agent_id, command, environment_key)
-                for worker in matching:
-                    if not worker.busy and worker.alive():
-                        self._activate_locked(worker, normalized_task_id, reused=True)
-                        return worker, True
-                if (
-                    len(matching) < process_limit
-                    and len(self._workers) < self.max_processes
-                ):
-                    worker = self._spawn_locked(
+            foreground = priority != "background"
+            if foreground:
+                self._foreground_waiters += 1
+            try:
+                while True:
+                    self._ensure_open_locked()
+                    self._prune_locked()
+                    if not foreground and self._foreground_waiters > 0:
+                        remaining = deadline - self._now()
+                        if remaining <= 0:
+                            raise ExternalCliPoolTimeout(
+                                f"No persistent process capacity available for {agent_id}"
+                            )
+                        self._condition.wait(timeout=min(remaining, 0.1))
+                        continue
+                    matching = self._matching_workers_locked(
                         agent_id,
                         command,
                         environment_key,
-                        env,
-                        cwd,
                     )
-                    self._activate_locked(worker, normalized_task_id, reused=False)
-                    return worker, False
-                idle_other = sorted(
-                    (
-                        worker
+                    for worker in matching:
+                        if not worker.busy and worker.alive():
+                            self._activate_locked(
+                                worker,
+                                normalized_task_id,
+                                reused=True,
+                                priority=priority,
+                            )
+                            return worker, True
+                    background_matching_busy = any(
+                        worker.busy and worker.active_priority == "background"
+                        for worker in matching
+                    )
+                    background_global_busy = any(
+                        worker.busy and worker.active_priority == "background"
                         for worker in self._workers.values()
-                        if not worker.busy and worker not in matching
-                    ),
-                    key=lambda item: item.last_used_at,
-                )
-                if idle_other:
-                    self._retire_locked(idle_other[0].worker_id)
-                    continue
-                remaining = deadline - self._now()
-                if remaining <= 0:
-                    raise ExternalCliPoolTimeout(
-                        f"No persistent process capacity available for {agent_id}"
                     )
-                self._condition.wait(timeout=min(remaining, 0.25))
+                    agent_limit = process_limit + (
+                        1 if foreground and background_matching_busy else 0
+                    )
+                    global_limit = self.max_processes + (
+                        1 if foreground and background_global_busy else 0
+                    )
+                    if (
+                        len(matching) < agent_limit
+                        and len(self._workers) < global_limit
+                    ):
+                        burst = (
+                            foreground
+                            and (
+                                len(matching) >= process_limit
+                                or len(self._workers) >= self.max_processes
+                            )
+                        )
+                        worker = self._spawn_locked(
+                            agent_id,
+                            command,
+                            environment_key,
+                            env,
+                            cwd,
+                        )
+                        self._activate_locked(
+                            worker,
+                            normalized_task_id,
+                            reused=False,
+                            priority=priority,
+                        )
+                        if burst:
+                            self._metrics["foreground_bursts"] += 1
+                        return worker, False
+                    idle_other = sorted(
+                        (
+                            worker
+                            for worker in self._workers.values()
+                            if not worker.busy and worker not in matching
+                        ),
+                        key=lambda item: item.last_used_at,
+                    )
+                    if idle_other:
+                        self._retire_locked(idle_other[0].worker_id)
+                        continue
+                    remaining = deadline - self._now()
+                    if remaining <= 0:
+                        raise ExternalCliPoolTimeout(
+                            f"No persistent process capacity available for {agent_id}"
+                        )
+                    self._condition.wait(timeout=min(remaining, 0.25))
+            finally:
+                if foreground:
+                    self._foreground_waiters = max(0, self._foreground_waiters - 1)
+                    self._condition.notify_all()
 
     def _activate_locked(
         self,
@@ -587,10 +653,16 @@ class ExternalCliProcessPool:
         task_id: str,
         *,
         reused: bool,
+        priority: str,
     ) -> None:
         worker.busy = True
+        worker.active_priority = priority
         self._active_tasks[task_id] = worker.worker_id
         self._metrics["requests"] += 1
+        if priority == "background":
+            self._metrics["background_requests"] += 1
+        else:
+            self._metrics["foreground_requests"] += 1
         if reused:
             self._metrics["warm_reuses"] += 1
 
@@ -631,6 +703,15 @@ class ExternalCliProcessPool:
             and worker.environment_key == environment_key
             and not worker.retiring
         ]
+
+    @staticmethod
+    def _normalize_priority(priority: str) -> str:
+        normalized = str(priority or "foreground").strip().lower()
+        if normalized not in {"foreground", "normal", "background"}:
+            raise ExternalCliPoolError(
+                f"Unsupported persistent Agent priority: {priority}"
+            )
+        return normalized
 
     def _prune_locked(self) -> int:
         now = self._now()

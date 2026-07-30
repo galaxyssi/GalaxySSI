@@ -950,6 +950,20 @@ object AgentProactiveTaskExecutor {
             )
             return
         }
+        if (foregroundTurnBlocksBackground(context)) {
+            store.upsertRun(
+                run.copy(
+                    status = AgentProactiveRunStatus.WAITING,
+                    resultSummary = "Waiting for foreground chat"
+                )
+            )
+            scheduleWake(
+                context,
+                run.runId,
+                System.currentTimeMillis() + FOREGROUND_RECHECK_MILLIS
+            )
+            return
+        }
         if (!constraintsSatisfied(context, task.policy)) {
             store.upsertRun(
                 run.copy(
@@ -1443,6 +1457,17 @@ object AgentProactiveTaskExecutor {
 
     private const val CONSTRAINT_RECHECK_MILLIS = 60_000L
     private const val CONCURRENCY_RECHECK_MILLIS = 15_000L
+    private const val FOREGROUND_RECHECK_MILLIS = 1_000L
+
+    private fun foregroundTurnBlocksBackground(context: Context): Boolean {
+        if (AgentForegroundWorkCoordinator.hasForegroundWork) return true
+        return runCatching {
+            AgentTaskRuntime.supervisor(context).recoverableTasks().any { workspace ->
+                workspace.status == AgentWorkspaceStatus.WAITING_RESPONSE ||
+                    workspace.status == AgentWorkspaceStatus.WAITING_CONFIRMATION
+            }
+        }.getOrDefault(false)
+    }
 }
 
 private object AgentProactiveTaskNotifier {

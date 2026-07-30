@@ -1243,6 +1243,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             supervisor.resume(
                 workspaceId = turnId,
                 lane = AgentTaskLane.READ_REASONING,
+                priority = AgentTaskPriority.FOREGROUND,
                 hook = AgentTaskResumeHook { context, _ ->
                     bindAgentExecutionLoop(runtime, turnId, context)
                     context.progress("connector.response", "Connector response received")
@@ -4510,7 +4511,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .ifBlank { AppStore.profile(this).optString("signalasi_id") },
             status = AgentWorkspaceStatus.CREATED
         )
-        AgentTaskRuntime.supervisor(this).submit(workspace, AgentTaskLane.READ_REASONING) {
+        AgentTaskRuntime.supervisor(this).submit(
+            workspace,
+            AgentTaskLane.READ_REASONING,
+            AgentTaskPriority.FOREGROUND
+        ) {
             progress("planning", "Planning task")
             val runtime = MobileNativeAgent(
                 this@MainActivity,
@@ -5402,7 +5407,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun refreshGlobalAgentCognition() {
         if (!::globalSuperAgentRuntime.isInitialized || !::agentTranscriptStore.isInitialized) return
-        if (foregroundAgentTurnInProgress()) {
+        if (AgentForegroundWorkCoordinator.hasForegroundWork || foregroundAgentTurnInProgress()) {
             if (globalAgentRefreshRequested.compareAndSet(false, true)) {
                 handler.postDelayed({
                     globalAgentRefreshRequested.set(false)

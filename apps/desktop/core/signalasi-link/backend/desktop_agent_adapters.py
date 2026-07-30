@@ -60,6 +60,22 @@ class AgentInvocationMode(str, Enum):
             raise ValueError(f"Unsupported Agent invocation mode: {value}") from exc
 
 
+class AgentRunPriority(str, Enum):
+    FOREGROUND = "foreground"
+    NORMAL = "normal"
+    BACKGROUND = "background"
+
+    @classmethod
+    def parse(cls, value: str | "AgentRunPriority") -> "AgentRunPriority":
+        if isinstance(value, cls):
+            return value
+        normalized = str(value or cls.FOREGROUND.value).strip().lower()
+        try:
+            return cls(normalized)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported Agent Run priority: {value}") from exc
+
+
 @dataclass(frozen=True)
 class AgentAdapterDescriptor:
     agent_id: str
@@ -113,6 +129,7 @@ class AgentAdapterRequest:
     source_message_id: str = ""
     return_path: str = ""
     response_language: str = ""
+    priority: AgentRunPriority = AgentRunPriority.FOREGROUND
     checkpoint: dict = field(default_factory=dict)
     artifacts: tuple[dict, ...] = ()
 
@@ -167,6 +184,7 @@ class AgentAdapterRequest:
             source_message_id=str(self.source_message_id or "").strip(),
             return_path=str(self.return_path or "").strip(),
             response_language=str(self.response_language or "").strip(),
+            priority=AgentRunPriority.parse(self.priority),
             checkpoint=dict(self.checkpoint or {}),
             artifacts=tuple(dict(item) for item in self.artifacts if isinstance(item, dict)),
         )
@@ -284,6 +302,7 @@ class DesktopAgentStateStore:
                 "conversation_id": request.conversation_id,
                 "source_message_id": request.source_message_id,
                 "return_path": request.return_path,
+                "priority": request.priority.value,
                 "checkpoint": dict(request.checkpoint),
                 "artifacts": [dict(item) for item in request.artifacts],
                 "events": [self._event(1, "run_started", now_ms)],
@@ -507,6 +526,7 @@ class DesktopAgentStateStore:
                 "handoff_chain": request.handoff_chain,
                 "conversation_id": request.conversation_id,
                 "source_message_id": request.source_message_id,
+                "priority": request.priority.value,
                 "desktop_access_profile": str(
                     request.checkpoint.get("desktop_access_profile") or ""
                 ),

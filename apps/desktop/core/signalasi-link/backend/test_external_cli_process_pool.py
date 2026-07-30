@@ -74,6 +74,7 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
         task_id: str,
         *,
         timeout_seconds: float = 2,
+        priority: str = "foreground",
     ) -> PersistentCliRequest:
         return PersistentCliRequest(
             agent_id="custom-agent",
@@ -82,6 +83,7 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
             conversation_id="conversation-1",
             working_directory="C:/workspace",
             timeout_seconds=timeout_seconds,
+            priority=priority,
         )
 
     def execute(
@@ -92,9 +94,15 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
         *,
         timeout_seconds: float = 2,
         process_limit: int | None = None,
+        priority: str = "foreground",
     ):
         return pool.execute(
-            self.request(prompt, task_id, timeout_seconds=timeout_seconds),
+            self.request(
+                prompt,
+                task_id,
+                timeout_seconds=timeout_seconds,
+                priority=priority,
+            ),
             command=self.command(),
             env=self.env(),
             cwd=self.root,
@@ -184,6 +192,49 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
         self.assertEqual(2, len(results))
         self.assertEqual(1, len({result.pid for result in results}))
         self.assertEqual(1, pool.health()["process_count"])
+
+    def test_foreground_request_bursts_past_busy_background_process(self):
+        pool = self.pool(max_processes=1, max_processes_per_agent=1)
+        background_result = []
+        foreground_result = []
+        background = threading.Thread(
+            target=lambda: background_result.append(
+                self.execute(
+                    pool,
+                    "sleep:0.4",
+                    "background-task",
+                    process_limit=1,
+                    priority="background",
+                )
+            )
+        )
+        background.start()
+        deadline = time.time() + 2
+        while time.time() < deadline and pool.health()["busy_count"] < 1:
+            time.sleep(0.01)
+        self.assertEqual(1, pool.health()["busy_count"])
+
+        foreground = threading.Thread(
+            target=lambda: foreground_result.append(
+                self.execute(
+                    pool,
+                    "foreground",
+                    "foreground-task",
+                    process_limit=1,
+                    priority="foreground",
+                )
+            )
+        )
+        foreground.start()
+        foreground.join(timeout=0.25)
+
+        self.assertFalse(foreground.is_alive())
+        self.assertEqual(1, len(foreground_result))
+        self.assertTrue(background.is_alive())
+        self.assertEqual(1, pool.health()["metrics"]["foreground_bursts"])
+
+        background.join(timeout=2)
+        self.assertEqual(1, len(background_result))
 
     def test_process_rotates_after_request_budget(self):
         pool = self.pool(max_requests_per_process=1)

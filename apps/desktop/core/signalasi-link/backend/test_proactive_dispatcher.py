@@ -83,6 +83,7 @@ class DesktopProactiveDispatcherTests(unittest.TestCase):
         sent_prompt = deliver.call_args.args[1]
         self.assertIn("untrusted event data", sent_prompt)
         self.assertIn("<untrusted-webhook>", sent_prompt)
+        self.assertEqual("background", deliver.call_args.kwargs["priority"])
         self.assertEqual("Summary", output["reply"])
 
     def test_team_has_one_final_responder_and_isolates_member_failure(self):

@@ -23,12 +23,13 @@ from desktop_agent_adapters import (
     AgentAdapterResult,
     AgentDeliveryMode,
     AgentInvocationMode,
+    AgentRunPriority,
     DesktopAgentProvider,
 )
 
 
 RUNTIME_PROTOCOL = "signalasi.agent-runtime/1.0"
-RUNTIME_STATE_VERSION = 3
+RUNTIME_STATE_VERSION = 4
 DEFAULT_MAX_WORKERS = 4
 DEFAULT_MAX_QUEUED_RUNS = 64
 DEFAULT_AGENT_FAILURE_THRESHOLD = 3
@@ -67,31 +68,78 @@ class DesktopAgentCapacityExhausted(DesktopAgentRuntimeError):
 class AgentCapacityController:
     """Bounded global admission state for queued and active Agent Runs."""
 
-    def __init__(self, *, max_active: int, max_queued: int = DEFAULT_MAX_QUEUED_RUNS) -> None:
+    def __init__(
+        self,
+        *,
+        max_active: int,
+        max_queued: int = DEFAULT_MAX_QUEUED_RUNS,
+        max_background_active: int = 1,
+        max_background_queued: int | None = None,
+    ) -> None:
         self.max_active = max(1, min(int(max_active or 1), 32))
         self.max_queued = max(0, min(int(max_queued or 0), 10_000))
+        self.max_background_active = max(
+            1,
+            min(int(max_background_active or 1), 4),
+        )
+        self.max_background_queued = max(
+            0,
+            min(
+                int(
+                    max_background_queued
+                    if max_background_queued is not None
+                    else min(self.max_queued, 16)
+                ),
+                1_000,
+            ),
+        )
         self._lock = threading.RLock()
         self._runs: dict[str, dict[str, str | int]] = {}
         self._rejected_runs = 0
 
-    def reserve(self, run_id: str, agent_id: str) -> None:
+    def reserve(
+        self,
+        run_id: str,
+        agent_id: str,
+        priority: str | AgentRunPriority = AgentRunPriority.FOREGROUND,
+    ) -> None:
         run = str(run_id or "").strip()
         agent = str(agent_id or "").strip()
+        normalized_priority = AgentRunPriority.parse(priority)
         if not run or not agent:
             raise DesktopAgentRuntimeError("Agent capacity reservation requires Run and Agent ids")
         with self._lock:
             if run in self._runs:
                 return
-            queued = sum(1 for item in self._runs.values() if item["state"] == "queued")
-            active = sum(1 for item in self._runs.values() if item["state"] == "active")
-            if active + queued >= self.max_active + self.max_queued:
+            is_background = normalized_priority == AgentRunPriority.BACKGROUND
+            matching = [
+                item
+                for item in self._runs.values()
+                if (
+                    str(item.get("priority") or AgentRunPriority.FOREGROUND.value)
+                    == AgentRunPriority.BACKGROUND.value
+                ) == is_background
+            ]
+            queued = sum(1 for item in matching if item["state"] == "queued")
+            active = sum(1 for item in matching if item["state"] == "active")
+            maximum = (
+                self.max_background_active + self.max_background_queued
+                if is_background
+                else self.max_active + self.max_queued
+            )
+            if active + queued >= maximum:
                 self._rejected_runs += 1
                 raise DesktopAgentCapacityExhausted(
-                    "Desktop Agent Runtime is busy; its bounded queue is full"
+                    (
+                        "Desktop background Agent queue is full"
+                        if is_background
+                        else "Desktop Agent Runtime is busy; its bounded foreground queue is full"
+                    )
                 )
             self._runs[run] = {
                 "agent_id": agent,
                 "state": "queued",
+                "priority": normalized_priority.value,
                 "reserved_at": int(time.time() * 1_000),
                 "started_at": 0,
             }
@@ -114,6 +162,18 @@ class AgentCapacityController:
         with self._lock:
             queued = [row for row in self._runs.values() if row["state"] == "queued"]
             active = [row for row in self._runs.values() if row["state"] == "active"]
+            foreground = [
+                row
+                for row in self._runs.values()
+                if str(row.get("priority") or AgentRunPriority.FOREGROUND.value)
+                != AgentRunPriority.BACKGROUND.value
+            ]
+            background = [
+                row
+                for row in self._runs.values()
+                if str(row.get("priority") or AgentRunPriority.FOREGROUND.value)
+                == AgentRunPriority.BACKGROUND.value
+            ]
             agent_ids = sorted({
                 str(row.get("agent_id") or "")
                 for row in self._runs.values()
@@ -138,10 +198,32 @@ class AgentCapacityController:
             return {
                 "max_active": self.max_active,
                 "max_queued": self.max_queued,
+                "max_background_active": self.max_background_active,
+                "max_background_queued": self.max_background_queued,
                 "active_runs": len(active),
                 "queued_runs": len(queued),
-                "available_active_slots": max(0, self.max_active - len(active)),
-                "available_queue_slots": max(0, self.max_queued - len(queued)),
+                "foreground_active_runs": sum(
+                    1 for row in foreground if row["state"] == "active"
+                ),
+                "foreground_queued_runs": sum(
+                    1 for row in foreground if row["state"] == "queued"
+                ),
+                "background_active_runs": sum(
+                    1 for row in background if row["state"] == "active"
+                ),
+                "background_queued_runs": sum(
+                    1 for row in background if row["state"] == "queued"
+                ),
+                "available_active_slots": max(
+                    0,
+                    self.max_active
+                    - sum(1 for row in foreground if row["state"] == "active"),
+                ),
+                "available_queue_slots": max(
+                    0,
+                    self.max_queued
+                    - sum(1 for row in foreground if row["state"] == "queued"),
+                ),
                 "rejected_runs": self._rejected_runs,
                 "by_agent": by_agent,
             }
@@ -349,6 +431,7 @@ class DesktopAgentRuntimeStore:
                 "task_id": str(request.checkpoint.get("task_id") or request.run_id).strip(),
                 "turn_id": turn_id,
                 "source_message_id": request.source_message_id,
+                "priority": request.priority.value,
                 "state": "queued",
                 "created_at": now_ms,
                 "queued_at": now_ms,
@@ -695,6 +778,7 @@ class DesktopAgentRuntimeStore:
                 "source_message_id": request.source_message_id,
                 "return_path": request.return_path,
                 "response_language": request.response_language,
+                "priority": request.priority.value,
                 "client_route_id": str(request.checkpoint.get("client_route_id") or ""),
                 "turn_id": str(request.checkpoint.get("turn_id") or ""),
                 "checkpoint": request.checkpoint,
@@ -768,6 +852,9 @@ class DesktopAgentRuntimeStore:
             "task_id": str(row.get("task_id") or ""),
             "turn_id": str(row.get("turn_id") or ""),
             "source_message_id": str(row.get("source_message_id") or ""),
+            "priority": str(
+                row.get("priority") or AgentRunPriority.FOREGROUND.value
+            ),
             "state": str(row.get("state") or "unknown"),
             "created_at": int(row.get("created_at") or 0),
             "queued_at": int(row.get("queued_at") or 0),
@@ -819,9 +906,13 @@ class DesktopAgentRuntimeServer:
         self.provider = provider
         self.store = store
         self.max_workers = max(1, min(int(max_workers or DEFAULT_MAX_WORKERS), 32))
-        self._executor = ThreadPoolExecutor(
+        self._foreground_executor = ThreadPoolExecutor(
             max_workers=self.max_workers,
-            thread_name_prefix="signalasi-agent-runtime",
+            thread_name_prefix="signalasi-agent-foreground",
+        )
+        self._background_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="signalasi-agent-background",
         )
         self._lock = threading.RLock()
         self._futures: dict[str, Future[AgentAdapterResult]] = {}
@@ -840,7 +931,11 @@ class DesktopAgentRuntimeServer:
         if not created:
             return snapshot
         try:
-            self.capacity.reserve(normalized.run_id, normalized.agent_id)
+            self.capacity.reserve(
+                normalized.run_id,
+                normalized.agent_id,
+                normalized.priority,
+            )
         except DesktopAgentCapacityExhausted as exc:
             self.store.fail(normalized.run_id, str(exc))
             raise
@@ -850,7 +945,12 @@ class DesktopAgentRuntimeServer:
                 self.store.fail(normalized.run_id, "Desktop Agent Runtime is shutting down")
                 raise DesktopAgentRuntimeError("Desktop Agent Runtime is shutting down")
             try:
-                future = self._executor.submit(self._execute, normalized)
+                executor = (
+                    self._background_executor
+                    if normalized.priority == AgentRunPriority.BACKGROUND
+                    else self._foreground_executor
+                )
+                future = executor.submit(self._execute, normalized)
             except Exception:
                 self.capacity.release(normalized.run_id)
                 self.store.fail(
@@ -964,6 +1064,8 @@ class DesktopAgentRuntimeServer:
             "state_version": RUNTIME_STATE_VERSION,
             "status": "stopped" if closed else "ready",
             "max_concurrency": self.max_workers,
+            "foreground_max_concurrency": self.max_workers,
+            "background_max_concurrency": 1,
             "active_runs": active_runs,
             "queued_runs": queued_runs,
             "pending_futures": pending_futures,
@@ -986,6 +1088,8 @@ class DesktopAgentRuntimeServer:
                 "per_agent_fault_domains",
                 "bounded_global_queue",
                 "capacity_backpressure",
+                "foreground_background_isolation",
+                "foreground_reserved_capacity",
             ],
             "agents": agents,
             "fault_domains": self.fault_domains.snapshots(
@@ -1011,7 +1115,8 @@ class DesktopAgentRuntimeServer:
             except Exception:
                 pass
         self.store.interrupt_active()
-        self._executor.shutdown(wait=wait, cancel_futures=True)
+        self._foreground_executor.shutdown(wait=wait, cancel_futures=True)
+        self._background_executor.shutdown(wait=wait, cancel_futures=True)
 
     def _execute(self, request: AgentAdapterRequest) -> AgentAdapterResult:
         try:

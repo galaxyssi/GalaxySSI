@@ -25,6 +25,12 @@ enum class AgentTaskLane {
     SIDE_EFFECT
 }
 
+enum class AgentTaskPriority {
+    FOREGROUND,
+    NORMAL,
+    BACKGROUND
+}
+
 object AgentTaskEventKinds {
     const val QUEUED = "task.queued"
     const val RESUMED = "task.resumed"
@@ -84,6 +90,7 @@ class AgentTaskHandle internal constructor(
     val workspaceId: String,
     val taskId: String,
     val lane: AgentTaskLane,
+    val priority: AgentTaskPriority,
     val cancellationSource: AgentTaskCancellationSource,
     val job: Job
 ) {
@@ -101,6 +108,7 @@ class AgentTaskHandle internal constructor(
 class AgentTaskContext internal constructor(
     val workspaceKey: AgentWorkspaceKey,
     val lane: AgentTaskLane,
+    val priority: AgentTaskPriority,
     val cancellationSource: AgentTaskCancellationSource,
     private val supervisor: AgentTaskSupervisor
 ) {
@@ -213,6 +221,13 @@ class AgentTaskSupervisor(
         supervisorJob + dispatcher + CoroutineName("AgentTaskSupervisor")
     )
     private val readReasoningPermits = Semaphore(maxConcurrentReadReasoningTasks)
+    private val backgroundReadReasoningPermits = Semaphore(
+        if (maxConcurrentReadReasoningTasks > 1) {
+            maxConcurrentReadReasoningTasks - 1
+        } else {
+            1
+        }
+    )
     private val sideEffectMutex = Mutex()
     private val storeMutationLock = Any()
     private val closed = AtomicBoolean(false)
@@ -281,10 +296,12 @@ class AgentTaskSupervisor(
     fun submit(
         workspace: AgentWorkspace,
         lane: AgentTaskLane = AgentTaskLane.READ_REASONING,
+        priority: AgentTaskPriority = AgentTaskPriority.NORMAL,
         block: suspend AgentTaskContext.() -> Unit
     ): AgentTaskHandle = startTask(
         workspace = workspace,
         lane = lane,
+        priority = priority,
         resumed = false,
         block = block
     )
@@ -292,27 +309,30 @@ class AgentTaskSupervisor(
     fun launch(
         workspace: AgentWorkspace,
         lane: AgentTaskLane = AgentTaskLane.READ_REASONING,
+        priority: AgentTaskPriority = AgentTaskPriority.NORMAL,
         block: suspend AgentTaskContext.() -> Unit
-    ): AgentTaskHandle = submit(workspace, lane, block)
+    ): AgentTaskHandle = submit(workspace, lane, priority, block)
 
     fun recoverableTasks(): List<AgentWorkspace> = workspaceStore.recoverable()
 
     fun resume(
         workspaceId: String,
         lane: AgentTaskLane = AgentTaskLane.READ_REASONING,
+        priority: AgentTaskPriority = AgentTaskPriority.NORMAL,
         hook: AgentTaskResumeHook
     ): AgentTaskHandle {
         val recovered = requireWorkspace(workspaceId)
         require(!recovered.status.isTerminal && !recovered.cancellationRequested) {
             "Workspace $workspaceId is not recoverable"
         }
-        return startTask(recovered, lane, resumed = true) {
+        return startTask(recovered, lane, priority, resumed = true) {
             hook.resume(this, recovered)
         }
     }
 
     fun resumeRecoverable(
         laneSelector: (AgentWorkspace) -> AgentTaskLane = { AgentTaskLane.READ_REASONING },
+        prioritySelector: (AgentWorkspace) -> AgentTaskPriority = { AgentTaskPriority.NORMAL },
         hook: AgentTaskResumeHook
     ): List<AgentTaskHandle> = recoverableTasks()
         .filterNot { activeByWorkspace.containsKey(it.workspaceId) }
@@ -320,6 +340,7 @@ class AgentTaskSupervisor(
             startTask(
                 workspace = workspace,
                 lane = laneSelector(workspace),
+                priority = prioritySelector(workspace),
                 resumed = true
             ) {
                 hook.resume(this, workspace)
@@ -696,6 +717,7 @@ class AgentTaskSupervisor(
     private fun startTask(
         workspace: AgentWorkspace,
         lane: AgentTaskLane,
+        priority: AgentTaskPriority,
         resumed: Boolean,
         block: suspend AgentTaskContext.() -> Unit
     ): AgentTaskHandle {
@@ -720,6 +742,7 @@ class AgentTaskSupervisor(
             workspaceId = normalizedWorkspace.workspaceId,
             taskId = normalizedWorkspace.taskId,
             lane = lane,
+            priority = priority,
             cancellationSource = cancellationSource
         )
         try {
@@ -752,6 +775,7 @@ class AgentTaskSupervisor(
         val context = AgentTaskContext(
             workspaceKey = queued.key,
             lane = lane,
+            priority = priority,
             cancellationSource = cancellationSource,
             supervisor = this
         )
@@ -771,6 +795,7 @@ class AgentTaskSupervisor(
             workspaceId = queued.workspaceId,
             taskId = queued.taskId,
             lane = lane,
+            priority = priority,
             cancellationSource = cancellationSource,
             job = execution
         )
@@ -786,7 +811,7 @@ class AgentTaskSupervisor(
         block: suspend AgentTaskContext.() -> Unit
     ) {
         try {
-            runInLane(control.lane) {
+            runInLane(control.lane, control.priority) {
                 context.ensureActive()
                 transition(
                     workspaceId = control.workspaceId,
@@ -806,13 +831,26 @@ class AgentTaskSupervisor(
         }
     }
 
-    private suspend fun <T> runInLane(lane: AgentTaskLane, block: suspend () -> T): T = when (lane) {
+    private suspend fun <T> runInLane(
+        lane: AgentTaskLane,
+        priority: AgentTaskPriority,
+        block: suspend () -> T
+    ): T = when (lane) {
         AgentTaskLane.READ_REASONING -> {
-            readReasoningPermits.acquire()
+            if (priority == AgentTaskPriority.BACKGROUND) {
+                backgroundReadReasoningPermits.acquire()
+            }
             try {
-                block()
+                readReasoningPermits.acquire()
+                try {
+                    block()
+                } finally {
+                    readReasoningPermits.release()
+                }
             } finally {
-                readReasoningPermits.release()
+                if (priority == AgentTaskPriority.BACKGROUND) {
+                    backgroundReadReasoningPermits.release()
+                }
             }
         }
 
@@ -1012,9 +1050,20 @@ class AgentTaskSupervisor(
             activeByWorkspace.remove(control.workspaceId, control)
             error("Task ${control.taskId} is already active")
         }
+        if (control.priority == AgentTaskPriority.FOREGROUND) {
+            try {
+                control.foregroundLease = AgentForegroundWorkCoordinator.begin(control.taskId)
+            } catch (failure: Throwable) {
+                activeByWorkspace.remove(control.workspaceId, control)
+                activeByTask.remove(control.taskId, control)
+                throw failure
+            }
+        }
     }
 
     private fun release(control: TaskControl) {
+        control.foregroundLease?.close()
+        control.foregroundLease = null
         activeByWorkspace.remove(control.workspaceId, control)
         activeByTask.remove(control.taskId, control)
     }
@@ -1025,7 +1074,9 @@ class AgentTaskSupervisor(
         val workspaceId: String,
         val taskId: String,
         val lane: AgentTaskLane,
+        val priority: AgentTaskPriority,
         val cancellationSource: AgentTaskCancellationSource,
+        @Volatile var foregroundLease: AgentForegroundWorkCoordinator.Lease? = null,
         @Volatile var executionJob: Job? = null,
         @Volatile var lastActivityAtMillis: Long = 0L
     )
