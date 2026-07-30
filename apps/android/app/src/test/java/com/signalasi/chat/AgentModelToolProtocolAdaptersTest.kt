@@ -80,6 +80,10 @@ class AgentModelToolProtocolAdaptersTest {
         val assistant = messages.getJSONObject(2)
         assertEquals("call-openai-2", assistant.getJSONArray("tool_calls").getJSONObject(1).getString("id"))
         assertEquals("call-openai-1", messages.getJSONObject(3).getString("tool_call_id"))
+        val evidenceBoundary = JSONObject(messages.getJSONObject(3).getString("content"))
+            .getJSONObject(AgentUntrustedEvidenceBoundary.METADATA_KEY)
+        assertEquals("untrusted", evidenceBoundary.getString("trust"))
+        assertEquals("none", evidenceBoundary.getString("instruction_authority"))
     }
 
     @Test
@@ -322,6 +326,7 @@ class AgentModelToolProtocolAdaptersTest {
         val json = JSONObject(content)
         assertTrue(json.getBoolean("truncated"))
         assertEquals("bounded-call", json.getString("tool_call_id"))
+        assertTrue(json.getString("_signalasi_evidence").contains("untrusted"))
     }
 
     private fun expectProtocolError(code: String, block: () -> Unit) {

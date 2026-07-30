@@ -23,7 +23,13 @@ object CloudModelClient {
             "Use a webpage block with an HTTPS uri when the actual public page should appear inline. Always include fallback_text."
 
     private fun defaultSystemPrompt(context: Context): String =
-        CodexStyleResponsePolicy.prompt(context) + "\n" + RICH_OUTPUT_PROMPT
+        secureSystemPrompt(CodexStyleResponsePolicy.prompt(context) + "\n" + RICH_OUTPUT_PROMPT)
+
+    private fun secureSystemPrompt(systemPrompt: String): String {
+        val policyLength = AgentUntrustedEvidenceBoundary.systemPolicy.length + 2
+        val boundedBase = systemPrompt.take((4_000 - policyLength).coerceAtLeast(1_000))
+        return AgentUntrustedEvidenceBoundary.enforceSystemPrompt(boundedBase)
+    }
 
     private fun isDefaultSystemPrompt(systemPrompt: String): Boolean =
         systemPrompt.contains(RICH_OUTPUT_PROMPT)
@@ -65,7 +71,7 @@ object CloudModelClient {
     ): CloudModelResponse {
         validateContact(context, contact)
         val turn = ChatMessage(0L, prompt, true, Contact("me", context.getString(R.string.chat_me), ""))
-        val boundedSystemPrompt = systemPrompt.take(4_000)
+        val boundedSystemPrompt = secureSystemPrompt(systemPrompt)
         return when (contact.optString("cloud_api_style", "openai")) {
             "anthropic" -> sendAnthropicWithUsage(
                 context,
@@ -112,7 +118,7 @@ object CloudModelClient {
                         DEFAULT_OUTPUT_RESERVE_TOKENS
                     ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
                     val compacted = AgentModelContextCompactor.compact(
-                        request.messages,
+                        AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
                         ConversationContextBudget(
                             contextWindowTokens = contextWindow,
                             reservedOutputTokens = outputReserve
@@ -226,7 +232,8 @@ object CloudModelClient {
         onToolEvent: ((CloudToolEvent) -> Unit)?,
         contextWindow: Int
     ): CloudModelResponse {
-        val effectiveSystemPrompt = systemPrompt + "\n" + CloudWebGrounding.currentEvidencePrompt()
+        val effectiveSystemPrompt =
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
         val compiled = compileCloudContext(
             context,
             contact,
@@ -318,7 +325,14 @@ object CloudModelClient {
                     messages.put(JSONObject()
                         .put("role", "tool")
                         .put("tool_call_id", call.optString("id"))
-                        .put("content", toolResult)
+                        .put(
+                            "content",
+                            AgentUntrustedEvidenceBoundary.wrapText(
+                                "web_tool_result",
+                                toolName,
+                                toolResult
+                            )
+                        )
                     )
                     toolCallsUsed += 1
                 }
@@ -402,7 +416,8 @@ object CloudModelClient {
         onToolEvent: ((CloudToolEvent) -> Unit)?,
         contextWindow: Int
     ): CloudModelResponse {
-        val effectiveSystemPrompt = systemPrompt + "\n" + CloudWebGrounding.currentEvidencePrompt()
+        val effectiveSystemPrompt =
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val messages = anthropicMessages(compiled.messages)
@@ -476,7 +491,14 @@ object CloudModelClient {
                     results.put(JSONObject()
                         .put("type", "tool_result")
                         .put("tool_use_id", call.id)
-                        .put("content", result)
+                        .put(
+                            "content",
+                            AgentUntrustedEvidenceBoundary.wrapText(
+                                "web_tool_result",
+                                call.name,
+                                result
+                            )
+                        )
                     )
                     toolCallsUsed += 1
                 }
@@ -565,7 +587,8 @@ object CloudModelClient {
         val endpoint = contact.getString("cloud_endpoint")
         val separator = if (endpoint.contains("?")) "&" else "?"
         val url = endpoint + separator + "key=" + URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-        val effectiveSystemPrompt = systemPrompt + "\n" + CloudWebGrounding.currentEvidencePrompt()
+        val effectiveSystemPrompt =
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
         val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt, contextWindow)
         logCompaction(contact, compiled)
         val contents = geminiContents(compiled.messages)
@@ -655,8 +678,15 @@ object CloudModelClient {
                     onToolEvent?.invoke(
                         CloudToolEvent(call.name, "completed", result.take(240))
                     )
-                    val response = runCatching { JSONObject(result) }
-                        .getOrElse { JSONObject().put("content", result) }
+                    val response = JSONObject(
+                        AgentNativeJsonCodec.stringify(
+                            AgentUntrustedEvidenceBoundary.markJson(
+                                "web_tool_result",
+                                call.name,
+                                result
+                            )
+                        )
+                    )
                     resultParts.put(JSONObject()
                         .put(
                             "functionResponse",

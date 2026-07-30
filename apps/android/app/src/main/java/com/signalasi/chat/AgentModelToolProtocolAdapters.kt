@@ -697,6 +697,7 @@ abstract class StrictAgentModelToolProtocolAdapter(
         if (fullText.length <= limits.maxToolResultCharacters) return BoundedResult(fullText, full)
 
         val summary = linkedMapOf<String, Any?>(
+            "_signalasi_evidence" to AgentUntrustedEvidenceBoundary.compactMarker(),
             "tool_call_id" to result.callId,
             "tool_id" to result.toolId,
             "status" to result.status,

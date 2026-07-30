@@ -70,6 +70,12 @@ class AgentModelToolLoopTest {
                 .toolResult?.nativeResult?.get("provenance")
                 .let { it as Map<*, *> }["tool_id"]
         )
+        assertEquals(AgentModelMessageRole.SYSTEM, adapter.requests.first().messages.first().role)
+        assertTrue(
+            adapter.requests.first().messages.first().text
+                .contains(AgentUntrustedEvidenceBoundary.POLICY_MARKER)
+        )
+        assertFalse(outcome.messages.any { it.role == AgentModelMessageRole.SYSTEM })
     }
 
     @Test

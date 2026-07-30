@@ -33,25 +33,43 @@ data class AgentModelToolResultContent(
     val receipt: AgentNativeJsonObject? = null,
     val nativeResult: AgentNativeJsonObject? = null
 ) {
-    fun toJsonValue(): AgentNativeJsonObject = linkedMapOf(
-        "tool_call_id" to callId,
-        "tool_id" to toolId,
-        "status" to status,
-        "output" to output,
-        "message" to message,
-        "error" to error?.let {
-            linkedMapOf(
-                "code" to it.code,
-                "message" to it.message,
-                "retryable" to it.retryable,
-                "details" to it.details
-            )
-        },
-        "invocation_id" to invocationId,
-        "retry_count" to retryCount,
-        "receipt" to receipt,
-        "native_result" to nativeResult
-    )
+    fun toJsonValue(): AgentNativeJsonObject {
+        val evidence = linkedMapOf<String, Any?>(
+            "output" to output,
+            "message" to message,
+            "error" to error?.let {
+                linkedMapOf(
+                    "code" to it.code,
+                    "message" to it.message,
+                    "retryable" to it.retryable,
+                    "details" to it.details
+                )
+            },
+            "receipt" to receipt,
+            "native_result" to nativeResult
+        )
+        return linkedMapOf(
+            AgentUntrustedEvidenceBoundary.METADATA_KEY to
+                AgentUntrustedEvidenceBoundary.metadata("tool_result", toolId, evidence),
+            "tool_call_id" to callId,
+            "tool_id" to toolId,
+            "status" to status,
+            "output" to output,
+            "message" to message,
+            "error" to error?.let {
+                linkedMapOf(
+                    "code" to it.code,
+                    "message" to it.message,
+                    "retryable" to it.retryable,
+                    "details" to it.details
+                )
+            },
+            "invocation_id" to invocationId,
+            "retry_count" to retryCount,
+            "receipt" to receipt,
+            "native_result" to nativeResult
+        )
+    }
 }
 
 data class AgentModelMessage(
@@ -432,7 +450,7 @@ class AgentModelToolLoop(
                 taskId = state.request.taskId,
                 workspaceId = state.request.workspaceId,
                 round = state.rounds,
-                messages = state.messages.toList(),
+                messages = AgentUntrustedEvidenceBoundary.secureMessages(state.messages),
                 toolManifestJson = state.manifestJson,
                 toolManifestSha256 = state.manifestSha256,
                 remainingToolCalls = (state.request.budget.maxToolCalls - state.toolCallAttempts).coerceAtLeast(0),
