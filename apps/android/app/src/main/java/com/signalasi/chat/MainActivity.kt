@@ -19965,6 +19965,51 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ))
         }
 
+        addSectionTitle(getString(R.string.desktop_control_active_runs))
+        if (snapshot.activeRuns.isEmpty()) {
+            featureContent.addView(featureRow(
+                getString(R.string.desktop_control_no_active_runs),
+                getString(R.string.desktop_control_no_active_runs_subtitle),
+                R.drawable.ic_agent_history,
+                getString(R.string.status_ready)
+            ))
+        } else {
+            snapshot.activeRuns.forEach { run ->
+                val title = run.prompt
+                    .replace(Regex("\\s+"), " ")
+                    .trim()
+                    .ifBlank { getString(R.string.agent_task_details_title) }
+                    .take(48)
+                val subtitle = run.currentStep.ifBlank {
+                    getString(
+                        when (run.status) {
+                            "paused" -> R.string.desktop_control_run_paused
+                            "takeover" -> R.string.desktop_control_run_takeover
+                            else -> R.string.agent_task_status_running
+                        }
+                    )
+                }
+                featureContent.addView(featureRow(
+                    title,
+                    subtitle,
+                    R.drawable.ic_agent_history,
+                    getString(
+                        when (run.status) {
+                            "paused" -> R.string.desktop_control_run_paused
+                            "takeover" -> R.string.desktop_control_run_takeover
+                            else -> R.string.agent_task_status_running
+                        }
+                    )
+                ).apply {
+                    isEnabled = snapshot.authorized
+                    alpha = if (snapshot.authorized) 1f else 0.5f
+                    setOnClickListener {
+                        showDesktopRunActions(device, run)
+                    }
+                })
+            }
+        }
+
         addSectionTitle(getString(R.string.desktop_control_actions))
         featureContent.addView(desktopControlButtonRow(
             getString(R.string.desktop_control_scroll_up) to { DesktopRemoteControl.scroll(device.id, 480) },
@@ -20676,13 +20721,62 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     )
 
+    private fun showDesktopRunActions(
+        device: DesktopSecuritySummary,
+        run: DesktopRunSummary
+    ) {
+        val labels = mutableListOf<String>()
+        val actions = mutableListOf<() -> Boolean>()
+        if (run.pausable) {
+            labels += getString(R.string.desktop_control_run_pause)
+            actions += { DesktopRemoteControl.pauseTask(device.id, run.taskId) }
+        }
+        if (run.takeoverAvailable) {
+            labels += getString(R.string.desktop_control_run_takeover_action)
+            actions += { DesktopRemoteControl.takeOverTask(device.id, run.taskId) }
+        }
+        if (run.takeoverActive) {
+            labels += getString(R.string.desktop_control_run_release_action)
+            actions += { DesktopRemoteControl.releaseTask(device.id, run.taskId) }
+        }
+        if (run.resumable) {
+            labels += getString(R.string.desktop_control_run_continue)
+            actions += { DesktopRemoteControl.continueTask(device.id, run.taskId) }
+        }
+        if (labels.isEmpty()) return
+        android.app.AlertDialog.Builder(this)
+            .setTitle(
+                run.prompt.replace(Regex("\\s+"), " ").trim()
+                    .ifBlank { getString(R.string.agent_task_details_title) }
+                    .take(64)
+            )
+            .setItems(labels.toTypedArray()) { dialog, index ->
+                val sent = actions.getOrNull(index)?.invoke() == true
+                Toast.makeText(
+                    this,
+                    getString(
+                        if (sent) {
+                            R.string.desktop_control_request_sent
+                        } else {
+                            R.string.desktop_control_request_failed
+                        }
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+                dialog.dismiss()
+            }
+            .setNegativeButton(R.string.common_cancel, null)
+            .show()
+    }
+
     private fun handleDesktopRemoteControlEvent(json: JSONObject?): Boolean {
         val payload = json ?: return false
         if (payload.optString("type") !in setOf(
                 "desktop_control_authorizations",
                 "desktop_control_authorization_changed",
                 "desktop_executor_event",
-                "desktop_action_receipt"
+                "desktop_action_receipt",
+                "agent_task_event"
             )
         ) return false
         val desktopId = payload.optString("desktop_id")

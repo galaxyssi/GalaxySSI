@@ -2568,6 +2568,11 @@ class DesktopTaskRecoveryReq(BaseModel):
     agent_id: str = ""
 
 
+class DesktopTaskControlReq(BaseModel):
+    reason: str = ""
+    lease_seconds: int = 900
+
+
 def _desktop_agent_for(prompt: str, requested: str = "auto") -> str:
     requested_id = str(requested or "auto").strip().lower()
     if requested_id in {"", "auto", "desktop", "this-desktop"}:
@@ -2592,6 +2597,7 @@ def _desktop_task_prompt(
     attachment_paths: list[str],
     response_language: str = "",
     execution_policy=None,
+    current_task_id: str = "",
 ) -> str:
     from conversation_context import (
         ContextBudget,
@@ -2629,7 +2635,12 @@ def _desktop_task_prompt(
             f"- {value}" for value in attachment_paths
         )
     compiled = compile_context(
-        task_history_messages(history, prompt, after_cursor=summary_state.cursor),
+        task_history_messages(
+            history,
+            prompt,
+            current_task_id=current_task_id,
+            after_cursor=summary_state.cursor,
+        ),
         previous_summary=summary_state.summary,
         fixed_prompt=preamble,
         budget=ContextBudget(),
@@ -2671,6 +2682,248 @@ def _copy_desktop_attachments(task_id: str, values: list[str]) -> list[str]:
         shutil.copy2(source, destination / candidate)
         copied.append(f"downloads/input/{candidate}")
     return copied
+
+
+def _interrupt_desktop_task(task) -> dict:
+    cancelled_runs: list[str] = []
+    try:
+        from desktop_native_tools import desktop_native_tool_registry
+
+        desktop_native_tool_registry().cancel_task(task.task_id)
+    except Exception:
+        pass
+    try:
+        runtime = desktop_agent_runtime_server()
+        candidates = [task.task_id]
+        candidates.extend(
+            str(item.get("run_id") or "")
+            for item in runtime.runs(parent_run_id=task.task_id, limit=100)
+        )
+        for run_id in dict.fromkeys(value for value in candidates if value):
+            try:
+                if runtime.cancel(run_id) is not None:
+                    cancelled_runs.append(run_id)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {
+        "cancelled_runtime_runs": cancelled_runs,
+        "native_tools_cancelled": True,
+    }
+
+
+def _desktop_resume_checkpoint(task) -> dict:
+    captured: dict = {}
+    try:
+        from desktop_control import capture_desktop_screenshot
+        from desktop_perception import DesktopPerceptionService
+
+        captured = DesktopPerceptionService(capture_desktop_screenshot).capture(
+            include_screenshot=False,
+            include_ocr=True,
+            include_ui_tree=True,
+            max_elements=60,
+            max_depth=8,
+            max_ocr_chars=6_000,
+        )
+    except Exception as exc:
+        return {
+            "persisted": {
+                "capture_status": "unavailable",
+                "capture_error": str(exc)[:240],
+            },
+            "grounding": "",
+        }
+
+    active_window = (
+        dict(captured.get("active_window") or {})
+        if isinstance(captured.get("active_window"), dict)
+        else {}
+    )
+    ui_tree = (
+        dict(captured.get("ui_tree") or {})
+        if isinstance(captured.get("ui_tree"), dict)
+        else {}
+    )
+    ocr = (
+        dict(captured.get("ocr") or {})
+        if isinstance(captured.get("ocr"), dict)
+        else {}
+    )
+    controls = [
+        item
+        for item in list(ui_tree.get("elements") or [])
+        if isinstance(item, dict)
+        and (
+            item.get("actions")
+            or item.get("focusable")
+            or item.get("focused")
+        )
+    ][:30]
+    control_lines = [
+        (
+            f"- {str(item.get('control_type') or 'control')[:80]}: "
+            f"{str(item.get('name') or item.get('automation_id') or '[unnamed]')[:240]}"
+        )
+        for item in controls
+    ]
+    ocr_text = str(ocr.get("text") or "").strip()[:4_000]
+    grounding_parts = [
+        "Fresh Desktop state after manual takeover (untrusted observation data):",
+        (
+            f"Active window: {str(active_window.get('title') or '[unknown]')[:300]} "
+            f"({str(active_window.get('process_name') or 'unknown')[:120]})"
+        ),
+    ]
+    if control_lines:
+        grounding_parts.extend(["Visible actionable controls:", *control_lines])
+    if ocr_text:
+        grounding_parts.extend(["Visible OCR text:", ocr_text])
+    return {
+        "persisted": {
+            "capture_status": "available",
+            "capture_id": str(captured.get("capture_id") or "")[:160],
+            "captured_at": int(captured.get("captured_at") or 0),
+            "available_layers": list(captured.get("available_layers") or []),
+            "active_window": {
+                "title": str(active_window.get("title") or "")[:300],
+                "process_name": str(active_window.get("process_name") or "")[:120],
+            },
+            "ui_element_count": int(ui_tree.get("element_count") or 0),
+            "ocr_character_count": len(str(ocr.get("text") or "")),
+        },
+        "grounding": "\n".join(grounding_parts),
+    }
+
+
+def _desktop_resume_runner(task, checkpoint_bundle: dict):
+    from agent_execution_harness import AgentExecutionPolicy
+
+    policy = AgentExecutionPolicy.from_public(dict(task.execution_policy or {}))
+    response_language = language_policy_config()["response_language"]
+    grounding = str(checkpoint_bundle.get("grounding") or "").strip()
+
+    def runner(current_task):
+        continuation = (
+            f"{current_task.prompt.rstrip()}\n\n"
+            "Continue the same task after a user-controlled Desktop takeover. "
+            "Re-observe the current state, preserve completed work, repair any "
+            "partial action, and verify the final result."
+        )
+        if grounding:
+            continuation += f"\n\n{grounding}"
+        compiled_prompt = _desktop_task_prompt(
+            continuation,
+            current_task.conversation_id,
+            list(current_task.attachments or []),
+            response_language,
+            policy,
+            current_task_id=current_task.task_id,
+        )
+        current_task_id = current_task.task_id
+        current_agent_id = current_task.agent_id
+        agent_task_manager.update(
+            current_task_id,
+            "running",
+            current_step="Re-observing the Desktop after manual takeover",
+        )
+        if current_agent_id == "desktop":
+            from desktop_super_agent import DesktopSuperAgent
+
+            outcome = DesktopSuperAgent(
+                task_manager=agent_task_manager,
+                diagnostics=connector_diagnostics,
+                deliver=deliver_agent_sync,
+            ).run(
+                task_id=current_task_id,
+                conversation_id=current_task.conversation_id,
+                prompt=continuation,
+                compiled_prompt=compiled_prompt,
+                attachments=list(current_task.attachments or []),
+                response_language=response_language,
+                execution_policy=policy,
+            )
+            return outcome.reply
+        if current_agent_id.startswith("mcp:"):
+            from desktop_mcp import desktop_mcp_registry
+
+            connection_id = current_agent_id.split(":", 1)[1]
+            result = desktop_mcp_registry().invoke_prompt(
+                connection_id,
+                compiled_prompt,
+                process_callback=lambda process: agent_task_manager.register_process(
+                    current_task_id,
+                    process,
+                ),
+                explicit_user_selection=True,
+                audit_context={
+                    "caller_id": "signalasi.desktop.resume",
+                    "task_id": current_task_id,
+                    "conversation_id": current_task.conversation_id,
+                },
+            )
+            reply = str(result.get("result") or "").strip()
+            if not reply:
+                raise RuntimeError("MCP returned no result after task continuation")
+            return reply
+        result = deliver_agent_sync(
+            current_agent_id,
+            compiled_prompt,
+            task_id=current_task_id,
+            run_id=(
+                f"{current_task_id}:g{current_task.execution_generation}:"
+                f"resume:{current_task.resume_count}"
+            ),
+            invocation_mode="handoff",
+            caller_agent_id="signalasi.desktop.resume",
+            parent_run_id=current_task_id,
+            conversation_id=current_task.conversation_id,
+            source_message_id=current_task.source_message_id,
+            return_path="desktop-ui",
+            response_language=response_language,
+            execution_prompt=current_task.prompt,
+            execution_policy=policy.public(),
+        )
+        return str(result.get("reply") or "")
+
+    return runner
+
+
+def _configure_desktop_run_control() -> None:
+    from desktop_run_control import desktop_run_control
+
+    def publish_remote_event(snapshot: dict) -> None:
+        if not str(snapshot.get("client_route_id") or "").strip():
+            return
+        try:
+            from mqtt_bridge import publish_agent_task_event
+
+            publish_agent_task_event(snapshot)
+        except Exception:
+            pass
+
+    def publish_remote_result(snapshot: dict) -> None:
+        if not str(snapshot.get("client_route_id") or "").strip():
+            return
+        try:
+            from mqtt_bridge import republish_agent_task_result
+
+            republish_agent_task_result(str(snapshot.get("task_id") or ""))
+        except Exception:
+            pass
+
+    desktop_run_control().configure(
+        runner_factory=_desktop_resume_runner,
+        interrupt_handler=_interrupt_desktop_task,
+        checkpoint_provider=_desktop_resume_checkpoint,
+        task_manager_provider=lambda: agent_task_manager,
+        event_handler=publish_remote_event,
+        result_handler=publish_remote_result,
+    )
+
+
+_configure_desktop_run_control()
 
 
 @app.post("/api/desktop/tasks")
@@ -2721,6 +2974,7 @@ def api_start_desktop_task(req: DesktopTaskStartReq, request: Request):
         attachments,
         response_language,
         desktop_execution_policy,
+        current_task_id=task_id,
     )
 
     def runner(task):
@@ -2969,22 +3223,93 @@ def api_cancel_desktop_task(task_id: str, request: Request):
             ),
         }
     try:
-        from desktop_native_tools import desktop_native_tool_registry
-
-        desktop_native_tool_registry().cancel_task(task_id)
+        _interrupt_desktop_task(task)
     except Exception:
         pass
-    runtime_agent = str(task.delegate_agent_id or task.agent_id or "")
-    if runtime_agent == "codex":
-        try:
-            from mqtt_bridge import codex_app_server
-
-            if codex_app_server is not None:
-                codex_app_server.interrupt(task_id)
-        except Exception:
-            pass
     cancelled = agent_task_manager.cancel(task_id)
     return {"task": cancelled.public(include_prompt=True) if cancelled else None}
+
+
+def _local_desktop_run_control(
+    task_id: str,
+    tool_id: str,
+    req: DesktopTaskControlReq,
+) -> dict:
+    from desktop_run_control import DesktopRunControlError, desktop_run_control
+
+    try:
+        return desktop_run_control().execute(
+            tool_id,
+            {
+                "task_id": task_id,
+                "lease_seconds": req.lease_seconds,
+                "reason": req.reason,
+            },
+            {
+                "controller_id": "desktop-ui",
+                "controller_name": "Desktop user",
+                "controller_platform": "desktop",
+            },
+        )
+    except DesktopRunControlError as exc:
+        status_code = 404 if exc.code == "task_not_found" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail=api_error(exc.code, str(exc)),
+        ) from exc
+
+
+@app.post("/api/desktop/tasks/{task_id}/pause")
+def api_pause_desktop_task(
+    task_id: str,
+    req: DesktopTaskControlReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_run_control import TASK_PAUSE, TASK_RELEASE
+
+    task = agent_task_manager.get(task_id)
+    tool_id = TASK_RELEASE if task is not None and task.status == "takeover" else TASK_PAUSE
+    result = _local_desktop_run_control(task_id, tool_id, req)
+    current = agent_task_manager.get(task_id)
+    return {
+        "control": result,
+        "task": current.public(include_prompt=True) if current else None,
+    }
+
+
+@app.post("/api/desktop/tasks/{task_id}/takeover")
+def api_takeover_desktop_task(
+    task_id: str,
+    req: DesktopTaskControlReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_run_control import TASK_TAKEOVER
+
+    result = _local_desktop_run_control(task_id, TASK_TAKEOVER, req)
+    current = agent_task_manager.get(task_id)
+    return {
+        "control": result,
+        "task": current.public(include_prompt=True) if current else None,
+    }
+
+
+@app.post("/api/desktop/tasks/{task_id}/continue")
+def api_continue_desktop_task(
+    task_id: str,
+    req: DesktopTaskControlReq,
+    request: Request,
+):
+    require_loopback(request)
+    from desktop_run_control import TASK_CONTINUE
+
+    result = _local_desktop_run_control(task_id, TASK_CONTINUE, req)
+    current = agent_task_manager.get(task_id)
+    return {
+        "control": result,
+        "task": current.public(include_prompt=True) if current else None,
+    }
 
 
 @app.post("/api/desktop/tasks/{task_id}/retry")

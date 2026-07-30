@@ -17,6 +17,7 @@ const required = [
   "src/renderer/locales/en.json",
   "src/renderer/styles.css",
   "core/signalasi-link/backend/desktop_control.py",
+  "core/signalasi-link/backend/desktop_run_control.py",
   "core/signalasi-link/backend/acp_runtime.py",
   "core/signalasi-link/backend/pairing_access.py",
   "core/signalasi-link/backend/desktop_agent_loop.py",
@@ -140,6 +141,7 @@ const backendAgentConfig = fs.readFileSync(path.join(backendDir, "agent_config.p
 const backendCustomAgent = fs.readFileSync(path.join(backendDir, "custom_agent_stdio.py"), "utf8");
 const backendDesktopFileTools = fs.readFileSync(path.join(backendDir, "desktop_file_tools.py"), "utf8");
 const backendDesktopControl = fs.readFileSync(path.join(backendDir, "desktop_control.py"), "utf8");
+const backendDesktopRunControl = fs.readFileSync(path.join(backendDir, "desktop_run_control.py"), "utf8");
 const backendDesktopAgentLoop = fs.readFileSync(path.join(backendDir, "desktop_agent_loop.py"), "utf8");
 const backendAgentFailureRecovery = fs.readFileSync(path.join(backendDir, "agent_failure_recovery.py"), "utf8");
 const backendResponseSelfCheck = fs.readFileSync(path.join(backendDir, "response_self_check.py"), "utf8");
@@ -383,6 +385,23 @@ if (
 }
 if (workspaceRenderer.includes("setInterval(() => refreshTasks(false), 1500)")) {
   throw new Error("Desktop task progress must not use the legacy 1.5 second full-list polling loop");
+}
+for (const pauseContract of [
+  [backendTaskManager, "def continue_task("],
+  [backendTaskManager, "execution_generation"],
+  [backendDesktopRunControl, "class DesktopRunControlCoordinator"],
+  [backendDesktopControl, "TASK_CONTROL_TOOLS"],
+  [backendMain, '/api/desktop/tasks/{task_id}/pause'],
+  [backendMain, '/api/desktop/tasks/{task_id}/takeover'],
+  [backendMain, '/api/desktop/tasks/{task_id}/continue'],
+  [main, 'ipcMain.handle("desktop-tasks:pause"'],
+  [preload, "pauseDesktopTask"],
+  [workspaceRenderer, "data-takeover-task"],
+  [workspaceRenderer, "data-continue-task"]
+]) {
+  if (!pauseContract[0].includes(pauseContract[1])) {
+    throw new Error(`Desktop pause/takeover/continue integration missing: ${pauseContract[1]}`);
+  }
 }
 
 for (const requiredLocaleKey of ["Language", "Desktop Connector", "{done}/{total} setup steps complete", "Detecting", "Super agent"]) {

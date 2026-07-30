@@ -270,7 +270,7 @@ class DesktopSuperAgentTest(unittest.TestCase):
         self.assertEqual(delivered[0]["parent_run_id"], "task-project")
         self.assertEqual(
             delivered[0]["run_id"],
-            "task-project:handoff:1:codex",
+            "task-project:g1:handoff:1:codex",
         )
 
     def test_build_task_uses_medium_policy_checkpoint_and_verified_project_archive(self):
