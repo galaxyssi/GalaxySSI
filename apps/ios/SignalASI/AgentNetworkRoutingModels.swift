@@ -911,6 +911,7 @@ struct AgentRegistration: Codable, Equatable, Identifiable {
   var runtimeFailureDomain: String
   var adapterType: String
   var independentlyUpgradeable: Bool
+  var providerProfile: ProviderProfile?
   var lastHeartbeatMillis: Int64
   var updatedAtMillis: Int64
 
@@ -941,6 +942,7 @@ struct AgentRegistration: Codable, Equatable, Identifiable {
     runtimeFailureDomain: String = "",
     adapterType: String = "",
     independentlyUpgradeable: Bool = true,
+    providerProfile: ProviderProfile? = nil,
     lastHeartbeatMillis: Int64 = 0,
     updatedAtMillis: Int64 = 0
   ) {
@@ -967,6 +969,7 @@ struct AgentRegistration: Codable, Equatable, Identifiable {
     self.runtimeFailureDomain = runtimeFailureDomain
     self.adapterType = adapterType
     self.independentlyUpgradeable = independentlyUpgradeable
+    self.providerProfile = providerProfile
     self.lastHeartbeatMillis = lastHeartbeatMillis
     self.updatedAtMillis = updatedAtMillis
   }
@@ -995,6 +998,7 @@ struct AgentRegistration: Codable, Equatable, Identifiable {
     case runtimeFailureDomain = "runtime_failure_domain"
     case adapterType = "adapter_type"
     case independentlyUpgradeable = "independently_upgradeable"
+    case providerProfile = "provider_profile"
     case lastHeartbeatMillis = "last_heartbeat_millis"
     case updatedAtMillis = "updated_at_millis"
   }
@@ -1535,7 +1539,7 @@ enum ProviderProfileCatalog {
     _ registration: AgentRegistration,
     existing: ProviderProfile? = nil
   ) -> ProviderProfile {
-    let base = existing ?? agentProfile(
+    let base = existing ?? registration.providerProfile ?? agentProfile(
       resourceId: registration.agentId,
       displayName: registration.displayName,
       providerId: registration.providerId.isEmpty ? registration.agentId : registration.providerId,
