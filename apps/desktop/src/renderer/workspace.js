@@ -3283,12 +3283,13 @@ async function runDiagnostics() {
   output.hidden = false;
   output.textContent = t("Running diagnostics...");
   try {
-    const [runtime, agents, pairing] = await Promise.all([
+    const [runtime, agents, pairing, linkTransport] = await Promise.all([
       window.signalasi.getRuntimeDiagnostics(),
       window.signalasi.getAgentDiagnostics(),
-      window.signalasi.getPairingStatus()
+      window.signalasi.getPairingStatus(),
+      window.signalasi.getLinkTransportDiagnostics()
     ]);
-    output.textContent = JSON.stringify({ runtime, agents, pairing }, null, 2);
+    output.textContent = JSON.stringify({ runtime, agents, pairing, linkTransport }, null, 2);
   } catch (error) {
     output.textContent = error.message || String(error);
   }

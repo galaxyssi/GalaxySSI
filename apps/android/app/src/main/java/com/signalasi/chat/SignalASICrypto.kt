@@ -479,9 +479,15 @@ object SignalASICrypto {
         }
     }
 
+    internal sealed interface EnvelopeDecryptionResult {
+        data class Success(val payload: JSONObject) : EnvelopeDecryptionResult
+        data class Failure(val error: Exception) : EnvelopeDecryptionResult
+        data object Rejected : EnvelopeDecryptionResult
+    }
+
     @Synchronized
-    fun decryptEnvelope(envelope: JSONObject): JSONObject? {
-        if (envelope.optString("scheme") != "signal") return null
+    internal fun decryptEnvelopeDetailed(envelope: JSONObject): EnvelopeDecryptionResult {
+        if (envelope.optString("scheme") != "signal") return EnvelopeDecryptionResult.Rejected
         return try {
             val body = b64d(envelope.getString("body"))
             val type = envelope.optString("signal_type", envelope.optString("type", "signal"))
@@ -496,14 +502,22 @@ object SignalASICrypto {
             } else {
                 SessionCipher(store, address).decrypt(SignalMessage(body))
             }
-            JSONObject(String(plaintext, Charsets.UTF_8)).also {
+            EnvelopeDecryptionResult.Success(JSONObject(String(plaintext, Charsets.UTF_8))).also {
                 Log.i(TAG, "Decrypted incoming Signal envelope")
             }
         } catch (exc: Exception) {
             Log.e(TAG, "Failed to decrypt incoming Signal envelope", exc)
-            null
+            EnvelopeDecryptionResult.Failure(exc)
         }
     }
+
+    @Synchronized
+    fun decryptEnvelope(envelope: JSONObject): JSONObject? =
+        when (val result = decryptEnvelopeDetailed(envelope)) {
+            is EnvelopeDecryptionResult.Success -> result.payload
+            is EnvelopeDecryptionResult.Failure,
+            EnvelopeDecryptionResult.Rejected -> null
+        }
 
     private fun b64e(value: ByteArray): String =
         Base64.encodeToString(value, Base64.NO_WRAP)

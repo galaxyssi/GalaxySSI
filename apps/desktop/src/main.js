@@ -1493,6 +1493,11 @@ async function getAgentDiagnostics() {
   return fetchJson("/api/agents/diagnostics");
 }
 
+async function getLinkTransportDiagnostics() {
+  await startBackend();
+  return fetchJson("/api/link/transport-diagnostics");
+}
+
 async function getAgentExecutionLog(limit = 50) {
   await startBackend();
   return fetchJson(`/api/agents/execution-log?limit=${encodeURIComponent(limit)}`);
@@ -2052,6 +2057,7 @@ ipcMain.handle("pairing:qr", (_event, grantDesktopExecutor = false) =>
 ipcMain.handle("pairing:clear", (_event, clientRouteId = "") => clearPairing(clientRouteId));
 ipcMain.handle("agents:detect", detectAgents);
 ipcMain.handle("agents:diagnostics", getAgentDiagnostics);
+ipcMain.handle("link:transport-diagnostics", getLinkTransportDiagnostics);
 ipcMain.handle("agents:execution-log", (_event, limit) => getAgentExecutionLog(limit));
 ipcMain.handle("agents:tasks", (_event, limit) => getAgentTasks(limit));
 ipcMain.handle("agents:memory-telemetry", getAgentMemoryTelemetry);

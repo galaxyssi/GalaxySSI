@@ -1342,6 +1342,13 @@ object SignalASIMqttClient {
             val assembled = try {
                 inboundChunkAssembler.accept("${link.desktopId}:$topic", wire)
             } catch (exception: IllegalArgumentException) {
+                SignalASILinkTransportDiagnostics.record(
+                    context = context,
+                    kind = SignalASILinkTransportDiagnostics.classifyFragmentFailure(exception),
+                    endpointIdentity = link.desktopId,
+                    messageIdentity = wire.optString("transfer_id"),
+                    detailCode = exception.javaClass.simpleName
+                )
                 Log.w(TAG, "Rejected MQTT fragmented transfer", exception)
                 return
             }
@@ -1376,10 +1383,30 @@ object SignalASIMqttClient {
         val ciphertextDigest = SignalASILinkCiphertextReplayPolicy.digest(wire)
         SignalASILinkDeliveryStore.messageForCiphertext(context, ciphertextDigest)?.let { known ->
             if (known.receiptRequired) publishInboundReceipt(link, known.messageId)
+            SignalASILinkTransportDiagnostics.record(
+                context = context,
+                kind = SignalASILinkDiagnosticKind.ENCRYPTED_REPLAY,
+                endpointIdentity = link.desktopId,
+                messageIdentity = known.messageId,
+                detailCode = "pre_decrypt"
+            )
             Log.i(TAG, "MQTT encrypted replay handled before Signal decrypt message=${known.messageId}")
             return
         }
-        val decrypted = SignalASICrypto.decryptEnvelope(wire) ?: return
+        val decrypted = when (val result = SignalASICrypto.decryptEnvelopeDetailed(wire)) {
+            is SignalASICrypto.EnvelopeDecryptionResult.Success -> result.payload
+            is SignalASICrypto.EnvelopeDecryptionResult.Failure -> {
+                SignalASILinkTransportDiagnostics.record(
+                    context = context,
+                    kind = SignalASILinkTransportDiagnostics.classifyDecryptionFailure(result.error),
+                    endpointIdentity = link.desktopId,
+                    messageIdentity = ciphertextDigest,
+                    detailCode = result.error.javaClass.simpleName
+                )
+                return
+            }
+            SignalASICrypto.EnvelopeDecryptionResult.Rejected -> return
+        }
         if (decrypted.optString("source_id") != link.desktopId ||
             decrypted.optString("target_id") != SignalASICrypto.localSignalasiId()
         ) {
@@ -1427,6 +1454,13 @@ object SignalASIMqttClient {
                 }
             val firstReceipt = SignalASILinkDeliveryStore.claimIncoming(context, incomingMessageId)
             if (!firstReceipt) {
+                SignalASILinkTransportDiagnostics.record(
+                    context = context,
+                    kind = SignalASILinkDiagnosticKind.DUPLICATE_RECEIPT,
+                    endpointIdentity = link.desktopId,
+                    messageIdentity = incomingMessageId,
+                    detailCode = "delivery_ack"
+                )
                 Log.i(TAG, "Ignored duplicate inbound receipt $incomingMessageId")
                 return
             }
@@ -1443,12 +1477,26 @@ object SignalASIMqttClient {
             SignalASILinkDeliveryStore.IncomingStageResult.INVALID -> return
             SignalASILinkDeliveryStore.IncomingStageResult.COMPLETED -> {
                 publishInboundReceipt(link, incomingMessageId)
+                SignalASILinkTransportDiagnostics.record(
+                    context = context,
+                    kind = SignalASILinkDiagnosticKind.DUPLICATE_MESSAGE,
+                    endpointIdentity = link.desktopId,
+                    messageIdentity = incomingMessageId,
+                    detailCode = "completed"
+                )
                 Log.i(TAG, "Ignored completed duplicate inbound message $incomingMessageId")
                 return
             }
             SignalASILinkDeliveryStore.IncomingStageResult.PENDING -> {
                 publishInboundReceipt(link, incomingMessageId)
                 schedulePendingIncomingReplay()
+                SignalASILinkTransportDiagnostics.record(
+                    context = context,
+                    kind = SignalASILinkDiagnosticKind.PENDING_REPLAY,
+                    endpointIdentity = link.desktopId,
+                    messageIdentity = incomingMessageId,
+                    detailCode = "pending"
+                )
                 Log.i(TAG, "Replaying pending inbound message $incomingMessageId")
                 return
             }

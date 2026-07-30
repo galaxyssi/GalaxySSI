@@ -29,7 +29,11 @@ class FakeMessage:
     def __init__(self, topic: str, signal_name: str) -> None:
         self.topic = topic
         self.payload = (
-            '{"scheme":"signal","from":"' + signal_name + '","ciphertext":"test"}'
+            '{"scheme":"signal","from":"'
+            + signal_name
+            + '","body":"'
+            + uuid.uuid4().hex
+            + '"}'
         ).encode("utf-8")
 
 
