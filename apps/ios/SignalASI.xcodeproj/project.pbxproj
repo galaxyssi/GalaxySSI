@@ -69,6 +69,7 @@
     A10000000000000000000145 /* AgentSkillLifecycleModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000145 /* AgentSkillLifecycleModels.swift */; };
     A10000000000000000000146 /* AgentSkillExecutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000146 /* AgentSkillExecutionModels.swift */; };
     A10000000000000000000147 /* AgentSkillPackageInstallerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000147 /* AgentSkillPackageInstallerModels.swift */; };
+    A10000000000000000000148 /* AgentLearningEngineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000148 /* AgentLearningEngineModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -96,6 +97,7 @@
     A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000225 /* AgentSkillLifecycleTests.swift */; };
     A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000226 /* AgentSkillExecutionTests.swift */; };
     A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */; };
+    A10000000000000000000228 /* AgentLearningEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000228 /* AgentLearningEngineTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -163,6 +165,7 @@
     A20000000000000000000145 /* AgentSkillLifecycleModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleModels.swift; sourceTree = "<group>"; };
     A20000000000000000000146 /* AgentSkillExecutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000147 /* AgentSkillPackageInstallerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000148 /* AgentLearningEngineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLearningEngineModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -190,6 +193,7 @@
     A20000000000000000000225 /* AgentSkillLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillLifecycleTests.swift; sourceTree = "<group>"; };
     A20000000000000000000226 /* AgentSkillExecutionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillExecutionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillPackageInstallerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000228 /* AgentLearningEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLearningEngineTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -258,6 +262,7 @@
         A20000000000000000000145 /* AgentSkillLifecycleModels.swift */,
         A20000000000000000000146 /* AgentSkillExecutionModels.swift */,
         A20000000000000000000147 /* AgentSkillPackageInstallerModels.swift */,
+        A20000000000000000000148 /* AgentLearningEngineModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -306,6 +311,7 @@
         A20000000000000000000225 /* AgentSkillLifecycleTests.swift */,
         A20000000000000000000226 /* AgentSkillExecutionTests.swift */,
         A20000000000000000000227 /* AgentSkillPackageInstallerTests.swift */,
+        A20000000000000000000228 /* AgentLearningEngineTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -450,6 +456,7 @@
         A10000000000000000000145 /* AgentSkillLifecycleModels.swift in Sources */,
         A10000000000000000000146 /* AgentSkillExecutionModels.swift in Sources */,
         A10000000000000000000147 /* AgentSkillPackageInstallerModels.swift in Sources */,
+        A10000000000000000000148 /* AgentLearningEngineModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -498,6 +505,7 @@
         A10000000000000000000225 /* AgentSkillLifecycleTests.swift in Sources */,
         A10000000000000000000226 /* AgentSkillExecutionTests.swift in Sources */,
         A10000000000000000000227 /* AgentSkillPackageInstallerTests.swift in Sources */,
+        A10000000000000000000228 /* AgentLearningEngineTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
