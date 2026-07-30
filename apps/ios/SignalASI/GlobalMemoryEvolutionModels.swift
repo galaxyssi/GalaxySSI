@@ -336,6 +336,103 @@ enum GlobalMemoryInboxIsolationPolicy {
 }
 
 enum GlobalMemoryEvolutionPolicy {
+  static func approve(
+    world: PersonalWorldModel,
+    inbox: GlobalMemoryInbox,
+    candidateId: String,
+    nowMillis: Int64 = GlobalMemoryClock.nowMillis()
+  ) -> (world: PersonalWorldModel, inbox: GlobalMemoryInbox) {
+    guard let candidate = inbox.candidates.first(where: {
+      $0.id == candidateId && [.pendingReview, .conflicted].contains($0.status)
+    }) else {
+      return (world, inbox)
+    }
+
+    let approvedTemporalState = resolvedTemporalState(candidate)
+    let approved = reviewedCandidate(
+      candidate,
+      status: .approved,
+      temporalState: approvedTemporalState,
+      reviewedAtMillis: nowMillis
+    )
+    var incomingBase = approved.item
+    incomingBase.status = .active
+    incomingBase.temporalState = approvedTemporalState
+    incomingBase.conflictGroupId = ""
+    incomingBase.supersededByItemId = ""
+    incomingBase.lastSeenAtMillis = max(incomingBase.lastSeenAtMillis, nowMillis)
+
+    let strengthenTarget: GlobalWorldItem? = candidate.action == .strengthen
+      ? candidate.targetItemIds.first.flatMap { targetId in world.items.first { $0.id == targetId } }
+      : nil
+    let replaced: [GlobalWorldItem]
+    if let strengthenTarget = strengthenTarget {
+      let merged = strengthened(existing: strengthenTarget, incoming: incomingBase)
+      replaced = world.items
+        .map { $0.id == strengthenTarget.id ? merged : $0 }
+        .filter { !($0.id == incomingBase.id && $0.id != strengthenTarget.id) }
+    } else {
+      let supersededItemIds = world.items
+        .filter { existing in
+          if existing.id == approved.item.id { return false }
+          let sameSubject = existing.kind == approved.item.kind &&
+            GlobalMemoryNamespacePolicy.same(existing, approved.item) &&
+            GlobalAgentText.overlap(
+              GlobalAgentText.tokens(existing.topic),
+              GlobalAgentText.tokens(approved.item.topic)
+            ) >= 0.45
+          return sameSubject && [.active, .conflicted].contains(existing.status)
+        }
+        .map(\.id)
+        .prefix(maxEvolutionTargets)
+
+      var incoming = incomingBase
+      incoming.supersedesItemIds = Array(uniqueStrings(incoming.supersedesItemIds + Array(supersededItemIds)).suffix(maxEvolutionTargets))
+      replaced = world.items
+        .map { existing -> GlobalWorldItem in
+          if incoming.supersedesItemIds.contains(existing.id) {
+            var superseded = existing
+            superseded.status = .superseded
+            superseded.temporalState = .deprecated
+            superseded.conflictGroupId = ""
+            superseded.supersededByItemId = incoming.id
+            return superseded
+          }
+          return existing
+        }
+        .filter { $0.id != incoming.id } + [incoming]
+    }
+
+    var updatedWorld = world
+    updatedWorld.items = Array(replaced.sorted { $0.lastSeenAtMillis > $1.lastSeenAtMillis }.prefix(maxWorldItems))
+    updatedWorld.updatedAtMillis = max(world.updatedAtMillis, nowMillis)
+
+    var updatedInbox = inbox
+    updatedInbox.candidates = inbox.candidates.map { $0.id == candidateId ? approved : $0 }
+    updatedInbox.updatedAtMillis = max(inbox.updatedAtMillis, nowMillis)
+    return (updatedWorld, updatedInbox)
+  }
+
+  static func reject(
+    inbox: GlobalMemoryInbox,
+    candidateId: String,
+    nowMillis: Int64 = GlobalMemoryClock.nowMillis()
+  ) -> GlobalMemoryInbox {
+    var changed = false
+    let candidates = inbox.candidates.map { candidate -> GlobalMemoryCandidate in
+      if candidate.id == candidateId && [.pendingReview, .conflicted].contains(candidate.status) {
+        changed = true
+        return reviewedCandidate(candidate, status: .rejected, temporalState: candidate.temporalState, reviewedAtMillis: nowMillis)
+      }
+      return candidate
+    }
+    if !changed { return inbox }
+    var updated = inbox
+    updated.candidates = candidates
+    updated.updatedAtMillis = max(inbox.updatedAtMillis, nowMillis)
+    return updated
+  }
+
   static func record(
     for candidate: GlobalMemoryCandidate,
     explicitOutcome: GlobalMemoryEvolutionOutcome? = nil,
@@ -537,6 +634,29 @@ enum GlobalMemoryEvolutionPolicy {
     }
   }
 
+  private static func reviewedCandidate(
+    _ candidate: GlobalMemoryCandidate,
+    status: GlobalMemoryCandidateStatus,
+    temporalState: GlobalMemoryTemporalState,
+    reviewedAtMillis: Int64
+  ) -> GlobalMemoryCandidate {
+    GlobalMemoryCandidate(
+      id: candidate.id,
+      sourceEventId: candidate.sourceEventId,
+      conversationId: candidate.conversationId,
+      kind: candidate.kind,
+      temporalState: temporalState,
+      risk: candidate.risk,
+      status: status,
+      action: candidate.action,
+      targetItemIds: candidate.targetItemIds,
+      item: candidate.item,
+      reason: candidate.reason,
+      createdAtMillis: candidate.createdAtMillis,
+      reviewedAtMillis: reviewedAtMillis
+    )
+  }
+
   private static func assertionPolarity(_ value: String) -> Int {
     let lower = value.lowercased()
     return negativeSignals.contains { lower.contains($0) } ? -1 : 1
@@ -563,6 +683,8 @@ enum GlobalMemoryEvolutionPolicy {
   private static let strengthenConfidenceBoost = 0.035
   private static let maxEvidencePerItem = 20
   private static let maxConversationsPerItem = 20
+  private static let maxEvolutionTargets = 12
+  private static let maxWorldItems = 1_500
 }
 
 private extension GlobalWorldItem {

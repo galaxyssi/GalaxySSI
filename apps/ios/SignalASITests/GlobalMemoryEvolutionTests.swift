@@ -222,6 +222,165 @@ final class GlobalMemoryEvolutionTests: XCTestCase {
     XCTAssertNoThrow(try report.requireSafe())
   }
 
+  func testGlobalMemoryEvolutionPolicyApproveStrengthensTargetAndMarksInbox() {
+    let existing = evolutionItem(
+      "existing",
+      topic: "Project SignalASI iOS memory",
+      value: "SignalASI iOS memory uses durable context",
+      confidence: 0.6,
+      evidenceProvenance: [GlobalEvidenceRef(eventId: "old-event", conversationId: "chat-a", timestampMillis: 1_000)],
+      lastSeenAtMillis: 2_000,
+      expiresAtMillis: 9_000
+    )
+    let incoming = evolutionItem(
+      "incoming",
+      topic: "Project SignalASI iOS memory",
+      value: "SignalASI iOS memory uses durable context",
+      confidence: 0.86,
+      evidenceProvenance: [GlobalEvidenceRef(eventId: "new-event", conversationId: "chat-b", timestampMillis: 2_000)],
+      lastSeenAtMillis: 3_000,
+      expiresAtMillis: 10_000
+    )
+    let candidate = GlobalMemoryCandidate(
+      id: "candidate-strengthen",
+      sourceEventId: "new-event",
+      conversationId: "chat-b",
+      kind: .fact,
+      temporalState: .pending,
+      risk: .reviewRequired,
+      status: .pendingReview,
+      action: .strengthen,
+      targetItemIds: ["existing"],
+      item: incoming,
+      reason: "needs_review",
+      createdAtMillis: 3_000
+    )
+
+    let result = GlobalMemoryEvolutionPolicy.approve(
+      world: PersonalWorldModel(items: [existing], updatedAtMillis: 1_000),
+      inbox: GlobalMemoryInbox(candidates: [candidate], updatedAtMillis: 1_000),
+      candidateId: "candidate-strengthen",
+      nowMillis: 5_000
+    )
+
+    XCTAssertEqual(result.world.items.map(\.id), ["existing"])
+    XCTAssertEqual(result.world.items.first?.evidenceEventIds, ["old-event", "new-event"])
+    XCTAssertEqual(result.world.items.first?.confidence ?? 0, 0.895, accuracy: 0.000_001)
+    XCTAssertEqual(result.world.items.first?.lastSeenAtMillis, 5_000)
+    XCTAssertEqual(result.world.items.first?.expiresAtMillis, 10_000)
+    XCTAssertEqual(result.world.updatedAtMillis, 5_000)
+    XCTAssertEqual(result.inbox.candidates.first?.status, .approved)
+    XCTAssertEqual(result.inbox.candidates.first?.temporalState, .current)
+    XCTAssertEqual(result.inbox.candidates.first?.reviewedAtMillis, 5_000)
+  }
+
+  func testGlobalMemoryEvolutionPolicyApproveSupersedesMatchingWorldItems() {
+    let active = evolutionItem(
+      "active",
+      kind: .decision,
+      topic: "Project SignalASI iOS routing",
+      value: "Use native routing for iOS tools",
+      status: .active,
+      temporalState: .current,
+      conflictGroupId: "routing-conflict",
+      lastSeenAtMillis: 2_000
+    )
+    let unrelated = evolutionItem(
+      "unrelated",
+      kind: .decision,
+      namespaceId: "other",
+      topic: "Project Other routing",
+      value: "Use native routing for another project",
+      lastSeenAtMillis: 3_000
+    )
+    let incoming = evolutionItem(
+      "replacement",
+      kind: .decision,
+      topic: "Project SignalASI iOS routing",
+      value: "Use native routing for iOS tools after review",
+      temporalState: .conflicted,
+      lastSeenAtMillis: 4_000
+    )
+    let candidate = GlobalMemoryCandidate(
+      id: "candidate-replacement",
+      sourceEventId: "replacement-event",
+      conversationId: "chat-a",
+      kind: .decision,
+      temporalState: .conflicted,
+      risk: .reviewRequired,
+      status: .conflicted,
+      action: .create,
+      item: incoming,
+      reason: "conflicting_evidence_requires_review",
+      createdAtMillis: 4_000
+    )
+
+    let result = GlobalMemoryEvolutionPolicy.approve(
+      world: PersonalWorldModel(items: [active, unrelated], updatedAtMillis: 1_000),
+      inbox: GlobalMemoryInbox(candidates: [candidate], updatedAtMillis: 1_000),
+      candidateId: "candidate-replacement",
+      nowMillis: 6_000
+    )
+    let byId = Dictionary(uniqueKeysWithValues: result.world.items.map { ($0.id, $0) })
+
+    XCTAssertEqual(byId["active"]?.status, .superseded)
+    XCTAssertEqual(byId["active"]?.temporalState, .deprecated)
+    XCTAssertEqual(byId["active"]?.conflictGroupId, "")
+    XCTAssertEqual(byId["active"]?.supersededByItemId, "replacement")
+    XCTAssertEqual(byId["replacement"]?.status, .active)
+    XCTAssertEqual(byId["replacement"]?.temporalState, .current)
+    XCTAssertEqual(byId["replacement"]?.supersedesItemIds, ["active"])
+    XCTAssertEqual(byId["replacement"]?.lastSeenAtMillis, 6_000)
+    XCTAssertEqual(byId["unrelated"]?.status, .active)
+    XCTAssertEqual(result.inbox.candidates.first?.status, .approved)
+    XCTAssertEqual(result.inbox.candidates.first?.temporalState, .current)
+  }
+
+  func testGlobalMemoryEvolutionPolicyRejectsOnlyReviewableCandidates() {
+    let pending = GlobalMemoryCandidate(
+      id: "pending",
+      sourceEventId: "pending-event",
+      conversationId: "chat-a",
+      kind: .fact,
+      temporalState: .pending,
+      risk: .reviewRequired,
+      status: .pendingReview,
+      item: evolutionItem("pending-item"),
+      reason: "needs_review",
+      createdAtMillis: 2_000
+    )
+    let applied = GlobalMemoryCandidate(
+      id: "applied",
+      sourceEventId: "applied-event",
+      conversationId: "chat-a",
+      kind: .fact,
+      temporalState: .current,
+      risk: .low,
+      status: .autoMerged,
+      item: evolutionItem("applied-item"),
+      reason: "auto_merged",
+      createdAtMillis: 1_000
+    )
+    let inbox = GlobalMemoryInbox(candidates: [pending, applied], updatedAtMillis: 1_000)
+
+    let rejected = GlobalMemoryEvolutionPolicy.reject(
+      inbox: inbox,
+      candidateId: "pending",
+      nowMillis: 7_000
+    )
+    let unchanged = GlobalMemoryEvolutionPolicy.reject(
+      inbox: rejected,
+      candidateId: "applied",
+      nowMillis: 8_000
+    )
+
+    XCTAssertEqual(rejected.candidates.first(where: { $0.id == "pending" })?.status, .rejected)
+    XCTAssertEqual(rejected.candidates.first(where: { $0.id == "pending" })?.reviewedAtMillis, 7_000)
+    XCTAssertEqual(rejected.updatedAtMillis, 7_000)
+    XCTAssertEqual(unchanged.candidates.first(where: { $0.id == "applied" })?.status, .autoMerged)
+    XCTAssertEqual(unchanged.updatedAtMillis, 7_000)
+  }
+
   func testGlobalMemoryEvolutionPolicyBuildsReviewStrengthenAndAuditRecords() {
     let pendingGoal = GlobalMemoryCandidate(
       id: "candidate-goal",
