@@ -8,6 +8,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var contactsWriteProvider: AgentIOSContactsWriteProviding
   var communicationHandoffProvider: AgentIOSCommunicationHandoffProviding
   var downloadProvider: AgentIOSDownloadManaging
+  var telephonyProvider: AgentIOSTelephonyStatusProviding
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
@@ -20,6 +21,7 @@ struct AgentIOSSystemNativeToolExecutor {
     contactsWriteProvider: AgentIOSContactsWriteProviding = AgentIOSDefaultContactsWriteProvider(),
     communicationHandoffProvider: AgentIOSCommunicationHandoffProviding = AgentIOSDefaultCommunicationHandoffProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
+    telephonyProvider: AgentIOSTelephonyStatusProviding = AgentIOSDefaultTelephonyStatusProvider(),
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
@@ -31,6 +33,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.contactsWriteProvider = contactsWriteProvider
     self.communicationHandoffProvider = communicationHandoffProvider
     self.downloadProvider = downloadProvider
+    self.telephonyProvider = telephonyProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
@@ -50,6 +53,10 @@ struct AgentIOSSystemNativeToolExecutor {
 
   private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     switch invocation.descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.telephonyStatus:
+      return telephonyStatus(invocation)
+    case AgentIOSSystemNativeToolCatalog.telephonyCallState:
+      return telephonyCallState(invocation)
     case AgentIOSSystemNativeToolCatalog.calendarsList:
       return calendarProvider.listCalendars(nowMillis: max(0, nowMillis()))
     case AgentIOSSystemNativeToolCatalog.calendarEventsQuery:
@@ -123,6 +130,30 @@ struct AgentIOSSystemNativeToolExecutor {
         "tool_id": .string(invocation.descriptor.id),
         "identifiers_included": .bool(false),
         "settings_changed": .bool(false)
+      ]
+    )
+  }
+
+  private func telephonyStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: telephonyProvider.telephonyStatus(nowMillis: max(0, nowMillis())),
+      message: "Phone service status read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
+        "identifiers_included": .bool(false)
+      ]
+    )
+  }
+
+  private func telephonyCallState(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: telephonyProvider.callState(nowMillis: max(0, nowMillis())),
+      message: "Current call state read",
+      metadata: [
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId),
+        "tool_id": .string(invocation.descriptor.id),
+        "identifiers_included": .bool(false)
       ]
     )
   }
