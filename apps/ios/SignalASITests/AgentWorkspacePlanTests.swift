@@ -497,6 +497,118 @@ extension SignalASIStoreTests {
     XCTAssertTrue(plan.validation.valid)
   }
 
+  func testAgentPlanFactoryRewritesHomeAssistantControlDeviceToNativeTool() throws {
+    let tool = try nativeToolDescriptor(
+      AgentIOSHomeAssistantNativeToolCatalog.serviceCall,
+      risk: .medium,
+      idempotency: .idempotencyKeyRequired
+    )
+    let plan = AgentPlanFactory.actions(
+      request: planFactoryRequest(
+        targets: [
+          planFactoryTarget(
+            id: "home-assistant",
+            title: "Home Assistant",
+            kind: .device,
+            capabilities: [.deviceControl]
+          )
+        ],
+        nativeTools: [tool]
+      ),
+      [
+        AgentAction(
+          id: "control-office-light",
+          kind: .controlDevice,
+          target: "Home Assistant",
+          risk: .low,
+          status: .pendingConfirmation,
+          description: "Turn on the office light",
+          parameters: [
+            "connector_id": "home-assistant",
+            "prompt": "Turn on light.office"
+          ]
+        )
+      ]
+    )
+    let action = try XCTUnwrap(plan.actions.first)
+    let inputJson = try XCTUnwrap(action.parameters["input_json"])
+    let input = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(inputJson.utf8)) as? [String: Any]
+    )
+
+    XCTAssertEqual(action.kind, .callNativeTool)
+    let expectedInput = AgentHomeAssistantServiceCallRequest(
+      serviceDomain: "homeassistant",
+      service: "turn_on",
+      entityId: "light.office"
+    ).nativeToolInput
+    XCTAssertEqual(action.id, "home-assistant-service-\(AgentMcpJSONCodec.sha256(expectedInput).prefix(16))")
+    XCTAssertEqual(action.target, "light.office")
+    XCTAssertEqual(action.risk, .medium)
+    XCTAssertEqual(action.parameters["tool_id"], AgentIOSHomeAssistantNativeToolCatalog.serviceCall)
+    XCTAssertEqual(action.parameters["connector_id"], "home-assistant")
+    XCTAssertEqual(action.parameters["source_action_kind"], AgentActionKind.controlDevice.rawValue)
+    XCTAssertEqual(input["service_domain"] as? String, "homeassistant")
+    XCTAssertEqual(input["service"] as? String, "turn_on")
+    XCTAssertEqual(input["entity_id"] as? String, "light.office")
+    XCTAssertTrue(input["service_data"] is [String: Any])
+    XCTAssertEqual(plan.route.kind, .localSystem)
+    XCTAssertEqual(plan.expectedResult, "The selected phone-native tool returns a locally verified receipt.")
+    XCTAssertTrue(plan.validation.valid)
+  }
+
+  func testAgentPlanFactoryKeepsHomeAssistantControlDeviceWhenNativeToolCannotRun() throws {
+    let unavailableTool = try nativeToolDescriptor(
+      AgentIOSHomeAssistantNativeToolCatalog.serviceCall,
+      availability: AgentNativeToolAvailability(status: .requiresSetup)
+    )
+    let action = AgentAction(
+      id: "control-office-light",
+      kind: .controlDevice,
+      target: "Home Assistant",
+      risk: .medium,
+      status: .pendingConfirmation,
+      description: "Turn on the office light",
+      parameters: [
+        "connector_id": "home-assistant",
+        "prompt": "Turn on light.office"
+      ]
+    )
+    let unavailablePlan = AgentPlanFactory.actions(
+      request: planFactoryRequest(
+        targets: [
+          planFactoryTarget(id: "home-assistant", title: "Home Assistant", kind: .device, capabilities: [.deviceControl])
+        ],
+        nativeTools: [unavailableTool]
+      ),
+      [action]
+    )
+    let missingEntityPlan = AgentPlanFactory.actions(
+      request: planFactoryRequest(
+        targets: [
+          planFactoryTarget(id: "home-assistant", title: "Home Assistant", kind: .device, capabilities: [.deviceControl])
+        ],
+        nativeTools: [try nativeToolDescriptor(AgentIOSHomeAssistantNativeToolCatalog.serviceCall)]
+      ),
+      [AgentAction(
+        id: "control-unspecified-light",
+        kind: .controlDevice,
+        target: "Home Assistant",
+        risk: .medium,
+        status: .pendingConfirmation,
+        description: "Turn on the office light",
+        parameters: ["connector_id": "home-assistant", "prompt": "Turn on the office light"]
+      )]
+    )
+
+    XCTAssertEqual(unavailablePlan.actions.first?.kind, .controlDevice)
+    XCTAssertEqual(unavailablePlan.route.kind, .deviceConnector)
+    XCTAssertEqual(missingEntityPlan.actions.first?.kind, .controlDevice)
+    XCTAssertNil(missingEntityPlan.actions.first?.parameters["tool_id"])
+    XCTAssertTrue(unavailablePlan.validation.valid)
+    XCTAssertTrue(missingEntityPlan.validation.valid)
+  }
+
   func testAgentPlanFactoryEmptyPlanFallsBackToAvailableReasoningConnector() {
     let plan = AgentPlanFactory.actions(request: planFactoryRequest(), [])
     let action = plan.actions.first

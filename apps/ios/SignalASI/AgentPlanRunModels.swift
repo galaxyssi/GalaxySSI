@@ -926,7 +926,10 @@ enum AgentPlanFactory {
   }
 
   static func actions(request: AgentPlanRequest, _ actions: [AgentAction]) -> AgentPlan {
-    let plannedActions = collapseDuplicateConnectorCalls(actions)
+    let plannedActions = AgentHomeAssistantNativeToolPlanBridge.rewrite(
+      actions: collapseDuplicateConnectorCalls(actions),
+      request: request
+    )
     let resolvedActions = plannedActions.isEmpty ? [emptyPlanFallbackAction(request)] : plannedActions
     let routeAction = resolvedActions.first {
       $0.kind == .callConnector || $0.kind == .controlDevice
