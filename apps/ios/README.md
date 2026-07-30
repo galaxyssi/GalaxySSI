@@ -10,7 +10,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Native MQTT 3.1.1 transport over TLS for pairing topics, Link topics, and background message delivery handoff
 - Durable Link outbox, exponential retry, delivery acknowledgements, Android-style delivery trace stages, inbound dedupe, and Android-compatible `signal-chunk` MQTT payload chunking
 - Android-style MQTT publish result acceptance, reconnect backoff, and relationship subscription recovery policies
-- Android-style Link transport diagnostics for encrypted replay, pending replay, duplicates, old counters, decrypt failures, and fragment rejection events with anonymous endpoint/message references
+- Android-style Link transport diagnostics for encrypted replay, pending replay, duplicates, old counters, decrypt failures, and fragment rejection events with anonymous endpoint/message references and a Settings summary/recent-events view
 - Android-compatible unified command payloads for desktop MQTT commands and structured command results
 - Android-compatible `signalasi_contact` QR export/import with pending friend requests, approve/reject handling, and verified contact creation
 - Local contact management with Android-style remark rename, soft delete, optional chat deletion, and private data reset
