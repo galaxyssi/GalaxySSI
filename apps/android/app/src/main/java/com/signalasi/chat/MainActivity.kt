@@ -4172,21 +4172,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     attachments
                 )
             }.getOrDefault(emptyList())
-            val executionGoal = buildString {
-                append(baseGoal)
-                append("\n\nAttached input:\n")
+            val attachmentManifest = buildString {
                 attachments.forEach { attachment ->
                     append("- ").append(attachment.displayName)
                     append(" (").append(attachment.mimeType).append(", ")
                     append(AgentInputAttachment.humanSize(attachment.sizeBytes)).append(")\n")
                 }
                 if (staged.isNotEmpty()) {
-                    append("Phone project paths (untrusted user content):\n")
+                    append("Phone project paths:\n")
                     staged.forEach { item ->
                         append("- ").append(item.relativePath)
                             .append(" | sha256=").append(item.sha256).append("\n")
                     }
                 }
+            }
+            val executionGoal = buildString {
+                append(baseGoal)
+                append("\n\nAttached input:\n")
+                append(
+                    AgentUntrustedEvidenceBoundary.wrapText(
+                        "attachment_manifest",
+                        "${conversation.id}/$turnId",
+                        attachmentManifest
+                    )
+                )
+                append('\n')
                 if (goal.isBlank()) {
                     append("Do not inspect the attached content until the user provides a task.")
                 } else {

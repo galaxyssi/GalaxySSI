@@ -62,6 +62,12 @@ from tool_call_audit import (
     canonical_digest as tool_audit_digest,
     desktop_tool_call_audit_store,
 )
+from untrusted_evidence import (
+    SYSTEM_POLICY as EVIDENCE_SYSTEM_POLICY,
+    enforce_system_prompt as enforce_evidence_system_prompt,
+    protect_agent_prompt,
+    wrap_untrusted_evidence,
+)
 from web_intelligence import (
     FINALIZE_WEB_RESEARCH_PROMPT,
     MAX_CLOUD_TOOL_CALLS,
@@ -768,7 +774,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
 
                 raw_reply = acp_runtime().execute(
                     spec.id,
-                    prompt,
+                    protect_agent_prompt(prompt),
                     run_id=request.run_id,
                     client_route_id=str(
                         request.checkpoint.get("client_route_id") or "desktop-local"
@@ -948,9 +954,11 @@ def _stateless_model_messages(
     from response_policy import response_policy_prompt
 
     config = local_model_config() if agent_id == "local-llm" else cloud_model_config()
-    fixed_prompt = response_policy_prompt(
-        request.prompt,
-        request.response_language or language_policy_config()["response_language"],
+    fixed_prompt = enforce_evidence_system_prompt(
+        response_policy_prompt(
+            request.prompt,
+            request.response_language or language_policy_config()["response_language"],
+        )
     )
     context_window = max(
         4_096,
@@ -2322,6 +2330,7 @@ def _ask_cli_agent_locked(
             )
             or _styled_turn_prompt(text, response_language)
         )
+    invocation_text = protect_agent_prompt(invocation_text)
     session_command = (
         _plan_only_command(spec, command)
         if plan_only
@@ -2984,6 +2993,12 @@ def ask_cloud_model(
     if not url or not api_key:
         return "[Cloud Model] \u672a\u914d\u7f6e\u4e91\u7aef\u6a21\u578b\u3002\u8bf7\u5728 SignalASI Desktop \u4e2d\u8bbe\u7f6e API \u5730\u5740\u548c\u5bc6\u94a5\u3002"
     conversation = [dict(item) for item in (messages or [{"role": "user", "content": text}])]
+    if not any(
+        str(item.get("role") or "") == "system"
+        and EVIDENCE_SYSTEM_POLICY in str(item.get("content") or "")
+        for item in conversation
+    ):
+        conversation.insert(0, {"role": "system", "content": enforce_evidence_system_prompt("")})
     conversation.insert(0, {"role": "system", "content": cloud_current_time_prompt()})
     payload = {"model": model, "messages": conversation}
     payload["tools"] = cloud_openai_tools()
@@ -3080,7 +3095,11 @@ def ask_cloud_model(
                         "tool_call_id": str(
                             call_value.get("id") or f"signalasi-{tool_calls_used + 1}"
                         ),
-                        "content": result,
+                        "content": wrap_untrusted_evidence(
+                            "web_tool_result",
+                            name,
+                            result,
+                        ),
                     })
                     tool_calls_used += 1
             else:

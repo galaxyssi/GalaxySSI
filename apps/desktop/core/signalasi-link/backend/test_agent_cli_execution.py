@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 import agent_gateway
 from external_cli_process_pool import ExternalCliProcessPool
+from untrusted_evidence import POLICY_MARKER
 
 
 class AgentCliExecutionTest(unittest.TestCase):
@@ -53,7 +54,9 @@ class AgentCliExecutionTest(unittest.TestCase):
                     "test prompt",
                 )
 
-        self.assertEqual("CLI_OK:test prompt", reply)
+        self.assertTrue(reply.startswith(f"CLI_OK:{POLICY_MARKER}"))
+        self.assertIn("SignalASI current task:\ntest prompt", reply.replace("\r\n", "\n"))
+        self.assertEqual(1, reply.count(POLICY_MARKER))
 
     def test_full_agent_call_applies_policy_and_returns_cli_reply(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -111,7 +114,9 @@ class AgentCliExecutionTest(unittest.TestCase):
                     "quoted prompt",
                 )
 
-        self.assertEqual("QUOTED_OK:quoted prompt", reply)
+        self.assertTrue(reply.startswith(f"QUOTED_OK:{POLICY_MARKER}"))
+        self.assertIn("SignalASI current task:\nquoted prompt", reply.replace("\r\n", "\n"))
+        self.assertEqual(1, reply.count(POLICY_MARKER))
 
     def test_restricted_pairing_disables_hermes_yolo_and_marks_workspace_only(self):
         full = agent_gateway._agent_env(agent_gateway.BASE_AGENTS["hermes"])
@@ -220,8 +225,12 @@ class AgentCliExecutionTest(unittest.TestCase):
                     os.environ["STARTUP_LOG"] = old_startup_log
             starts = startup_log.read_text(encoding="utf-8").splitlines()
 
-        self.assertEqual("KEEPALIVE:one", first)
-        self.assertEqual("KEEPALIVE:two", second)
+        self.assertTrue(first.startswith(f"KEEPALIVE:{POLICY_MARKER}"))
+        self.assertIn("SignalASI current task:\none", first.replace("\r\n", "\n"))
+        self.assertEqual(1, first.count(POLICY_MARKER))
+        self.assertTrue(second.startswith(f"KEEPALIVE:{POLICY_MARKER}"))
+        self.assertIn("SignalASI current task:\ntwo", second.replace("\r\n", "\n"))
+        self.assertEqual(1, second.count(POLICY_MARKER))
         self.assertEqual(1, len(starts))
 
     def test_restricted_access_rejects_persistent_transport_without_starting_process(self):
