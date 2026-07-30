@@ -19779,6 +19779,65 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         ))
 
+        addSectionTitle(getString(R.string.desktop_control_surfaces))
+        val surfaceCatalog = snapshot.surfaceCatalog
+        featureContent.addView(featureRow(
+            surfaceCatalog?.targetTitle
+                ?.takeIf(String::isNotBlank)
+                ?: getString(R.string.desktop_control_surface_select),
+            surfaceCatalog?.let {
+                getString(
+                    R.string.desktop_control_surface_summary,
+                    it.targetBounds.width,
+                    it.targetBounds.height,
+                    it.displays.size,
+                    it.windows.size
+                )
+            } ?: getString(R.string.desktop_control_surface_select_subtitle),
+            R.drawable.ic_agent_screen,
+            getString(
+                if (surfaceCatalog == null) {
+                    R.string.desktop_control_surface_load
+                } else {
+                    R.string.desktop_control_surface_change
+                }
+            )
+        ).apply {
+            isEnabled = snapshot.authorized
+            alpha = if (snapshot.authorized) 1f else 0.5f
+            setOnClickListener {
+                if (surfaceCatalog == null) {
+                    if (!DesktopRemoteControl.requestSurfaces(device.id)) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.desktop_control_request_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                } else {
+                    showDesktopSurfaceDialog(device, surfaceCatalog)
+                }
+            }
+        })
+        featureContent.addView(featureRow(
+            getString(R.string.desktop_control_surface_refresh),
+            getString(R.string.desktop_control_surface_refresh_subtitle),
+            R.drawable.ic_import,
+            getString(R.string.desktop_control_surface_refresh_action)
+        ).apply {
+            isEnabled = snapshot.authorized
+            alpha = if (snapshot.authorized) 1f else 0.5f
+            setOnClickListener {
+                if (!DesktopRemoteControl.requestSurfaces(device.id)) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.desktop_control_request_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
+
         addSectionTitle(getString(R.string.desktop_control_live_display))
         val screenshotFrame = FrameLayout(this).apply {
             background = GradientDrawable().apply {
@@ -20166,6 +20225,68 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
     }
 
+    private fun showDesktopSurfaceDialog(
+        device: DesktopSecuritySummary,
+        catalog: DesktopSurfaceCatalog
+    ) {
+        val labels = mutableListOf<String>()
+        val actions = mutableListOf<() -> Boolean>()
+        var selectedIndex = -1
+        catalog.displays.forEachIndexed { index, display ->
+            if (catalog.selection.windowId.isBlank() &&
+                catalog.selection.displayId == display.displayId
+            ) {
+                selectedIndex = labels.size
+            }
+            labels += getString(
+                R.string.desktop_control_surface_display_option,
+                index + 1,
+                display.name,
+                display.bounds.width,
+                display.bounds.height
+            )
+            actions += {
+                DesktopRemoteControl.selectDisplay(device.id, display.displayId)
+            }
+        }
+        catalog.windows.forEach { window ->
+            if (catalog.selection.windowId == window.windowId) {
+                selectedIndex = labels.size
+            }
+            labels += getString(
+                R.string.desktop_control_surface_window_option,
+                window.title.ifBlank { getString(R.string.desktop_control_surface_untitled_window) },
+                window.bounds.width,
+                window.bounds.height
+            )
+            actions += {
+                DesktopRemoteControl.activateWindow(device.id, window.windowId)
+            }
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.desktop_control_surface_dialog_title))
+            .setSingleChoiceItems(
+                labels.toTypedArray(),
+                selectedIndex
+            ) { dialog, index ->
+                val sent = actions.getOrNull(index)?.invoke() == true
+                Toast.makeText(
+                    this@MainActivity,
+                    getString(
+                        if (sent) {
+                            R.string.desktop_control_request_sent
+                        } else {
+                            R.string.desktop_control_request_failed
+                        }
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+                if (sent) dialog.dismiss()
+            }
+            .setNegativeButton(R.string.common_cancel, null)
+            .show()
+    }
+
     private fun showDesktopPerceptionPage(device: DesktopSecuritySummary) {
         val remote = DesktopRemoteControl.snapshot(this, device.id)
         val perception = remote.perception
@@ -20516,6 +20637,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             DesktopRemoteControl.SCROLL -> R.string.desktop_control_action_scroll
             DesktopRemoteControl.WINDOW_SWITCH -> R.string.desktop_control_action_window_switch
             DesktopRemoteControl.FILE_SELECT -> R.string.desktop_control_action_file_select
+            DesktopRemoteControl.SURFACE_LIST -> R.string.desktop_control_action_surface_list
+            DesktopRemoteControl.SURFACE_SELECT -> R.string.desktop_control_action_surface_select
+            DesktopRemoteControl.WINDOW_ACTIVATE -> R.string.desktop_control_action_window_activate
             else -> R.string.status_unknown
         }
     )

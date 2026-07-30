@@ -36,6 +36,7 @@ class FakeInput:
         *,
         source_width: int | None = None,
         source_height: int | None = None,
+        target_bounds: dict | None = None,
     ) -> None:
         self.calls.append(("click", x, y, button))
 

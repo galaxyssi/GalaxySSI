@@ -13,7 +13,10 @@ from desktop_control import (
     FILE_SELECT,
     PERCEIVE,
     SCREENSHOT,
+    SURFACE_LIST,
+    SURFACE_SELECT,
     TYPE_TEXT,
+    WINDOW_ACTIVATE,
     WINDOW_SWITCH,
     RECEIPT_SIGNED_FIELDS,
     DesktopControlError,
@@ -40,9 +43,19 @@ class FakeInput:
     def is_locked(self):
         return self.locked
 
-    def click(self, x, y, button, *, source_width=None, source_height=None):
+    def click(
+        self,
+        x,
+        y,
+        button,
+        *,
+        source_width=None,
+        source_height=None,
+        target_bounds=None,
+    ):
         self.calls.append(("click", x, y, button))
         self.coordinate_space = (source_width, source_height)
+        self.target_bounds = target_bounds
 
     def type_text(self, text):
         self.calls.append(("type", text))
@@ -58,6 +71,43 @@ class FakeInput:
 
     def select_file(self, path):
         self.calls.append(("file_select", path))
+
+
+class FakeSurfaceProvider:
+    def __init__(self):
+        self.activated = []
+
+    def displays(self):
+        return [
+            {
+                "display_id": "display:primary",
+                "name": "Primary",
+                "bounds": {"left": 0, "top": 0, "width": 1920, "height": 1080},
+                "work_area": {"left": 0, "top": 0, "width": 1920, "height": 1040},
+                "primary": True,
+            },
+            {
+                "display_id": "display:left",
+                "name": "Left",
+                "bounds": {"left": -1280, "top": 40, "width": 1280, "height": 1024},
+                "work_area": {"left": -1280, "top": 40, "width": 1280, "height": 984},
+                "primary": False,
+            },
+        ]
+
+    def windows(self, _displays):
+        return [{
+            "window_id": "window:browser",
+            "title": "Browser",
+            "display_id": "display:left",
+            "bounds": {"left": -1200, "top": 100, "width": 1000, "height": 760},
+            "foreground": bool(self.activated),
+            "minimized": False,
+        }]
+
+    def activate_window(self, window_id):
+        self.activated.append(window_id)
+        return window_id == "window:browser"
 
 
 class FakeReceiptIdentity:
@@ -92,6 +142,7 @@ class DesktopControlTests(unittest.TestCase):
         self.input = FakeInput()
         self.identity = FakeReceiptIdentity()
         self.handles = ToolHandleRegistry(now=self.clock)
+        self.surfaces = FakeSurfaceProvider()
         self.screenshot_calls = 0
 
         def screenshot():
@@ -115,6 +166,7 @@ class DesktopControlTests(unittest.TestCase):
             identity_provider=self.identity.identity,
             receipt_signer=self.identity.sign,
             handle_registry=self.handles,
+            surface_provider=self.surfaces,
         )
         self.client = {
             "client_route_id": "client-route-1",
@@ -374,6 +426,7 @@ class DesktopControlTests(unittest.TestCase):
                 }
 
         self.manager._perception = FakePerception()
+        self.manager._custom_perception_service = True
         request = self.request(authorization, PERCEIVE, {})
         receipt = self.manager.execute_request(request, self.client)
         after = self.manager.status(self.client["client_route_id"])
@@ -391,6 +444,78 @@ class DesktopControlTests(unittest.TestCase):
         self.assertNotIn("Private OCR", persisted)
         self.assertNotIn("Private control", persisted)
         self.assertNotIn("Private window", persisted)
+
+    def test_surface_catalog_selection_scopes_screenshot_and_click(self):
+        authorization = self.authorize()
+
+        listed = self.manager.execute_request(
+            self.request(authorization, SURFACE_LIST),
+            self.client,
+        )
+        selected = self.manager.execute_request(
+            self.request(
+                authorization,
+                SURFACE_SELECT,
+                {"display_id": "display:left"},
+            ),
+            self.client,
+        )
+        screenshot = self.manager.execute_request(
+            self.request(authorization, SCREENSHOT),
+            self.client,
+        )
+        clicked = self.manager.execute_request(
+            self.request(
+                authorization,
+                CLICK_XY,
+                {
+                    "x": 640,
+                    "y": 512,
+                    "button": "left",
+                    "coordinate_width": 1280,
+                    "coordinate_height": 1024,
+                },
+            ),
+            self.client,
+        )
+
+        self.assertEqual(2, listed["output"]["surface_catalog"]["display_count"])
+        self.assertEqual(
+            "display:left",
+            selected["output"]["surface_catalog"]["selection"]["selected_display_id"],
+        )
+        self.assertEqual(
+            "display:left",
+            screenshot["output"]["screenshot"]["surface"]["display_id"],
+        )
+        self.assertEqual("succeeded", clicked["status"])
+        self.assertEqual(
+            {"left": -1280, "top": 40, "width": 1280, "height": 1024},
+            self.input.target_bounds,
+        )
+
+    def test_window_activation_updates_session_and_captures_selected_window(self):
+        authorization = self.authorize()
+
+        activated = self.manager.execute_request(
+            self.request(
+                authorization,
+                WINDOW_ACTIVATE,
+                {"window_id": "window:browser"},
+            ),
+            self.client,
+        )
+
+        self.assertEqual("succeeded", activated["status"])
+        self.assertEqual(["window:browser"], self.surfaces.activated)
+        self.assertEqual(
+            "window:browser",
+            activated["output"]["surface_catalog"]["selection"]["selected_window_id"],
+        )
+        self.assertEqual(
+            "window:browser",
+            activated["post_screenshot"]["surface"]["window_id"],
+        )
 
     def test_duplicate_action_with_different_input_is_rejected(self):
         authorization = self.authorize()
@@ -606,6 +731,55 @@ class DesktopControlTests(unittest.TestCase):
                 self.request(restored),
                 self.client,
             )["status"],
+        )
+
+    def test_surface_selection_follows_rotated_session_after_restart(self):
+        authorization = self.authorize()
+        selected = self.manager.execute_request(
+            self.request(
+                authorization,
+                SURFACE_SELECT,
+                {"display_id": "display:left"},
+            ),
+            self.client,
+        )
+        self.assertEqual("succeeded", selected["status"])
+
+        reloaded = DesktopControlManager(
+            Path(self.temporary.name) / "control.json",
+            now=self.clock,
+            screenshot_provider=lambda: {
+                "image_mime": "image/jpeg",
+                "image_base64": "/9j/2Q==",
+                "width": 640,
+                "height": 512,
+                "original_width": 1280,
+                "original_height": 1024,
+                "bytes": 4,
+                "captured_at": int(self.clock() * 1_000),
+            },
+            input_controller=self.input,
+            identity_provider=self.identity.identity,
+            receipt_signer=self.identity.sign,
+            handle_registry=ToolHandleRegistry(now=self.clock),
+            surface_provider=self.surfaces,
+        )
+        refreshed = reloaded.status(
+            self.client["client_route_id"]
+        )["authorizations"][0]
+        self.assertNotEqual(
+            authorization["desktop_session_id"],
+            refreshed["desktop_session_id"],
+        )
+
+        screenshot = reloaded.execute_request(
+            self.request(refreshed),
+            self.client,
+        )
+
+        self.assertEqual(
+            "display:left",
+            screenshot["output"]["screenshot"]["surface"]["display_id"],
         )
 
     def test_explicit_desktop_session_is_required_and_route_scoped(self):

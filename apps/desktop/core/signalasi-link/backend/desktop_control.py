@@ -29,6 +29,13 @@ from desktop_run_control import (
     DesktopRunControlError,
     desktop_run_control,
 )
+from desktop_surfaces import (
+    CONTRACT_VERSION as DESKTOP_SURFACE_CONTRACT,
+    DesktopSurfaceError,
+    DesktopSurfaceProvider,
+    DesktopSurfaceSessionRegistry,
+    StaticDesktopSurfaceProvider,
+)
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_access import (
     DESKTOP_EXECUTOR,
@@ -47,7 +54,7 @@ from tool_handle_registry import (
 )
 
 
-CONTRACT_VERSION = "signalasi.desktop-control/1.5"
+CONTRACT_VERSION = "signalasi.desktop-control/1.6"
 AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
 RECEIPT_VERSION = 4
@@ -71,6 +78,9 @@ SCROLL = "desktop.scroll"
 WINDOW_SWITCH = "desktop.window_switch"
 FILE_SELECT = "desktop.file_select"
 PERCEIVE = "desktop.perceive"
+SURFACE_LIST = "desktop.surface.list"
+SURFACE_SELECT = "desktop.surface.select"
+WINDOW_ACTIVATE = "desktop.window.activate"
 
 DEFAULT_ALLOWED_TOOLS = (
     SCREENSHOT,
@@ -81,6 +91,9 @@ DEFAULT_ALLOWED_TOOLS = (
     WINDOW_SWITCH,
     FILE_SELECT,
     PERCEIVE,
+    SURFACE_LIST,
+    SURFACE_SELECT,
+    WINDOW_ACTIVATE,
     *TASK_CONTROL_TOOLS,
 )
 RECEIPT_SIGNED_FIELDS = (
@@ -129,6 +142,7 @@ def _default_state() -> dict[str, Any]:
             "require_unlocked": False,
         },
         "authorizations": {},
+        "surface_sessions": {},
         "recent_actions": {},
         "audit": [],
         "updated_at": int(time.time() * 1_000),
@@ -193,6 +207,7 @@ class DesktopControlManager:
         receipt_signer: ReceiptSigner = sign_signal_identity,
         handle_registry: ToolHandleRegistry | None = None,
         perception_service: DesktopPerceptionService | None = None,
+        surface_provider: DesktopSurfaceProvider | None = None,
     ) -> None:
         self.state_path = Path(state_path or DATA_DIR / "desktop_control.json")
         self.now = now
@@ -201,9 +216,19 @@ class DesktopControlManager:
         self._offers: dict[str, dict[str, Any]] = {}
         self._recent_transient_actions: dict[str, dict[str, Any]] = {}
         self._state = self._load()
+        self._custom_screenshot_provider = screenshot_provider is not None
+        self._custom_perception_service = perception_service is not None
         self._screenshot_provider = screenshot_provider or capture_desktop_screenshot
         self._perception = perception_service or DesktopPerceptionService(
             self._screenshot_provider,
+            now=now,
+        )
+        resolved_surface_provider = surface_provider
+        if resolved_surface_provider is None and self._custom_screenshot_provider:
+            resolved_surface_provider = StaticDesktopSurfaceProvider()
+        self._surfaces = DesktopSurfaceSessionRegistry(
+            resolved_surface_provider,
+            sessions=self._state["surface_sessions"],
             now=now,
         )
         self._input = input_controller or WindowsInputController()
@@ -228,6 +253,8 @@ class DesktopControlManager:
                 if not settings["enabled"]:
                     self._offers.clear()
                     self._handles.revoke_kind("desktop_session")
+                    self._surfaces.clear()
+                    self._state["surface_sessions"] = {}
             if require_unlocked is not None:
                 settings["require_unlocked"] = bool(require_unlocked)
             self._append_audit_locked(
@@ -386,12 +413,21 @@ class DesktopControlManager:
     def revoke(self, authorization_id: str, reason: str = "user_revoked") -> dict[str, Any]:
         with self._lock:
             row = self._authorization_locked(authorization_id, include_revoked=True)
+            desktop_session_id = str(
+                self._public_authorization(row).get("desktop_session_id") or ""
+            )
             now_ms = int(self.now() * 1_000)
             row["status"] = "revoked"
             row["revoked_at"] = now_ms
             row["revoke_reason"] = str(reason or "user_revoked")[:120]
             row["updated_at"] = now_ms
             self._handles.revoke_resource("desktop_session", authorization_id)
+            if desktop_session_id:
+                self._surfaces.forget(desktop_session_id)
+            self._surfaces.forget(
+                self._surface_persistent_id(authorization_id)
+            )
+            self._state["surface_sessions"] = self._surfaces.export()
             self._append_audit_locked(
                 "authorization_revoked",
                 authorization_id=authorization_id,
@@ -466,6 +502,7 @@ class DesktopControlManager:
                 "contract_version": CONTRACT_VERSION,
                 "authorized_app_contract": AUTHORIZED_APP_CONTRACT,
                 "tool_handle_contract": TOOL_HANDLE_CONTRACT,
+                "desktop_surface_contract": DESKTOP_SURFACE_CONTRACT,
                 "enabled": bool(self._state["settings"].get("enabled")),
                 "require_unlocked": bool(self._state["settings"].get("require_unlocked")),
                 "allowed_tools": list(DEFAULT_ALLOWED_TOOLS),
@@ -475,6 +512,155 @@ class DesktopControlManager:
                 "recent_audit": list(reversed(self._state["audit"][-50:])),
                 "recent_receipts": receipts,
             }
+
+    def _surface_catalog(self, desktop_session_id: str) -> dict[str, Any]:
+        try:
+            catalog = self._surfaces.catalog(desktop_session_id)
+        except DesktopSurfaceError as exc:
+            raise DesktopControlError(
+                exc.code,
+                str(exc),
+                retryable=exc.retryable,
+            ) from exc
+        with self._lock:
+            self._state["surface_sessions"] = self._surfaces.export()
+        return catalog
+
+    @staticmethod
+    def _surface_result(
+        catalog: Mapping[str, Any],
+        *,
+        include_catalog: bool,
+    ) -> dict[str, Any]:
+        result = {
+            "surface_contract": str(
+                catalog.get("contract_version") or DESKTOP_SURFACE_CONTRACT
+            ),
+            "selection": dict(catalog.get("selection") or {}),
+            "target": dict(catalog.get("target") or {}),
+        }
+        if include_catalog:
+            result.update({
+                "display_count": int(catalog.get("display_count") or 0),
+                "window_count": int(catalog.get("window_count") or 0),
+                "displays": list(catalog.get("displays") or []),
+                "windows": list(catalog.get("windows") or []),
+            })
+        return result
+
+    def _capture_surface(
+        self,
+        desktop_session_id: str,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        catalog = self._surface_catalog(desktop_session_id)
+        target = dict(catalog.get("target") or {})
+        if target.get("kind") == "window" and bool(target.get("minimized")):
+            raise DesktopControlError(
+                "window_not_visible",
+                "Activate the selected window before capturing it",
+                retryable=True,
+            )
+        if self._custom_screenshot_provider:
+            screenshot = self._screenshot_provider()
+        else:
+            screenshot = capture_desktop_screenshot(
+                bounds=target.get("bounds"),
+            )
+        screenshot = dict(screenshot)
+        screenshot["surface"] = {
+            "kind": str(target.get("kind") or "display"),
+            "display_id": str(target.get("display_id") or ""),
+            "window_id": str(target.get("window_id") or ""),
+            "title": str(target.get("title") or "")[:500],
+            "bounds": dict(target.get("bounds") or {}),
+        }
+        return screenshot, catalog
+
+    def _capture_surface_perception(
+        self,
+        desktop_session_id: str,
+        *,
+        include_screenshot: bool,
+        include_ocr: bool,
+        include_ui_tree: bool,
+        max_elements: int,
+        max_depth: int,
+        max_ocr_chars: int,
+    ) -> dict[str, Any]:
+        catalog = self._surface_catalog(desktop_session_id)
+        target = dict(catalog.get("target") or {})
+        foreground = next(
+            (
+                row
+                for row in catalog.get("windows") or []
+                if isinstance(row, Mapping) and bool(row.get("foreground"))
+            ),
+            {},
+        )
+        ui_tree_scoped = (
+            target.get("kind") == "window"
+            and str(foreground.get("window_id") or "")
+            == str(target.get("window_id") or "")
+        ) or (
+            target.get("kind") == "display"
+            and str(foreground.get("display_id") or "")
+            == str(target.get("display_id") or "")
+        )
+        effective_ui_tree = include_ui_tree and (
+            self._custom_perception_service or ui_tree_scoped
+        )
+        service = self._perception
+        if not self._custom_perception_service:
+            service = DesktopPerceptionService(
+                lambda: self._capture_surface(desktop_session_id)[0],
+                now=self.now,
+            )
+        output = service.capture(
+            include_screenshot=include_screenshot,
+            include_ocr=include_ocr,
+            include_ui_tree=effective_ui_tree,
+            max_elements=max_elements,
+            max_depth=max_depth,
+            max_ocr_chars=max_ocr_chars,
+        )
+        output["surface"] = self._surface_result(
+            catalog,
+            include_catalog=False,
+        )
+        if include_ui_tree and not effective_ui_tree:
+            output["ui_tree"] = {
+                "status": "unavailable",
+                "element_count": 0,
+                "elements": [],
+                "truncated": False,
+                "error": {
+                    "code": "selected_surface_not_active",
+                    "message": "Activate the selected window before reading its UI tree",
+                    "retryable": True,
+                },
+            }
+        return output
+
+    def _activate_selected_window(self, desktop_session_id: str) -> dict[str, Any]:
+        catalog = self._surface_catalog(desktop_session_id)
+        target = dict(catalog.get("target") or {})
+        window_id = str(target.get("window_id") or "")
+        if target.get("kind") != "window" or not window_id or target.get("foreground"):
+            return catalog
+        try:
+            catalog = self._surfaces.activate_window(
+                desktop_session_id,
+                window_id,
+            )
+        except DesktopSurfaceError as exc:
+            raise DesktopControlError(
+                exc.code,
+                str(exc),
+                retryable=exc.retryable,
+            ) from exc
+        with self._lock:
+            self._state["surface_sessions"] = self._surfaces.export()
+        return catalog
 
     def execute_request(
         self,
@@ -493,7 +679,12 @@ class DesktopControlManager:
         ) = self._validate_request(payload, paired_client)
         stream_fps = self._screenshot_stream_fps(tool_id, arguments)
         stream_frame = stream_fps is not None
-        transient_action = stream_frame or tool_id == PERCEIVE
+        transient_action = stream_frame or tool_id in {
+            PERCEIVE,
+            SURFACE_LIST,
+            SURFACE_SELECT,
+            WINDOW_ACTIVATE,
+        }
         if transient_action:
             with self._lock:
                 previous = self._recent_transient_actions.get(action_id)
@@ -568,8 +759,88 @@ class DesktopControlManager:
                     raise DesktopControlError("desktop_locked", "Desktop must be unlocked before remote control")
                 screenshot = None
                 output: dict[str, Any] = {}
-                if tool_id == SCREENSHOT:
-                    screenshot = self._screenshot_provider()
+                if tool_id == SURFACE_LIST:
+                    output = {
+                        "surface_catalog": self._surface_result(
+                            self._surface_catalog(desktop_session_id),
+                            include_catalog=True,
+                        ),
+                    }
+                elif tool_id == SURFACE_SELECT:
+                    display_id = _bounded_text(
+                        arguments.get("display_id"),
+                        "display_id",
+                        120,
+                    ).strip()
+                    window_id = _bounded_text(
+                        arguments.get("window_id"),
+                        "window_id",
+                        120,
+                    ).strip()
+                    if bool(display_id) == bool(window_id):
+                        raise DesktopControlError(
+                            "invalid_input",
+                            "Select exactly one display_id or window_id",
+                        )
+                    try:
+                        catalog = self._surfaces.select(
+                            desktop_session_id,
+                            display_id=display_id,
+                            window_id=window_id,
+                        )
+                    except DesktopSurfaceError as exc:
+                        raise DesktopControlError(
+                            exc.code,
+                            str(exc),
+                            retryable=exc.retryable,
+                        ) from exc
+                    with self._lock:
+                        self._state["surface_sessions"] = self._surfaces.export()
+                        self._save_locked()
+                    output = {
+                        "surface_catalog": self._surface_result(
+                            catalog,
+                            include_catalog=True,
+                        ),
+                    }
+                elif tool_id == WINDOW_ACTIVATE:
+                    window_id = _bounded_text(
+                        arguments.get("window_id"),
+                        "window_id",
+                        120,
+                    ).strip()
+                    if not window_id:
+                        raise DesktopControlError(
+                            "invalid_input",
+                            "window_id must not be empty",
+                        )
+                    try:
+                        catalog = self._surfaces.activate_window(
+                            desktop_session_id,
+                            window_id,
+                        )
+                    except DesktopSurfaceError as exc:
+                        raise DesktopControlError(
+                            exc.code,
+                            str(exc),
+                            retryable=exc.retryable,
+                        ) from exc
+                    with self._lock:
+                        self._state["surface_sessions"] = self._surfaces.export()
+                        self._save_locked()
+                    output = {
+                        "surface_catalog": self._surface_result(
+                            catalog,
+                            include_catalog=True,
+                        ),
+                    }
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
+                elif tool_id == SCREENSHOT:
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                     output = {"screenshot": screenshot}
                     if stream_frame:
                         output.update({
@@ -578,7 +849,8 @@ class DesktopControlManager:
                         })
                 elif tool_id == PERCEIVE:
                     try:
-                        output = self._perception.capture(
+                        output = self._capture_surface_perception(
+                            desktop_session_id,
                             include_screenshot=self._bounded_bool(
                                 arguments.get("include_screenshot", True),
                                 "include_screenshot",
@@ -654,31 +926,45 @@ class DesktopControlManager:
                         button,
                         source_width=coordinate_width,
                         source_height=coordinate_height,
+                        target_bounds=self._surface_catalog(
+                            desktop_session_id,
+                        )["target"]["bounds"],
                     )
                     output = {"x": x, "y": y, "button": button}
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 elif tool_id == TYPE_TEXT:
                     text = _bounded_text(arguments.get("text"), "text", 4_096)
                     if not text:
                         raise DesktopControlError("invalid_input", "text must not be empty")
+                    self._activate_selected_window(desktop_session_id)
                     self._input.type_text(text)
                     output = {"characters": len(text)}
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 elif tool_id == HOTKEY:
                     keys = arguments.get("keys")
                     if not isinstance(keys, list) or not 1 <= len(keys) <= 4:
                         raise DesktopControlError("invalid_input", "keys must contain one to four key names")
                     normalized = [str(key or "").strip().lower() for key in keys]
+                    self._activate_selected_window(desktop_session_id)
                     self._input.hotkey(normalized)
                     output = {"keys": normalized}
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 elif tool_id == SCROLL:
                     delta = self._bounded_int(arguments.get("delta"), "delta", -2_400, 2_400)
                     if delta == 0:
                         raise DesktopControlError("invalid_input", "delta must not be zero")
+                    self._activate_selected_window(desktop_session_id)
                     self._input.scroll(delta)
                     output = {"delta": delta}
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 elif tool_id == WINDOW_SWITCH:
                     direction = str(arguments.get("direction") or "next").lower()
                     if direction not in {"next", "previous"}:
@@ -687,8 +973,16 @@ class DesktopControlManager:
                             "direction must be next or previous",
                         )
                     self._input.window_switch(direction)
+                    try:
+                        self._surfaces.follow_foreground_window(
+                            desktop_session_id,
+                        )
+                    except DesktopSurfaceError:
+                        pass
                     output = {"direction": direction}
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 elif tool_id == FILE_SELECT:
                     raw_path = _bounded_text(
                         arguments.get("path"),
@@ -712,12 +1006,15 @@ class DesktopControlManager:
                             "file_not_found",
                             "The selected Desktop path is not a file",
                         )
+                    self._activate_selected_window(desktop_session_id)
                     self._input.select_file(str(selected_path))
                     output = {
                         "selected": True,
                         "file_name": selected_path.name,
                     }
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 elif tool_id in TASK_CONTROL_TOOLS:
                     controller = {
                         "controller_id": str(
@@ -752,7 +1049,9 @@ class DesktopControlManager:
                             str(exc),
                             retryable=exc.retryable,
                         ) from exc
-                    screenshot = self._screenshot_provider()
+                    screenshot, _catalog = self._capture_surface(
+                        desktop_session_id,
+                    )
                 else:
                     raise DesktopControlError("invalid_tool", "Desktop control tool is not supported")
 
@@ -771,12 +1070,27 @@ class DesktopControlManager:
                 "completed_at": completed_at,
                 "duration_ms": max(0, completed_at - started_at),
                 "replayed": False,
-                "post_screenshot": screenshot if tool_id not in {SCREENSHOT, PERCEIVE} else None,
+                "post_screenshot": (
+                    screenshot
+                    if tool_id not in {
+                        SCREENSHOT,
+                        PERCEIVE,
+                        SURFACE_LIST,
+                        SURFACE_SELECT,
+                    }
+                    else None
+                ),
             }, request_digest, arguments, paired_client)
             if transient_action:
                 with self._lock:
                     self._complete_transient_action_locked(action_id, request_digest, receipt)
             if not stream_frame:
+                self._surfaces.mirror(
+                    desktop_session_id,
+                    self._surface_persistent_id(
+                        str(authorization.get("authorization_id") or "")
+                    ),
+                )
                 with self._lock:
                     authorization["last_used_at"] = completed_at
                     authorization["updated_at"] = completed_at
@@ -1277,6 +1591,14 @@ class DesktopControlManager:
                 },
                 reuse=True,
             )
+            desktop_session_id = str(desktop_session.get("handle_id") or "")
+            if desktop_session_id:
+                self._surfaces.restore(
+                    desktop_session_id,
+                    self._surface_persistent_id(
+                        str(row.get("authorization_id") or "")
+                    ),
+                )
         return {
             "record_version": 1,
             "authorization_id": str(row.get("authorization_id") or ""),
@@ -1307,6 +1629,10 @@ class DesktopControlManager:
                 desktop_session.get("expires_at") or 0
             ),
         }
+
+    @staticmethod
+    def _surface_persistent_id(authorization_id: str) -> str:
+        return f"authorization:{str(authorization_id or '').strip()}"
 
     def _append_audit_locked(
         self,
@@ -1433,6 +1759,12 @@ class DesktopControlManager:
     @staticmethod
     def _action_summary(tool_id: str, arguments: Mapping[str, Any], *, running: bool = False) -> str:
         prefix = "Executing" if running else "Executed"
+        if tool_id == SURFACE_LIST:
+            return f"{prefix} display and window discovery"
+        if tool_id == SURFACE_SELECT:
+            return f"{prefix} Desktop surface selection"
+        if tool_id == WINDOW_ACTIVATE:
+            return f"{prefix} window activation"
         if tool_id == SCREENSHOT:
             return f"{prefix} desktop screenshot"
         if tool_id == PERCEIVE:
@@ -1461,6 +1793,13 @@ class DesktopControlManager:
 
     @staticmethod
     def _audit_summary(tool_id: str, arguments: Mapping[str, Any]) -> str:
+        if tool_id == SURFACE_LIST:
+            return "listed connected displays and visible windows"
+        if tool_id == SURFACE_SELECT:
+            kind = "window" if arguments.get("window_id") else "display"
+            return f"selected a {kind} for this Desktop session"
+        if tool_id == WINDOW_ACTIVATE:
+            return "activated the selected Desktop window"
         if tool_id == TYPE_TEXT:
             return f"typed {len(str(arguments.get('text') or ''))} chars"
         if tool_id == SCREENSHOT:
@@ -1495,7 +1834,13 @@ class DesktopControlManager:
         except (OSError, ValueError, json.JSONDecodeError):
             value = _default_state()
         defaults = _default_state()
-        for key in ("settings", "authorizations", "recent_actions", "audit"):
+        for key in (
+            "settings",
+            "authorizations",
+            "surface_sessions",
+            "recent_actions",
+            "audit",
+        ):
             if not isinstance(value.get(key), type(defaults[key])):
                 value[key] = defaults[key]
         for key, default in defaults["settings"].items():
@@ -1520,6 +1865,8 @@ class DesktopControlManager:
         return value
 
     def _save_locked(self) -> None:
+        if hasattr(self, "_surfaces"):
+            self._state["surface_sessions"] = self._surfaces.export()
         self._state["updated_at"] = int(self.now() * 1_000)
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
@@ -1578,11 +1925,15 @@ class WindowsInputController:
         *,
         source_width: int | None = None,
         source_height: int | None = None,
+        target_bounds: Mapping[str, Any] | None = None,
     ) -> None:
         self._require_windows()
         user32 = ctypes.windll.user32
-        width = int(user32.GetSystemMetrics(0))
-        height = int(user32.GetSystemMetrics(1))
+        bounds = dict(target_bounds or {})
+        left = int(bounds.get("left") or 0)
+        top = int(bounds.get("top") or 0)
+        width = int(bounds.get("width") or user32.GetSystemMetrics(0))
+        height = int(bounds.get("height") or user32.GetSystemMetrics(1))
         if source_width is not None and source_height is not None:
             x, y = self.scale_point(
                 x,
@@ -1593,8 +1944,8 @@ class WindowsInputController:
                 target_height=height,
             )
         if not (0 <= x < width and 0 <= y < height):
-            raise DesktopControlError("invalid_input", "Click coordinates are outside the primary display")
-        if not user32.SetCursorPos(x, y):
+            raise DesktopControlError("invalid_input", "Click coordinates are outside the selected surface")
+        if not user32.SetCursorPos(left + x, top + y):
             raise DesktopControlError("input_execution_failed", "Windows rejected the pointer position")
         down, up = (0x0002, 0x0004) if button == "left" else (0x0008, 0x0010)
         user32.mouse_event(down, 0, 0, 0, 0)
@@ -1697,7 +2048,9 @@ class WindowsInputController:
                 raise DesktopControlError("input_execution_failed", "Windows did not accept the full text input")
 
 
-def capture_desktop_screenshot() -> dict[str, Any]:
+def capture_desktop_screenshot(
+    bounds: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     if os.name != "nt":
         raise DesktopControlError("screen_capture_failed", "Desktop screen capture requires Windows")
     try:
@@ -1705,7 +2058,18 @@ def capture_desktop_screenshot() -> dict[str, Any]:
     except ImportError as exc:
         raise DesktopControlError("screen_capture_failed", "Pillow screen capture support is unavailable") from exc
     try:
-        source = ImageGrab.grab(all_screens=False).convert("RGB")
+        selected = dict(bounds or {})
+        width = int(selected.get("width") or 0)
+        height = int(selected.get("height") or 0)
+        bbox = None
+        if width > 0 and height > 0:
+            left = int(selected.get("left") or 0)
+            top = int(selected.get("top") or 0)
+            bbox = (left, top, left + width, top + height)
+        source = ImageGrab.grab(
+            bbox=bbox,
+            all_screens=bbox is not None,
+        ).convert("RGB")
     except Exception as exc:
         raise DesktopControlError("screen_capture_failed", str(exc) or "Windows screen capture failed") from exc
     original_width, original_height = source.size

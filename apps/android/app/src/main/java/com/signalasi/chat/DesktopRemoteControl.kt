@@ -90,6 +90,104 @@ data class DesktopControlScreenshot(
     val capturedAt: Long
 )
 
+data class DesktopSurfaceBounds(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int
+)
+
+data class DesktopDisplaySurface(
+    val displayId: String,
+    val name: String,
+    val bounds: DesktopSurfaceBounds,
+    val primary: Boolean
+)
+
+data class DesktopWindowSurface(
+    val windowId: String,
+    val title: String,
+    val displayId: String,
+    val bounds: DesktopSurfaceBounds,
+    val foreground: Boolean,
+    val minimized: Boolean
+)
+
+data class DesktopSurfaceSelection(
+    val displayId: String,
+    val windowId: String,
+    val targetKind: String
+)
+
+data class DesktopSurfaceCatalog(
+    val displays: List<DesktopDisplaySurface>,
+    val windows: List<DesktopWindowSurface>,
+    val selection: DesktopSurfaceSelection,
+    val targetTitle: String,
+    val targetBounds: DesktopSurfaceBounds
+)
+
+private fun parseDesktopSurfaceBounds(source: JSONObject?): DesktopSurfaceBounds {
+    val bounds = source ?: JSONObject()
+    return DesktopSurfaceBounds(
+        left = bounds.optInt("left"),
+        top = bounds.optInt("top"),
+        width = bounds.optInt("width").coerceAtLeast(0),
+        height = bounds.optInt("height").coerceAtLeast(0)
+    )
+}
+
+internal fun parseDesktopSurfaceCatalog(source: JSONObject?): DesktopSurfaceCatalog? {
+    val root = source ?: return null
+    if (root.optString("surface_contract") != "signalasi.desktop-surfaces/1.0") return null
+    val displayRows = root.optJSONArray("displays") ?: JSONArray()
+    val windowRows = root.optJSONArray("windows") ?: JSONArray()
+    val displays = buildList {
+        for (index in 0 until minOf(displayRows.length(), 16)) {
+            val item = displayRows.optJSONObject(index) ?: continue
+            val displayId = item.optString("display_id").take(120)
+            if (displayId.isBlank()) continue
+            add(DesktopDisplaySurface(
+                displayId = displayId,
+                name = item.optString("name").take(120),
+                bounds = parseDesktopSurfaceBounds(item.optJSONObject("bounds")),
+                primary = item.optBoolean("primary")
+            ))
+        }
+    }
+    if (displays.isEmpty()) return null
+    val displayIds = displays.mapTo(mutableSetOf()) { it.displayId }
+    val windows = buildList {
+        for (index in 0 until minOf(windowRows.length(), 100)) {
+            val item = windowRows.optJSONObject(index) ?: continue
+            val windowId = item.optString("window_id").take(120)
+            val displayId = item.optString("display_id").take(120)
+            if (windowId.isBlank() || displayId !in displayIds) continue
+            add(DesktopWindowSurface(
+                windowId = windowId,
+                title = item.optString("title").take(500),
+                displayId = displayId,
+                bounds = parseDesktopSurfaceBounds(item.optJSONObject("bounds")),
+                foreground = item.optBoolean("foreground"),
+                minimized = item.optBoolean("minimized")
+            ))
+        }
+    }
+    val selection = root.optJSONObject("selection") ?: JSONObject()
+    val target = root.optJSONObject("target") ?: JSONObject()
+    return DesktopSurfaceCatalog(
+        displays = displays,
+        windows = windows,
+        selection = DesktopSurfaceSelection(
+            displayId = selection.optString("selected_display_id").take(120),
+            windowId = selection.optString("selected_window_id").take(120),
+            targetKind = selection.optString("target_kind").take(20)
+        ),
+        targetTitle = target.optString("title").take(500),
+        targetBounds = parseDesktopSurfaceBounds(target.optJSONObject("bounds"))
+    )
+}
+
 data class DesktopPerceptionElement(
     val id: String,
     val parentId: String,
@@ -294,6 +392,7 @@ data class DesktopRemoteControlSnapshot(
     val lastActionAt: Long,
     val screenshot: DesktopControlScreenshot?,
     val perception: DesktopPerceptionSnapshot?,
+    val surfaceCatalog: DesktopSurfaceCatalog?,
     val streamFps: Int,
     val streamActive: Boolean
 ) {
@@ -388,7 +487,7 @@ internal class DesktopScreenshotRequestGate {
 }
 
 internal object DesktopControlReceiptProtocol {
-    const val CONTRACT_VERSION = "signalasi.desktop-control/1.5"
+    const val CONTRACT_VERSION = "signalasi.desktop-control/1.6"
     const val RECEIPT_VERSION = 4
 
     fun pendingRequest(
@@ -583,6 +682,9 @@ object DesktopRemoteControl {
     const val SCROLL = "desktop.scroll"
     const val WINDOW_SWITCH = "desktop.window_switch"
     const val FILE_SELECT = "desktop.file_select"
+    const val SURFACE_LIST = "desktop.surface.list"
+    const val SURFACE_SELECT = "desktop.surface.select"
+    const val WINDOW_ACTIVATE = "desktop.window.activate"
     const val TASK_PAUSE = "desktop.task_pause"
     const val TASK_TAKEOVER = "desktop.task_takeover"
     const val TASK_CONTINUE = "desktop.task_continue"
@@ -599,6 +701,7 @@ object DesktopRemoteControl {
         var at: Long = 0L,
         var screenshot: DesktopControlScreenshot? = null,
         var perception: DesktopPerceptionSnapshot? = null,
+        var surfaceCatalog: DesktopSurfaceCatalog? = null,
         var activeRuns: List<DesktopRunSummary>? = null
     )
 
@@ -747,6 +850,24 @@ object DesktopRemoteControl {
                         state.perception = it
                     }
                 }
+                if (!streamFrame &&
+                    payload.optString("tool_id") in setOf(
+                        SURFACE_LIST,
+                        SURFACE_SELECT,
+                        WINDOW_ACTIVATE
+                    ) &&
+                    payload.optString("status") == "succeeded"
+                ) {
+                    parseDesktopSurfaceCatalog(
+                        payload.optJSONObject("output")
+                            ?.optJSONObject("surface_catalog")
+                    )?.let {
+                        state.surfaceCatalog = it
+                    }
+                    if (payload.optString("tool_id") == SURFACE_SELECT) {
+                        requestScreenshot(desktopId)
+                    }
+                }
                 if (!streamFrame && payload.optString("status") == "succeeded") {
                     touchAuthorization(context, desktopId, state.at)
                 }
@@ -807,6 +928,7 @@ object DesktopRemoteControl {
             lastActionAt = live?.at ?: 0L,
             screenshot = live?.screenshot,
             perception = live?.perception,
+            surfaceCatalog = live?.surfaceCatalog,
             streamFps = stream?.fps ?: 0,
             streamActive = stream?.future?.let {
                 !it.isCancelled && !it.isDone
@@ -833,6 +955,57 @@ object DesktopRemoteControl {
                 .put("max_ocr_chars", 12_000),
             durable = false
         )
+
+    fun requestSurfaces(desktopId: String): Boolean =
+        requestAction(
+            desktopId,
+            SURFACE_LIST,
+            JSONObject(),
+            durable = false
+        )
+
+    fun selectDisplay(desktopId: String, displayId: String): Boolean {
+        if (displayId.isBlank()) return false
+        val sent = requestAction(
+            desktopId,
+            SURFACE_SELECT,
+            JSONObject().put("display_id", displayId),
+            durable = false
+        )
+        if (sent) prepareSurfaceChange(desktopId)
+        return sent
+    }
+
+    fun selectWindow(desktopId: String, windowId: String): Boolean {
+        if (windowId.isBlank()) return false
+        val sent = requestAction(
+            desktopId,
+            SURFACE_SELECT,
+            JSONObject().put("window_id", windowId),
+            durable = false
+        )
+        if (sent) prepareSurfaceChange(desktopId)
+        return sent
+    }
+
+    fun activateWindow(desktopId: String, windowId: String): Boolean {
+        if (windowId.isBlank()) return false
+        val sent = requestAction(
+            desktopId,
+            WINDOW_ACTIVATE,
+            JSONObject().put("window_id", windowId)
+        )
+        if (sent) prepareSurfaceChange(desktopId)
+        return sent
+    }
+
+    private fun prepareSurfaceChange(desktopId: String) {
+        stopScreenshotStream(desktopId)
+        runtime.computeIfAbsent(desktopId) { RuntimeState() }.apply {
+            screenshot = null
+            perception = null
+        }
+    }
 
     fun startScreenshotStream(desktopId: String, fps: Int): Boolean {
         val normalized = DesktopScreenshotStreamPolicy.normalizeFps(fps) ?: return false
