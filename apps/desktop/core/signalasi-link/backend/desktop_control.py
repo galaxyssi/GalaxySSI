@@ -38,7 +38,10 @@ from desktop_surfaces import (
 )
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_access import (
+    DESKTOP_CONTROL,
     DESKTOP_EXECUTOR,
+    DESKTOP_EXTERNAL_FILES,
+    DESKTOP_NATIVE_TOOLS,
     client_grant,
     grant_binding,
     has_full_executor,
@@ -60,7 +63,7 @@ AUTHORIZATION_VERSION = 1
 RECEIPT_VERSION = 4
 OFFER_TTL_SECONDS = 10 * 60
 ACTION_TTL_MILLIS = 30_000
-DESKTOP_SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
+DESKTOP_SESSION_TTL_SECONDS = 30 * 60
 MAX_CLOCK_SKEW_MILLIS = 30_000
 MAX_SCREENSHOT_BYTES = MAX_IMAGE_TRANSPORT_BYTES
 MIN_SCREENSHOT_STREAM_FPS = 1
@@ -96,6 +99,44 @@ DEFAULT_ALLOWED_TOOLS = (
     WINDOW_ACTIVATE,
     *TASK_CONTROL_TOOLS,
 )
+
+_TOOL_REQUIRED_SCOPES = {
+    **{
+        tool_id: frozenset({DESKTOP_CONTROL})
+        for tool_id in (
+            SCREENSHOT,
+            CLICK_XY,
+            TYPE_TEXT,
+            HOTKEY,
+            SCROLL,
+            WINDOW_SWITCH,
+            PERCEIVE,
+            SURFACE_LIST,
+            SURFACE_SELECT,
+            WINDOW_ACTIVATE,
+        )
+    },
+    FILE_SELECT: frozenset({DESKTOP_CONTROL, DESKTOP_EXTERNAL_FILES}),
+    **{
+        tool_id: frozenset({DESKTOP_CONTROL, DESKTOP_NATIVE_TOOLS})
+        for tool_id in TASK_CONTROL_TOOLS
+    },
+}
+
+
+def allowed_tools_for_scopes(scopes: Any) -> tuple[str, ...]:
+    granted = {
+        str(scope or "").strip()
+        for scope in (scopes or [])
+        if str(scope or "").strip()
+    }
+    return tuple(
+        tool_id
+        for tool_id in DEFAULT_ALLOWED_TOOLS
+        if _TOOL_REQUIRED_SCOPES[tool_id].issubset(granted)
+    )
+
+
 RECEIPT_SIGNED_FIELDS = (
     "receipt_version",
     "receipt_id",
@@ -139,7 +180,7 @@ def _default_state() -> dict[str, Any]:
         "schema": 1,
         "settings": {
             "enabled": False,
-            "require_unlocked": False,
+            "require_unlocked": True,
         },
         "authorizations": {},
         "surface_sessions": {},
@@ -343,6 +384,9 @@ class DesktopControlManager:
                 )
             pairing_access = client_grant(paired_client)
             access_binding = grant_binding(paired_client)
+            allowed_tools = list(
+                allowed_tools_for_scopes(pairing_access["scopes"])
+            )
 
             existing = next(
                 (
@@ -362,7 +406,7 @@ class DesktopControlManager:
                 existing["access_profile"] = DESKTOP_EXECUTOR
                 existing["access_scopes"] = list(pairing_access["scopes"])
                 existing["pairing_access_sha256"] = access_binding
-                existing["allowed_tools"] = list(DEFAULT_ALLOWED_TOOLS)
+                existing["allowed_tools"] = allowed_tools
                 existing["status"] = "active"
                 existing["granted_at"] = int(existing.get("granted_at") or now * 1_000)
                 existing["updated_at"] = int(now * 1_000)
@@ -395,7 +439,7 @@ class DesktopControlManager:
                 "granted_at": granted_at,
                 "last_used_at": 0,
                 "updated_at": int(now * 1_000),
-                "allowed_tools": list(DEFAULT_ALLOWED_TOOLS),
+                "allowed_tools": allowed_tools,
                 "status": "active",
             }
             self._state["authorizations"][authorization_id] = row
@@ -506,6 +550,12 @@ class DesktopControlManager:
                 "enabled": bool(self._state["settings"].get("enabled")),
                 "require_unlocked": bool(self._state["settings"].get("require_unlocked")),
                 "allowed_tools": list(DEFAULT_ALLOWED_TOOLS),
+                "least_privilege": {
+                    "default_access_profile": "restricted",
+                    "authorization_source": "pairing_qr",
+                    "tools_derived_from_scopes": True,
+                    "desktop_session_ttl_seconds": DESKTOP_SESSION_TTL_SECONDS,
+                },
                 "authorizations": rows,
                 "pending_count": sum(row.get("status") == "pending" for row in rows),
                 "active_count": sum(row.get("status") == "active" for row in rows),
@@ -1191,7 +1241,7 @@ class DesktopControlManager:
         if not task_id:
             raise DesktopControlError("invalid_input", "task_id must not be empty")
         tool_id = str(payload.get("tool_id") or "")
-        if tool_id not in DEFAULT_ALLOWED_TOOLS:
+        if tool_id not in _TOOL_REQUIRED_SCOPES:
             raise DesktopControlError("invalid_tool", "Desktop control tool is not allowed")
         arguments = payload.get("input")
         if not isinstance(arguments, dict):
@@ -1316,7 +1366,7 @@ class DesktopControlManager:
             handle = self._handles.resolve(
                 desktop_session_id,
                 kind="desktop_session",
-                scope=ToolHandleScope(client_route_id),
+                scope=ToolHandleScope(client_route_id, authorization_id),
                 required_capability=tool_id,
             )
         except ToolHandleError as exc:
@@ -1582,7 +1632,10 @@ class DesktopControlManager:
             desktop_session = self._handles.create(
                 kind="desktop_session",
                 resource_id=str(row.get("authorization_id") or ""),
-                scope=ToolHandleScope(str(row.get("client_route_id") or "")),
+                scope=ToolHandleScope(
+                    str(row.get("client_route_id") or ""),
+                    str(row.get("authorization_id") or ""),
+                ),
                 capabilities=list(row.get("allowed_tools") or []),
                 ttl_seconds=DESKTOP_SESSION_TTL_SECONDS,
                 metadata={
@@ -1851,7 +1904,11 @@ class DesktopControlManager:
                 and authorization.get("status") == "active"
                 and authorization.get("access_profile") == DESKTOP_EXECUTOR
             ):
-                authorization["allowed_tools"] = list(DEFAULT_ALLOWED_TOOLS)
+                authorization["allowed_tools"] = list(
+                    allowed_tools_for_scopes(
+                        authorization.get("access_scopes") or []
+                    )
+                )
         for row in value["recent_actions"].values():
             if isinstance(row, dict) and row.get("status") == "running":
                 row["status"] = "ambiguous"

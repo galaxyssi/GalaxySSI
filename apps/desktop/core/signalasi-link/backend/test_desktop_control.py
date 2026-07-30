@@ -6,10 +6,16 @@ import unittest
 import uuid
 from pathlib import Path
 
-from pairing_access import grant_for_executor
+from pairing_access import (
+    DESKTOP_CONTROL,
+    DESKTOP_EXTERNAL_FILES,
+    DESKTOP_NATIVE_TOOLS,
+    grant_for_executor,
+)
 from desktop_control import (
     CLICK_XY,
     DEFAULT_ALLOWED_TOOLS,
+    DESKTOP_SESSION_TTL_SECONDS,
     FILE_SELECT,
     PERCEIVE,
     SCREENSHOT,
@@ -23,7 +29,9 @@ from desktop_control import (
     DesktopControlManager,
     WindowsInputController,
     _canonical_json,
+    allowed_tools_for_scopes,
 )
+from desktop_run_control import TASK_PAUSE
 from tool_handle_registry import ToolHandleRegistry, ToolHandleScope
 
 
@@ -252,6 +260,65 @@ class DesktopControlTests(unittest.TestCase):
         self.assertEqual(
             "signalasi.authorized-app/1.0",
             self.manager.status()["authorized_app_contract"],
+        )
+
+    def test_default_policy_requires_unlocked_short_lived_scoped_sessions(self):
+        self.assertTrue(self.manager.settings()["require_unlocked"])
+        authorization = self.authorize()
+        policy = self.manager.status()["least_privilege"]
+
+        self.assertTrue(policy["tools_derived_from_scopes"])
+        self.assertEqual(
+            DESKTOP_SESSION_TTL_SECONDS,
+            policy["desktop_session_ttl_seconds"],
+        )
+        self.assertEqual(
+            int(self.clock() * 1_000) + DESKTOP_SESSION_TTL_SECONDS * 1_000,
+            authorization["desktop_session_expires_at"],
+        )
+
+    def test_tool_permissions_are_derived_from_the_pairing_scopes(self):
+        control_only = allowed_tools_for_scopes([DESKTOP_CONTROL])
+        with_external_files = allowed_tools_for_scopes(
+            [DESKTOP_CONTROL, DESKTOP_EXTERNAL_FILES]
+        )
+        with_task_control = allowed_tools_for_scopes(
+            [DESKTOP_CONTROL, DESKTOP_NATIVE_TOOLS]
+        )
+
+        self.assertIn(SCREENSHOT, control_only)
+        self.assertNotIn(FILE_SELECT, control_only)
+        self.assertNotIn(TASK_PAUSE, control_only)
+        self.assertIn(FILE_SELECT, with_external_files)
+        self.assertIn(TASK_PAUSE, with_task_control)
+
+    def test_locked_desktop_rejects_remote_actions_by_default(self):
+        authorization = self.authorize()
+        self.input.locked = True
+
+        receipt = self.manager.execute_request(
+            self.request(authorization),
+            self.client,
+        )
+
+        self.assertEqual("failed", receipt["status"])
+        self.assertEqual("desktop_locked", receipt["error_code"])
+
+    def test_expired_desktop_session_does_not_revoke_pairing(self):
+        authorization = self.authorize()
+        self.clock.value += DESKTOP_SESSION_TTL_SECONDS + 1
+
+        with self.assertRaises(DesktopControlError) as raised:
+            self.manager.execute_request(
+                self.request(authorization),
+                self.client,
+            )
+
+        self.assertEqual("tool_handle_expired", raised.exception.code)
+        self.assertTrue(raised.exception.retryable)
+        self.assertEqual(
+            "active",
+            self.manager.status()["authorizations"][0]["status"],
         )
 
     def test_repairing_refreshes_the_authorized_standard_tool_set(self):
@@ -794,7 +861,10 @@ class DesktopControlTests(unittest.TestCase):
         self.assertTrue(
             self.handles.release(
                 authorization["desktop_session_id"],
-                scope=ToolHandleScope(self.client["client_route_id"]),
+                scope=ToolHandleScope(
+                    self.client["client_route_id"],
+                    authorization["authorization_id"],
+                ),
             )
         )
         with self.assertRaises(DesktopControlError) as stale:
