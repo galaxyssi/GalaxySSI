@@ -12027,6 +12027,15 @@ enum AgentIOSSystemNativeToolCatalog {
   static let compatibilityConsent = "signalasi.consent.android_system_compatibility"
   static let executorId = "signalasi.ios.system_native_catalog"
 
+  static let handoffToolIds: Set<String> = [
+    telephonyDialHandoff,
+    smsComposeHandoff,
+    wifiPanelOpen,
+    wifiHotspotPanelOpen,
+    biometricEnrollmentOpen,
+    vpnConsentOpen
+  ]
+
   static var orderedToolIds: [String] {
     specifications.map(\.id)
   }
@@ -12356,14 +12365,16 @@ enum AgentIOSSystemNativeToolCatalog {
       description: specification.description,
       location: .androidSystem,
       inputSchema: specification.inputSchema,
-      outputSchema: AgentNativeToolDescriptor.objectSchema(),
+      outputSchema: handoffToolIds.contains(specification.id)
+        ? handoffOutputSchema()
+        : AgentNativeToolDescriptor.objectSchema(),
       risk: specification.risk,
       capabilities: specification.capabilities,
       requiredPermissions: permissionRequirements(specification.permissions),
       requiredConsents: consentRequirements(specification.consents),
       timeoutMillis: 30_000,
       idempotency: specification.risk == .high ? .idempotencyKeyRequired : .nonIdempotent,
-      availability: unavailableAvailability
+      availability: handoffToolIds.contains(specification.id) ? handoffAvailability : unavailableAvailability
     )
     return AgentPhoneNativeToolDefinition(
       descriptor: descriptor,
@@ -12372,7 +12383,9 @@ enum AgentIOSSystemNativeToolCatalog {
         "platform": "ios",
         "compatibility_source": "AgentAndroidSystemNativeTools",
         "contract": "bounded-system-api-v1",
-        "execution_policy": "descriptor_only_unavailable_on_ios15"
+        "execution_policy": handoffToolIds.contains(specification.id)
+          ? "handoff_request_on_ios15"
+          : "descriptor_only_unavailable_on_ios15"
       ]
     )
   }
@@ -12461,6 +12474,35 @@ enum AgentIOSSystemNativeToolCatalog {
     )
   }
 
+  private static var handoffAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor returns a user-visible handoff request; the app UI must present the system URL or settings surface."
+    )
+  }
+
+  private static func handoffOutputSchema() -> AgentMcpJSONObject {
+    input([
+      "handoff_kind": stringSchema(maxLength: 64),
+      "url": stringSchema(maxLength: 2_048),
+      "requires_user_action": boolSchema(),
+      "completion_untrusted": boolSchema(),
+      "platform": stringSchema(maxLength: 16),
+      "tool_id": stringSchema(maxLength: 160),
+      "phone_number": stringSchema(maxLength: 64),
+      "prefill_body": stringSchema(maxLength: 2_000),
+      "body_in_url": boolSchema(),
+      "settings_target": stringSchema(maxLength: 80)
+    ], required: [
+      "handoff_kind",
+      "url",
+      "requires_user_action",
+      "completion_untrusted",
+      "platform",
+      "tool_id"
+    ])
+  }
+
   private static func input(
     _ properties: [String: AgentMcpJSONObject] = [:],
     required: [String] = []
@@ -12501,6 +12543,150 @@ enum AgentIOSSystemNativeToolCatalog {
   private static let consentAudioChange = "signalasi.consent.audio.change"
   private static let consentDownload = "signalasi.consent.download"
   private static let consentDevicePolicy = "signalasi.consent.device_policy"
+}
+
+struct AgentIOSSystemNativeToolExecutor {
+  func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
+    AgentNativeToolExecutableDefinition(
+      definition: definition,
+      executor: { invocation in
+        try invocation.checkpoint()
+        let result = self.execute(invocation)
+        try invocation.checkpoint()
+        return result
+      }
+    )
+  }
+
+  private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    switch invocation.descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.telephonyDialHandoff:
+      return dialHandoff(invocation)
+    case AgentIOSSystemNativeToolCatalog.smsComposeHandoff:
+      return smsComposeHandoff(invocation)
+    case AgentIOSSystemNativeToolCatalog.wifiPanelOpen:
+      return settingsHandoff(
+        invocation,
+        settingsTarget: "wifi",
+        message: "Open iOS Settings so the user can review Wi-Fi connectivity."
+      )
+    case AgentIOSSystemNativeToolCatalog.wifiHotspotPanelOpen:
+      return settingsHandoff(
+        invocation,
+        settingsTarget: "personal_hotspot",
+        message: "Open iOS Settings so the user can review Personal Hotspot settings."
+      )
+    case AgentIOSSystemNativeToolCatalog.biometricEnrollmentOpen:
+      return settingsHandoff(
+        invocation,
+        settingsTarget: "biometric_enrollment",
+        message: "Open iOS Settings so the user can review Face ID, Touch ID, or passcode enrollment."
+      )
+    case AgentIOSSystemNativeToolCatalog.vpnConsentOpen:
+      return settingsHandoff(
+        invocation,
+        settingsTarget: "vpn",
+        message: "Open iOS Settings so the user can review VPN configuration."
+      )
+    default:
+      return AgentNativeToolExecutionResult.failure(
+        code: "ios_system_tool_unavailable",
+        message: "This Android system native tool has no iOS handoff executor."
+      )
+    }
+  }
+
+  private func dialHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    guard let phoneNumber = normalizedPhoneNumber(invocation.input["phone_number"]?.stringValue) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_phone_number",
+        message: "Phone number must contain only bounded dialable characters."
+      )
+    }
+    return handoffResult(
+      invocation,
+      kind: "dial",
+      url: "tel:\(phoneNumber)",
+      message: "Dialer handoff prepared for user confirmation.",
+      extra: ["phone_number": .string(phoneNumber)]
+    )
+  }
+
+  private func smsComposeHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    guard let phoneNumber = normalizedPhoneNumber(invocation.input["phone_number"]?.stringValue) else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_phone_number",
+        message: "Phone number must contain only bounded dialable characters."
+      )
+    }
+    let body = String((invocation.input["message"]?.stringValue ?? "").prefix(2_000))
+    return handoffResult(
+      invocation,
+      kind: "sms_compose",
+      url: "sms:\(phoneNumber)",
+      message: "SMS compose handoff prepared; iOS requires the user to review and send.",
+      extra: [
+        "phone_number": .string(phoneNumber),
+        "prefill_body": .string(body),
+        "body_in_url": .bool(false)
+      ]
+    )
+  }
+
+  private func settingsHandoff(
+    _ invocation: AgentNativeToolInvocation,
+    settingsTarget: String,
+    message: String
+  ) -> AgentNativeToolExecutionResult {
+    handoffResult(
+      invocation,
+      kind: "settings",
+      url: "app-settings:",
+      message: message,
+      extra: ["settings_target": .string(settingsTarget)]
+    )
+  }
+
+  private func handoffResult(
+    _ invocation: AgentNativeToolInvocation,
+    kind: String,
+    url: String,
+    message: String,
+    extra: AgentMcpJSONObject
+  ) -> AgentNativeToolExecutionResult {
+    var output: AgentMcpJSONObject = [
+      "handoff_kind": .string(kind),
+      "url": .string(url),
+      "requires_user_action": .bool(true),
+      "completion_untrusted": .bool(true),
+      "platform": .string("ios"),
+      "tool_id": .string(invocation.descriptor.id)
+    ]
+    for (key, value) in extra {
+      output[key] = value
+    }
+    return AgentNativeToolExecutionResult.success(
+      output: output,
+      message: message,
+      metadata: [
+        "handoff_required": .bool(true),
+        "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId)
+      ]
+    )
+  }
+
+  private func normalizedPhoneNumber(_ value: String?) -> String? {
+    var normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    for removable in [" ", "-", "(", ")", "."] {
+      normalized = normalized.replacingOccurrences(of: removable, with: "")
+    }
+    guard !normalized.isEmpty,
+          normalized.count <= 64,
+          normalized.range(of: #"^[+0-9*#,;]+$"#, options: .regularExpression) != nil else {
+      return nil
+    }
+    return normalized
+  }
 }
 
 struct AgentNativeValidationIssue: Codable, Equatable {
@@ -13817,6 +14003,14 @@ enum AgentPhoneNativeToolCatalog {
     store: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor()
   ) -> [AgentNativeToolExecutableDefinition] {
     workspaceDefinitions().map(store.executableDefinition)
+  }
+
+  static func systemExecutableDefinitions(
+    executor: AgentIOSSystemNativeToolExecutor = AgentIOSSystemNativeToolExecutor()
+  ) -> [AgentNativeToolExecutableDefinition] {
+    AgentIOSSystemNativeToolCatalog.definitions()
+      .filter { AgentIOSSystemNativeToolCatalog.handoffToolIds.contains($0.id) }
+      .map(executor.executableDefinition)
   }
 
   static func actionExecutableDefinitions(
