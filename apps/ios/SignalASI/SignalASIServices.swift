@@ -311,6 +311,32 @@ struct CloudModelClient {
     }
   }
 
+  func sendStructured(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    systemPrompt: String,
+    prompt: String
+  ) async throws -> String {
+    guard let model = contact.selectedCloudModel else {
+      throw SignalASIError.missingCloudModel
+    }
+    guard let apiKey = await store.apiKey(for: model),
+          CloudModelCredentialPolicy.isStoredCredential(apiKey) else {
+      throw SignalASIError.missingAPIKey
+    }
+    let turns = [
+      ChatMessage(contactId: contact.id, content: prompt, isMine: true)
+    ]
+    switch model.apiStyle {
+    case .anthropic:
+      return try await sendAnthropic(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
+    case .gemini:
+      return try await sendGemini(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
+    case .openAICompatible:
+      return try await sendOpenAICompatible(model: model, apiKey: apiKey, turns: turns, systemPrompt: systemPrompt)
+    }
+  }
+
   static func systemPrompt(languagePolicy: LanguagePolicySettings) -> String {
     let responseLanguage = LanguagePolicySettings.modelLanguageName(languagePolicy.responseLanguage)
     return "\(baseSystemPrompt) Reply in \(responseLanguage) unless the user explicitly asks for another language."

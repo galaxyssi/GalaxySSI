@@ -128,6 +128,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style model plan parser for fenced/raw JSON action plans, allowed action kinds, dependency and output graph validation, local screen/app/native-tool resolution, task-complete replan markers, native-tool risk mapping, and bounded fallback-ready rejection
 - Android-style model planning prompt builder for constrained JSON schema instructions, compact fast/economy prompts, screen/app/connector/native-tool inventories, replan and execution-history context, runtime-tool eligibility, and sensitive connector-output redaction
 - Android-style guarded model agent planner core for settings/safety/private/fast/sensitive-route gating, safe low-risk native-tool exposure, prompt invocation, parser-enforced model output acceptance, risk hardening, and deterministic fallback profiles
+- Android-style cloud model planning provider for structured planner prompts over existing OpenAI-compatible, Anthropic, and Gemini cloud contacts with credential preflight and model-planner invocation bridging
 - Android-style agent plan factory for connector dedupe, empty-plan reasoning fallback, route resolution, and paired-contact permission projection
 - Android-style native tool registry for descriptor lookup, JSON-schema input validation, permission and consent gates, deterministic catalog export, and idempotency-key replay protection
 - Android-style AgentAction native tool adapter for legacy phone action calls, receipts, provenance, result metadata, and preflight rejection results
