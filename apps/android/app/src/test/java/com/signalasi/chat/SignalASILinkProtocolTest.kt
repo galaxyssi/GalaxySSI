@@ -82,6 +82,67 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun pendingOutboxCanHydrateAFileBackedEncryptedPayload() {
+        val now = 1_000_000L
+        val values = JSONArray().put(
+            outboxMessage("file-backed", "topic")
+                .apply { remove("wire_payload") }
+                .put("wire_payload_file", "payload.wire")
+                .put("next_attempt_at", now)
+        )
+
+        val pending = SignalASILinkDeliveryStore.pendingFromArray(
+            values,
+            now,
+            wirePayload = { item ->
+                if (item.optString("wire_payload_file") == "payload.wire") {
+                    "encrypted-wire"
+                } else {
+                    ""
+                }
+            }
+        )
+
+        assertEquals("encrypted-wire", pending.single().wirePayload)
+    }
+
+    @Test
+    fun outboxDoesNotPublishTaskWhileAttachmentTransferIsPending() {
+        val now = 1_000_000L
+        val values = JSONArray()
+            .put(outboxMessage("manifest", "topic").put("next_attempt_at", now))
+            .put(
+                outboxMessage("task", "topic")
+                    .put("next_attempt_at", now)
+                    .put(
+                        "blocked_by_attachment_transfers",
+                        JSONArray().put("a".repeat(64))
+                    )
+            )
+
+        val pending = SignalASILinkDeliveryStore.pendingFromArray(values, now)
+        val retryDelay = SignalASILinkDeliveryStore.nextRetryDelayFromArray(values, now)
+
+        assertEquals(listOf("manifest"), pending.map { it.messageId })
+        assertEquals(0L, retryDelay)
+    }
+
+    @Test
+    fun outboxDoesNotScheduleRetriesForOnlyAttachmentBlockedTasks() {
+        val now = 1_000_000L
+        val values = JSONArray().put(
+            outboxMessage("task", "topic")
+                .put("next_attempt_at", now)
+                .put(
+                    "blocked_by_attachment_transfers",
+                    JSONArray().put("a".repeat(64))
+                )
+        )
+
+        assertNull(SignalASILinkDeliveryStore.nextRetryDelayFromArray(values, now))
+    }
+
+    @Test
     fun outboxSchedulerUsesEarliestDueMessageInsteadOfFixedPolling() {
         val now = 1_000_000L
         val values = JSONArray()
