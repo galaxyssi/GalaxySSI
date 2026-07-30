@@ -1401,25 +1401,51 @@ class AgentExecutionHarness:
         return None
 
     def _checkpoint_paths(self) -> tuple[Path, Path]:
-        from task_workspace import task_workspace
-
-        root = task_workspace(self.checkpoint.task_id, self.checkpoint.agent_id)
-        common = root / ".signalasi" / "execution-checkpoint.json"
-        clean_agent = re.sub(
-            r"[^A-Za-z0-9._-]+",
-            "-",
+        return execution_checkpoint_paths(
+            self.checkpoint.task_id,
             self.checkpoint.agent_id,
-        ).strip(".-")[:48] or "agent"
-        digest = hashlib.sha256(
-            self.checkpoint.agent_id.encode("utf-8")
-        ).hexdigest()[:8]
-        actor = (
-            root
-            / ".signalasi"
-            / "execution-checkpoints"
-            / f"{clean_agent}-{digest}.json"
         )
-        return common, actor
+
+
+def execution_checkpoint_paths(
+    task_id: str,
+    agent_id: str,
+) -> tuple[Path, Path]:
+    configured = str(os.environ.get("SIGNALASI_STATE_DIR") or "").strip()
+    configured_workspace = str(
+        os.environ.get("SIGNALASI_WORKSPACE_ROOT") or ""
+    ).strip()
+    state_root = (
+        Path(configured).expanduser()
+        if configured
+        else Path(configured_workspace).expanduser() / ".signalasi-state"
+        if configured_workspace
+        else Path(os.environ.get("APPDATA") or Path.home()) / "SignalASI"
+    ).resolve()
+    clean_task = re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "-",
+        str(task_id or ""),
+    ).strip(".-")[:64] or "task"
+    task_digest = hashlib.sha256(
+        str(task_id or "").encode("utf-8")
+    ).hexdigest()[:12]
+    root = (
+        state_root
+        / "execution-checkpoints"
+        / f"{clean_task}-{task_digest}"
+    )
+    common = root / "execution-checkpoint.json"
+    clean_agent = re.sub(
+        r"[^A-Za-z0-9._-]+",
+        "-",
+        str(agent_id or ""),
+    ).strip(".-")[:48] or "agent"
+    digest = hashlib.sha256(
+        str(agent_id or "").encode("utf-8")
+    ).hexdigest()[:8]
+    actor = root / "agents" / f"{clean_agent}-{digest}.json"
+    return common, actor
 
 
 @dataclass(frozen=True)

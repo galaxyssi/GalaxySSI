@@ -11,6 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
+from host_execution_config_guard import (
+    HostExecutionConfigGuard,
+    HostExecutionConfigViolation,
+)
+
 
 PROTOCOL = "signalasi.agent-file-access/1.0"
 STATE_VERSION = 1
@@ -624,6 +629,7 @@ class AgentWorkspaceCapture:
         before: Mapping[str, FileObservation],
         channel_ids: tuple[str, ...],
         capture_id: str,
+        host_config_guard: HostExecutionConfigGuard,
     ) -> None:
         self.root = Path(root)
         self.scope = scope
@@ -632,6 +638,7 @@ class AgentWorkspaceCapture:
         self.before = dict(before)
         self.channel_ids = channel_ids
         self.capture_id = capture_id
+        self.host_config_guard = host_config_guard
         self._finished = False
 
     @classmethod
@@ -648,6 +655,11 @@ class AgentWorkspaceCapture:
         resolved_root = Path(root).expanduser().resolve()
         active_ledger = ledger or agent_file_access_ledger()
         actor = _safe_identifier(agent_id, "agent", default="agent-unknown")
+        host_config_guard = HostExecutionConfigGuard.begin(
+            resolved_root,
+            agent_id=actor,
+            capture_id=capture_id,
+        )
         before = capture_workspace(resolved_root)
         active_ledger.record_batch(
             scope,
@@ -664,6 +676,7 @@ class AgentWorkspaceCapture:
             before,
             tuple(collaboration_channel_ids),
             capture_id,
+            host_config_guard,
         )
 
     def finish(self) -> dict:
@@ -671,25 +684,41 @@ class AgentWorkspaceCapture:
             return {"reads_recorded": 0, "writes_recorded": 0, "conflicts_created": []}
         self._finished = True
         after = capture_workspace(self.root)
-        writes: list[FileObservation] = []
+        violations = self.host_config_guard.finish()
+        writes_by_path: dict[str, FileObservation] = {}
         for path in sorted(set(self.before).union(after)):
             previous = self.before.get(path)
             current = after.get(path)
             if previous == current:
                 continue
-            writes.append(
+            writes_by_path[path] = (
                 current
                 if current is not None
                 else FileObservation.create(path, exists=False)
             )
-        return self.ledger.record_batch(
+        for violation in violations:
+            path = str(violation.get("path") or "")
+            if not path or path in writes_by_path:
+                continue
+            after_sha256 = str(violation.get("after_sha256") or "")
+            writes_by_path[path] = FileObservation.create(
+                path,
+                exists=str(violation.get("operation") or "") != "deleted",
+                sha256=after_sha256,
+                size_bytes=int(violation.get("after_size_bytes") or 0),
+            )
+        result = self.ledger.record_batch(
             self.scope,
             agent_id=self.agent_id,
-            writes=writes,
+            writes=writes_by_path.values(),
             event_id=f"{self.capture_id}:writes" if self.capture_id else "",
             collaboration_channel_ids=self.channel_ids,
             observation_mode="conservative_workspace_snapshot",
         )
+        result["host_config_violations"] = [dict(item) for item in violations]
+        if violations:
+            raise HostExecutionConfigViolation(violations)
+        return result
 
 
 def capture_workspace(root: Path) -> dict[str, FileObservation]:

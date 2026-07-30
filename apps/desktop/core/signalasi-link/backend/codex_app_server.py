@@ -394,6 +394,20 @@ class CodexAppServer:
                         output_tokens=estimate_text_tokens(run.final_text),
                         estimated=True,
                     )
+                host_config_failure = self._finish_file_access_capture(run)
+                if host_config_failure:
+                    run.final_text = host_config_failure
+                    run.finished = True
+                    self._remove_turn_mapping(run)
+                    self.on_event(task_id, {
+                        "thread_id": clean_thread_id,
+                        "turn_id": clean_turn_id,
+                        "status": "failed",
+                        "current_step": "",
+                        "result": run.final_text,
+                        "error": host_config_failure,
+                    })
+                    return run
                 run.finished = True
                 self._remove_turn_mapping(run)
                 self.on_event(task_id, {
@@ -405,6 +419,7 @@ class CodexAppServer:
                 })
                 return run
             if turn_status in {"failed", "interrupted"}:
+                host_config_failure = self._finish_file_access_capture(run)
                 run.finished = True
                 self._remove_turn_mapping(run)
                 reason = self._turn_error(turn)
@@ -413,6 +428,9 @@ class CodexAppServer:
                     if run.prefers_chinese else
                     "The original Codex turn ended before completion and was not replayed. Please send the task again."
                 )
+                if host_config_failure:
+                    result = host_config_failure
+                    reason = host_config_failure
                 self.on_event(task_id, {
                     "thread_id": clean_thread_id,
                     "turn_id": clean_turn_id,
@@ -454,6 +472,7 @@ class CodexAppServer:
             ).start()
             return run
         except Exception:
+            self._finish_file_access_capture(run)
             run.finished = True
             self._remove_turn_mapping(run)
             raise
@@ -959,18 +978,25 @@ class CodexAppServer:
             log.debug("Codex file change telemetry failed", exc_info=True)
 
     @staticmethod
-    def _finish_file_access_capture(run: CodexRun) -> None:
+    def _finish_file_access_capture(run: CodexRun) -> str:
         capture = run.workspace_capture
         run.workspace_capture = None
         if capture is None:
-            return
+            return ""
         try:
             capture.finish()
-        except Exception:
+        except Exception as exc:
+            from host_execution_config_guard import (
+                HostExecutionConfigViolation,
+            )
+
+            if isinstance(exc, HostExecutionConfigViolation):
+                return str(exc)
             log.debug(
                 "Codex file access capture could not finish",
                 exc_info=True,
             )
+        return ""
 
     def _load_conversation_threads(self) -> dict[str, str]:
         try:
@@ -1316,7 +1342,15 @@ class CodexAppServer:
                     mapped = "failed"
                     run.final_text = str(exc)
             run.finished = True
-            self._finish_file_access_capture(run)
+            host_config_failure = self._finish_file_access_capture(run)
+            if host_config_failure:
+                mapped = "failed"
+                run.final_text = host_config_failure
+                self._checkpoint_progress(
+                    run,
+                    "failed",
+                    host_config_write_blocked=True,
+                )
             run.agent_message_deltas.clear()
             run.reasoning_summary_deltas.clear()
             if turn_id:

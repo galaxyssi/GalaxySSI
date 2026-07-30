@@ -174,6 +174,27 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         self.assertEqual("invocation-2", audit[0]["invocation_id"])
         self.assertEqual("invocation-1", audit[0]["original_invocation_id"])
 
+    def test_workspace_write_rejects_host_execution_configuration(self):
+        result = self.invoke(
+            FILE_WRITE_TEXT,
+            {
+                "workspace_id": "task-a",
+                "path": ".signalasi-task.json",
+                "content": '{"task_id":"attacker"}',
+                "mode": "create",
+            },
+            key="protected-write-1",
+        )
+
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(
+            "host_execution_config_write_blocked",
+            result["error"]["code"],
+        )
+        self.assertFalse(
+            (self.workspace() / ".signalasi-task.json").exists()
+        )
+
     def test_idempotency_key_cannot_be_reused_with_different_input(self):
         first = {"workspace_id": "task-a", "path": "a.txt", "content": "one", "mode": "create"}
         second = {"workspace_id": "task-a", "path": "b.txt", "content": "two", "mode": "create"}
@@ -250,6 +271,46 @@ class DesktopNativeToolRegistryTests(unittest.TestCase):
         self.assertEqual("succeeded", result["status"])
         self.assertEqual(0, result["output"]["exit_code"])
         self.assertEqual("ok", result["output"]["stdout"].strip())
+
+    def test_terminal_rolls_back_indirect_host_configuration_write(self):
+        workspace = self.workspace()
+        metadata = workspace / ".signalasi-task.json"
+        metadata.write_text('{"task_id":"trusted"}', encoding="utf-8")
+        arguments = {
+            "workspace_id": "task-a",
+            "argv": [
+                "python",
+                "-c",
+                (
+                    "from pathlib import Path;"
+                    "Path('.signalasi-task.json').write_text("
+                    "'{\\\"task_id\\\":\\\"attacker\\\"}', encoding='utf-8')"
+                ),
+            ],
+            "timeout_seconds": 10,
+        }
+
+        with patch.object(
+            self.registry,
+            "_resolve_executable",
+            return_value=sys.executable,
+        ):
+            result = self.invoke(
+                TERMINAL_RUN,
+                arguments,
+                key="terminal-protected-1",
+                confirmed=True,
+            )
+
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(
+            "host_execution_config_write_blocked",
+            result["error"]["code"],
+        )
+        self.assertEqual(
+            '{"task_id":"trusted"}',
+            metadata.read_text(encoding="utf-8"),
+        )
 
     def test_docx_inspection_does_not_execute_active_content(self):
         source = self.workspace() / "report.docx"

@@ -129,7 +129,7 @@ class AgentContextCompactionTest(unittest.TestCase):
         self.assertIn("Refined durable context", messages[0]["content"])
         refine.assert_called_once()
 
-    def test_cloud_model_sends_compiled_messages_unchanged(self):
+    def test_cloud_model_adds_host_policy_without_changing_compiled_messages(self):
         captured = {}
 
         def fake_post(_url, payload, timeout, headers=None):
@@ -157,7 +157,11 @@ class AgentContextCompactionTest(unittest.TestCase):
         sent = captured["payload"]["messages"]
         self.assertIn("Current local date, time, and UTC offset", sent[0]["content"])
         self.assertNotIn("Asia/Shanghai", sent[0]["content"])
-        self.assertEqual(messages, sent[1:])
+        self.assertIn(
+            "SignalASI untrusted evidence policy",
+            sent[1]["content"],
+        )
+        self.assertEqual(messages, sent[2:])
         self.assertEqual(10, len(captured["payload"]["tools"]))
         self.assertEqual("auto", captured["payload"]["tool_choice"])
 

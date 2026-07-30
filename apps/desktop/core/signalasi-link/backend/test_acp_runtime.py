@@ -129,6 +129,16 @@ class FakeAgent:
                 path=text.split(":", 1)[1],
             )
             reply = result.content
+        elif text.startswith("write:"):
+            try:
+                await self.client.write_text_file(
+                    session_id=session_id,
+                    path=text.split(":", 1)[1],
+                    content="agent content",
+                )
+                reply = "write:ok"
+            except Exception as exc:
+                reply = f"write_error:{type(exc).__name__}:{exc}"
         elif text == "wait":
             for _ in range(500):
                 if session_id in self.cancelled:
@@ -166,7 +176,9 @@ class AcpRuntimeTest(unittest.TestCase):
         self.agent_script.write_text(FAKE_AGENT, encoding="utf-8")
         self.log_path = self.root / "agent.jsonl"
         self.previous_log = os.environ.get("FAKE_ACP_LOG")
+        self.previous_state = os.environ.get("SIGNALASI_STATE_DIR")
         os.environ["FAKE_ACP_LOG"] = str(self.log_path)
+        os.environ["SIGNALASI_STATE_DIR"] = str(self.root / "state")
         command = f'"{sys.executable}" "{self.agent_script}"'
         self.config = {
             "enabled": True,
@@ -192,6 +204,10 @@ class AcpRuntimeTest(unittest.TestCase):
             os.environ.pop("FAKE_ACP_LOG", None)
         else:
             os.environ["FAKE_ACP_LOG"] = self.previous_log
+        if self.previous_state is None:
+            os.environ.pop("SIGNALASI_STATE_DIR", None)
+        else:
+            os.environ["SIGNALASI_STATE_DIR"] = self.previous_state
         self.temporary.cleanup()
 
     def execute(
@@ -288,6 +304,29 @@ class AcpRuntimeTest(unittest.TestCase):
         session_id = next(iter(self.runtime._sessions.values())).external_session_id
         with self.assertRaises(PermissionError):
             self.runtime._session_file("hermes", session_id, "../outside.txt")
+
+    def test_file_callback_rejects_host_execution_configuration(self) -> None:
+        workspace = self.root / "workspace"
+        workspace.mkdir(parents=True, exist_ok=True)
+
+        reply = self.execute("write:.signalasi-task.json")
+
+        self.assertIn(
+            "write_error:RequestError:"
+            "Host execution configuration write is not allowed",
+            reply,
+        )
+        self.assertFalse((workspace / ".signalasi-task.json").exists())
+        audit_path = (
+            self.root
+            / "state"
+            / "security"
+            / "host-config-write-audit.jsonl"
+        )
+        self.assertIn(
+            ".signalasi-task.json",
+            audit_path.read_text(encoding="utf-8"),
+        )
 
     def test_cancel_reaches_active_acp_session(self) -> None:
         run_id = str(uuid.uuid4())

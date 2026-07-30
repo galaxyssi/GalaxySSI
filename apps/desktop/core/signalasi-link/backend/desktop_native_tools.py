@@ -934,13 +934,14 @@ class DesktopNativeToolRegistry:
                     dict(input_value),
                     {**context, "invocation_id": invocation_id},
                 )
-            finally:
-                if workspace_capture is not None:
-                    try:
-                        workspace_capture.finish()
-                    except Exception:
-                        pass
-                    workspace_capture = None
+            except Exception:
+                capture = workspace_capture
+                workspace_capture = None
+                self._finish_workspace_capture(capture)
+                raise
+            capture = workspace_capture
+            workspace_capture = None
+            self._finish_workspace_capture(capture)
             output = _bounded_json(dict(execution.output))
             self._record_exact_file_access(
                 spec.tool_id,
@@ -1083,6 +1084,50 @@ class DesktopNativeToolRegistry:
             ),
             capture_id=invocation_id,
         )
+
+    @staticmethod
+    def _finish_workspace_capture(capture) -> None:
+        if capture is None:
+            return
+        try:
+            capture.finish()
+        except Exception as exc:
+            from host_execution_config_guard import (
+                HostExecutionConfigViolation,
+            )
+
+            if not isinstance(exc, HostExecutionConfigViolation):
+                raise
+            raise DesktopNativeToolError(
+                "host_execution_config_write_blocked",
+                str(exc),
+                details={"violations": list(exc.violations)},
+            ) from exc
+
+    def _ensure_workspace_write_allowed(
+        self,
+        root: Path,
+        target: Path,
+        context: dict[str, Any],
+    ) -> None:
+        from host_execution_config_guard import (
+            HostExecutionConfigViolation,
+            assert_host_execution_path_writable,
+        )
+
+        try:
+            assert_host_execution_path_writable(
+                root,
+                target,
+                agent_id=self._file_access_actor(context),
+                capture_id=str(context.get("invocation_id") or ""),
+            )
+        except HostExecutionConfigViolation as exc:
+            raise DesktopNativeToolError(
+                "host_execution_config_write_blocked",
+                str(exc),
+                details={"violations": list(exc.violations)},
+            ) from exc
 
     def _record_exact_file_access(
         self,
@@ -1713,8 +1758,9 @@ class DesktopNativeToolRegistry:
         output = {"path": self._relative(root, source), "text": text, "size_bytes": len(raw), "sha256": sha256}
         return DesktopToolExecution(output, f"Read {len(raw)} bytes", verification_evidence={"sha256": sha256, "size_bytes": len(raw)})
 
-    def _file_write_text(self, arguments: dict[str, Any], _context: dict[str, Any]) -> DesktopToolExecution:
+    def _file_write_text(self, arguments: dict[str, Any], context: dict[str, Any]) -> DesktopToolExecution:
         root, target = self._workspace_path(arguments["workspace_id"], arguments["path"])
+        self._ensure_workspace_write_allowed(root, target, context)
         raw = arguments["content"].encode("utf-8")
         if len(raw) > MAX_WRITE_BYTES:
             raise DesktopNativeToolError("content_too_large", "Desktop workspace write exceeds the limit")
@@ -1741,9 +1787,10 @@ class DesktopNativeToolRegistry:
         output = {"path": self._relative(root, source), "size_bytes": source.stat().st_size, "sha256": sha256}
         return DesktopToolExecution(output, "Calculated SHA-256", verification_evidence=output)
 
-    def _archive_create(self, arguments: dict[str, Any], _context: dict[str, Any]) -> DesktopToolExecution:
+    def _archive_create(self, arguments: dict[str, Any], context: dict[str, Any]) -> DesktopToolExecution:
         workspace_id = arguments["workspace_id"]
         root, target = self._workspace_path(workspace_id, arguments["output_path"])
+        self._ensure_workspace_write_allowed(root, target, context)
         if target.suffix.lower() != ".zip":
             raise DesktopNativeToolError("invalid_archive_path", "Archive output must end with .zip")
         files: list[Path] = []
@@ -1847,6 +1894,7 @@ class DesktopNativeToolRegistry:
         output_format = arguments["output_format"]
         raw_output = str(arguments.get("output_path") or f"outputs/{source.stem}.{output_format}")
         _, target = self._workspace_path(workspace_id, raw_output)
+        self._ensure_workspace_write_allowed(root, target, context)
         if target.suffix.lower() != f".{output_format}":
             raise DesktopNativeToolError("invalid_output_path", "Office output extension does not match output_format")
         target.parent.mkdir(parents=True, exist_ok=True)

@@ -4,9 +4,13 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from agent_execution_harness import execution_policy_for
+from agent_execution_harness import (
+    execution_checkpoint_paths,
+    execution_policy_for,
+)
 from desktop_agent_loop import AgentLoopBudget
 from desktop_super_agent import DesktopSuperAgent
 from task_workspace import task_artifacts, task_workspace
@@ -146,7 +150,12 @@ class DesktopSuperAgentTest(unittest.TestCase):
         self.temporary_workspace = tempfile.TemporaryDirectory()
         self.workspace_environment = patch.dict(
             os.environ,
-            {"SIGNALASI_WORKSPACE_ROOT": self.temporary_workspace.name},
+            {
+                "SIGNALASI_WORKSPACE_ROOT": self.temporary_workspace.name,
+                "SIGNALASI_STATE_DIR": str(
+                    Path(self.temporary_workspace.name) / "state"
+                ),
+            },
         )
         self.workspace_environment.start()
 
@@ -305,11 +314,10 @@ class DesktopSuperAgentTest(unittest.TestCase):
         )
 
         checkpoint = json.loads(
-            (
-                task_workspace("task-build-policy", "desktop")
-                / ".signalasi"
-                / "execution-checkpoint.json"
-            ).read_text(encoding="utf-8")
+            execution_checkpoint_paths(
+                "task-build-policy",
+                "desktop",
+            )[0].read_text(encoding="utf-8")
         )
         outputs = task_artifacts("task-build-policy")
 

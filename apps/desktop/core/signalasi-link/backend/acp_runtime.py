@@ -25,6 +25,7 @@ from agent_config import acp_runtime_config
 
 try:
     import acp
+    from acp.exceptions import RequestError
     from acp.schema import (
         AllowedOutcome,
         ClientCapabilities,
@@ -37,6 +38,7 @@ try:
     )
 except ImportError:  # Packaged installations can still use the legacy CLI path.
     acp = None
+    RequestError = None
     AllowedOutcome = ClientCapabilities = DeniedOutcome = None
     FileSystemCapabilities = Implementation = None
     ReadTextFileResponse = RequestPermissionResponse = WriteTextFileResponse = None
@@ -202,6 +204,29 @@ class _AcpClient:
             path,
             require_exists=False,
         )
+        from host_execution_config_guard import (
+            HostExecutionConfigViolation,
+            assert_host_execution_path_writable,
+        )
+
+        try:
+            assert_host_execution_path_writable(
+                self.runtime._session_root(self.agent_id, session_id),
+                target,
+                agent_id=self.agent_id,
+                capture_id=f"acp-callback:{session_id}",
+            )
+        except HostExecutionConfigViolation as exc:
+            relative_path = target.relative_to(
+                self.runtime._session_root(self.agent_id, session_id)
+            ).as_posix()
+            if RequestError is not None:
+                raise RequestError(
+                    -32003,
+                    "Host execution configuration write is not allowed",
+                    {"path": relative_path},
+                ) from exc
+            raise PermissionError(str(exc)) from exc
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(encoded)
         return WriteTextFileResponse()
@@ -506,6 +531,25 @@ class AcpRuntime:
         )
         async with session_lock:
             entry = await self._ensure_process(agent_id, reason="execute")
+            from agent_file_access_ledger import (
+                AgentWorkspaceCapture,
+                FileAccessScope,
+                agent_file_access_ledger,
+                repository_identity,
+            )
+
+            workspace_capture = AgentWorkspaceCapture.begin(
+                cwd,
+                scope=FileAccessScope.create(
+                    client_route_id=client_route_id or "desktop-local",
+                    conversation_id=conversation_id or run_id,
+                    task_id=run_id,
+                    repository_id=repository_identity(cwd),
+                ),
+                agent_id=agent_id,
+                ledger=agent_file_access_ledger(),
+                capture_id=f"acp:{run_id}:{time.time_ns()}",
+            )
             entry.active_prompts += 1
             try:
                 session_id = await self._ensure_session(
@@ -563,6 +607,16 @@ class AcpRuntime:
                             (agent_id, binding.session_id),
                             None,
                         )
+                try:
+                    workspace_capture.finish()
+                except Exception as exc:
+                    from host_execution_config_guard import (
+                        HostExecutionConfigViolation,
+                    )
+
+                    if isinstance(exc, HostExecutionConfigViolation):
+                        raise AcpExecutionError(str(exc)) from exc
+                    raise
 
     async def _ensure_process(
         self,
@@ -961,6 +1015,22 @@ class AcpRuntime:
         *,
         require_exists: bool = True,
     ) -> Path:
+        root = self._session_root(agent_id, session_id)
+        offered = Path(str(path or ""))
+        target = (offered if offered.is_absolute() else root / offered).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise PermissionError("ACP file callback escaped the session workspace") from exc
+        if require_exists and (not target.is_file() or target.is_symlink()):
+            raise FileNotFoundError(str(target))
+        return target
+
+    def _session_root(
+        self,
+        agent_id: str,
+        session_id: str,
+    ) -> Path:
         record = next(
             (
                 row for row in self._sessions.values()
@@ -971,16 +1041,7 @@ class AcpRuntime:
         )
         if record is None:
             raise PermissionError("Unknown ACP session")
-        root = Path(record.cwd).resolve()
-        offered = Path(str(path or ""))
-        target = (offered if offered.is_absolute() else root / offered).resolve()
-        try:
-            target.relative_to(root)
-        except ValueError as exc:
-            raise PermissionError("ACP file callback escaped the session workspace") from exc
-        if require_exists and (not target.is_file() or target.is_symlink()):
-            raise FileNotFoundError(str(target))
-        return target
+        return Path(record.cwd).resolve()
 
     def _ensure_loop(self) -> None:
         with self._snapshot_lock:
