@@ -809,8 +809,9 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
     from desktop_control import desktop_control_manager
 
     manager = desktop_control_manager()
+    client_route_id = str(paired_client.get("client_route_id") or "")
     own = manager.status(
-        str(paired_client.get("client_route_id") or ""),
+        client_route_id,
         include_revoked=True,
     )
     own_rows = own.get("authorizations") or []
@@ -818,6 +819,27 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
         (row for row in own_rows if row.get("status") == "active"),
         None,
     )
+    active_runs = []
+    for task in agent_task_manager.list(limit=100, include_prompt=True):
+        if str(task.get("status") or "") in TERMINAL_STATES:
+            continue
+        task_route = str(task.get("client_route_id") or "")
+        if task_route and task_route != client_route_id:
+            continue
+        active_runs.append({
+            "task_id": str(task.get("task_id") or ""),
+            "conversation_id": str(task.get("conversation_id") or ""),
+            "turn_id": str(task.get("client_turn_id") or task.get("turn_id") or ""),
+            "agent_id": str(task.get("delegate_agent_id") or task.get("agent_id") or ""),
+            "status": str(task.get("status") or ""),
+            "prompt": str(task.get("prompt") or "")[:500],
+            "current_step": str(task.get("current_step") or "")[:240],
+            "updated_at": int(task.get("updated_at") or 0),
+            "execution_view": dict(task.get("execution_view") or {}),
+            "takeover": dict(task.get("takeover") or {}),
+        })
+        if len(active_runs) >= 20:
+            break
     return {
         "type": DESKTOP_CONTROL_AUTHORIZATIONS_TYPE,
         "desktop_id": desktop_id(),
@@ -834,6 +856,7 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
         "current_authorization": current,
         "recent_audit": list(own.get("recent_audit") or []),
         "recent_receipts": list(own.get("recent_receipts") or []),
+        "active_runs": active_runs,
         "reason": str(reason or "status")[:80],
         "sender": "system",
         "time": time.time(),
@@ -1043,6 +1066,17 @@ def _route_desktop_control_payload(
                 "time": time.time(),
             })
             _publish_phone_payload(mqttc, wire_payload, receipt, durable=durable_reply)
+            try:
+                from desktop_run_control import TASK_CONTROL_TOOLS
+
+                if str(payload.get("tool_id") or "") in TASK_CONTROL_TOOLS:
+                    publish_desktop_control_status(
+                        mqttc,
+                        str(paired_client.get("client_route_id") or ""),
+                        reason="task_control_changed",
+                    )
+            except Exception:
+                pass
         except Exception as exc:
             log.warning("Desktop control request failed action=%s: %s", payload.get("action_id"), exc)
             receipt = _desktop_control_failure_receipt(

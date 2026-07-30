@@ -20,6 +20,15 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from desktop_perception import DesktopPerceptionError, DesktopPerceptionService
+from desktop_run_control import (
+    TASK_CONTINUE,
+    TASK_CONTROL_TOOLS,
+    TASK_PAUSE,
+    TASK_RELEASE,
+    TASK_TAKEOVER,
+    DesktopRunControlError,
+    desktop_run_control,
+)
 from image_transport import MAX_IMAGE_TRANSPORT_BYTES, compress_pil_image
 from pairing_access import (
     DESKTOP_EXECUTOR,
@@ -38,7 +47,7 @@ from tool_handle_registry import (
 )
 
 
-CONTRACT_VERSION = "signalasi.desktop-control/1.4"
+CONTRACT_VERSION = "signalasi.desktop-control/1.5"
 AUTHORIZED_APP_CONTRACT = "signalasi.authorized-app/1.0"
 AUTHORIZATION_VERSION = 1
 RECEIPT_VERSION = 4
@@ -72,6 +81,7 @@ DEFAULT_ALLOWED_TOOLS = (
     WINDOW_SWITCH,
     FILE_SELECT,
     PERCEIVE,
+    *TASK_CONTROL_TOOLS,
 )
 RECEIPT_SIGNED_FIELDS = (
     "receipt_version",
@@ -707,6 +717,41 @@ class DesktopControlManager:
                         "selected": True,
                         "file_name": selected_path.name,
                     }
+                    screenshot = self._screenshot_provider()
+                elif tool_id in TASK_CONTROL_TOOLS:
+                    controller = {
+                        "controller_id": str(
+                            paired_client.get("app_instance_id")
+                            or paired_client.get("client_route_id")
+                            or ""
+                        ),
+                        "controller_name": str(
+                            paired_client.get("signal_name")
+                            or paired_client.get("phone_name")
+                            or "Paired phone"
+                        ),
+                        "controller_platform": str(
+                            paired_client.get("platform") or "android"
+                        ),
+                        "client_route_id": str(
+                            paired_client.get("client_route_id") or ""
+                        ),
+                        "authorization_id": str(
+                            authorization.get("authorization_id") or ""
+                        ),
+                    }
+                    try:
+                        output = desktop_run_control().execute(
+                            tool_id,
+                            arguments,
+                            controller,
+                        )
+                    except DesktopRunControlError as exc:
+                        raise DesktopControlError(
+                            exc.code,
+                            str(exc),
+                            retryable=exc.retryable,
+                        ) from exc
                     screenshot = self._screenshot_provider()
                 else:
                     raise DesktopControlError("invalid_tool", "Desktop control tool is not supported")
@@ -1404,6 +1449,14 @@ class DesktopControlManager:
             return f"{prefix} window switch"
         if tool_id == FILE_SELECT:
             return f"{prefix} file selection"
+        if tool_id == TASK_PAUSE:
+            return f"{prefix} task pause"
+        if tool_id == TASK_TAKEOVER:
+            return f"{prefix} manual takeover"
+        if tool_id == TASK_RELEASE:
+            return f"{prefix} takeover release"
+        if tool_id == TASK_CONTINUE:
+            return f"{prefix} task continuation"
         return f"{prefix} desktop action"
 
     @staticmethod
@@ -1424,6 +1477,14 @@ class DesktopControlManager:
             return f"switched to the {arguments.get('direction', 'next')} window"
         if tool_id == FILE_SELECT:
             return "selected an existing file in the active file dialog"
+        if tool_id == TASK_PAUSE:
+            return "paused a Desktop Agent task"
+        if tool_id == TASK_TAKEOVER:
+            return "started manual control of a Desktop Agent task"
+        if tool_id == TASK_RELEASE:
+            return "ended manual control of a Desktop Agent task"
+        if tool_id == TASK_CONTINUE:
+            return "continued a Desktop Agent task"
         return "executed desktop action"
 
     def _load(self) -> dict[str, Any]:
@@ -1439,6 +1500,13 @@ class DesktopControlManager:
                 value[key] = defaults[key]
         for key, default in defaults["settings"].items():
             value["settings"].setdefault(key, default)
+        for authorization in value["authorizations"].values():
+            if (
+                isinstance(authorization, dict)
+                and authorization.get("status") == "active"
+                and authorization.get("access_profile") == DESKTOP_EXECUTOR
+            ):
+                authorization["allowed_tools"] = list(DEFAULT_ALLOWED_TOOLS)
         for row in value["recent_actions"].values():
             if isinstance(row, dict) and row.get("status") == "running":
                 row["status"] = "ambiguous"

@@ -326,6 +326,12 @@ function statusLabel(status) {
   const labels = {
     accepted: "Accepted",
     queued: "Queued",
+    pausing: "Pausing",
+    paused: "Paused",
+    takeover: "Manual control",
+    recovering: "Recovering",
+    waiting_input: "Waiting for input",
+    waiting_approval: "Waiting for approval",
     running: "Running",
     completed: "Completed",
     failed: "Failed",
@@ -383,7 +389,11 @@ function taskExecutionView(task) {
     step: String(view.current_step || task?.current_step || taskStatusLabel(task)).trim(),
     cancellable: Boolean(
       view.cancellable ?? (task && !TERMINAL_STATES.has(task.status))
-    )
+    ),
+    pausable: Boolean(view.pausable),
+    resumable: Boolean(view.resumable),
+    takeoverAvailable: Boolean(view.takeover_available),
+    takeoverActive: Boolean(view.takeover_active)
   };
 }
 
@@ -645,6 +655,20 @@ function renderTurn(task) {
     : "";
   const detailHidden = isEvolution && !TERMINAL_STATES.has(task.status) ? "" : "hidden";
   const execution = taskExecutionView(task);
+  const runControls = [
+    execution.pausable
+      ? `<button class="run-control" data-pause-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Pause"))}</button>`
+      : "",
+    execution.takeoverAvailable
+      ? `<button class="run-control" data-takeover-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Take over"))}</button>`
+      : "",
+    execution.resumable
+      ? `<button class="run-control primary" data-continue-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Continue"))}</button>`
+      : "",
+    execution.cancellable
+      ? `<button class="run-cancel" data-cancel-task="${escapeHtml(task.task_id)}" title="${escapeHtml(t("Stop running task"))}" aria-label="${escapeHtml(t("Stop running task"))}">${escapeHtml(t("Cancel"))}</button>`
+      : ""
+  ].join("");
   return `
     <article class="task-turn ${isEvolution ? "self-evolution-turn" : ""}" data-task-id="${escapeHtml(task.task_id)}">
       <div class="user-message-row"><div class="user-message ${isEvolution ? "self-evolution-message" : ""}">${originLabel}${escapeHtml(task.prompt || t("Attached files"))}</div></div>${attachmentRows}
@@ -658,7 +682,7 @@ function renderTurn(task) {
           <span class="run-duration" data-elapsed-task="${escapeHtml(task.task_id)}">${escapeHtml(formatDuration(taskElapsed(task)))}</span>
           <span class="chevron" aria-hidden="true"></span>
         </button>
-        ${execution.cancellable ? `<button class="run-cancel" data-cancel-task="${escapeHtml(task.task_id)}" title="${escapeHtml(t("Stop running task"))}" aria-label="${escapeHtml(t("Stop running task"))}">${escapeHtml(t("Cancel"))}</button>` : ""}
+        ${runControls}
       </div>
       <div class="run-detail" data-run-detail="${escapeHtml(task.task_id)}" ${detailHidden}>${latencySummary}${detail}</div>
       ${answer}
@@ -682,6 +706,11 @@ function renderConversation(force = false) {
     task.execution_view?.executor_id,
     task.execution_view?.location_name,
     task.execution_view?.cancellable,
+    task.execution_view?.pausable,
+    task.execution_view?.resumable,
+    task.execution_view?.takeover_available,
+    task.execution_view?.takeover_active,
+    task.takeover?.lease_id,
     task.recovery_actions?.map((action) => [action.action, action.enabled, action.recommended]),
     state.recoveryDiagnostics[task.task_id]
   ]));
@@ -3526,6 +3555,29 @@ async function cancelRunningTask() {
   await cancelTask(task?.task_id);
 }
 
+async function controlTask(taskId, action) {
+  const methods = {
+    pause: window.signalasi.pauseDesktopTask,
+    takeover: window.signalasi.takeOverDesktopTask,
+    continue: window.signalasi.continueDesktopTask
+  };
+  const method = methods[action];
+  if (typeof method !== "function") return;
+  try {
+    const response = await method(taskId, {
+      reason: action === "pause" ? "Paused from SignalASI Desktop" : "",
+      leaseSeconds: 900
+    });
+    const task = response?.task;
+    if (task?.task_id) mergeTaskUpdate(task);
+    state.renderingSignature = "";
+    renderHistory();
+    renderConversation(true);
+  } catch (error) {
+    showToast(`${t("Could not update task")}: ${error.message || error}`);
+  }
+}
+
 async function retryTask(taskId) {
   return recoverTask(taskId, "retry");
 }
@@ -3672,6 +3724,21 @@ function bindEvents() {
     renderConversation(true);
   });
   elements.messages.addEventListener("click", async (event) => {
+    const pause = event.target.closest("[data-pause-task]");
+    if (pause) {
+      await controlTask(pause.dataset.pauseTask, "pause");
+      return;
+    }
+    const takeover = event.target.closest("[data-takeover-task]");
+    if (takeover) {
+      await controlTask(takeover.dataset.takeoverTask, "takeover");
+      return;
+    }
+    const resume = event.target.closest("[data-continue-task]");
+    if (resume) {
+      await controlTask(resume.dataset.continueTask, "continue");
+      return;
+    }
     const cancel = event.target.closest("[data-cancel-task]");
     if (cancel) {
       await cancelTask(cancel.dataset.cancelTask);

@@ -27,7 +27,7 @@ class DesktopRemoteControlReceiptTest {
         val receipt = receipt(request, pending)
 
         assertEquals(
-            "ddf1181c7021616a86e361a9a5f929ff443570b11095b3503e172e5a467107aa",
+            "beb112bb5876d76563ff5d927b6c867f83e99182d9f120c97afeeb2b9d3368e2",
             pending.requestSha256
         )
         assertTrue(verify(receipt, pending))

@@ -17,9 +17,21 @@ from agent_task_store import AgentTaskStore
 
 TASKS_DB_PATH = Path.home() / ".signalasi" / "agent_tasks.sqlite3"
 TERMINAL_STATES = {"completed", "failed", "cancelled", "timed_out"}
+PAUSABLE_STATES = {
+    "accepted",
+    "queued",
+    "starting",
+    "recovering",
+    "running",
+    "waiting_input",
+    "waiting_approval",
+}
+PAUSED_STATES = {"pausing", "paused", "takeover"}
 MAX_AUTOMATIC_RECOVERY_ATTEMPTS = 2
 MAX_TASK_EVENTS = 256
 MAX_DELIVERY_TRACE_EVENTS = 64
+DEFAULT_TAKEOVER_LEASE_SECONDS = 15 * 60
+MAX_TAKEOVER_LEASE_SECONDS = 60 * 60
 EventCallback = Callable[[dict], None]
 ExternalRecoveryCallback = Callable[[dict, str], bool]
 
@@ -134,6 +146,13 @@ class AgentTask:
     failure_counts: dict[str, int] = field(default_factory=dict)
     trace_id: str = field(default_factory=lambda: uuid.uuid4().hex)
     delivery_trace: list[dict] = field(default_factory=list)
+    pause_requested: bool = False
+    pause_reason: str = ""
+    paused_at: int = 0
+    resume_count: int = 0
+    execution_generation: int = 1
+    execution_checkpoint: dict = field(default_factory=dict)
+    takeover: dict = field(default_factory=dict)
     process: subprocess.Popen | None = field(default=None, repr=False, compare=False)
     cancel_requested: bool = field(default=False, repr=False, compare=False)
 
@@ -214,6 +233,13 @@ class AgentTask:
             "trace_id": self.trace_id,
             "delivery_trace": self.delivery_trace[-MAX_DELIVERY_TRACE_EVENTS:],
             "latency": delivery_trace_metrics(self.delivery_trace),
+            "pause_requested": self.pause_requested,
+            "pause_reason": self.pause_reason,
+            "paused_at": self.paused_at,
+            "resume_count": self.resume_count,
+            "execution_generation": self.execution_generation,
+            "execution_checkpoint": dict(self.execution_checkpoint),
+            "takeover": dict(self.takeover),
             "process_id": self.process.pid if self.process is not None and self.process.poll() is None else 0,
             "execution_view": {
                 "executor_id": executor_id,
@@ -223,6 +249,11 @@ class AgentTask:
                 "status": self.status,
                 "current_step": self.current_step,
                 "cancellable": self.status not in TERMINAL_STATES,
+                "pausable": self.status in PAUSABLE_STATES,
+                "resumable": self.status in {"paused", "takeover"},
+                "takeover_available": self.status == "paused",
+                "takeover_active": self.status == "takeover",
+                "takeover": dict(self.takeover),
                 "started_at": self.started_at or self.created_at,
                 "completed_at": self.completed_at,
             },
@@ -257,6 +288,7 @@ class AgentTaskManager:
             str,
             tuple[ExternalRecoveryCallback, EventCallback | None, EventCallback | None],
         ] = {}
+        self._takeover_timers: dict[str, threading.Timer] = {}
         self._listeners: dict[str, EventCallback] = {}
         self._heartbeat_interval_seconds = max(0.01, float(heartbeat_interval_seconds))
         self._default_stall_timeout_seconds = max(
@@ -355,7 +387,11 @@ class AgentTaskManager:
             self._save_locked(task)
         self._emit(task, on_event)
         self._set_status(task, "queued", on_event)
-        threading.Thread(target=self._run, args=(task, runner, on_event, on_result), daemon=True).start()
+        threading.Thread(
+            target=self._run,
+            args=(task, runner, on_event, on_result, task.execution_generation),
+            daemon=True,
+        ).start()
         return task
 
     def create_external(
@@ -461,7 +497,225 @@ class AgentTaskManager:
             return None
         self._emit(task, on_event)
         self._set_status(task, "queued", on_event)
-        threading.Thread(target=self._run, args=(task, runner, on_event, on_result), daemon=True).start()
+        threading.Thread(
+            target=self._run,
+            args=(task, runner, on_event, on_result, task.execution_generation),
+            daemon=True,
+        ).start()
+        return task
+
+    def pause(
+        self,
+        task_id: str,
+        *,
+        reason: str = "Paused by user",
+        on_event: EventCallback | None = None,
+    ) -> AgentTask | None:
+        with self._lock:
+            task = self._tasks.get(str(task_id or "").strip())
+            if task is None:
+                return None
+            if task.status in TERMINAL_STATES:
+                return task
+            if task.status in {"paused", "takeover"}:
+                snapshot = task.public(include_prompt=True)
+                process = None
+            elif task.status not in PAUSABLE_STATES and task.status != "pausing":
+                return task
+            else:
+                now = int(time.time() * 1000)
+                previous_status = task.status
+                previous_step = task.current_step
+                task.pause_requested = True
+                task.pause_reason = str(reason or "Paused by user")[:500]
+                task.paused_at = now
+                task.status = "paused"
+                task.updated_at = now
+                task.last_progress_at = now
+                task.status_seq += 1
+                task.current_step = "Paused"
+                task.recovery_state = "paused"
+                task.pending_approval = {}
+                task.execution_checkpoint = {
+                    "status": previous_status,
+                    "thread_id": task.thread_id,
+                    "turn_id": task.turn_id,
+                    "delegate_agent_id": task.delegate_agent_id,
+                    "current_step": previous_step,
+                    "event_count": len(task.events),
+                    "paused_at": now,
+                    "generation": task.execution_generation,
+                }
+                self._append_control_event_locked(
+                    task,
+                    "task_paused",
+                    "Task paused",
+                    task.pause_reason,
+                )
+                process = task.process
+                task.process = None
+                self._stop_external_runtime_locked(task.task_id, forget_task=False)
+                self._save_locked(task)
+                snapshot = task.public(include_prompt=True)
+        if process is not None:
+            self._terminate(process)
+        self._emit_snapshot(snapshot, on_event)
+        return task
+
+    def begin_takeover(
+        self,
+        task_id: str,
+        controller: dict,
+        *,
+        lease_seconds: int = DEFAULT_TAKEOVER_LEASE_SECONDS,
+        on_event: EventCallback | None = None,
+    ) -> AgentTask | None:
+        clean_task_id = str(task_id or "").strip()
+        with self._lock:
+            task = self._tasks.get(clean_task_id)
+            if task is None:
+                return None
+            if task.status == "takeover":
+                return task
+            if task.status != "paused":
+                return task
+            now = int(time.time() * 1000)
+            lease_ms = min(
+                MAX_TAKEOVER_LEASE_SECONDS,
+                max(30, int(lease_seconds or DEFAULT_TAKEOVER_LEASE_SECONDS)),
+            ) * 1000
+            lease_id = str(uuid.uuid4())
+            task.status = "takeover"
+            task.updated_at = now
+            task.last_progress_at = now
+            task.status_seq += 1
+            task.current_step = "Manual takeover active"
+            task.takeover = {
+                "lease_id": lease_id,
+                "controller_id": str(controller.get("controller_id") or "")[:200],
+                "controller_name": str(controller.get("controller_name") or "User")[:200],
+                "controller_platform": str(controller.get("controller_platform") or "")[:64],
+                "client_route_id": str(controller.get("client_route_id") or "")[:200],
+                "authorization_id": str(controller.get("authorization_id") or "")[:200],
+                "started_at": now,
+                "expires_at": now + lease_ms,
+            }
+            self._append_control_event_locked(
+                task,
+                "manual_takeover_started",
+                "Manual takeover started",
+                task.takeover["controller_name"],
+            )
+            self._save_locked(task)
+            snapshot = task.public(include_prompt=True)
+            previous = self._takeover_timers.pop(clean_task_id, None)
+            if previous is not None:
+                previous.cancel()
+            timer = threading.Timer(
+                lease_ms / 1000.0,
+                self._expire_takeover,
+                args=(clean_task_id, lease_id),
+            )
+            timer.daemon = True
+            self._takeover_timers[clean_task_id] = timer
+            timer.start()
+        self._emit_snapshot(snapshot, on_event)
+        return task
+
+    def release_takeover(
+        self,
+        task_id: str,
+        *,
+        reason: str = "Manual takeover ended",
+        on_event: EventCallback | None = None,
+    ) -> AgentTask | None:
+        clean_task_id = str(task_id or "").strip()
+        with self._lock:
+            task = self._tasks.get(clean_task_id)
+            if task is None:
+                return None
+            if task.status != "takeover":
+                return task
+            timer = self._takeover_timers.pop(clean_task_id, None)
+            if timer is not None:
+                timer.cancel()
+            now = int(time.time() * 1000)
+            task.status = "paused"
+            task.updated_at = now
+            task.last_progress_at = now
+            task.status_seq += 1
+            task.current_step = "Paused"
+            task.pause_reason = str(reason or "Manual takeover ended")[:500]
+            task.takeover = {}
+            self._append_control_event_locked(
+                task,
+                "manual_takeover_ended",
+                "Manual takeover ended",
+                task.pause_reason,
+            )
+            self._save_locked(task)
+            snapshot = task.public(include_prompt=True)
+        self._emit_snapshot(snapshot, on_event)
+        return task
+
+    def continue_task(
+        self,
+        task_id: str,
+        runner: Callable[[AgentTask], str],
+        on_event: EventCallback,
+        on_result: EventCallback | None = None,
+        *,
+        checkpoint: dict | None = None,
+    ) -> AgentTask | None:
+        clean_task_id = str(task_id or "").strip()
+        with self._lock:
+            task = self._tasks.get(clean_task_id)
+            if task is None or task.status not in {"paused", "takeover"}:
+                return task
+            timer = self._takeover_timers.pop(clean_task_id, None)
+            if timer is not None:
+                timer.cancel()
+            now = int(time.time() * 1000)
+            previous_takeover = dict(task.takeover)
+            task.pause_requested = False
+            task.pause_reason = ""
+            task.paused_at = 0
+            task.takeover = {}
+            task.status = "accepted"
+            task.resume_count += 1
+            task.execution_generation += 1
+            task.completed_at = 0
+            task.result = ""
+            task.error = ""
+            task.exit_code = None
+            task.current_step = "Resuming from the latest checkpoint"
+            task.updated_at = now
+            task.last_progress_at = now
+            task.status_seq += 1
+            task.recovery_state = "healthy"
+            task.execution_checkpoint = {
+                **dict(task.execution_checkpoint),
+                **dict(checkpoint or {}),
+                "resumed_at": now,
+                "resume_count": task.resume_count,
+                "previous_takeover": previous_takeover,
+                "generation": task.execution_generation,
+            }
+            self._append_control_event_locked(
+                task,
+                "task_resumed",
+                "Task resumed",
+                "Continuing from the latest Desktop state",
+            )
+            self._save_locked(task)
+            generation = task.execution_generation
+        self._emit(task, on_event)
+        self._set_status(task, "queued", on_event)
+        threading.Thread(
+            target=self._run,
+            args=(task, runner, on_event, on_result, generation),
+            daemon=True,
+        ).start()
         return task
 
     def update(
@@ -479,6 +733,11 @@ class AgentTaskManager:
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None or task.status in TERMINAL_STATES:
+                return task
+            if (
+                (task.pause_requested or task.status in {"paused", "takeover"})
+                and status not in {"pausing", "paused", "takeover"}
+            ):
                 return task
             now = int(time.time() * 1000)
             meaningful_progress = (
@@ -574,6 +833,8 @@ class AgentTaskManager:
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None or task.status in TERMINAL_STATES:
+                return task
+            if task.pause_requested or task.status in {"paused", "takeover"}:
                 return task
             now = int(time.time() * 1000)
             stable_event_id = str(event_id or "").strip()[:200] or str(uuid.uuid4())
@@ -713,11 +974,19 @@ class AgentTaskManager:
         runner: Callable[[AgentTask], str],
         on_event: EventCallback,
         on_result: EventCallback | None,
+        generation: int,
     ) -> None:
+        with self._lock:
+            if task.execution_generation != generation:
+                return
+            paused = task.pause_requested or task.status in {"paused", "takeover"}
+        if paused:
+            return
         if task.cancel_requested:
             self._finish(task, "cancelled", on_event)
             return
-        task.started_at = int(time.time() * 1000)
+        if not task.started_at:
+            task.started_at = int(time.time() * 1000)
         self._set_status(task, "running", on_event)
         heartbeat_stop = threading.Event()
         heartbeat = threading.Thread(target=self._heartbeat, args=(task, on_event, heartbeat_stop), daemon=True)
@@ -732,22 +1001,58 @@ class AgentTaskManager:
         try:
             result = runner(task)
             transitioned = False
+            with self._lock:
+                stale_generation = task.execution_generation != generation
+                paused = task.pause_requested or task.status in {"paused", "takeover"}
+            if stale_generation or paused:
+                return
             if task.cancel_requested:
-                transitioned = self._finish(task, "cancelled", on_event)
+                transitioned = self._finish(task, "cancelled", on_event, generation=generation)
             elif task.status == "timed_out" or self._looks_timed_out(result):
-                transitioned = self._finish(task, "timed_out", on_event, result=result)
+                transitioned = self._finish(
+                    task,
+                    "timed_out",
+                    on_event,
+                    result=result,
+                    generation=generation,
+                )
             elif self._looks_failed(result):
-                transitioned = self._finish(task, "failed", on_event, result=result, error=result[:240])
+                transitioned = self._finish(
+                    task,
+                    "failed",
+                    on_event,
+                    result=result,
+                    error=result[:240],
+                    generation=generation,
+                )
             else:
-                transitioned = self._finish(task, "completed", on_event, result=result)
+                transitioned = self._finish(
+                    task,
+                    "completed",
+                    on_event,
+                    result=result,
+                    generation=generation,
+                )
             if transitioned and not task.cancel_requested and task.result and on_result is not None:
                 self._emit(task, on_result)
         except Exception as exc:
-            self._finish(task, "failed", on_event, error=str(exc)[:500])
+            with self._lock:
+                stale_generation = task.execution_generation != generation
+                paused = task.pause_requested or task.status in {"paused", "takeover"}
+            if not stale_generation and not paused:
+                self._finish(
+                    task,
+                    "failed",
+                    on_event,
+                    error=str(exc)[:500],
+                    generation=generation,
+                )
         finally:
             watchdog_stop.set()
             heartbeat_stop.set()
-            task.process = None
+            with self._lock:
+                if task.execution_generation == generation:
+                    task.process = None
 
     def _heartbeat(self, task: AgentTask, on_event: EventCallback, stop: threading.Event) -> None:
         while not stop.wait(self._heartbeat_interval_seconds):
@@ -1109,7 +1414,11 @@ class AgentTaskManager:
             if task is None:
                 return
             task.process = process
-            if task.cancel_requested:
+            if (
+                task.cancel_requested
+                or task.pause_requested
+                or task.status in {"paused", "takeover"}
+            ):
                 self._terminate(process)
 
     def record_exit_code(self, task_id: str, exit_code: int | None) -> None:
@@ -1131,6 +1440,9 @@ class AgentTaskManager:
             else:
                 terminal_task = None
                 task.cancel_requested = True
+                timer = self._takeover_timers.pop(task.task_id, None)
+                if timer is not None:
+                    timer.cancel()
                 process = task.process
         if terminal_task is not None:
             self._emit(terminal_task, on_event)
@@ -1214,6 +1526,7 @@ class AgentTaskManager:
                 and task.conversation_id == clean_conversation_id
                 and task.status not in TERMINAL_STATES
                 and task.status != "interrupted"
+                and task.status not in PAUSED_STATES
                 and not task.cancel_requested
                 and (not clean_agent_id or task.agent_id == clean_agent_id)
                 and (
@@ -1276,6 +1589,9 @@ class AgentTaskManager:
                 task = self._tasks.pop(task_id, None)
                 if task is not None and task.process is not None:
                     self._terminate(task.process)
+                timer = self._takeover_timers.pop(task_id, None)
+                if timer is not None:
+                    timer.cancel()
                 self._recovered_task_ids.discard(task_id)
                 self._stop_external_runtime_locked(task_id, forget_task=True)
         return deleted
@@ -1339,9 +1655,66 @@ class AgentTaskManager:
             self._save_locked(task)
         return task
 
+    def _append_control_event_locked(
+        self,
+        task: AgentTask,
+        kind: str,
+        title: str,
+        detail: str = "",
+    ) -> None:
+        now = int(time.time() * 1000)
+        task.events.append({
+            "event_id": f"{kind}:{task.status_seq}:{uuid.uuid4().hex[:8]}",
+            "created_at": now,
+            "updated_at": now,
+            "kind": str(kind or "task_control")[:48],
+            "title": str(title or "Task control updated")[:240],
+            "status": "completed",
+            "detail": str(detail or "")[:4_000],
+            "metadata": {
+                **self._task_identity(task),
+                "execution_generation": task.execution_generation,
+                "resume_count": task.resume_count,
+            },
+        })
+        del task.events[:-MAX_TASK_EVENTS]
+
+    def _expire_takeover(self, task_id: str, lease_id: str) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if (
+                task is None
+                or task.status != "takeover"
+                or str(task.takeover.get("lease_id") or "") != lease_id
+            ):
+                return
+            now = int(time.time() * 1000)
+            task.status = "paused"
+            task.updated_at = now
+            task.last_progress_at = now
+            task.status_seq += 1
+            task.current_step = "Paused"
+            task.pause_reason = "Manual takeover lease expired"
+            task.takeover = {}
+            self._takeover_timers.pop(task_id, None)
+            self._append_control_event_locked(
+                task,
+                "manual_takeover_expired",
+                "Manual takeover ended",
+                task.pause_reason,
+            )
+            self._save_locked(task)
+            snapshot = task.public(include_prompt=True)
+        self._emit_snapshot(snapshot, None)
+
     def _set_status(self, task: AgentTask, status: str, on_event: EventCallback | None) -> None:
         with self._lock:
             if task.status in TERMINAL_STATES and status not in TERMINAL_STATES:
+                return
+            if (
+                (task.pause_requested or task.status in {"paused", "takeover"})
+                and status not in {"pausing", "paused", "takeover"}
+            ):
                 return
             task.status = status
             task.updated_at = int(time.time() * 1000)
@@ -1358,9 +1731,18 @@ class AgentTaskManager:
         on_event: EventCallback | None,
         result: str = "",
         error: str = "",
+        generation: int | None = None,
     ) -> bool:
         with self._lock:
-            if task.status in TERMINAL_STATES:
+            if (
+                task.status in TERMINAL_STATES
+                or task.pause_requested
+                or task.status in {"paused", "takeover"}
+                or (
+                    generation is not None
+                    and task.execution_generation != generation
+                )
+            ):
                 return False
             now = int(time.time() * 1000)
             task.status = status
@@ -1379,6 +1761,9 @@ class AgentTaskManager:
                 if status == "completed" else
                 "stopped"
             )
+            timer = self._takeover_timers.pop(task.task_id, None)
+            if timer is not None:
+                timer.cancel()
             self._stop_external_runtime_locked(task.task_id, forget_task=True)
             self._save_locked(task)
         self._emit(task, on_event)
@@ -1427,6 +1812,25 @@ class AgentTaskManager:
             recovered_at = int(time.time() * 1000)
             task.updated_at = recovered_at
             task.status_seq += 1
+            if task.status in PAUSED_STATES or task.pause_requested:
+                task.status = "paused"
+                task.pause_requested = True
+                task.takeover = {}
+                task.current_step = "Paused"
+                task.pause_reason = (
+                    task.pause_reason
+                    or "Paused state restored after Desktop restart"
+                )
+                task.recovery_state = "paused"
+                self._append_control_event_locked(
+                    task,
+                    "task_pause_restored",
+                    "Paused task restored",
+                    "Desktop restarted; the task will remain paused until continued.",
+                )
+                self._tasks[task.task_id] = task
+                self._store.upsert(task.record())
+                continue
             previous_attempt = max(1, task.attempt)
             if previous_attempt >= MAX_AUTOMATIC_RECOVERY_ATTEMPTS:
                 task.status = "failed"
@@ -1526,6 +1930,16 @@ class AgentTaskManager:
                     f"signalasi:agent-task:{task_id}",
                 ).hex
             ),
+            pause_requested=bool(row.get("pause_requested")),
+            pause_reason=str(row.get("pause_reason") or "")[:500],
+            paused_at=max(0, int(row.get("paused_at") or 0)),
+            resume_count=max(0, int(row.get("resume_count") or 0)),
+            execution_generation=max(
+                1,
+                int(row.get("execution_generation") or 1),
+            ),
+            execution_checkpoint=dict(row.get("execution_checkpoint") or {}),
+            takeover=dict(row.get("takeover") or {}),
         )
         task.delivery_trace = AgentTaskManager._merge_delivery_trace(
             task,

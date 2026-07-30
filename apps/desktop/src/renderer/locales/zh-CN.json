@@ -938,4 +938,13 @@
 , "Scroll": "滚动"
 , "Switch window": "切换窗口"
 , "Select file": "选择文件"
+, "Pausing": "正在暂停"
+, "Paused": "已暂停"
+, "Manual control": "人工接管"
+, "Recovering": "正在恢复"
+, "Waiting for input": "等待输入"
+, "Waiting for approval": "等待确认"
+, "Take over": "接管"
+, "Continue": "继续"
+, "Could not update task": "无法更新任务"
 }

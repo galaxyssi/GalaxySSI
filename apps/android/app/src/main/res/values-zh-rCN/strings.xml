@@ -271,6 +271,15 @@
     <string name="desktop_control_request_failed">远程控制请求发送失败</string>
     <string name="desktop_control_click_sent">已发送点击：%1$d, %2$d</string>
     <string name="desktop_control_latest_action">最近操作</string>
+    <string name="desktop_control_active_runs">正在运行的智能体任务</string>
+    <string name="desktop_control_no_active_runs">没有正在运行的电脑任务</string>
+    <string name="desktop_control_no_active_runs_subtitle">任务运行时可在这里暂停、接管和继续</string>
+    <string name="desktop_control_run_paused">已暂停</string>
+    <string name="desktop_control_run_takeover">人工接管</string>
+    <string name="desktop_control_run_pause">暂停任务</string>
+    <string name="desktop_control_run_takeover_action">接管任务</string>
+    <string name="desktop_control_run_release_action">结束接管</string>
+    <string name="desktop_control_run_continue">继续任务</string>
     <string name="desktop_control_actions">控制</string>
     <string name="desktop_control_scroll_up">向上滚动</string>
     <string name="desktop_control_scroll_down">向下滚动</string>

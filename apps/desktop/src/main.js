@@ -1583,6 +1583,17 @@ async function cancelDesktopTask(taskId) {
   return fetchJson(`/api/desktop/tasks/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
 }
 
+async function controlDesktopTask(taskId, action, payload = {}) {
+  await startBackend();
+  return fetchJson(`/api/desktop/tasks/${encodeURIComponent(taskId)}/${encodeURIComponent(action)}`, {
+    method: "POST",
+    body: JSON.stringify({
+      reason: String(payload.reason || ""),
+      lease_seconds: Number(payload.leaseSeconds || 900)
+    })
+  });
+}
+
 async function retryDesktopTask(taskId) {
   await startBackend();
   return fetchJson(`/api/desktop/tasks/${encodeURIComponent(taskId)}/retry`, { method: "POST" });
@@ -2019,6 +2030,12 @@ ipcMain.handle("desktop-tasks:stream-config", () => ({
 }));
 ipcMain.handle("desktop-tasks:start", (_event, payload) => startDesktopTask(payload));
 ipcMain.handle("desktop-tasks:cancel", (_event, taskId) => cancelDesktopTask(taskId));
+ipcMain.handle("desktop-tasks:pause", (_event, taskId, payload = {}) =>
+  controlDesktopTask(taskId, "pause", payload));
+ipcMain.handle("desktop-tasks:takeover", (_event, taskId, payload = {}) =>
+  controlDesktopTask(taskId, "takeover", payload));
+ipcMain.handle("desktop-tasks:continue", (_event, taskId, payload = {}) =>
+  controlDesktopTask(taskId, "continue", payload));
 ipcMain.handle("desktop-tasks:retry", (_event, taskId) => retryDesktopTask(taskId));
 ipcMain.handle("desktop-tasks:recover", (_event, taskId, action, agentId = "") =>
   recoverDesktopTask(taskId, action, agentId));

@@ -30,6 +30,12 @@ contextBridge.exposeInMainWorld("signalasi", {
   desktopTaskStreamConfig: () => ipcRenderer.invoke("desktop-tasks:stream-config"),
   startDesktopTask: (payload) => ipcRenderer.invoke("desktop-tasks:start", payload),
   cancelDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:cancel", taskId),
+  pauseDesktopTask: (taskId, payload = {}) =>
+    ipcRenderer.invoke("desktop-tasks:pause", taskId, payload),
+  takeOverDesktopTask: (taskId, payload = {}) =>
+    ipcRenderer.invoke("desktop-tasks:takeover", taskId, payload),
+  continueDesktopTask: (taskId, payload = {}) =>
+    ipcRenderer.invoke("desktop-tasks:continue", taskId, payload),
   retryDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:retry", taskId),
   recoverDesktopTask: (taskId, action, agentId = "") =>
     ipcRenderer.invoke("desktop-tasks:recover", taskId, action, agentId),

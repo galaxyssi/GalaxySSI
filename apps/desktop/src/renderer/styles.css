@@ -356,7 +356,8 @@ button:disabled { cursor: default; opacity: 0.48; }
 .run-summary-copy small { max-width: 430px; color: #69737c; font-size: 7px; }
 .run-duration { flex: 0 0 auto; color: #606972; font-size: 8px; font-variant-numeric: tabular-nums; }
 .run-summary .chevron { width: 6px; height: 6px; border-right: 1px solid #8a929a; border-bottom: 1px solid #8a929a; transform: rotate(45deg) translateY(-1px); }
-.run-cancel {
+.run-cancel,
+.run-control {
   height: 28px;
   flex: 0 0 auto;
   padding: 0 9px;
@@ -366,7 +367,13 @@ button:disabled { cursor: default; opacity: 0.48; }
   color: #636d76;
   font-size: 8px;
 }
-.run-cancel:hover { border-color: #c8d0d6; background: #f1f4f6; color: #30383f; }
+.run-cancel:hover,
+.run-control:hover { border-color: #c8d0d6; background: #f1f4f6; color: #30383f; }
+.run-control.primary {
+  border-color: #b7ddcc;
+  background: #edf8f3;
+  color: #177b53;
+}
 .run-detail { margin: -4px 0 16px 8px; padding-left: 13px; border-left: 1px solid #cfd5da; color: #65707a; font-size: 8px; line-height: 1.6; }
 .run-detail code { color: #34414c; font-family: Consolas, monospace; }
 .latency-summary { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0 0 8px; color: var(--muted); }

@@ -288,6 +288,7 @@ data class DesktopRemoteControlSnapshot(
     val authorizations: List<DesktopControlAuthorization>,
     val recentAudit: List<DesktopControlAudit>,
     val recentReceipts: List<DesktopControlReceipt>,
+    val activeRuns: List<DesktopRunSummary>,
     val lastActionStatus: String,
     val lastActionSummary: String,
     val lastActionAt: Long,
@@ -300,6 +301,55 @@ data class DesktopRemoteControlSnapshot(
         get() = fullDesktopExecutor && enabled && currentAuthorization?.status == "active"
     val pending: Boolean
         get() = fullDesktopExecutor && currentAuthorization?.status == "pending"
+}
+
+data class DesktopRunSummary(
+    val taskId: String,
+    val conversationId: String,
+    val turnId: String,
+    val agentId: String,
+    val status: String,
+    val prompt: String,
+    val currentStep: String,
+    val updatedAt: Long,
+    val pausable: Boolean,
+    val resumable: Boolean,
+    val takeoverAvailable: Boolean,
+    val takeoverActive: Boolean,
+    val takeoverController: String
+)
+
+internal fun parseDesktopRunSummaries(array: JSONArray): List<DesktopRunSummary> = buildList {
+    for (index in 0 until array.length()) {
+        parseDesktopRunSummary(array.optJSONObject(index))?.let(::add)
+    }
+}
+
+internal fun parseDesktopRunSummary(source: JSONObject?): DesktopRunSummary? {
+    val item = source ?: return null
+    val taskId = item.optString("task_id")
+    if (taskId.isBlank()) return null
+    val view = item.optJSONObject("execution_view") ?: JSONObject()
+    val takeover = item.optJSONObject("takeover")
+        ?: view.optJSONObject("takeover")
+        ?: JSONObject()
+    return DesktopRunSummary(
+        taskId = taskId,
+        conversationId = item.optString("conversation_id"),
+        turnId = item.optString("turn_id"),
+        agentId = item.optString("agent_id"),
+        status = item.optString("status").ifBlank {
+            item.optString("task_status")
+        },
+        prompt = item.optString("prompt"),
+        currentStep = item.optString("current_step"),
+        updatedAt = item.optLong("updated_at"),
+        pausable = view.optBoolean("pausable"),
+        resumable = view.optBoolean("resumable"),
+        takeoverAvailable = view.optBoolean("takeover_available"),
+        takeoverActive = view.optBoolean("takeover_active"),
+        takeoverController = takeover.optString("controller_name")
+    )
 }
 
 internal data class DesktopControlPendingRequest(
@@ -338,7 +388,7 @@ internal class DesktopScreenshotRequestGate {
 }
 
 internal object DesktopControlReceiptProtocol {
-    const val CONTRACT_VERSION = "signalasi.desktop-control/1.4"
+    const val CONTRACT_VERSION = "signalasi.desktop-control/1.5"
     const val RECEIPT_VERSION = 4
 
     fun pendingRequest(
@@ -533,6 +583,10 @@ object DesktopRemoteControl {
     const val SCROLL = "desktop.scroll"
     const val WINDOW_SWITCH = "desktop.window_switch"
     const val FILE_SELECT = "desktop.file_select"
+    const val TASK_PAUSE = "desktop.task_pause"
+    const val TASK_TAKEOVER = "desktop.task_takeover"
+    const val TASK_CONTINUE = "desktop.task_continue"
+    const val TASK_RELEASE = "desktop.task_release"
 
     private const val PREFS = "signalasi_desktop_control_v2"
     private const val KEY_DESKTOPS = "desktops"
@@ -544,7 +598,8 @@ object DesktopRemoteControl {
         var summary: String = "",
         var at: Long = 0L,
         var screenshot: DesktopControlScreenshot? = null,
-        var perception: DesktopPerceptionSnapshot? = null
+        var perception: DesktopPerceptionSnapshot? = null,
+        var activeRuns: List<DesktopRunSummary>? = null
     )
 
     private data class ScreenshotStreamState(
@@ -587,12 +642,17 @@ object DesktopRemoteControl {
                 "desktop_control_authorizations",
                 "desktop_control_authorization_changed",
                 "desktop_executor_event",
-                "desktop_action_receipt"
+                "desktop_action_receipt",
+                "agent_task_event"
             )
         ) return false
 
         val desktopId = payload.optString("desktop_id")
         if (desktopId.isBlank()) return true
+        if (type == "agent_task_event") {
+            updateActiveRun(desktopId, payload)
+            return false
+        }
         SignalASILinkProtocol.updatePairingAccess(
             context,
             desktopId,
@@ -740,6 +800,8 @@ object DesktopRemoteControl {
             authorizations = authorizations,
             recentAudit = parseAudit(item.optJSONArray("recent_audit") ?: JSONArray()),
             recentReceipts = parseReceipts(item.optJSONArray("recent_receipts") ?: JSONArray()),
+            activeRuns = live?.activeRuns
+                ?: parseDesktopRunSummaries(item.optJSONArray("active_runs") ?: JSONArray()),
             lastActionStatus = live?.status.orEmpty(),
             lastActionSummary = live?.summary.orEmpty(),
             lastActionAt = live?.at ?: 0L,
@@ -873,6 +935,39 @@ object DesktopRemoteControl {
         if (path.isBlank() || path.length > 32_767) return false
         return requestAction(desktopId, FILE_SELECT, JSONObject().put("path", path))
     }
+
+    fun pauseTask(desktopId: String, taskId: String): Boolean =
+        taskId.isNotBlank() && requestAction(
+            desktopId,
+            TASK_PAUSE,
+            JSONObject().put("task_id", taskId)
+        )
+
+    fun takeOverTask(
+        desktopId: String,
+        taskId: String,
+        leaseSeconds: Int = 900
+    ): Boolean = taskId.isNotBlank() && requestAction(
+        desktopId,
+        TASK_TAKEOVER,
+        JSONObject()
+            .put("task_id", taskId)
+            .put("lease_seconds", leaseSeconds.coerceIn(30, 3_600))
+    )
+
+    fun continueTask(desktopId: String, taskId: String): Boolean =
+        taskId.isNotBlank() && requestAction(
+            desktopId,
+            TASK_CONTINUE,
+            JSONObject().put("task_id", taskId)
+        )
+
+    fun releaseTask(desktopId: String, taskId: String): Boolean =
+        taskId.isNotBlank() && requestAction(
+            desktopId,
+            TASK_RELEASE,
+            JSONObject().put("task_id", taskId)
+        )
 
     fun revoke(desktopId: String, authorizationId: String): Boolean =
         authorizationId.isNotBlank() && SignalASIMqttClient.publishDesktopControlRevoke(
@@ -1025,6 +1120,7 @@ object DesktopRemoteControl {
             .put("authorizations", items)
             .put("current_authorization", currentAuthorization ?: JSONObject.NULL)
             .put("recent_audit", control.optJSONArray("recent_audit") ?: item.optJSONArray("recent_audit") ?: JSONArray())
+            .put("active_runs", control.optJSONArray("active_runs") ?: item.optJSONArray("active_runs") ?: JSONArray())
             .put(
                 "recent_receipts",
                 recentReceipts
@@ -1032,6 +1128,8 @@ object DesktopRemoteControl {
             .put("updated_at", System.currentTimeMillis())
         root.put(desktopId, item)
         write(context, root)
+        runtime.computeIfAbsent(desktopId) { RuntimeState() }.activeRuns =
+            parseDesktopRunSummaries(control.optJSONArray("active_runs") ?: JSONArray())
     }
 
     private fun mergeAuthorization(
@@ -1174,6 +1272,27 @@ object DesktopRemoteControl {
         for (index in 0 until array.length()) {
             parseDesktopControlReceipt(array.optJSONObject(index))?.let(::add)
         }
+    }
+
+    private fun updateActiveRun(desktopId: String, payload: JSONObject) {
+        val state = runtime.computeIfAbsent(desktopId) { RuntimeState() }
+        val current = state.activeRuns.orEmpty().toMutableList()
+        val index = current.indexOfFirst { it.taskId == payload.optString("task_id") }
+        val status = payload.optString("task_status")
+        if (status in setOf("completed", "failed", "cancelled", "timed_out")) {
+            if (index >= 0) current.removeAt(index)
+            state.activeRuns = current
+            return
+        }
+        val previous = current.getOrNull(index)
+        val merged = JSONObject(payload.toString()).apply {
+            if (optString("prompt").isBlank() && previous != null) {
+                put("prompt", previous.prompt)
+            }
+        }
+        val parsed = parseDesktopRunSummary(merged) ?: return
+        if (index >= 0) current[index] = parsed else current.add(0, parsed)
+        state.activeRuns = current.sortedByDescending { it.updatedAt }.take(20)
     }
 
     private fun read(context: Context): JSONObject {

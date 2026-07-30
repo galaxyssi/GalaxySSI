@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from types import SimpleNamespace
 
@@ -374,3 +375,75 @@ def test_safe_fallback_restarts_in_plan_only_mode(tmp_path, monkeypatch):
     assert completed.result == "Read-only fallback plan"
     assert policies[-1]["execution_mode"] == "plan_only"
     assert policies[-1]["requires_artifact"] is False
+
+
+def test_desktop_task_can_pause_take_over_and_continue_in_place(tmp_path, monkeypatch):
+    from desktop_run_control import desktop_run_control
+
+    monkeypatch.setattr(task_module, "TASKS_DB_PATH", tmp_path / "tasks.sqlite3")
+    manager = task_module.AgentTaskManager()
+    monkeypatch.setattr(main, "agent_task_manager", manager)
+    first_runner_started = threading.Event()
+    release_first_runner = threading.Event()
+
+    def first_runner(_task):
+        first_runner_started.set()
+        assert release_first_runner.wait(3.0)
+        return "stale result"
+
+    task = manager.create(
+        agent_id="codex",
+        contact_id="codex",
+        source_message_id="desktop:test",
+        prompt="Continue this task after takeover",
+        conversation_id="conversation-control",
+        runner=first_runner,
+        on_event=lambda _event: None,
+    )
+    assert first_runner_started.wait(1.0)
+
+    desktop_run_control().configure(
+        runner_factory=lambda _task, bundle: (
+            lambda _current: f"resumed from {bundle['persisted']['capture_id']}"
+        ),
+        interrupt_handler=lambda _task: {"cancelled_runtime_runs": ["run-1"]},
+        checkpoint_provider=lambda _task: {
+            "persisted": {"capture_id": "capture-after-takeover"},
+            "grounding": "Fresh Desktop state",
+        },
+        task_manager_provider=lambda: manager,
+    )
+    try:
+        paused = main.api_pause_desktop_task(
+            task.task_id,
+            main.DesktopTaskControlReq(reason="Pause for manual work"),
+            LoopbackRequest(),
+        )
+        assert paused["task"]["status"] == "paused"
+        assert paused["control"]["interruption"]["cancelled_runtime_runs"] == ["run-1"]
+
+        takeover = main.api_takeover_desktop_task(
+            task.task_id,
+            main.DesktopTaskControlReq(lease_seconds=60),
+            LoopbackRequest(),
+        )
+        assert takeover["task"]["status"] == "takeover"
+        assert takeover["task"]["execution_view"]["takeover_active"] is True
+
+        continued = main.api_continue_desktop_task(
+            task.task_id,
+            main.DesktopTaskControlReq(),
+            LoopbackRequest(),
+        )
+        assert continued["control"]["task_id"] == task.task_id
+        completed = wait_for_terminal(manager, task.task_id)
+        assert completed.result == "resumed from capture-after-takeover"
+        assert completed.resume_count == 1
+        assert completed.execution_generation == 2
+
+        release_first_runner.set()
+        time.sleep(0.05)
+        assert manager.get(task.task_id).result == "resumed from capture-after-takeover"
+    finally:
+        release_first_runner.set()
+        main._configure_desktop_run_control()

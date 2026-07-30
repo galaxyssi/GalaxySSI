@@ -300,7 +300,15 @@ class DesktopSuperAgent:
                 current_step=f"Working with {label}",
             )
             event_id = f"agent-loop:{iteration}:delegate:{delegate}"
-            child_run_id = f"{task_id}:handoff:{iteration}:{delegate}"
+            get_task = getattr(self.task_manager, "get", None)
+            managed_task = get_task(task_id) if callable(get_task) else None
+            execution_generation = max(
+                1,
+                int(getattr(managed_task, "execution_generation", 1) or 1),
+            )
+            child_run_id = (
+                f"{task_id}:g{execution_generation}:handoff:{iteration}:{delegate}"
+            )
             self._phase(
                 task_id,
                 AgentLoopPhase.ACT,
@@ -1050,8 +1058,16 @@ class DesktopSuperAgent:
         if not callable(get_task):
             return
         task = get_task(task_id)
-        if task is not None and (getattr(task, "cancel_requested", False) or getattr(task, "status", "") == "cancelled"):
+        if task is not None and (
+            getattr(task, "cancel_requested", False)
+            or getattr(task, "status", "") == "cancelled"
+        ):
             raise RuntimeError("Task cancelled")
+        if task is not None and (
+            getattr(task, "pause_requested", False)
+            or getattr(task, "status", "") in {"paused", "takeover"}
+        ):
+            raise RuntimeError("Task paused")
 
     def _learn(self, task_id: str, conversation_id: str, prompt: str, reply: str) -> None:
         learned = self.memory.evolve(prompt, reply, conversation_id=conversation_id, task_id=task_id)
