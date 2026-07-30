@@ -119,6 +119,8 @@ const requiredProjectSnippets = [
   "GuardedModelAgentPlannerModels.swift in Sources",
   "GuardedModelAgentPlanner.swift in Sources",
   "GuardedModelAgentPlannerTests.swift in Sources",
+  "CloudModelAgentPlanningProvider.swift in Sources",
+  "CloudModelAgentPlanningProviderTests.swift in Sources",
 ];
 
 const requiredSourceSnippets = [
@@ -1001,6 +1003,7 @@ const requiredSourceSnippets = [
   [readme, "Android-style model plan parser"],
   [readme, "Android-style model planning prompt builder"],
   [readme, "Android-style guarded model agent planner core"],
+  [readme, "Android-style cloud model planning provider"],
   [models, "AgentModelContextCompactor"],
   [models, "AgentModelMessage"],
   [models, "ConversationContextBudget"],
@@ -1040,6 +1043,9 @@ const requiredSourceSnippets = [
   [models, "rule-based-invalid-model-plan"],
   [models, "rule-based-sensitive-fallback"],
   [models, "guarded-model:"],
+  [models, "CloudModelAgentPlanningProvider"],
+  [models, "CloudModelStructuredSending"],
+  [models, "sendStructured"],
   [models, "skill_explicit_match"],
   [models, "trigger_examples"],
   [models, "additional_properties"],
@@ -1611,6 +1617,8 @@ const requiredSourceSnippets = [
   [tests, "testGuardedModelAgentPlannerFallsBackOnProviderErrorAndInvalidPlan"],
   [tests, "testGuardedModelAgentPlannerPassesOnlySafeAvailableNativeTools"],
   [tests, "testAgentModelPlanningInvocationUsesAndroidWireNames"],
+  [tests, "testCloudModelAgentPlanningProviderForwardsStructuredInvocation"],
+  [tests, "testCloudModelClientStructuredRejectsPlaceholderCredentialBeforeNetwork"],
   [tests, "testAgentNativeToolResultModelsUseAndroidWireNames"],
   [tests, "testAgentNativeToolReplayStoreEvictsOldestAndClears"],
   [tests, "testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults"],
