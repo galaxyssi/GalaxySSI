@@ -30,6 +30,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("Messages compose handoff"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "sms_compose_handoff_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.smsInboxBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("SMS inbox boundary"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "ios_sms_inbox_boundary_on_ios15")
       } else if AgentIOSSystemNativeToolCatalog.handoffToolIds.contains(descriptor.id) {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
@@ -98,6 +102,13 @@ extension SignalASIStoreTests {
       } else if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosSMSComposePermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.smsInboxBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosSMSInboxBoundaryPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -219,6 +230,14 @@ extension SignalASIStoreTests {
       $0.id == AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission
     })
     XCTAssertTrue((telephonyObserve.descriptor.inputSchema["required"]?.arrayValue ?? []).isEmpty)
+
+    let smsList = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.smsList })
+    XCTAssertEqual(smsList.descriptor.risk, .low)
+    XCTAssertEqual(smsList.descriptor.availability.status, .available)
+    XCTAssertTrue(smsList.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosSMSInboxBoundaryPermission
+    })
+    XCTAssertFalse(smsList.descriptor.requiredPermissions.contains { $0.id == "android.permission.READ_SMS" })
 
     let smsSend = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.smsSend })
     XCTAssertEqual(smsSend.descriptor.risk, .high)
@@ -465,6 +484,68 @@ extension SignalASIStoreTests {
     XCTAssertEqual(observed.output["timeout_ms"], .int(30_000))
     XCTAssertEqual(observed.output["identifiers_included"], .bool(false))
     XCTAssertEqual(observed.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReturnsSMSInboxBoundary() throws {
+    final class FakeSMSInboxProvider: AgentIOSSMSInboxProviding {
+      var capturedLimit = 0
+      var capturedAddress = ""
+      var capturedNow: Int64 = 0
+
+      func listMessages(limit: Int, address: String, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedLimit = limit
+        capturedAddress = address
+        capturedNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "messages": .array([]),
+            "count": .int(0),
+            "limit": .int(Int64(limit)),
+            "address_filter": .string(address),
+            "sms_database_read_supported": .bool(false),
+            "direct_sms_read_supported": .bool(false),
+            "identifiers_included": .bool(false),
+            "platform": .string("ios"),
+            "scope": .string("ios_sms_inbox_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "iOS does not expose the user's SMS database to normal apps."
+        )
+      }
+    }
+    let provider = FakeSMSInboxProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          smsInboxProvider: provider,
+          nowMillis: { 14_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosSMSInboxBoundaryPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.smsList,
+      input: [
+        "limit": .int(100),
+        "address": .string("+15551234567")
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(provider.capturedLimit, 100)
+    XCTAssertEqual(provider.capturedAddress, "+15551234567")
+    XCTAssertEqual(provider.capturedNow, 14_000)
+    XCTAssertEqual(result.output["messages"], .array([]))
+    XCTAssertEqual(result.output["count"], .int(0))
+    XCTAssertEqual(result.output["sms_database_read_supported"], .bool(false))
+    XCTAssertEqual(result.output["direct_sms_read_supported"], .bool(false))
+    XCTAssertEqual(result.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(14_000))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorReadsAudioStatus() throws {
