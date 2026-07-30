@@ -22,7 +22,11 @@ extension SignalASIStoreTests {
       let descriptor = definition.descriptor
       XCTAssertEqual(definition.executorId, AgentIOSSystemNativeToolCatalog.executorId)
       XCTAssertEqual(descriptor.location, .androidSystem)
-      if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
+      if AgentIOSSystemNativeToolCatalog.telephonyReadToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("CoreTelephony"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "core_telephony_callkit_status_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("Messages compose handoff"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "sms_compose_handoff_on_ios15")
@@ -68,7 +72,14 @@ extension SignalASIStoreTests {
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "descriptor_only_unavailable_on_ios15")
       }
-      if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
+      if AgentIOSSystemNativeToolCatalog.telephonyReadToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.smsHandoffToolIds.contains(descriptor.id) {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosSMSComposePermission
         }, descriptor.id)
@@ -144,6 +155,19 @@ extension SignalASIStoreTests {
       XCTAssertEqual(definition.provenanceMetadata["compatibility_source"], "AgentAndroidSystemNativeTools")
     }
 
+    let telephonyStatus = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.telephonyStatus })
+    let telephonyCallState = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.telephonyCallState })
+    XCTAssertEqual(telephonyStatus.descriptor.risk, .low)
+    XCTAssertEqual(telephonyStatus.descriptor.availability.status, .available)
+    XCTAssertTrue(telephonyStatus.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission
+    })
+    XCTAssertFalse(telephonyStatus.descriptor.requiredPermissions.contains { $0.id == "android.permission.READ_PHONE_STATE" })
+    XCTAssertEqual(telephonyCallState.descriptor.risk, .low)
+    XCTAssertTrue(telephonyCallState.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission
+    })
+
     let smsSend = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.smsSend })
     XCTAssertEqual(smsSend.descriptor.risk, .high)
     XCTAssertEqual(smsSend.descriptor.idempotency, .idempotencyKeyRequired)
@@ -209,6 +233,101 @@ extension SignalASIStoreTests {
 
     XCTAssertTrue(authorized.allowed)
     XCTAssertFalse(invalid.isValid)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReadsTelephonyStatusAndCallState() throws {
+    final class FakeTelephonyProvider: AgentIOSTelephonyStatusProviding {
+      var capturedStatusNow: Int64 = 0
+      var capturedCallNow: Int64 = 0
+
+      func telephonyStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        capturedStatusNow = nowMillis
+        return [
+          "phone_type": .string("cellular_capable_ios"),
+          "sim_state": .string("carrier_info_available"),
+          "network_operator_name": .string("Example Wireless"),
+          "network_country_iso": .string("us"),
+          "data_state": .string("not_exposed_ios"),
+          "call_state": .string("idle"),
+          "data_enabled": .null,
+          "carrier_count": .int(1),
+          "carriers": .array([
+            .object([
+              "service_id": .string("0001"),
+              "carrier_name": .string("Example Wireless"),
+              "iso_country_code": .string("us"),
+              "identifiers_included": .bool(false)
+            ])
+          ]),
+          "radio_access_technologies": .array([
+            .object([
+              "service_id": .string("0001"),
+              "radio_access_technology": .string("CTRadioAccessTechnologyLTE")
+            ])
+          ]),
+          "call_state_scope": .string("app_visible_ios_callkit"),
+          "identifiers_included": .bool(false),
+          "scope": .string("app_visible_ios_telephony_status"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+
+      func callState(nowMillis: Int64) -> AgentMcpJSONObject {
+        capturedCallNow = nowMillis
+        return [
+          "call_state": .string("off_hook"),
+          "active_call_count": .int(1),
+          "outgoing_call_count": .int(0),
+          "on_hold_call_count": .int(0),
+          "ringing_detection_supported": .bool(false),
+          "continuous_listener_supported": .bool(false),
+          "identifiers_included": .bool(false),
+          "scope": .string("app_visible_ios_callkit"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+    }
+    let provider = FakeTelephonyProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          telephonyProvider: provider,
+          nowMillis: { 13_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission]
+    )
+
+    let status = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.telephonyStatus,
+      input: [:],
+      context: context
+    )
+    let callState = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.telephonyCallState,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(status.isSuccess)
+    XCTAssertEqual(status.output["network_operator_name"], .string("Example Wireless"))
+    XCTAssertEqual(status.output["carrier_count"], .int(1))
+    XCTAssertEqual(status.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(status.output["observed_at_epoch_ms"], .int(13_000))
+    XCTAssertEqual(provider.capturedStatusNow, 13_000)
+    XCTAssertEqual(status.metadata["identifiers_included"], .bool(false))
+    XCTAssertEqual(status.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+
+    XCTAssertTrue(callState.isSuccess)
+    XCTAssertEqual(callState.output["call_state"], .string("off_hook"))
+    XCTAssertEqual(callState.output["active_call_count"], .int(1))
+    XCTAssertEqual(callState.output["ringing_detection_supported"], .bool(false))
+    XCTAssertEqual(callState.output["continuous_listener_supported"], .bool(false))
+    XCTAssertEqual(callState.output["observed_at_epoch_ms"], .int(13_000))
+    XCTAssertEqual(provider.capturedCallNow, 13_000)
+    XCTAssertEqual(callState.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorReadsAudioStatus() throws {

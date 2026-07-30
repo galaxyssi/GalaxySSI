@@ -38,6 +38,11 @@ enum AgentIOSSystemNativeToolCatalog {
   static let compatibilityConsent = "signalasi.consent.android_system_compatibility"
   static let executorId = "signalasi.ios.system_native_catalog"
 
+  static let telephonyReadToolIds: Set<String> = [
+    telephonyStatus,
+    telephonyCallState
+  ]
+
   static let handoffToolIds: Set<String> = [
     telephonyDialHandoff,
     smsSend,
@@ -70,6 +75,8 @@ enum AgentIOSSystemNativeToolCatalog {
   ]
 
   static let executableToolIds: Set<String> = handoffToolIds.union([
+    telephonyStatus,
+    telephonyCallState,
     calendarsList,
     calendarEventsQuery,
     contactsSearch,
@@ -116,7 +123,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       telephonyStatus,
       "Read phone service status",
-      "Android telephony status descriptor retained for cross-platform planning; iOS cannot read SIM and carrier telephony state through this Android API.",
+      "Reads app-visible iOS CoreTelephony carrier and CallKit call-state summary without exposing subscriber identifiers.",
       .low,
       ["telephony.status"],
       ["android.permission.READ_PHONE_STATE"]
@@ -124,7 +131,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       telephonyCallState,
       "Read current call state",
-      "Android call-state descriptor retained for cross-platform planning; iOS apps cannot read arbitrary cellular call state.",
+      "Reads app-visible iOS CallKit current call-state summary without phone numbers or subscriber identifiers.",
       .low,
       ["telephony.call_state"],
       ["android.permission.READ_PHONE_STATE"]
@@ -482,6 +489,15 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func permissionRequirements(_ specification: Specification) -> [AgentNativePermissionRequirement] {
+    if telephonyReadToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosTelephonyStatusPermission,
+          title: "App-visible iOS telephony status",
+          description: "Limits execution to CoreTelephony and CallKit status fields visible to the SignalASI app process."
+        )
+      ]
+    }
     if smsHandoffToolIds.contains(specification.id) {
       return [
         AgentNativePermissionRequirement(
@@ -596,6 +612,9 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func compatibilityConsentDescription(_ id: String) -> String {
+    if telephonyReadToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS CoreTelephony and CallKit status executor."
+    }
     if smsHandoffToolIds.contains(id) {
       return "Acknowledges that this Android wire tool is fulfilled by a user-visible iOS Messages compose handoff."
     }
@@ -627,6 +646,9 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func availability(_ id: String) -> AgentNativeToolAvailability {
+    if telephonyReadToolIds.contains(id) {
+      return telephonyReadAvailability
+    }
     if smsHandoffToolIds.contains(id) {
       return smsHandoffAvailability
     }
@@ -661,6 +683,9 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func executionPolicy(_ id: String) -> String {
+    if telephonyReadToolIds.contains(id) {
+      return "core_telephony_callkit_status_on_ios15"
+    }
     if smsHandoffToolIds.contains(id) {
       return "sms_compose_handoff_on_ios15"
     }
@@ -712,6 +737,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor returns a user-visible Messages compose handoff; direct background SMS send is not available on iOS."
+    )
+  }
+
+  private static var telephonyReadAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor reads app-visible CoreTelephony carrier fields and CallKit call-state summary without subscriber identifiers."
     )
   }
 
@@ -842,6 +874,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosDownloadPermission = "signalasi.scope.ios_app_managed_downloads"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
   static let iosSMSComposePermission = "signalasi.scope.ios_user_visible_sms_compose"
+  static let iosTelephonyStatusPermission = "signalasi.scope.ios_app_visible_telephony_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"
