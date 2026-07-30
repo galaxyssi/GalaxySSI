@@ -48,6 +48,7 @@ extension SignalASIStoreTests {
     expected.formUnion(AgentIOSHomeAssistantNativeToolCatalog.toolIds)
     expected.formUnion(AgentIOSNotificationNativeToolCatalog.toolIds)
     expected.formUnion(AgentIOSVisibleCaptureNativeToolCatalog.toolIds)
+    expected.formUnion(AgentIOSWebMediaNativeToolCatalog.toolIds)
     expected.formUnion(AgentIOSWebIntelligenceNativeToolCatalog.toolIds)
     expected.formUnion(AgentIOSMediaNativeToolCatalog.toolIds)
     expected.formUnion(AgentIOSSelfEvolutionNativeToolCatalog.toolIds)
