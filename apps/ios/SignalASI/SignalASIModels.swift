@@ -11989,6 +11989,520 @@ struct AgentPhoneNativeToolDefinition: Codable, Equatable, Identifiable {
   }
 }
 
+enum AgentIOSSystemNativeToolCatalog {
+  static let telephonyStatus = "signalasi.android.telephony.status"
+  static let telephonyCallState = "signalasi.android.telephony.call_state"
+  static let telephonyCallStateObserve = "signalasi.android.telephony.call_state.observe"
+  static let telephonyDialHandoff = "signalasi.android.telephony.dial.handoff"
+  static let smsList = "signalasi.android.sms.list"
+  static let smsSend = "signalasi.android.sms.send"
+  static let smsComposeHandoff = "signalasi.android.sms.compose.handoff"
+  static let contactsSearch = "signalasi.android.contacts.search"
+  static let contactsUpsert = "signalasi.android.contacts.upsert"
+  static let contactsDelete = "signalasi.android.contacts.delete"
+  static let calendarsList = "signalasi.android.calendar.calendars.list"
+  static let calendarEventsQuery = "signalasi.android.calendar.events.query"
+  static let calendarEventUpsert = "signalasi.android.calendar.event.upsert"
+  static let calendarEventDelete = "signalasi.android.calendar.event.delete"
+  static let wifiStatus = "signalasi.android.wifi.status"
+  static let wifiScanResults = "signalasi.android.wifi.scan_results"
+  static let wifiScanStart = "signalasi.android.wifi.scan.start"
+  static let wifiPanelOpen = "signalasi.android.wifi.panel.open"
+  static let wifiHotspotPanelOpen = "signalasi.android.wifi.hotspot.panel.open"
+  static let audioStatus = "signalasi.android.audio.status"
+  static let audioVolumeSet = "signalasi.android.audio.volume.set"
+  static let audioMuteSet = "signalasi.android.audio.mute.set"
+  static let downloadEnqueue = "signalasi.android.download.enqueue"
+  static let downloadQuery = "signalasi.android.download.query"
+  static let downloadRemove = "signalasi.android.download.remove"
+  static let biometricStatus = "signalasi.android.biometric.status"
+  static let biometricEnrollmentOpen = "signalasi.android.biometric.enrollment.open"
+  static let vpnStatus = "signalasi.android.vpn.status"
+  static let vpnConsentOpen = "signalasi.android.vpn.consent.open"
+  static let devicePolicyStatus = "signalasi.android.device_policy.status"
+  static let devicePolicyLock = "signalasi.android.device_policy.lock"
+  static let devicePolicyReboot = "signalasi.android.device_policy.reboot"
+
+  static let androidSystemPermission = "signalasi.platform.android_system_api"
+  static let compatibilityConsent = "signalasi.consent.android_system_compatibility"
+  static let executorId = "signalasi.ios.system_native_catalog"
+
+  static var orderedToolIds: [String] {
+    specifications.map(\.id)
+  }
+
+  static var toolIds: Set<String> {
+    Set(orderedToolIds)
+  }
+
+  static func definitions() -> [AgentPhoneNativeToolDefinition] {
+    specifications.map(definition)
+  }
+
+  static func descriptors() -> [AgentNativeToolDescriptor] {
+    definitions().map(\.descriptor)
+  }
+
+  private struct Specification {
+    var id: String
+    var title: String
+    var description: String
+    var risk: AgentNativeToolRisk
+    var capabilities: Set<String>
+    var permissions: [String]
+    var consents: [String]
+    var inputSchema: AgentMcpJSONObject
+  }
+
+  private static let specifications: [Specification] = [
+    spec(
+      telephonyStatus,
+      "Read phone service status",
+      "Android telephony status descriptor retained for cross-platform planning; iOS cannot read SIM and carrier telephony state through this Android API.",
+      .low,
+      ["telephony.status"],
+      ["android.permission.READ_PHONE_STATE"]
+    ),
+    spec(
+      telephonyCallState,
+      "Read current call state",
+      "Android call-state descriptor retained for cross-platform planning; iOS apps cannot read arbitrary cellular call state.",
+      .low,
+      ["telephony.call_state"],
+      ["android.permission.READ_PHONE_STATE"]
+    ),
+    spec(
+      telephonyCallStateObserve,
+      "Observe call state transition",
+      "Android bounded call-state observer descriptor retained for planning; iOS does not provide this app-sandboxed listener.",
+      .low,
+      ["telephony.call_state.observe"],
+      ["android.permission.READ_PHONE_STATE"],
+      inputSchema: input(["timeout_ms": integerSchema(minimum: 1_000, maximum: 30_000)])
+    ),
+    spec(
+      telephonyDialHandoff,
+      "Open Android dialer",
+      "Android dialer handoff descriptor retained for planning; iOS needs a separate user-visible tel URL executor.",
+      .medium,
+      ["telephony.dial_handoff"],
+      inputSchema: input(["phone_number": stringSchema(maxLength: 64)], required: ["phone_number"])
+    ),
+    spec(
+      smsList,
+      "Read recent SMS messages",
+      "Android SMS inbox descriptor retained for planning; iOS cannot read the user's SMS database.",
+      .low,
+      ["sms.read"],
+      ["android.permission.READ_SMS"],
+      inputSchema: input(["limit": integerSchema(minimum: 1, maximum: 100), "address": stringSchema(maxLength: 128)])
+    ),
+    spec(
+      smsSend,
+      "Send SMS message",
+      "Android direct SMS send descriptor retained for planning; iOS requires a user-visible Messages compose handoff.",
+      .high,
+      ["sms.send"],
+      ["android.permission.SEND_SMS"],
+      [consentSmsSend],
+      input(["phone_number": stringSchema(maxLength: 64), "message": stringSchema(maxLength: 2_000)], required: ["phone_number", "message"])
+    ),
+    spec(
+      smsComposeHandoff,
+      "Open SMS composer",
+      "Android SMS composer handoff descriptor retained for planning; iOS needs a dedicated user-visible compose executor.",
+      .medium,
+      ["sms.compose_handoff"],
+      inputSchema: input(["phone_number": stringSchema(maxLength: 64), "message": stringSchema(maxLength: 2_000)], required: ["phone_number"])
+    ),
+    spec(
+      contactsSearch,
+      "Search Android contacts",
+      "Android contacts search descriptor retained for planning; iOS requires a Contacts framework executor and permission gate.",
+      .low,
+      ["contacts.read"],
+      ["android.permission.READ_CONTACTS"],
+      inputSchema: input(["query": stringSchema(maxLength: 160), "limit": integerSchema(minimum: 1, maximum: 100)])
+    ),
+    spec(
+      contactsUpsert,
+      "Create or update Android contact",
+      "Android contacts write descriptor retained for planning; iOS requires a Contacts framework executor and explicit confirmation.",
+      .high,
+      ["contacts.write"],
+      ["android.permission.WRITE_CONTACTS"],
+      [consentContactsWrite],
+      input([
+        "contact_id": integerSchema(minimum: 1),
+        "display_name": stringSchema(maxLength: 160),
+        "phone_number": stringSchema(maxLength: 64)
+      ], required: ["display_name"])
+    ),
+    spec(
+      contactsDelete,
+      "Delete Android contact",
+      "Android contact delete descriptor retained for planning; iOS requires a Contacts framework executor and explicit confirmation.",
+      .high,
+      ["contacts.delete"],
+      ["android.permission.WRITE_CONTACTS"],
+      [consentContactsWrite],
+      input(["contact_id": integerSchema(minimum: 1)], required: ["contact_id"])
+    ),
+    spec(
+      calendarsList,
+      "List Android calendars",
+      "Android calendar list descriptor retained for planning; iOS requires an EventKit executor and permission gate.",
+      .low,
+      ["calendar.read"],
+      ["android.permission.READ_CALENDAR"]
+    ),
+    spec(
+      calendarEventsQuery,
+      "Query Android calendar events",
+      "Android calendar query descriptor retained for planning; iOS requires an EventKit executor and permission gate.",
+      .low,
+      ["calendar.read"],
+      ["android.permission.READ_CALENDAR"],
+      inputSchema: input([
+        "start_epoch_ms": integerSchema(minimum: 0),
+        "end_epoch_ms": integerSchema(minimum: 0),
+        "limit": integerSchema(minimum: 1, maximum: 200)
+      ], required: ["start_epoch_ms", "end_epoch_ms"])
+    ),
+    spec(
+      calendarEventUpsert,
+      "Create or update calendar event",
+      "Android calendar event write descriptor retained for planning; iOS requires an EventKit executor and explicit confirmation.",
+      .high,
+      ["calendar.write"],
+      ["android.permission.WRITE_CALENDAR"],
+      [consentCalendarWrite],
+      input([
+        "event_id": integerSchema(minimum: 1),
+        "calendar_id": integerSchema(minimum: 1),
+        "title": stringSchema(maxLength: 240),
+        "description": stringSchema(maxLength: 2_000),
+        "location": stringSchema(maxLength: 240),
+        "start_epoch_ms": integerSchema(minimum: 0),
+        "end_epoch_ms": integerSchema(minimum: 0),
+        "timezone": stringSchema(maxLength: 80)
+      ], required: ["calendar_id", "title", "start_epoch_ms", "end_epoch_ms"])
+    ),
+    spec(
+      calendarEventDelete,
+      "Delete calendar event",
+      "Android calendar event delete descriptor retained for planning; iOS requires an EventKit executor and explicit confirmation.",
+      .high,
+      ["calendar.delete"],
+      ["android.permission.WRITE_CALENDAR"],
+      [consentCalendarWrite],
+      input(["event_id": integerSchema(minimum: 1)], required: ["event_id"])
+    ),
+    spec(
+      wifiStatus,
+      "Read Wi-Fi status",
+      "Android Wi-Fi status descriptor retained for planning; iOS exposes only limited network path state through a separate native executor.",
+      .low,
+      ["wifi.status"],
+      ["android.permission.ACCESS_WIFI_STATE"]
+    ),
+    spec(
+      wifiScanResults,
+      "Read Wi-Fi scan results",
+      "Android Wi-Fi scan results descriptor retained for planning; iOS cannot enumerate nearby Wi-Fi scan results.",
+      .low,
+      ["wifi.scan_results"],
+      ["android.permission.ACCESS_WIFI_STATE", "android.permission.ACCESS_FINE_LOCATION"],
+      inputSchema: input(["limit": integerSchema(minimum: 1, maximum: 100)])
+    ),
+    spec(
+      wifiScanStart,
+      "Start Wi-Fi scan",
+      "Android Wi-Fi scan request descriptor retained for planning; iOS cannot trigger arbitrary Wi-Fi scans.",
+      .medium,
+      ["wifi.scan.start"],
+      ["android.permission.ACCESS_WIFI_STATE", "android.permission.CHANGE_WIFI_STATE", "android.permission.ACCESS_FINE_LOCATION"]
+    ),
+    spec(
+      wifiPanelOpen,
+      "Open Internet panel",
+      "Android Internet panel descriptor retained for planning; iOS requires a separate Settings handoff executor.",
+      .medium,
+      ["wifi.settings_handoff"]
+    ),
+    spec(
+      wifiHotspotPanelOpen,
+      "Open hotspot settings",
+      "Android hotspot settings descriptor retained for planning; iOS personal hotspot settings are not exposed as the same Android panel.",
+      .medium,
+      ["wifi.hotspot.settings_handoff"]
+    ),
+    spec(
+      audioStatus,
+      "Read audio status",
+      "Android audio status descriptor retained for planning; iOS requires a separate AVAudioSession-backed status executor.",
+      .low,
+      ["audio.status"]
+    ),
+    spec(
+      audioVolumeSet,
+      "Set Android stream volume",
+      "Android stream-volume descriptor retained for planning; iOS apps cannot set global system stream volumes directly.",
+      .medium,
+      ["audio.volume"],
+      [],
+      [consentAudioChange],
+      input(["stream": stringSchema(maxLength: 32), "percent": integerSchema(minimum: 0, maximum: 100)], required: ["stream", "percent"])
+    ),
+    spec(
+      audioMuteSet,
+      "Set Android stream mute",
+      "Android stream-mute descriptor retained for planning; iOS apps cannot mute arbitrary system audio streams directly.",
+      .medium,
+      ["audio.mute"],
+      [],
+      [consentAudioChange],
+      input(["stream": stringSchema(maxLength: 32), "muted": boolSchema()], required: ["stream", "muted"])
+    ),
+    spec(
+      downloadEnqueue,
+      "Enqueue Android download",
+      "Android DownloadManager enqueue descriptor retained for planning; iOS requires a separate URLSession-backed download executor.",
+      .medium,
+      ["download.enqueue"],
+      ["android.permission.INTERNET"],
+      [consentDownload],
+      input(["url": stringSchema(maxLength: 4_096), "title": stringSchema(maxLength: 240), "description": stringSchema(maxLength: 500)], required: ["url"])
+    ),
+    spec(
+      downloadQuery,
+      "Query Android download",
+      "Android DownloadManager query descriptor retained for planning; iOS cannot query Android-managed downloads.",
+      .low,
+      ["download.query"],
+      inputSchema: input(["download_id": integerSchema(minimum: 1)], required: ["download_id"])
+    ),
+    spec(
+      downloadRemove,
+      "Remove Android download",
+      "Android DownloadManager remove descriptor retained for planning; iOS requires a separate scoped download executor.",
+      .high,
+      ["download.remove"],
+      [],
+      [consentDownload],
+      input(["download_id": integerSchema(minimum: 1)], required: ["download_id"])
+    ),
+    spec(
+      biometricStatus,
+      "Read biometric capability",
+      "Android biometric status descriptor retained for planning; iOS requires a LocalAuthentication-backed status executor.",
+      .low,
+      ["biometric.status"],
+      ["android.permission.USE_BIOMETRIC"]
+    ),
+    spec(
+      biometricEnrollmentOpen,
+      "Open biometric enrollment",
+      "Android biometric enrollment descriptor retained for planning; iOS can only hand off to allowed Settings surfaces through a separate executor.",
+      .medium,
+      ["biometric.enrollment_handoff"]
+    ),
+    spec(
+      vpnStatus,
+      "Read VPN status",
+      "Android VPN transport descriptor retained for planning; iOS VPN state is not exposed through this Android API.",
+      .low,
+      ["vpn.status"]
+    ),
+    spec(
+      vpnConsentOpen,
+      "Request Android VPN consent",
+      "Android VPN consent descriptor retained for planning; iOS requires Network Extension entitlements and a separate setup flow.",
+      .medium,
+      ["vpn.consent_handoff"]
+    ),
+    spec(
+      devicePolicyStatus,
+      "Read device policy status",
+      "Android device-policy descriptor retained for planning; iOS supervised MDM state is not available to normal apps.",
+      .low,
+      ["device_policy.status"]
+    ),
+    spec(
+      devicePolicyLock,
+      "Lock device through device policy",
+      "Android device-policy lock descriptor retained for planning; iOS normal apps cannot lock the device.",
+      .high,
+      ["device_policy.lock"],
+      [],
+      [consentDevicePolicy]
+    ),
+    spec(
+      devicePolicyReboot,
+      "Reboot device through device policy",
+      "Android device-policy reboot descriptor retained for planning; iOS normal apps cannot reboot the device.",
+      .high,
+      ["device_policy.reboot"],
+      [],
+      [consentDevicePolicy]
+    )
+  ]
+
+  private static func definition(_ specification: Specification) -> AgentPhoneNativeToolDefinition {
+    let descriptor = try! AgentNativeToolDescriptor(
+      id: specification.id,
+      version: AgentPhoneNativeToolCatalog.version,
+      title: specification.title,
+      description: specification.description,
+      location: .androidSystem,
+      inputSchema: specification.inputSchema,
+      outputSchema: AgentNativeToolDescriptor.objectSchema(),
+      risk: specification.risk,
+      capabilities: specification.capabilities,
+      requiredPermissions: permissionRequirements(specification.permissions),
+      requiredConsents: consentRequirements(specification.consents),
+      timeoutMillis: 30_000,
+      idempotency: specification.risk == .high ? .idempotencyKeyRequired : .nonIdempotent,
+      availability: unavailableAvailability
+    )
+    return AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: executorId,
+      provenanceMetadata: [
+        "platform": "ios",
+        "compatibility_source": "AgentAndroidSystemNativeTools",
+        "contract": "bounded-system-api-v1",
+        "execution_policy": "descriptor_only_unavailable_on_ios15"
+      ]
+    )
+  }
+
+  private static func spec(
+    _ id: String,
+    _ title: String,
+    _ description: String,
+    _ risk: AgentNativeToolRisk,
+    _ capabilities: Set<String>,
+    _ permissions: [String] = [],
+    _ consents: [String] = [],
+    inputSchema: AgentMcpJSONObject = input()
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: risk,
+      capabilities: capabilities,
+      permissions: permissions,
+      consents: consents,
+      inputSchema: inputSchema
+    )
+  }
+
+  private static func spec(
+    _ id: String,
+    _ title: String,
+    _ description: String,
+    _ risk: AgentNativeToolRisk,
+    _ capabilities: Set<String>,
+    _ permissions: [String] = [],
+    _ consents: [String] = [],
+    _ inputSchema: AgentMcpJSONObject
+  ) -> Specification {
+    spec(
+      id,
+      title,
+      description,
+      risk,
+      capabilities,
+      permissions,
+      consents,
+      inputSchema: inputSchema
+    )
+  }
+
+  private static func permissionRequirements(_ androidPermissions: [String]) -> [AgentNativePermissionRequirement] {
+    let platform = AgentNativePermissionRequirement(
+      id: androidSystemPermission,
+      title: "Android system API",
+      description: "This Android framework tool is cataloged for planning but is unavailable inside the iOS 15+ app sandbox."
+    )
+    let mirrored = androidPermissions.map { permission in
+      AgentNativePermissionRequirement(
+        id: permission,
+        title: permission.replacingOccurrences(of: "android.permission.", with: ""),
+        description: "Android permission mirrored from AgentAndroidSystemNativeTools for cross-platform policy decisions."
+      )
+    }
+    return ([platform] + mirrored).sorted { $0.id < $1.id }
+  }
+
+  private static func consentRequirements(_ androidConsents: [String]) -> [AgentNativeConsentRequirement] {
+    let compatibility = AgentNativeConsentRequirement(
+      id: compatibilityConsent,
+      title: "Android compatibility boundary",
+      description: "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor.",
+      required: false
+    )
+    let mirrored = androidConsents.map { consent in
+      AgentNativeConsentRequirement(
+        id: consent,
+        title: consent.replacingOccurrences(of: "signalasi.consent.", with: "").replacingOccurrences(of: "_", with: " "),
+        description: "Android consent requirement mirrored for cross-platform policy decisions."
+      )
+    }
+    return ([compatibility] + mirrored).sorted { $0.id < $1.id }
+  }
+
+  private static var unavailableAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .unavailable,
+      reason: "Android system framework APIs are not executable by the iOS 15+ app sandbox; use an iOS-specific native executor when one is available."
+    )
+  }
+
+  private static func input(
+    _ properties: [String: AgentMcpJSONObject] = [:],
+    required: [String] = []
+  ) -> AgentMcpJSONObject {
+    [
+      "type": .string("object"),
+      "properties": .object(properties.mapValues { .object($0) }),
+      "required": .array(required.map(AgentMcpJSONValue.string)),
+      "additionalProperties": .bool(false)
+    ]
+  }
+
+  private static func stringSchema(maxLength: Int64) -> AgentMcpJSONObject {
+    [
+      "type": .string("string"),
+      "maxLength": .int(maxLength)
+    ]
+  }
+
+  private static func integerSchema(minimum: Int64, maximum: Int64? = nil) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = [
+      "type": .string("integer"),
+      "minimum": .int(minimum)
+    ]
+    if let maximum {
+      schema["maximum"] = .int(maximum)
+    }
+    return schema
+  }
+
+  private static func boolSchema() -> AgentMcpJSONObject {
+    ["type": .string("boolean")]
+  }
+
+  private static let consentSmsSend = "signalasi.consent.sms.send"
+  private static let consentContactsWrite = "signalasi.consent.contacts.write"
+  private static let consentCalendarWrite = "signalasi.consent.calendar.write"
+  private static let consentAudioChange = "signalasi.consent.audio.change"
+  private static let consentDownload = "signalasi.consent.download"
+  private static let consentDevicePolicy = "signalasi.consent.device_policy"
+}
+
 struct AgentNativeValidationIssue: Codable, Equatable {
   var path: String
   var code: String
@@ -13273,13 +13787,13 @@ enum AgentPhoneNativeToolCatalog {
 
   static let toolIds: Set<String> = Set(workspaceToolIds + supportedActionKinds.map {
     AgentNativeToolAgentActionAdapter.defaultToolId($0)
-  })
+  }).union(AgentIOSSystemNativeToolCatalog.toolIds)
 
   static let defaultToolIds: Set<String> = toolIds
     .union(AgentPhoneCapabilityNativeCoverage.coveredToolIds)
     .union(webMediaToolIds)
     .union(webIntelligenceToolIds)
-    .union(androidSystemCompatibilityToolIds)
+    .union(AgentIOSSystemNativeToolCatalog.toolIds)
     .union(mcpToolIds)
     .union(onDeviceRuntimeToolIds)
     .union(selfEvolutionToolIds)
@@ -13288,7 +13802,9 @@ enum AgentPhoneNativeToolCatalog {
   static func definitions(
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
   ) -> [AgentPhoneNativeToolDefinition] {
-    workspaceDefinitions() + actionDefinitions(capabilityStatuses: capabilityStatuses)
+    workspaceDefinitions() +
+      actionDefinitions(capabilityStatuses: capabilityStatuses) +
+      AgentIOSSystemNativeToolCatalog.definitions()
   }
 
   static func descriptors(
@@ -13971,17 +14487,6 @@ enum AgentPhoneNativeToolCatalog {
     "signalasi.web.intelligence.agent",
     "signalasi.web.intelligence.diff",
     "signalasi.web.intelligence.watch"
-  ]
-  private static let androidSystemCompatibilityToolIds: Set<String> = [
-    "signalasi.android.audio.status",
-    "signalasi.android.audio.volume.set",
-    "signalasi.android.audio.mute.set",
-    "signalasi.android.wifi.status",
-    "signalasi.android.wifi.scan_results",
-    "signalasi.android.wifi.scan.start",
-    "signalasi.android.wifi.panel.open",
-    "signalasi.android.wifi.hotspot.panel.open",
-    "signalasi.android.biometric.enrollment.open"
   ]
   private static let mcpToolIds: Set<String> = [AgentMcpNativeTools.callTool]
   private static let onDeviceRuntimeToolIds: Set<String> = [

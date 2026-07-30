@@ -4895,8 +4895,74 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNil(observationObject["probeSucceeded"])
   }
 
+  func testAgentIOSSystemNativeToolCatalogMirrorsAndroidSystemIdsWithIOSBoundaries() throws {
+    let ids = AgentIOSSystemNativeToolCatalog.toolIds
+    let definitions = AgentIOSSystemNativeToolCatalog.definitions()
+
+    XCTAssertEqual(ids.count, 32)
+    XCTAssertEqual(Set(AgentIOSSystemNativeToolCatalog.orderedToolIds), ids)
+    XCTAssertEqual(Set(definitions.map(\.id)), ids)
+    XCTAssertTrue(ids.allSatisfy { $0.hasPrefix("signalasi.android.") })
+    XCTAssertTrue(ids.allSatisfy { !$0.contains(" ") })
+    [
+      ".telephony.", ".sms.", ".contacts.", ".calendar.", ".wifi.",
+      ".audio.", ".download.", ".biometric.", ".vpn.", ".device_policy."
+    ].forEach { domain in
+      XCTAssertTrue(ids.contains { $0.contains(domain) }, "Missing \(domain) tools")
+    }
+
+    definitions.forEach { definition in
+      let descriptor = definition.descriptor
+      XCTAssertEqual(definition.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+      XCTAssertEqual(descriptor.location, .androidSystem)
+      XCTAssertEqual(descriptor.availability.status, .unavailable)
+      XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
+      XCTAssertTrue(descriptor.requiredPermissions.contains {
+        $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+      }, descriptor.id)
+      XCTAssertTrue(descriptor.requiredConsents.contains {
+        $0.id == AgentIOSSystemNativeToolCatalog.compatibilityConsent
+      }, descriptor.id)
+      XCTAssertEqual(definition.provenanceMetadata["platform"], "ios")
+      XCTAssertEqual(definition.provenanceMetadata["compatibility_source"], "AgentAndroidSystemNativeTools")
+    }
+
+    let smsSend = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.smsSend })
+    XCTAssertEqual(smsSend.descriptor.risk, .high)
+    XCTAssertEqual(smsSend.descriptor.idempotency, .idempotencyKeyRequired)
+    XCTAssertTrue(smsSend.descriptor.requiredPermissions.contains { $0.id == "android.permission.SEND_SMS" })
+    XCTAssertTrue(smsSend.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.sms.send" })
+    XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("phone_number")))
+    XCTAssertTrue((smsSend.descriptor.inputSchema["required"]?.arrayValue ?? []).contains(.string("message")))
+
+    let registry = try AgentNativeToolRegistry(definitions: definitions)
+    let unavailable = registry.authorize(
+      AgentIOSSystemNativeToolCatalog.smsSend,
+      input: [
+        "phone_number": .string("+15551234567"),
+        "message": .string("hello")
+      ],
+      context: AgentNativeToolInvocationContext(
+        idempotencyKey: "sms-1",
+        grantedPermissions: [
+          AgentIOSSystemNativeToolCatalog.androidSystemPermission,
+          "android.permission.SEND_SMS"
+        ],
+        grantedConsents: ["signalasi.consent.sms.send"]
+      )
+    )
+    let invalid = registry.validateInput(
+      AgentIOSSystemNativeToolCatalog.smsSend,
+      input: ["phone_number": .string("+15551234567")]
+    )
+
+    XCTAssertEqual(unavailable.code, "tool_unavailable")
+    XCTAssertFalse(unavailable.allowed)
+    XCTAssertFalse(invalid.isValid)
+  }
+
   func testAgentPhoneNativeToolCatalogRegistersStableDefaultIds() {
-    let expected: Set<String> = [
+    var expected: Set<String> = [
       "signalasi.workspace.initialize",
       "signalasi.workspace.directory.create",
       "signalasi.workspace.directory.list",
@@ -4936,6 +5002,7 @@ final class SignalASIStoreTests: XCTestCase {
       "signalasi.agent_action.set.alarm",
       "signalasi.agent_action.reply.notification"
     ]
+    expected.formUnion(AgentIOSSystemNativeToolCatalog.toolIds)
     let descriptors = AgentPhoneNativeToolCatalog.descriptors(capabilityStatuses: readyPhoneCapabilityStatuses())
 
     XCTAssertEqual(expected, AgentPhoneNativeToolCatalog.toolIds)
@@ -4986,6 +5053,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains("signalasi.hardware.location.foreground.read"))
     XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains("signalasi.runtime.execute"))
     XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains(AgentMcpNativeTools.callTool))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains(AgentIOSSystemNativeToolCatalog.smsSend))
   }
 
   func testAgentPhoneNativeToolCatalogModelsUseAndroidWireNames() throws {
@@ -6033,9 +6101,7 @@ final class SignalASIStoreTests: XCTestCase {
       )
     )
 
-    XCTAssertEqual(Set(registry.ids()), AgentPhoneNativeToolCatalog.toolIds.subtracting(Set(AgentPhoneNativeToolCatalog.supportedActionKinds.map {
-      AgentNativeToolAgentActionAdapter.defaultToolId($0)
-    })))
+    XCTAssertEqual(Set(registry.ids()), Set(AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store).map(\.id)))
     XCTAssertEqual(missingConsent.status, .rejected)
     XCTAssertEqual(missingConsent.error?.code, "missing_consents")
     XCTAssertTrue(createdBadZip.isSuccess)
