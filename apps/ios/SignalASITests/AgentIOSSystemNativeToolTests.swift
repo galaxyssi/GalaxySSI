@@ -157,6 +157,9 @@ extension SignalASIStoreTests {
 
     let telephonyStatus = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.telephonyStatus })
     let telephonyCallState = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.telephonyCallState })
+    let telephonyObserve = try XCTUnwrap(definitions.first {
+      $0.id == AgentIOSSystemNativeToolCatalog.telephonyCallStateObserve
+    })
     XCTAssertEqual(telephonyStatus.descriptor.risk, .low)
     XCTAssertEqual(telephonyStatus.descriptor.availability.status, .available)
     XCTAssertTrue(telephonyStatus.descriptor.requiredPermissions.contains {
@@ -167,6 +170,11 @@ extension SignalASIStoreTests {
     XCTAssertTrue(telephonyCallState.descriptor.requiredPermissions.contains {
       $0.id == AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission
     })
+    XCTAssertEqual(telephonyObserve.descriptor.availability.status, .available)
+    XCTAssertTrue(telephonyObserve.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosTelephonyStatusPermission
+    })
+    XCTAssertTrue((telephonyObserve.descriptor.inputSchema["required"]?.arrayValue ?? []).isEmpty)
 
     let smsSend = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.smsSend })
     XCTAssertEqual(smsSend.descriptor.risk, .high)
@@ -239,6 +247,8 @@ extension SignalASIStoreTests {
     final class FakeTelephonyProvider: AgentIOSTelephonyStatusProviding {
       var capturedStatusNow: Int64 = 0
       var capturedCallNow: Int64 = 0
+      var capturedObserveTimeout: Int64 = 0
+      var capturedObserveNow: Int64 = 0
 
       func telephonyStatus(nowMillis: Int64) -> AgentMcpJSONObject {
         capturedStatusNow = nowMillis
@@ -286,6 +296,29 @@ extension SignalASIStoreTests {
           "observed_at_epoch_ms": .int(nowMillis)
         ]
       }
+
+      func observeCallState(timeoutMillis: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedObserveTimeout = timeoutMillis
+        capturedObserveNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "initial_state": .string("idle"),
+            "observed_state": .string("off_hook"),
+            "changed": .bool(true),
+            "timed_out": .bool(false),
+            "timeout_ms": .int(timeoutMillis),
+            "continuous_listener_supported": .bool(true),
+            "ringing_detection_supported": .bool(false),
+            "active_call_count": .int(1),
+            "outgoing_call_count": .int(0),
+            "on_hold_call_count": .int(0),
+            "identifiers_included": .bool(false),
+            "scope": .string("app_visible_ios_callkit"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Call state transition observed"
+        )
+      }
     }
     let provider = FakeTelephonyProvider()
     let registry = try AgentNativeToolRegistry().registerExecutables(
@@ -310,6 +343,11 @@ extension SignalASIStoreTests {
       input: [:],
       context: context
     )
+    let observed = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.telephonyCallStateObserve,
+      input: ["timeout_ms": .int(45_000)],
+      context: context
+    )
 
     XCTAssertTrue(status.isSuccess)
     XCTAssertEqual(status.output["network_operator_name"], .string("Example Wireless"))
@@ -328,6 +366,17 @@ extension SignalASIStoreTests {
     XCTAssertEqual(callState.output["observed_at_epoch_ms"], .int(13_000))
     XCTAssertEqual(provider.capturedCallNow, 13_000)
     XCTAssertEqual(callState.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+
+    XCTAssertTrue(observed.isSuccess)
+    XCTAssertEqual(provider.capturedObserveTimeout, 30_000)
+    XCTAssertEqual(provider.capturedObserveNow, 13_000)
+    XCTAssertEqual(observed.output["initial_state"], .string("idle"))
+    XCTAssertEqual(observed.output["observed_state"], .string("off_hook"))
+    XCTAssertEqual(observed.output["changed"], .bool(true))
+    XCTAssertEqual(observed.output["timed_out"], .bool(false))
+    XCTAssertEqual(observed.output["timeout_ms"], .int(30_000))
+    XCTAssertEqual(observed.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(observed.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorReadsAudioStatus() throws {

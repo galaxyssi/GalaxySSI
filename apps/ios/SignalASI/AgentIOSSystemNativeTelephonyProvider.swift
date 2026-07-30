@@ -9,6 +9,7 @@ import CoreTelephony
 protocol AgentIOSTelephonyStatusProviding {
   func telephonyStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func callState(nowMillis: Int64) -> AgentMcpJSONObject
+  func observeCallState(timeoutMillis: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
 struct AgentIOSDefaultTelephonyStatusProvider: AgentIOSTelephonyStatusProviding {
@@ -72,6 +73,43 @@ struct AgentIOSDefaultTelephonyStatusProvider: AgentIOSTelephonyStatusProviding 
     ]
   }
 
+  func observeCallState(timeoutMillis: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    let timeout = max(1_000, min(30_000, timeoutMillis))
+    #if canImport(CallKit)
+    let observer = CXCallObserver()
+    let initial = Self.callSummary(observer.calls)
+    let delegate = CallObserverDelegate(initial: initial)
+    observer.setDelegate(delegate, queue: DispatchQueue(label: "signalasi.ios.call_state.observe"))
+    let changed = delegate.wait(timeoutMillis: timeout)
+    observer.setDelegate(nil, queue: nil)
+    let observed = delegate.snapshot()
+    return AgentNativeToolExecutionResult.success(
+      output: observeOutput(
+        initial: initial,
+        observed: observed,
+        changed: changed,
+        timeoutMillis: timeout,
+        listenerSupported: true,
+        nowMillis: nowMillis
+      ),
+      message: changed ? "Call state transition observed" : "No call state transition observed before timeout"
+    )
+    #else
+    let initial = currentCallState()
+    return AgentNativeToolExecutionResult.success(
+      output: observeOutput(
+        initial: initial,
+        observed: initial,
+        changed: false,
+        timeoutMillis: timeout,
+        listenerSupported: false,
+        nowMillis: nowMillis
+      ),
+      message: "Current call state read; transition observation is unavailable without CallKit."
+    )
+    #endif
+  }
+
   private struct CallSummary {
     var state: String
     var activeCalls: Int
@@ -82,14 +120,7 @@ struct AgentIOSDefaultTelephonyStatusProvider: AgentIOSTelephonyStatusProviding 
 
   private func currentCallState() -> CallSummary {
     #if canImport(CallKit)
-    let calls = CXCallObserver().calls.filter { !$0.hasEnded }
-    return CallSummary(
-      state: calls.isEmpty ? "idle" : "off_hook",
-      activeCalls: calls.count,
-      outgoingCalls: calls.filter(\.isOutgoing).count,
-      onHoldCalls: calls.filter(\.isOnHold).count,
-      scope: "app_visible_ios_callkit"
-    )
+    return Self.callSummary(CXCallObserver().calls)
     #else
     return CallSummary(
       state: "unknown",
@@ -100,6 +131,80 @@ struct AgentIOSDefaultTelephonyStatusProvider: AgentIOSTelephonyStatusProviding 
     )
     #endif
   }
+
+  private func observeOutput(
+    initial: CallSummary,
+    observed: CallSummary,
+    changed: Bool,
+    timeoutMillis: Int64,
+    listenerSupported: Bool,
+    nowMillis: Int64
+  ) -> AgentMcpJSONObject {
+    [
+      "initial_state": .string(initial.state),
+      "observed_state": .string(observed.state),
+      "changed": .bool(changed),
+      "timed_out": .bool(!changed),
+      "timeout_ms": .int(timeoutMillis),
+      "continuous_listener_supported": .bool(listenerSupported),
+      "ringing_detection_supported": .bool(false),
+      "active_call_count": .int(Int64(observed.activeCalls)),
+      "outgoing_call_count": .int(Int64(observed.outgoingCalls)),
+      "on_hold_call_count": .int(Int64(observed.onHoldCalls)),
+      "identifiers_included": .bool(false),
+      "scope": .string(observed.scope),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  #if canImport(CallKit)
+  private static func callSummary(_ calls: [CXCall]) -> CallSummary {
+    let active = calls.filter { !$0.hasEnded }
+    return CallSummary(
+      state: active.isEmpty ? "idle" : "off_hook",
+      activeCalls: active.count,
+      outgoingCalls: active.filter(\.isOutgoing).count,
+      onHoldCalls: active.filter(\.isOnHold).count,
+      scope: "app_visible_ios_callkit"
+    )
+  }
+
+  private final class CallObserverDelegate: NSObject, CXCallObserverDelegate {
+    private let initial: CallSummary
+    private var latest: CallSummary
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+
+    init(initial: CallSummary) {
+      self.initial = initial
+      self.latest = initial
+    }
+
+    func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+      let summary = AgentIOSDefaultTelephonyStatusProvider.callSummary(callObserver.calls)
+      lock.lock()
+      latest = summary
+      let shouldSignal = summary.state != initial.state ||
+        summary.activeCalls != initial.activeCalls ||
+        summary.outgoingCalls != initial.outgoingCalls ||
+        summary.onHoldCalls != initial.onHoldCalls
+      lock.unlock()
+      if shouldSignal {
+        semaphore.signal()
+      }
+    }
+
+    func wait(timeoutMillis: Int64) -> Bool {
+      semaphore.wait(timeout: .now() + .milliseconds(Int(timeoutMillis))) == .success
+    }
+
+    func snapshot() -> CallSummary {
+      lock.lock()
+      defer { lock.unlock() }
+      return latest
+    }
+  }
+  #endif
 
   #if canImport(CoreTelephony)
   private func carrierRows(_ networkInfo: CTTelephonyNetworkInfo) -> [AgentMcpJSONValue] {
