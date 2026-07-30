@@ -35,6 +35,7 @@ const required = [
   "core/signalasi-link/backend/agent_reputation_ledger.py",
   "core/signalasi-link/backend/agent_collaboration_channels.py",
   "core/signalasi-link/backend/agent_file_access_ledger.py",
+  "core/signalasi-link/backend/agent_performance_lab.py",
   "core/signalasi-link/backend/provider_profiles.py",
   "core/signalasi-link/backend/response_self_check.py",
   "core/signalasi-link/backend/run_timeline.py",
@@ -132,6 +133,7 @@ const backendSignalClient = fs.readFileSync(path.join(backendDir, "signalasi_cli
 const backendAgentReputation = fs.readFileSync(path.join(backendDir, "agent_reputation_ledger.py"), "utf8");
 const backendAgentCollaboration = fs.readFileSync(path.join(backendDir, "agent_collaboration_channels.py"), "utf8");
 const backendAgentFileAccess = fs.readFileSync(path.join(backendDir, "agent_file_access_ledger.py"), "utf8");
+const backendAgentPerformanceLab = fs.readFileSync(path.join(backendDir, "agent_performance_lab.py"), "utf8");
 const backendProviderProfiles = fs.readFileSync(path.join(backendDir, "provider_profiles.py"), "utf8");
 const backendGateway = fs.readFileSync(path.join(backendDir, "agent_gateway.py"), "utf8");
 const backendAcpRuntime = fs.readFileSync(path.join(backendDir, "acp_runtime.py"), "utf8");
@@ -207,6 +209,9 @@ if (!main.includes("width: 960") || !main.includes("height: 640")) {
 }
 if (main.includes("minWidth:") || main.includes("minHeight:")) {
   throw new Error("Desktop window must not impose a minimum size");
+}
+if (!main.includes("fetch(`${BACKEND_ORIGIN}/health`")) {
+  throw new Error("Desktop liveness checks must use the lightweight health endpoint");
 }
 
 for (const resource of ["colors.xml", "styles.xml"]) {
@@ -353,6 +358,18 @@ if (
   || !backendGateway.includes("provider_metrics_store().record")
 ) {
   throw new Error("Provider Profiles must expose durable metrics through Desktop and SignalASI Link");
+}
+if (
+  !backendMain.includes('@app.get("/api/agents/performance-lab")')
+  || !backendAgentPerformanceLab.includes("local_anonymous_execution_metrics")
+  || !backendAgentPerformanceLab.includes("CORE_AGENT_DEFINITIONS")
+  || !main.includes('"agents:performance-lab"')
+  || !preload.includes("getAgentPerformanceLab")
+  || !workspaceRenderer.includes("refreshAgentPerformance")
+  || !html.includes('id="agentPerformanceList"')
+  || !styles.includes(".agent-performance-lab")
+) {
+  throw new Error("Desktop must expose the privacy-preserving Agent performance lab");
 }
 
 if (fs.existsSync(path.join(sidecarSourceDir, "com", "hermes", "signal"))) {

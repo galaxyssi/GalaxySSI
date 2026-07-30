@@ -63,6 +63,7 @@ from agent_task_manager import TERMINAL_STATES, agent_task_manager
 from backend_instance_lock import BackendInstanceLock
 from desktop_native_tools import TOOL_VERSION as DESKTOP_NATIVE_TOOL_VERSION
 from unified_commands import default_command_engine
+from agent_performance_lab import current_agent_performance_report
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("signalasi")
@@ -421,6 +422,18 @@ def api_health():
 @app.get("/api/agents/execution-log")
 def api_agent_execution_log(limit: int = Query(50)):
     return recent_agent_execution_log(limit)
+
+
+@app.get("/api/agents/performance-lab")
+def api_agent_performance_lab(
+    request: Request,
+    window: str = Query("7d"),
+):
+    require_loopback(request)
+    try:
+        return current_agent_performance_report(window)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/agents/reputation")

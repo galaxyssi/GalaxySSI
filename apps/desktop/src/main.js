@@ -273,17 +273,30 @@ async function runUiSmoke() {
     `);
     const agentsState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
+        await window.signalasi.startBackend();
         document.querySelector('[data-open-panel="agents"]')?.click();
         for (let attempt = 0; attempt < 30; attempt += 1) {
           if (document.querySelectorAll("#agentContactList .agent-contact").length > 0) break;
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          if (document.querySelectorAll("#agentPerformanceList .performance-agent").length === 4) break;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        document.querySelector('[data-performance-window="all"]')?.click();
+        await new Promise((resolve) => setTimeout(resolve, 250));
         const customDetails = document.querySelector("#agentsPanel .drawer-details");
         if (customDetails) customDetails.open = true;
+        document.querySelector(".agent-performance-lab")?.scrollIntoView({ block: "start" });
         return {
           open: document.querySelector("#utilityDrawer")?.classList.contains("open") || false,
           active: document.querySelector("#agentsPanel")?.classList.contains("active") || false,
           contacts: document.querySelectorAll("#agentContactList .agent-contact").length,
+          performanceRows: document.querySelectorAll("#agentPerformanceList .performance-agent").length,
+          performanceWindows: document.querySelectorAll("[data-performance-window]").length,
+          performanceWindow: document.querySelector("[data-performance-window].active")?.dataset.performanceWindow || "",
+          performanceSummary: document.querySelector("#agentPerformanceSummary")?.textContent || "",
+          performanceSuccess: document.querySelector(".performance-overview strong")?.textContent || "",
           customFields: document.querySelectorAll("#agentsPanel .form-stack input").length,
           customTransport: Boolean(document.querySelector("#customAgentTransport")),
           customPoolSize: Boolean(document.querySelector("#customAgentPoolSize")),
@@ -296,6 +309,11 @@ async function runUiSmoke() {
       !agentsState.open
       || !agentsState.active
       || agentsState.contacts < 1
+      || agentsState.performanceRows !== 4
+      || agentsState.performanceWindows !== 4
+      || agentsState.performanceWindow !== "all"
+      || !agentsState.performanceSummary.trim()
+      || agentsState.performanceSuccess !== "\u2014"
       || agentsState.customFields < 4
       || !agentsState.customTransport
       || !agentsState.customPoolSize
@@ -1117,7 +1135,7 @@ function findPython() {
 
 async function backendStatus() {
   try {
-    const response = await fetch(`${BACKEND_ORIGIN}/api/agents/diagnostics`, { method: "GET" });
+    const response = await fetch(`${BACKEND_ORIGIN}/health`, { method: "GET" });
     const payload = response.ok ? await response.json() : null;
     const identityMatches = payload?.protocol === "SignalASI Link Protocol"
       && payload?.connector === "SignalASI Desktop";
@@ -1508,6 +1526,11 @@ async function getLinkTransportDiagnostics() {
 async function getAgentExecutionLog(limit = 50) {
   await startBackend();
   return fetchJson(`/api/agents/execution-log?limit=${encodeURIComponent(limit)}`);
+}
+
+async function getAgentPerformanceLab(window = "7d") {
+  await startBackend();
+  return fetchJson(`/api/agents/performance-lab?window=${encodeURIComponent(window)}`);
 }
 
 async function getAgentTasks(limit = 100) {
@@ -2074,6 +2097,7 @@ ipcMain.handle("agents:detect", detectAgents);
 ipcMain.handle("agents:diagnostics", getAgentDiagnostics);
 ipcMain.handle("link:transport-diagnostics", getLinkTransportDiagnostics);
 ipcMain.handle("agents:execution-log", (_event, limit) => getAgentExecutionLog(limit));
+ipcMain.handle("agents:performance-lab", (_event, window) => getAgentPerformanceLab(window));
 ipcMain.handle("agents:tasks", (_event, limit) => getAgentTasks(limit));
 ipcMain.handle("agents:memory-telemetry", getAgentMemoryTelemetry);
 ipcMain.handle("commands:list", (_event, root = "") => listCommands(root));

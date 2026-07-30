@@ -173,6 +173,12 @@ const state = {
   backend: null,
   agents: DEFAULT_AGENT_CONTACTS,
   agentConfig: null,
+  agentPerformance: {
+    window: "7d",
+    report: null,
+    loading: false,
+    requestId: 0
+  },
   acpRuntime: null,
   pairing: null,
   pairingGrantDesktopExecutor: false,
@@ -1146,6 +1152,114 @@ function renderAgentContacts() {
     const stateLabel = checking ? "Checking" : (ready ? "Ready" : "Setup");
     return `<article class="agent-contact"><div class="agent-contact-icon">${escapeHtml(initials)}</div><div><strong>${escapeHtml(agent.name || id)}<span class="contact-state ${ready ? "" : "setup"}">${escapeHtml(t(stateLabel))}</span></strong><small>${escapeHtml(t(agent.detail || agent.note || agent.kind || ""))}</small></div><div class="contact-actions"><button data-use-agent="${escapeHtml(id)}">${escapeHtml(t("Use"))}</button><button class="primary" data-chat-agent="${escapeHtml(id)}">${escapeHtml(t("Chat"))}</button></div></article>`;
   }).join("");
+}
+
+function performancePercent(value) {
+  if (value === null || value === undefined || value === "") return "\u2014";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${Math.round(numeric * 100)}%` : "\u2014";
+}
+
+function performanceStateLabel(agent) {
+  if (agent.measurement_state === "unavailable") return t("Unavailable");
+  if (agent.measurement_state === "no_data") return t("No evidence");
+  if (agent.active_tasks > 0 || agent.availability_status === "busy") return t("Busy");
+  return {
+    insufficient: t("Early result"),
+    indicative: t("Indicative"),
+    established: t("Established")
+  }[agent.confidence] || t("Measured");
+}
+
+function renderAgentPerformance() {
+  const summaryTarget = $("#agentPerformanceSummary");
+  const listTarget = $("#agentPerformanceList");
+  const report = state.agentPerformance.report;
+  $$("[data-performance-window]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.performanceWindow === state.agentPerformance.window);
+  });
+  if (state.agentPerformance.loading && !report) {
+    summaryTarget.innerHTML = `<div class="performance-empty">${escapeHtml(t("Loading performance evidence"))}</div>`;
+    listTarget.innerHTML = "";
+    return;
+  }
+  if (!report) {
+    summaryTarget.innerHTML = `<div class="performance-empty">${escapeHtml(t("No performance evidence yet."))}</div>`;
+    listTarget.innerHTML = "";
+    return;
+  }
+  const summary = report.summary || {};
+  const agents = Array.isArray(report.agents) ? report.agents : [];
+  const recommended = agents.find((agent) => agent.agent_id === summary.recommended_agent_id);
+  const fastest = agents.find((agent) => agent.agent_id === summary.fastest_agent_id);
+  summaryTarget.innerHTML = `
+    <div class="performance-overview">
+      <span><strong>${escapeHtml(performancePercent(summary.success_rate))}</strong><small>${escapeHtml(t("Success rate"))}</small></span>
+      <span><strong>${escapeHtml(String(summary.attempts || 0))}</strong><small>${escapeHtml(t("Runs"))}</small></span>
+      <span><strong>${escapeHtml(`${summary.available_agents || 0}/${summary.agents || 0}`)}</strong><small>${escapeHtml(t("Available now"))}</small></span>
+    </div>
+    <p class="performance-leader">${escapeHtml(
+      recommended
+        ? t("Recommended: {agent}. Fastest: {fastest}.", {
+            agent: recommended.display_name,
+            fastest: fastest?.display_name || t("Not enough evidence")
+          })
+        : t("Run an Agent task to begin a measured comparison.")
+    )}</p>`;
+  listTarget.innerHTML = agents.map((agent) => {
+    const rank = Number(agent.rank);
+    const measured = agent.measurement_state === "measured";
+    const stateClass = agent.measurement_state === "unavailable"
+      ? "unavailable"
+      : measured ? "measured" : "no-data";
+    const successWidth = measured && Number.isFinite(Number(agent.success_rate))
+      ? Math.max(0, Math.min(100, Number(agent.success_rate) * 100))
+      : 0;
+    return `<article class="performance-agent ${stateClass} ${rank === 1 ? "rank-1" : ""}">
+      <div class="performance-rank">${escapeHtml(Number.isFinite(rank) && rank > 0 ? String(rank) : "\u2013")}</div>
+      <div class="performance-agent-main">
+        <div class="performance-agent-header">
+          <strong>${escapeHtml(agent.display_name || agent.agent_id)}</strong>
+          <span class="performance-state">${escapeHtml(performanceStateLabel(agent))}</span>
+        </div>
+        <progress class="performance-success-track" value="${successWidth.toFixed(1)}" max="100" aria-label="${escapeHtml(t("Success rate"))}"></progress>
+        <div class="performance-metrics">
+          <span><b>${escapeHtml(performancePercent(agent.success_rate))}</b><small>${escapeHtml(t("Success"))}</small></span>
+          <span><b>${escapeHtml(agent.p50_latency_ms == null ? "\u2014" : formatLatency(agent.p50_latency_ms))}</b><small>P50</small></span>
+          <span><b>${escapeHtml(agent.p95_latency_ms == null ? "\u2014" : formatLatency(agent.p95_latency_ms))}</b><small>P95</small></span>
+          <span><b>${escapeHtml(String(agent.attempts || 0))}</b><small>${escapeHtml(t("Samples"))}</small></span>
+        </div>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+async function refreshAgentPerformance(performanceWindow = state.agentPerformance.window) {
+  const requestedWindow = ["24h", "7d", "30d", "all"].includes(performanceWindow)
+    ? performanceWindow
+    : "7d";
+  if (state.agentPerformance.loading && requestedWindow === state.agentPerformance.window) return;
+  state.agentPerformance.window = requestedWindow;
+  state.agentPerformance.loading = true;
+  const requestId = ++state.agentPerformance.requestId;
+  const refreshButton = $("#refreshAgentPerformanceButton");
+  refreshButton.classList.add("loading");
+  renderAgentPerformance();
+  try {
+    const report = await window.signalasi.getAgentPerformanceLab(requestedWindow);
+    if (requestId !== state.agentPerformance.requestId) return;
+    state.agentPerformance.report = report;
+  } catch (error) {
+    if (requestId !== state.agentPerformance.requestId) return;
+    state.agentPerformance.report = null;
+    $("#agentPerformanceSummary").innerHTML = `<div class="performance-empty">${escapeHtml(error.message || String(error))}</div>`;
+    $("#agentPerformanceList").innerHTML = "";
+  } finally {
+    if (requestId !== state.agentPerformance.requestId) return;
+    state.agentPerformance.loading = false;
+    refreshButton.classList.remove("loading");
+    if (state.agentPerformance.report) renderAgentPerformance();
+  }
 }
 
 async function refreshAgents() {
@@ -3614,7 +3728,9 @@ async function openPanel(name) {
   elements.drawer.dataset.panelLoading = "true";
   delete elements.drawer.dataset.panelReady;
   try {
-    if (panelName === "agents") await refreshAgents();
+    if (panelName === "agents") {
+      await Promise.all([refreshAgents(), refreshAgentPerformance()]);
+    }
     if (panelName === "gateway") {
       await Promise.all([refreshGateway(), refreshDesktopControl()]);
       await loadPairingFrame();
@@ -4006,7 +4122,14 @@ function bindEvents() {
   $$('[data-open-panel]').forEach((button) => button.addEventListener("click", () => openPanel(button.dataset.openPanel)));
   $("#closeDrawer").addEventListener("click", closePanel);
   elements.backdrop.addEventListener("click", closePanel);
-  $("#refreshAgentsButton").addEventListener("click", refreshAgents);
+  $("#refreshAgentsButton").addEventListener("click", () =>
+    Promise.all([refreshAgents(), refreshAgentPerformance()]));
+  $("#refreshAgentPerformanceButton").addEventListener("click", () =>
+    refreshAgentPerformance());
+  $$("[data-performance-window]").forEach((button) => {
+    button.addEventListener("click", () =>
+      refreshAgentPerformance(button.dataset.performanceWindow));
+  });
   $("#agentContactList").addEventListener("click", (event) => {
     const use = event.target.closest("[data-use-agent]");
     const chat = event.target.closest("[data-chat-agent]");

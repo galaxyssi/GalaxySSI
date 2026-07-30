@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("signalasi", {
   getAgentDiagnostics: () => ipcRenderer.invoke("agents:diagnostics"),
   getLinkTransportDiagnostics: () => ipcRenderer.invoke("link:transport-diagnostics"),
   getAgentExecutionLog: (limit) => ipcRenderer.invoke("agents:execution-log", limit),
+  getAgentPerformanceLab: (window = "7d") =>
+    ipcRenderer.invoke("agents:performance-lab", window),
   getAgentTasks: (limit) => ipcRenderer.invoke("agents:tasks", limit),
   getAgentMemoryTelemetry: () => ipcRenderer.invoke("agents:memory-telemetry"),
   listCommands: (root) => ipcRenderer.invoke("commands:list", root),
