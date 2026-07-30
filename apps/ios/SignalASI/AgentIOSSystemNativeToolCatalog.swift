@@ -89,6 +89,11 @@ enum AgentIOSSystemNativeToolCatalog {
     audioMuteSet
   ]
 
+  static let devicePolicyActionBoundaryToolIds: Set<String> = [
+    devicePolicyLock,
+    devicePolicyReboot
+  ]
+
   static let executableToolIds: Set<String> = handoffToolIds.union([
     telephonyStatus,
     telephonyCallState,
@@ -105,6 +110,8 @@ enum AgentIOSSystemNativeToolCatalog {
     downloadQuery,
     downloadRemove,
     devicePolicyStatus,
+    devicePolicyLock,
+    devicePolicyReboot,
     wifiStatus,
     wifiScanResults,
     wifiScanStart,
@@ -419,7 +426,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       devicePolicyLock,
       "Lock device through device policy",
-      "Android device-policy lock descriptor retained for planning; iOS normal apps cannot lock the device.",
+      "Returns an iOS device-policy action boundary failure; iOS normal apps cannot lock the device.",
       .high,
       ["device_policy.lock"],
       [],
@@ -428,7 +435,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       devicePolicyReboot,
       "Reboot device through device policy",
-      "Android device-policy reboot descriptor retained for planning; iOS normal apps cannot reboot the device.",
+      "Returns an iOS device-policy action boundary failure; iOS normal apps cannot reboot the device.",
       .high,
       ["device_policy.reboot"],
       [],
@@ -638,6 +645,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if devicePolicyActionBoundaryToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosDevicePolicyActionBoundaryPermission,
+          title: "iOS device policy action boundary",
+          description: "Limits execution to a structured iOS platform-boundary failure for unsupported device policy actions."
+        )
+      ]
+    }
     if downloadToolIds.contains(specification.id) {
       return [
         AgentNativePermissionRequirement(
@@ -725,6 +741,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == devicePolicyStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS app-visible device policy status executor."
     }
+    if devicePolicyActionBoundaryToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a structured iOS device policy action boundary executor."
+    }
     return "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor."
   }
 
@@ -777,6 +796,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == devicePolicyStatus {
       return devicePolicyStatusAvailability
     }
+    if devicePolicyActionBoundaryToolIds.contains(id) {
+      return devicePolicyActionBoundaryAvailability
+    }
     return unavailableAvailability
   }
 
@@ -828,6 +850,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == devicePolicyStatus {
       return "ios_app_visible_device_policy_status_on_ios15"
+    }
+    if devicePolicyActionBoundaryToolIds.contains(id) {
+      return "ios_device_policy_action_boundary_on_ios15"
     }
     return "descriptor_only_unavailable_on_ios15"
   }
@@ -951,6 +976,13 @@ enum AgentIOSSystemNativeToolCatalog {
     )
   }
 
+  private static var devicePolicyActionBoundaryAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor returns a structured device-policy action boundary failure because lock and reboot are not exposed to normal apps."
+    )
+  }
+
   private static func handoffOutputSchema() -> AgentMcpJSONObject {
     input([
       "handoff_kind": stringSchema(maxLength: 64),
@@ -1028,6 +1060,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosTelephonyStatusPermission = "signalasi.scope.ios_app_visible_telephony_status"
   static let iosVPNStatusPermission = "signalasi.scope.ios_app_managed_vpn_status"
   static let iosDevicePolicyStatusPermission = "signalasi.scope.ios_app_visible_device_policy_status"
+  static let iosDevicePolicyActionBoundaryPermission = "signalasi.scope.ios_device_policy_action_boundary"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"

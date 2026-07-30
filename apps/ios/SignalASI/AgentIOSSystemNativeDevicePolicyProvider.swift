@@ -5,6 +5,8 @@ import UIKit
 
 protocol AgentIOSDevicePolicyStatusProviding {
   func devicePolicyStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func lockDevice(nowMillis: Int64) -> AgentNativeToolExecutionResult
+  func rebootDevice(nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
 struct AgentIOSDefaultDevicePolicyStatusProvider: AgentIOSDevicePolicyStatusProviding {
@@ -30,5 +32,33 @@ struct AgentIOSDefaultDevicePolicyStatusProvider: AgentIOSDevicePolicyStatusProv
       "scope": .string("ios_app_visible_device_policy_status"),
       "observed_at_epoch_ms": .int(nowMillis)
     ]
+  }
+
+  func lockDevice(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.failure(
+      code: "device_admin_required",
+      message: "iOS normal apps cannot lock the device through Android device policy.",
+      details: [
+        "locked": .bool(false),
+        "lock_supported": .bool(false),
+        "platform": .string("ios"),
+        "scope": .string("ios_device_policy_action_unavailable_app_sandbox"),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ]
+    )
+  }
+
+  func rebootDevice(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.failure(
+      code: "device_owner_required",
+      message: "iOS normal apps cannot reboot the device through Android device policy.",
+      details: [
+        "reboot_requested": .bool(false),
+        "reboot_supported": .bool(false),
+        "platform": .string("ios"),
+        "scope": .string("ios_device_policy_action_unavailable_app_sandbox"),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ]
+    )
   }
 }

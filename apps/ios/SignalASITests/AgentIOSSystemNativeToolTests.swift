@@ -87,6 +87,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("device policy boundaries"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "ios_app_visible_device_policy_status_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.devicePolicyActionBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("device-policy action boundary"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "ios_device_policy_action_boundary_on_ios15")
       } else {
         XCTAssertEqual(descriptor.availability.status, .unavailable)
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
@@ -187,6 +191,13 @@ extension SignalASIStoreTests {
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.devicePolicyStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.devicePolicyActionBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyActionBoundaryPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -314,6 +325,23 @@ extension SignalASIStoreTests {
     XCTAssertTrue(devicePolicyStatus.descriptor.requiredPermissions.contains {
       $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission
     })
+
+    let devicePolicyLock = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.devicePolicyLock })
+    let devicePolicyReboot = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.devicePolicyReboot })
+    XCTAssertEqual(devicePolicyLock.descriptor.risk, .high)
+    XCTAssertEqual(devicePolicyLock.descriptor.idempotency, .idempotencyKeyRequired)
+    XCTAssertEqual(devicePolicyLock.descriptor.availability.status, .available)
+    XCTAssertTrue(devicePolicyLock.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyActionBoundaryPermission
+    })
+    XCTAssertTrue(devicePolicyLock.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.device_policy" })
+    XCTAssertEqual(devicePolicyReboot.descriptor.risk, .high)
+    XCTAssertEqual(devicePolicyReboot.descriptor.idempotency, .idempotencyKeyRequired)
+    XCTAssertEqual(devicePolicyReboot.descriptor.availability.status, .available)
+    XCTAssertTrue(devicePolicyReboot.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyActionBoundaryPermission
+    })
+    XCTAssertTrue(devicePolicyReboot.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.device_policy" })
 
     let wifiScanResults = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.wifiScanResults })
     let wifiScanStart = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.wifiScanStart })
@@ -817,6 +845,34 @@ extension SignalASIStoreTests {
           "observed_at_epoch_ms": .int(nowMillis)
         ]
       }
+
+      func lockDevice(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        AgentNativeToolExecutionResult.failure(
+          code: "device_admin_required",
+          message: "iOS normal apps cannot lock the device through Android device policy.",
+          details: [
+            "locked": .bool(false),
+            "lock_supported": .bool(false),
+            "platform": .string("ios"),
+            "scope": .string("ios_device_policy_action_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ]
+        )
+      }
+
+      func rebootDevice(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        AgentNativeToolExecutionResult.failure(
+          code: "device_owner_required",
+          message: "iOS normal apps cannot reboot the device through Android device policy.",
+          details: [
+            "reboot_requested": .bool(false),
+            "reboot_supported": .bool(false),
+            "platform": .string("ios"),
+            "scope": .string("ios_device_policy_action_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ]
+        )
+      }
     }
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
@@ -829,11 +885,38 @@ extension SignalASIStoreTests {
     let context = AgentNativeToolInvocationContext(
       grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission]
     )
+    let actionContext = AgentNativeToolInvocationContext(
+      idempotencyKey: "device-policy-lock-1",
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDevicePolicyActionBoundaryPermission],
+      grantedConsents: ["signalasi.consent.device_policy"]
+    )
 
     let result = registry.invoke(
       AgentIOSSystemNativeToolCatalog.devicePolicyStatus,
       input: [:],
       context: context
+    )
+    let lock = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.devicePolicyLock,
+      input: [:],
+      context: actionContext
+    )
+    let reboot = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.devicePolicyReboot,
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        idempotencyKey: "device-policy-reboot-1",
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDevicePolicyActionBoundaryPermission],
+        grantedConsents: ["signalasi.consent.device_policy"]
+      )
+    )
+    let missingKey = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.devicePolicyLock,
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosDevicePolicyActionBoundaryPermission],
+        grantedConsents: ["signalasi.consent.device_policy"]
+      )
     )
 
     XCTAssertTrue(result.isSuccess)
@@ -846,6 +929,19 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(24_000))
     XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+    XCTAssertEqual(lock.status, .failed)
+    XCTAssertEqual(lock.error?.code, "device_admin_required")
+    XCTAssertEqual(lock.error?.details["locked"], .bool(false))
+    XCTAssertEqual(lock.error?.details["lock_supported"], .bool(false))
+    XCTAssertEqual(lock.error?.details["observed_at_epoch_ms"], .int(24_000))
+    XCTAssertEqual(lock.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+    XCTAssertEqual(reboot.status, .failed)
+    XCTAssertEqual(reboot.error?.code, "device_owner_required")
+    XCTAssertEqual(reboot.error?.details["reboot_requested"], .bool(false))
+    XCTAssertEqual(reboot.error?.details["reboot_supported"], .bool(false))
+    XCTAssertEqual(reboot.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+    XCTAssertEqual(missingKey.status, .rejected)
+    XCTAssertEqual(missingKey.error?.code, "missing_idempotency_key")
   }
 
   func testAgentIOSSystemNativeToolExecutorReadsIdentifierFreeWifiStatus() throws {
