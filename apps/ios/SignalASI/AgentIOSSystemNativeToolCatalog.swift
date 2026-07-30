@@ -75,6 +75,11 @@ enum AgentIOSSystemNativeToolCatalog {
     calendarEventDelete
   ]
 
+  static let wifiScanBoundaryToolIds: Set<String> = [
+    wifiScanResults,
+    wifiScanStart
+  ]
+
   static let executableToolIds: Set<String> = handoffToolIds.union([
     telephonyStatus,
     telephonyCallState,
@@ -91,6 +96,8 @@ enum AgentIOSSystemNativeToolCatalog {
     downloadRemove,
     devicePolicyStatus,
     wifiStatus,
+    wifiScanResults,
+    wifiScanStart,
     audioStatus,
     vpnStatus,
     biometricStatus
@@ -278,7 +285,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       wifiScanResults,
       "Read Wi-Fi scan results",
-      "Android Wi-Fi scan results descriptor retained for planning; iOS cannot enumerate nearby Wi-Fi scan results.",
+      "Returns a structured iOS Wi-Fi scan boundary result; iOS cannot enumerate nearby Wi-Fi networks for normal apps.",
       .low,
       ["wifi.scan_results"],
       ["android.permission.ACCESS_WIFI_STATE", "android.permission.ACCESS_FINE_LOCATION"],
@@ -287,7 +294,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       wifiScanStart,
       "Start Wi-Fi scan",
-      "Android Wi-Fi scan request descriptor retained for planning; iOS cannot trigger arbitrary Wi-Fi scans.",
+      "Returns a structured iOS Wi-Fi scan boundary result; iOS cannot trigger arbitrary nearby-network scans for normal apps.",
       .medium,
       ["wifi.scan.start"],
       ["android.permission.ACCESS_WIFI_STATE", "android.permission.CHANGE_WIFI_STATE", "android.permission.ACCESS_FINE_LOCATION"]
@@ -529,6 +536,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if wifiScanBoundaryToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosWifiScanBoundaryPermission,
+          title: "iOS Wi-Fi scan boundary",
+          description: "Limits execution to a structured iOS platform-boundary result; nearby Wi-Fi scans are not exposed."
+        )
+      ]
+    }
     if specification.id == contactsSearch {
       return [
         AgentNativePermissionRequirement(
@@ -646,6 +662,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == wifiStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Wi-Fi status executor."
     }
+    if wifiScanBoundaryToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a structured iOS Wi-Fi scan boundary executor."
+    }
     if id == contactsSearch {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Contacts search executor."
     }
@@ -689,6 +708,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == wifiStatus {
       return wifiStatusAvailability
     }
+    if wifiScanBoundaryToolIds.contains(id) {
+      return wifiScanBoundaryAvailability
+    }
     if id == contactsSearch {
       return contactsSearchAvailability
     }
@@ -731,6 +753,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == wifiStatus {
       return "nw_path_wifi_status_on_ios15"
+    }
+    if wifiScanBoundaryToolIds.contains(id) {
+      return "ios_wifi_scan_boundary_on_ios15"
     }
     if id == contactsSearch {
       return "contacts_search_on_ios15"
@@ -798,6 +823,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads bounded NWPath Wi-Fi transport status without network identifiers."
+    )
+  }
+
+  private static var wifiScanBoundaryAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor returns a structured Wi-Fi scan boundary result because nearby-network scans are not exposed to normal apps."
     )
   }
 
@@ -921,6 +953,7 @@ enum AgentIOSSystemNativeToolCatalog {
 
   static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
   static let iosWifiStatusPermission = "signalasi.scope.ios_app_visible_wifi_status"
+  static let iosWifiScanBoundaryPermission = "signalasi.scope.ios_wifi_scan_boundary"
   static let iosContactsReadPermission = "signalasi.scope.ios_contacts_read"
   static let iosContactsWritePermission = "signalasi.scope.ios_contacts_write"
   static let iosCalendarReadPermission = "signalasi.scope.ios_calendar_read"

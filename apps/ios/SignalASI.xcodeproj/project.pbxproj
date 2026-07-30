@@ -137,6 +137,7 @@
     A10000000000000000000305 /* AgentIOSSystemNativeTelephonyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000305 /* AgentIOSSystemNativeTelephonyProvider.swift */; };
     A10000000000000000000306 /* AgentIOSSystemNativeVPNProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000306 /* AgentIOSSystemNativeVPNProvider.swift */; };
     A10000000000000000000307 /* AgentIOSSystemNativeDevicePolicyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000307 /* AgentIOSSystemNativeDevicePolicyProvider.swift */; };
+    A10000000000000000000308 /* AgentIOSSystemNativeWifiScanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000308 /* AgentIOSSystemNativeWifiScanProvider.swift */; };
     A10000000000000000000280 /* AgentIOSHardwareNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */; };
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
@@ -364,6 +365,7 @@
     A20000000000000000000305 /* AgentIOSSystemNativeTelephonyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeTelephonyProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000306 /* AgentIOSSystemNativeVPNProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeVPNProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000307 /* AgentIOSSystemNativeDevicePolicyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeDevicePolicyProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000308 /* AgentIOSSystemNativeWifiScanProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeWifiScanProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
@@ -592,6 +594,7 @@
         A20000000000000000000305 /* AgentIOSSystemNativeTelephonyProvider.swift */,
         A20000000000000000000306 /* AgentIOSSystemNativeVPNProvider.swift */,
         A20000000000000000000307 /* AgentIOSSystemNativeDevicePolicyProvider.swift */,
+        A20000000000000000000308 /* AgentIOSSystemNativeWifiScanProvider.swift */,
         A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */,
         A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */,
         A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */,
@@ -917,6 +920,7 @@
         A10000000000000000000305 /* AgentIOSSystemNativeTelephonyProvider.swift in Sources */,
         A10000000000000000000306 /* AgentIOSSystemNativeVPNProvider.swift in Sources */,
         A10000000000000000000307 /* AgentIOSSystemNativeDevicePolicyProvider.swift in Sources */,
+        A10000000000000000000308 /* AgentIOSSystemNativeWifiScanProvider.swift in Sources */,
         A10000000000000000000280 /* AgentIOSHardwareNativeTools.swift in Sources */,
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,

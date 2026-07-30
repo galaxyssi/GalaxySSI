@@ -59,6 +59,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("NWPath"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "nw_path_wifi_status_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.wifiScanBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("Wi-Fi scan boundary"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "ios_wifi_scan_boundary_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("AVAudioSession"), descriptor.id)
@@ -133,6 +137,13 @@ extension SignalASIStoreTests {
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.wifiStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosWifiStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.wifiScanBoundaryToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosWifiScanBoundaryPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -257,6 +268,19 @@ extension SignalASIStoreTests {
     XCTAssertEqual(devicePolicyStatus.descriptor.availability.status, .available)
     XCTAssertTrue(devicePolicyStatus.descriptor.requiredPermissions.contains {
       $0.id == AgentIOSSystemNativeToolCatalog.iosDevicePolicyStatusPermission
+    })
+
+    let wifiScanResults = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.wifiScanResults })
+    let wifiScanStart = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.wifiScanStart })
+    XCTAssertEqual(wifiScanResults.descriptor.risk, .low)
+    XCTAssertEqual(wifiScanResults.descriptor.availability.status, .available)
+    XCTAssertTrue(wifiScanResults.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosWifiScanBoundaryPermission
+    })
+    XCTAssertEqual(wifiScanStart.descriptor.risk, .medium)
+    XCTAssertEqual(wifiScanStart.descriptor.availability.status, .available)
+    XCTAssertTrue(wifiScanStart.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosWifiScanBoundaryPermission
     })
 
     let registry = try AgentNativeToolRegistry(definitions: definitions)
@@ -660,6 +684,89 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(33_000))
     XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReturnsWifiScanBoundary() throws {
+    final class FakeWifiScanProvider: AgentIOSWifiScanProviding {
+      var capturedLimit = 0
+      var capturedResultsNow: Int64 = 0
+      var capturedStartNow: Int64 = 0
+
+      func wifiScanResults(limit: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedLimit = limit
+        capturedResultsNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "networks": .array([]),
+            "count": .int(0),
+            "limit": .int(Int64(limit)),
+            "scan_supported": .bool(false),
+            "scan_trigger_supported": .bool(false),
+            "identifiers_included": .bool(false),
+            "platform": .string("ios"),
+            "scope": .string("ios_wifi_scan_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "iOS does not expose nearby Wi-Fi scan results to normal apps."
+        )
+      }
+
+      func startWifiScan(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedStartNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "accepted": .bool(false),
+            "may_be_throttled": .bool(false),
+            "scan_supported": .bool(false),
+            "scan_trigger_supported": .bool(false),
+            "platform": .string("ios"),
+            "scope": .string("ios_wifi_scan_unavailable_app_sandbox"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "iOS does not allow normal apps to trigger arbitrary Wi-Fi scans."
+        )
+      }
+    }
+    let provider = FakeWifiScanProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          wifiScanProvider: provider,
+          nowMillis: { 34_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosWifiScanBoundaryPermission]
+    )
+
+    let results = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.wifiScanResults,
+      input: ["limit": .int(250)],
+      context: context
+    )
+    let started = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.wifiScanStart,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(results.isSuccess)
+    XCTAssertEqual(provider.capturedLimit, 100)
+    XCTAssertEqual(provider.capturedResultsNow, 34_000)
+    XCTAssertEqual(results.output["count"], .int(0))
+    XCTAssertEqual(results.output["scan_supported"], .bool(false))
+    XCTAssertEqual(results.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(results.output["observed_at_epoch_ms"], .int(34_000))
+    XCTAssertEqual(results.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+
+    XCTAssertTrue(started.isSuccess)
+    XCTAssertEqual(provider.capturedStartNow, 34_000)
+    XCTAssertEqual(started.output["accepted"], .bool(false))
+    XCTAssertEqual(started.output["may_be_throttled"], .bool(false))
+    XCTAssertEqual(started.output["scan_supported"], .bool(false))
+    XCTAssertEqual(started.output["observed_at_epoch_ms"], .int(34_000))
+    XCTAssertEqual(started.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorSearchesContacts() throws {
