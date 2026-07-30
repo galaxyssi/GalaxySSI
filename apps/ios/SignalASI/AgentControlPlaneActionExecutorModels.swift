@@ -317,6 +317,38 @@ final class ActionExecutorAgentProvider: AgentProvider {
     return nil
   }
 
+  @discardableResult
+  func recordConnectorTaskStatus(
+    sourceMessageId: Int64,
+    contactId: String,
+    taskId: String,
+    taskStatus: String,
+    statusSeq: Int64,
+    conversationId: String = "",
+    turnId: String = "",
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentActionResult? {
+    let envelope = AgentConnectorTerminalStatusEnvelope(
+      sourceMessageId: sourceMessageId,
+      contactId: contactId,
+      taskId: taskId,
+      taskStatus: taskStatus,
+      statusSeq: statusSeq,
+      conversationId: conversationId,
+      turnId: turnId,
+      nowMillis: nowMillis
+    )
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.recordConnectorTaskStatus(envelope) {
+        return result
+      }
+    }
+    return nil
+  }
+
   func discardPrepared(agentId: String, runId: String) {
     transportIfPresent(agentId: agentId)?.discardPrepared(runId: runId)
   }
@@ -547,6 +579,26 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       )
     }
     return settlement.result
+  }
+
+  func recordConnectorTaskStatus(_ envelope: AgentConnectorTerminalStatusEnvelope) -> AgentActionResult? {
+    let record: AgentConnectorTaskStatusRecord
+    lock.lock()
+    guard let match = activeByRunId.first(where: { item in
+      guard item.value.sourceMessageId == envelope.sourceMessageId,
+        let pending = resultsByRunId[item.key] else {
+        return false
+      }
+      return AgentConnectorTerminalStatusResolver.canAccept(pending: pending, envelope: envelope)
+    }), let pending = resultsByRunId[match.key],
+      let resolved = AgentConnectorTaskStatusRecorder.record(pending: pending, envelope: envelope) else {
+      lock.unlock()
+      return nil
+    }
+    record = resolved
+    resultsByRunId[match.key] = resolved.result
+    lock.unlock()
+    return record.result
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {
