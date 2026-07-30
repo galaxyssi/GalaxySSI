@@ -126,6 +126,7 @@ class AgentVisibleAudioCaptureActivity : Activity() {
 
     private fun startRecording() {
         if (recorder != null || outcomeReported.get()) return
+        val mediaProfile = AgentMediaNetworkDetector.detect(this)
         val file = File(cacheDir, "agent_audio_${System.currentTimeMillis()}.m4a")
         var candidate: MediaRecorder? = null
         runCatching {
@@ -139,8 +140,7 @@ class AgentVisibleAudioCaptureActivity : Activity() {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(96_000)
-                setAudioSamplingRate(44_100)
+                applyAgentAudioProfile(mediaProfile)
                 setOutputFile(file.absolutePath)
                 setMaxDuration(maxDurationSeconds * 1_000)
                 setOnInfoListener { _, what, _ ->

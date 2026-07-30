@@ -33,7 +33,8 @@ object SignalASILinkDeliveryStore {
         val topic: String,
         val wirePayload: String,
         val attempts: Int,
-        val createdAt: Long
+        val createdAt: Long,
+        val requiresValidatedNetwork: Boolean
     )
 
     data class PendingIncoming(
@@ -60,7 +61,13 @@ object SignalASILinkDeliveryStore {
     }
 
     @Synchronized
-    fun enqueue(context: Context, messageId: String, topic: String, wirePayload: String) {
+    fun enqueue(
+        context: Context,
+        messageId: String,
+        topic: String,
+        wirePayload: String,
+        requiresValidatedNetwork: Boolean = false
+    ) {
         val values = outboxArray(context)
         for (index in 0 until values.length()) {
             if (values.optJSONObject(index)?.optString("message_id") == messageId) return
@@ -72,6 +79,7 @@ object SignalASILinkDeliveryStore {
                 .put("wire_payload", wirePayload)
                 .put("status", "queued")
                 .put("attempts", 0)
+                .put("requires_validated_network", requiresValidatedNetwork)
                 .put("next_attempt_at", System.currentTimeMillis())
                 .put("created_at", System.currentTimeMillis())
                 .put("updated_at", System.currentTimeMillis())
@@ -127,18 +135,40 @@ object SignalASILinkDeliveryStore {
     }
 
     @Synchronized
-    fun pending(context: Context): List<PendingMessage> =
-        pendingFromArray(outboxArray(context), System.currentTimeMillis())
+    fun pending(
+        context: Context,
+        allowValidatedNetworkMessages: Boolean = true
+    ): List<PendingMessage> = pendingFromArray(
+        outboxArray(context),
+        System.currentTimeMillis(),
+        allowValidatedNetworkMessages
+    )
 
     @Synchronized
-    fun nextRetryDelayMillis(context: Context, nowMillis: Long = System.currentTimeMillis()): Long? {
-        return nextRetryDelayFromArray(outboxArray(context), nowMillis)
+    fun nextRetryDelayMillis(
+        context: Context,
+        nowMillis: Long = System.currentTimeMillis(),
+        allowValidatedNetworkMessages: Boolean = true
+    ): Long? {
+        return nextRetryDelayFromArray(
+            outboxArray(context),
+            nowMillis,
+            allowValidatedNetworkMessages
+        )
     }
 
-    internal fun nextRetryDelayFromArray(values: JSONArray, nowMillis: Long): Long? {
+    internal fun nextRetryDelayFromArray(
+        values: JSONArray,
+        nowMillis: Long,
+        allowValidatedNetworkMessages: Boolean = true
+    ): Long? {
         var earliest: Long? = null
         for (index in 0 until values.length()) {
             val item = values.optJSONObject(index) ?: continue
+            if (
+                item.optBoolean("requires_validated_network", false) &&
+                !allowValidatedNetworkMessages
+            ) continue
             val nextAttemptAt = item.optLong("next_attempt_at", nowMillis)
             earliest = minOf(earliest ?: nextAttemptAt, nextAttemptAt)
         }
@@ -162,10 +192,18 @@ object SignalASILinkDeliveryStore {
         if (changed) writeArray(context, KEY_OUTBOX, values)
     }
 
-    internal fun pendingFromArray(values: JSONArray, nowMillis: Long): List<PendingMessage> =
+    internal fun pendingFromArray(
+        values: JSONArray,
+        nowMillis: Long,
+        allowValidatedNetworkMessages: Boolean = true
+    ): List<PendingMessage> =
         buildList {
             for (index in 0 until values.length()) {
                 val item = values.optJSONObject(index) ?: continue
+                if (
+                    item.optBoolean("requires_validated_network", false) &&
+                    !allowValidatedNetworkMessages
+                ) continue
                 if (item.optLong("next_attempt_at") > nowMillis) continue
                 add(
                     PendingMessage(
@@ -173,7 +211,8 @@ object SignalASILinkDeliveryStore {
                         item.optString("topic"),
                         item.optString("wire_payload"),
                         item.optInt("attempts"),
-                        item.optLong("created_at")
+                        item.optLong("created_at"),
+                        item.optBoolean("requires_validated_network", false)
                     )
                 )
             }
