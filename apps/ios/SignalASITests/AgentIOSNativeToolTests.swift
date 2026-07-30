@@ -220,6 +220,42 @@ extension SignalASIStoreTests {
     XCTAssertEqual(availabilityRoutes, ["offline", "ready"])
   }
 
+  func testAgentPhoneNativeToolCatalogRefreshesActionAvailabilityFromProvider() throws {
+    var now: Int64 = 1_000
+    var probes = 0
+    var accessibilityReady = false
+    let registry = try AgentPhoneNativeToolCatalog.createRegistry(
+      workspaceStore: AgentWorkspaceNativeToolExecutor(nowMillis: { now }),
+      actionExecutor: TestAgentActionExecutor { action, _ in
+        AgentActionResult(actionId: action.id, success: true, message: "Executed")
+      },
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatusProvider: {
+        probes += 1
+        return readyPhoneCapabilityStatuses().map { status in
+          guard status.boundary.id == .accessibilityUITree else { return status }
+          return AgentPhoneCapabilityStatus(
+            boundary: status.boundary,
+            availability: accessibilityReady ? .ready : .needsSpecialAccess,
+            evidence: accessibilityReady ? "Accessibility is ready" : "Accessibility needs setup"
+          )
+        }
+      },
+      nowMillis: { now }
+    )
+    let readScreen = AgentNativeToolAgentActionAdapter.defaultToolId(.readScreen)
+
+    XCTAssertEqual(registry.descriptors().first { $0.id == readScreen }?.availability.status, .requiresSetup)
+    XCTAssertEqual(registry.descriptors().first { $0.id == readScreen }?.availability.status, .requiresSetup)
+    XCTAssertEqual(probes, 1)
+
+    accessibilityReady = true
+    now += AgentPhoneCapabilityStatusSnapshotProvider.defaultTtlMillis + 1
+
+    XCTAssertEqual(registry.descriptors().first { $0.id == readScreen }?.availability.status, .available)
+    XCTAssertEqual(probes, 2)
+  }
+
   func testAgentPhoneNativeToolCatalogModelsUseAndroidWireNames() throws {
     let definition = try XCTUnwrap(
       AgentPhoneNativeToolCatalog.definitions().first { $0.id == AgentPhoneNativeToolCatalog.workspaceReadText }
@@ -289,7 +325,7 @@ extension SignalASIStoreTests {
         AgentActionResult(actionId: action.id, success: true, message: "Executed")
       },
       screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
-      capabilityStatuses: readyPhoneCapabilityStatuses(),
+      capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
       replayStore: replayStore,
       auditStore: auditStore,
       nowMillis: { 1_000 }

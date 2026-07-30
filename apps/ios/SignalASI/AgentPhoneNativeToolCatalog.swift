@@ -82,8 +82,17 @@ enum AgentPhoneNativeToolCatalog {
   static func definitions(
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
   ) -> [AgentPhoneNativeToolDefinition] {
+    definitions(capabilityStatusProvider: { capabilityStatuses })
+  }
+
+  static func definitions(
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus],
+    nowMillis: @escaping () -> Int64 = {
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    }
+  ) -> [AgentPhoneNativeToolDefinition] {
     workspaceDefinitions() +
-      actionDefinitions(capabilityStatuses: capabilityStatuses) +
+      actionDefinitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis) +
       AgentIOSSystemNativeToolCatalog.definitions() +
       AgentIOSHardwareNativeToolCatalog.definitions() +
       AgentIOSHomeAssistantNativeToolCatalog.definitions() +
@@ -104,11 +113,22 @@ enum AgentPhoneNativeToolCatalog {
     definitions(capabilityStatuses: capabilityStatuses).map(\.descriptor)
   }
 
+  static func descriptors(
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus],
+    nowMillis: @escaping () -> Int64 = {
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    }
+  ) -> [AgentNativeToolDescriptor] {
+    definitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis).map(\.descriptor)
+  }
+
   static func createRegistry(
     workspaceStore: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor(),
     actionExecutor: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
-    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus] = {
+      AgentPhoneCapabilityCatalog.declaredStatuses()
+    },
     replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
     auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
@@ -133,7 +153,8 @@ enum AgentPhoneNativeToolCatalog {
       actionExecutableDefinitions(
         delegate: actionExecutor,
         screenProvider: screenProvider,
-        capabilityStatuses: capabilityStatuses
+        capabilityStatusProvider: capabilityStatusProvider,
+        nowMillis: nowMillis
       ) +
       systemExecutableDefinitions() +
       hardwareExecutableDefinitions() +
@@ -251,7 +272,25 @@ enum AgentPhoneNativeToolCatalog {
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses()
   ) -> [AgentNativeToolExecutableDefinition] {
-    zip(supportedActionKinds, actionDefinitions(capabilityStatuses: capabilityStatuses)).map { kind, definition in
+    actionExecutableDefinitions(
+      delegate: delegate,
+      screenProvider: screenProvider,
+      capabilityStatusProvider: { capabilityStatuses }
+    )
+  }
+
+  static func actionExecutableDefinitions(
+    delegate: AgentActionExecutor,
+    screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus],
+    nowMillis: @escaping () -> Int64 = {
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    }
+  ) -> [AgentNativeToolExecutableDefinition] {
+    zip(
+      supportedActionKinds,
+      actionDefinitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis)
+    ).map { kind, definition in
       AgentActionNativeToolExecutor.executableDefinition(
         definition: definition,
         delegate: delegate,
@@ -356,6 +395,20 @@ enum AgentPhoneNativeToolCatalog {
   private static func actionDefinitions(
     capabilityStatuses: [AgentPhoneCapabilityStatus]
   ) -> [AgentPhoneNativeToolDefinition] {
+    actionDefinitions(capabilityStatusProvider: { capabilityStatuses })
+  }
+
+  private static func actionDefinitions(
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus],
+    nowMillis: @escaping () -> Int64 = {
+      Int64((Date().timeIntervalSince1970 * 1_000).rounded())
+    }
+  ) -> [AgentPhoneNativeToolDefinition] {
+    let snapshotProvider = AgentPhoneCapabilityStatusSnapshotProvider(
+      source: capabilityStatusProvider,
+      nowMillis: nowMillis
+    )
+    let initialStatuses = snapshotProvider.current()
     supportedActionKinds.map { kind in
       let capabilityIds = capabilities(for: kind)
       let boundaries = capabilityIds.map { AgentPhoneCapabilityCatalog.find($0) }
@@ -373,7 +426,7 @@ enum AgentPhoneNativeToolCatalog {
         requiredConsents: consentRequirements(boundaries),
         timeoutMillis: 15_000,
         idempotency: .nonIdempotent,
-        availability: capabilityAvailability(capabilityIds, statuses: capabilityStatuses)
+        availability: capabilityAvailability(capabilityIds, statuses: initialStatuses)
       )
       return AgentPhoneNativeToolDefinition(
         descriptor: descriptor,
@@ -383,7 +436,10 @@ enum AgentPhoneNativeToolCatalog {
           "legacy_action_kind": kind.rawValue,
           "result_policy": "bounded-v1",
           "platform": "ios"
-        ]
+        ],
+        availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+          capabilityAvailability(capabilityIds, statuses: snapshotProvider.current())
+        }
       )
     }
   }
