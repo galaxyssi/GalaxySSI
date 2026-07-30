@@ -120,6 +120,106 @@ extension SignalASIStoreTests {
     XCTAssertTrue(AgentPhoneNativeToolCatalog.defaultToolIds.contains(AgentIOSDesktopRemoteNativeToolCatalog.systemStatus))
   }
 
+  func testAgentNativeToolRegistryIdsDoNotResolveDynamicAvailability() throws {
+    var availabilityChecks = 0
+    let descriptor = try nativeToolDescriptor("signalasi.test.dynamic.ids")
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(
+          descriptor: descriptor,
+          executorId: "test.dynamic",
+          availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+            availabilityChecks += 1
+            return AgentNativeToolAvailability(status: .available, reason: "check-\(availabilityChecks)")
+          }
+        ),
+        executor: { _ in .success() }
+      ))
+
+    XCTAssertEqual(registry.ids(), Set([descriptor.id]))
+    XCTAssertEqual(availabilityChecks, 0)
+    XCTAssertEqual(registry.descriptors().first?.availability.reason, "check-1")
+    XCTAssertEqual(availabilityChecks, 1)
+  }
+
+  func testAgentNativeToolRegistryCachesResolvedDescriptorsAndInvalidatesAfterRegistration() throws {
+    var now: Int64 = 1_000
+    var availabilityChecks = 0
+    let descriptor = try nativeToolDescriptor("signalasi.test.dynamic.cached")
+    let registry = try AgentNativeToolRegistry(
+      nowMillis: { now },
+      descriptorCacheTtlMillis: 100
+    ).registerExecutable(AgentNativeToolExecutableDefinition(
+      definition: AgentPhoneNativeToolDefinition(
+        descriptor: descriptor,
+        executorId: "test.dynamic",
+        availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+          availabilityChecks += 1
+          return AgentNativeToolAvailability(status: .available, reason: "check-\(availabilityChecks)")
+        }
+      ),
+      executor: { _ in .success() }
+    ))
+
+    XCTAssertEqual(registry.descriptors().first?.availability.reason, "check-1")
+    XCTAssertEqual(registry.descriptors().first?.availability.reason, "check-1")
+    XCTAssertEqual(availabilityChecks, 1)
+
+    now += 101
+    XCTAssertEqual(registry.descriptors().first?.availability.reason, "check-2")
+    XCTAssertEqual(availabilityChecks, 2)
+
+    try registry.register(AgentPhoneNativeToolDefinition(
+      descriptor: nativeToolDescriptor("signalasi.test.dynamic.second"),
+      executorId: "test.static"
+    ))
+    XCTAssertEqual(registry.descriptors().first { $0.id == descriptor.id }?.availability.reason, "check-3")
+    XCTAssertEqual(availabilityChecks, 3)
+  }
+
+  func testAgentNativeToolRegistryInvokeUsesContextualAvailabilityProvider() throws {
+    var executions = 0
+    var availabilityRoutes: [String] = []
+    let descriptor = try nativeToolDescriptor("signalasi.test.dynamic.invoke")
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(
+          descriptor: descriptor,
+          executorId: "test.dynamic",
+          availabilityProvider: AgentNativeToolAvailabilityProvider { context in
+            let route = context?.attributes["route"] ?? ""
+            availabilityRoutes.append(route)
+            guard route == "ready" else {
+              return AgentNativeToolAvailability(status: .unavailable, reason: "Route is not ready")
+            }
+            return .available
+          }
+        ),
+        executor: { _ in
+          executions += 1
+          return .success(output: ["executed": .bool(true)])
+        }
+      ))
+
+    let unavailable = registry.invoke(
+      descriptor.id,
+      input: [:],
+      context: AgentNativeToolInvocationContext(attributes: ["route": "offline"])
+    )
+    let success = registry.invoke(
+      descriptor.id,
+      input: [:],
+      context: AgentNativeToolInvocationContext(attributes: ["route": "ready"])
+    )
+
+    XCTAssertEqual(unavailable.status, .unavailable)
+    XCTAssertEqual(unavailable.error?.code, "tool_unavailable")
+    XCTAssertEqual(success.status, .succeeded)
+    XCTAssertEqual(success.output["executed"], .bool(true))
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(availabilityRoutes, ["offline", "ready"])
+  }
+
   func testAgentPhoneNativeToolCatalogModelsUseAndroidWireNames() throws {
     let definition = try XCTUnwrap(
       AgentPhoneNativeToolCatalog.definitions().first { $0.id == AgentPhoneNativeToolCatalog.workspaceReadText }

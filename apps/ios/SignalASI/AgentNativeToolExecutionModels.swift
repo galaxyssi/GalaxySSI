@@ -604,19 +604,32 @@ enum AgentNativeToolRegistryError: LocalizedError, Equatable {
 final class AgentNativeToolRegistry {
   static let contractVersion = "signalasi.phone-native-tools/1.0"
   static let legacyActionIdAttribute = AgentNativeToolAgentActionAdapter.legacyActionIdAttribute
+  static let defaultDescriptorCacheTtlMillis: Int64 = 5_000
 
   private var definitionsById: [String: AgentPhoneNativeToolDefinition] = [:]
   private var executableById: [String: AgentNativeToolExecutableDefinition] = [:]
   private let replayStore: InMemoryAgentNativeToolReplayStore
   private let auditStore: AgentNativeToolAuditStore
+  private let nowMillis: () -> Int64
+  private let descriptorCacheTtlMillis: Int64
+  private var descriptorSnapshot: DescriptorSnapshot?
+
+  private struct DescriptorSnapshot {
+    var createdAtEpochMillis: Int64
+    var descriptors: [AgentNativeToolDescriptor]
+  }
 
   init(
     definitions: [AgentPhoneNativeToolDefinition] = [],
     replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
-    auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore()
+    auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
+    nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
+    descriptorCacheTtlMillis: Int64 = AgentNativeToolRegistry.defaultDescriptorCacheTtlMillis
   ) throws {
     self.replayStore = replayStore
     self.auditStore = auditStore
+    self.nowMillis = nowMillis
+    self.descriptorCacheTtlMillis = max(0, descriptorCacheTtlMillis)
     try registerAll(definitions)
   }
 
@@ -626,6 +639,7 @@ final class AgentNativeToolRegistry {
       throw AgentNativeToolRegistryError.duplicateTool(definition.id)
     }
     definitionsById[definition.id] = definition
+    descriptorSnapshot = nil
     return self
   }
 
@@ -659,6 +673,7 @@ final class AgentNativeToolRegistry {
     for definition in definitions {
       definitionsById[definition.id] = definition
     }
+    descriptorSnapshot = nil
     return self
   }
 
@@ -675,14 +690,29 @@ final class AgentNativeToolRegistry {
   }
 
   func descriptors() -> [AgentNativeToolDescriptor] {
-    definitionsById.values.map(\.descriptor).sorted { $0.id < $1.id }
+    let now = max(0, nowMillis())
+    if let snapshot = descriptorSnapshot,
+       now >= snapshot.createdAtEpochMillis,
+       now - snapshot.createdAtEpochMillis <= descriptorCacheTtlMillis {
+      return snapshot.descriptors
+    }
+    let resolved = definitionsById.values
+      .map { resolvedDescriptor($0, context: nil) }
+      .sorted { $0.id < $1.id }
+    descriptorSnapshot = DescriptorSnapshot(createdAtEpochMillis: now, descriptors: resolved)
+    return resolved
   }
 
   func subset(_ predicate: (AgentNativeToolDescriptor) -> Bool) throws -> AgentNativeToolRegistry {
-    let matchingDefinitions = definitionsById.values.filter { predicate($0.descriptor) }
+    let matchingDefinitions = definitionsById.values.filter { predicate(resolvedDescriptor($0, context: nil)) }
     let matchingIds = Set(matchingDefinitions.map(\.id))
     let matchingExecutables = executableById.values.filter { matchingIds.contains($0.id) }
-    let registry = try AgentNativeToolRegistry(replayStore: replayStore, auditStore: auditStore)
+    let registry = try AgentNativeToolRegistry(
+      replayStore: replayStore,
+      auditStore: auditStore,
+      nowMillis: nowMillis,
+      descriptorCacheTtlMillis: descriptorCacheTtlMillis
+    )
     if matchingExecutables.isEmpty {
       return try registry.registerAll(matchingDefinitions)
     }
@@ -743,7 +773,7 @@ final class AgentNativeToolRegistry {
         validationIssues: []
       )
     }
-    let descriptor = definition.descriptor
+    let descriptor = resolvedDescriptor(definition, context: context)
     if descriptor.risk == .blocked {
       return decision(
         descriptor: descriptor,
@@ -1149,6 +1179,15 @@ final class AgentNativeToolRegistry {
       })
     }
     return details
+  }
+
+  private func resolvedDescriptor(
+    _ definition: AgentPhoneNativeToolDefinition,
+    context: AgentNativeToolInvocationContext?
+  ) -> AgentNativeToolDescriptor {
+    var descriptor = definition.descriptor
+    descriptor.availability = definition.availabilityProvider.current(context)
+    return descriptor
   }
 
   private func finishSynthetic(
