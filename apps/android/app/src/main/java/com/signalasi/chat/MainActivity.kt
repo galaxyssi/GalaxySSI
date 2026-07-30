@@ -19786,6 +19786,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val profile = LocalModelRuntimeSettings.selectedProfile(this)
         val contextTokens = LocalModelRuntimeSettings.contextTokens(this)
         val estimate = LocalModelRuntimePreflight.estimate(this, profile, contextTokens)
+        val accelerators = LocalModelAcceleratorDetector.detect(this)
         showFeaturePage(getString(R.string.local_model_title))
         featureContent.addView(localModelStatusCard(profile, estimate))
         addSectionTitle(getString(R.string.local_model_section_manage))
@@ -19893,6 +19894,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         ).apply {
             setOnClickListener { showLocalModelFeaturePage() }
         })
+        addSectionTitle(getString(R.string.local_model_acceleration_section))
+        LocalModelAcceleratorKind.entries.forEach { kind ->
+            val capability = accelerators[kind]
+            featureContent.addView(featureValueRow(
+                localModelAcceleratorTitle(kind),
+                getString(
+                    R.string.local_model_accelerator_detail,
+                    capability.hardwareEvidence,
+                    capability.runtimeEvidence
+                ),
+                if (kind == LocalModelAcceleratorKind.CPU) {
+                    R.drawable.ic_local_model
+                } else {
+                    R.drawable.ic_agent_memory
+                },
+                localModelAcceleratorStatus(capability.state)
+            ))
+        }
         addSectionTitle(getString(R.string.local_model_section_permissions))
         featureContent.addView(featureValueRow(getString(R.string.on_device_agent_microphone), "", R.drawable.ic_agent_node, getString(R.string.permission_allowed)))
         featureContent.addView(featureValueRow(getString(R.string.on_device_agent_camera), "", R.drawable.ic_scan, getString(R.string.permission_allowed)))
@@ -24613,6 +24632,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             5 -> R.string.local_model_thermal_emergency
             6 -> R.string.local_model_thermal_shutdown
             else -> R.string.local_model_thermal_unknown
+        }
+    )
+
+    private fun localModelAcceleratorTitle(kind: LocalModelAcceleratorKind): String = getString(
+        when (kind) {
+            LocalModelAcceleratorKind.CPU -> R.string.local_model_accelerator_cpu
+            LocalModelAcceleratorKind.GPU -> R.string.local_model_accelerator_gpu
+            LocalModelAcceleratorKind.NNAPI -> R.string.local_model_accelerator_nnapi
+            LocalModelAcceleratorKind.VENDOR_SDK -> R.string.local_model_accelerator_vendor
+        }
+    )
+
+    private fun localModelAcceleratorStatus(state: LocalModelAcceleratorState): String = getString(
+        when (state) {
+            LocalModelAcceleratorState.READY -> R.string.local_model_accelerator_ready
+            LocalModelAcceleratorState.HARDWARE_ONLY ->
+                R.string.local_model_accelerator_hardware_only
+            LocalModelAcceleratorState.UNAVAILABLE ->
+                R.string.local_model_accelerator_unavailable
         }
     )
 

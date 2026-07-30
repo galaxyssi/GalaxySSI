@@ -210,6 +210,15 @@
     <string name="local_model_thermal_emergency">Emergency thermal state</string>
     <string name="local_model_thermal_shutdown">Thermal shutdown state</string>
     <string name="local_model_thermal_unknown">Thermal status is unavailable</string>
+    <string name="local_model_acceleration_section">Acceleration Backends</string>
+    <string name="local_model_accelerator_cpu">CPU Backend</string>
+    <string name="local_model_accelerator_gpu">GPU Delegate</string>
+    <string name="local_model_accelerator_nnapi">NNAPI</string>
+    <string name="local_model_accelerator_vendor">Vendor SDK</string>
+    <string name="local_model_accelerator_detail">%1$s\n%2$s</string>
+    <string name="local_model_accelerator_ready">Ready</string>
+    <string name="local_model_accelerator_hardware_only">Hardware only</string>
+    <string name="local_model_accelerator_unavailable">Unavailable</string>
     <string name="local_model_section_inference">Inference</string>
     <string name="local_model_enable">Enable Local Model</string>
     <string name="local_model_enable_subtitle">Process sensitive devices and tasks offline</string>
