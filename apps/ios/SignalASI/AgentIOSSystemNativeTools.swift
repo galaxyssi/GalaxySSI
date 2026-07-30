@@ -5,9 +5,16 @@ import AVFoundation
 #if canImport(LocalAuthentication)
 import LocalAuthentication
 #endif
+#if canImport(Contacts)
+import Contacts
+#endif
 
 protocol AgentIOSAudioStatusProviding {
   func audioStatus(nowMillis: Int64) -> AgentMcpJSONObject
+}
+
+protocol AgentIOSContactsSearchProviding {
+  func searchContacts(query: String, limit: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
 protocol AgentIOSBiometricStatusProviding {
@@ -133,6 +140,152 @@ struct AgentIOSDefaultWifiStatusProvider: AgentIOSWifiStatusProviding {
   }
 }
 
+struct AgentIOSDefaultContactsSearchProvider: AgentIOSContactsSearchProviding {
+  func searchContacts(query: String, limit: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    #if canImport(Contacts)
+    let authorization = CNContactStore.authorizationStatus(for: .contacts)
+    guard authorization == .authorized else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "contacts_permission_required",
+        message: "iOS Contacts permission is required before contacts can be searched."
+      )
+    }
+    let store = CNContactStore()
+    let clampedLimit = max(1, min(100, limit))
+    let normalizedQuery = bounded(query, 160)
+    let keys = [
+      CNContactIdentifierKey,
+      CNContactGivenNameKey,
+      CNContactMiddleNameKey,
+      CNContactFamilyNameKey,
+      CNContactOrganizationNameKey,
+      CNContactPhoneNumbersKey
+    ] as [CNKeyDescriptor]
+    var rows: [AgentMcpJSONObject] = []
+    var seen: Set<String> = []
+
+    do {
+      if normalizedQuery.isEmpty {
+        let request = CNContactFetchRequest(keysToFetch: keys)
+        request.sortOrder = .userDefault
+        try store.enumerateContacts(with: request) { contact, stop in
+          self.append(contact, rows: &rows, seen: &seen, limit: clampedLimit)
+          if rows.count >= clampedLimit {
+            stop.pointee = true
+          }
+        }
+      } else {
+        let contacts = try store.unifiedContacts(
+          matching: CNContact.predicateForContacts(matchingName: normalizedQuery),
+          keysToFetch: keys
+        )
+        for contact in contacts {
+          self.append(contact, rows: &rows, seen: &seen, limit: clampedLimit)
+          if rows.count >= clampedLimit {
+            break
+          }
+        }
+      }
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "contacts": .array(rows.map(AgentMcpJSONValue.object)),
+          "count": .int(Int64(rows.count)),
+          "query": .string(normalizedQuery),
+          "limit": .int(Int64(clampedLimit)),
+          "authorization_status": .string(authorizationStatus(authorization)),
+          "scope": .string("ios_contacts_read"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ],
+        message: "Contacts search completed"
+      )
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "contacts_search_failed",
+        message: "iOS Contacts search failed."
+      )
+    }
+    #else
+    return AgentNativeToolExecutionResult.failure(
+      code: "contacts_framework_unavailable",
+      message: "Contacts framework is unavailable on this platform."
+    )
+    #endif
+  }
+
+  #if canImport(Contacts)
+  private func append(
+    _ contact: CNContact,
+    rows: inout [AgentMcpJSONObject],
+    seen: inout Set<String>,
+    limit: Int
+  ) {
+    guard rows.count < limit else {
+      return
+    }
+    let displayName = bounded(contactDisplayName(contact), 160)
+    for phone in contact.phoneNumbers {
+      let number = bounded(phone.value.stringValue, 64)
+      guard !number.isEmpty else {
+        continue
+      }
+      let dedupeKey = "\(contact.identifier)|\(number)"
+      guard seen.insert(dedupeKey).inserted else {
+        continue
+      }
+      rows.append([
+        "contact_id": .int(syntheticContactId(contact.identifier)),
+        "display_name": .string(displayName),
+        "phone_number": .string(number),
+        "platform": .string("ios")
+      ])
+      if rows.count >= limit {
+        break
+      }
+    }
+  }
+
+  private func contactDisplayName(_ contact: CNContact) -> String {
+    let name = [contact.givenName, contact.middleName, contact.familyName]
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+    if !name.isEmpty {
+      return name
+    }
+    let organization = contact.organizationName.trimmingCharacters(in: .whitespacesAndNewlines)
+    return organization.isEmpty ? "Contact" : organization
+  }
+
+  private func syntheticContactId(_ identifier: String) -> Int64 {
+    var hash: UInt64 = 14_695_981_039_346_656_037
+    for byte in identifier.utf8 {
+      hash ^= UInt64(byte)
+      hash &*= 1_099_511_628_211
+    }
+    return Int64(hash & 0x7fff_ffff_ffff_ffff)
+  }
+
+  private func authorizationStatus(_ status: CNAuthorizationStatus) -> String {
+    switch status {
+    case .notDetermined:
+      return "not_determined"
+    case .restricted:
+      return "restricted"
+    case .denied:
+      return "denied"
+    case .authorized:
+      return "authorized"
+    @unknown default:
+      return "unknown"
+    }
+  }
+  #endif
+
+  private func bounded(_ value: String, _ limit: Int) -> String {
+    String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
+  }
+}
+
 struct AgentIOSDefaultBiometricStatusProvider: AgentIOSBiometricStatusProviding {
   func biometricStatus(nowMillis: Int64) -> AgentMcpJSONObject {
     #if canImport(LocalAuthentication)
@@ -234,7 +387,12 @@ enum AgentIOSSystemNativeToolCatalog {
     vpnConsentOpen
   ]
 
-  static let executableToolIds: Set<String> = handoffToolIds.union([wifiStatus, audioStatus, biometricStatus])
+  static let executableToolIds: Set<String> = handoffToolIds.union([
+    contactsSearch,
+    wifiStatus,
+    audioStatus,
+    biometricStatus
+  ])
 
   static var orderedToolIds: [String] {
     specifications.map(\.id)
@@ -327,7 +485,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       contactsSearch,
       "Search Android contacts",
-      "Android contacts search descriptor retained for planning; iOS requires a Contacts framework executor and permission gate.",
+      "Searches iOS Contacts phone numbers after the app-visible Contacts permission gate.",
       .low,
       ["contacts.read"],
       ["android.permission.READ_CONTACTS"],
@@ -651,6 +809,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if specification.id == contactsSearch {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosContactsReadPermission,
+          title: "Read iOS Contacts",
+          description: "Allows bounded Contacts framework search for display names and phone numbers."
+        )
+      ]
+    }
     if specification.id == biometricStatus {
       return [
         AgentNativePermissionRequirement(
@@ -699,6 +866,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == wifiStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Wi-Fi status executor."
     }
+    if id == contactsSearch {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Contacts search executor."
+    }
     if id == biometricStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS biometric status executor."
     }
@@ -715,6 +885,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == wifiStatus {
       return wifiStatusAvailability
     }
+    if id == contactsSearch {
+      return contactsSearchAvailability
+    }
     if id == biometricStatus {
       return biometricStatusAvailability
     }
@@ -730,6 +903,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == wifiStatus {
       return "nw_path_wifi_status_on_ios15"
+    }
+    if id == contactsSearch {
+      return "contacts_search_on_ios15"
     }
     if id == biometricStatus {
       return "local_authentication_status_on_ios15"
@@ -762,6 +938,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads bounded NWPath Wi-Fi transport status without network identifiers."
+    )
+  }
+
+  private static var contactsSearchAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor searches Contacts after the Contacts permission gate."
     )
   }
 
@@ -830,6 +1013,7 @@ enum AgentIOSSystemNativeToolCatalog {
 
   static let iosAudioStatusPermission = "signalasi.scope.ios_app_visible_audio_status"
   static let iosWifiStatusPermission = "signalasi.scope.ios_app_visible_wifi_status"
+  static let iosContactsReadPermission = "signalasi.scope.ios_contacts_read"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
@@ -842,17 +1026,20 @@ enum AgentIOSSystemNativeToolCatalog {
 
 struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
+  var contactsProvider: AgentIOSContactsSearchProviding
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
 
   init(
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
+    contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.audioProvider = audioProvider
+    self.contactsProvider = contactsProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
@@ -872,6 +1059,8 @@ struct AgentIOSSystemNativeToolExecutor {
 
   private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
     switch invocation.descriptor.id {
+    case AgentIOSSystemNativeToolCatalog.contactsSearch:
+      return contactsSearch(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiStatus:
       return wifiStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.audioStatus:
@@ -924,6 +1113,16 @@ struct AgentIOSSystemNativeToolExecutor {
         "identifiers_included": .bool(false),
         "settings_changed": .bool(false)
       ]
+    )
+  }
+
+  private func contactsSearch(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let query = String((invocation.input["query"]?.stringValue ?? "").prefix(160))
+    let limit = Int(invocation.input["limit"]?.intValue ?? 30)
+    return contactsProvider.searchContacts(
+      query: query,
+      limit: max(1, min(100, limit)),
+      nowMillis: max(0, nowMillis())
     )
   }
 
