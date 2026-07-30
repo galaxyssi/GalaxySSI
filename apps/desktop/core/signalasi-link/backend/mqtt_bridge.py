@@ -98,6 +98,7 @@ from response_self_check import (
     evaluate_response,
     response_repair_prompt,
 )
+from remote_agent_security import remote_agent_security_policy
 from stt_bridge import transcribe_audio
 
 log = logging.getLogger("signalasi.mqtt")
@@ -2857,8 +2858,6 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     client_turn_id = task_identity["turn_id"]
     paired_client = get_client(client_route_id)
     full_desktop_executor = has_full_executor(paired_client)
-    codex_approval_policy = "never"
-    codex_sandbox = "danger-full-access" if full_desktop_executor else "workspace-write"
     client_conversation_id = task_identity["conversation_id"]
     preferred_response_language = str(
         payload.get("response_language")
@@ -2973,7 +2972,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         supersedes_active_task_id = ""
         effective_content = content
         image_artifact_required = False
-        codex_sandbox = "read-only"
+    codex_security = remote_agent_security_policy(plan_only=plan_only)
+    codex_approval_policy = codex_security.approval_policy
+    codex_sandbox = codex_security.sandbox
     image_artifact_repair_attempts = 0
     image_artifact_repair_lock = threading.Lock()
     artifact_repair_attempts = 0

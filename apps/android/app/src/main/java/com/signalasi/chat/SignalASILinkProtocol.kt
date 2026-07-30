@@ -31,7 +31,6 @@ object SignalASILinkProtocol {
     const val SCOPE_DESKTOP_CONTROL = "desktop.control"
     const val SCOPE_DESKTOP_NATIVE_TOOLS = "desktop.native_tools"
     const val SCOPE_DESKTOP_EXTERNAL_FILES = "desktop.files.external"
-    const val SCOPE_DESKTOP_APPROVAL_BYPASS = "desktop.approval.bypass"
     private const val MAX_TEXT_BYTES = 128 * 1024
     private val routePattern = Regex("^[A-Za-z0-9_-]{22}$")
     private val random = SecureRandom()
@@ -249,8 +248,7 @@ object SignalASILinkProtocol {
             SCOPE_DESKTOP_EXECUTOR,
             SCOPE_DESKTOP_CONTROL,
             SCOPE_DESKTOP_NATIVE_TOOLS,
-            SCOPE_DESKTOP_EXTERNAL_FILES,
-            SCOPE_DESKTOP_APPROVAL_BYPASS
+            SCOPE_DESKTOP_EXTERNAL_FILES
         )
         if (!scopes.containsAll(restrictedScopes)) return null
         if (profile == ACCESS_DESKTOP_EXECUTOR && !scopes.containsAll(executorScopes)) return null

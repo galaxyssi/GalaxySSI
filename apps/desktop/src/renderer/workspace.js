@@ -1656,7 +1656,7 @@ function renderGateway() {
   $("#gatewaySummary p").textContent = count ? t("{count} verified phone(s) connected", { count }) : t("No phone paired");
   $("#pairedClientList").innerHTML = clients.length ? clients.map((client) => {
     const id = client.client_route_id || "";
-    const access = client.access?.profile === "desktop_executor" ? t("Full access") : t("Restricted");
+    const access = client.access?.profile === "desktop_executor" ? t("Desktop Executor") : t("Restricted");
     const fingerprint = client.identity_fingerprint_short || id.slice(0, 12) || t("Verified");
     return `<article class="paired-client"><span class="phone-outline"></span><div><strong>${escapeHtml(client.remote_name || client.device_name || t("SignalASI phone"))}</strong><small>${escapeHtml(`${fingerprint} · ${access}`)}</small></div><button data-revoke-client="${escapeHtml(id)}">${escapeHtml(t("Revoke"))}</button></article>`;
   }).join("") : `<div class="history-empty">${escapeHtml(t("Scan the QR code below to pair a phone."))}</div>`;
@@ -1687,7 +1687,7 @@ async function loadPairingFrame() {
       ? t("Computer fingerprint: {fingerprint}", { fingerprint: pairing.fingerprint })
       : "";
     accessSummary.textContent = state.pairingGrantDesktopExecutor
-      ? t("Full Desktop Executor access will be granted to this phone.")
+      ? t("Desktop Executor access will be granted; sensitive actions still require approval.")
       : t("Restricted pairing: Agent chat and explicit task attachments only.");
   } catch (error) {
     image.removeAttribute("src");
@@ -1778,7 +1778,7 @@ function renderDesktopControl() {
         || authorization.phone_fingerprint
         || "";
       const access = authorization.access_profile === "desktop_executor"
-        ? t("Full Desktop Executor")
+        ? t("Desktop Executor")
         : t("Restricted access");
       const timing = [
         authorization.granted_at
