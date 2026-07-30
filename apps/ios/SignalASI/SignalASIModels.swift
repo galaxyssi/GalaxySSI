@@ -18831,9 +18831,28 @@ struct AgentMcpPromptGetResult: Codable, Equatable {
   var raw: AgentMcpJSONObject
 }
 
+struct AgentMcpNotification: Codable, Equatable {
+  var method: String
+  var params: AgentMcpJSONObject?
+  var raw: AgentMcpJSONObject
+}
+
+protocol AgentMcpRemoteSessionListener {
+  func onNotification(_ notification: AgentMcpNotification)
+  func onProtocolIssue(_ error: AgentMcpRemoteSessionError)
+}
+
+extension AgentMcpRemoteSessionListener {
+  func onNotification(_ notification: AgentMcpNotification) {}
+  func onProtocolIssue(_ error: AgentMcpRemoteSessionError) {}
+}
+
+final class NoopAgentMcpRemoteSessionListener: AgentMcpRemoteSessionListener {}
+
 final class AgentMcpRemoteSession {
   private let transport: AgentMcpStreamableHTTPTransport
   private let config: AgentMcpRemoteSessionConfig
+  private let listener: AgentMcpRemoteSessionListener
   private let lock = NSRecursiveLock()
   private var nextRequestId: Int64 = 1
   private(set) var state: AgentMcpRemoteSessionState = .new
@@ -18841,10 +18860,12 @@ final class AgentMcpRemoteSession {
 
   init(
     transport: AgentMcpStreamableHTTPTransport,
-    config: AgentMcpRemoteSessionConfig = AgentMcpRemoteSessionConfig()
+    config: AgentMcpRemoteSessionConfig = AgentMcpRemoteSessionConfig(),
+    listener: AgentMcpRemoteSessionListener = NoopAgentMcpRemoteSessionListener()
   ) {
     self.transport = transport
     self.config = config
+    self.listener = listener
   }
 
   func initialize(
@@ -19073,7 +19094,7 @@ final class AgentMcpRemoteSession {
       payload["params"] = .object(params)
     }
     try await transport.send(AgentMcpJSONCodec.stringify(payload))
-    return try receiveResponse(requestId: requestId, method: method)
+    return try await receiveResponse(requestId: requestId, method: method)
   }
 
   private func sendNotification(_ method: String, params: AgentMcpJSONObject = [:]) async throws {
@@ -19087,25 +19108,37 @@ final class AgentMcpRemoteSession {
     try await transport.send(AgentMcpJSONCodec.stringify(payload))
   }
 
-  private func receiveResponse(requestId: Int64, method: String) throws -> AgentMcpRpcEnvelope {
+  private func receiveResponse(requestId: Int64, method: String) async throws -> AgentMcpRpcEnvelope {
     for _ in 0..<config.maxMessagesPerRequest {
       guard let message = transport.receive() else {
         break
       }
-      guard let envelope = try parseEnvelope(message, method: method) else {
+      guard let envelope = try await parseEnvelope(message, method: method) else {
         continue
       }
       guard envelope.requestId == requestId else {
+        listener.onProtocolIssue(
+          sessionError(
+            .invalidJSONRPC,
+            "Response references an unknown request ID",
+            requestId: envelope.requestId
+          )
+        )
         continue
       }
       if let error = envelope.error {
-        let message = error["message"]?.stringValue?.nilIfEmpty ?? "MCP remote error"
+        guard case .some(.int(let code)) = error["code"] else {
+          throw sessionError(.invalidJSONRPC, "JSON-RPC error code must be an integer", requestId: requestId, method: method)
+        }
+        guard let message = error["message"]?.stringValue?.nilIfEmpty else {
+          throw sessionError(.invalidJSONRPC, "JSON-RPC error message must be a non-empty string", requestId: requestId, method: method)
+        }
         throw sessionError(
           .remote,
           message,
           requestId: requestId,
           method: method,
-          rpcCode: error["code"]?.intValue,
+          rpcCode: code,
           data: error["data"]
         )
       }
@@ -19117,7 +19150,7 @@ final class AgentMcpRemoteSession {
     throw sessionError(.resourceLimit, "MCP response was not received", requestId: requestId, method: method)
   }
 
-  private func parseEnvelope(_ message: String, method: String) throws -> AgentMcpRpcEnvelope? {
+  private func parseEnvelope(_ message: String, method: String) async throws -> AgentMcpRpcEnvelope? {
     guard let data = message.data(using: .utf8),
           let object = try? JSONDecoder().decode(AgentMcpJSONObject.self, from: data) else {
       throw sessionError(.malformedJSON, "MCP message is not valid JSON", method: method)
@@ -19125,8 +19158,46 @@ final class AgentMcpRemoteSession {
     guard object["jsonrpc"]?.stringValue == "2.0" else {
       throw sessionError(.invalidJSONRPC, "MCP message is not JSON-RPC 2.0", method: method)
     }
-    guard let id = object["id"]?.intValue else {
+    if let methodValue = object["method"] {
+      guard let incomingMethod = methodValue.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty else {
+        throw sessionError(.invalidJSONRPC, "JSON-RPC method must be a non-empty string", method: method)
+      }
+      guard object["result"] == nil, object["error"] == nil else {
+        throw sessionError(.invalidJSONRPC, "JSON-RPC request or notification cannot contain result or error", method: incomingMethod)
+      }
+      let params: AgentMcpJSONObject?
+      if let paramsValue = object["params"] {
+        guard let paramsObject = paramsValue.objectValue else {
+          throw sessionError(.invalidJSONRPC, "JSON-RPC params must be an object", method: incomingMethod)
+        }
+        params = paramsObject
+      } else {
+        params = nil
+      }
+      guard let rawId = object["id"] else {
+        listener.onNotification(AgentMcpNotification(method: incomingMethod, params: params, raw: object))
+        return nil
+      }
+      let requestId = try incomingRequestId(rawId, method: incomingMethod)
+      try await respondToServerRequest(id: requestId, method: incomingMethod)
       return nil
+    }
+    guard let rawResponseId = object["id"] else {
+      throw sessionError(.invalidJSONRPC, "JSON-RPC response is missing id", method: method)
+    }
+    guard let id = responseId(rawResponseId) else {
+      listener.onProtocolIssue(
+        sessionError(.invalidJSONRPC, "Response references an unknown request ID", method: method)
+      )
+      return nil
+    }
+    let hasResult = object["result"] != nil
+    let hasError = object["error"] != nil
+    guard hasResult != hasError else {
+      throw sessionError(.invalidJSONRPC, "JSON-RPC response must contain exactly one of result or error", requestId: id, method: method)
+    }
+    if hasError, object["error"]?.objectValue == nil {
+      throw sessionError(.invalidJSONRPC, "JSON-RPC error must be an object", requestId: id, method: method)
     }
     return AgentMcpRpcEnvelope(
       requestId: id,
@@ -19134,6 +19205,45 @@ final class AgentMcpRemoteSession {
       error: object["error"]?.objectValue,
       raw: object
     )
+  }
+
+  private func respondToServerRequest(id: AgentMcpJSONValue, method: String) async throws {
+    let response: AgentMcpJSONObject
+    if method == "ping" {
+      response = [
+        "jsonrpc": .string("2.0"),
+        "id": id,
+        "result": .object([:])
+      ]
+    } else {
+      response = [
+        "jsonrpc": .string("2.0"),
+        "id": id,
+        "error": .object([
+          "code": .int(-32601),
+          "message": .string("Method not found: \(method)")
+        ])
+      ]
+    }
+    try await transport.send(AgentMcpJSONCodec.stringify(response))
+  }
+
+  private func incomingRequestId(_ value: AgentMcpJSONValue, method: String) throws -> AgentMcpJSONValue {
+    switch value {
+    case .int:
+      return value
+    case .string(let raw) where !raw.isEmpty:
+      return value
+    default:
+      throw sessionError(.invalidJSONRPC, "JSON-RPC id must be a string or integer", method: method)
+    }
+  }
+
+  private func responseId(_ value: AgentMcpJSONValue?) -> Int64? {
+    guard case .int(let id) = value else {
+      return nil
+    }
+    return id
   }
 
   private func parseInitializeResult(_ response: AgentMcpRpcEnvelope) throws -> AgentMcpInitializeResult {

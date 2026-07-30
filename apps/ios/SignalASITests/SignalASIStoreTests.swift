@@ -66,6 +66,19 @@ private final class FakeMcpStreamableHTTPNetworking: AgentMcpStreamableHTTPNetwo
   }
 }
 
+private final class TestMcpRemoteSessionListener: AgentMcpRemoteSessionListener {
+  var notifications: [AgentMcpNotification] = []
+  var issues: [AgentMcpRemoteSessionError] = []
+
+  func onNotification(_ notification: AgentMcpNotification) {
+    notifications.append(notification)
+  }
+
+  func onProtocolIssue(_ error: AgentMcpRemoteSessionError) {
+    issues.append(error)
+  }
+}
+
 private extension AgentRuntimePackCatalogEntry {
   func with(
     version: String? = nil,
@@ -2111,6 +2124,72 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertTrue(networking.requests[1].body.contains(#""method":"notifications/initialized""#))
     XCTAssertTrue(networking.requests[2].body.contains(#""method":"tools/list""#))
     XCTAssertTrue(networking.requests[3].body.contains(#""method":"tools/call""#))
+  }
+
+  func testAgentMcpRemoteSessionReceivesNotificationsAndRespondsToPing() async throws {
+    let listener = TestMcpRemoteSessionListener()
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "text/event-stream"],
+        body: """
+        data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"step":"connecting"}}
+
+        data: {"jsonrpc":"2.0","id":"server-ping","method":"ping"}
+
+        data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}}}}
+
+        """
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: "")
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+    let session = AgentMcpRemoteSession(transport: transport, listener: listener)
+
+    let initialized = try await session.initialize(clientInfo: AgentMcpImplementationInfo(name: "SignalASI iOS", version: "1"))
+
+    XCTAssertTrue(initialized.capabilities.tools)
+    XCTAssertEqual(listener.notifications.map(\.method), ["notifications/progress"])
+    XCTAssertEqual(listener.notifications.first?.params?["step"], .string("connecting"))
+    XCTAssertTrue(listener.issues.isEmpty)
+    XCTAssertEqual(networking.requests.count, 3)
+    XCTAssertTrue(networking.requests[1].body.contains(#""id":"server-ping""#))
+    XCTAssertTrue(networking.requests[1].body.contains(#""result":{}"#))
+    XCTAssertTrue(networking.requests[2].body.contains(#""method":"notifications/initialized""#))
+  }
+
+  func testAgentMcpRemoteSessionReturnsMethodNotFoundForUnknownServerRequest() async throws {
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "text/event-stream"],
+        body: """
+        data: {"jsonrpc":"2.0","id":7,"method":"sampling/createMessage"}
+
+        data: {"jsonrpc":"2.0","id":2,"result":{"tools":[]}}
+
+        """
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: "")
+    ])
+    let transport = try AgentMcpStreamableHTTPTransport(endpoint: "https://mcp.example/rpc", networking: networking)
+    let session = AgentMcpRemoteSession(transport: transport)
+    _ = try await session.initialize(clientInfo: AgentMcpImplementationInfo(name: "SignalASI iOS", version: "1"))
+
+    let tools = try await session.listTools()
+
+    XCTAssertTrue(tools.items.isEmpty)
+    XCTAssertEqual(networking.requests.count, 4)
+    XCTAssertTrue(networking.requests[3].body.contains(#""id":7"#))
+    XCTAssertTrue(networking.requests[3].body.contains(#""code":-32601"#))
+    XCTAssertTrue(networking.requests[3].body.contains("Method not found: sampling/createMessage"))
   }
 
   func testAgentMcpRemoteSessionListsReadsResourcesAndPrompts() async throws {
