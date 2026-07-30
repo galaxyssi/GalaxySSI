@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 protocol AgentIOSHardwareStatusProviding {
   func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject
@@ -9,11 +12,12 @@ protocol AgentIOSHardwareStatusProviding {
 
 struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
   func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    let battery = currentBatterySnapshot()
     [
-      "percent": .null,
-      "charging": .bool(false),
-      "plugged": .string("unknown"),
-      "status": .string("unknown"),
+      "percent": battery.percent.map(AgentMcpJSONValue.int) ?? .null,
+      "charging": .bool(battery.charging),
+      "plugged": .string(battery.plugged),
+      "status": .string(battery.status),
       "health": .string("unknown"),
       "scope": .string("app_visible_ios"),
       "observed_at_epoch_ms": .int(nowMillis)
@@ -83,6 +87,38 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
     @unknown default:
       return "unknown"
     }
+  }
+
+  private func currentBatterySnapshot() -> (percent: Int64?, charging: Bool, plugged: String, status: String) {
+    #if canImport(UIKit)
+    let device = UIDevice.current
+    let wasMonitoring = device.isBatteryMonitoringEnabled
+    device.isBatteryMonitoringEnabled = true
+    defer { device.isBatteryMonitoringEnabled = wasMonitoring }
+
+    let percent: Int64?
+    if device.batteryLevel >= 0 {
+      let rounded = Int((device.batteryLevel * 100).rounded())
+      percent = Int64(max(0, min(100, rounded)))
+    } else {
+      percent = nil
+    }
+
+    switch device.batteryState {
+    case .charging:
+      return (percent, true, "unknown", "charging")
+    case .full:
+      return (percent ?? 100, true, "unknown", "full")
+    case .unplugged:
+      return (percent, false, "none", "discharging")
+    case .unknown:
+      return (percent, false, "unknown", "unknown")
+    @unknown default:
+      return (percent, false, "unknown", "unknown")
+    }
+    #else
+    return (nil, false, "unknown", "unknown")
+    #endif
   }
 }
 
