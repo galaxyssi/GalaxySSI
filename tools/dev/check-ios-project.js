@@ -137,6 +137,8 @@ const requiredProjectSnippets = [
   "AgentDynamicTeamModels.swift in Sources",
   "AgentDynamicTeamCompiler.swift in Sources",
   "AgentDynamicTeamCompilerTests.swift in Sources",
+  "AgentTeamPlanBridgeModels.swift in Sources",
+  "AgentTeamPlanBridgeTests.swift in Sources",
   "AgentMediaNetworkPolicyModels.swift in Sources",
   "AgentMediaNetworkPolicyTests.swift in Sources",
   "VoiceRealtimeHealthModels.swift in Sources",
