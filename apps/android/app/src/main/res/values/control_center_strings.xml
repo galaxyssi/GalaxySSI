@@ -536,6 +536,15 @@
     <string name="cc_entity_state">State: %1$s</string>
     <string name="cc_audit_empty">No operation record yet</string>
     <string name="cc_audit_empty_subtitle">Native tools and Agent actions will appear here after use</string>
+    <string name="cc_tool_audit_title">Tool calls</string>
+    <string name="cc_tool_audit_detail">%1$s · %2$d ms</string>
+    <string name="cc_tool_audit_succeeded">Succeeded</string>
+    <string name="cc_tool_audit_failed">Failed</string>
+    <string name="cc_tool_audit_verification_failed">Verification failed</string>
+    <string name="cc_tool_audit_rejected">Rejected</string>
+    <string name="cc_tool_audit_unavailable">Unavailable</string>
+    <string name="cc_tool_audit_cancelled">Cancelled</string>
+    <string name="cc_tool_audit_timed_out">Timed out</string>
     <string name="cc_memory_overview_title">Your private memory</string>
     <string name="cc_memory_overview_subtitle">Encrypted on this device, organized by purpose, and always under your control</string>
     <string name="cc_memory_capture_on">Automatic memory on</string>

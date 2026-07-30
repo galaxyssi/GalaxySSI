@@ -583,6 +583,12 @@ class MobileNativeAgent(
 
     fun nativeToolIds(): Set<String> = AgentPhoneNativeToolCatalog.defaultToolIds
 
+    fun nativeToolAudit(
+        limit: Int = 100,
+        toolId: String = "",
+        status: AgentNativeToolResultStatus? = null
+    ): List<AgentNativeToolAuditRecord> = nativeToolRegistry.audit(limit, toolId, status)
+
     fun executeDirectAction(
         action: AgentAction,
         conversationId: String = "",

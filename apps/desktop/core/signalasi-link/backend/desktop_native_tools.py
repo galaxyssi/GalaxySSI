@@ -34,6 +34,7 @@ from urllib.request import Request, urlopen
 
 from desktop_perception import DesktopPerceptionError, DesktopPerceptionService
 from desktop_runtime import DesktopRuntimeManager, desktop_runtime_manager
+from tool_call_audit import ToolCallAuditStore, desktop_tool_call_audit_store
 from web_intelligence import (
     TOOL_OPERATIONS as WEB_INTELLIGENCE_OPERATIONS,
     WebIntelligenceError,
@@ -770,6 +771,7 @@ class DesktopNativeToolRegistry:
         runtime_manager: DesktopRuntimeManager | None = None,
         web_intelligence_service: WebIntelligenceService | None = None,
         perception_service: DesktopPerceptionService | None = None,
+        audit_store: ToolCallAuditStore | None = None,
     ) -> None:
         root = Path(state_root) if state_root else Path(
             os.environ.get("SIGNALASI_STATE_DIR") or Path(os.environ.get("APPDATA") or Path.home()) / "SignalASI"
@@ -783,6 +785,11 @@ class DesktopNativeToolRegistry:
         self.workspace_root.mkdir(parents=True, exist_ok=True)
         self.receipts = DesktopToolReceiptStore(root / "desktop-native-tool-receipts.json")
         self.transient_receipts = DesktopToolReceiptStore(None)
+        self.audit_store = audit_store or (
+            ToolCallAuditStore(root / "desktop-tool-call-audit.json")
+            if state_root is not None
+            else desktop_tool_call_audit_store()
+        )
         self.now = now
         self.known_roots = dict(known_roots or self._default_known_roots())
         self.app_catalog = app_catalog or self._windows_app_catalog
@@ -863,6 +870,31 @@ class DesktopNativeToolRegistry:
         input_sha256 = _digest(input_value)
         idempotency_key = str(context.get("idempotency_key") or "").strip()
         receipt_key = f"{tool_id}:{idempotency_key}" if idempotency_key else ""
+
+        def audited(result: dict[str, Any]) -> dict[str, Any]:
+            receipt = result.get("receipt") if isinstance(result.get("receipt"), dict) else {}
+            provenance = result.get("provenance") if isinstance(result.get("provenance"), dict) else {}
+            error = result.get("error") if isinstance(result.get("error"), dict) else {}
+            finished_at = int(self.now() * 1_000)
+            self.audit_store.append(
+                tool_id=str(provenance.get("tool_id") or tool_id or "unknown"),
+                tool_version=str(provenance.get("tool_version") or TOOL_VERSION),
+                location=str(provenance.get("location") or "desktop"),
+                risk=spec.risk if spec is not None else "unknown",
+                confirmation=spec.confirmation if spec is not None else "none",
+                status=str(result.get("status") or "failed"),
+                started_at=started_at,
+                finished_at=finished_at,
+                input_sha256=str(receipt.get("input_sha256") or input_sha256),
+                output_sha256=str(receipt.get("output_sha256") or _digest({})),
+                invocation_id=invocation_id,
+                error_code=str(error.get("code") or ""),
+                replayed=bool(receipt.get("replayed")),
+                original_invocation_id=str(receipt.get("original_invocation_id") or ""),
+                context=context,
+            )
+            return result
+
         try:
             if spec is None:
                 raise DesktopNativeToolError("unknown_tool", f"Unknown Desktop native tool: {tool_id}")
@@ -887,7 +919,7 @@ class DesktopNativeToolRegistry:
                     raise DesktopNativeToolError("desktop_side_effect_busy", "Another Desktop side effect is running", retryable=True)
             replay = receipt_store.claim(receipt_key, input_sha256, invocation_id, spec.tool_id)
             if replay is not None:
-                return replay
+                return audited(replay)
             receipt_claimed = bool(receipt_key)
             if self._is_cancelled(invocation_id):
                 raise DesktopNativeToolError("cancelled", "Desktop tool call was cancelled")
@@ -934,12 +966,12 @@ class DesktopNativeToolRegistry:
                 artifacts=list(execution.artifacts),
             )
             receipt_store.complete(receipt_key, result)
-            return result
+            return audited(result)
         except DesktopNativeToolError as exc:
             if receipt_claimed:
                 receipt_store.fail(receipt_key)
             status = "cancelled" if exc.code == "cancelled" else "failed"
-            return self._result(
+            return audited(self._result(
                 spec,
                 invocation_id,
                 started_at,
@@ -952,11 +984,11 @@ class DesktopNativeToolRegistry:
                     "retryable": exc.retryable,
                     "details": _bounded_json(dict(exc.details)) if exc.details else {},
                 },
-            )
+            ))
         except Exception as exc:
             if receipt_claimed:
                 receipt_store.fail(receipt_key)
-            return self._result(
+            return audited(self._result(
                 spec,
                 invocation_id,
                 started_at,
@@ -969,7 +1001,7 @@ class DesktopNativeToolRegistry:
                     "retryable": False,
                     "details": {},
                 },
-            )
+            ))
         finally:
             if workspace_capture is not None:
                 try:
@@ -983,6 +1015,15 @@ class DesktopNativeToolRegistry:
             with self._process_lock:
                 self._processes.pop(invocation_id, None)
                 self._cancelled.discard(invocation_id)
+
+    def audit(
+        self,
+        *,
+        limit: int = 100,
+        tool_id: str = "",
+        status: str = "",
+    ) -> list[dict[str, Any]]:
+        return self.audit_store.list(limit=limit, tool_id=tool_id, status=status)
 
     def _file_access_scope(
         self,

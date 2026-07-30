@@ -768,6 +768,7 @@ class AgentNativeToolDefinition(
 class AgentNativeToolRegistry(
     private val clock: AgentNativeClock = AgentNativeClock.SYSTEM,
     private val replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
+    private val auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     private val descriptorCacheTtlMillis: Long = DEFAULT_DESCRIPTOR_CACHE_TTL_MILLIS
 ) {
     private val definitions = LinkedHashMap<String, AgentNativeToolDefinition>()
@@ -813,7 +814,7 @@ class AgentNativeToolRegistry(
     /** Creates an independent registry view without exposing executor implementations to callers. */
     @Synchronized
     fun subset(predicate: (AgentNativeToolDescriptor) -> Boolean): AgentNativeToolRegistry =
-        AgentNativeToolRegistry(clock, replayStore, descriptorCacheTtlMillis).registerAll(
+        AgentNativeToolRegistry(clock, replayStore, auditStore, descriptorCacheTtlMillis).registerAll(
             definitions.values.filter { predicate(resolvedDescriptor(it)) }
         )
 
@@ -852,6 +853,12 @@ class AgentNativeToolRegistry(
             "tools" to descriptors().map(AgentNativeToolDescriptor::catalogValue)
         )
     )
+
+    fun audit(
+        limit: Int = 100,
+        toolId: String = "",
+        status: AgentNativeToolResultStatus? = null
+    ): List<AgentNativeToolAuditRecord> = auditStore.list(limit, toolId, status)
 
     fun validateInput(id: String, input: AgentNativeJsonObject): AgentNativeValidationResult {
         val definition = lookup(id) ?: return AgentNativeValidationResult.invalid(
@@ -939,6 +946,11 @@ class AgentNativeToolRegistry(
                     metadata = definition.provenanceMetadata
                 )
             )
+            runCatching {
+                auditStore.append(
+                    AgentNativeToolAuditRecord.from(result, context, descriptor.risk)
+                )
+            }
             runHook { hooks.onFinished(result) }
             return result
         }
@@ -1177,6 +1189,15 @@ class AgentNativeToolRegistry(
                 contractVersion = CONTRACT_VERSION
             )
         )
+        runCatching {
+            auditStore.append(
+                AgentNativeToolAuditRecord.from(
+                    result,
+                    context,
+                    AgentNativeToolRisk.BLOCKED
+                )
+            )
+        }
         runHook { hooks.onFinished(result) }
         return result
     }
