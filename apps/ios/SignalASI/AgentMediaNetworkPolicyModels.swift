@@ -150,12 +150,18 @@ final class AgentMediaNetworkDetector {
   static let shared = AgentMediaNetworkDetector()
 
   private let monitor: NWPathMonitor
+  private let deviceProfileProvider: () -> AgentDeviceProfile
   private let queue = DispatchQueue(label: "com.signalasi.ios.media-network")
   private let lock = NSLock()
-  private var profile = AgentMediaNetworkPolicy.evaluate(AgentMediaNetworkProbe())
+  private var profile: AgentMediaDeliveryProfile
 
-  init(monitor: NWPathMonitor = NWPathMonitor()) {
+  init(
+    monitor: NWPathMonitor = NWPathMonitor(),
+    deviceProfileProvider: @escaping () -> AgentDeviceProfile = { AgentDeviceProfileDetector.detect() }
+  ) {
     self.monitor = monitor
+    self.deviceProfileProvider = deviceProfileProvider
+    self.profile = deviceProfileProvider().adaptMedia(AgentMediaNetworkPolicy.evaluate(AgentMediaNetworkProbe()))
     self.monitor.pathUpdateHandler = { [weak self] path in
       self?.update(path: path)
     }
@@ -169,7 +175,7 @@ final class AgentMediaNetworkDetector {
   }
 
   func update(path: NWPath) {
-    let next = AgentMediaNetworkPolicy.evaluate(Self.probe(for: path))
+    let next = deviceProfileProvider().adaptMedia(AgentMediaNetworkPolicy.evaluate(Self.probe(for: path)))
     lock.lock()
     profile = next
     lock.unlock()

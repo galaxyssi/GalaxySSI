@@ -53,6 +53,14 @@ private extension View {
       self
     }
   }
+
+  func agentDeviceTouchTarget(_ policy: AgentDeviceInputTargetPolicy) -> some View {
+    frame(
+      minWidth: CGFloat(policy.minimumTouchTargetDp),
+      minHeight: CGFloat(policy.minimumTouchTargetDp)
+    )
+    .contentShape(Rectangle())
+  }
 }
 
 private extension AppTextScaleMode {
@@ -156,6 +164,10 @@ struct ConversationView: View {
     store.contact(id: contactId) ?? SignalASIContact.hermes()
   }
 
+  private var deviceInputPolicy: AgentDeviceInputTargetPolicy {
+    AgentDeviceProfileDetector.detect().inputTargetPolicy
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       ScrollViewReader { proxy in
@@ -187,7 +199,9 @@ struct ConversationView: View {
         }
         .onChange(of: store.messages(for: contact.id).count) { _ in
           if let last = store.messages(for: contact.id).last {
-            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+            withAnimation(deviceInputPolicy.reduceMotion ? nil : Animation.default) {
+              proxy.scrollTo(last.id, anchor: .bottom)
+            }
           }
           store.markContactRead(contact.id)
         }
@@ -212,12 +226,14 @@ struct ConversationView: View {
             Image(systemName: "paperclip")
               .font(.system(size: 22))
           }
+          .agentDeviceTouchTarget(deviceInputPolicy)
           Button {
             photoPickerPresented = true
           } label: {
             Image(systemName: "photo")
               .font(.system(size: 22))
           }
+          .agentDeviceTouchTarget(deviceInputPolicy)
           TextField("Message", text: $draft)
             .textFieldStyle(.roundedBorder)
           Button {
@@ -231,6 +247,7 @@ struct ConversationView: View {
             Image(systemName: "arrow.up.circle.fill")
               .font(.system(size: 30))
           }
+          .agentDeviceTouchTarget(deviceInputPolicy)
           .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
         }
       }
