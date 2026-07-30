@@ -2,6 +2,23 @@ import XCTest
 @testable import SignalASI
 
 extension SignalASIStoreTests {
+  func testAgentIOSDefaultHardwareProviderReadsBoundedBatteryState() {
+    let output = AgentIOSDefaultHardwareStatusProvider().batteryStatus(nowMillis: 9_000)
+    let allowedPluggedValues: Set<String> = ["none", "unknown"]
+    let allowedStatusValues: Set<String> = ["charging", "discharging", "full", "unknown"]
+
+    XCTAssertEqual(output["scope"], .string("app_visible_ios"))
+    XCTAssertEqual(output["observed_at_epoch_ms"], .int(9_000))
+    XCTAssertNotNil(output["charging"]?.boolValue)
+    XCTAssertTrue(allowedPluggedValues.contains(output["plugged"]?.stringValue ?? ""), output["plugged"]?.stringValue ?? "nil")
+    XCTAssertTrue(allowedStatusValues.contains(output["status"]?.stringValue ?? ""), output["status"]?.stringValue ?? "nil")
+    if let percent = output["percent"]?.intValue {
+      XCTAssertTrue((0...100).contains(percent), "Battery percent \(percent) must be bounded")
+    } else {
+      XCTAssertEqual(output["percent"], .null)
+    }
+  }
+
   func testAgentIOSHardwareNativeToolCatalogAndExecutorExposeAppVisibleStatus() throws {
     struct FakeHardwareProvider: AgentIOSHardwareStatusProviding {
       func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
