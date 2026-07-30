@@ -17485,6 +17485,9 @@ enum AgentDesktopControlAction {
   static let scroll = "desktop.scroll"
   static let windowSwitch = "desktop.window_switch"
   static let fileSelect = "desktop.file_select"
+  static let surfaceList = "desktop.surface.list"
+  static let surfaceSelect = "desktop.surface.select"
+  static let windowActivate = "desktop.window.activate"
   static let taskPause = "desktop.task_pause"
   static let taskTakeover = "desktop.task_takeover"
   static let taskContinue = "desktop.task_continue"
@@ -17499,6 +17502,9 @@ enum AgentDesktopControlAction {
     scroll,
     windowSwitch,
     fileSelect,
+    surfaceList,
+    surfaceSelect,
+    windowActivate,
     taskPause,
     taskTakeover,
     taskContinue,
@@ -17632,6 +17638,146 @@ struct AgentDesktopControlScreenshot: Equatable {
       return nil
     }
     return screenshot
+  }
+}
+
+struct AgentDesktopSurfaceBounds: Codable, Equatable {
+  var left: Int
+  var top: Int
+  var width: Int
+  var height: Int
+
+  static func parse(_ source: AgentMcpJSONObject?) -> AgentDesktopSurfaceBounds {
+    let source = source ?? [:]
+    return AgentDesktopSurfaceBounds(
+      left: Int(source.int64("left")),
+      top: Int(source.int64("top")),
+      width: max(0, Int(source.int64("width"))),
+      height: max(0, Int(source.int64("height")))
+    )
+  }
+}
+
+struct AgentDesktopDisplaySurface: Codable, Equatable, Identifiable {
+  var displayId: String
+  var name: String
+  var bounds: AgentDesktopSurfaceBounds
+  var primary: Bool
+
+  var id: String { displayId }
+
+  enum CodingKeys: String, CodingKey {
+    case displayId = "display_id"
+    case name
+    case bounds
+    case primary
+  }
+
+  static func parse(_ source: AgentMcpJSONObject?) -> AgentDesktopDisplaySurface? {
+    guard let source else { return nil }
+    let displayId = source.clippedString("display_id", limit: 120)
+    guard !displayId.isBlank else { return nil }
+    return AgentDesktopDisplaySurface(
+      displayId: displayId,
+      name: source.clippedString("name", limit: 120),
+      bounds: AgentDesktopSurfaceBounds.parse(source.object("bounds")),
+      primary: source.bool("primary")
+    )
+  }
+}
+
+struct AgentDesktopWindowSurface: Codable, Equatable, Identifiable {
+  var windowId: String
+  var title: String
+  var displayId: String
+  var bounds: AgentDesktopSurfaceBounds
+  var foreground: Bool
+  var minimized: Bool
+
+  var id: String { windowId }
+
+  enum CodingKeys: String, CodingKey {
+    case windowId = "window_id"
+    case title
+    case displayId = "display_id"
+    case bounds
+    case foreground
+    case minimized
+  }
+
+  static func parse(
+    _ source: AgentMcpJSONObject?,
+    allowedDisplayIds: Set<String>
+  ) -> AgentDesktopWindowSurface? {
+    guard let source else { return nil }
+    let windowId = source.clippedString("window_id", limit: 120)
+    let displayId = source.clippedString("display_id", limit: 120)
+    guard !windowId.isBlank,
+          allowedDisplayIds.contains(displayId) else {
+      return nil
+    }
+    return AgentDesktopWindowSurface(
+      windowId: windowId,
+      title: source.clippedString("title", limit: 500),
+      displayId: displayId,
+      bounds: AgentDesktopSurfaceBounds.parse(source.object("bounds")),
+      foreground: source.bool("foreground"),
+      minimized: source.bool("minimized")
+    )
+  }
+}
+
+struct AgentDesktopSurfaceSelection: Codable, Equatable {
+  var displayId: String
+  var windowId: String
+  var targetKind: String
+
+  enum CodingKeys: String, CodingKey {
+    case displayId = "selected_display_id"
+    case windowId = "selected_window_id"
+    case targetKind = "target_kind"
+  }
+}
+
+struct AgentDesktopSurfaceCatalog: Codable, Equatable {
+  static let contractVersion = "signalasi.desktop-surfaces/1.0"
+
+  var displays: [AgentDesktopDisplaySurface]
+  var windows: [AgentDesktopWindowSurface]
+  var selection: AgentDesktopSurfaceSelection
+  var targetTitle: String
+  var targetBounds: AgentDesktopSurfaceBounds
+
+  static func parse(_ source: AgentMcpJSONObject?) -> AgentDesktopSurfaceCatalog? {
+    guard let source,
+          source.string("surface_contract") == contractVersion else {
+      return nil
+    }
+    let displays = (source["displays"]?.arrayValue ?? [])
+      .prefix(16)
+      .compactMap { AgentDesktopDisplaySurface.parse($0.objectValue) }
+    guard !displays.isEmpty else { return nil }
+    let displayIds = Set(displays.map(\.displayId))
+    let windows = (source["windows"]?.arrayValue ?? [])
+      .prefix(100)
+      .compactMap { AgentDesktopWindowSurface.parse($0.objectValue, allowedDisplayIds: displayIds) }
+    let selection = source.object("selection") ?? [:]
+    let target = source.object("target") ?? [:]
+    return AgentDesktopSurfaceCatalog(
+      displays: displays,
+      windows: windows,
+      selection: AgentDesktopSurfaceSelection(
+        displayId: selection.clippedString("selected_display_id", limit: 120),
+        windowId: selection.clippedString("selected_window_id", limit: 120),
+        targetKind: selection.clippedString("target_kind", limit: 20)
+      ),
+      targetTitle: target.clippedString("title", limit: 500),
+      targetBounds: AgentDesktopSurfaceBounds.parse(target.object("bounds"))
+    )
+  }
+
+  static func parseOutput(_ source: AgentMcpJSONObject?) -> AgentDesktopSurfaceCatalog? {
+    parse(source?.object("surface_catalog"))
   }
 }
 

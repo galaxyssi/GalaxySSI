@@ -6553,6 +6553,134 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertNotNil(AgentDesktopControlAuthorization.parse(["status": .string("pending")]))
   }
 
+  func testAgentDesktopSurfaceCatalogParsesDisplaysWindowsAndIndependentSelection() throws {
+    let catalog = try XCTUnwrap(AgentDesktopSurfaceCatalog.parse([
+      "surface_contract": .string(AgentDesktopSurfaceCatalog.contractVersion),
+      "displays": .array([
+        .object([
+          "display_id": .string("display:primary"),
+          "name": .string("Display 1"),
+          "primary": .bool(true),
+          "bounds": .object([
+            "left": .int(0),
+            "top": .int(0),
+            "width": .int(1_920),
+            "height": .int(1_080)
+          ])
+        ]),
+        .object([
+          "display_id": .string("display:left"),
+          "name": .string("Display 2"),
+          "bounds": .object([
+            "left": .int(-1_280),
+            "top": .int(40),
+            "width": .int(1_280),
+            "height": .int(1_024)
+          ])
+        ])
+      ]),
+      "windows": .array([
+        .object([
+          "window_id": .string("window:browser"),
+          "title": .string("Browser"),
+          "display_id": .string("display:left"),
+          "foreground": .bool(true),
+          "minimized": .bool(false),
+          "bounds": .object([
+            "left": .int(-1_200),
+            "top": .int(100),
+            "width": .int(1_000),
+            "height": .int(760)
+          ])
+        ]),
+        .object([
+          "window_id": .string("window:orphan"),
+          "title": .string("Orphan"),
+          "display_id": .string("display:missing")
+        ])
+      ]),
+      "selection": .object([
+        "selected_display_id": .string("display:left"),
+        "selected_window_id": .string("window:browser"),
+        "target_kind": .string("window")
+      ]),
+      "target": .object([
+        "title": .string("Browser"),
+        "bounds": .object([
+          "left": .int(-1_200),
+          "top": .int(100),
+          "width": .int(1_000),
+          "height": .int(760)
+        ])
+      ])
+    ]))
+    let nested = try XCTUnwrap(AgentDesktopSurfaceCatalog.parseOutput([
+      "surface_catalog": .object([
+        "surface_contract": .string(AgentDesktopSurfaceCatalog.contractVersion),
+        "displays": .array([
+          .object([
+            "display_id": .string("display:primary"),
+            "name": .string("Display 1"),
+            "bounds": .object(["width": .int(1), "height": .int(1)])
+          ])
+        ])
+      ])
+    ]))
+
+    func request(toolId: String, input: AgentMcpJSONObject) -> AgentMcpJSONObject {
+      [
+        "type": .string("desktop_executor_request"),
+        "task_id": .string("desktop-control-action"),
+        "action_id": .string("00000000-0000-4000-8000-000000000001"),
+        "authorization_id": .string("00000000-0000-4000-8000-000000000002"),
+        "desktop_session_id": .string("session-1"),
+        "tool_id": .string(toolId),
+        "input": .object(input),
+        "sent_at": .int(1_800_000_000_000),
+        "expires_at": .int(1_800_000_030_000)
+      ]
+    }
+    let displaySelect = AgentDesktopControlReceiptProtocol.pendingRequest(
+      payload: request(toolId: AgentDesktopControlAction.surfaceSelect, input: ["display_id": .string("display:left")]),
+      clientRouteId: "client-route-1",
+      controllerFingerprint: "controller-fingerprint",
+      controllerSignalName: "signalasi:phone"
+    )
+    let windowSelect = AgentDesktopControlReceiptProtocol.pendingRequest(
+      payload: request(toolId: AgentDesktopControlAction.surfaceSelect, input: ["window_id": .string("window:browser")]),
+      clientRouteId: "client-route-1",
+      controllerFingerprint: "controller-fingerprint",
+      controllerSignalName: "signalasi:phone"
+    )
+    let windowActivate = AgentDesktopControlReceiptProtocol.pendingRequest(
+      payload: request(toolId: AgentDesktopControlAction.windowActivate, input: ["window_id": .string("window:browser")]),
+      clientRouteId: "client-route-1",
+      controllerFingerprint: "controller-fingerprint",
+      controllerSignalName: "signalasi:phone"
+    )
+
+    XCTAssertEqual(catalog.displays.count, 2)
+    XCTAssertEqual(catalog.windows.count, 1)
+    XCTAssertEqual(catalog.selection.displayId, "display:left")
+    XCTAssertEqual(catalog.selection.windowId, "window:browser")
+    XCTAssertEqual(catalog.selection.targetKind, "window")
+    XCTAssertEqual(catalog.targetTitle, "Browser")
+    XCTAssertEqual(catalog.targetBounds.left, -1_200)
+    XCTAssertTrue(catalog.displays.first?.primary == true)
+    XCTAssertTrue(catalog.windows.first?.foreground == true)
+    XCTAssertEqual(nested.displays.count, 1)
+    XCTAssertNil(AgentDesktopSurfaceCatalog.parse([:]))
+    XCTAssertNil(AgentDesktopSurfaceCatalog.parse([
+      "surface_contract": .string(AgentDesktopSurfaceCatalog.contractVersion),
+      "displays": .array([])
+    ]))
+    XCTAssertTrue(AgentDesktopControlAction.toolIds.contains(AgentDesktopControlAction.surfaceList))
+    XCTAssertTrue(AgentDesktopControlAction.toolIds.contains(AgentDesktopControlAction.surfaceSelect))
+    XCTAssertTrue(AgentDesktopControlAction.toolIds.contains(AgentDesktopControlAction.windowActivate))
+    XCTAssertNotEqual(displaySelect.inputSha256, windowSelect.inputSha256)
+    XCTAssertNotEqual(windowSelect.requestSha256, windowActivate.requestSha256)
+  }
+
   func testAgentDesktopControlReceiptProtocolVerifiesSignedScreenshotEvidence() throws {
     let signerId = "desktop_test"
     let desktopSessionId = "sth_desktops_00000000000000000000000000000000"
