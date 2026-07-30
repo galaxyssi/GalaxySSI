@@ -19,6 +19,37 @@ extension SignalASIStoreTests {
     }
   }
 
+  func testAgentIOSDefaultHardwareProviderMapsMediaProbeToNetworkStatus() {
+    let provider = AgentIOSDefaultHardwareStatusProvider(networkProbeProvider: {
+      AgentMediaNetworkProbe(
+        networkPresent: true,
+        internetCapable: true,
+        validated: true,
+        metered: true,
+        roaming: false,
+        restricted: true,
+        congested: false,
+        cellular: true,
+        transports: ["wifi", "cellular", "wifi", "unsupported"],
+        downstreamKbps: 900,
+        upstreamKbps: -1
+      )
+    })
+
+    let output = provider.networkStatus(nowMillis: 10_000)
+
+    XCTAssertEqual(output["connected"], .bool(true))
+    XCTAssertEqual(output["validated"], .bool(true))
+    XCTAssertEqual(output["metered"], .bool(true))
+    XCTAssertEqual(output["roaming"], .bool(false))
+    XCTAssertEqual(output["transports"], .array([.string("wifi"), .string("cellular")]))
+    XCTAssertEqual(output["downstream_kbps"], .int(900))
+    XCTAssertEqual(output["upstream_kbps"], .int(0))
+    XCTAssertEqual(output["identifiers_included"], .bool(false))
+    XCTAssertEqual(output["scope"], .string("app_visible_ios"))
+    XCTAssertEqual(output["observed_at_epoch_ms"], .int(10_000))
+  }
+
   func testAgentIOSHardwareNativeToolCatalogAndExecutorExposeAppVisibleStatus() throws {
     struct FakeHardwareProvider: AgentIOSHardwareStatusProviding {
       func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {

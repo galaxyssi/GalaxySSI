@@ -11,6 +11,14 @@ protocol AgentIOSHardwareStatusProviding {
 }
 
 struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
+  var networkProbeProvider: () -> AgentMediaNetworkProbe
+
+  init(
+    networkProbeProvider: @escaping () -> AgentMediaNetworkProbe = { AgentMediaNetworkDetector.shared.currentProbe }
+  ) {
+    self.networkProbeProvider = networkProbeProvider
+  }
+
   func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
     let battery = currentBatterySnapshot()
     [
@@ -49,14 +57,18 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
   }
 
   func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    let probe = networkProbeProvider()
+    let transports = boundedNetworkTransports(probe.transports, cellular: probe.cellular)
     [
-      "connected": .bool(false),
-      "validated": .bool(false),
-      "metered": .bool(false),
-      "roaming": .bool(false),
-      "transports": .array([]),
+      "connected": .bool(probe.networkPresent && probe.internetCapable),
+      "validated": .bool(probe.validated),
+      "metered": .bool(probe.metered),
+      "roaming": .bool(probe.roaming),
+      "transports": .array(transports.map(AgentMcpJSONValue.string)),
+      "downstream_kbps": .int(Int64(max(0, probe.downstreamKbps))),
+      "upstream_kbps": .int(Int64(max(0, probe.upstreamKbps))),
       "identifiers_included": .bool(false),
-      "scope": .string("app_visible_ios_requires_network_probe"),
+      "scope": .string("app_visible_ios"),
       "observed_at_epoch_ms": .int(nowMillis)
     ]
   }
@@ -72,6 +84,23 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
       return max(0, Int64(value))
     }
     return 0
+  }
+
+  private func boundedNetworkTransports(_ values: [String], cellular: Bool) -> [String] {
+    let allowed: Set<String> = ["wifi", "cellular", "ethernet", "vpn", "bluetooth", "wifi_aware", "lowpan", "usb"]
+    var ordered = values
+    if cellular && !ordered.contains("cellular") {
+      ordered.append("cellular")
+    }
+    var seen: Set<String> = []
+    let filtered = ordered.filter { value in
+      guard allowed.contains(value), !seen.contains(value) else {
+        return false
+      }
+      seen.insert(value)
+      return true
+    }
+    return Array(filtered.prefix(8))
   }
 
   private func thermalState(_ state: ProcessInfo.ThermalState) -> String {
