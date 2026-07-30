@@ -59,6 +59,7 @@
     A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */; };
     A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */; };
     A10000000000000000000137 /* AgentMediaNetworkPolicyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000137 /* AgentMediaNetworkPolicyModels.swift */; };
+    A10000000000000000000138 /* VoiceRealtimeHealthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -79,6 +80,7 @@
     A10000000000000000000218 /* AgentControlPlaneAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000218 /* AgentControlPlaneAdapterTests.swift */; };
     A10000000000000000000219 /* AgentControlPlaneActionExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000219 /* AgentControlPlaneActionExecutorTests.swift */; };
     A10000000000000000000220 /* AgentMediaNetworkPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000220 /* AgentMediaNetworkPolicyTests.swift */; };
+    A10000000000000000000221 /* VoiceRealtimeHealthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -136,6 +138,7 @@
     A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneAdapterModels.swift; sourceTree = "<group>"; };
     A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneActionExecutorModels.swift; sourceTree = "<group>"; };
     A20000000000000000000137 /* AgentMediaNetworkPolicyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMediaNetworkPolicyModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRealtimeHealthModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -156,6 +159,7 @@
     A20000000000000000000218 /* AgentControlPlaneAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneAdapterTests.swift; sourceTree = "<group>"; };
     A20000000000000000000219 /* AgentControlPlaneActionExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneActionExecutorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000220 /* AgentMediaNetworkPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMediaNetworkPolicyTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRealtimeHealthTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -214,6 +218,7 @@
         A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */,
         A20000000000000000000137 /* AgentMediaNetworkPolicyModels.swift */,
+        A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -255,6 +260,7 @@
         A20000000000000000000218 /* AgentControlPlaneAdapterTests.swift */,
         A20000000000000000000219 /* AgentControlPlaneActionExecutorTests.swift */,
         A20000000000000000000220 /* AgentMediaNetworkPolicyTests.swift */,
+        A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -389,6 +395,7 @@
         A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */,
         A10000000000000000000137 /* AgentMediaNetworkPolicyModels.swift in Sources */,
+        A10000000000000000000138 /* VoiceRealtimeHealthModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -430,6 +437,7 @@
         A10000000000000000000218 /* AgentControlPlaneAdapterTests.swift in Sources */,
         A10000000000000000000219 /* AgentControlPlaneActionExecutorTests.swift in Sources */,
         A10000000000000000000220 /* AgentMediaNetworkPolicyTests.swift in Sources */,
+        A10000000000000000000221 /* VoiceRealtimeHealthTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };

@@ -913,6 +913,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   @Published private(set) var transcript = ""
   @Published private(set) var isRecording = false
 
+  private let runtimeChannel = VoiceRuntimeChannel.androidSystemASR
   private let audioEngine = AVAudioEngine()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
@@ -942,18 +943,30 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
       request.append(buffer)
     }
-    try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
-    try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
-    audioEngine.prepare()
-    try audioEngine.start()
+    VoiceRuntimeHealthRegistry.begin(runtimeChannel)
+    do {
+      try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
+      try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
+      audioEngine.prepare()
+      try audioEngine.start()
+    } catch {
+      VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+      throw error
+    }
     isRecording = true
     task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
       DispatchQueue.main.async {
+        guard let self else { return }
         if let result {
-          self?.transcript = result.bestTranscription.formattedString
+          self.transcript = result.bestTranscription.formattedString
+        }
+        if let error, self.isRecording {
+          VoiceRuntimeHealthRegistry.failure(self.runtimeChannel, reason: error.localizedDescription)
+        } else if result?.isFinal == true {
+          VoiceRuntimeHealthRegistry.success(self.runtimeChannel)
         }
         if error != nil || result?.isFinal == true {
-          Task { @MainActor in self?.stop() }
+          Task { @MainActor in self.stop() }
         }
       }
     }
@@ -961,13 +974,17 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   @MainActor
   func stop() {
+    let wasRecording = isRecording
+    isRecording = false
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
     request?.endAudio()
     task?.cancel()
     task = nil
     request = nil
-    isRecording = false
+    if wasRecording {
+      VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+    }
   }
 }
 
