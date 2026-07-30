@@ -93,6 +93,7 @@
     A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */; };
     A10000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */; };
     A10000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift */; };
+    A10000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -133,6 +134,7 @@
     A10000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift */; };
     A10000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift */; };
     A10000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift */; };
+    A10000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -224,6 +226,7 @@
     A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTaskStatusPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTerminalStatusResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTaskStatusRecorder.swift; sourceTree = "<group>"; };
+    A20000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTransportReceiptRecorder.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -264,6 +267,7 @@
     A20000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelToolLoopAgentPlanningProviderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTerminalStatusResolverTests.swift; sourceTree = "<group>"; };
     A20000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTaskStatusRecorderTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTransportReceiptRecorderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -356,6 +360,7 @@
         A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */,
         A20000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift */,
         A20000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift */,
+        A20000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -417,6 +422,7 @@
         A20000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift */,
         A20000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift */,
         A20000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift */,
+        A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -585,6 +591,7 @@
         A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */,
         A10000000000000000000170 /* AgentConnectorTerminalStatusResolver.swift in Sources */,
         A10000000000000000000171 /* AgentConnectorTaskStatusRecorder.swift in Sources */,
+        A10000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -646,6 +653,7 @@
         A10000000000000000000238 /* CloudModelToolLoopAgentPlanningProviderTests.swift in Sources */,
         A10000000000000000000239 /* AgentConnectorTerminalStatusResolverTests.swift in Sources */,
         A10000000000000000000240 /* AgentConnectorTaskStatusRecorderTests.swift in Sources */,
+        A10000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
