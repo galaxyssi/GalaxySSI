@@ -11,12 +11,17 @@ object AgentTaskRuntime {
     fun supervisor(context: Context): AgentTaskSupervisor {
         supervisor?.let { return it }
         return synchronized(this) {
-            val deviceProfile = AgentDeviceProfileDetector.detect(context.applicationContext)
+            val applicationContext = context.applicationContext
+            val deviceProfile = AgentDeviceProfileDetector.detect(applicationContext)
             supervisor ?: AgentTaskSupervisor(
-                workspaceStore = EncryptedAgentWorkspaceStore(context.applicationContext),
+                workspaceStore = EncryptedAgentWorkspaceStore(applicationContext),
                 maxConcurrentReadReasoningTasks = deviceProfile.maxReadReasoningTasks,
-                livenessListener = AgentTaskLivenessListener(::publishLivenessSignal)
-            ).also { supervisor = it }
+                livenessListener = AgentTaskLivenessListener(::publishLivenessSignal),
+                memoryObserver = { workspace -> AgentMemoryPssRuntime.requestCapture(workspace) }
+            ).also { created ->
+                AgentMemoryPssRuntime.start(applicationContext, created::activeWorkspaces)
+                supervisor = created
+            }
         }
     }
 

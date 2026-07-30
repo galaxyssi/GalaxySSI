@@ -81,6 +81,7 @@ async function runUiSmoke() {
   const capabilitiesPath = path.join(outDir, "desktop-capabilities.png");
   const marketplacePath = path.join(outDir, "desktop-marketplace.png");
   const settingsPath = path.join(outDir, "desktop-settings.png");
+  const agentMemoryPath = path.join(outDir, "desktop-agent-memory.png");
   const evolutionV2Path = path.join(outDir, "desktop-evolution-v2.png");
   const runtimePath = path.join(outDir, "desktop-runtimes.png");
   try {
@@ -851,6 +852,12 @@ async function runUiSmoke() {
             document.querySelector("#asrLanguageSelect")?.value || "",
             document.querySelector("#ttsLanguageSelect")?.value || ""
           ],
+          agentMemory: {
+            refresh: Boolean(document.querySelector("#refreshAgentMemoryButton")),
+            summary: document.querySelector("#agentMemorySummary")?.textContent || "",
+            groups: document.querySelectorAll(".agent-memory-groups section").length,
+            note: document.querySelector(".agent-memory-note")?.textContent || ""
+          },
           secureValidation: validateCloudModelSettings({
             url: "https://api.example.com/v1/chat/completions",
             model: "test-model",
@@ -890,10 +897,42 @@ async function runUiSmoke() {
         || settingsState.evolutionV2.scheduler.parallelLimit !== "2"
         || !settingsState.evolutionV2.scheduler.save
         || !settingsState.evolutionV2.scheduler.runNow
+        || !settingsState.agentMemory.refresh
+        || !settingsState.agentMemory.summary.trim()
+        || settingsState.agentMemory.groups !== 3
+        || !settingsState.agentMemory.note.trim()
         || settingsState.languagePolicy.some((value) => value !== "auto")) {
       throw new Error(`Settings drawer did not expose cloud API configuration: ${JSON.stringify(settingsState)}`);
     }
     await captureSmokeScreenshot(settingsPath);
+    const agentMemoryState = await mainWindow.webContents.executeJavaScript(`
+      (async () => {
+        const summary = document.querySelector("#agentMemorySummary");
+        const group = summary?.closest(".settings-group");
+        const panel = document.querySelector("#settingsPanel");
+        if (!summary || !group || !panel) return { visible: false, summary: "" };
+        panel.style.scrollBehavior = "auto";
+        panel.scrollTop = Math.max(
+          0,
+          panel.scrollTop
+            + group.getBoundingClientRect().top
+            - panel.getBoundingClientRect().top
+            - 12
+        );
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const groupRect = group.getBoundingClientRect();
+        const panelRect = panel.getBoundingClientRect();
+        return {
+          visible: groupRect.top >= panelRect.top && groupRect.top < panelRect.bottom,
+          summary: summary.textContent || "",
+          groups: group.querySelectorAll(".agent-memory-groups section").length
+        };
+      })()
+    `);
+    if (!agentMemoryState.visible || !agentMemoryState.summary.trim() || agentMemoryState.groups !== 3) {
+      throw new Error(`Agent memory telemetry did not render in Settings: ${JSON.stringify(agentMemoryState)}`);
+    }
+    await captureSmokeScreenshot(agentMemoryPath);
     const evolutionViewportState = await mainWindow.webContents.executeJavaScript(`
       (async () => {
         const shell = document.querySelector("#evolutionV2Shell");
@@ -1464,6 +1503,11 @@ async function getAgentTasks(limit = 100) {
   return fetchJson(`/api/agent/tasks?limit=${encodeURIComponent(limit)}`);
 }
 
+async function getAgentMemoryTelemetry() {
+  await startBackend();
+  return fetchJson("/api/agents/memory-telemetry");
+}
+
 async function listCommands(root = "") {
   await startBackend();
   const query = root ? `?root=${encodeURIComponent(root)}` : "";
@@ -2010,6 +2054,7 @@ ipcMain.handle("agents:detect", detectAgents);
 ipcMain.handle("agents:diagnostics", getAgentDiagnostics);
 ipcMain.handle("agents:execution-log", (_event, limit) => getAgentExecutionLog(limit));
 ipcMain.handle("agents:tasks", (_event, limit) => getAgentTasks(limit));
+ipcMain.handle("agents:memory-telemetry", getAgentMemoryTelemetry);
 ipcMain.handle("commands:list", (_event, root = "") => listCommands(root));
 ipcMain.handle("commands:execute", (_event, payload = {}) => executeCommand(payload));
 ipcMain.handle("commands:runs", (_event, limit) => getCommandRuns(limit));

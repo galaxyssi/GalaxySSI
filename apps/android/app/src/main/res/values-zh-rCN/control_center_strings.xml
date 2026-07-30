@@ -88,6 +88,7 @@
     <string name="cc_metric_native_tools">原生工具</string>
     <string name="cc_metric_available_resources">可用资源</string>
     <string name="cc_metric_tasks">最近任务</string>
+    <string name="cc_metric_agent_memory">Agent 内存</string>
     <string name="cc_metric_security_events">安全事件</string>
     <string name="cc_section_core_services">核心服务</string>
     <string name="cc_service_runtime">Agent Runtime</string>
@@ -99,6 +100,29 @@
     <string name="cc_service_router_subtitle">%1$d / %2$d 个智能资源可用</string>
     <string name="cc_service_knowledge">知识索引</string>
     <string name="cc_service_knowledge_subtitle">%1$d 个来源可用于检索</string>
+    <string name="cc_agent_memory_telemetry_title">Agent 内存</string>
+    <string name="cc_agent_memory_telemetry_subtitle">采集 Android PSS，并按当前 Agent 任务的执行身份分组</string>
+    <string name="cc_agent_memory_telemetry_summary">当前 %1$s · 峰值 %2$s</string>
+    <string name="cc_agent_memory_pss_badge">PSS</string>
+    <string name="cc_agent_memory_current">当前</string>
+    <string name="cc_agent_memory_peak">峰值</string>
+    <string name="cc_agent_memory_samples">采样</string>
+    <string name="cc_agent_memory_process_section">App 进程</string>
+    <string name="cc_agent_memory_process_total">总 PSS</string>
+    <string name="cc_agent_memory_process_total_subtitle">SignalASI 进程按比例占用的物理内存</string>
+    <string name="cc_agent_memory_native">原生堆 PSS</string>
+    <string name="cc_agent_memory_native_subtitle">原生运行时与动态库</string>
+    <string name="cc_agent_memory_dalvik">托管堆 PSS</string>
+    <string name="cc_agent_memory_dalvik_subtitle">Kotlin、Java 与 Android 对象</string>
+    <string name="cc_agent_memory_other">其他 PSS</string>
+    <string name="cc_agent_memory_other_subtitle">图形、代码、线程栈与共享映射</string>
+    <string name="cc_agent_memory_by_agent">按 Agent</string>
+    <string name="cc_agent_memory_by_session">按会话</string>
+    <string name="cc_agent_memory_by_provider">按 Provider</string>
+    <string name="cc_agent_memory_no_samples">暂无归因采样</string>
+    <string name="cc_agent_memory_no_samples_subtitle">启动 Agent 任务后将采集此维度</string>
+    <string name="cc_agent_memory_dimension_subtitle">峰值 %1$s · %2$d 次采样</string>
+    <string name="cc_agent_memory_estimate_notice">Android 只提供进程级 PSS。多个任务共享同一进程时，SignalASI 会将当前 PSS 分配给活动任务，并明确标记为估算归因。</string>
 
     <string name="cc_agent_running">Agent 内核运行中</string>
     <string name="cc_agent_running_subtitle">规划、工具、恢复与安全控制均已启用</string>

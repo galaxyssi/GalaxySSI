@@ -166,6 +166,8 @@ async def lifespan(app: FastAPI):
     proactive_runtime = None
     evolution_runtime = None
     memory_critic_runtime = None
+    memory_telemetry_runtime = None
+    memory_telemetry_subscription_id = ""
     reputation_subscription_id = ""
     runtime_server = None
     external_services_enabled = os.environ.get("SIGNALASI_DISABLE_EXTERNAL_SERVICES") != "1"
@@ -189,6 +191,19 @@ async def lifespan(app: FastAPI):
         )
     except Exception as exc:
         log.warning("Desktop Agent Runtime start failed: %s", exc)
+    try:
+        from agent_memory_telemetry import agent_memory_telemetry_runtime
+
+        memory_telemetry_runtime = agent_memory_telemetry_runtime(
+            lambda: agent_task_manager.list(limit=500)
+        )
+        memory_telemetry_runtime.start()
+        memory_telemetry_subscription_id = agent_task_manager.subscribe(
+            memory_telemetry_runtime.observe_task
+        )
+        log.info("Agent memory telemetry started")
+    except Exception as exc:
+        log.warning("Agent memory telemetry start failed: %s", exc)
     try:
         prewarm = prewarm_external_cli_agents()
         log.info("External CLI Runtime ready (prewarmed=%s)", prewarm.get("warmed", {}))
@@ -276,6 +291,10 @@ async def lifespan(app: FastAPI):
                 memory_critic_runtime.stop()
             except Exception as exc:
                 log.warning("Desktop memory critic runtime shutdown failed: %s", exc)
+        if memory_telemetry_subscription_id:
+            agent_task_manager.unsubscribe(memory_telemetry_subscription_id)
+        if memory_telemetry_runtime is not None:
+            memory_telemetry_runtime.stop()
         if runtime_server is not None:
             shutdown_desktop_agent_runtime_server(wait=False)
         shutdown_acp_agent_runtime()
@@ -357,6 +376,17 @@ def api_list_agents():
 @app.get("/api/agents/diagnostics")
 def api_agent_diagnostics():
     return connector_diagnostics()
+
+@app.get("/api/agents/memory-telemetry")
+def api_agent_memory_telemetry(request: Request):
+    require_loopback(request)
+    from agent_memory_telemetry import agent_memory_telemetry_runtime
+
+    runtime = agent_memory_telemetry_runtime(
+        lambda: agent_task_manager.list(limit=500)
+    )
+    runtime.request_capture()
+    return runtime.snapshot()
 
 
 @app.get("/api/provider-profiles")

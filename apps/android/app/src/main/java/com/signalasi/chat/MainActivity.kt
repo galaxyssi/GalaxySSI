@@ -7662,6 +7662,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 mobileNativeAgent.updateNoProgressTimeoutSeconds(next)
                 showAgentPlannerSettingsPage()
             }
+            "agent.memory_telemetry" -> openExistingControlCenterPage {
+                renderControlCenterAgentMemoryTelemetryPage()
+            }
             "memory.manage" -> openExistingControlCenterPage { showAgentMemoryPage() }
             "memory.inbox" -> openExistingControlCenterPage { showGlobalMemoryInboxPage() }
             "memory.temporal.current" -> openExistingControlCenterPage {
@@ -8901,6 +8904,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun renderControlCenterSystemStatusPage() {
         val state = mobileNativeAgent.snapshot()
         val safety = mobileNativeAgent.safetySettings()
+        val memory = AgentMemoryPssRuntime.snapshot()
         val tools = mobileNativeAgent.nativeToolCatalog()
         val visibleTargets = controlCenterResourceTargets(state.callableTargets)
         val availableResources = visibleTargets.count { it.status == AgentConnectorStatus.AVAILABLE }
@@ -8924,7 +8928,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     metrics = listOf(
                         ControlCenterMetricSpec(tools.count { it.availability.status == AgentNativeToolAvailabilityStatus.AVAILABLE }.toString(), getString(R.string.cc_metric_native_tools)),
                         ControlCenterMetricSpec("$availableResources/${visibleTargets.size}", getString(R.string.cc_metric_available_resources)),
-                        ControlCenterMetricSpec(state.recentTasks.size.toString(), getString(R.string.cc_metric_tasks))
+                        ControlCenterMetricSpec(formatBytes(memory.processCurrentBytes), getString(R.string.cc_metric_agent_memory))
                     )
                 ),
                 sections = listOf(
@@ -8936,10 +8940,149 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             ControlCenterRowSpec(routeAction(ControlCenterRoute.RESOURCE_ROUTING), getString(R.string.cc_service_router), getString(R.string.cc_service_router_subtitle, availableResources, visibleTargets.size), R.drawable.ic_settings_model, getString(if (availableResources > 0) R.string.cc_status_ready else R.string.cc_status_degraded), if (availableResources > 0) ControlCenterTone.BLUE else ControlCenterTone.AMBER),
                             ControlCenterRowSpec(routeAction(ControlCenterRoute.KNOWLEDGE), getString(R.string.cc_service_knowledge), getString(R.string.cc_service_knowledge_subtitle, knowledgeCount), R.drawable.ic_agent_knowledge, getString(if (knowledgeCount > 0) R.string.cc_status_ready else R.string.status_needs_setup), if (knowledgeCount > 0) ControlCenterTone.BLUE else ControlCenterTone.NEUTRAL)
                         )
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.advanced_section_diagnostics),
+                        listOf(
+                            ControlCenterRowSpec(
+                                "agent.memory_telemetry",
+                                getString(R.string.cc_agent_memory_telemetry_title),
+                                getString(
+                                    R.string.cc_agent_memory_telemetry_summary,
+                                    formatBytes(memory.processCurrentBytes),
+                                    formatBytes(memory.processPeakBytes)
+                                ),
+                                R.drawable.ic_agent_memory,
+                                getString(R.string.cc_agent_memory_pss_badge),
+                                ControlCenterTone.VIOLET
+                            )
+                        )
                     )
                 )
             )
         )
+    }
+
+    private fun renderControlCenterAgentMemoryTelemetryPage() {
+        val snapshot = AgentMemoryPssRuntime.snapshot()
+        val processRows = listOf(
+            ControlCenterRowSpec(
+                "",
+                getString(R.string.cc_agent_memory_process_total),
+                getString(R.string.cc_agent_memory_process_total_subtitle),
+                R.drawable.ic_settings_diagnostics,
+                formatBytes(snapshot.processCurrentBytes),
+                ControlCenterTone.VIOLET,
+                showChevron = false
+            ),
+            ControlCenterRowSpec(
+                "",
+                getString(R.string.cc_agent_memory_native),
+                getString(R.string.cc_agent_memory_native_subtitle),
+                R.drawable.ic_agent_node,
+                formatBytes(snapshot.nativeBytes),
+                ControlCenterTone.BLUE,
+                showChevron = false
+            ),
+            ControlCenterRowSpec(
+                "",
+                getString(R.string.cc_agent_memory_dalvik),
+                getString(R.string.cc_agent_memory_dalvik_subtitle),
+                R.drawable.ic_settings_model,
+                formatBytes(snapshot.dalvikBytes),
+                ControlCenterTone.GREEN,
+                showChevron = false
+            ),
+            ControlCenterRowSpec(
+                "",
+                getString(R.string.cc_agent_memory_other),
+                getString(R.string.cc_agent_memory_other_subtitle),
+                R.drawable.ic_info_outline,
+                formatBytes(snapshot.otherBytes),
+                ControlCenterTone.NEUTRAL,
+                showChevron = false
+            )
+        )
+        showControlCenterFeature(
+            getString(R.string.cc_agent_memory_telemetry_title),
+            ControlCenterPageSpec(
+                hero = ControlCenterHeroSpec(
+                    title = getString(R.string.cc_agent_memory_telemetry_title),
+                    subtitle = getString(R.string.cc_agent_memory_telemetry_subtitle),
+                    iconRes = R.drawable.ic_agent_memory,
+                    badges = listOf(
+                        ControlCenterBadgeSpec(
+                            getString(R.string.cc_agent_memory_pss_badge),
+                            ControlCenterTone.VIOLET
+                        )
+                    ),
+                    metrics = listOf(
+                        ControlCenterMetricSpec(
+                            formatBytes(snapshot.processCurrentBytes),
+                            getString(R.string.cc_agent_memory_current)
+                        ),
+                        ControlCenterMetricSpec(
+                            formatBytes(snapshot.processPeakBytes),
+                            getString(R.string.cc_agent_memory_peak)
+                        ),
+                        ControlCenterMetricSpec(
+                            snapshot.sampleCount.toString(),
+                            getString(R.string.cc_agent_memory_samples)
+                        )
+                    )
+                ),
+                sections = listOf(
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_agent_memory_process_section),
+                        processRows
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_agent_memory_by_agent),
+                        agentMemoryTelemetryRows(snapshot.byAgent)
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_agent_memory_by_session),
+                        agentMemoryTelemetryRows(snapshot.bySession)
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_agent_memory_by_provider),
+                        agentMemoryTelemetryRows(snapshot.byProvider)
+                    )
+                ),
+                footer = getString(R.string.cc_agent_memory_estimate_notice)
+            )
+        )
+    }
+
+    private fun agentMemoryTelemetryRows(
+        values: List<AgentMemoryDimensionStats>
+    ): List<ControlCenterRowSpec> {
+        if (values.isEmpty()) {
+            return listOf(
+                ControlCenterRowSpec(
+                    "",
+                    getString(R.string.cc_agent_memory_no_samples),
+                    getString(R.string.cc_agent_memory_no_samples_subtitle),
+                    R.drawable.ic_info_outline,
+                    showChevron = false
+                )
+            )
+        }
+        return values.take(12).map { item ->
+            ControlCenterRowSpec(
+                "",
+                item.id,
+                getString(
+                    R.string.cc_agent_memory_dimension_subtitle,
+                    formatBytes(item.peakBytes),
+                    item.sampleCount
+                ),
+                R.drawable.ic_agent_node,
+                formatBytes(item.currentBytes),
+                if (item.estimated) ControlCenterTone.AMBER else ControlCenterTone.GREEN,
+                showChevron = false
+            )
+        }
     }
 
     private fun renderControlCenterAgentCorePage() {

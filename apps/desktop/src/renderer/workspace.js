@@ -1031,6 +1031,45 @@ async function refreshBackend() {
   elements.backendDetail.textContent = online ? state.backend.origin : (state.backend?.error || t("Backend unavailable"));
 }
 
+function renderAgentMemoryGroup(selector, values) {
+  const target = $(selector);
+  const rows = Array.isArray(values) ? values.slice(0, 6) : [];
+  target.innerHTML = rows.length
+    ? rows.map((item) => `<div class="agent-memory-item" title="${escapeHtml(item.id)}">
+        <span>${escapeHtml(item.id)}</span>
+        <b>${escapeHtml(formatBytes(item.current_bytes || 0))}${item.estimated ? "*" : ""}</b>
+      </div>`).join("")
+    : `<div class="agent-memory-item"><span>${escapeHtml(t("No active samples"))}</span></div>`;
+}
+
+async function refreshAgentMemoryTelemetry() {
+  const summary = $("#agentMemorySummary");
+  try {
+    const snapshot = await window.signalasi.getAgentMemoryTelemetry();
+    const kind = {
+      android_pss: "Android PSS",
+      windows_working_set: "Windows Working Set",
+      linux_rss: "Linux RSS",
+      macos_resident_set: "macOS Resident Set"
+    }[snapshot.measurement_kind] || snapshot.measurement_kind || t("Memory");
+    summary.textContent = snapshot.sampled_at
+      ? t("Current {current} · Peak {peak} · {kind}", {
+          current: formatBytes(snapshot.process_current_bytes || 0),
+          peak: formatBytes(snapshot.process_peak_bytes || 0),
+          kind
+        })
+      : t("Memory telemetry has not been sampled.");
+    renderAgentMemoryGroup("#agentMemoryByAgent", snapshot.by_agent);
+    renderAgentMemoryGroup("#agentMemoryBySession", snapshot.by_session);
+    renderAgentMemoryGroup("#agentMemoryByProvider", snapshot.by_provider);
+  } catch (error) {
+    summary.textContent = error.message || String(error);
+    renderAgentMemoryGroup("#agentMemoryByAgent", []);
+    renderAgentMemoryGroup("#agentMemoryBySession", []);
+    renderAgentMemoryGroup("#agentMemoryByProvider", []);
+  }
+}
+
 function updateAgentCounters() {
   elements.agentCount.textContent = String(state.agents.length);
 }
@@ -3519,7 +3558,13 @@ async function openPanel(name) {
     if (panelName === "capabilities") await refreshCapabilities();
     if (panelName === "commands") await Promise.all([refreshCommands(), refreshCommandRuns()]);
     if (panelName === "settings") {
-      await Promise.all([refreshBackend(), refreshAgents(), refreshRuntimeManager(false), refreshEvolutionTasks(false)]);
+      await Promise.all([
+        refreshBackend(),
+        refreshAgents(),
+        refreshRuntimeManager(false),
+        refreshEvolutionTasks(false),
+        refreshAgentMemoryTelemetry()
+      ]);
     }
   } finally {
     if (sequence === panelOpenSequence) {
@@ -4070,6 +4115,7 @@ function bindEvents() {
   $("#proactiveTaskList").addEventListener("click", handleProactiveAction);
   $("#proactiveRunList").addEventListener("click", handleProactiveAction);
   $("#runDiagnosticsButton").addEventListener("click", runDiagnostics);
+  $("#refreshAgentMemoryButton").addEventListener("click", refreshAgentMemoryTelemetry);
   $("#refreshRuntimeButton").addEventListener("click", () => refreshRuntimeManager(true));
   $("#refreshCommandsButton").addEventListener("click", refreshCommands);
   $("#refreshCommandRunsButton").addEventListener("click", refreshCommandRuns);
