@@ -21694,6 +21694,73 @@ final class InMemoryAgentMcpAuditStore: AgentMcpAuditStore {
   static let maxRecords = 1_000
 }
 
+final class FileAgentMcpAuditStore: AgentMcpAuditStore {
+  private let fileURL: URL
+  private let fileManager: FileManager
+  private let lock = NSRecursiveLock()
+
+  init(directory: URL, fileName: String = "agent-mcp-audit.json", fileManager: FileManager = .default) {
+    self.fileURL = directory.appendingPathComponent(fileName, isDirectory: false)
+    self.fileManager = fileManager
+  }
+
+  init(fileURL: URL, fileManager: FileManager = .default) {
+    self.fileURL = fileURL
+    self.fileManager = fileManager
+  }
+
+  func append(_ record: AgentMcpAuditRecord) {
+    synchronized {
+      var records = readRecords()
+      records.append(record)
+      writeRecords(Array(records.suffix(InMemoryAgentMcpAuditStore.maxRecords)))
+    }
+  }
+
+  func list(connectionId: String = "", limit: Int = 100) -> [AgentMcpAuditRecord] {
+    synchronized {
+      let cleanConnectionId = connectionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      return Array(readRecords()
+        .filter { cleanConnectionId.isEmpty || $0.connectionId == cleanConnectionId }
+        .suffix(min(max(limit, 1), 500))
+        .reversed())
+    }
+  }
+
+  func clear(connectionId: String = "") -> Int {
+    synchronized {
+      let cleanConnectionId = connectionId.trimmingCharacters(in: .whitespacesAndNewlines)
+      let records = readRecords()
+      let kept = cleanConnectionId.isEmpty ? [] : records.filter { $0.connectionId != cleanConnectionId }
+      writeRecords(kept)
+      return records.count - kept.count
+    }
+  }
+
+  private func readRecords() -> [AgentMcpAuditRecord] {
+    guard fileManager.fileExists(atPath: fileURL.path),
+          let document = try? String(contentsOf: fileURL, encoding: .utf8) else {
+      return []
+    }
+    return AgentMcpAuditCodec.decode(document)
+  }
+
+  private func writeRecords(_ records: [AgentMcpAuditRecord]) {
+    do {
+      try fileManager.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      try AgentMcpAuditCodec.encode(records).write(to: fileURL, atomically: true, encoding: .utf8)
+    } catch {
+      return
+    }
+  }
+
+  private func synchronized<T>(_ body: () -> T) -> T {
+    lock.lock()
+    defer { lock.unlock() }
+    return body()
+  }
+}
+
 enum AgentMcpAuditCodec {
   static func emptyDocument() -> String {
     #"{"version":1,"records":[]}"#
