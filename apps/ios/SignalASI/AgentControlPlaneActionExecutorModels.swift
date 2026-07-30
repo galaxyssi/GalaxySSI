@@ -420,6 +420,27 @@ final class ActionExecutorAgentProvider: AgentProvider {
     return nil
   }
 
+  @discardableResult
+  func forceTaskTimeout(
+    runId: String,
+    message: String,
+    nowMillis: Int64 = AgentControlPlaneClock.nowMillis()
+  ) -> AgentActionResult? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let result = transport.forceTaskTimeout(
+        runId: runId,
+        message: message,
+        nowMillis: nowMillis
+      ) {
+        return result
+      }
+    }
+    return nil
+  }
+
   func discardPrepared(agentId: String, runId: String) {
     transportIfPresent(agentId: agentId)?.discardPrepared(runId: runId)
   }
@@ -803,6 +824,33 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       payload: steered.eventPayload
     )
     return steered.result
+  }
+
+  func forceTaskTimeout(runId: String, message: String, nowMillis: Int64) -> AgentActionResult? {
+    let active: ActiveRun
+    let timeout: AgentTaskWatchdogTimeoutResult
+    lock.lock()
+    guard let matchedActive = activeByRunId.removeValue(forKey: runId),
+      let pending = resultsByRunId[runId] else {
+      lock.unlock()
+      return nil
+    }
+    active = matchedActive
+    timeout = AgentTaskWatchdogTimeoutResolver.resolve(
+      pending: pending,
+      message: message,
+      nowMillis: nowMillis
+    )
+    resultsByRunId[runId] = timeout.result
+    lock.unlock()
+    emit(
+      request: active.request,
+      registration: active.registration,
+      type: .runFailed,
+      sequence: 3,
+      payload: timeout.eventPayload
+    )
+    return timeout.result
   }
 
   func observeEvents(runId: String) -> AsyncStream<AgentRunControlEvent> {

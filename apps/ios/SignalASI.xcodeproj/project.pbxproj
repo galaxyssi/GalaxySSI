@@ -96,6 +96,7 @@
     A10000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift */; };
     A10000000000000000000173 /* AgentConnectorTimeoutResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000173 /* AgentConnectorTimeoutResolver.swift */; };
     A10000000000000000000174 /* AgentConnectorSteeredResultResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000174 /* AgentConnectorSteeredResultResolver.swift */; };
+    A10000000000000000000175 /* AgentTaskWatchdogTimeoutResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000175 /* AgentTaskWatchdogTimeoutResolver.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -139,6 +140,7 @@
     A10000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */; };
     A10000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift */; };
     A10000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift */; };
+    A10000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -233,6 +235,7 @@
     A20000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTransportReceiptRecorder.swift; sourceTree = "<group>"; };
     A20000000000000000000173 /* AgentConnectorTimeoutResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTimeoutResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000174 /* AgentConnectorSteeredResultResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorSteeredResultResolver.swift; sourceTree = "<group>"; };
+    A20000000000000000000175 /* AgentTaskWatchdogTimeoutResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskWatchdogTimeoutResolver.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -276,6 +279,7 @@
     A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTransportReceiptRecorderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorTimeoutResolverTests.swift; sourceTree = "<group>"; };
     A20000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorSteeredResultResolverTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskWatchdogTimeoutResolverTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -371,6 +375,7 @@
         A20000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift */,
         A20000000000000000000173 /* AgentConnectorTimeoutResolver.swift */,
         A20000000000000000000174 /* AgentConnectorSteeredResultResolver.swift */,
+        A20000000000000000000175 /* AgentTaskWatchdogTimeoutResolver.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -435,6 +440,7 @@
         A20000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift */,
         A20000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift */,
         A20000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift */,
+        A20000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -606,6 +612,7 @@
         A10000000000000000000172 /* AgentConnectorTransportReceiptRecorder.swift in Sources */,
         A10000000000000000000173 /* AgentConnectorTimeoutResolver.swift in Sources */,
         A10000000000000000000174 /* AgentConnectorSteeredResultResolver.swift in Sources */,
+        A10000000000000000000175 /* AgentTaskWatchdogTimeoutResolver.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -670,6 +677,7 @@
         A10000000000000000000241 /* AgentConnectorTransportReceiptRecorderTests.swift in Sources */,
         A10000000000000000000242 /* AgentConnectorTimeoutResolverTests.swift in Sources */,
         A10000000000000000000243 /* AgentConnectorSteeredResultResolverTests.swift in Sources */,
+        A10000000000000000000244 /* AgentTaskWatchdogTimeoutResolverTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
