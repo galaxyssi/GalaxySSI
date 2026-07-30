@@ -26,6 +26,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "handoff_request_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.contactsSearch {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("Contacts"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "contacts_search_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.wifiStatus {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("NWPath"), descriptor.id)
@@ -46,6 +50,13 @@ extension SignalASIStoreTests {
       if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.contactsSearch {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosContactsReadPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -250,6 +261,69 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["scope"], .string("app_visible_ios_no_wifi_identifiers"))
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(33_000))
     XCTAssertEqual(result.metadata["settings_changed"], .bool(false))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorSearchesContacts() throws {
+    final class FakeContactsProvider: AgentIOSContactsSearchProviding {
+      var capturedQuery = ""
+      var capturedLimit = 0
+      var capturedNow: Int64 = 0
+
+      func searchContacts(query: String, limit: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        capturedQuery = query
+        capturedLimit = limit
+        capturedNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "contacts": .array([
+              .object([
+                "contact_id": .int(101),
+                "display_name": .string("Alice Example"),
+                "phone_number": .string("+15551234567"),
+                "platform": .string("ios")
+              ])
+            ]),
+            "count": .int(1),
+            "query": .string(query),
+            "limit": .int(Int64(limit)),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_contacts_read"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Contacts search completed"
+        )
+      }
+    }
+    let provider = FakeContactsProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          contactsProvider: provider,
+          nowMillis: { 44_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosContactsReadPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.contactsSearch,
+      input: [
+        "query": .string("Alice"),
+        "limit": .int(2)
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(provider.capturedQuery, "Alice")
+    XCTAssertEqual(provider.capturedLimit, 2)
+    XCTAssertEqual(provider.capturedNow, 44_000)
+    XCTAssertEqual(result.output["count"], .int(1))
+    XCTAssertEqual(result.output["contacts"]?.arrayValue?.first?.objectValue?["display_name"], .string("Alice Example"))
+    XCTAssertEqual(result.output["contacts"]?.arrayValue?.first?.objectValue?["phone_number"], .string("+15551234567"))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 

@@ -63,6 +63,7 @@ const requiredProjectSnippets = [
   "IPHONEOS_DEPLOYMENT_TARGET = 15.0",
   "PRODUCT_BUNDLE_IDENTIFIER = com.signalasi.chat.ios",
   "INFOPLIST_KEY_NSCameraUsageDescription",
+  "INFOPLIST_KEY_NSContactsUsageDescription",
   "INFOPLIST_KEY_NSMicrophoneUsageDescription",
   "INFOPLIST_KEY_NSSpeechRecognitionUsageDescription",
   "SignalASIAttachments.swift in Sources",
