@@ -119,6 +119,8 @@
     A10000000000000000000195 /* AgentClarificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000195 /* AgentClarificationPolicy.swift */; };
     A10000000000000000000196 /* AgentSkillCommandParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000196 /* AgentSkillCommandParser.swift */; };
     A10000000000000000000197 /* AgentTaskRequirementAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */; };
+    A10000000000000000000198 /* AgentDynamicTeamModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000198 /* AgentDynamicTeamModels.swift */; };
+    A10000000000000000000199 /* AgentDynamicTeamCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000199 /* AgentDynamicTeamCompiler.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -185,6 +187,7 @@
     A10000000000000000000264 /* AgentClarificationPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000264 /* AgentClarificationPolicyTests.swift */; };
     A10000000000000000000265 /* AgentSkillCommandParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000265 /* AgentSkillCommandParserTests.swift */; };
     A10000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */; };
+    A10000000000000000000267 /* AgentDynamicTeamCompilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -302,6 +305,8 @@
     A20000000000000000000195 /* AgentClarificationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClarificationPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000196 /* AgentSkillCommandParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillCommandParser.swift; sourceTree = "<group>"; };
     A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRequirementAnalyzer.swift; sourceTree = "<group>"; };
+    A20000000000000000000198 /* AgentDynamicTeamModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDynamicTeamModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000199 /* AgentDynamicTeamCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDynamicTeamCompiler.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -368,6 +373,7 @@
     A20000000000000000000264 /* AgentClarificationPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClarificationPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000265 /* AgentSkillCommandParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSkillCommandParserTests.swift; sourceTree = "<group>"; };
     A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRequirementAnalyzerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDynamicTeamCompilerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -486,6 +492,8 @@
         A20000000000000000000195 /* AgentClarificationPolicy.swift */,
         A20000000000000000000196 /* AgentSkillCommandParser.swift */,
         A20000000000000000000197 /* AgentTaskRequirementAnalyzer.swift */,
+        A20000000000000000000198 /* AgentDynamicTeamModels.swift */,
+        A20000000000000000000199 /* AgentDynamicTeamCompiler.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -573,6 +581,7 @@
         A20000000000000000000264 /* AgentClarificationPolicyTests.swift */,
         A20000000000000000000265 /* AgentSkillCommandParserTests.swift */,
         A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */,
+        A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -767,6 +776,8 @@
         A10000000000000000000195 /* AgentClarificationPolicy.swift in Sources */,
         A10000000000000000000196 /* AgentSkillCommandParser.swift in Sources */,
         A10000000000000000000197 /* AgentTaskRequirementAnalyzer.swift in Sources */,
+        A10000000000000000000198 /* AgentDynamicTeamModels.swift in Sources */,
+        A10000000000000000000199 /* AgentDynamicTeamCompiler.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -854,6 +865,7 @@
         A10000000000000000000264 /* AgentClarificationPolicyTests.swift in Sources */,
         A10000000000000000000265 /* AgentSkillCommandParserTests.swift in Sources */,
         A10000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift in Sources */,
+        A10000000000000000000267 /* AgentDynamicTeamCompilerTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
