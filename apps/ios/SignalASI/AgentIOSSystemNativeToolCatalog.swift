@@ -47,10 +47,19 @@ enum AgentIOSSystemNativeToolCatalog {
     vpnConsentOpen
   ]
 
+  static let downloadToolIds: Set<String> = [
+    downloadEnqueue,
+    downloadQuery,
+    downloadRemove
+  ]
+
   static let executableToolIds: Set<String> = handoffToolIds.union([
     calendarsList,
     calendarEventsQuery,
     contactsSearch,
+    downloadEnqueue,
+    downloadQuery,
+    downloadRemove,
     wifiStatus,
     audioStatus,
     biometricStatus
@@ -296,7 +305,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       downloadEnqueue,
       "Enqueue Android download",
-      "Android DownloadManager enqueue descriptor retained for planning; iOS requires a separate URLSession-backed download executor.",
+      "Enqueues one public HTTPS download through the iOS app-managed URLSession download store.",
       .medium,
       ["download.enqueue"],
       ["android.permission.INTERNET"],
@@ -306,7 +315,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       downloadQuery,
       "Query Android download",
-      "Android DownloadManager query descriptor retained for planning; iOS cannot query Android-managed downloads.",
+      "Queries one app-managed iOS URLSession download record using Android DownloadManager-compatible fields.",
       .low,
       ["download.query"],
       inputSchema: input(["download_id": integerSchema(minimum: 1)], required: ["download_id"])
@@ -314,7 +323,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       downloadRemove,
       "Remove Android download",
-      "Android DownloadManager remove descriptor retained for planning; iOS requires a separate scoped download executor.",
+      "Cancels or removes one app-managed iOS download record and its cached file.",
       .high,
       ["download.remove"],
       [],
@@ -498,6 +507,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if downloadToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosDownloadPermission,
+          title: "iOS app-managed downloads",
+          description: "Limits downloads to public HTTPS URLs and files cached inside the SignalASI iOS app sandbox."
+        )
+      ]
+    }
     let platform = AgentNativePermissionRequirement(
       id: androidSystemPermission,
       title: "Android system API",
@@ -543,6 +561,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == calendarsList || id == calendarEventsQuery {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Calendar read executor."
     }
+    if downloadToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS URLSession download executor."
+    }
     if id == biometricStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS biometric status executor."
     }
@@ -565,6 +586,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == calendarsList || id == calendarEventsQuery {
       return calendarReadAvailability
     }
+    if downloadToolIds.contains(id) {
+      return downloadAvailability
+    }
     if id == biometricStatus {
       return biometricStatusAvailability
     }
@@ -586,6 +610,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == calendarsList || id == calendarEventsQuery {
       return "eventkit_calendar_read_on_ios15"
+    }
+    if downloadToolIds.contains(id) {
+      return "url_session_download_manager_on_ios15"
     }
     if id == biometricStatus {
       return "local_authentication_status_on_ios15"
@@ -632,6 +659,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads EventKit calendars and events after the Calendar permission gate."
+    )
+  }
+
+  private static var downloadAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor uses URLSession to manage bounded public HTTPS downloads inside the app cache."
     )
   }
 
@@ -702,6 +736,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosWifiStatusPermission = "signalasi.scope.ios_app_visible_wifi_status"
   static let iosContactsReadPermission = "signalasi.scope.ios_contacts_read"
   static let iosCalendarReadPermission = "signalasi.scope.ios_calendar_read"
+  static let iosDownloadPermission = "signalasi.scope.ios_app_managed_downloads"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
