@@ -438,11 +438,18 @@ extension SignalASIStoreTests {
       ],
       idempotency: .idempotencyKeyRequired
     )
-    let registry = try AgentNativeToolRegistry(definitions: [
-      AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor")
-    ])
+    let registry = try AgentNativeToolRegistry()
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
+        executor: { _ in .success(output: ["value": .int(1)]) }
+      ))
     let missingKey = registry.authorize("signalasi.test.idempotent", input: ["value": .int(1)])
     let first = registry.replayDecision(
+      "signalasi.test.idempotent",
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "first", idempotencyKey: "request-1")
+    )
+    let invoked = registry.invoke(
       "signalasi.test.idempotent",
       input: ["value": .int(1)],
       context: AgentNativeToolInvocationContext(invocationId: "first", idempotencyKey: "request-1")
@@ -460,6 +467,7 @@ extension SignalASIStoreTests {
 
     XCTAssertEqual(missingKey.code, "missing_idempotency_key")
     XCTAssertEqual(first.code, .accepted)
+    XCTAssertTrue(invoked.isSuccess)
     XCTAssertEqual(replay.code, .replay)
     XCTAssertTrue(replay.replayed)
     XCTAssertEqual(replay.originalInvocationId, "first")
@@ -937,6 +945,55 @@ extension SignalASIStoreTests {
     XCTAssertEqual(replay.receipt.invocationId, "second")
     XCTAssertEqual(conflict.status, .rejected)
     XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
+  }
+
+  func testAgentNativeToolRegistryReplaysSnapshotStoreAcrossRegistryRecreation() throws {
+    var executions = 0
+    var now: Int64 = 2_000
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.snapshot.replay",
+      inputSchema: [
+        "type": .string("object"),
+        "properties": .object(["value": .object(["type": .string("integer")])]),
+        "required": .array([.string("value")]),
+        "additionalProperties": .bool(false)
+      ],
+      idempotency: .idempotencyKeyRequired
+    )
+
+    func registry(replayStore: AgentNativeToolReplayStore) throws -> AgentNativeToolRegistry {
+      try AgentNativeToolRegistry(replayStore: replayStore)
+        .registerExecutable(AgentNativeToolExecutableDefinition(
+          definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
+          executor: { _ in
+            executions += 1
+            return .success(output: ["execution": .int(Int64(executions))])
+          }
+        ))
+    }
+
+    let firstStore = AgentNativeToolReplaySnapshotStore(nowMillis: { now })
+    let first = try registry(replayStore: firstStore).invoke(
+      descriptor.id,
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "first", idempotencyKey: "request-1")
+    )
+    let serialized = firstStore.serializedSnapshot()
+    now += 10
+    let restoredStore = AgentNativeToolReplaySnapshotStore(serializedEntries: serialized, nowMillis: { now })
+    let replay = try registry(replayStore: restoredStore).invoke(
+      descriptor.id,
+      input: ["value": .int(1)],
+      context: AgentNativeToolInvocationContext(invocationId: "second", idempotencyKey: "request-1")
+    )
+
+    XCTAssertTrue(first.isSuccess)
+    XCTAssertEqual(executions, 1)
+    XCTAssertEqual(replay.output, first.output)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(replay.receipt.originalInvocationId, "first")
+    XCTAssertEqual(replay.receipt.invocationId, "second")
+    XCTAssertTrue(serialized.contains(#""tool_id":"signalasi.test.snapshot.replay""#))
   }
 
   func testAgentNativeToolRegistryAuditsReplayFailureAndUnknownTools() throws {

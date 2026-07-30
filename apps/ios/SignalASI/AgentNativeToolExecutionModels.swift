@@ -417,179 +417,6 @@ struct AgentNativeToolReplayDecision: Codable, Equatable {
   }
 }
 
-struct AgentNativeToolReplayRecord: Codable, Equatable {
-  var toolId: String
-  var idempotencyKey: String
-  var inputSha256: String
-  var invocationId: String
-  var recordedAtEpochMillis: Int64
-
-  enum CodingKeys: String, CodingKey {
-    case toolId = "tool_id"
-    case idempotencyKey = "idempotency_key"
-    case inputSha256 = "input_sha256"
-    case invocationId = "invocation_id"
-    case recordedAtEpochMillis = "recorded_at_epoch_millis"
-  }
-}
-
-final class InMemoryAgentNativeToolReplayStore {
-  private var records: [String: AgentNativeToolReplayRecord] = [:]
-  private var results: [String: AgentNativeToolResult] = [:]
-
-  func decide(
-    descriptor: AgentNativeToolDescriptor,
-    input: AgentMcpJSONObject,
-    context: AgentNativeToolInvocationContext
-  ) -> AgentNativeToolReplayDecision {
-    guard descriptor.idempotency != .nonIdempotent else {
-      return AgentNativeToolReplayDecision(
-        code: .bypassed,
-        replayed: false,
-        originalInvocationId: nil,
-        inputSha256: AgentMcpJSONCodec.sha256(input)
-      )
-    }
-    guard let key = context.idempotencyKey, !key.isEmpty else {
-      let code: AgentNativeToolReplayDecisionCode = descriptor.idempotency == .idempotencyKeyRequired
-        ? .keyRequired
-        : .accepted
-      return AgentNativeToolReplayDecision(
-        code: code,
-        replayed: false,
-        originalInvocationId: nil,
-        inputSha256: AgentMcpJSONCodec.sha256(input)
-      )
-    }
-
-    let digest = AgentMcpJSONCodec.sha256(input)
-    let storageKey = self.storageKey(descriptor: descriptor, idempotencyKey: key)
-    if let existing = records[storageKey] {
-      return AgentNativeToolReplayDecision(
-        code: existing.inputSha256 == digest ? .replay : .conflict,
-        replayed: existing.inputSha256 == digest,
-        originalInvocationId: existing.invocationId,
-        inputSha256: digest
-      )
-    }
-    records[storageKey] = AgentNativeToolReplayRecord(
-      toolId: descriptor.id,
-      idempotencyKey: key,
-      inputSha256: digest,
-      invocationId: context.invocationId,
-      recordedAtEpochMillis: context.requestedAtEpochMillis
-    )
-    return AgentNativeToolReplayDecision(
-      code: .accepted,
-      replayed: false,
-      originalInvocationId: nil,
-      inputSha256: digest
-    )
-  }
-
-  func cachedResult(
-    descriptor: AgentNativeToolDescriptor,
-    input: AgentMcpJSONObject,
-    context: AgentNativeToolInvocationContext
-  ) -> (AgentNativeToolReplayDecision, AgentNativeToolResult?) {
-    guard descriptor.idempotency != .nonIdempotent else {
-      return (
-        AgentNativeToolReplayDecision(
-          code: .bypassed,
-          replayed: false,
-          originalInvocationId: nil,
-          inputSha256: AgentMcpJSONCodec.sha256(input)
-        ),
-        nil
-      )
-    }
-    guard let key = context.idempotencyKey, !key.isEmpty else {
-      return (
-        AgentNativeToolReplayDecision(
-          code: descriptor.idempotency == .idempotencyKeyRequired ? .keyRequired : .accepted,
-          replayed: false,
-          originalInvocationId: nil,
-          inputSha256: AgentMcpJSONCodec.sha256(input)
-        ),
-        nil
-      )
-    }
-
-    let digest = AgentMcpJSONCodec.sha256(input)
-    let keyValue = storageKey(descriptor: descriptor, idempotencyKey: key)
-    guard let existing = records[keyValue] else {
-      return (
-        AgentNativeToolReplayDecision(
-          code: .accepted,
-          replayed: false,
-          originalInvocationId: nil,
-          inputSha256: digest
-        ),
-        nil
-      )
-    }
-    guard existing.inputSha256 == digest else {
-      return (
-        AgentNativeToolReplayDecision(
-          code: .conflict,
-          replayed: false,
-          originalInvocationId: existing.invocationId,
-          inputSha256: digest
-        ),
-        nil
-      )
-    }
-    return (
-      AgentNativeToolReplayDecision(
-        code: .replay,
-        replayed: true,
-        originalInvocationId: existing.invocationId,
-        inputSha256: digest
-      ),
-      results[keyValue]
-    )
-  }
-
-  func recordResult(
-    descriptor: AgentNativeToolDescriptor,
-    input: AgentMcpJSONObject,
-    context: AgentNativeToolInvocationContext,
-    result: AgentNativeToolResult
-  ) {
-    guard descriptor.idempotency != .nonIdempotent,
-          let key = context.idempotencyKey,
-          !key.isEmpty else {
-      return
-    }
-    let digest = AgentMcpJSONCodec.sha256(input)
-    let keyValue = storageKey(descriptor: descriptor, idempotencyKey: key)
-    records[keyValue] = AgentNativeToolReplayRecord(
-      toolId: descriptor.id,
-      idempotencyKey: key,
-      inputSha256: digest,
-      invocationId: context.invocationId,
-      recordedAtEpochMillis: result.receipt.finishedAtEpochMillis
-    )
-    results[keyValue] = result
-  }
-
-  func snapshot() -> [AgentNativeToolReplayRecord] {
-    records.values.sorted {
-      if $0.toolId != $1.toolId {
-        return $0.toolId < $1.toolId
-      }
-      return $0.idempotencyKey < $1.idempotencyKey
-    }
-  }
-
-  private func storageKey(
-    descriptor: AgentNativeToolDescriptor,
-    idempotencyKey: String
-  ) -> String {
-    "\(descriptor.id)\u{001F}\(descriptor.version)\u{001F}\(idempotencyKey)"
-  }
-}
-
 enum AgentNativeToolRegistryError: LocalizedError, Equatable {
   case duplicateTool(String)
 
@@ -608,7 +435,7 @@ final class AgentNativeToolRegistry {
 
   private var definitionsById: [String: AgentPhoneNativeToolDefinition] = [:]
   private var executableById: [String: AgentNativeToolExecutableDefinition] = [:]
-  private let replayStore: InMemoryAgentNativeToolReplayStore
+  private let replayStore: AgentNativeToolReplayStore
   private let auditStore: AgentNativeToolAuditStore
   private let nowMillis: () -> Int64
   private let descriptorCacheTtlMillis: Int64
@@ -621,7 +448,7 @@ final class AgentNativeToolRegistry {
 
   init(
     definitions: [AgentPhoneNativeToolDefinition] = [],
-    replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
+    replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
     auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     nowMillis: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
     descriptorCacheTtlMillis: Int64 = AgentNativeToolRegistry.defaultDescriptorCacheTtlMillis
@@ -1019,7 +846,7 @@ final class AgentNativeToolRegistry {
         return result
       }
 
-      let replay = replayStore.cachedResult(descriptor: descriptor, input: input, context: context)
+      let replay = cachedReplayResult(descriptor: descriptor, input: input, context: context)
       switch replay.0.code {
       case .conflict:
         return finish(
@@ -1100,9 +927,8 @@ final class AgentNativeToolRegistry {
         metadata: execution.metadata,
         verification: verification
       )
-      replayStore.recordResult(
+      recordReplayResult(
         descriptor: descriptor,
-        input: input,
         context: context,
         result: result
       )
@@ -1151,11 +977,93 @@ final class AgentNativeToolRegistry {
         inputSha256: AgentMcpJSONCodec.sha256(input)
       )
     }
-    return replayStore.decide(
+    return replayDecision(
       descriptor: definition.descriptor,
       input: input,
       context: context
     )
+  }
+
+  private func replayDecision(
+    descriptor: AgentNativeToolDescriptor,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext
+  ) -> AgentNativeToolReplayDecision {
+    let inputSha256 = AgentMcpJSONCodec.sha256(input)
+    guard descriptor.idempotency != .nonIdempotent else {
+      return AgentNativeToolReplayDecision(
+        code: .bypassed,
+        replayed: false,
+        originalInvocationId: nil,
+        inputSha256: inputSha256
+      )
+    }
+    guard let idempotencyKey = context.idempotencyKey, !idempotencyKey.isEmpty else {
+      return AgentNativeToolReplayDecision(
+        code: descriptor.idempotency == .idempotencyKeyRequired ? .keyRequired : .accepted,
+        replayed: false,
+        originalInvocationId: nil,
+        inputSha256: inputSha256
+      )
+    }
+    let key = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: idempotencyKey
+    )
+    guard let cached = replayStore.get(key) else {
+      return AgentNativeToolReplayDecision(
+        code: .accepted,
+        replayed: false,
+        originalInvocationId: nil,
+        inputSha256: inputSha256
+      )
+    }
+    let matchesInput = cached.receipt.inputSha256 == inputSha256
+    return AgentNativeToolReplayDecision(
+      code: matchesInput ? .replay : .conflict,
+      replayed: matchesInput,
+      originalInvocationId: cached.receipt.originalInvocationId ?? cached.receipt.invocationId,
+      inputSha256: inputSha256
+    )
+  }
+
+  private func cachedReplayResult(
+    descriptor: AgentNativeToolDescriptor,
+    input: AgentMcpJSONObject,
+    context: AgentNativeToolInvocationContext
+  ) -> (AgentNativeToolReplayDecision, AgentNativeToolResult?) {
+    let decision = replayDecision(descriptor: descriptor, input: input, context: context)
+    guard decision.code == .replay,
+          let idempotencyKey = context.idempotencyKey,
+          !idempotencyKey.isEmpty else {
+      return (decision, nil)
+    }
+    let key = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: idempotencyKey
+    )
+    return (decision, replayStore.get(key))
+  }
+
+  private func recordReplayResult(
+    descriptor: AgentNativeToolDescriptor,
+    context: AgentNativeToolInvocationContext,
+    result: AgentNativeToolResult
+  ) {
+    guard descriptor.idempotency != .nonIdempotent,
+          let idempotencyKey = context.idempotencyKey,
+          !idempotencyKey.isEmpty,
+          result.isSuccess else {
+      return
+    }
+    let key = AgentNativeToolReplayKey(
+      toolId: descriptor.id,
+      toolVersion: descriptor.version,
+      idempotencyKey: idempotencyKey
+    )
+    try? replayStore.put(key, result: result)
   }
 
   private func authorizationDetails(_ decision: AgentNativeToolAuthorizationDecision) -> AgentMcpJSONObject {
@@ -1412,7 +1320,7 @@ enum AgentPhoneNativeToolCatalog {
     actionExecutor: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
-    replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
+    replayStore: AgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
     auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSUnavailableHomeAssistantToolProvider(),
