@@ -1,0 +1,1614 @@
+import CryptoKit
+import Foundation
+
+enum SignalASITrustState: String, Codable, CaseIterable {
+  case unverified
+  case verified
+  case deleted
+}
+
+enum SignalASIDeliveryMode: String, Codable, CaseIterable {
+  case local
+  case link
+  case cloudAPI
+}
+
+enum SignalASICloudAPIStyle: String, Codable, CaseIterable, Identifiable {
+  case openAICompatible = "openai"
+  case anthropic
+  case gemini
+
+  var id: String { rawValue }
+}
+
+struct SignalASIProfile: Codable, Equatable {
+  var signalASIId: String
+  var name: String
+  var identityFingerprint: String
+  var identityPublicKey: String
+}
+
+struct SignalASIContact: Codable, Identifiable, Equatable, Hashable {
+  var id: String
+  var signalASIId: String
+  var name: String
+  var displayName: String
+  var type: String
+  var agentKind: String
+  var deliveryMode: SignalASIDeliveryMode
+  var trustState: SignalASITrustState
+  var desktopId: String
+  var desktopName: String
+  var identityFingerprint: String
+  var setupStatus: String
+  var setupDetail: String
+  var cloudProvider: String
+  var cloudModels: [CloudModelConfig]
+  var selectedCloudModelId: String
+  var deleted: Bool
+  var createdAt: Date
+  var updatedAt: Date
+  var mqttTopic: String? = nil
+  var mqttInboxTopic: String? = nil
+  var signalBundleRef: String? = nil
+  var deletedAt: Date? = nil
+
+  var selectedCloudModel: CloudModelConfig? {
+    cloudModels.first { $0.modelId == selectedCloudModelId } ?? cloudModels.first
+  }
+
+  var isCommunicable: Bool {
+    !deleted && trustState == .verified
+  }
+
+  static func hermes() -> SignalASIContact {
+    SignalASIContact(
+      id: "hermes",
+      signalASIId: "hermes",
+      name: "Hermes Agent",
+      displayName: "Hermes Agent",
+      type: "hermes",
+      agentKind: "desktop-agent",
+      deliveryMode: .link,
+      trustState: .unverified,
+      desktopId: "",
+      desktopName: "",
+      identityFingerprint: "",
+      setupStatus: "needs_pairing",
+      setupDetail: "Waiting for SignalASI Desktop pairing",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: Date(),
+      updatedAt: Date()
+    )
+  }
+
+  static func system() -> SignalASIContact {
+    SignalASIContact(
+      id: "system",
+      signalASIId: "system",
+      name: "System",
+      displayName: "System",
+      type: "system",
+      agentKind: "local",
+      deliveryMode: .local,
+      trustState: .verified,
+      desktopId: "",
+      desktopName: "",
+      identityFingerprint: "",
+      setupStatus: "ready",
+      setupDetail: "Local notices",
+      cloudProvider: "",
+      cloudModels: [],
+      selectedCloudModelId: "",
+      deleted: false,
+      createdAt: Date(),
+      updatedAt: Date()
+    )
+  }
+}
+
+enum SignalASIFriendRequestStatus: String, Codable, CaseIterable {
+  case pending
+  case approved
+  case rejected
+  case deleted
+}
+
+struct SignalASIFriendRequest: Codable, Identifiable, Equatable, Hashable {
+  var id: String
+  var signalASIId: String
+  var name: String
+  var type: String
+  var identityPublicKey: String
+  var identityFingerprint: String
+  var mqttTopic: String
+  var mqttInboxTopic: String
+  var signalBundleRef: String
+  var source: String
+  var status: SignalASIFriendRequestStatus
+  var createdAt: Date
+  var approvedAt: Date?
+  var rejectedAt: Date?
+  var deletedAt: Date?
+  var previouslyDeleted: Bool
+  var readdRequired: Bool
+
+  init(
+    id: String,
+    signalASIId: String,
+    name: String,
+    type: String,
+    identityPublicKey: String,
+    identityFingerprint: String,
+    mqttTopic: String,
+    mqttInboxTopic: String,
+    signalBundleRef: String = "",
+    source: String = "qr",
+    status: SignalASIFriendRequestStatus = .pending,
+    createdAt: Date = Date(),
+    approvedAt: Date? = nil,
+    rejectedAt: Date? = nil,
+    deletedAt: Date? = nil,
+    previouslyDeleted: Bool = false,
+    readdRequired: Bool = false
+  ) {
+    self.id = id
+    self.signalASIId = signalASIId
+    self.name = name
+    self.type = type
+    self.identityPublicKey = identityPublicKey
+    self.identityFingerprint = identityFingerprint
+    self.mqttTopic = mqttTopic
+    self.mqttInboxTopic = mqttInboxTopic
+    self.signalBundleRef = signalBundleRef
+    self.source = source
+    self.status = status
+    self.createdAt = createdAt
+    self.approvedAt = approvedAt
+    self.rejectedAt = rejectedAt
+    self.deletedAt = deletedAt
+    self.previouslyDeleted = previouslyDeleted
+    self.readdRequired = readdRequired
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case signalASIId = "signalasi_id"
+    case name
+    case type
+    case identityPublicKey = "identity_public_key"
+    case identityFingerprint = "identity_fingerprint"
+    case mqttTopic = "mqtt_topic"
+    case mqttInboxTopic = "mqtt_inbox_topic"
+    case signalBundleRef = "signal_bundle_ref"
+    case source
+    case status
+    case createdAt = "created_at"
+    case approvedAt = "approved_at"
+    case rejectedAt = "rejected_at"
+    case deletedAt = "deleted_at"
+    case previouslyDeleted = "previously_deleted"
+    case readdRequired = "readd_required"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(String.self, forKey: .id) ?? ""
+    signalASIId = try container.decodeIfPresent(String.self, forKey: .signalASIId) ?? ""
+    name = try container.decodeIfPresent(String.self, forKey: .name) ?? "Friend"
+    type = try container.decodeIfPresent(String.self, forKey: .type) ?? "person"
+    identityPublicKey = try container.decodeIfPresent(String.self, forKey: .identityPublicKey) ?? ""
+    identityFingerprint = try container.decodeIfPresent(String.self, forKey: .identityFingerprint) ?? ""
+    mqttTopic = try container.decodeIfPresent(String.self, forKey: .mqttTopic) ?? ""
+    mqttInboxTopic = try container.decodeIfPresent(String.self, forKey: .mqttInboxTopic) ?? mqttTopic
+    signalBundleRef = try container.decodeIfPresent(String.self, forKey: .signalBundleRef) ?? ""
+    source = try container.decodeIfPresent(String.self, forKey: .source) ?? "qr"
+    status = try container.decodeIfPresent(SignalASIFriendRequestStatus.self, forKey: .status) ?? .pending
+    createdAt = Self.decodeDate(container, key: .createdAt) ?? Date()
+    approvedAt = Self.decodeDate(container, key: .approvedAt)
+    rejectedAt = Self.decodeDate(container, key: .rejectedAt)
+    deletedAt = Self.decodeDate(container, key: .deletedAt)
+    previouslyDeleted = try container.decodeIfPresent(Bool.self, forKey: .previouslyDeleted) ?? false
+    readdRequired = try container.decodeIfPresent(Bool.self, forKey: .readdRequired) ?? previouslyDeleted
+  }
+
+  private static func decodeDate(_ container: KeyedDecodingContainer<CodingKeys>, key: CodingKeys) -> Date? {
+    if let date = try? container.decode(Date.self, forKey: key) {
+      return date
+    }
+    if let milliseconds = try? container.decode(Double.self, forKey: key), milliseconds > 0 {
+      return Date(timeIntervalSince1970: (milliseconds < 10_000_000_000 ? milliseconds * 1000 : milliseconds) / 1000)
+    }
+    if let value = try? container.decode(String.self, forKey: key),
+       let milliseconds = Double(value), milliseconds > 0 {
+      return Date(timeIntervalSince1970: (milliseconds < 10_000_000_000 ? milliseconds * 1000 : milliseconds) / 1000)
+    }
+    return nil
+  }
+}
+
+struct CloudModelConfig: Codable, Identifiable, Equatable, Hashable {
+  var id: String
+  var displayName: String
+  var provider: String
+  var modelId: String
+  var endpoint: String
+  var apiStyle: SignalASICloudAPIStyle
+  var keychainAccount: String
+  var updatedAt: Date
+}
+
+struct CloudModelPreset: Identifiable, Equatable, Hashable {
+  var id: String { "\(provider)-\(modelId)" }
+  var provider: String
+  var name: String
+  var modelId: String
+  var endpoint: String
+  var apiStyle: SignalASICloudAPIStyle
+
+  static let androidParity: [CloudModelPreset] = [
+    CloudModelPreset(provider: "OpenAI", name: "GPT-5.5", modelId: "gpt-5.5", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "OpenAI", name: "GPT-5.4 mini", modelId: "gpt-5.4-mini", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "OpenAI", name: "GPT-5", modelId: "gpt-5", endpoint: "https://api.openai.com/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "Anthropic", name: "Claude Opus 4.7", modelId: "claude-opus-4-7-latest", endpoint: "https://api.anthropic.com/v1/messages", apiStyle: .anthropic),
+    CloudModelPreset(provider: "Anthropic", name: "Claude Sonnet 5", modelId: "claude-sonnet-5-latest", endpoint: "https://api.anthropic.com/v1/messages", apiStyle: .anthropic),
+    CloudModelPreset(provider: "Google Gemini", name: "Gemini 3.5 Flash", modelId: "gemini-3.5-flash", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent", apiStyle: .gemini),
+    CloudModelPreset(provider: "DeepSeek", name: "DeepSeek V4 Pro", modelId: "deepseek-v4-pro", endpoint: "https://api.deepseek.com/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "Qwen", name: "Qwen 3.7 Max", modelId: "qwen3.7-max", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "OpenRouter", name: "OpenRouter Auto", modelId: "openrouter/auto", endpoint: "https://openrouter.ai/api/v1/chat/completions", apiStyle: .openAICompatible),
+    CloudModelPreset(provider: "Custom", name: "OpenAI Compatible", modelId: "model-id", endpoint: "https://api.example.com/v1/chat/completions", apiStyle: .openAICompatible)
+  ]
+}
+
+enum CloudModelCredentialPolicy {
+  private static let placeholderCredentials: Set<String> = [
+    "key",
+    "api-key",
+    "your-api-key",
+    "your_api_key",
+    "replace-me",
+    "replace_me"
+  ]
+
+  private static let debugCredentials: Set<String> = [
+    "smoke-key",
+    "backup-smoke-key",
+    "sk-signalasi-smoke-key"
+  ]
+
+  static func isStoredCredential(_ value: String?) -> Bool {
+    let credential = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    if credential.isEmpty || credential.contains("*") {
+      return false
+    }
+    return !placeholderCredentials.contains(credential.lowercased())
+  }
+
+  static func isDebugFixtureCredential(_ value: String?) -> Bool {
+    let credential = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
+    return debugCredentials.contains(credential) ||
+      credential.contains("signalasi-smoke") ||
+      credential.hasPrefix("backup-smoke-")
+  }
+
+  static func isAutoRoutableCredential(_ value: String?) -> Bool {
+    isStoredCredential(value) && !isDebugFixtureCredential(value)
+  }
+
+  static func isAutoRoutable(
+    model: CloudModelConfig,
+    apiKey: String?,
+    provider: String,
+    setupStatus: String = "ready"
+  ) -> Bool {
+    let endpoint = model.endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    let modelId = model.modelId.trimmingCharacters(in: .whitespacesAndNewlines)
+    let status = setupStatus.trimmingCharacters(in: .whitespacesAndNewlines)
+    return (status.isEmpty || status.localizedCaseInsensitiveCompare("ready") == .orderedSame) &&
+      !provider.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+      !modelId.isEmpty &&
+      modelId.localizedCaseInsensitiveCompare("model-id") != .orderedSame &&
+      endpoint.lowercased().hasPrefix("https://") &&
+      !endpoint.localizedCaseInsensitiveContains("example.com") &&
+      isAutoRoutableCredential(apiKey)
+  }
+}
+
+enum AgentConnectorAvailability {
+  static func desktopAgentReady(
+    setupStatus: String,
+    setupUpdatedAtMillis: Int64,
+    nowMillis: Int64
+  ) -> Bool {
+    let statusReady = routableDesktopStates.contains(
+      setupStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    )
+    guard statusReady, setupUpdatedAtMillis > 0 else {
+      return false
+    }
+    let ageMillis = nowMillis - setupUpdatedAtMillis
+    return ageMillis >= -maximumClockSkewMillis && ageMillis <= desktopStatusTtlMillis
+  }
+
+  static func desktopAgentReady(
+    contact: SignalASIContact,
+    now: Date = Date()
+  ) -> Bool {
+    desktopAgentReady(
+      setupStatus: contact.setupStatus,
+      setupUpdatedAtMillis: milliseconds(contact.updatedAt),
+      nowMillis: milliseconds(now)
+    )
+  }
+
+  static func cloudModelReady(
+    model: CloudModelConfig,
+    apiKey: String?,
+    provider: String,
+    setupStatus: String = "ready"
+  ) -> Bool {
+    CloudModelCredentialPolicy.isAutoRoutable(
+      model: model,
+      apiKey: apiKey,
+      provider: provider,
+      setupStatus: setupStatus
+    )
+  }
+
+  static func cloudModelReady(
+    contact: SignalASIContact,
+    apiKey: String?
+  ) -> Bool {
+    guard let model = contact.selectedCloudModel else {
+      return false
+    }
+    return cloudModelReady(
+      model: model,
+      apiKey: apiKey,
+      provider: contact.cloudProvider,
+      setupStatus: contact.setupStatus
+    )
+  }
+
+  private static func milliseconds(_ date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1_000).rounded())
+  }
+
+  private static let routableDesktopStates: Set<String> = ["ready", "busy"]
+  private static let desktopStatusTtlMillis: Int64 = 10 * 60_000
+  private static let maximumClockSkewMillis: Int64 = 60_000
+}
+
+enum ChatDeliveryStatus: String, Codable, Equatable {
+  case local
+  case queued
+  case sent
+  case delivered
+  case failed
+}
+
+struct DeliveryTraceEvent: Codable, Equatable, Identifiable {
+  var id: UUID
+  var stage: String
+  var detail: String
+  var createdAt: Date
+
+  init(id: UUID = UUID(), stage: String, detail: String = "", createdAt: Date = Date()) {
+    self.id = id
+    self.stage = stage
+    self.detail = detail
+    self.createdAt = createdAt
+  }
+
+  var displayTitle: String {
+    switch stage {
+    case "created": return "Created"
+    case "persisted": return "Persisted"
+    case "queued": return "Queued"
+    case "sent": return "Sent"
+    case "delivered": return "Delivered"
+    case "failed": return "Failed"
+    case "mqtt_published": return "Published to MQTT"
+    case "publish_failed": return "Publish failed"
+    case "delivered_local_estimate": return "Delivery estimated"
+    case "desktop_received": return "Desktop received"
+    case "desktop_plain": return "Desktop plaintext debug"
+    case "desktop_decrypted": return "Desktop decrypted"
+    case "agent_started": return "Agent started"
+    case "agent_first_output": return "First Agent output"
+    case "agent_replied": return "Agent replied"
+    case "desktop_reply_publish_queued": return "Desktop reply queued"
+    case "desktop_reply_broker_ack": return "Desktop reply Broker ACK"
+    case "desktop_broker_ack": return "Broker confirmed"
+    case "desktop_mobile_test_queued": return "Desktop test queued"
+    case "desktop_agent_push_queued": return "Agent Push queued"
+    case "desktop_connector_status": return "Connector status synced"
+    case "desktop_pairing_confirmed": return "Pairing confirmed"
+    case "desktop_pairing_revocation_queued": return "Pairing revocation queued"
+    case "received": return "Received"
+    case "decrypted": return "Decrypted"
+    case "cloud_request": return "Model request"
+    case "cloud_reply": return "Model replied"
+    case "cloud_reply_received": return "Model reply received"
+    case "cloud_error": return "Model error"
+    default: return stage
+    }
+  }
+}
+
+struct ChatMessage: Codable, Identifiable, Equatable {
+  var id: UUID
+  var contactId: String
+  var content: String
+  var isMine: Bool
+  var isSystem: Bool
+  var createdAt: Date
+  var deliveryStatus: ChatDeliveryStatus
+  var deliveryTrace: [DeliveryTraceEvent]
+  var conversationId: String
+  var turnId: String
+  var remoteMessageId: String
+
+  init(
+    id: UUID = UUID(),
+    contactId: String,
+    content: String,
+    isMine: Bool,
+    isSystem: Bool = false,
+    createdAt: Date = Date(),
+    deliveryStatus: ChatDeliveryStatus = .local,
+    deliveryTrace: [DeliveryTraceEvent] = [],
+    conversationId: String = "",
+    turnId: String = "",
+    remoteMessageId: String = ""
+  ) {
+    self.id = id
+    self.contactId = contactId
+    self.content = content
+    self.isMine = isMine
+    self.isSystem = isSystem
+    self.createdAt = createdAt
+    self.deliveryStatus = deliveryStatus
+    self.deliveryTrace = deliveryTrace
+    self.conversationId = conversationId
+    self.turnId = turnId
+    self.remoteMessageId = remoteMessageId
+  }
+}
+
+struct SignalASILinkRoutes: Codable, Equatable, Hashable {
+  var serverRouteId: String
+  var clientRouteId: String
+
+  var pairingTopic: String {
+    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/pair"
+  }
+
+  var upTopic: String {
+    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/\(clientRouteId)/up"
+  }
+
+  var downTopic: String {
+    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/\(clientRouteId)/down"
+  }
+
+  var controlTopic: String {
+    "\(SignalASILinkProtocol.topicRoot)/\(serverRouteId)/\(clientRouteId)/control"
+  }
+}
+
+struct PairingAccess: Codable, Equatable, Hashable {
+  var profile: String
+  var scopes: Set<String>
+
+  var fullDesktopExecutor: Bool {
+    profile == SignalASILinkProtocol.accessDesktopExecutor &&
+      scopes.contains(SignalASILinkProtocol.scopeDesktopExecutor)
+  }
+}
+
+struct ServerLink: Codable, Identifiable, Equatable, Hashable {
+  var id: String { desktopId }
+  var desktopId: String
+  var desktopName: String
+  var desktopFingerprint: String
+  var signalName: String
+  var routes: SignalASILinkRoutes
+  var paired: Bool
+  var accessProfile: String
+  var accessScopes: Set<String>
+  var updatedAt: Date
+
+  var fullDesktopExecutor: Bool {
+    accessProfile == SignalASILinkProtocol.accessDesktopExecutor &&
+      accessScopes.contains(SignalASILinkProtocol.scopeDesktopExecutor)
+  }
+}
+
+enum VoiceRoutingMode: String, Codable, CaseIterable, Identifiable {
+  case nativeAgent = "native_agent"
+  case contact
+
+  var id: String { rawValue }
+
+  var displayTitle: String {
+    switch self {
+    case .nativeAgent: return "Native Agent"
+    case .contact: return "Chat Contact"
+    }
+  }
+}
+
+struct VoiceSettings: Codable, Equatable {
+  var wakeListeningEnabled: Bool
+  var speechRecognitionEnabled: Bool
+  var textToSpeechEnabled: Bool
+  var autoSendTranscripts: Bool
+  var preferredLocaleIdentifier: String
+  var wakeWords: [String]
+  var wakeThreshold: Double
+  var welcomeText: String
+  var targetContactId: String
+  var speakReplies: Bool
+  var routingMode: VoiceRoutingMode
+
+  init(
+    wakeListeningEnabled: Bool,
+    speechRecognitionEnabled: Bool,
+    textToSpeechEnabled: Bool,
+    autoSendTranscripts: Bool,
+    preferredLocaleIdentifier: String,
+    wakeWords: [String] = VoiceSettings.defaultWakeWords,
+    wakeThreshold: Double = 0.5,
+    welcomeText: String = VoiceSettings.defaultWelcomeText,
+    targetContactId: String = "hermes",
+    speakReplies: Bool = true,
+    routingMode: VoiceRoutingMode = .nativeAgent
+  ) {
+    self.wakeListeningEnabled = wakeListeningEnabled
+    self.speechRecognitionEnabled = speechRecognitionEnabled
+    self.textToSpeechEnabled = textToSpeechEnabled
+    self.autoSendTranscripts = autoSendTranscripts
+    self.preferredLocaleIdentifier = preferredLocaleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Locale.current.identifier)
+    self.wakeWords = Self.normalizedWakeWords(wakeWords)
+    self.wakeThreshold = min(max(wakeThreshold, 0.01), 0.99)
+    self.welcomeText = welcomeText.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultWelcomeText)
+    self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
+    self.speakReplies = speakReplies
+    self.routingMode = routingMode
+  }
+
+  static let `default` = VoiceSettings(
+    wakeListeningEnabled: false,
+    speechRecognitionEnabled: true,
+    textToSpeechEnabled: true,
+    autoSendTranscripts: false,
+    preferredLocaleIdentifier: Locale.current.identifier,
+    wakeWords: defaultWakeWords,
+    wakeThreshold: 0.5,
+    welcomeText: defaultWelcomeText,
+    targetContactId: "hermes",
+    speakReplies: true,
+    routingMode: .nativeAgent
+  )
+
+  static let defaultWakeWords = [
+    "SignalASI",
+    "signal asi",
+    "signal ai",
+    "hello",
+    "hi"
+  ]
+
+  static let defaultWelcomeText = "I am here. Welcome to SignalASI. Say your question or task."
+
+  var wakeWordsText: String {
+    wakeWords.joined(separator: ", ")
+  }
+
+  var normalized: VoiceSettings {
+    VoiceSettings(
+      wakeListeningEnabled: wakeListeningEnabled,
+      speechRecognitionEnabled: speechRecognitionEnabled,
+      textToSpeechEnabled: textToSpeechEnabled,
+      autoSendTranscripts: autoSendTranscripts,
+      preferredLocaleIdentifier: preferredLocaleIdentifier,
+      wakeWords: wakeWords,
+      wakeThreshold: wakeThreshold,
+      welcomeText: welcomeText,
+      targetContactId: targetContactId,
+      speakReplies: speakReplies,
+      routingMode: routingMode
+    )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case wakeListeningEnabled
+    case speechRecognitionEnabled
+    case textToSpeechEnabled
+    case autoSendTranscripts
+    case preferredLocaleIdentifier
+    case wakeWords = "wake_words"
+    case wakeThreshold = "wake_threshold"
+    case welcomeText = "welcome_text"
+    case targetContactId = "target_contact_id"
+    case speakReplies = "speak_replies"
+    case routingMode = "routing_mode"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      wakeListeningEnabled: try container.decodeIfPresent(Bool.self, forKey: .wakeListeningEnabled) ?? false,
+      speechRecognitionEnabled: try container.decodeIfPresent(Bool.self, forKey: .speechRecognitionEnabled) ?? true,
+      textToSpeechEnabled: try container.decodeIfPresent(Bool.self, forKey: .textToSpeechEnabled) ?? true,
+      autoSendTranscripts: try container.decodeIfPresent(Bool.self, forKey: .autoSendTranscripts) ?? false,
+      preferredLocaleIdentifier: try container.decodeIfPresent(String.self, forKey: .preferredLocaleIdentifier) ?? Locale.current.identifier,
+      wakeWords: try container.decodeIfPresent([String].self, forKey: .wakeWords) ?? Self.defaultWakeWords,
+      wakeThreshold: try container.decodeIfPresent(Double.self, forKey: .wakeThreshold) ?? 0.5,
+      welcomeText: try container.decodeIfPresent(String.self, forKey: .welcomeText) ?? Self.defaultWelcomeText,
+      targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",
+      speakReplies: try container.decodeIfPresent(Bool.self, forKey: .speakReplies) ?? true,
+      routingMode: try container.decodeIfPresent(VoiceRoutingMode.self, forKey: .routingMode) ?? .nativeAgent
+    )
+  }
+
+  static func wakeWords(from text: String) -> [String] {
+    normalizedWakeWords(text.split(separator: ",").map(String.init))
+  }
+
+  private static func normalizedWakeWords(_ words: [String]) -> [String] {
+    let normalized = words
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    return normalized.isEmpty ? defaultWakeWords : Array(normalized.prefix(12))
+  }
+}
+
+enum AppTextScaleMode: String, Codable, CaseIterable, Identifiable {
+  case system
+  case standard
+  case comfortable
+  case large
+  case extraLarge = "extra_large"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AppTextScaleMode {
+    let candidate = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return allCases.first { $0.rawValue == candidate } ?? .comfortable
+  }
+
+  var displayName: String {
+    switch self {
+    case .system: return "System"
+    case .standard: return "Standard"
+    case .comfortable: return "Comfortable"
+    case .large: return "Large"
+    case .extraLarge: return "Extra Large"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .system:
+      return "Follow the iOS system text size."
+    case .standard:
+      return "Use the app's compact default text size."
+    case .comfortable:
+      return "Use the Android default comfortable text size."
+    case .large:
+      return "Increase text for easier reading."
+    case .extraLarge:
+      return "Use the largest app text size."
+    }
+  }
+}
+
+struct AppDisplaySettings: Codable, Equatable {
+  var textScale: AppTextScaleMode
+
+  static let `default` = AppDisplaySettings()
+
+  init(textScale: AppTextScaleMode = .comfortable) {
+    self.textScale = textScale
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case textScale = "text_scale"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(textScale: AppTextScaleMode.fromWireValue(try container.decodeIfPresent(String.self, forKey: .textScale)))
+  }
+}
+
+enum AgentTaskExecutionMode: String, CaseIterable, Identifiable, Codable {
+  case planOnly = "plan_only"
+  case autoComplete = "auto_complete"
+
+  var id: String { rawValue }
+
+  var androidName: String {
+    switch self {
+    case .planOnly: return "PLAN_ONLY"
+    case .autoComplete: return "AUTO_COMPLETE"
+    }
+  }
+
+  var displayTitle: String {
+    switch self {
+    case .planOnly: return "Plan only"
+    case .autoComplete: return "Auto complete"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .planOnly:
+      return "Inspect context and return an actionable plan without changing anything."
+    case .autoComplete:
+      return "Continue through execution, recovery, verification, and completion."
+    }
+  }
+
+  static func fromStoredValue(_ value: String?) -> AgentTaskExecutionMode {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let lowered = trimmed.lowercased()
+    let uppercased = trimmed.uppercased()
+    return allCases.first { $0.rawValue == lowered || $0.androidName == uppercased } ?? .autoComplete
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentTaskExecutionMode {
+    fromStoredValue(value)
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromStoredValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(androidName)
+  }
+}
+
+struct AgentTaskExecutionModeResolution: Codable, Equatable {
+  var mode: AgentTaskExecutionMode
+  var explicitlyRequested: Bool
+  var matchedSignal: String
+
+  init(
+    mode: AgentTaskExecutionMode,
+    explicitlyRequested: Bool = false,
+    matchedSignal: String = ""
+  ) {
+    self.mode = mode
+    self.explicitlyRequested = explicitlyRequested
+    self.matchedSignal = matchedSignal
+  }
+}
+
+enum AgentTaskExecutionModePolicy {
+  static func resolve(
+    request: String,
+    configuredMode: AgentTaskExecutionMode = .autoComplete
+  ) -> AgentTaskExecutionModeResolution {
+    let normalized = request
+      .lowercased()
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if let signal = planOnlySignals.first(where: normalized.contains) {
+      return AgentTaskExecutionModeResolution(
+        mode: .planOnly,
+        explicitlyRequested: true,
+        matchedSignal: signal
+      )
+    }
+    if let signal = autoCompleteSignals.first(where: normalized.contains) {
+      return AgentTaskExecutionModeResolution(
+        mode: .autoComplete,
+        explicitlyRequested: true,
+        matchedSignal: signal
+      )
+    }
+    return AgentTaskExecutionModeResolution(mode: configuredMode)
+  }
+
+  private static let planOnlySignals = [
+    "\u{5148}\u{7ed9}\u{65b9}\u{6848}",
+    "\u{5148}\u{7ed9}\u{6211}\u{65b9}\u{6848}",
+    "\u{53ea}\u{7ed9}\u{65b9}\u{6848}",
+    "\u{4ec5}\u{7ed9}\u{65b9}\u{6848}",
+    "\u{4ec5}\u{63d0}\u{4f9b}\u{65b9}\u{6848}",
+    "\u{53ea}\u{5236}\u{5b9a}\u{8ba1}\u{5212}",
+    "\u{5148}\u{5236}\u{5b9a}\u{8ba1}\u{5212}",
+    "\u{5148}\u{5217}\u{51fa}\u{8ba1}\u{5212}",
+    "\u{6682}\u{4e0d}\u{6267}\u{884c}",
+    "\u{5148}\u{4e0d}\u{8981}\u{6267}\u{884c}",
+    "\u{4e0d}\u{8981}\u{5b9e}\u{9645}\u{6267}\u{884c}",
+    "\u{4e0d}\u{8981}\u{6267}\u{884c}\u{4efb}\u{4f55}\u{64cd}\u{4f5c}",
+    "\u{4e0d}\u{8981}\u{6267}\u{884c}\u{4efb}\u{4f55}\u{52a8}\u{4f5c}",
+    "plan only",
+    "proposal only",
+    "show me the plan first",
+    "give me a plan first",
+    "do not execute",
+    "don't execute",
+    "without executing",
+    "without making changes"
+  ]
+
+  private static let autoCompleteSignals = [
+    "\u{81ea}\u{52a8}\u{6267}\u{884c}\u{5230}\u{5b8c}\u{6210}",
+    "\u{76f4}\u{63a5}\u{6267}\u{884c}\u{5230}\u{5b8c}\u{6210}",
+    "\u{4e00}\u{76f4}\u{6267}\u{884c}\u{5230}\u{5b8c}\u{6210}",
+    "\u{6267}\u{884c}\u{8fd9}\u{4e2a}\u{65b9}\u{6848}",
+    "\u{6309}\u{8fd9}\u{4e2a}\u{65b9}\u{6848}\u{6267}\u{884c}",
+    "\u{7ee7}\u{7eed}\u{6267}\u{884c}\u{5230}\u{5b8c}\u{6210}",
+    "go ahead and execute",
+    "execute until complete",
+    "carry this through to completion",
+    "implement this plan",
+    "proceed with the plan"
+  ]
+}
+
+enum AgentPermissionMode: String, CaseIterable, Identifiable, Codable {
+  case observeOnly = "OBSERVE_ONLY"
+  case suggestOnly = "SUGGEST_ONLY"
+  case askBeforeAction = "ASK_BEFORE_ACTION"
+  case autoLowRisk = "AUTO_LOW_RISK"
+
+  var id: String { rawValue }
+
+  var displayTitle: String {
+    switch self {
+    case .observeOnly: return "Observe Only"
+    case .suggestOnly: return "Suggest Only"
+    case .askBeforeAction: return "Ask Before Action"
+    case .autoLowRisk: return "Auto Low-risk"
+    }
+  }
+
+  var detail: String {
+    switch self {
+    case .observeOnly:
+      return "Read current screen and device state; never create or execute actions."
+    case .suggestOnly:
+      return "Build plans and suggestions, but block every executable action."
+    case .askBeforeAction:
+      return "Require confirmation before every executable action."
+    case .autoLowRisk:
+      return "Run direct actions, remember first-time consent, and always confirm high-risk actions."
+    }
+  }
+
+  static func fromStoredValue(_ value: String?) -> AgentPermissionMode {
+    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let normalized = trimmed.uppercased().replacingOccurrences(of: "-", with: "_")
+    return allCases.first { $0.rawValue == normalized } ?? .askBeforeAction
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromStoredValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentSafetySettings: Codable, Equatable {
+  var taskExecutionMode: AgentTaskExecutionMode
+  var permissionMode: AgentPermissionMode
+  var highRiskGuard: Bool
+  var memoryCapture: Bool
+  var screenObservationAllowed: Bool
+  var localActionsAllowed: Bool
+  var connectorCallsAllowed: Bool
+  var deviceControlAllowed: Bool
+  var executionPaused: Bool
+
+  init(
+    taskExecutionMode: AgentTaskExecutionMode = .autoComplete,
+    permissionMode: AgentPermissionMode = .askBeforeAction,
+    highRiskGuard: Bool = true,
+    memoryCapture: Bool = true,
+    screenObservationAllowed: Bool = true,
+    localActionsAllowed: Bool = true,
+    connectorCallsAllowed: Bool = true,
+    deviceControlAllowed: Bool = true,
+    executionPaused: Bool = false
+  ) {
+    self.taskExecutionMode = taskExecutionMode
+    self.permissionMode = permissionMode
+    self.highRiskGuard = highRiskGuard
+    self.memoryCapture = memoryCapture
+    self.screenObservationAllowed = screenObservationAllowed
+    self.localActionsAllowed = localActionsAllowed
+    self.connectorCallsAllowed = connectorCallsAllowed
+    self.deviceControlAllowed = deviceControlAllowed
+    self.executionPaused = executionPaused
+  }
+
+  static let `default` = AgentSafetySettings()
+
+  enum CodingKeys: String, CodingKey {
+    case taskExecutionMode = "task_execution_mode"
+    case permissionMode = "permission_mode"
+    case highRiskGuard = "high_risk_guard"
+    case memoryCapture = "memory_capture"
+    case screenObservationAllowed = "screen_observation_allowed"
+    case localActionsAllowed = "local_actions_allowed"
+    case connectorCallsAllowed = "connector_calls_allowed"
+    case deviceControlAllowed = "device_control_allowed"
+    case executionPaused = "execution_paused"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      taskExecutionMode: try container.decodeIfPresent(AgentTaskExecutionMode.self, forKey: .taskExecutionMode) ?? .autoComplete,
+      permissionMode: try container.decodeIfPresent(AgentPermissionMode.self, forKey: .permissionMode) ?? .askBeforeAction,
+      highRiskGuard: try container.decodeIfPresent(Bool.self, forKey: .highRiskGuard) ?? true,
+      memoryCapture: try container.decodeIfPresent(Bool.self, forKey: .memoryCapture) ?? true,
+      screenObservationAllowed: try container.decodeIfPresent(Bool.self, forKey: .screenObservationAllowed) ?? true,
+      localActionsAllowed: try container.decodeIfPresent(Bool.self, forKey: .localActionsAllowed) ?? true,
+      connectorCallsAllowed: try container.decodeIfPresent(Bool.self, forKey: .connectorCallsAllowed) ?? true,
+      deviceControlAllowed: try container.decodeIfPresent(Bool.self, forKey: .deviceControlAllowed) ?? true,
+      executionPaused: try container.decodeIfPresent(Bool.self, forKey: .executionPaused) ?? false
+    )
+  }
+}
+
+enum AgentActionKind: String, Codable, CaseIterable, Identifiable {
+  case readScreen = "READ_SCREEN"
+  case saveScreenKnowledge = "SAVE_SCREEN_KNOWLEDGE"
+  case draftPlan = "DRAFT_PLAN"
+  case tap = "TAP"
+  case typeText = "TYPE_TEXT"
+  case swipe = "SWIPE"
+  case longPress = "LONG_PRESS"
+  case back = "BACK"
+  case home = "HOME"
+  case recents = "RECENTS"
+  case lockScreen = "LOCK_SCREEN"
+  case openApp = "OPEN_APP"
+  case openURL = "OPEN_URL"
+  case setAlarm = "SET_ALARM"
+  case createNotification = "CREATE_NOTIFICATION"
+  case replyNotification = "REPLY_NOTIFICATION"
+  case importWebKnowledge = "IMPORT_WEB_KNOWLEDGE"
+  case copyScreenText = "COPY_SCREEN_TEXT"
+  case deleteText = "DELETE_TEXT"
+  case pasteText = "PASTE_TEXT"
+  case callConnector = "CALL_CONNECTOR"
+  case callNativeTool = "CALL_NATIVE_TOOL"
+  case controlDevice = "CONTROL_DEVICE"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentActionKind {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .draftPlan
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentActionStatus: String, Codable, CaseIterable, Identifiable {
+  case proposed = "PROPOSED"
+  case pendingConfirmation = "PENDING_CONFIRMATION"
+  case running = "RUNNING"
+  case waitingResponse = "WAITING_RESPONSE"
+  case completed = "COMPLETED"
+  case failed = "FAILED"
+  case blocked = "BLOCKED"
+  case rolledBack = "ROLLED_BACK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentActionStatus {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .pendingConfirmation
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentRisk: String, Codable, CaseIterable, Identifiable {
+  case low = "LOW"
+  case medium = "MEDIUM"
+  case high = "HIGH"
+  case blocked = "BLOCKED"
+
+  var id: String { rawValue }
+
+  var weight: Int {
+    switch self {
+    case .low: return 1
+    case .medium: return 2
+    case .high: return 3
+    case .blocked: return 4
+    }
+  }
+
+  static func fromWireValue(_ value: String?) -> AgentRisk {
+    let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .medium
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentElementOrigin: String, Codable, CaseIterable, Identifiable {
+  case accessibility = "ACCESSIBILITY"
+  case visualOcr = "VISUAL_OCR"
+  case fused = "FUSED"
+  case manual = "MANUAL"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentElementOrigin {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .uppercased()
+      .replacingOccurrences(of: "-", with: "_")
+      .replacingOccurrences(of: " ", with: "_") ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unknown
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentVisualRole: String, Codable, CaseIterable, Identifiable {
+  case title = "TITLE"
+  case button = "BUTTON"
+  case input = "INPUT"
+  case navigation = "NAVIGATION"
+  case listItem = "LIST_ITEM"
+  case text = "TEXT"
+  case unknown = "UNKNOWN"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentVisualRole {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .uppercased()
+      .replacingOccurrences(of: "-", with: "_")
+      .replacingOccurrences(of: " ", with: "_") ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .unknown
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentVisualElement: Codable, Equatable {
+  var text: String
+  var bounds: String
+  var confidence: Double
+  var role: AgentVisualRole
+  var actionable: Bool
+  var inputCandidate: Bool
+
+  init(
+    text: String,
+    bounds: String,
+    confidence: Double = 1,
+    role: AgentVisualRole = .unknown,
+    actionable: Bool = false,
+    inputCandidate: Bool = false
+  ) {
+    self.text = String(text.prefix(Self.maximumTextLength))
+    self.bounds = bounds
+    self.confidence = min(max(confidence, 0), 1)
+    self.role = role
+    self.actionable = actionable
+    self.inputCandidate = inputCandidate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case text
+    case bounds
+    case confidence
+    case role
+    case actionable
+    case inputCandidate = "input_candidate"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      text: try container.decodeIfPresent(String.self, forKey: .text) ?? "",
+      bounds: try container.decodeIfPresent(String.self, forKey: .bounds) ?? "",
+      confidence: try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 1,
+      role: try container.decodeIfPresent(AgentVisualRole.self, forKey: .role) ?? .unknown,
+      actionable: try container.decodeIfPresent(Bool.self, forKey: .actionable) ?? false,
+      inputCandidate: try container.decodeIfPresent(Bool.self, forKey: .inputCandidate) ?? false
+    )
+  }
+
+  private static let maximumTextLength = 500
+}
+
+struct AgentVisualScene: Codable, Equatable {
+  var width: Int
+  var height: Int
+  var modelProfile: String
+  var elements: [AgentVisualElement]
+  var actionCandidateCount: Int
+  var inputCandidateCount: Int
+  var timestampMillis: Int64
+
+  init(
+    width: Int = 0,
+    height: Int = 0,
+    modelProfile: String = "none",
+    elements: [AgentVisualElement] = [],
+    actionCandidateCount: Int? = nil,
+    inputCandidateCount: Int? = nil,
+    timestampMillis: Int64 = 0
+  ) {
+    self.width = max(width, 0)
+    self.height = max(height, 0)
+    self.modelProfile = modelProfile
+    self.elements = elements
+    self.actionCandidateCount = max(actionCandidateCount ?? elements.filter(\.actionable).count, 0)
+    self.inputCandidateCount = max(inputCandidateCount ?? elements.filter(\.inputCandidate).count, 0)
+    self.timestampMillis = max(timestampMillis, 0)
+  }
+
+  var available: Bool {
+    width > 0 && height > 0 && !elements.isEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case width
+    case height
+    case modelProfile = "model_profile"
+    case elements
+    case actionCandidateCount = "action_candidate_count"
+    case inputCandidateCount = "input_candidate_count"
+    case timestampMillis = "timestamp_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      width: try container.decodeIfPresent(Int.self, forKey: .width) ?? 0,
+      height: try container.decodeIfPresent(Int.self, forKey: .height) ?? 0,
+      modelProfile: try container.decodeIfPresent(String.self, forKey: .modelProfile) ?? "none",
+      elements: try container.decodeIfPresent([AgentVisualElement].self, forKey: .elements) ?? [],
+      actionCandidateCount: try container.decodeIfPresent(Int.self, forKey: .actionCandidateCount),
+      inputCandidateCount: try container.decodeIfPresent(Int.self, forKey: .inputCandidateCount),
+      timestampMillis: try container.decodeIfPresent(Int64.self, forKey: .timestampMillis) ?? 0
+    )
+  }
+}
+
+struct AgentScreenElement: Codable, Equatable, Identifiable {
+  var label: String
+  var viewId: String
+  var className: String
+  var bounds: String
+  var origin: AgentElementOrigin
+  var confidence: Double
+  var visualRole: AgentVisualRole
+  var actionable: Bool
+
+  var id: String {
+    [viewId, label, bounds].joined(separator: "|")
+  }
+
+  init(
+    label: String,
+    viewId: String,
+    className: String,
+    bounds: String,
+    origin: AgentElementOrigin = .accessibility,
+    confidence: Double = 1,
+    visualRole: AgentVisualRole = .unknown,
+    actionable: Bool = true
+  ) {
+    self.label = String(label.prefix(Self.maximumLabelLength))
+    self.viewId = String(viewId.prefix(Self.maximumIdentifierLength))
+    self.className = String(className.prefix(Self.maximumIdentifierLength))
+    self.bounds = bounds
+    self.origin = origin
+    self.confidence = min(max(confidence, 0), 1)
+    self.visualRole = visualRole
+    self.actionable = actionable
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case label
+    case viewId = "view_id"
+    case className = "class_name"
+    case bounds
+    case origin
+    case confidence
+    case visualRole = "visual_role"
+    case actionable
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      label: try container.decodeIfPresent(String.self, forKey: .label) ?? "",
+      viewId: try container.decodeIfPresent(String.self, forKey: .viewId) ?? "",
+      className: try container.decodeIfPresent(String.self, forKey: .className) ?? "",
+      bounds: try container.decodeIfPresent(String.self, forKey: .bounds) ?? "",
+      origin: try container.decodeIfPresent(AgentElementOrigin.self, forKey: .origin) ?? .accessibility,
+      confidence: try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 1,
+      visualRole: try container.decodeIfPresent(AgentVisualRole.self, forKey: .visualRole) ?? .unknown,
+      actionable: try container.decodeIfPresent(Bool.self, forKey: .actionable) ?? true
+    )
+  }
+
+  private static let maximumLabelLength = 500
+  private static let maximumIdentifierLength = 300
+}
+
+enum AgentVisualGrounding {
+  static func analyze(
+    rawElements: [AgentVisualElement],
+    width: Int,
+    height: Int,
+    timestampMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) -> AgentVisualScene {
+    guard width > 0 && height > 0 else {
+      return AgentVisualScene()
+    }
+    var seen: Set<String> = []
+    var elements: [AgentVisualElement] = []
+    for raw in rawElements {
+      let text = normalizedText(raw.text)
+      guard !text.isEmpty,
+            let rect = AgentVisualBounds.parse(raw.bounds),
+            rect.width > 1,
+            rect.height > 1 else {
+        continue
+      }
+      let dedupeKey = "\(text.lowercased()):\(raw.bounds)"
+      guard seen.insert(dedupeKey).inserted else {
+        continue
+      }
+      let role = inferRole(text: text, rect: rect, width: width, height: height)
+      elements.append(
+        AgentVisualElement(
+          text: text,
+          bounds: raw.bounds,
+          confidence: raw.confidence,
+          role: role,
+          actionable: actionableRoles.contains(role),
+          inputCandidate: role == .input
+        )
+      )
+      if elements.count >= maxVisualElements {
+        break
+      }
+    }
+    return AgentVisualScene(
+      width: width,
+      height: height,
+      modelProfile: "mlkit-ocr-layout-v1",
+      elements: elements,
+      timestampMillis: timestampMillis
+    )
+  }
+
+  static func fuseClickableElements(
+    accessibilityElements: [AgentScreenElement],
+    scene: AgentVisualScene
+  ) -> [AgentScreenElement] {
+    fuse(
+      accessibilityElements: accessibilityElements,
+      visualElements: scene.elements.filter(\.actionable),
+      limit: maxFusedActions,
+      requireInput: false
+    )
+  }
+
+  static func fuseInputFields(
+    accessibilityElements: [AgentScreenElement],
+    scene: AgentVisualScene
+  ) -> [AgentScreenElement] {
+    fuse(
+      accessibilityElements: accessibilityElements,
+      visualElements: scene.elements.filter(\.inputCandidate),
+      limit: maxFusedFields,
+      requireInput: true
+    )
+  }
+
+  private static func fuse(
+    accessibilityElements: [AgentScreenElement],
+    visualElements: [AgentVisualElement],
+    limit: Int,
+    requireInput: Bool
+  ) -> [AgentScreenElement] {
+    var visualPool = visualElements
+    var fused = accessibilityElements.map { accessibility -> AgentScreenElement in
+      guard let matchIndex = bestMatchIndex(for: accessibility, in: visualPool),
+            matchScore(accessibility: accessibility, visual: visualPool[matchIndex]) >= minimumFusionScore else {
+        return accessibility
+      }
+      let match = visualPool.remove(at: matchIndex)
+      return AgentScreenElement(
+        label: accessibility.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? match.text : accessibility.label,
+        viewId: accessibility.viewId,
+        className: accessibility.className,
+        bounds: accessibility.bounds,
+        origin: .fused,
+        confidence: max(accessibility.confidence, match.confidence),
+        visualRole: match.role,
+        actionable: accessibility.actionable || match.actionable
+      )
+    }
+    var visualIndex = 0
+    for visual in visualPool where fused.count < limit {
+      guard visual.confidence >= minVisualActionConfidence,
+            !requireInput || visual.inputCandidate,
+            !fused.contains(where: { overlapRatio($0.bounds, visual.bounds) >= duplicateOverlapThreshold }) else {
+        continue
+      }
+      let roleName = visual.role.rawValue.lowercased()
+      let classRole = roleName.prefix(1).uppercased() + String(roleName.dropFirst())
+      fused.append(
+        AgentScreenElement(
+          label: visual.text,
+          viewId: "visual:\(roleName):\(visualIndex)",
+          className: "AgentVisual\(classRole)",
+          bounds: visual.bounds,
+          origin: .visualOcr,
+          confidence: visual.confidence,
+          visualRole: visual.role,
+          actionable: visual.actionable
+        )
+      )
+      visualIndex += 1
+    }
+    return Array(fused.prefix(limit))
+  }
+
+  private static func bestMatchIndex(for accessibility: AgentScreenElement, in visualPool: [AgentVisualElement]) -> Int? {
+    var bestIndex: Int?
+    var bestScore = 0.0
+    for (index, visual) in visualPool.enumerated() {
+      let score = matchScore(accessibility: accessibility, visual: visual)
+      if score > bestScore {
+        bestScore = score
+        bestIndex = index
+      }
+    }
+    return bestIndex
+  }
+
+  private static func inferRole(text: String, rect: AgentVisualBounds, width: Int, height: Int) -> AgentVisualRole {
+    let normalized = text.lowercased()
+    let centerY = Double(rect.centerY) / Double(height)
+    let widthRatio = Double(rect.width) / Double(width)
+    let shortLabel = text.count <= 36
+    if inputTerms.contains(where: normalized.contains) {
+      return .input
+    }
+    if actionTerms.contains(normalized) ||
+      (shortLabel && actionTerms.contains(where: { normalized.hasPrefix($0) })) {
+      return .button
+    }
+    if centerY >= 0.82 && shortLabel {
+      return .navigation
+    }
+    if centerY <= 0.18 && widthRatio >= 0.18 {
+      return .title
+    }
+    if shortLabel && widthRatio >= 0.22 && (0.18...0.82).contains(centerY) {
+      return .listItem
+    }
+    return .text
+  }
+
+  private static func matchScore(accessibility: AgentScreenElement, visual: AgentVisualElement) -> Double {
+    let overlap = overlapRatio(accessibility.bounds, visual.bounds)
+    let accessibilityLabel = accessibility.label.normalizedElementLabel()
+    let visualLabel = visual.text.normalizedElementLabel()
+    let labelScore: Double
+    if accessibilityLabel.isEmpty || visualLabel.isEmpty {
+      labelScore = 0
+    } else if accessibilityLabel == visualLabel {
+      labelScore = 1
+    } else if accessibilityLabel.contains(visualLabel) || visualLabel.contains(accessibilityLabel) {
+      labelScore = 0.75
+    } else {
+      labelScore = 0
+    }
+    return max(overlap, labelScore)
+  }
+
+  private static func overlapRatio(_ firstBounds: String, _ secondBounds: String) -> Double {
+    guard let first = AgentVisualBounds.parse(firstBounds),
+          let second = AgentVisualBounds.parse(secondBounds),
+          let intersection = first.intersection(second) else {
+      return 0
+    }
+    let smallerArea = min(first.area, second.area)
+    guard smallerArea > 0 else {
+      return 0
+    }
+    return Double(intersection.area) / Double(smallerArea)
+  }
+
+  private static func normalizedText(_ value: String) -> String {
+    String(
+      value
+        .components(separatedBy: .whitespacesAndNewlines)
+        .filter { !$0.isEmpty }
+        .joined(separator: " ")
+        .prefix(500)
+    )
+  }
+
+  private static let maxVisualElements = 160
+  private static let maxFusedActions = 80
+  private static let maxFusedFields = 30
+  private static let minVisualActionConfidence = 0.55
+  private static let minimumFusionScore = 0.45
+  private static let duplicateOverlapThreshold = 0.65
+  private static let actionableRoles: Set<AgentVisualRole> = [
+    .button,
+    .navigation,
+    .listItem
+  ]
+  private static let actionTerms = [
+    "ok", "yes", "no", "done", "next", "continue", "confirm", "cancel", "save", "send", "search",
+    "open", "close", "add", "delete", "edit", "allow", "deny", "login", "sign in", "submit", "share",
+    "\u{786e}\u{5b9a}", "\u{53d6}\u{6d88}", "\u{4fdd}\u{5b58}", "\u{53d1}\u{9001}",
+    "\u{641c}\u{7d22}", "\u{4e0b}\u{4e00}\u{6b65}", "\u{7ee7}\u{7eed}",
+    "\u{786e}\u{8ba4}", "\u{5141}\u{8bb8}", "\u{62d2}\u{7edd}", "\u{767b}\u{5f55}",
+    "\u{63d0}\u{4ea4}", "\u{6dfb}\u{52a0}", "\u{5220}\u{9664}", "\u{7f16}\u{8f91}",
+    "\u{5173}\u{95ed}", "\u{6253}\u{5f00}", "\u{5206}\u{4eab}"
+  ]
+  private static let inputTerms = [
+    "search", "type", "enter", "message", "email", "phone", "name", "password", "input",
+    "\u{641c}\u{7d22}", "\u{8f93}\u{5165}", "\u{6d88}\u{606f}", "\u{90ae}\u{7bb1}",
+    "\u{624b}\u{673a}\u{53f7}", "\u{59d3}\u{540d}", "\u{5bc6}\u{7801}"
+  ]
+}
+
+enum AgentScreenElementMatcher {
+  static func resolve(query: String, elements: [AgentScreenElement]) -> AgentScreenElement? {
+    let clean = query.normalizedElementLabel()
+    guard !clean.isEmpty else {
+      return nil
+    }
+    return elements
+      .map { ($0, score(query: clean, element: $0)) }
+      .filter { $0.1 > 0 }
+      .sorted { first, second in
+        if first.1 != second.1 {
+          return first.1 > second.1
+        }
+        if first.0.confidence != second.0.confidence {
+          return first.0.confidence > second.0.confidence
+        }
+        return first.0.origin != .visualOcr && second.0.origin == .visualOcr
+      }
+      .first?
+      .0
+  }
+
+  private static func score(query: String, element: AgentScreenElement) -> Int {
+    let label = element.label.normalizedElementLabel()
+    let viewId = element.viewId.normalizedElementLabel()
+    let className = element.className.normalizedElementLabel()
+    let role = element.visualRole.rawValue.normalizedElementLabel()
+    if viewId == query { return 140 }
+    if label == query { return 120 }
+    if label.hasPrefix(query) { return 100 }
+    if label.contains(query) { return 90 }
+    if query.contains(label) && label.count >= 2 { return 75 }
+    if viewId.contains(query) { return 65 }
+    if className.contains(query) { return 35 }
+    if role == query { return 25 }
+    return 0
+  }
+}
+
+private struct AgentVisualBounds: Equatable {
+  var left: Int
+  var top: Int
+  var right: Int
+  var bottom: Int
+
+  var width: Int { right - left }
+  var height: Int { bottom - top }
+  var centerY: Int { (top + bottom) / 2 }
+  var area: Int { width * height }
+
+  static func parse(_ value: String) -> AgentVisualBounds? {
+    let parts = value.split(separator: ",").map {
+      Int(String($0).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+    guard parts.count == 4,
+          let left = parts[0],
+          let top = parts[1],
+          let right = parts[2],
+          let bottom = parts[3],
+          right > left,
+          bottom > top else {
+      return nil
+    }
+    return AgentVisualBounds(left: left, top: top, right: right, bottom: bottom)
+  }
+
+  func intersection(_ other: AgentVisualBounds) -> AgentVisualBounds? {
+    let nextLeft = max(left, other.left)
+    let nextTop = max(top, other.top)
+    let nextRight = min(right, other.right)
+    let nextBottom = min(bottom, other.bottom)
+    guard nextRight > nextLeft && nextBottom > nextTop else {
+      return nil
+    }
+    return AgentVisualBounds(left: nextLeft, top: nextTop, right: nextRight, bottom: nextBottom)
+  }
+}
+
+private extension String {
+  func normalizedElementLabel() -> String {
+    unicodeScalars
+      .filter { CharacterSet.alphanumerics.contains($0) }
+      .map(String.init)
+      .joined()
+      .lowercased()
+  }
+}

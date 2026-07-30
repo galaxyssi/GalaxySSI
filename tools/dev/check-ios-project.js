@@ -38,7 +38,15 @@ for (const relativePath of requiredFiles) {
 
 const project = read("apps/ios/SignalASI.xcodeproj/project.pbxproj");
 const readme = read("apps/ios/README.md");
-const models = read("apps/ios/SignalASI/SignalASIModels.swift");
+const signalASISourceFiles = fs.readdirSync(path.join(repoRoot, "apps/ios/SignalASI"))
+  .filter((file) => file.endsWith(".swift"))
+  .sort();
+const signalASITestFiles = fs.readdirSync(path.join(repoRoot, "apps/ios/SignalASITests"))
+  .filter((file) => file.endsWith(".swift"))
+  .sort();
+const models = signalASISourceFiles
+  .map((file) => read(`apps/ios/SignalASI/${file}`))
+  .join("\n");
 const contactExchange = read("apps/ios/SignalASI/SignalASIContactExchange.swift");
 const attachments = read("apps/ios/SignalASI/SignalASIAttachments.swift");
 const linkProtocol = read("apps/ios/SignalASI/SignalASILinkProtocol.swift");
@@ -47,14 +55,9 @@ const backup = read("apps/ios/SignalASI/SignalASIBackup.swift");
 const store = read("apps/ios/SignalASI/SignalASIStore.swift");
 const services = read("apps/ios/SignalASI/SignalASIServices.swift");
 const views = read("apps/ios/SignalASI/SignalASIViews.swift");
-const tests = [
-  read("apps/ios/SignalASITests/SignalASIAttachmentTests.swift"),
-  read("apps/ios/SignalASITests/SignalASIContactExchangeTests.swift"),
-  read("apps/ios/SignalASITests/SignalASILinkProtocolTests.swift"),
-  read("apps/ios/SignalASITests/SignalASILinkReliabilityTests.swift"),
-  read("apps/ios/SignalASITests/SignalASIBackupTests.swift"),
-  read("apps/ios/SignalASITests/SignalASIStoreTests.swift"),
-].join("\n");
+const tests = signalASITestFiles
+  .map((file) => read(`apps/ios/SignalASITests/${file}`))
+  .join("\n");
 
 const requiredProjectSnippets = [
   "IPHONEOS_DEPLOYMENT_TARGET = 15.0",
@@ -73,6 +76,8 @@ const requiredProjectSnippets = [
 
 const requiredSourceSnippets = [
   [readme, "iOS 15"],
+  [readme, "Swift source is split by functional domain"],
+  [readme, "should stay limited to shared foundation types"],
   [readme, "Android-style app display text sizing"],
   [readme, "Android-style animated image timing normalization"],
   [readme, "Android-compatible unified command payloads"],
@@ -1428,6 +1433,13 @@ const requiredSourceSnippets = [
   [tests, "testAgentConnectorAvailabilityMatchesAndroidDesktopStatusRules"],
   [tests, "testAgentConnectorAvailabilityMatchesAndroidCloudModelReadiness"],
 ];
+
+for (const file of signalASISourceFiles) {
+  requiredProjectSnippets.push(`${file} in Sources`);
+}
+for (const file of signalASITestFiles) {
+  requiredProjectSnippets.push(`${file} in Sources`);
+}
 
 for (const snippet of requiredProjectSnippets) {
   if (!project.includes(snippet)) {
