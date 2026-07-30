@@ -878,7 +878,7 @@
     <string name="pairing_save_trust">Save Trust</string>
     <string name="pairing_save_trust_subtitle">Hermes, Codex, Claude, local models, and custom Agents will appear as contacts</string>
     <string name="pairing_access_full">Desktop Executor</string>
-    <string name="pairing_access_full_subtitle">Full Desktop tools, control, and external file access without per-action approval</string>
+    <string name="pairing_access_full_subtitle">Desktop tools, control, and external files; sensitive actions require approval</string>
     <string name="pairing_access_restricted">Restricted Desktop Access</string>
     <string name="pairing_access_restricted_subtitle">Agent chat and files explicitly attached to the current task only</string>
     <string name="pairing_invalid_identity_qr">Invalid SignalASI identity QR code</string>

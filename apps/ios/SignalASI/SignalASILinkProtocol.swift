@@ -29,7 +29,6 @@ enum SignalASILinkProtocol {
   static let scopeDesktopControl = "desktop.control"
   static let scopeDesktopNativeTools = "desktop.native_tools"
   static let scopeDesktopExternalFiles = "desktop.files.external"
-  static let scopeDesktopApprovalBypass = "desktop.approval.bypass"
 
   private static let maxQRAgeMilliseconds: Double = 10 * 60 * 1000
   private static let maxClockSkewMilliseconds: Double = 5 * 60 * 1000
@@ -138,8 +137,7 @@ enum SignalASILinkProtocol {
       scopeDesktopExecutor,
       scopeDesktopControl,
       scopeDesktopNativeTools,
-      scopeDesktopExternalFiles,
-      scopeDesktopApprovalBypass
+      scopeDesktopExternalFiles
     ])
     guard scopes.isSuperset(of: restrictedScopes) else { return nil }
     if profile == accessDesktopExecutor, !scopes.isSuperset(of: executorScopes) {

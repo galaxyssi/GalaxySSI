@@ -22,7 +22,6 @@ EXECUTOR_FULL = "desktop.executor.full"
 DESKTOP_CONTROL = "desktop.control"
 DESKTOP_NATIVE_TOOLS = "desktop.native_tools"
 DESKTOP_EXTERNAL_FILES = "desktop.files.external"
-DESKTOP_APPROVAL_BYPASS = "desktop.approval.bypass"
 
 RESTRICTED_SCOPES = (
     AGENT_CHAT,
@@ -35,7 +34,6 @@ EXECUTOR_SCOPES = (
     DESKTOP_CONTROL,
     DESKTOP_NATIVE_TOOLS,
     DESKTOP_EXTERNAL_FILES,
-    DESKTOP_APPROVAL_BYPASS,
 )
 
 _WINDOWS_PATH = re.compile(

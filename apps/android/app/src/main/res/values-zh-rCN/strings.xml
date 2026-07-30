@@ -621,7 +621,7 @@
     <string name="pairing_save_trust">保存信任</string>
     <string name="pairing_save_trust_subtitle">Hermes、Codex、Claude、本地模型和自定义 Agent 将作为联系人出现</string>
     <string name="pairing_access_full">桌面执行器</string>
-    <string name="pairing_access_full_subtitle">无需逐项审批即可使用完整电脑工具、控制和外部文件</string>
+    <string name="pairing_access_full_subtitle">可使用电脑工具、控制和外部文件；敏感操作仍需审批</string>
     <string name="pairing_access_restricted">受限桌面访问</string>
     <string name="pairing_access_restricted_subtitle">仅允许 Agent 对话和当前任务明确添加的文件</string>
     <string name="pairing_invalid_identity_qr">SignalASI 身份二维码无效</string>

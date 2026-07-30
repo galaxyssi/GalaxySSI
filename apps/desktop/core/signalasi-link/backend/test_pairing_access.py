@@ -7,6 +7,7 @@ from pathlib import Path
 from pairing_access import (
     DESKTOP_CONTROL,
     DESKTOP_EXECUTOR,
+    DESKTOP_EXTERNAL_FILES,
     DESKTOP_NATIVE_TOOLS,
     EXECUTOR_FULL,
     RESTRICTED,
@@ -26,6 +27,8 @@ class PairingAccessTests(unittest.TestCase):
         self.assertIn(EXECUTOR_FULL, grant["scopes"])
         self.assertIn(DESKTOP_CONTROL, grant["scopes"])
         self.assertIn(DESKTOP_NATIVE_TOOLS, grant["scopes"])
+        self.assertIn(DESKTOP_EXTERNAL_FILES, grant["scopes"])
+        self.assertNotIn("desktop.approval.bypass", grant["scopes"])
 
     def test_partial_or_self_asserted_executor_grant_fails_closed(self) -> None:
         grant = normalize_grant({

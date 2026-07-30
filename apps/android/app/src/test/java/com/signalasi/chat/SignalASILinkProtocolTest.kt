@@ -278,8 +278,15 @@ class SignalASILinkProtocolTest {
             SignalASILinkProtocol.SCOPE_DESKTOP_EXECUTOR,
             SignalASILinkProtocol.SCOPE_DESKTOP_CONTROL,
             SignalASILinkProtocol.SCOPE_DESKTOP_NATIVE_TOOLS,
-            SignalASILinkProtocol.SCOPE_DESKTOP_EXTERNAL_FILES,
-            SignalASILinkProtocol.SCOPE_DESKTOP_APPROVAL_BYPASS
+            SignalASILinkProtocol.SCOPE_DESKTOP_EXTERNAL_FILES
+        )
+        val incompleteExecutor = pairingAccess(
+            SignalASILinkProtocol.ACCESS_DESKTOP_EXECUTOR,
+            SignalASILinkProtocol.SCOPE_AGENT_CHAT,
+            SignalASILinkProtocol.SCOPE_EXPLICIT_ATTACHMENTS,
+            SignalASILinkProtocol.SCOPE_TASK_WORKSPACE,
+            SignalASILinkProtocol.SCOPE_DESKTOP_EXECUTOR,
+            SignalASILinkProtocol.SCOPE_DESKTOP_CONTROL
         )
         val forgedRestricted = pairingAccess(
             SignalASILinkProtocol.ACCESS_RESTRICTED,
@@ -294,6 +301,7 @@ class SignalASILinkProtocolTest {
             SignalASILinkProtocol.pairingAccess(restricted)?.profile
         )
         assertTrue(SignalASILinkProtocol.pairingAccess(executor)?.fullDesktopExecutor == true)
+        assertNull(SignalASILinkProtocol.pairingAccess(incompleteExecutor))
         assertNull(SignalASILinkProtocol.pairingAccess(forgedRestricted))
     }
 
