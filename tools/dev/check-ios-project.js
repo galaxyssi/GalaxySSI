@@ -154,6 +154,8 @@ const requiredProjectSnippets = [
   "AgentIOSHardwareNativeToolTests.swift in Sources",
   "AgentIOSHomeAssistantNativeTools.swift in Sources",
   "AgentIOSHomeAssistantNativeToolTests.swift in Sources",
+  "AgentIOSNotificationNativeTools.swift in Sources",
+  "AgentIOSNotificationNativeToolTests.swift in Sources",
   "AgentMediaNetworkPolicyModels.swift in Sources",
   "AgentMediaNetworkPolicyTests.swift in Sources",
   "VoiceRealtimeHealthModels.swift in Sources",
