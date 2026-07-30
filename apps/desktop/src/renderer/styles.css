@@ -418,6 +418,12 @@ button:disabled { cursor: default; opacity: 0.48; }
 .assistant-answer code { padding: 1px 3px; border-radius: 3px; background: #f0f2f4; font-family: Consolas, monospace; font-size: 9px; }
 .assistant-answer pre code { padding: 0; background: transparent; }
 .assistant-answer a { color: var(--blue); text-decoration: none; }
+.assistant-output-chunk { display: flow-root; content-visibility: auto; contain-intrinsic-size: 1px 180px; }
+.assistant-output-chunk + .assistant-output-chunk { margin-top: 8px; }
+.assistant-output-controls { display: flex; align-items: center; gap: 8px; min-height: 24px; margin-top: 4px; }
+.load-full-output { padding: 4px 0; border: 0; background: transparent; color: var(--blue); font-size: 9px; }
+.load-full-output:disabled { color: var(--muted); }
+.output-load-state { color: var(--muted); font-size: 8px; }
 .evolution-result-meta {
   display: flex;
   align-items: center;

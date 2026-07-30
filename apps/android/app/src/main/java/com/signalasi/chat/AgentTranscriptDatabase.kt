@@ -21,6 +21,18 @@ internal data class AgentTranscriptDelta(
     val hasMore: Boolean
 )
 
+internal data class AgentTranscriptContentPage(
+    val entryId: String,
+    val field: String,
+    val offset: Int,
+    val nextOffset: Int,
+    val totalChunks: Int,
+    val totalLength: Int,
+    val sha256: String,
+    val chunks: List<String>,
+    val done: Boolean
+)
+
 internal class AgentTranscriptWindow {
     var conversationId: String = ""
         private set
@@ -140,13 +152,30 @@ internal class AgentTranscriptEntryDatabase(
             ON transcript_entries(conversation_id, dedupe_hash)
             """.trimIndent()
         )
+        createChunkStorage(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        db.setForeignKeyConstraintsEnabled(true)
+    }
+
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) createChunkStorage(db)
+    }
 
     @Synchronized
-    fun insert(entry: AgentTranscriptEntry): Boolean =
-        insertEntry(writableDatabase, entry) != -1L
+    fun insert(entry: AgentTranscriptEntry): Boolean {
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            val inserted = insertEntry(db, entry) != -1L
+            if (inserted) db.setTransactionSuccessful()
+            inserted
+        } finally {
+            db.endTransaction()
+        }
+    }
 
     @Synchronized
     fun replace(previousEntryId: String, entry: AgentTranscriptEntry): Boolean {
@@ -187,7 +216,7 @@ internal class AgentTranscriptEntryDatabase(
             null,
             null,
             "timestamp_millis ASC, sequence ASC"
-        ).use(::decodeEntries)
+        ).use(::decodeEntries).map(::hydrateEntry)
 
     @Synchronized
     fun listConversation(conversationId: String): List<AgentTranscriptEntry> =
@@ -199,7 +228,7 @@ internal class AgentTranscriptEntryDatabase(
             null,
             null,
             "timestamp_millis ASC, sequence ASC"
-        ).use(::decodeEntries)
+        ).use(::decodeEntries).map(::hydrateEntry)
 
     @Synchronized
     fun listConversationAfterEntry(
@@ -230,7 +259,7 @@ internal class AgentTranscriptEntryDatabase(
             null,
             null,
             "sequence ASC"
-        ).use(::decodeEntries)
+        ).use(::decodeEntries).map(::hydrateEntry)
     }
 
     @Synchronized
@@ -316,7 +345,7 @@ internal class AgentTranscriptEntryDatabase(
             null,
             null,
             "sequence ASC"
-        ).use(::decodeEntries)
+        ).use(::decodeEntries).map(::hydrateEntry)
 
     @Synchronized
     fun listTask(taskId: String): List<AgentTranscriptEntry> =
@@ -328,7 +357,7 @@ internal class AgentTranscriptEntryDatabase(
             null,
             null,
             "sequence ASC"
-        ).use(::decodeEntries)
+        ).use(::decodeEntries).map(::hydrateEntry)
 
     @Synchronized
     fun findById(entryId: String): AgentTranscriptEntry? =
@@ -340,6 +369,79 @@ internal class AgentTranscriptEntryDatabase(
         return querySingle(
             "conversation_id = ? AND dedupe_hash = ?",
             arrayOf(conversationId, digest(dedupeKey))
+        )
+    }
+
+    @Synchronized
+    fun textChunkPage(
+        entryId: String,
+        offset: Int = 0,
+        pageSize: Int = 2
+    ): AgentTranscriptContentPage? {
+        val cleanEntryId = entryId.trim()
+        if (cleanEntryId.isBlank()) return null
+        val entry = queryStored("entry_id = ?", arrayOf(cleanEntryId)) ?: return null
+        val safeOffset = offset.coerceAtLeast(0)
+        val safePageSize = pageSize.coerceIn(1, MAX_CONTENT_PAGE_CHUNKS)
+        if (entry.textChunkCount <= 0) {
+            val chunks = if (safeOffset == 0 && entry.text.isNotEmpty()) {
+                listOf(entry.text)
+            } else {
+                emptyList()
+            }
+            return AgentTranscriptContentPage(
+                entryId = cleanEntryId,
+                field = FIELD_TEXT,
+                offset = safeOffset,
+                nextOffset = safeOffset + chunks.size,
+                totalChunks = if (entry.text.isEmpty()) 0 else 1,
+                totalLength = entry.text.length,
+                sha256 = AgentLargeOutputPolicy.digest(entry.text),
+                chunks = chunks,
+                done = true
+            )
+        }
+        val chunks = readableDatabase.query(
+            TABLE_CHUNKS,
+            arrayOf("chunk_index", "encrypted_chunk", "char_count", "chunk_sha256"),
+            "entry_id = ? AND field_name = ? AND chunk_index >= ?",
+            arrayOf(cleanEntryId, FIELD_TEXT, safeOffset.toString()),
+            null,
+            null,
+            "chunk_index ASC",
+            safePageSize.toString()
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val index = cursor.getInt(0)
+                    check(index == safeOffset + size) {
+                        "Agent transcript chunk order mismatch"
+                    }
+                    val value = AgentStorageCipher.decrypt(
+                        cursor.getString(1),
+                        chunkAssociatedData(cleanEntryId, FIELD_TEXT, index)
+                    ) ?: error("Agent transcript chunk could not be decrypted")
+                    check(value.length == cursor.getInt(2)) {
+                        "Agent transcript chunk length mismatch"
+                    }
+                    check(AgentLargeOutputPolicy.digest(value) == cursor.getString(3)) {
+                        "Agent transcript chunk digest mismatch"
+                    }
+                    add(value)
+                }
+            }
+        }
+        val nextOffset = safeOffset + chunks.size
+        return AgentTranscriptContentPage(
+            entryId = cleanEntryId,
+            field = FIELD_TEXT,
+            offset = safeOffset,
+            nextOffset = nextOffset,
+            totalChunks = entry.textChunkCount,
+            totalLength = entry.textLength,
+            sha256 = entry.textSha256,
+            chunks = chunks,
+            done = nextOffset >= entry.textChunkCount
         )
     }
 
@@ -404,6 +506,12 @@ internal class AgentTranscriptEntryDatabase(
     }
 
     private fun querySingle(selection: String, arguments: Array<String>): AgentTranscriptEntry? =
+        queryStored(selection, arguments)?.let(::hydrateEntry)
+
+    private fun queryStored(
+        selection: String,
+        arguments: Array<String>
+    ): AgentTranscriptEntry? =
         readableDatabase.query(
             TABLE_ENTRIES,
             PAYLOAD_COLUMNS,
@@ -432,6 +540,21 @@ internal class AgentTranscriptEntryDatabase(
         }
 
     private fun insertEntry(db: SQLiteDatabase, entry: AgentTranscriptEntry): Long {
+        val text = AgentLargeOutputPolicy.prepare(entry.text, includePreview = true)
+        val richOutput = AgentLargeOutputPolicy.prepare(
+            entry.richOutputJson,
+            includePreview = false
+        )
+        val storedEntry = entry.copy(
+            text = text.storedValue,
+            richOutputJson = richOutput.storedValue,
+            textChunkCount = text.chunkCount,
+            textLength = text.totalLength,
+            textSha256 = text.sha256,
+            richOutputChunkCount = richOutput.chunkCount,
+            richOutputLength = richOutput.totalLength,
+            richOutputSha256 = richOutput.sha256
+        )
         val values = ContentValues().apply {
             put("entry_id", entry.id)
             put("conversation_id", entry.conversationId)
@@ -439,9 +562,18 @@ internal class AgentTranscriptEntryDatabase(
             put("task_id", entry.taskId)
             put("dedupe_hash", entry.dedupeKey.takeIf(String::isNotBlank)?.let(::digest).orEmpty())
             put("timestamp_millis", entry.timestampMillis)
-            put("encrypted_payload", encode(entry))
+            put("encrypted_payload", encode(storedEntry))
         }
-        return db.insertWithOnConflict(TABLE_ENTRIES, null, values, SQLiteDatabase.CONFLICT_ABORT)
+        val rowId = db.insertWithOnConflict(
+            TABLE_ENTRIES,
+            null,
+            values,
+            SQLiteDatabase.CONFLICT_ABORT
+        )
+        if (rowId == -1L) return rowId
+        writeChunks(db, entry.id, FIELD_TEXT, text.chunks)
+        writeChunks(db, entry.id, FIELD_RICH_OUTPUT, richOutput.chunks)
+        return rowId
     }
 
     private fun decodeEntries(cursor: Cursor): List<AgentTranscriptEntry> = buildList {
@@ -467,7 +599,43 @@ internal class AgentTranscriptEntryDatabase(
             richOutputJson = AgentRichContentCodec.normalize(item.optString("rich_output")),
             sourceConversationId = item.optString("source_conversation_id"),
             sourceConversationTitle = item.optString("source_conversation_title"),
-            sourceEntryId = item.optString("source_entry_id")
+            sourceEntryId = item.optString("source_entry_id"),
+            textChunkCount = item.optInt("text_chunk_count"),
+            textLength = item.optInt("text_length"),
+            textSha256 = item.optString("text_sha256"),
+            richOutputChunkCount = item.optInt("rich_output_chunk_count"),
+            richOutputLength = item.optInt("rich_output_length"),
+            richOutputSha256 = item.optString("rich_output_sha256")
+        )
+    }
+
+    private fun hydrateEntry(entry: AgentTranscriptEntry): AgentTranscriptEntry {
+        if (!AgentLargeOutputPolicy.hasDeferredContent(entry)) return entry
+        val text = if (entry.textChunkCount > 0) {
+            readChunks(
+                entryId = entry.id,
+                field = FIELD_TEXT,
+                expectedCount = entry.textChunkCount,
+                expectedLength = entry.textLength,
+                expectedSha256 = entry.textSha256
+            )
+        } else {
+            entry.text
+        }
+        val richOutput = if (entry.richOutputChunkCount > 0) {
+            readChunks(
+                entryId = entry.id,
+                field = FIELD_RICH_OUTPUT,
+                expectedCount = entry.richOutputChunkCount,
+                expectedLength = entry.richOutputLength,
+                expectedSha256 = entry.richOutputSha256
+            )
+        } else {
+            entry.richOutputJson
+        }
+        return entry.copy(
+            text = text,
+            richOutputJson = AgentRichContentCodec.normalize(richOutput)
         )
     }
 
@@ -485,24 +653,129 @@ internal class AgentTranscriptEntryDatabase(
             .put("source_conversation_id", entry.sourceConversationId)
             .put("source_conversation_title", entry.sourceConversationTitle)
             .put("source_entry_id", entry.sourceEntryId)
+            .put("text_chunk_count", entry.textChunkCount)
+            .put("text_length", entry.textLength)
+            .put("text_sha256", entry.textSha256)
+            .put("rich_output_chunk_count", entry.richOutputChunkCount)
+            .put("rich_output_length", entry.richOutputLength)
+            .put("rich_output_sha256", entry.richOutputSha256)
             .toString()
         return AgentStorageCipher.encrypt(raw, associatedData(entry.id))
     }
 
+    private fun writeChunks(
+        db: SQLiteDatabase,
+        entryId: String,
+        field: String,
+        chunks: List<String>
+    ) {
+        chunks.forEachIndexed { index, chunk ->
+            val values = ContentValues().apply {
+                put("entry_id", entryId)
+                put("field_name", field)
+                put("chunk_index", index)
+                put(
+                    "encrypted_chunk",
+                    AgentStorageCipher.encrypt(
+                        chunk,
+                        chunkAssociatedData(entryId, field, index)
+                    )
+                )
+                put("char_count", chunk.length)
+                put("chunk_sha256", AgentLargeOutputPolicy.digest(chunk))
+            }
+            db.insertOrThrow(TABLE_CHUNKS, null, values)
+        }
+    }
+
+    private fun readChunks(
+        entryId: String,
+        field: String,
+        expectedCount: Int,
+        expectedLength: Int,
+        expectedSha256: String
+    ): String {
+        val chunks = readableDatabase.query(
+            TABLE_CHUNKS,
+            arrayOf("chunk_index", "encrypted_chunk", "char_count", "chunk_sha256"),
+            "entry_id = ? AND field_name = ?",
+            arrayOf(entryId, field),
+            null,
+            null,
+            "chunk_index ASC"
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val index = cursor.getInt(0)
+                    check(index == size) { "Agent transcript chunk order mismatch" }
+                    val value = AgentStorageCipher.decrypt(
+                        cursor.getString(1),
+                        chunkAssociatedData(entryId, field, index)
+                    ) ?: error("Agent transcript chunk could not be decrypted")
+                    check(value.length == cursor.getInt(2)) {
+                        "Agent transcript chunk length mismatch"
+                    }
+                    check(AgentLargeOutputPolicy.digest(value) == cursor.getString(3)) {
+                        "Agent transcript chunk digest mismatch"
+                    }
+                    add(value)
+                }
+            }
+        }
+        check(chunks.size == expectedCount) { "Agent transcript chunk count mismatch" }
+        val value = chunks.joinToString("")
+        check(value.length == expectedLength) { "Agent transcript output length mismatch" }
+        check(AgentLargeOutputPolicy.digest(value) == expectedSha256) {
+            "Agent transcript output digest mismatch"
+        }
+        return value
+    }
+
     private fun associatedData(entryId: String): ByteArray =
         "agent-transcript-entry:$entryId".toByteArray(Charsets.UTF_8)
+
+    private fun chunkAssociatedData(entryId: String, field: String, index: Int): ByteArray =
+        "agent-transcript-chunk:$entryId:$field:$index".toByteArray(Charsets.UTF_8)
 
     private fun digest(value: String): String =
         MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
+    private fun createChunkStorage(db: SQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS transcript_entry_chunks (
+                entry_id TEXT NOT NULL,
+                field_name TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                encrypted_chunk TEXT NOT NULL,
+                char_count INTEGER NOT NULL,
+                chunk_sha256 TEXT NOT NULL,
+                PRIMARY KEY(entry_id, field_name, chunk_index),
+                FOREIGN KEY(entry_id) REFERENCES transcript_entries(entry_id)
+                    ON DELETE CASCADE
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS transcript_entry_chunks_order
+            ON transcript_entry_chunks(entry_id, field_name, chunk_index)
+            """.trimIndent()
+        )
+    }
+
     companion object {
         private const val DATABASE_NAME = "signalasi_agent_transcript_entries.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         private const val TABLE_ENTRIES = "transcript_entries"
+        private const val TABLE_CHUNKS = "transcript_entry_chunks"
+        private const val FIELD_TEXT = "text"
+        private const val FIELD_RICH_OUTPUT = "rich_output"
         private const val DEFAULT_PAGE_SIZE = 100
         private const val MAX_PAGE_SIZE = 500
+        private const val MAX_CONTENT_PAGE_CHUNKS = 8
         private val PAYLOAD_COLUMNS = arrayOf("entry_id", "encrypted_payload")
         private val PAGE_COLUMNS = arrayOf("sequence", "entry_id", "encrypted_payload")
     }

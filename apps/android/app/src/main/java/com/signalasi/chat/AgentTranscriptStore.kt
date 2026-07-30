@@ -321,7 +321,13 @@ data class AgentTranscriptEntry(
     val richOutputJson: String = "",
     val sourceConversationId: String = "",
     val sourceConversationTitle: String = "",
-    val sourceEntryId: String = ""
+    val sourceEntryId: String = "",
+    val textChunkCount: Int = 0,
+    val textLength: Int = 0,
+    val textSha256: String = "",
+    val richOutputChunkCount: Int = 0,
+    val richOutputLength: Int = 0,
+    val richOutputSha256: String = ""
 )
 
 data class AgentConversation(
@@ -841,6 +847,20 @@ class AgentTranscriptStore(context: Context) {
         val cleanTaskId = taskId.trim()
         return if (cleanTaskId.isBlank()) emptyList() else entryDatabase.listTask(cleanTaskId)
     }
+
+    @Synchronized
+    internal fun fullEntry(entryId: String): AgentTranscriptEntry? {
+        val cleanEntryId = entryId.trim()
+        return if (cleanEntryId.isBlank()) null else entryDatabase.findById(cleanEntryId)
+    }
+
+    @Synchronized
+    internal fun textChunkPage(
+        entryId: String,
+        offset: Int = 0,
+        pageSize: Int = 2
+    ): AgentTranscriptContentPage? =
+        entryDatabase.textChunkPage(entryId, offset, pageSize)
 
     @Synchronized
     fun conversationIdForTurn(turnId: String): String? {

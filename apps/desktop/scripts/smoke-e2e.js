@@ -268,7 +268,7 @@ function createFakeMcpServer(tmpDir) {
 function createMcpWrapperCommand(fakeMcpServer) {
   const python = findBackendPython().replaceAll("\\", "/");
   const wrapper = path.join(backendDir, "mcp_agent_wrapper.py").replaceAll("\\", "/");
-  return `"${python}" "${wrapper}" --server-python "${fakeMcpServer.replaceAll("\\", "/")}" --tool echo -`;
+  return `"${python}" "${wrapper}" --server-python "${fakeMcpServer.replaceAll("\\", "/")}" --stdio-framing content_length --tool echo -`;
 }
 
 function startFakeModelServer() {

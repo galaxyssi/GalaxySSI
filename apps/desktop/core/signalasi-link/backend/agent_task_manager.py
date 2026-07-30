@@ -1546,12 +1546,39 @@ class AgentTaskManager:
         with self._lock:
             records = self._store.list_recent(max(1, min(int(limit or 100), 500)))
             return [
-                (
+                self._public_with_output_preview(
                     self._tasks.get(str(record.get("task_id") or ""))
-                    or self._decode_task(record)
-                ).public(include_prompt=include_prompt)
+                    or self._decode_task(record),
+                    record,
+                    include_prompt=include_prompt,
+                )
                 for record in records
             ]
+
+    def public_preview(self, task_id: str, include_prompt: bool = False) -> dict | None:
+        clean_id = str(task_id or "").strip()
+        if not clean_id:
+            return None
+        with self._lock:
+            record = self._store.get(clean_id, hydrate_output=False)
+            if record is None:
+                return None
+            task = self._tasks.get(clean_id) or self._decode_task(record)
+            return self._public_with_output_preview(
+                task,
+                record,
+                include_prompt=include_prompt,
+            )
+
+    def output_page(
+        self,
+        task_id: str,
+        *,
+        offset: int = 0,
+        limit: int = 2,
+    ) -> dict | None:
+        with self._lock:
+            return self._store.output_page(task_id, offset=offset, limit=limit)
 
     def conversation_messages(
         self,
@@ -1868,6 +1895,27 @@ class AgentTaskManager:
 
     def _save_locked(self, task: AgentTask) -> None:
         self._store.upsert(task.record())
+
+    @staticmethod
+    def _public_with_output_preview(
+        task: AgentTask,
+        record: dict,
+        *,
+        include_prompt: bool,
+    ) -> dict:
+        payload = task.public(include_prompt=include_prompt)
+        if not bool(record.get("result_chunked")):
+            return payload
+        payload["result"] = str(record.get("result") or "")
+        for key in (
+            "result_chunked",
+            "result_length",
+            "result_chunk_count",
+            "result_sha256",
+            "result_preview_length",
+        ):
+            payload[key] = record.get(key)
+        return payload
 
     @staticmethod
     def _decode_task(row: dict) -> AgentTask:

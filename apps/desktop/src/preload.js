@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld("signalasi", {
   syncMobileStatus: () => ipcRenderer.invoke("mobile:sync-status"),
   listDesktopTasks: (limit) => ipcRenderer.invoke("desktop-tasks:list", limit),
   getDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:get", taskId),
+  getDesktopTaskOutput: (taskId, offset = 0, limit = 2) =>
+    ipcRenderer.invoke("desktop-tasks:output", taskId, offset, limit),
   desktopTaskStreamConfig: () => ipcRenderer.invoke("desktop-tasks:stream-config"),
   startDesktopTask: (payload) => ipcRenderer.invoke("desktop-tasks:start", payload),
   cancelDesktopTask: (taskId) => ipcRenderer.invoke("desktop-tasks:cancel", taskId),

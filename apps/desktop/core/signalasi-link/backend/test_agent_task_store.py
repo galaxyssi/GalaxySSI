@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,6 +40,87 @@ def _record(index: int, conversation_id: str = "conversation-main") -> dict:
 
 
 class AgentTaskStoreTests(unittest.TestCase):
+    def test_large_output_is_chunked_for_lists_and_hydrated_for_agent_context(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            store = AgentTaskStore(path)
+            record = _record(1)
+            record["result"] = "".join(
+                f"Section {index}\n{'content ' * 240}\n\n"
+                for index in range(40)
+            )
+            store.upsert(record)
+
+            preview = store.list_recent(1)[0]
+            restored = store.get(record["task_id"])
+            conversation = store.conversation(
+                record["conversation_id"],
+                source_prefix=None,
+            )
+
+            self.assertTrue(preview["result_chunked"])
+            self.assertLess(len(preview["result"]), len(record["result"]))
+            self.assertEqual(len(record["result"]), preview["result_length"])
+            self.assertEqual(record["result"], restored["result"])
+            self.assertEqual(record["result"], conversation[0]["result"])
+
+            offset = 0
+            received: list[str] = []
+            while True:
+                page = store.output_page(record["task_id"], offset=offset, limit=2)
+                self.assertIsNotNone(page)
+                received.extend(chunk["content"] for chunk in page["chunks"])
+                offset = page["next_offset"]
+                if page["done"]:
+                    break
+            self.assertEqual(record["result"], "".join(received))
+
+            manager = AgentTaskManager(state_path=path)
+            manager_preview = manager.public_preview(record["task_id"])
+            self.assertTrue(manager_preview["result_chunked"])
+            self.assertEqual(preview["result"], manager_preview["result"])
+            self.assertEqual(record["result"], manager.get(record["task_id"]).result)
+
+    def test_replacing_large_output_with_small_output_removes_old_chunks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = AgentTaskStore(Path(temp_dir) / "tasks.sqlite3")
+            record = _record(1)
+            record["result"] = "large output\n".join(str(index) for index in range(4_000))
+            store.upsert(record)
+            self.assertTrue(store.list_recent(1)[0]["result_chunked"])
+
+            record["result"] = "small result"
+            store.upsert(record)
+
+            restored = store.get(record["task_id"])
+            page = store.output_page(record["task_id"])
+            self.assertEqual("small result", restored["result"])
+            self.assertNotIn("result_chunked", restored)
+            self.assertEqual(["small result"], [chunk["content"] for chunk in page["chunks"]])
+
+    def test_paged_output_rejects_a_missing_chunk(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            store = AgentTaskStore(path)
+            record = _record(1)
+            record["result"] = "large output line\n" * 4_000
+            store.upsert(record)
+            connection = sqlite3.connect(path)
+            try:
+                connection.execute(
+                    """
+                    DELETE FROM agent_task_output_chunks
+                    WHERE task_id = ? AND field_name = 'result' AND chunk_index = 0
+                    """,
+                    (record["task_id"],),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            with self.assertRaisesRegex(ValueError, "chunk order mismatch"):
+                store.output_page(record["task_id"], offset=0, limit=2)
+
     def test_complete_conversation_history_survives_beyond_legacy_limit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"

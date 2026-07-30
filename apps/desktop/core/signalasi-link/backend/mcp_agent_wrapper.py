@@ -234,13 +234,17 @@ def call_mcp_detailed(
 def _client_config(args: argparse.Namespace) -> McpClientConfig:
     command, _use_shell = server_command(args)
     transport = str(getattr(args, "transport", "") or "local_stdio")
+    command_argv = tuple(
+        str(value)
+        for value in list(getattr(args, "command_argv", ()) or ())
+    )
+    if not command_argv and isinstance(command, (list, tuple)):
+        command_argv = tuple(str(value) for value in command)
+        command = ""
     return McpClientConfig(
         transport=transport,
         command=str(command or ""),
-        command_argv=tuple(
-            str(value)
-            for value in list(getattr(args, "command_argv", ()) or ())
-        ),
+        command_argv=command_argv,
         process_environment={
             str(key): str(value)
             for key, value in dict(

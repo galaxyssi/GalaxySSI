@@ -158,6 +158,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val REQUEST_EXPORT_RUNTIME_ARTIFACT = 2019
         private const val INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS = 24
         private const val AGENT_TRANSCRIPT_PAGE_ITEMS = 24
+        private const val MAX_EXPANDED_AGENT_TRANSCRIPT_ENTRIES = 8
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
         private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
@@ -354,6 +355,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         handler.post(::refreshGlobalAgentCognition)
     }
     private val historyExecutor = Executors.newSingleThreadExecutor()
+    private val agentTranscriptContentExecutor = Executors.newSingleThreadExecutor()
     private val agentRegistryHeartbeatExecutor = Executors.newSingleThreadExecutor()
     private val agentSubmissionExecutor = Executors.newSingleThreadExecutor()
     private val agentRoutingExecutor = Executors.newSingleThreadExecutor()
@@ -447,6 +449,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val renderedAgentTranscriptIds = linkedSetOf<String>()
     private val renderedAgentTranscriptSignatures = mutableMapOf<String, Int>()
     private var renderedAgentTranscriptSourceEntries: List<AgentTranscriptEntry> = emptyList()
+    private val expandedAgentTranscriptEntries = linkedMapOf<String, AgentTranscriptEntry>()
+    private val expandedAgentTranscriptText = linkedMapOf<String, AgentExpandedTextOutput>()
+    private val agentTranscriptExpansionInFlight = linkedSetOf<String>()
     private val expandedAgentProcessGroups = linkedSetOf<String>()
     private val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
     private val directoryContacts = mutableListOf<Contact>()
@@ -1060,6 +1065,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentSubmissionExecutor.shutdown()
         agentRoutingExecutor.shutdown()
         agentTaskPersistenceExecutor.shutdown()
+        agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
         super.onDestroy()
     }
@@ -3536,6 +3542,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun resetAgentTranscriptRendering(conversationId: String = "") {
         clearAgentTranscriptRows()
+        expandedAgentTranscriptEntries.clear()
+        expandedAgentTranscriptText.clear()
+        agentTranscriptExpansionInFlight.clear()
         agentTranscriptPageLoading = false
         agentTranscriptAllLoaded = false
         agentRenderedConversationId = conversationId
@@ -13449,6 +13458,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val topOffset: Int
     )
 
+    private data class AgentExpandedTextOutput(
+        val sha256: String,
+        val chunks: MutableList<String> = mutableListOf(),
+        var done: Boolean = false
+    )
+
     private class AgentTranscriptViewHolder(
         val container: FrameLayout
     ) : RecyclerView.ViewHolder(container)
@@ -13559,7 +13574,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderAgentTranscript(entries: List<AgentTranscriptEntry>) {
         val renderStartedAt = SystemClock.elapsedRealtime()
-        val filteredEntries = entries.filterNot { entry ->
+        val hydratedEntries = entries.map(::expandedAgentTranscriptEntry)
+        val filteredEntries = hydratedEntries.filterNot { entry ->
             val staleApproval = isLocalAgentApprovalEntry(entry) &&
                 (isDirectActionApprovalEntry(entry) || !isAgentApprovalStillWaiting(entry.taskId))
             if (staleApproval && agentTranscriptStore.deleteEntry(entry.id)) {
@@ -13623,6 +13639,228 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 scrollAgentTranscriptToBottom()
             } else {
                 restoreAgentTranscriptScrollAnchor(scrollAnchor)
+            }
+        }
+    }
+
+    private fun agentChunkedAssistantContent(entry: AgentTranscriptEntry): View {
+        val cached = expandedAgentTranscriptText[entry.id]
+            ?.takeIf { it.sha256 == entry.textSha256 }
+            ?: run {
+                expandedAgentTranscriptText.remove(entry.id)
+                null
+            }
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            val chunkContainer = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                tag = "agent-transcript-chunks:${entry.id}"
+            }
+            if (cached?.chunks.isNullOrEmpty()) {
+                chunkContainer.addView(agentAssistantRichContent(entry, entry))
+            } else {
+                cached?.chunks?.forEach { chunk ->
+                    chunkContainer.addView(agentAssistantTextChunk(entry, chunk))
+                }
+            }
+            addView(chunkContainer)
+            if (cached?.done != true) {
+                addView(TextView(this@MainActivity).apply {
+                    tag = "agent-transcript-expand:${entry.id}"
+                    val loading = entry.id in agentTranscriptExpansionInFlight
+                    text = if (loading) "\u2026" else getString(R.string.rich_output_show_more)
+                    isEnabled = !loading
+                    textSize = 13f
+                    includeFontPadding = false
+                    setTextColor(Color.parseColor("#087F69"))
+                    setPadding(0, dp(8), dp(8), dp(8))
+                    setOnClickListener {
+                        loadAllAgentTranscriptTextChunks(entry, chunkContainer, this)
+                    }
+                })
+            }
+        }
+    }
+
+    private fun agentAssistantTextChunk(
+        entry: AgentTranscriptEntry,
+        chunk: String
+    ): View = agentAssistantRichContent(
+        entry.copy(
+            text = chunk,
+            richOutputJson = "",
+            textChunkCount = 0,
+            textLength = chunk.length,
+            textSha256 = AgentLargeOutputPolicy.digest(chunk)
+        ),
+        entry
+    )
+
+    private fun loadAllAgentTranscriptTextChunks(
+        entry: AgentTranscriptEntry,
+        chunkContainer: LinearLayout,
+        button: TextView
+    ) {
+        if (!agentTranscriptExpansionInFlight.add(entry.id)) return
+        button.isEnabled = false
+        button.text = "\u2026"
+        val existing = expandedAgentTranscriptText[entry.id]
+            ?.takeIf { it.sha256 == entry.textSha256 }
+            ?.chunks
+            ?.toList()
+            .orEmpty()
+        agentTranscriptContentExecutor.execute {
+            val loaded = existing.toMutableList()
+            val result = runCatching {
+                var offset = loaded.size
+                var done = false
+                while (!done) {
+                    val page = checkNotNull(
+                        agentTranscriptStore.textChunkPage(
+                            entryId = entry.id,
+                            offset = offset,
+                            pageSize = 2
+                        )
+                    ) { "Agent transcript output is unavailable" }
+                    check(page.sha256 == entry.textSha256) {
+                        "Agent transcript output digest changed"
+                    }
+                    check(page.chunks.isNotEmpty() || page.done) {
+                        "Agent transcript output stream stopped"
+                    }
+                    loaded += page.chunks
+                    offset = page.nextOffset
+                    done = page.done
+                    runOnUiThread {
+                        if (entry.conversationId != agentRenderedConversationId) {
+                            return@runOnUiThread
+                        }
+                        val cache = expandedAgentTranscriptText.getOrPut(entry.id) {
+                            AgentExpandedTextOutput(entry.textSha256)
+                        }
+                        if (cache.sha256 != entry.textSha256) return@runOnUiThread
+                        if (cache.chunks.size == page.offset) {
+                            val visibleContainer =
+                                agentOutputList.findViewWithTag<LinearLayout>(
+                                    "agent-transcript-chunks:${entry.id}"
+                                ) ?: chunkContainer.takeIf { it.isAttachedToWindow }
+                            if (page.offset == 0) visibleContainer?.removeAllViews()
+                            page.chunks.forEach { chunk ->
+                                cache.chunks += chunk
+                                visibleContainer?.let { target ->
+                                    target.addView(
+                                        agentAssistantTextChunk(entry, chunk)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                val complete = loaded.joinToString("")
+                check(complete.length == entry.textLength) {
+                    "Agent transcript output length mismatch"
+                }
+                check(AgentLargeOutputPolicy.digest(complete) == entry.textSha256) {
+                    "Agent transcript output digest mismatch"
+                }
+            }
+            runOnUiThread {
+                agentTranscriptExpansionInFlight.remove(entry.id)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val error = result.exceptionOrNull()
+                if (error != null) {
+                    val visibleButton = agentOutputList.findViewWithTag<TextView>(
+                        "agent-transcript-expand:${entry.id}"
+                    ) ?: button
+                    visibleButton.isEnabled = true
+                    visibleButton.text = getString(R.string.rich_output_show_more)
+                    Toast.makeText(
+                        this,
+                        error.message ?: getString(R.string.rich_output_load_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@runOnUiThread
+                }
+                if (entry.conversationId != agentRenderedConversationId) {
+                    return@runOnUiThread
+                }
+                val cache = expandedAgentTranscriptText.getOrPut(entry.id) {
+                    AgentExpandedTextOutput(entry.textSha256)
+                }
+                cache.done = true
+                (
+                    agentOutputList.findViewWithTag<TextView>(
+                        "agent-transcript-expand:${entry.id}"
+                    ) ?: button
+                    ).visibility = View.GONE
+                trimExpandedAgentTranscriptCaches()
+            }
+        }
+    }
+
+    private fun trimExpandedAgentTranscriptCaches() {
+        while (
+            expandedAgentTranscriptText.size >
+            MAX_EXPANDED_AGENT_TRANSCRIPT_ENTRIES
+        ) {
+            expandedAgentTranscriptText.remove(expandedAgentTranscriptText.keys.first())
+        }
+        while (
+            expandedAgentTranscriptEntries.size >
+            MAX_EXPANDED_AGENT_TRANSCRIPT_ENTRIES
+        ) {
+            expandedAgentTranscriptEntries.remove(expandedAgentTranscriptEntries.keys.first())
+        }
+    }
+
+    private fun expandedAgentTranscriptEntry(
+        preview: AgentTranscriptEntry
+    ): AgentTranscriptEntry {
+        val expanded = expandedAgentTranscriptEntries[preview.id] ?: return preview
+        val matches = expanded.conversationId == preview.conversationId &&
+            expanded.textSha256 == preview.textSha256 &&
+            expanded.richOutputSha256 == preview.richOutputSha256
+        if (matches) return expanded
+        expandedAgentTranscriptEntries.remove(preview.id)
+        return preview
+    }
+
+    private fun loadFullAgentTranscriptEntry(
+        preview: AgentTranscriptEntry,
+        button: TextView
+    ) {
+        if (!agentTranscriptExpansionInFlight.add(preview.id)) return
+        button.isEnabled = false
+        button.text = "\u2026"
+        agentTranscriptContentExecutor.execute {
+            val result = runCatching { agentTranscriptStore.fullEntry(preview.id) }
+            runOnUiThread {
+                agentTranscriptExpansionInFlight.remove(preview.id)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val expanded = result.getOrNull()
+                if (
+                    expanded == null ||
+                    expanded.conversationId != agentRenderedConversationId ||
+                    AgentLargeOutputPolicy.hasDeferredContent(expanded)
+                ) {
+                    button.isEnabled = true
+                    button.text = getString(R.string.rich_output_show_more)
+                    Toast.makeText(
+                        this,
+                        result.exceptionOrNull()?.message
+                            ?: getString(R.string.rich_output_load_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    return@runOnUiThread
+                }
+                expandedAgentTranscriptEntries.remove(expanded.id)
+                expandedAgentTranscriptEntries[expanded.id] = expanded
+                trimExpandedAgentTranscriptCaches()
+                renderAgentTranscript(agentTranscriptWindow.entries)
             }
         }
     }
@@ -13709,17 +13947,37 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun agentAssistantTranscriptRow(entry: AgentTranscriptEntry): View {
-        val content = AgentRichContentView(
-            activity = this,
-            onTextViewReady = { textView -> attachAgentTranscriptActions(textView, entry) },
-            onAction = { action -> handleAgentRichAction(entry, action) },
-            onFormSubmit = { block, values -> handleAgentRichForm(entry, block, values) }
-        ).create(entry.copy(
-            text = CodexStyleResponsePolicy.sanitizeAssistantText(
-                localizedAgentAssistantText(entry.text)
-            ),
-            richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(entry.richOutputJson)
-        ))
+        val progressiveText = entry.textChunkCount > 0 && entry.richOutputChunkCount == 0
+        val richContent = if (progressiveText) {
+            agentChunkedAssistantContent(entry)
+        } else {
+            agentAssistantRichContent(entry, entry)
+        }
+        val content = if (
+            !progressiveText &&
+            AgentLargeOutputPolicy.hasDeferredContent(entry)
+        ) {
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                addView(richContent)
+                addView(TextView(this@MainActivity).apply {
+                    text = getString(R.string.rich_output_show_more)
+                    textSize = 13f
+                    includeFontPadding = false
+                    setTextColor(Color.parseColor("#087F69"))
+                    setPadding(0, dp(8), dp(8), dp(8))
+                    setOnClickListener {
+                        loadFullAgentTranscriptEntry(entry, this)
+                    }
+                })
+            }
+        } else {
+            richContent
+        }
         val execution = agentExecutionPresentations[entry.taskId]
             ?.takeUnless { isAgentApprovalEntry(entry) || entry.dedupeKey.startsWith("agent-recovery:") }
             ?: return content
@@ -13751,6 +14009,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             })
         }
     }
+
+    private fun agentAssistantRichContent(
+        displayEntry: AgentTranscriptEntry,
+        actionEntry: AgentTranscriptEntry
+    ): View = AgentRichContentView(
+        activity = this,
+        onTextViewReady = { textView -> attachAgentTranscriptActions(textView, actionEntry) },
+        onAction = { action -> handleAgentRichAction(actionEntry, action) },
+        onFormSubmit = { block, values -> handleAgentRichForm(actionEntry, block, values) }
+    ).create(displayEntry.copy(
+        text = CodexStyleResponsePolicy.sanitizeAssistantText(
+            localizedAgentAssistantText(displayEntry.text)
+        ),
+        richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
+            displayEntry.richOutputJson
+        )
+    ))
 
     private fun agentProcessTranscriptRow(entry: AgentTranscriptEntry): View {
         val groupKey = AgentTranscriptPresentationPolicy.processGroupKey(entry)
