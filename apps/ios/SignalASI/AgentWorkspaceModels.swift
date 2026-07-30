@@ -320,6 +320,7 @@ enum AgentTaskEventKinds {
   static let progress = "task.progress"
   static let stalled = "task.stalled"
   static let timedOut = "task.timed_out"
+  static let lateResponse = "task.late_response"
 }
 
 struct AgentWorkspaceKey: Codable, Equatable {
