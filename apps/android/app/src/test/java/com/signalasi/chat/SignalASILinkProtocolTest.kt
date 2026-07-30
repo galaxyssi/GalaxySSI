@@ -96,6 +96,52 @@ class SignalASILinkProtocolTest {
     }
 
     @Test
+    fun deferredMediaWaitsForValidatedNetworkWithoutBlockingText() {
+        val now = 1_000_000L
+        val values = JSONArray()
+            .put(
+                outboxMessage("media", "topic")
+                    .put("next_attempt_at", now)
+                    .put("requires_validated_network", true)
+            )
+            .put(
+                outboxMessage("text", "topic")
+                    .put("next_attempt_at", now + 750L)
+                    .put("requires_validated_network", false)
+            )
+
+        val constrained = SignalASILinkDeliveryStore.pendingFromArray(
+            values,
+            now + 1_000L,
+            allowValidatedNetworkMessages = false
+        )
+        val recovered = SignalASILinkDeliveryStore.pendingFromArray(
+            values,
+            now + 1_000L,
+            allowValidatedNetworkMessages = true
+        )
+
+        assertEquals(listOf("text"), constrained.map { it.messageId })
+        assertEquals(listOf("media", "text"), recovered.map { it.messageId })
+        assertEquals(
+            750L,
+            SignalASILinkDeliveryStore.nextRetryDelayFromArray(
+                values,
+                now,
+                allowValidatedNetworkMessages = false
+            )
+        )
+        assertEquals(
+            0L,
+            SignalASILinkDeliveryStore.nextRetryDelayFromArray(
+                values,
+                now,
+                allowValidatedNetworkMessages = true
+            )
+        )
+    }
+
+    @Test
     fun deliveryAckSeparatesTransportAndClientMessageIds() {
         val transportId = UUID.randomUUID().toString()
         val payload = JSONObject()

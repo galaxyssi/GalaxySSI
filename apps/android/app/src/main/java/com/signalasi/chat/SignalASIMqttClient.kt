@@ -502,6 +502,12 @@ object SignalASIMqttClient {
     fun connectAfterNetworkAvailable(context: Context) {
         retryHandler.removeCallbacks(connectionRetryRunnable)
         connectionRetryScheduled.set(false)
+        if (client?.isConnected == true) {
+            SignalASILinkDeliveryStore.makePendingImmediatelyRetryable(context)
+            retryPendingMessages()
+            scheduleOutboxRetries()
+            return
+        }
         connect(context)
     }
 
@@ -596,8 +602,18 @@ object SignalASIMqttClient {
                 .put("response_language_preference", policy.responseLanguage)
         }
         clientMessageId?.let { payload.put("client_message_id", it) }
-        inlineTurnAttachments(context, resolvedTurnId).takeIf { it.length() > 0 }
-            ?.let { payload.put("attachments", it) }
+        if (context != null) {
+            val attachments = AgentTurnAttachmentRegistry.get(resolvedTurnId)
+            val mediaProfile = AgentMediaNetworkDetector.detect(context)
+            inlineTurnAttachments(context, attachments, mediaProfile)
+                .takeIf { it.length() > 0 }
+                ?.let { payload.put("attachments", it) }
+            if (attachments.any { attachment -> attachment.isTransportMedia() }) {
+                payload
+                    .put("media_network_profile", mediaProfile.id)
+                    .put("defer_media_upload", mediaProfile.deferMediaUpload)
+            }
+        }
         deliveryTrace?.let { payload.put("delivery_trace", it) }
         if (context != null) {
             AppStore.contactById(context, contactId)?.let { contact ->
@@ -610,15 +626,23 @@ object SignalASIMqttClient {
         return publishJsonResult(payload, topicOverride ?: outgoingTopic(contactId), contactId)
     }
 
-    private fun inlineTurnAttachments(context: Context?, turnId: String): JSONArray {
-        if (context == null) return JSONArray()
+    private fun inlineTurnAttachments(
+        context: Context,
+        attachments: List<AgentInputAttachment>,
+        mediaProfile: AgentMediaDeliveryProfile
+    ): JSONArray {
         var remaining = MAX_INLINE_ATTACHMENT_BYTES
         val result = JSONArray()
-        AgentTurnAttachmentRegistry.get(turnId).forEach { attachment ->
+        attachments.forEach { attachment ->
             val item = attachment.descriptor()
             item.remove("uri")
+            item.put("transport_profile", mediaProfile.id)
             if (attachment.isImage) {
-                val encoded = AgentImagePipeline.encodeForTransport(context, attachment, remaining)
+                val encoded = AgentImagePipeline.encodeForTransport(
+                    context,
+                    attachment,
+                    minOf(remaining, mediaProfile.imageTargetBytes)
+                )
                 if (encoded != null && encoded.bytes.isNotEmpty() && encoded.bytes.size <= remaining) {
                     val transportName = encoded.transportName(attachment.displayName)
                     if (transportName != attachment.displayName) {
@@ -648,6 +672,11 @@ object SignalASIMqttClient {
         }
         return result
     }
+
+    private fun AgentInputAttachment.isTransportMedia(): Boolean =
+        mimeType.startsWith("image/", ignoreCase = true) ||
+            mimeType.startsWith("audio/", ignoreCase = true) ||
+            mimeType.startsWith("video/", ignoreCase = true)
 
     private fun readBoundedBytes(
         context: Context,
@@ -1004,7 +1033,21 @@ object SignalASIMqttClient {
         }
         val messageId = applicationEnvelope.getString("message_id")
         val wirePayload = encrypted.toString()
-        SignalASILinkDeliveryStore.enqueue(context, messageId, topic, wirePayload)
+        val deferMediaUpload = payload.optBoolean("defer_media_upload", false)
+        SignalASILinkDeliveryStore.enqueue(
+            context,
+            messageId,
+            topic,
+            wirePayload,
+            requiresValidatedNetwork = deferMediaUpload
+        )
+        if (deferMediaUpload) {
+            Log.i(
+                TAG,
+                "Deferred encrypted media message until validated network contact=$contactId"
+            )
+            return MqttPublishResult.QUEUED
+        }
 
         val mqtt = client
         if (mqtt?.isConnected != true) {
@@ -1037,7 +1080,13 @@ object SignalASIMqttClient {
         val context = appContext ?: return
         val mqtt = client ?: return
         if (!mqtt.isConnected) return
-        for (pending in SignalASILinkDeliveryStore.pending(context).take(MAX_OUTBOX_RETRY_BATCH)) {
+        val mediaProfile = AgentMediaNetworkDetector.detect(context)
+        for (
+            pending in SignalASILinkDeliveryStore.pending(
+                context,
+                allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia
+            ).take(MAX_OUTBOX_RETRY_BATCH)
+        ) {
             if (pending.topic.isBlank() || pending.wirePayload.isBlank()) continue
             if (isFragmentTransferActive(pending.messageId)) continue
             SignalASILinkDeliveryStore.markAttempt(context, pending.messageId)
@@ -1056,7 +1105,11 @@ object SignalASIMqttClient {
         retryHandler.removeCallbacks(retryRunnable)
         if (!connected) return
         val context = appContext ?: return
-        val delayMillis = SignalASILinkDeliveryStore.nextRetryDelayMillis(context) ?: return
+        val mediaProfile = AgentMediaNetworkDetector.detect(context)
+        val delayMillis = SignalASILinkDeliveryStore.nextRetryDelayMillis(
+            context,
+            allowValidatedNetworkMessages = mediaProfile.canUploadDeferredMedia
+        ) ?: return
         retryHandler.postDelayed(
             retryRunnable,
             delayMillis.coerceIn(

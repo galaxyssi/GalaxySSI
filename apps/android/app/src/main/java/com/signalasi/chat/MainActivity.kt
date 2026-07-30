@@ -6343,6 +6343,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (!ensureRecordPermission() || recorder != null) return
         val config = VoiceAssistantSettings.get(this)
         val contact = voiceAssistantTargetContact(config)
+        val mediaProfile = AgentMediaNetworkDetector.detect(this)
         val file = File(cacheDir, "voice_cmd_${System.currentTimeMillis()}.m4a")
         recordingFile = file
         recordingStartedAt = System.currentTimeMillis()
@@ -6357,6 +6358,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                applyAgentAudioProfile(mediaProfile)
                 setOutputFile(file.absolutePath)
                 prepare()
                 start()
@@ -18358,6 +18360,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     // ===== Recording =====
     private fun startRecording(purpose: String): Boolean {
         if (recorder != null) return false
+        val mediaProfile = AgentMediaNetworkDetector.detect(this)
         val file = File(cacheDir, "voice_${System.currentTimeMillis()}.m4a")
         var candidate: MediaRecorder? = null
         return runCatching {
@@ -18365,8 +18368,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 setAudioSource(MediaRecorder.AudioSource.MIC)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(96_000)
-                setAudioSamplingRate(44_100)
+                applyAgentAudioProfile(mediaProfile)
                 setOutputFile(file.absolutePath)
                 prepare()
                 start()
