@@ -97,6 +97,8 @@ const requiredProjectSnippets = [
   "AgentSkillExecutionTests.swift in Sources",
   "AgentSkillPackageInstallerModels.swift in Sources",
   "AgentSkillPackageInstallerTests.swift in Sources",
+  "AgentLearningEngineModels.swift in Sources",
+  "AgentLearningEngineTests.swift in Sources",
 ];
 
 const requiredSourceSnippets = [
@@ -970,6 +972,10 @@ const requiredSourceSnippets = [
   [models, "AgentSkillPackageInstaller"],
   [models, "AgentSkillPackageExporter"],
   [models, "allowUnsignedLocalPackage"],
+  [models, "AgentLearningProposal"],
+  [models, "AgentLearningEngine"],
+  [models, "explicitPreference"],
+  [models, "hasTrustedExecutionEvidence"],
   [models, "skill_explicit_match"],
   [models, "trigger_examples"],
   [models, "additional_properties"],
@@ -1501,6 +1507,10 @@ const requiredSourceSnippets = [
   [tests, "testAgentSkillPackageInstallerVerifiesManifestIntegrityAndInstallsDisabled"],
   [tests, "testAgentSkillPackageInstallerRejectsTraversalExecutableAndTamperedPackages"],
   [tests, "testAgentSkillPackageInstallerRequiresUnsignedLocalApproval"],
+  [tests, "testAgentLearningAnalyzerLearnsPreferenceCorrectionAndFailureFamily"],
+  [tests, "testAgentLearningAnalyzerTrustsCompletedRuntimeReceiptAndRejectsUnsafeEvidence"],
+  [tests, "testAgentLearningEngineCreatesMemoryAndSkillProposalThenReviews"],
+  [tests, "testAgentLearningEngineCreatesSkillUpgradeProposalFromFeedback"],
   [tests, "testAgentNativeToolResultModelsUseAndroidWireNames"],
   [tests, "testAgentNativeToolReplayStoreEvictsOldestAndClears"],
   [tests, "testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults"],
