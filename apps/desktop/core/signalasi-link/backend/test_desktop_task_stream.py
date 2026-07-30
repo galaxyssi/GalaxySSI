@@ -95,6 +95,44 @@ class FakeTaskStream:
 
 
 class DesktopTaskStreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stream_sends_large_task_preview_instead_of_complete_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex",
+                source_message_id="desktop:large-output",
+                prompt="Produce a long report",
+                on_event=lambda _snapshot: None,
+                task_id="desktop-large-output",
+                conversation_id="desktop-conversation",
+            )
+            complete_output = "Long report paragraph.\n\n".join(
+                str(index) for index in range(4_000)
+            )
+            manager.update(task.task_id, "completed", result=complete_output)
+            stream = FakeTaskStream(manager)
+
+            with (
+                patch.object(main, "agent_task_manager", manager),
+                patch.object(main, "_desktop_evolution_manager", return_value=FakeEvolutionManager()),
+                patch.dict(os.environ, {"SIGNALASI_DESKTOP_TASK_STREAM_TOKEN": "stream-test-token"}),
+            ):
+                await main.desktop_task_stream(stream)
+                page = main.api_get_desktop_task_output(
+                    task.task_id,
+                    SimpleNamespace(client=SimpleNamespace(host="testclient")),
+                    offset=0,
+                    limit=2,
+                )
+
+            preview = stream.messages[0]["tasks"][0]
+            self.assertTrue(preview["result_chunked"])
+            self.assertLess(len(preview["result"]), len(complete_output))
+            self.assertEqual(len(complete_output), preview["result_length"])
+            self.assertEqual(2, len(page["chunks"]))
+            self.assertFalse(page["done"])
+
     async def test_stream_filters_mobile_tasks_and_sends_live_desktop_updates(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = AgentTaskManager(state_path=Path(temp_dir) / "tasks.sqlite3")

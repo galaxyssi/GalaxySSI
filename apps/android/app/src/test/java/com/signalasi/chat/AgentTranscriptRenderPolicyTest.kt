@@ -72,6 +72,28 @@ class AgentTranscriptRenderPolicyTest {
     }
 
     @Test
+    fun expandedChunkedOutputRefreshesOnlyItsStableRow() {
+        val preview = entry("assistant-1", "preview").copy(
+            role = AgentTranscriptRole.ASSISTANT,
+            textChunkCount = 3,
+            textLength = 20_000,
+            textSha256 = "stable-output-digest"
+        )
+        val expanded = preview.copy(text = "full output ".repeat(1_800))
+
+        val diff = AgentTranscriptRenderPolicy.diff(
+            renderedIds = listOf(preview.id),
+            renderedSignatures = mapOf(
+                preview.id to AgentTranscriptRenderPolicy.signature(preview)
+            ),
+            incoming = listOf(expanded)
+        )
+
+        assertFalse(diff.reset)
+        assertEquals(listOf(0), diff.replacementIndices)
+    }
+
+    @Test
     fun appendedAssistantRefreshesItsProcessHeader() {
         val user = entry(
             id = "user-1",

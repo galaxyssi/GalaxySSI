@@ -230,6 +230,7 @@ const state = {
   taskStream: null,
   taskStreamConnected: false,
   taskStreamReconnectTimer: 0,
+  expandedTaskOutputs: new Map(),
   emptyConversationIntent: false,
   toastTimer: 0,
   speechRecognition: null,
@@ -625,6 +626,39 @@ function renderTaskEvent(event = {}) {
   </div>`;
 }
 
+function expandedTaskOutput(task) {
+  const cached = state.expandedTaskOutputs.get(task.task_id);
+  if (!cached || cached.sha256 !== String(task.result_sha256 || "")) return null;
+  return cached;
+}
+
+function renderTaskOutput(task, fallbackText) {
+  const cached = expandedTaskOutput(task);
+  const rendered = cached?.chunks?.length
+    ? cached.chunks.map((chunk) =>
+      `<section class="assistant-output-chunk">${renderMarkdown(chunk)}</section>`
+    ).join("")
+    : renderMarkdown(fallbackText);
+  if (!task.result_chunked) return rendered;
+  const buttonLabel = cached?.loading
+    ? t("Loading full output")
+    : (cached?.error ? t("Retry full output") : t("Show full output"));
+  const button = cached?.done
+    ? ""
+    : `<button class="load-full-output" data-load-task-output="${escapeHtml(task.task_id)}" ${cached?.loading ? "disabled" : ""}>${escapeHtml(buttonLabel)}</button>`;
+  const loadedCharacters = cached?.chunks?.reduce(
+    (total, chunk) => total + textCharacterCount(chunk),
+    0
+  ) || 0;
+  const progress = cached?.loading || cached?.error
+    ? `<small class="output-load-state" data-output-load-state="${escapeHtml(task.task_id)}">${cached?.error ? escapeHtml(cached.error) : escapeHtml(`${loadedCharacters} / ${Number(task.result_length || 0)}`)}</small>`
+    : "";
+  return `<div class="assistant-output" data-output-task="${escapeHtml(task.task_id)}">
+    <div class="assistant-output-chunks" data-output-chunks="${escapeHtml(task.task_id)}">${rendered}</div>
+    <div class="assistant-output-controls">${button}${progress}</div>
+  </div>`;
+}
+
 function renderTurn(task) {
   const statusClass = task.status === "completed" ? "completed" : (TERMINAL_STATES.has(task.status) ? "failed" : "");
   const isEvolution = task.task_kind === "self_evolution";
@@ -635,7 +669,7 @@ function renderTurn(task) {
     ? t(task.result || "The self-evolution run completed.")
     : (task.result || t("Task completed."));
   const answer = task.status === "completed"
-    ? `<article class="assistant-answer">${renderMarkdown(answerText)}${evolutionMetadata}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
+    ? `<article class="assistant-answer">${renderTaskOutput(task, answerText)}${evolutionMetadata}<div class="assistant-actions"><button data-speak-task="${escapeHtml(task.task_id)}">${escapeHtml(t("Read aloud"))}</button></div></article>${renderArtifacts(task)}`
     : (TERMINAL_STATES.has(task.status)
       ? `<article class="assistant-answer error-answer">${escapeHtml(task.error || task.result || t("The task could not be completed."))}${renderRecoveryActions(task)}</article>`
       : "");
@@ -696,6 +730,10 @@ function renderConversation(force = false) {
     task.status,
     task.updated_at,
     task.result?.length,
+    task.result_sha256,
+    task.result_chunk_count,
+    expandedTaskOutput(task)?.chunks?.length,
+    expandedTaskOutput(task)?.done,
     task.output_files?.length,
     task.run_timeline?.events?.length ?? task.events?.length,
     task.delivery_trace?.length,
@@ -778,6 +816,12 @@ function mergeTaskUpdate(task) {
   const index = state.tasks.findIndex((item) => item.task_id === task.task_id);
   const isNewTask = index < 0;
   if (index >= 0) {
+    if (
+      state.tasks[index].result_sha256
+      && state.tasks[index].result_sha256 !== task.result_sha256
+    ) {
+      state.expandedTaskOutputs.delete(task.task_id);
+    }
     state.tasks[index] = { ...state.tasks[index], ...task };
   } else {
     state.tasks.push(task);
@@ -3719,7 +3763,10 @@ function startVoiceInput() {
 
 function speakTaskResult(taskId) {
   const task = state.tasks.find((item) => item.task_id === taskId);
-  const text = String(task?.result || "").trim();
+  const expanded = task ? expandedTaskOutput(task) : null;
+  const text = String(
+    expanded?.done ? expanded.chunks.join("") : (task?.result || "")
+  ).trim();
   if (!text || !window.speechSynthesis || !window.SpeechSynthesisUtterance) {
     showToast(t("Text-to-speech is not available on this desktop."));
     return;
@@ -3736,6 +3783,106 @@ function speakTaskResult(taskId) {
   if (matchingVoice) utterance.voice = matchingVoice;
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
+}
+
+async function sha256Text(value) {
+  const encoded = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", encoded);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function textCharacterCount(value) {
+  return Array.from(String(value || "")).length;
+}
+
+function trimExpandedTaskOutputs() {
+  while (state.expandedTaskOutputs.size > 8) {
+    const oldest = state.expandedTaskOutputs.keys().next().value;
+    state.expandedTaskOutputs.delete(oldest);
+  }
+}
+
+async function loadFullTaskOutput(taskId, button) {
+  const task = state.tasks.find((item) => item.task_id === taskId);
+  if (!task?.result_chunked) return;
+  let cached = expandedTaskOutput(task);
+  if (!cached) {
+    cached = {
+      sha256: String(task.result_sha256 || ""),
+      chunks: [],
+      loading: false,
+      done: false,
+      error: ""
+    };
+    state.expandedTaskOutputs.set(taskId, cached);
+    trimExpandedTaskOutputs();
+  }
+  if (cached.loading || cached.done) return;
+  cached.loading = true;
+  cached.error = "";
+  button.disabled = true;
+  button.textContent = t("Loading full output");
+  const output = elements.messages.querySelector(
+    `[data-output-chunks="${CSS.escape(taskId)}"]`
+  );
+  let stateLabel = elements.messages.querySelector(
+    `[data-output-load-state="${CSS.escape(taskId)}"]`
+  );
+  if (!stateLabel) {
+    stateLabel = document.createElement("small");
+    stateLabel.className = "output-load-state";
+    stateLabel.dataset.outputLoadState = taskId;
+    button.insertAdjacentElement("afterend", stateLabel);
+  }
+  if (output && cached.chunks.length === 0) output.innerHTML = "";
+  try {
+    while (!cached.done) {
+      const page = await window.signalasi.getDesktopTaskOutput(
+        taskId,
+        cached.chunks.length,
+        2
+      );
+      const chunks = Array.isArray(page.chunks) ? page.chunks : [];
+      if (!chunks.length && !page.done) throw new Error(t("Output stream stopped"));
+      for (const chunk of chunks) {
+        const content = String(chunk.content || "");
+        cached.chunks.push(content);
+        output?.insertAdjacentHTML(
+          "beforeend",
+          `<section class="assistant-output-chunk">${renderMarkdown(content)}</section>`
+        );
+      }
+      cached.done = Boolean(page.done);
+      if (stateLabel) {
+        const loaded = cached.chunks.reduce(
+          (total, chunk) => total + textCharacterCount(chunk),
+          0
+        );
+        stateLabel.textContent = `${loaded} / ${Number(page.total_length || task.result_length || 0)}`;
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    const complete = cached.chunks.join("");
+    if (
+      textCharacterCount(complete) !== Number(task.result_length || 0)
+      || await sha256Text(complete) !== String(task.result_sha256 || "")
+    ) {
+      throw new Error(t("Output integrity check failed"));
+    }
+    button.remove();
+    stateLabel?.remove();
+  } catch (error) {
+    cached.error = error.message || String(error);
+    cached.done = false;
+    button.disabled = false;
+    button.textContent = t("Retry full output");
+    if (stateLabel) stateLabel.textContent = cached.error;
+    else showToast(cached.error);
+  } finally {
+    cached.loading = false;
+  }
 }
 
 function bindEvents() {
@@ -3807,6 +3954,11 @@ function bindEvents() {
     const cancel = event.target.closest("[data-cancel-task]");
     if (cancel) {
       await cancelTask(cancel.dataset.cancelTask);
+      return;
+    }
+    const fullOutput = event.target.closest("[data-load-task-output]");
+    if (fullOutput) {
+      await loadFullTaskOutput(fullOutput.dataset.loadTaskOutput, fullOutput);
       return;
     }
     const speak = event.target.closest("[data-speak-task]");

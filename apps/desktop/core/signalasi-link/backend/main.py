@@ -61,6 +61,7 @@ from agent_config import language_policy_config, load_config, save_config
 from api_response import api_error
 from agent_task_manager import TERMINAL_STATES, agent_task_manager
 from backend_instance_lock import BackendInstanceLock
+from desktop_native_tools import TOOL_VERSION as DESKTOP_NATIVE_TOOL_VERSION
 from unified_commands import default_command_engine
 
 logging.basicConfig(level=logging.INFO)
@@ -757,7 +758,7 @@ class AgentFileConflictResolveReq(BaseModel):
 
 class DesktopNativeToolInvokeReq(BaseModel):
     tool_id: str
-    tool_version: str = "1.0.0"
+    tool_version: str = DESKTOP_NATIVE_TOOL_VERSION
     arguments: dict = {}
     invocation_id: str = ""
     task_id: str = ""
@@ -3253,6 +3254,29 @@ def api_get_desktop_task(task_id: str, request: Request):
     raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
 
 
+@app.get("/api/desktop/tasks/{task_id}/output")
+def api_get_desktop_task_output(
+    task_id: str,
+    request: Request,
+    offset: int = Query(0),
+    limit: int = Query(2),
+):
+    require_loopback(request)
+    task = agent_task_manager.public_preview(task_id, include_prompt=True)
+    if task is None or not str(task.get("source_message_id") or "").startswith("desktop:"):
+        raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+    try:
+        page = agent_task_manager.output_page(task_id, offset=offset, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=api_error("desktop_task_output_integrity_failed", str(exc)),
+        ) from exc
+    if page is None:
+        raise HTTPException(status_code=404, detail=api_error("desktop_task_not_found"))
+    return page
+
+
 @app.post("/api/desktop/tasks/{task_id}/cancel")
 def api_cancel_desktop_task(task_id: str, request: Request):
     require_loopback(request)
@@ -3685,7 +3709,9 @@ async def desktop_task_stream(ws: WebSocket):
         task = agent_task_manager.get(str(snapshot.get("task_id") or ""))
         if task is None or not task.source_message_id.startswith("desktop:"):
             return
-        offer_update(task.public(include_prompt=True))
+        preview = agent_task_manager.public_preview(task.task_id, include_prompt=True)
+        if preview is not None:
+            offer_update(preview)
 
     def enqueue_evolution_task(event: dict) -> None:
         task_id = str((event.get("task") or {}).get("task_id") or "")

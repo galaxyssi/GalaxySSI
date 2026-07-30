@@ -962,4 +962,9 @@
 , "New session overhead has not been measured.": "尚未测量新会话内存开销。"
 , "New session {latest} · target under {target} · peak {peak} · {samples} samples": "新会话 {latest} · 目标低于 {target} · 峰值 {peak} · {samples} 次测量"
 , "Windows reports Working Set. Shared in-process memory is estimated; external Agent and model processes are measured separately.": "Windows 显示工作集；进程内共享内存为估算值，外部 Agent 与模型进程单独测量。"
+, "Show full output": "\u5c55\u5f00\u5b8c\u6574\u8f93\u51fa"
+, "Loading full output": "\u6b63\u5728\u52a0\u8f7d\u5b8c\u6574\u8f93\u51fa"
+, "Retry full output": "\u91cd\u8bd5\u52a0\u8f7d"
+, "Output stream stopped": "\u8f93\u51fa\u6d41\u5df2\u4e2d\u65ad"
+, "Output integrity check failed": "\u8f93\u51fa\u5b8c\u6574\u6027\u6821\u9a8c\u5931\u8d25"
 }

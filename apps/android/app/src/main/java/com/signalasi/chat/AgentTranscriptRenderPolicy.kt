@@ -7,7 +7,31 @@ data class AgentTranscriptRenderDiff(
 )
 
 object AgentTranscriptRenderPolicy {
-    fun signature(entry: AgentTranscriptEntry): Int = entry.hashCode()
+    fun signature(entry: AgentTranscriptEntry): Int {
+        var result = entry.id.hashCode()
+        result = 31 * result + entry.role.hashCode()
+        result = 31 * result + entry.timestampMillis.hashCode()
+        result = 31 * result + entry.dedupeKey.hashCode()
+        result = 31 * result + entry.conversationId.hashCode()
+        result = 31 * result + entry.turnId.hashCode()
+        result = 31 * result + entry.taskId.hashCode()
+        result = 31 * result + if (entry.textSha256.isBlank()) {
+            entry.text.hashCode()
+        } else {
+            entry.textSha256.hashCode()
+        }
+        result = 31 * result + entry.text.length
+        result = 31 * result + if (entry.richOutputSha256.isBlank()) {
+            entry.richOutputJson.hashCode()
+        } else {
+            entry.richOutputSha256.hashCode()
+        }
+        result = 31 * result + entry.richOutputJson.length
+        result = 31 * result + entry.sourceConversationId.hashCode()
+        result = 31 * result + entry.sourceConversationTitle.hashCode()
+        result = 31 * result + entry.sourceEntryId.hashCode()
+        return result
+    }
 
     fun diff(
         renderedIds: List<String>,

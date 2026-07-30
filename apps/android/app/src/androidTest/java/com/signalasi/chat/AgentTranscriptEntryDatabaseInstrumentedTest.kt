@@ -60,6 +60,13 @@ class AgentTranscriptEntryDatabaseInstrumentedTest {
             )
         )
 
+        val preview = database.listConversationPage(
+            "long-conversation",
+            pageSize = 1
+        ).entries.single()
+        assertTrue(AgentLargeOutputPolicy.hasDeferredContent(preview))
+        assertTrue(preview.text.length < text.length)
+        assertEquals(text.length, preview.textLength)
         assertEquals(text, database.listConversation("long-conversation").single().text)
         val encryptedPayload = database.readableDatabase.rawQuery(
             "SELECT encrypted_payload FROM transcript_entries WHERE entry_id = ?",
@@ -69,6 +76,36 @@ class AgentTranscriptEntryDatabaseInstrumentedTest {
             cursor.getString(0)
         }
         assertFalse(encryptedPayload.contains(marker))
+        val encryptedChunks = database.readableDatabase.rawQuery(
+            """
+            SELECT encrypted_chunk
+            FROM transcript_entry_chunks
+            WHERE entry_id = ? AND field_name = 'text'
+            """.trimIndent(),
+            arrayOf("long-entry")
+        ).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(0))
+            }
+        }
+        assertTrue(encryptedChunks.size > 1)
+        assertTrue(encryptedChunks.none { it.contains(marker) })
+        val reconstructed = mutableListOf<String>()
+        var offset = 0
+        var done = false
+        do {
+            val page = checkNotNull(
+                database.textChunkPage(
+                    entryId = "long-entry",
+                    offset = offset,
+                    pageSize = 2
+                )
+            )
+            reconstructed += page.chunks
+            offset = page.nextOffset
+            done = page.done
+        } while (!done)
+        assertEquals(text, reconstructed.joinToString(""))
         database.close()
     }
 

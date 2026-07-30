@@ -1614,6 +1614,14 @@ async function getDesktopTask(taskId) {
   return fetchJson(`/api/desktop/tasks/${encodeURIComponent(taskId)}`);
 }
 
+async function getDesktopTaskOutput(taskId, offset = 0, limit = 2) {
+  await startBackend();
+  return fetchJson(
+    `/api/desktop/tasks/${encodeURIComponent(taskId)}/output`
+      + `?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}`
+  );
+}
+
 async function startDesktopTask(payload = {}) {
   await startBackend();
   return fetchJson("/api/desktop/tasks", {
@@ -2082,6 +2090,8 @@ ipcMain.handle("mobile:test-message", (_event, contactId, content) => sendMobile
 ipcMain.handle("mobile:sync-status", syncMobileStatus);
 ipcMain.handle("desktop-tasks:list", (_event, limit) => listDesktopTasks(limit));
 ipcMain.handle("desktop-tasks:get", (_event, taskId) => getDesktopTask(taskId));
+ipcMain.handle("desktop-tasks:output", (_event, taskId, offset, limit) =>
+  getDesktopTaskOutput(taskId, offset, limit));
 ipcMain.handle("desktop-tasks:stream-config", () => ({
   url: DESKTOP_TASK_STREAM_URL,
   protocols: ["signalasi-task-stream", desktopTaskStreamToken()]
