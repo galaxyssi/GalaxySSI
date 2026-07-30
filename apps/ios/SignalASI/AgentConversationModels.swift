@@ -1038,25 +1038,21 @@ private struct AgentContextArtifact: Equatable {
 
 private extension AgentTranscriptEntry {
   func contextArtifacts() -> [AgentContextArtifact] {
-    let blocks = Self.richBlocks(from: richOutputJson)
+    let blocks = AgentRichContentCodec.decode(richOutputJson)
     var seen: Set<String> = []
     var result: [AgentContextArtifact] = []
     for block in blocks {
-      let type = (block["type"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      let type = block.type.rawValue
       guard contextArtifactTypes.contains(type) else {
         continue
       }
-      let title = stringValue(block["title"]).ifBlank(
-        stringValue(block["fallback_text"]).ifBlank(
-          fallbackName(from: stringValue(block["uri"]))
-        )
-      )
+      let title = block.title.ifBlank(block.fallbackText.ifBlank(fallbackName(from: block.uri)))
       let artifact = AgentContextArtifact(
-        id: String(stringValue(block["id"]).prefix(120)),
+        id: String(block.id.prefix(120)),
         kind: type,
         name: String(title.prefix(240)).ifBlank("attachment"),
-        mimeType: String(stringValue(block["mime_type"]).prefix(160)),
-        sizeBytes: metadataSizeBytes(block["metadata"])
+        mimeType: String(block.mimeType.prefix(160)),
+        sizeBytes: metadataSizeBytes(block.metadata)
       )
       let key = [artifact.kind, artifact.name, artifact.mimeType].joined(separator: "\u{001f}").lowercased()
       if seen.insert(key).inserted {
@@ -1080,49 +1076,17 @@ private extension AgentTranscriptEntry {
     return "\(text)\nAttachments: \(names)"
   }
 
-  private static func richBlocks(from raw: String) -> [[String: Any]] {
-    let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty,
-      clean.count <= maximumRichOutputJsonLength,
-      let data = clean.data(using: .utf8),
-      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-      (root["version"] as? Int ?? 1) <= 1,
-      let blocks = root["blocks"] as? [[String: Any]] else {
-      return []
-    }
-    return Array(blocks.prefix(maximumRichBlocks))
-  }
-
   private func fallbackName(from uri: String) -> String {
     let withoutQuery = uri.split(separator: "?").first.map(String.init) ?? uri
     return withoutQuery.split(separator: "/").last.map(String.init) ?? "attachment"
   }
 
-  private func metadataSizeBytes(_ metadata: Any?) -> Int64 {
-    guard let object = metadata as? [String: Any] else {
-      return 0
-    }
-    if let size = object["size_bytes"] as? Int64 {
-      return max(size, 0)
-    }
-    if let size = object["size_bytes"] as? Int {
-      return Int64(max(size, 0))
-    }
-    if let size = object["size_bytes"] as? Double {
-      return Int64(max(size, 0))
-    }
-    if let value = object["size_bytes"] as? String,
+  private func metadataSizeBytes(_ metadata: [String: String]) -> Int64 {
+    if let value = metadata["size_bytes"],
       let size = Int64(value.trimmingCharacters(in: .whitespacesAndNewlines)) {
       return max(size, 0)
     }
     return 0
-  }
-
-  private func stringValue(_ value: Any?) -> String {
-    if let value = value as? String {
-      return value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    return ""
   }
 
   private var contextArtifactTypes: Set<String> {
@@ -1132,9 +1096,6 @@ private extension AgentTranscriptEntry {
   private var maximumContextArtifactsPerEntry: Int {
     10
   }
-
-  private static let maximumRichOutputJsonLength = 640 * 1024
-  private static let maximumRichBlocks = 100
 }
 
 struct AgentConversationContext: Codable, Equatable {

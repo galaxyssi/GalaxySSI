@@ -62,6 +62,10 @@
     A10000000000000000000138 /* VoiceRealtimeHealthModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */; };
     A10000000000000000000139 /* AgentDeviceProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000139 /* AgentDeviceProfileModels.swift */; };
     A10000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift */; };
+    A10000000000000000000141 /* AgentRichContentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000141 /* AgentRichContentModels.swift */; };
+    A10000000000000000000142 /* AgentDesktopArtifactModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000142 /* AgentDesktopArtifactModels.swift */; };
+    A10000000000000000000143 /* AgentDesktopArtifactActionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */; };
+    A10000000000000000000144 /* AgentRuntimeArtifactUiModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -85,6 +89,7 @@
     A10000000000000000000221 /* VoiceRealtimeHealthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */; };
     A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000222 /* AgentDeviceProfileTests.swift */; };
     A10000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */; };
+    A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -145,6 +150,10 @@
     A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRealtimeHealthModels.swift; sourceTree = "<group>"; };
     A20000000000000000000139 /* AgentDeviceProfileModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDeviceProfileModels.swift; sourceTree = "<group>"; };
     A20000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimeProjectWorkspaceModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000141 /* AgentRichContentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRichContentModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000142 /* AgentDesktopArtifactModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopArtifactModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopArtifactActionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimeArtifactUiModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -168,6 +177,7 @@
     A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRealtimeHealthTests.swift; sourceTree = "<group>"; };
     A20000000000000000000222 /* AgentDeviceProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDeviceProfileTests.swift; sourceTree = "<group>"; };
     A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimeProjectWorkspaceTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopArtifactHandoffTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -229,6 +239,10 @@
         A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */,
         A20000000000000000000139 /* AgentDeviceProfileModels.swift */,
         A20000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift */,
+        A20000000000000000000141 /* AgentRichContentModels.swift */,
+        A20000000000000000000142 /* AgentDesktopArtifactModels.swift */,
+        A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */,
+        A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -273,6 +287,7 @@
         A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */,
         A20000000000000000000222 /* AgentDeviceProfileTests.swift */,
         A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */,
+        A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -410,6 +425,10 @@
         A10000000000000000000138 /* VoiceRealtimeHealthModels.swift in Sources */,
         A10000000000000000000139 /* AgentDeviceProfileModels.swift in Sources */,
         A10000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift in Sources */,
+        A10000000000000000000141 /* AgentRichContentModels.swift in Sources */,
+        A10000000000000000000142 /* AgentDesktopArtifactModels.swift in Sources */,
+        A10000000000000000000143 /* AgentDesktopArtifactActionModels.swift in Sources */,
+        A10000000000000000000144 /* AgentRuntimeArtifactUiModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -454,6 +473,7 @@
         A10000000000000000000221 /* VoiceRealtimeHealthTests.swift in Sources */,
         A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */,
         A10000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift in Sources */,
+        A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
