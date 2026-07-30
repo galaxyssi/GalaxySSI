@@ -80,6 +80,8 @@
     A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000156 /* AgentModelToolLoop.swift */; };
     A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000157 /* AgentModelPlanParserModels.swift */; };
     A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000158 /* AgentModelPlanParser.swift */; };
+    A10000000000000000000159 /* AgentModelPlanningPromptModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000159 /* AgentModelPlanningPromptModels.swift */; };
+    A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000160 /* AgentModelPlanningPrompt.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -112,6 +114,7 @@
     A10000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift */; };
     A10000000000000000000231 /* AgentModelToolLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000231 /* AgentModelToolLoopTests.swift */; };
     A10000000000000000000232 /* AgentModelPlanParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000232 /* AgentModelPlanParserTests.swift */; };
+    A10000000000000000000233 /* AgentModelPlanningPromptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000233 /* AgentModelPlanningPromptTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -190,6 +193,8 @@
     A20000000000000000000156 /* AgentModelToolLoop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoop.swift; sourceTree = "<group>"; };
     A20000000000000000000157 /* AgentModelPlanParserModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParserModels.swift; sourceTree = "<group>"; };
     A20000000000000000000158 /* AgentModelPlanParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParser.swift; sourceTree = "<group>"; };
+    A20000000000000000000159 /* AgentModelPlanningPromptModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPromptModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000160 /* AgentModelPlanningPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPrompt.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -222,6 +227,7 @@
     A20000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolProtocolAdapterTests.swift; sourceTree = "<group>"; };
     A20000000000000000000231 /* AgentModelToolLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelToolLoopTests.swift; sourceTree = "<group>"; };
     A20000000000000000000232 /* AgentModelPlanParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanParserTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000233 /* AgentModelPlanningPromptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlanningPromptTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -301,6 +307,8 @@
         A20000000000000000000156 /* AgentModelToolLoop.swift */,
         A20000000000000000000157 /* AgentModelPlanParserModels.swift */,
         A20000000000000000000158 /* AgentModelPlanParser.swift */,
+        A20000000000000000000159 /* AgentModelPlanningPromptModels.swift */,
+        A20000000000000000000160 /* AgentModelPlanningPrompt.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -354,6 +362,7 @@
         A20000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift */,
         A20000000000000000000231 /* AgentModelToolLoopTests.swift */,
         A20000000000000000000232 /* AgentModelPlanParserTests.swift */,
+        A20000000000000000000233 /* AgentModelPlanningPromptTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -509,6 +518,8 @@
         A10000000000000000000156 /* AgentModelToolLoop.swift in Sources */,
         A10000000000000000000157 /* AgentModelPlanParserModels.swift in Sources */,
         A10000000000000000000158 /* AgentModelPlanParser.swift in Sources */,
+        A10000000000000000000159 /* AgentModelPlanningPromptModels.swift in Sources */,
+        A10000000000000000000160 /* AgentModelPlanningPrompt.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -562,6 +573,7 @@
         A10000000000000000000230 /* AgentModelToolProtocolAdapterTests.swift in Sources */,
         A10000000000000000000231 /* AgentModelToolLoopTests.swift in Sources */,
         A10000000000000000000232 /* AgentModelPlanParserTests.swift in Sources */,
+        A10000000000000000000233 /* AgentModelPlanningPromptTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
