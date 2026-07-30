@@ -274,13 +274,8 @@ object AgentExecutionPresentationPolicy {
         AgentPhase.BLOCKED
     )
 
-    fun phaseForRemoteStatus(status: String): AgentPhase = when (status.trim().lowercase()) {
-        "waiting_input", "waiting_approval" -> AgentPhase.PAUSED
-        "completed" -> AgentPhase.COMPLETED
-        "failed", "timed_out", "not_found" -> AgentPhase.FAILED
-        "cancelled" -> AgentPhase.CANCELLED
-        else -> AgentPhase.EXECUTING
-    }
+    fun phaseForRemoteStatus(status: String): AgentPhase =
+        AgentRemoteTaskStatusPolicy.phase(status)
 
     private const val TARGET_SEPARATOR = " \u00b7 "
 }
