@@ -2218,6 +2218,7 @@ class MobileNativeAgent(
         return snapshot()
     }
 
+    @Synchronized
     fun acceptConnectorResponse(
         sourceMessageId: Long,
         contactId: String,
@@ -2462,6 +2463,7 @@ class MobileNativeAgent(
         }
     }
 
+    @Synchronized
     fun acceptConnectorSteered(
         sourceMessageId: Long,
         contactId: String,
@@ -2652,6 +2654,7 @@ class MobileNativeAgent(
         result.metadata["source_message_id"]?.toLongOrNull() == sourceMessageId &&
         result.metadata["timeout_stage"].orEmpty().isNotBlank()
 
+    @Synchronized
     fun recordConnectorTaskStatus(
         sourceMessageId: Long,
         contactId: String,
@@ -2673,19 +2676,128 @@ class MobileNativeAgent(
         val previousSeq = pendingResult.metadata["remote_task_status_seq"]?.toLongOrNull() ?: -1L
         if (statusSeq > 0L && statusSeq < previousSeq) return snapshot()
         val now = System.currentTimeMillis()
-        pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
-            AgentResourceHealthStore(appContext).markAvailable("domain:$domain")
+        if (AgentRemoteTaskStatusPolicy.keepsResourceHealthy(taskStatus)) {
+            pendingResult.metadata["failure_domain"].orEmpty().takeIf(String::isNotBlank)?.let { domain ->
+                AgentResourceHealthStore(appContext).markAvailable("domain:$domain")
+            }
         }
         lastActionResult = pendingResult.copy(
             metadata = pendingResult.metadata + mapOf(
                 "remote_task_id" to taskId,
-                "remote_task_status" to taskStatus,
+                "remote_task_status" to AgentRemoteTaskStatusPolicy.normalize(taskStatus),
                 "remote_task_status_seq" to maxOf(previousSeq, statusSeq).toString(),
                 "remote_task_status_updated_at" to now.toString()
             )
         )
         saveTaskRecord()
         return snapshot()
+    }
+
+    @Synchronized
+    fun acceptConnectorTerminalStatus(
+        sourceMessageId: Long,
+        contactId: String,
+        taskId: String,
+        taskStatus: String,
+        statusSeq: Long,
+        message: String,
+        conversationId: String = "",
+        turnId: String = ""
+    ): AgentUiState? {
+        val normalizedStatus = AgentRemoteTaskStatusPolicy.normalize(taskStatus)
+        if (!AgentRemoteTaskStatusPolicy.settlesWithoutResponse(normalizedStatus)) return null
+        if (!canAcceptConnectorResponse(
+                sourceMessageId = sourceMessageId,
+                contactId = contactId,
+                conversationId = conversationId,
+                turnId = turnId,
+                taskId = taskId
+            ) || taskId.isBlank()
+        ) return null
+        val pending = lastActionResult ?: return null
+        val previousSeq = pending.metadata["remote_task_status_seq"]?.toLongOrNull() ?: -1L
+        if (statusSeq > 0L && statusSeq < previousSeq) return snapshot()
+        val plan = currentPlan ?: return null
+        val now = System.currentTimeMillis()
+        val elapsed = (
+            now - (pending.metadata["resource_started_at"]?.toLongOrNull() ?: now)
+            ).coerceAtLeast(0L)
+        val terminalMessage = message.trim().ifBlank {
+            when (normalizedStatus) {
+                "cancelled" -> "The remote task was cancelled."
+                "timed_out" -> "The remote task timed out."
+                "not_found" -> "The remote task is no longer available."
+                else -> "The remote task failed."
+            }
+        }
+        val timeoutStage = AgentRemoteTaskStatusPolicy.timeoutStage(normalizedStatus)
+        val terminalMetadata = pending.metadata + buildMap {
+            put("awaiting_response", "false")
+            put("remote_task_id", taskId)
+            put("remote_task_status", normalizedStatus)
+            put("remote_task_status_seq", maxOf(previousSeq, statusSeq).toString())
+            put("remote_task_status_updated_at", now.toString())
+            put("remote_task_terminal_at", now.toString())
+            if (timeoutStage.isNotBlank()) {
+                put("timeout_stage", timeoutStage)
+                put("timeout_elapsed_ms", elapsed.toString())
+            }
+        }
+        val failed = pending.copy(
+            success = false,
+            message = terminalMessage,
+            metadata = terminalMetadata
+        )
+        if (normalizedStatus == "cancelled") {
+            lastActionResult = failed
+            currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
+            phase = AgentPhase.CANCELLED
+            recordAudit(
+                AgentAuditEvent.TASK_CANCELLED,
+                "remote_task_id=$taskId; source_message_id=$sourceMessageId"
+            )
+            saveTaskRecord(result = terminalMessage)
+            return reconcileExecutionLoop(snapshot())
+        }
+        val resourceId = pending.metadata["resource_id"].orEmpty().ifBlank { contactId }
+        val failureDomain = pending.metadata["failure_domain"].orEmpty()
+        val health = AgentResourceHealthStore(appContext)
+        if (resourceId.isNotBlank()) health.record("target:$resourceId", false, elapsed)
+        if (failureDomain.isNotBlank()) {
+            if (normalizedStatus == "timed_out") {
+                health.recordFailureDomainTimeout("domain:$failureDomain", elapsed)
+            } else {
+                health.record("domain:$failureDomain", false, elapsed)
+            }
+        }
+        val withinFailureBudget = recordExecutionFailure(
+            failureClass = "connector:$resourceId",
+            reason = terminalMessage,
+            actionId = failed.actionId
+        )
+        if (!withinFailureBudget) {
+            val budgetMessage = lastActionResult?.message.orEmpty().ifBlank { terminalMessage }
+            val budgetFailure = failed.copy(message = budgetMessage)
+            lastActionResult = budgetFailure
+            currentPlan = plan.markAction(
+                budgetFailure.actionId,
+                AgentActionStatus.FAILED,
+                budgetFailure
+            )
+            phase = AgentPhase.FAILED
+            saveTaskRecord(result = budgetMessage)
+            return reconcileExecutionLoop(snapshot())
+        }
+        continueWithConnectorFallback(plan, failed)?.let { return it }
+        lastActionResult = failed
+        currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
+        phase = AgentPhase.FAILED
+        recordAudit(
+            AgentAuditEvent.INVOCATION_AUDIT,
+            "remote_terminal:$normalizedStatus:task=$taskId:source=$sourceMessageId"
+        )
+        saveTaskRecord(result = terminalMessage)
+        return reconcileExecutionLoop(snapshot())
     }
 
     fun recordConnectorTransportAccepted(sourceMessageId: Long): AgentUiState? {
@@ -2707,6 +2819,7 @@ class MobileNativeAgent(
         return snapshot()
     }
 
+    @Synchronized
     fun handleConnectorTimeout(
         sourceMessageId: Long,
         stage: AgentConnectorTimeoutStage
@@ -2761,6 +2874,41 @@ class MobileNativeAgent(
         currentPlan = plan.markAction(failed.actionId, AgentActionStatus.FAILED, failed)
         phase = AgentPhase.FAILED
         saveTaskRecord(result = failed.message)
+        return reconcileExecutionLoop(snapshot())
+    }
+
+    @Synchronized
+    fun forceTaskTimeout(message: String): AgentUiState {
+        if (phase in setOf(
+                AgentPhase.COMPLETED,
+                AgentPhase.FAILED,
+                AgentPhase.CANCELLED,
+                AgentPhase.BLOCKED
+            )
+        ) return snapshot()
+        val now = System.currentTimeMillis()
+        val reason = message.trim().ifBlank { "The task timed out." }
+        val pending = lastActionResult
+        val failed = AgentActionResult(
+            actionId = pending?.actionId.orEmpty().ifBlank { "agent-task-timeout" },
+            success = false,
+            message = reason,
+            metadata = pending?.metadata.orEmpty() + mapOf(
+                "awaiting_response" to "false",
+                "timeout_stage" to "TASK_WATCHDOG",
+                "remote_task_status" to "timed_out",
+                "remote_task_terminal_at" to now.toString()
+            )
+        )
+        lastActionResult = failed
+        currentPlan = currentPlan?.markAction(
+            failed.actionId,
+            AgentActionStatus.FAILED,
+            failed
+        )
+        phase = AgentPhase.FAILED
+        recordAudit(AgentAuditEvent.INVOCATION_AUDIT, "task_watchdog_timeout")
+        saveTaskRecord(result = reason)
         return reconcileExecutionLoop(snapshot())
     }
 
