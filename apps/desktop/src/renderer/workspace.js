@@ -1044,6 +1044,7 @@ function renderAgentMemoryGroup(selector, values) {
 
 async function refreshAgentMemoryTelemetry() {
   const summary = $("#agentMemorySummary");
+  const sessionSummary = $("#agentSessionMemoryBudget");
   try {
     const snapshot = await window.signalasi.getAgentMemoryTelemetry();
     const kind = {
@@ -1059,11 +1060,24 @@ async function refreshAgentMemoryTelemetry() {
           kind
         })
       : t("Memory telemetry has not been sampled.");
+    const sessionBudget = snapshot.session_budget || {};
+    const sessionSamples = Number(sessionBudget.sample_count || 0);
+    sessionSummary.textContent = sessionSamples
+      ? t("New session {latest} · target under {target} · peak {peak} · {samples} samples", {
+          latest: formatBytes(sessionBudget.latest_incremental_bytes || 0),
+          target: formatBytes(sessionBudget.target_bytes || 20 * 1_048_576),
+          peak: formatBytes(sessionBudget.peak_incremental_bytes || 0),
+          samples: sessionSamples
+        })
+      : t("New session overhead has not been measured.");
+    sessionSummary.classList.toggle("over-budget", sessionBudget.within_budget === false);
     renderAgentMemoryGroup("#agentMemoryByAgent", snapshot.by_agent);
     renderAgentMemoryGroup("#agentMemoryBySession", snapshot.by_session);
     renderAgentMemoryGroup("#agentMemoryByProvider", snapshot.by_provider);
   } catch (error) {
     summary.textContent = error.message || String(error);
+    sessionSummary.textContent = t("New session overhead has not been measured.");
+    sessionSummary.classList.remove("over-budget");
     renderAgentMemoryGroup("#agentMemoryByAgent", []);
     renderAgentMemoryGroup("#agentMemoryBySession", []);
     renderAgentMemoryGroup("#agentMemoryByProvider", []);

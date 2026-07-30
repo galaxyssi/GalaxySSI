@@ -391,6 +391,7 @@ class DesktopAgentRuntimeStore:
                 return self._public_run(existing, replayed=True), False
 
             session = self._state["sessions"].get(session_id)
+            session_created = not isinstance(session, dict)
             if not isinstance(session, dict):
                 session = {
                     "session_id": session_id,
@@ -432,6 +433,7 @@ class DesktopAgentRuntimeStore:
                 "turn_id": turn_id,
                 "source_message_id": request.source_message_id,
                 "priority": request.priority.value,
+                "session_created": session_created,
                 "state": "queued",
                 "created_at": now_ms,
                 "queued_at": now_ms,
@@ -448,6 +450,16 @@ class DesktopAgentRuntimeStore:
             self._prune_locked()
             self._save_locked()
             return self._public_run(row), True
+
+    def will_create_session(self, request: AgentAdapterRequest) -> bool:
+        route_id = str(request.checkpoint.get("client_route_id") or "").strip()
+        session_id = self._session_id(
+            request.agent_id,
+            route_id,
+            request.conversation_id,
+        )
+        with self._lock:
+            return not isinstance(self._state["sessions"].get(session_id), dict)
 
     def transition_running(self, run_id: str) -> dict:
         now_ms = self._now_ms()
@@ -855,6 +867,7 @@ class DesktopAgentRuntimeStore:
             "priority": str(
                 row.get("priority") or AgentRunPriority.FOREGROUND.value
             ),
+            "session_created": bool(row.get("session_created")),
             "state": str(row.get("state") or "unknown"),
             "created_at": int(row.get("created_at") or 0),
             "queued_at": int(row.get("queued_at") or 0),
@@ -902,6 +915,8 @@ class DesktopAgentRuntimeServer:
         max_queued_runs: int = DEFAULT_MAX_QUEUED_RUNS,
         fault_domains: AgentFaultDomainRegistry | None = None,
         capacity: AgentCapacityController | None = None,
+        session_memory_reader: Callable[[], tuple[int, str]] | None = None,
+        session_memory_observer: Callable[[dict], None] | None = None,
     ) -> None:
         self.provider = provider
         self.store = store
@@ -917,6 +932,8 @@ class DesktopAgentRuntimeServer:
         self._lock = threading.RLock()
         self._futures: dict[str, Future[AgentAdapterResult]] = {}
         self._closed = False
+        self._session_memory_reader = session_memory_reader
+        self._session_memory_observer = session_memory_observer
         self.fault_domains = fault_domains or AgentFaultDomainRegistry()
         self.capacity = capacity or AgentCapacityController(
             max_active=self.max_workers,
@@ -927,9 +944,20 @@ class DesktopAgentRuntimeServer:
         normalized = request.normalized()
         self._ensure_open()
         self._require_agent(normalized.agent_id)
+        memory_before = (
+            self._read_session_memory()
+            if self.store.will_create_session(normalized)
+            else None
+        )
         snapshot, created = self.store.claim(normalized)
         if not created:
             return snapshot
+        if bool(snapshot.get("session_created")):
+            self._observe_session_memory(
+                snapshot,
+                memory_before,
+                self._read_session_memory(),
+            )
         try:
             self.capacity.reserve(
                 normalized.run_id,
@@ -1090,6 +1118,7 @@ class DesktopAgentRuntimeServer:
                 "capacity_backpressure",
                 "foreground_background_isolation",
                 "foreground_reserved_capacity",
+                "session_memory_budget",
             ],
             "agents": agents,
             "fault_domains": self.fault_domains.snapshots(
@@ -1148,6 +1177,38 @@ class DesktopAgentRuntimeServer:
                 raise
         finally:
             self.capacity.release(request.run_id)
+
+    def _read_session_memory(self) -> tuple[int, str] | None:
+        reader = self._session_memory_reader
+        if reader is None:
+            return None
+        try:
+            resident_bytes, kind = reader()
+            return max(0, int(resident_bytes)), str(kind or "").strip()
+        except Exception:
+            return None
+
+    def _observe_session_memory(
+        self,
+        snapshot: dict,
+        before: tuple[int, str] | None,
+        after: tuple[int, str] | None,
+    ) -> None:
+        observer = self._session_memory_observer
+        if observer is None or before is None or after is None:
+            return
+        try:
+            observer({
+                "sampled_at": int(time.time() * 1_000),
+                "session_id": str(snapshot.get("session_id") or ""),
+                "agent_id": str(snapshot.get("agent_id") or ""),
+                "conversation_id": str(snapshot.get("conversation_id") or ""),
+                "before_bytes": before[0],
+                "after_bytes": after[0],
+                "measurement_kind": after[1] or before[1],
+            })
+        except Exception:
+            return
 
     def _require_agent(self, agent_id: str) -> None:
         if agent_id not in {str(item.get("agent_id") or "") for item in self.provider.enumerate()}:

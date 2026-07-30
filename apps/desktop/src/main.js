@@ -855,6 +855,7 @@ async function runUiSmoke() {
           agentMemory: {
             refresh: Boolean(document.querySelector("#refreshAgentMemoryButton")),
             summary: document.querySelector("#agentMemorySummary")?.textContent || "",
+            sessionBudget: document.querySelector("#agentSessionMemoryBudget")?.textContent || "",
             groups: document.querySelectorAll(".agent-memory-groups section").length,
             note: document.querySelector(".agent-memory-note")?.textContent || ""
           },
@@ -899,6 +900,7 @@ async function runUiSmoke() {
         || !settingsState.evolutionV2.scheduler.runNow
         || !settingsState.agentMemory.refresh
         || !settingsState.agentMemory.summary.trim()
+        || !settingsState.agentMemory.sessionBudget.trim()
         || settingsState.agentMemory.groups !== 3
         || !settingsState.agentMemory.note.trim()
         || settingsState.languagePolicy.some((value) => value !== "auto")) {
@@ -910,7 +912,10 @@ async function runUiSmoke() {
         const summary = document.querySelector("#agentMemorySummary");
         const group = summary?.closest(".settings-group");
         const panel = document.querySelector("#settingsPanel");
-        if (!summary || !group || !panel) return { visible: false, summary: "" };
+        const sessionBudget = document.querySelector("#agentSessionMemoryBudget");
+        if (!summary || !sessionBudget || !group || !panel) {
+          return { visible: false, summary: "", sessionBudget: "" };
+        }
         panel.style.scrollBehavior = "auto";
         panel.scrollTop = Math.max(
           0,
@@ -925,11 +930,13 @@ async function runUiSmoke() {
         return {
           visible: groupRect.top >= panelRect.top && groupRect.top < panelRect.bottom,
           summary: summary.textContent || "",
+          sessionBudget: sessionBudget.textContent || "",
           groups: group.querySelectorAll(".agent-memory-groups section").length
         };
       })()
     `);
-    if (!agentMemoryState.visible || !agentMemoryState.summary.trim() || agentMemoryState.groups !== 3) {
+    if (!agentMemoryState.visible || !agentMemoryState.summary.trim()
+        || !agentMemoryState.sessionBudget.trim() || agentMemoryState.groups !== 3) {
       throw new Error(`Agent memory telemetry did not render in Settings: ${JSON.stringify(agentMemoryState)}`);
     }
     await captureSmokeScreenshot(agentMemoryPath);

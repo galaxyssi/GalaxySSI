@@ -9135,6 +9135,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderControlCenterAgentMemoryTelemetryPage() {
         val snapshot = AgentMemoryPssRuntime.snapshot()
+        val sessionBudget = snapshot.sessionBudget
         val processRows = listOf(
             ControlCenterRowSpec(
                 "",
@@ -9196,8 +9197,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             getString(R.string.cc_agent_memory_peak)
                         ),
                         ControlCenterMetricSpec(
-                            snapshot.sampleCount.toString(),
-                            getString(R.string.cc_agent_memory_samples)
+                            formatBytes(sessionBudget.latestIncrementalBytes),
+                            getString(R.string.cc_agent_session_memory_latest)
                         )
                     )
                 ),
@@ -9205,6 +9206,61 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ControlCenterSectionSpec(
                         getString(R.string.cc_agent_memory_process_section),
                         processRows
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_agent_session_memory_section),
+                        listOf(
+                            ControlCenterRowSpec(
+                                "",
+                                getString(R.string.cc_agent_session_memory_latest),
+                                getString(R.string.cc_agent_session_memory_latest_subtitle),
+                                R.drawable.ic_agent_memory,
+                                if (sessionBudget.sampleCount == 0) {
+                                    getString(R.string.cc_agent_session_memory_unmeasured)
+                                } else {
+                                    getString(
+                                        if (sessionBudget.withinBudget) {
+                                            R.string.cc_agent_session_memory_target
+                                        } else {
+                                            R.string.cc_agent_session_memory_over
+                                        },
+                                        formatBytes(sessionBudget.targetBytes)
+                                    )
+                                },
+                                when {
+                                    sessionBudget.sampleCount == 0 -> ControlCenterTone.NEUTRAL
+                                    sessionBudget.withinBudget -> ControlCenterTone.GREEN
+                                    else -> ControlCenterTone.AMBER
+                                },
+                                showChevron = false
+                            ),
+                            ControlCenterRowSpec(
+                                "",
+                                getString(R.string.cc_agent_session_memory_peak),
+                                getString(R.string.cc_agent_session_memory_peak_subtitle),
+                                R.drawable.ic_settings_diagnostics,
+                                formatBytes(sessionBudget.peakIncrementalBytes),
+                                if (sessionBudget.peakIncrementalBytes <= sessionBudget.targetBytes) {
+                                    ControlCenterTone.GREEN
+                                } else {
+                                    ControlCenterTone.AMBER
+                                },
+                                showChevron = false
+                            ),
+                            ControlCenterRowSpec(
+                                "",
+                                getString(R.string.cc_agent_session_memory_average),
+                                getString(
+                                    R.string.cc_agent_session_memory_average_subtitle,
+                                    sessionBudget.sampleCount,
+                                    sessionBudget.exceededCount
+                                ),
+                                R.drawable.ic_agent_node,
+                                formatBytes(sessionBudget.averageIncrementalBytes),
+                                ControlCenterTone.BLUE,
+                                showChevron = false
+                            )
+                        )
                     ),
                     ControlCenterSectionSpec(
                         getString(R.string.cc_agent_memory_by_agent),
@@ -9219,7 +9275,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         agentMemoryTelemetryRows(snapshot.byProvider)
                     )
                 ),
-                footer = getString(R.string.cc_agent_memory_estimate_notice)
+                footer = listOf(
+                    getString(R.string.cc_agent_memory_estimate_notice),
+                    getString(R.string.cc_agent_session_memory_notice)
+                ).joinToString("\n\n")
             )
         )
     }

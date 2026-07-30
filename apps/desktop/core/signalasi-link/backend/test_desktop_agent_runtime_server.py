@@ -1,3 +1,4 @@
+import os
 import tempfile
 import threading
 import time
@@ -23,6 +24,10 @@ from desktop_agent_runtime_server import (
     DesktopAgentRuntimeServer,
     DesktopAgentRuntimeStore,
     RUNTIME_PROTOCOL,
+)
+from agent_memory_telemetry import (
+    DEFAULT_SESSION_MEMORY_TARGET_BYTES,
+    process_memory_reading,
 )
 
 
@@ -57,6 +62,8 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         descriptors=None,
         fault_domains: AgentFaultDomainRegistry | None = None,
         capacity: AgentCapacityController | None = None,
+        session_memory_reader=None,
+        session_memory_observer=None,
     ) -> DesktopAgentRuntimeServer:
         def default_execute(agent_id, request):
             self.calls.append((agent_id, request.prompt))
@@ -74,6 +81,8 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             max_queued_runs=max_queued_runs,
             fault_domains=fault_domains,
             capacity=capacity,
+            session_memory_reader=session_memory_reader,
+            session_memory_observer=session_memory_observer,
         )
         self.servers.append(server)
         return server
@@ -144,6 +153,46 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         self.assertEqual(1, len(sessions))
         self.assertEqual(2, sessions[0]["run_count"])
         self.assertEqual("run-2", sessions[0]["last_run_id"])
+
+    def test_new_session_memory_is_measured_once_before_agent_execution(self):
+        readings = iter([
+            (100 * 1_048_576, "windows_working_set"),
+            (109 * 1_048_576, "windows_working_set"),
+            (109 * 1_048_576, "windows_working_set"),
+        ])
+        observed = []
+        server = self.server(
+            session_memory_reader=lambda: next(readings),
+            session_memory_observer=observed.append,
+        )
+
+        server.execute(self.request("one", run_id="run-memory-1"))
+        server.execute(self.request("two", run_id="run-memory-2"))
+
+        self.assertEqual(1, len(observed))
+        self.assertEqual(100 * 1_048_576, observed[0]["before_bytes"])
+        self.assertEqual(109 * 1_048_576, observed[0]["after_bytes"])
+        self.assertEqual("conversation-1", observed[0]["conversation_id"])
+        self.assertTrue(server.status("run-memory-1")["session_created"])
+        self.assertFalse(server.status("run-memory-2")["session_created"])
+
+    def test_runtime_registry_stays_well_below_twenty_mib_per_session(self):
+        store = DesktopAgentRuntimeStore(self.root / "session-budget-state.json")
+        before = process_memory_reading(os.getpid()).resident_bytes
+        session_count = 200
+
+        for index in range(session_count):
+            store.claim(self.request(
+                "measure lightweight session shell",
+                run_id=f"run-budget-{index}",
+                conversation_id=f"conversation-budget-{index}",
+            ))
+
+        after = process_memory_reading(os.getpid()).resident_bytes
+        average_increment = max(0, after - before) // session_count
+
+        self.assertLess(average_increment, DEFAULT_SESSION_MEMORY_TARGET_BYTES)
+        self.assertEqual(session_count, store.counts()["sessions"])
 
     def test_parent_child_agent_runs_are_persisted_and_queryable(self):
         server = self.server(descriptors=(descriptor("codex"), descriptor("hermes")))

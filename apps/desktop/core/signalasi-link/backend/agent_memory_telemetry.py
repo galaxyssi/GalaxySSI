@@ -19,6 +19,8 @@ from typing import Callable, Iterable, Mapping
 DEFAULT_RETENTION_SECONDS = 24 * 60 * 60
 DEFAULT_MAX_SAMPLES = 25_000
 DEFAULT_SAMPLE_INTERVAL_SECONDS = 5.0
+DEFAULT_SESSION_MEMORY_TARGET_BYTES = 20 * 1024 * 1024
+DEFAULT_MAX_SESSION_SAMPLES = 2_000
 TERMINAL_TASK_STATES = {"completed", "failed", "cancelled", "timed_out", "interrupted"}
 
 
@@ -67,6 +69,70 @@ class AgentMemorySample:
             "provider_id": self.provider_id,
             "task_id": self.task_id,
         }
+
+
+@dataclass(frozen=True)
+class AgentSessionMemorySample:
+    sample_id: str
+    sampled_at: int
+    session_id: str
+    agent_id: str
+    conversation_id: str
+    before_bytes: int
+    after_bytes: int
+    incremental_bytes: int
+    target_bytes: int = DEFAULT_SESSION_MEMORY_TARGET_BYTES
+    measurement_kind: str = ""
+
+    def public(self) -> dict:
+        return {
+            "sample_id": self.sample_id,
+            "sampled_at": max(0, int(self.sampled_at)),
+            "session_id": self.session_id,
+            "agent_id": self.agent_id,
+            "conversation_id": self.conversation_id,
+            "before_bytes": max(0, int(self.before_bytes)),
+            "after_bytes": max(0, int(self.after_bytes)),
+            "incremental_bytes": max(0, int(self.incremental_bytes)),
+            "target_bytes": max(1, int(self.target_bytes)),
+            "measurement_kind": self.measurement_kind,
+            "within_budget": self.incremental_bytes <= self.target_bytes,
+        }
+
+
+def aggregate_session_memory_samples(
+    samples: Iterable[AgentSessionMemorySample],
+    target_bytes: int = DEFAULT_SESSION_MEMORY_TARGET_BYTES,
+) -> dict:
+    ordered = sorted(samples, key=lambda item: (item.sampled_at, item.sample_id))
+    target = max(1, int(target_bytes))
+    if not ordered:
+        return {
+            "target_bytes": target,
+            "latest_incremental_bytes": 0,
+            "peak_incremental_bytes": 0,
+            "average_incremental_bytes": 0,
+            "sample_count": 0,
+            "exceeded_count": 0,
+            "latest_session_id": "",
+            "latest_conversation_id": "",
+            "latest_sampled_at": 0,
+            "within_budget": True,
+        }
+    latest = ordered[-1]
+    increments = [max(0, int(item.incremental_bytes)) for item in ordered]
+    return {
+        "target_bytes": target,
+        "latest_incremental_bytes": increments[-1],
+        "peak_incremental_bytes": max(increments),
+        "average_incremental_bytes": sum(increments) // max(1, len(increments)),
+        "sample_count": len(ordered),
+        "exceeded_count": sum(1 for value in increments if value > target),
+        "latest_session_id": latest.session_id,
+        "latest_conversation_id": latest.conversation_id,
+        "latest_sampled_at": max(0, int(latest.sampled_at)),
+        "within_budget": increments[-1] <= target,
+    }
 
 
 def provider_id_for_task(task: Mapping[str, object]) -> str:
@@ -240,6 +306,66 @@ class AgentMemoryTelemetryStore:
             for row in reversed(rows)
         ]
 
+    def append_session(self, sample: AgentSessionMemorySample) -> None:
+        with self._lock, self._database() as database:
+            database.execute(
+                """
+                INSERT OR REPLACE INTO session_memory_samples (
+                    sample_id, sampled_at, session_id, agent_id, conversation_id,
+                    before_bytes, after_bytes, incremental_bytes, target_bytes,
+                    measurement_kind
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    sample.sample_id,
+                    sample.sampled_at,
+                    sample.session_id,
+                    sample.agent_id,
+                    sample.conversation_id,
+                    sample.before_bytes,
+                    sample.after_bytes,
+                    sample.incremental_bytes,
+                    sample.target_bytes,
+                    sample.measurement_kind,
+                ),
+            )
+            self._prune_locked(database, now_millis=sample.sampled_at)
+
+    def recent_sessions(
+        self,
+        limit: int = DEFAULT_MAX_SESSION_SAMPLES,
+    ) -> list[AgentSessionMemorySample]:
+        bounded = max(1, min(int(limit), DEFAULT_MAX_SESSION_SAMPLES))
+        cutoff = int(time.time() * 1000) - self.retention_seconds * 1000
+        with self._lock, self._database() as database:
+            rows = database.execute(
+                """
+                SELECT sample_id, sampled_at, session_id, agent_id, conversation_id,
+                       before_bytes, after_bytes, incremental_bytes, target_bytes,
+                       measurement_kind
+                FROM session_memory_samples
+                WHERE sampled_at >= ?
+                ORDER BY sampled_at DESC, sample_id DESC
+                LIMIT ?
+                """,
+                (cutoff, bounded),
+            ).fetchall()
+        return [
+            AgentSessionMemorySample(
+                sample_id=row[0],
+                sampled_at=int(row[1]),
+                session_id=row[2],
+                agent_id=row[3],
+                conversation_id=row[4],
+                before_bytes=int(row[5]),
+                after_bytes=int(row[6]),
+                incremental_bytes=int(row[7]),
+                target_bytes=int(row[8]),
+                measurement_kind=row[9],
+            )
+            for row in reversed(rows)
+        ]
+
     def _initialize(self) -> None:
         with self._lock, self._database() as database:
             database.execute(
@@ -267,10 +393,31 @@ class AgentMemoryTelemetryStore:
                 "CREATE INDEX IF NOT EXISTS idx_memory_samples_task "
                 "ON memory_samples(task_id, sampled_at)"
             )
+            database.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_memory_samples (
+                    sample_id TEXT PRIMARY KEY NOT NULL,
+                    sampled_at INTEGER NOT NULL,
+                    session_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    before_bytes INTEGER NOT NULL,
+                    after_bytes INTEGER NOT NULL,
+                    incremental_bytes INTEGER NOT NULL,
+                    target_bytes INTEGER NOT NULL,
+                    measurement_kind TEXT NOT NULL
+                )
+                """
+            )
+            database.execute(
+                "CREATE INDEX IF NOT EXISTS idx_session_memory_samples_time "
+                "ON session_memory_samples(sampled_at)"
+            )
 
     def _prune_locked(self, database: sqlite3.Connection, *, now_millis: int) -> None:
         cutoff = int(now_millis) - self.retention_seconds * 1000
         database.execute("DELETE FROM memory_samples WHERE sampled_at < ?", (cutoff,))
+        database.execute("DELETE FROM session_memory_samples WHERE sampled_at < ?", (cutoff,))
         database.execute(
             """
             DELETE FROM memory_samples
@@ -281,6 +428,17 @@ class AgentMemoryTelemetryStore:
             )
             """,
             (self.max_samples,),
+        )
+        database.execute(
+            """
+            DELETE FROM session_memory_samples
+            WHERE sample_id IN (
+                SELECT sample_id FROM session_memory_samples
+                ORDER BY sampled_at DESC, sample_id DESC
+                LIMIT -1 OFFSET ?
+            )
+            """,
+            (DEFAULT_MAX_SESSION_SAMPLES,),
         )
 
     def _connect(self) -> sqlite3.Connection:
@@ -323,6 +481,9 @@ class AgentMemoryTelemetryRuntime:
         self._observed_lock = threading.Lock()
         self._observed_tasks: list[dict] = []
         self._cached = aggregate_memory_samples(self._store.recent())
+        self._session_cached = aggregate_session_memory_samples(
+            self._store.recent_sessions()
+        )
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -352,6 +513,40 @@ class AgentMemoryTelemetryRuntime:
             self._observed_tasks.append(dict(task))
             self._observed_tasks = self._observed_tasks[-256:]
         self.request_capture()
+
+    def observe_session_created(self, event: Mapping[str, object]) -> None:
+        before_bytes = max(0, int(event.get("before_bytes") or 0))
+        after_bytes = max(0, int(event.get("after_bytes") or 0))
+        sample = AgentSessionMemorySample(
+            sample_id=uuid.uuid4().hex,
+            sampled_at=max(
+                0,
+                int(event.get("sampled_at") or int(self._clock() * 1000)),
+            ),
+            session_id=str(event.get("session_id") or "").strip(),
+            agent_id=str(event.get("agent_id") or "").strip(),
+            conversation_id=str(event.get("conversation_id") or "").strip(),
+            before_bytes=before_bytes,
+            after_bytes=after_bytes,
+            incremental_bytes=max(0, after_bytes - before_bytes),
+            target_bytes=max(
+                1,
+                int(
+                    event.get("target_bytes")
+                    or DEFAULT_SESSION_MEMORY_TARGET_BYTES
+                ),
+            ),
+            measurement_kind=str(
+                event.get("measurement_kind") or measurement_kind()
+            ).strip(),
+        )
+        if not sample.session_id:
+            return
+        self._store.append_session(sample)
+        self._session_cached = aggregate_session_memory_samples(
+            self._store.recent_sessions(),
+            target_bytes=sample.target_bytes,
+        )
 
     def capture(self) -> dict:
         if not self._capture_lock.acquire(blocking=False):
@@ -444,7 +639,9 @@ class AgentMemoryTelemetryRuntime:
             self._capture_lock.release()
 
     def snapshot(self) -> dict:
-        return json.loads(json.dumps(self._cached))
+        payload = json.loads(json.dumps(self._cached))
+        payload["session_budget"] = json.loads(json.dumps(self._session_cached))
+        return payload
 
     def _run(self) -> None:
         while not self._stop.is_set():

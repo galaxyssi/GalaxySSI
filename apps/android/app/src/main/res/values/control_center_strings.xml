@@ -703,4 +703,15 @@
     <string name="cc_memory_state_deprecated">Superseded</string>
     <string name="cc_memory_state_pending">Pending</string>
     <string name="cc_memory_state_conflicted">Conflicted</string>
+    <string name="cc_agent_session_memory_section">New Session Budget</string>
+    <string name="cc_agent_session_memory_latest">Latest session overhead</string>
+    <string name="cc_agent_session_memory_latest_subtitle">Incremental SignalASI process PSS after creating a conversation</string>
+    <string name="cc_agent_session_memory_peak">Peak session overhead</string>
+    <string name="cc_agent_session_memory_peak_subtitle">Highest measured conversation-shell increment</string>
+    <string name="cc_agent_session_memory_average">Average session overhead</string>
+    <string name="cc_agent_session_memory_average_subtitle">%1$d measurements · %2$d over budget</string>
+    <string name="cc_agent_session_memory_target">Under %1$s target</string>
+    <string name="cc_agent_session_memory_over">Over %1$s target</string>
+    <string name="cc_agent_session_memory_unmeasured">Not measured</string>
+    <string name="cc_agent_session_memory_notice">Session overhead measures only the SignalASI conversation shell. External Codex, Claude Code, Hermes, OpenClaw, and model processes remain separate.</string>
 </resources>

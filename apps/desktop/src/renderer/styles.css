@@ -946,6 +946,16 @@ button:disabled { cursor: default; opacity: 0.48; }
   color: var(--muted);
   font-size: 8px;
 }
+.session-memory-budget {
+  border-color: #cde9d8;
+  background: #f2fbf6;
+  color: #33714d;
+}
+.session-memory-budget.over-budget {
+  border-color: #efd59e;
+  background: #fff9ec;
+  color: #8a641c;
+}
 .agent-memory-groups {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
