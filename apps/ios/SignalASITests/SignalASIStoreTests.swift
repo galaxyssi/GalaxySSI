@@ -4915,8 +4915,15 @@ final class SignalASIStoreTests: XCTestCase {
       let descriptor = definition.descriptor
       XCTAssertEqual(definition.executorId, AgentIOSSystemNativeToolCatalog.executorId)
       XCTAssertEqual(descriptor.location, .androidSystem)
-      XCTAssertEqual(descriptor.availability.status, .unavailable)
-      XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
+      if AgentIOSSystemNativeToolCatalog.handoffToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "handoff_request_on_ios15")
+      } else {
+        XCTAssertEqual(descriptor.availability.status, .unavailable)
+        XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "descriptor_only_unavailable_on_ios15")
+      }
       XCTAssertTrue(descriptor.requiredPermissions.contains {
         $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
       }, descriptor.id)
@@ -4959,6 +4966,61 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(unavailable.code, "tool_unavailable")
     XCTAssertFalse(unavailable.allowed)
     XCTAssertFalse(invalid.isValid)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorBuildsUserVisibleHandoffs() throws {
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions()
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.androidSystemPermission]
+    )
+
+    let dial = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.telephonyDialHandoff,
+      input: ["phone_number": .string("+1 (555) 123-4567")],
+      context: context
+    )
+    let sms = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.smsComposeHandoff,
+      input: [
+        "phone_number": .string("+1-555-123-4567"),
+        "message": .string("hello")
+      ],
+      context: context
+    )
+    let wifi = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.wifiPanelOpen,
+      input: [:],
+      context: context
+    )
+    let invalidDial = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.telephonyDialHandoff,
+      input: ["phone_number": .string("call-me")],
+      context: context
+    )
+
+    XCTAssertEqual(registry.ids(), AgentIOSSystemNativeToolCatalog.handoffToolIds)
+    XCTAssertTrue(dial.isSuccess)
+    XCTAssertEqual(dial.output["handoff_kind"], .string("dial"))
+    XCTAssertEqual(dial.output["url"], .string("tel:+15551234567"))
+    XCTAssertEqual(dial.output["requires_user_action"], .bool(true))
+    XCTAssertEqual(dial.output["completion_untrusted"], .bool(true))
+    XCTAssertEqual(dial.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+
+    XCTAssertTrue(sms.isSuccess)
+    XCTAssertEqual(sms.output["handoff_kind"], .string("sms_compose"))
+    XCTAssertEqual(sms.output["url"], .string("sms:+15551234567"))
+    XCTAssertEqual(sms.output["prefill_body"], .string("hello"))
+    XCTAssertEqual(sms.output["body_in_url"], .bool(false))
+
+    XCTAssertTrue(wifi.isSuccess)
+    XCTAssertEqual(wifi.output["handoff_kind"], .string("settings"))
+    XCTAssertEqual(wifi.output["url"], .string("app-settings:"))
+    XCTAssertEqual(wifi.output["settings_target"], .string("wifi"))
+
+    XCTAssertEqual(invalidDial.status, .failed)
+    XCTAssertEqual(invalidDial.error?.code, "invalid_phone_number")
   }
 
   func testAgentPhoneNativeToolCatalogRegistersStableDefaultIds() {
