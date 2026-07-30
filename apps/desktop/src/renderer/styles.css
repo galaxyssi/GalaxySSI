@@ -946,6 +946,54 @@ button:disabled { cursor: default; opacity: 0.48; }
   color: var(--muted);
   font-size: 8px;
 }
+.agent-memory-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+.agent-memory-groups section {
+  min-width: 0;
+  padding: 8px;
+  border-right: 1px solid var(--line);
+}
+.agent-memory-groups section:last-child { border-right: 0; }
+.agent-memory-groups section > strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #424a52;
+  font-size: 8px;
+}
+.agent-memory-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 0;
+  color: var(--muted);
+  font-size: 8px;
+}
+.agent-memory-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-memory-item b {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: #30373d;
+  font-size: 8px;
+  font-weight: 600;
+}
+.agent-memory-note {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 8px;
+}
 .runtime-manager-list {
   overflow: hidden;
   border: 1px solid var(--line);

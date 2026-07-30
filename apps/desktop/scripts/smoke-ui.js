@@ -28,6 +28,7 @@ const screenshots = [
   path.join(screenshotDir, "desktop-mcp-task-transparency.png"),
   path.join(screenshotDir, "desktop-capabilities.png"),
   path.join(screenshotDir, "desktop-settings.png"),
+  path.join(screenshotDir, "desktop-agent-memory.png"),
   path.join(screenshotDir, "desktop-evolution-v2.png"),
   path.join(screenshotDir, "desktop-runtimes.png")
 ];

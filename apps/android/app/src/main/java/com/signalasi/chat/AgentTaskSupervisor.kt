@@ -205,7 +205,8 @@ class AgentTaskSupervisor(
     dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val clock: () -> Long = { System.currentTimeMillis() },
     private val livenessPolicy: AgentTaskLivenessPolicy = AgentTaskLivenessPolicy(),
-    private val livenessListener: AgentTaskLivenessListener = AgentTaskLivenessListener {}
+    private val livenessListener: AgentTaskLivenessListener = AgentTaskLivenessListener {},
+    private val memoryObserver: (AgentWorkspace) -> Unit = {}
 ) : Closeable {
     private val supervisorJob = SupervisorJob()
     private val applicationScope = CoroutineScope(
@@ -234,6 +235,10 @@ class AgentTaskSupervisor(
         get() = supervisorJob.isActive && !closed.get()
 
     fun activeTaskIds(): Set<String> = activeByTask.keys.toSet()
+
+    fun activeWorkspaces(): List<AgentWorkspace> = activeByWorkspace.keys
+        .mapNotNull(workspaceStore::find)
+        .sortedWith(compareBy<AgentWorkspace> { it.createdAtMillis }.thenBy { it.workspaceId })
 
     fun heartbeat(
         workspaceId: String,
@@ -640,7 +645,7 @@ class AgentTaskSupervisor(
                 )
             )
         }
-    }
+    }.also(::notifyMemoryObserver)
 
     fun transition(
         workspaceId: String,
@@ -659,7 +664,7 @@ class AgentTaskSupervisor(
                 cancellationRequested = current.cancellationRequested || status == AgentWorkspaceStatus.CANCELLED
             )
         }
-    }
+    }.also(::notifyMemoryObserver)
 
     internal fun requireWorkspace(workspaceId: String): AgentWorkspace =
         requireNotNull(workspaceStore.find(workspaceId.trim())) {
@@ -734,6 +739,7 @@ class AgentTaskSupervisor(
             taskJob.complete()
             throw failure
         }
+        notifyMemoryObserver(queued)
         control.lastActivityAtMillis = now()
         if (recoveringFromStall) {
             notifyLiveness(
@@ -757,6 +763,7 @@ class AgentTaskSupervisor(
         control.executionJob = execution
         execution.invokeOnCompletion { cause ->
             if (cause is CancellationException) finishInterrupted(control)
+            workspaceStore.find(control.workspaceId)?.let(::notifyMemoryObserver)
             release(control)
             cancellationSource.complete()
         }
@@ -767,6 +774,10 @@ class AgentTaskSupervisor(
             cancellationSource = cancellationSource,
             job = execution
         )
+    }
+
+    private fun notifyMemoryObserver(workspace: AgentWorkspace) {
+        runCatching { memoryObserver(workspace) }
     }
 
     private suspend fun runTask(

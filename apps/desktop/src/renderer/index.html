@@ -389,6 +389,19 @@
       </div>
       <div class="settings-group">
         <div class="settings-group-heading">
+          <h3 data-i18n="Agent memory telemetry">Agent memory telemetry</h3>
+          <button id="refreshAgentMemoryButton" class="secondary-button compact-button" data-i18n="Refresh">Refresh</button>
+        </div>
+        <div id="agentMemorySummary" class="runtime-manager-summary" data-i18n="Memory telemetry has not been sampled.">Memory telemetry has not been sampled.</div>
+        <div class="agent-memory-groups">
+          <section><strong data-i18n="By Agent">By Agent</strong><div id="agentMemoryByAgent"></div></section>
+          <section><strong data-i18n="By session">By session</strong><div id="agentMemoryBySession"></div></section>
+          <section><strong data-i18n="By Provider">By Provider</strong><div id="agentMemoryByProvider"></div></section>
+        </div>
+        <small class="agent-memory-note" data-i18n="Windows reports Working Set. Shared in-process memory is an attributed estimate.">Windows reports Working Set. Shared in-process memory is an attributed estimate.</small>
+      </div>
+      <div class="settings-group">
+        <div class="settings-group-heading">
           <h3 data-i18n="Cloud model API">Cloud model API</h3>
           <span id="cloudModelBadge" class="state-badge pending" data-i18n="Not configured">Not configured</span>
         </div>

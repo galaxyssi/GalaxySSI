@@ -947,4 +947,12 @@
 , "Take over": "接管"
 , "Continue": "继续"
 , "Could not update task": "无法更新任务"
+, "Agent memory telemetry": "Agent 内存遥测"
+, "Memory telemetry has not been sampled.": "尚未采集内存遥测数据。"
+, "By Agent": "按 Agent"
+, "By session": "按会话"
+, "By Provider": "按 Provider"
+, "Windows reports Working Set. Shared in-process memory is an attributed estimate.": "Windows 显示工作集；进程内共享内存为归因估算值。"
+, "No active samples": "暂无活动采样"
+, "Current {current} · Peak {peak} · {kind}": "当前 {current} · 峰值 {peak} · {kind}"
 }

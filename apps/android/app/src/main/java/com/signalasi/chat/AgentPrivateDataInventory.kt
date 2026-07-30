@@ -151,6 +151,7 @@ object AgentPrivateDataInventory {
         localOnly("agent_reputation_ledger", "Signed Agent execution receipts and independent attestations", "database:signalasi_agent_reputation_ledger_v1", AgentPrivateDataSensitivity.PERSONAL),
         localOnly("run_start_receipts", "Cross-end idempotency receipts", "database:signalasi_run_start_receipts_v1", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("provider_health", "Per-runtime health and circuit state", "database:signalasi_agent_provider_health", AgentPrivateDataSensitivity.EPHEMERAL),
+        localOnly("agent_memory_telemetry", "Agent process memory samples", "database:signalasi_agent_memory_pss", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("run_workspaces", "Active Run workspaces and checkpoints", "database:signalasi_agent_workspaces", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("run_events", "Run event ledger", "database:signalasi_agent_runs", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("connector_responses", "Pending connector responses", "encrypted_prefs:signalasi_agent_connector_responses", AgentPrivateDataSensitivity.EPHEMERAL),

@@ -15,6 +15,33 @@ import org.junit.Test
 
 class AgentTaskSupervisorTest {
     @Test
+    fun memoryObserverReceivesQueuedAndTerminalTaskIdentity() = runBlocking {
+        val store = InMemoryAgentWorkspaceStore()
+        val observed = Collections.synchronizedList(mutableListOf<AgentWorkspace>())
+        val supervisor = AgentTaskSupervisor(
+            workspaceStore = store,
+            memoryObserver = { observed.add(it) }
+        )
+
+        supervisor.submit(workspace("memory")) {
+            recordExecutionSnapshot(
+                AgentWorkspaceExecutionSnapshot(agentId = "model:deepseek")
+            )
+        }.join()
+
+        assertTrue(observed.any {
+            it.taskId == "task-memory" && it.status == AgentWorkspaceStatus.QUEUED
+        })
+        assertTrue(observed.any {
+            it.taskId == "task-memory" &&
+                it.agentId == "model:deepseek" &&
+                it.status == AgentWorkspaceStatus.COMPLETED
+        })
+        assertTrue(supervisor.activeWorkspaces().isEmpty())
+        supervisor.shutdown()
+    }
+
+    @Test
     fun readReasoningLaneBoundsConcurrentWork() = runBlocking {
         val store = InMemoryAgentWorkspaceStore()
         val supervisor = AgentTaskSupervisor(store, maxConcurrentReadReasoningTasks = 2)
