@@ -90,6 +90,7 @@
     A10000000000000000000166 /* SignalASILinkDiagnosticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000166 /* SignalASILinkDiagnosticsView.swift */; };
     A10000000000000000000167 /* CloudModelNativeToolAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */; };
     A10000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */; };
+    A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -216,6 +217,7 @@
     A20000000000000000000166 /* SignalASILinkDiagnosticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASILinkDiagnosticsView.swift; sourceTree = "<group>"; };
     A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelNativeToolAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelToolLoopAgentPlanningProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTaskStatusPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -343,6 +345,7 @@
         A20000000000000000000166 /* SignalASILinkDiagnosticsView.swift */,
         A20000000000000000000167 /* CloudModelNativeToolAdapter.swift */,
         A20000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift */,
+        A20000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -567,6 +570,7 @@
         A10000000000000000000166 /* SignalASILinkDiagnosticsView.swift in Sources */,
         A10000000000000000000167 /* CloudModelNativeToolAdapter.swift in Sources */,
         A10000000000000000000168 /* CloudModelToolLoopAgentPlanningProvider.swift in Sources */,
+        A10000000000000000000169 /* AgentRemoteTaskStatusPolicy.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,

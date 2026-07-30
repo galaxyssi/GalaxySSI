@@ -71,6 +71,94 @@ extension SignalASIStoreTests {
     XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("waiting_approval"), .paused)
   }
 
+  func testAgentRemoteTaskStatusPolicyMatchesAndroidTerminalSemantics() {
+    for status in ["failed", "cancelled", "timed_out", "not_found"] {
+      XCTAssertTrue(AgentRemoteTaskStatusPolicy.isTerminal(status))
+      XCTAssertTrue(AgentRemoteTaskStatusPolicy.settlesWithoutResponse(status))
+    }
+
+    XCTAssertTrue(AgentRemoteTaskStatusPolicy.isTerminal("completed"))
+    XCTAssertFalse(AgentRemoteTaskStatusPolicy.settlesWithoutResponse("completed"))
+    XCTAssertFalse(AgentRemoteTaskStatusPolicy.isTerminal("running"))
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.normalize(" TIMED_OUT "), "timed_out")
+  }
+
+  func testAgentRemoteTaskStatusPolicyAssignsTerminalCompletionTimestamp() {
+    XCTAssertEqual(
+      AgentRemoteTaskStatusPolicy.completionTimestamp(
+        status: "timed_out",
+        declaredCompletedAtMillis: 0,
+        updatedAtMillis: 120,
+        observedAtMillis: 130
+      ),
+      120
+    )
+    XCTAssertEqual(
+      AgentRemoteTaskStatusPolicy.completionTimestamp(
+        status: "failed",
+        declaredCompletedAtMillis: 0,
+        updatedAtMillis: 0,
+        observedAtMillis: 130
+      ),
+      130
+    )
+    XCTAssertEqual(
+      AgentRemoteTaskStatusPolicy.completionTimestamp(
+        status: "running",
+        declaredCompletedAtMillis: 100,
+        updatedAtMillis: 120,
+        observedAtMillis: 130
+      ),
+      0
+    )
+  }
+
+  func testAgentRemoteTaskStatusPolicyMapsVisibleTerminalPhase() {
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.phase("COMPLETED"), .completed)
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.phase(" cancelled "), .cancelled)
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.phase("timed_out"), .failed)
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.workspaceStatus("not_found"), .failed)
+    XCTAssertNil(AgentRemoteTaskStatusPolicy.workspaceStatus("running"))
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.timeoutStage("timed_out"), "REMOTE_TASK")
+    XCTAssertEqual(AgentRemoteTaskStatusPolicy.timeoutStage("failed"), "")
+  }
+
+  func testAgentRemoteTaskStatusPolicyFailedStatusDoesNotResetResourceHealth() {
+    for status in ["failed", "cancelled", "timed_out", "not_found"] {
+      XCTAssertFalse(AgentRemoteTaskStatusPolicy.keepsResourceHealthy(status))
+    }
+    for status in ["accepted", "running", "completed"] {
+      XCTAssertTrue(AgentRemoteTaskStatusPolicy.keepsResourceHealthy(status))
+    }
+  }
+
+  func testAgentRemoteTaskStatusPolicyRestoredTaskUsesOnlyRemainingDeadline() {
+    XCTAssertEqual(
+      AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
+        deadlineMillis: 10_000,
+        startedAtMillis: 2_000,
+        nowMillis: 10_000
+      ),
+      2_000
+    )
+    XCTAssertEqual(
+      AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
+        deadlineMillis: 10_000,
+        startedAtMillis: 2_000,
+        nowMillis: 20_000
+      ),
+      0
+    )
+    XCTAssertEqual(
+      AgentRemoteTaskStatusPolicy.remainingDeadlineMillis(
+        deadlineMillis: 10_000,
+        startedAtMillis: 0,
+        nowMillis: 20_000
+      ),
+      10_000
+    )
+  }
+
   func testAgentPlanLifecyclePolicyRestoresConnectorResultAndCompletesSession() {
     let connector = lifecycleAction(
       id: "connector-codex",
