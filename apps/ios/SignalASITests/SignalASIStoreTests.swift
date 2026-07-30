@@ -1776,6 +1776,140 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertFalse(item?.permissionDiff.requiresApproval ?? true)
   }
 
+  func testAgentDesktopMarketplaceStoreProjectsPairedDesktopManifests() throws {
+    let store = AgentDesktopMarketplaceStore()
+    let longText = String(repeating: "s", count: 520)
+    let longCapability = String(repeating: "c", count: 180)
+    let rollbackVersions = (0..<10).map { AgentMcpJSONValue.string("0.\($0).0") }
+    let updated = store.update(payload: [
+      "type": .string("capability_manifest"),
+      "server": .object([
+        "id": .string(" desktop-1 "),
+        "name": .string("Office PC")
+      ]),
+      "tool_marketplace": .object([
+        "items": .array([
+          .object([
+            "id": .string(String(repeating: "m", count: 540)),
+            "kind": .string(AgentCapabilityCatalogKind.mcp.rawValue),
+            "name": .string("GitHub MCP"),
+            "summary": .string(longText),
+            "version": .string(""),
+            "install_state": .string(AgentMarketplaceInstallState.installed.rawValue),
+            "enabled": .bool(true),
+            "capabilities": .array([
+              .string(" repositories "),
+              .string(""),
+              .string(longCapability)
+            ]),
+            "permissions": .array([
+              .object(["id": .string("   ")]),
+              .object([
+                "id": .string(" repo.read "),
+                "title": .string(""),
+                "description": .string(longText)
+              ])
+            ]),
+            "permission_diff": .object([
+              "added": .array([
+                .object([
+                  "id": .string("repo.write"),
+                  "title": .string("Write repositories"),
+                  "scope": .string("catalog"),
+                  "risk": .string("high")
+                ])
+              ]),
+              "removed": .array([]),
+              "unchanged": .array([
+                .object(["id": .string("repo.read")])
+              ])
+            ]),
+            "installed_version": .string("0.9.0"),
+            "available_version": .string(""),
+            "update_available": .bool(true),
+            "rollback_versions": .array(rollbackVersions),
+            "revocable": .bool(true),
+            "revoked": .bool(false)
+          ]),
+          .object([
+            "id": .string("desktop-native"),
+            "kind": .string(AgentCapabilityCatalogKind.nativeTool.rawValue),
+            "name": .string("Desktop Terminal"),
+            "summary": .string("Run workspace commands"),
+            "version": .string("1.2.0"),
+            "install_state": .string(AgentMarketplaceInstallState.builtIn.rawValue),
+            "trusted": .bool(false)
+          ]),
+          .object([
+            "id": .string("bad-kind"),
+            "kind": .string("not-supported"),
+            "install_state": .string(AgentMarketplaceInstallState.available.rawValue)
+          ]),
+          .object([
+            "id": .string("bad-state"),
+            "kind": .string(AgentCapabilityCatalogKind.automation.rawValue),
+            "install_state": .string("not-supported")
+          ])
+        ])
+      ])
+    ], nowMillis: 1_800_000_000_000)
+
+    XCTAssertTrue(updated)
+    XCTAssertFalse(store.update(payload: ["type": .string("not_capability_manifest")], nowMillis: 2_000))
+    XCTAssertTrue(store.list(
+      pairedDesktopIds: ["desktop-1"],
+      desktopSessionDesktopIds: []
+    ).isEmpty)
+
+    let all = store.list(
+      pairedDesktopIds: ["desktop-1", "other-desktop"],
+      desktopSessionDesktopIds: ["desktop-1"]
+    )
+    let mcp = try XCTUnwrap(store.list(
+      selectedKind: .mcp,
+      pairedDesktopIds: ["desktop-1"],
+      desktopSessionDesktopIds: ["desktop-1"]
+    ).first)
+    let native = try XCTUnwrap(all.first { $0.id == "desktop-native" })
+
+    XCTAssertEqual(all.count, 2)
+    XCTAssertEqual(mcp.desktopId, "desktop-1")
+    XCTAssertEqual(mcp.desktopName, "Office PC")
+    XCTAssertEqual(mcp.id.count, 500)
+    XCTAssertEqual(mcp.summary.count, 500)
+    XCTAssertEqual(mcp.version, "1.0.0")
+    XCTAssertEqual(mcp.installedVersion, "0.9.0")
+    XCTAssertEqual(mcp.availableVersion, "1.0.0")
+    XCTAssertEqual(mcp.installState, .installed)
+    XCTAssertTrue(mcp.enabled)
+    XCTAssertTrue(mcp.trusted)
+    XCTAssertTrue(mcp.updateAvailable)
+    XCTAssertEqual(mcp.capabilities.count, 2)
+    XCTAssertTrue(mcp.capabilities.contains("repositories"))
+    XCTAssertTrue(mcp.capabilities.contains(String(repeating: "c", count: 160)))
+    XCTAssertEqual(mcp.permissions.count, 1)
+    XCTAssertEqual(mcp.permissions.first?.id, "repo.read")
+    XCTAssertEqual(mcp.permissions.first?.title, "repo.read")
+    XCTAssertEqual(mcp.permissions.first?.description.count, 500)
+    XCTAssertEqual(mcp.permissionDiff.added.first?.id, "repo.write")
+    XCTAssertEqual(mcp.permissionDiff.added.first?.scope, "catalog")
+    XCTAssertEqual(mcp.permissionDiff.added.first?.risk, "high")
+    XCTAssertEqual(mcp.permissionDiff.unchanged.first?.title, "repo.read")
+    XCTAssertEqual(mcp.rollbackVersions.count, 8)
+    XCTAssertTrue(mcp.revocable)
+    XCTAssertFalse(mcp.revoked)
+    XCTAssertEqual(mcp.updatedAtMillis, 1_800_000_000_000)
+    XCTAssertEqual(native.kind, .nativeTool)
+    XCTAssertEqual(native.version, "1.2.0")
+    XCTAssertFalse(native.trusted)
+
+    store.remove(desktopId: "desktop-1")
+    XCTAssertTrue(store.list(
+      pairedDesktopIds: ["desktop-1"],
+      desktopSessionDesktopIds: ["desktop-1"]
+    ).isEmpty)
+  }
+
   func testAgentMcpRegistryDynamicAuthenticationAdvancesStepsAndExpires() throws {
     var now: Int64 = 1_000
     let registry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: { now })

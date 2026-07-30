@@ -24303,6 +24303,226 @@ struct AgentMarketplaceItem: Codable, Equatable, Identifiable {
   }
 }
 
+struct AgentDesktopMarketplaceItem: Codable, Equatable, Identifiable {
+  var desktopId: String
+  var desktopName: String
+  var id: String
+  var kind: AgentCapabilityCatalogKind
+  var name: String
+  var summary: String
+  var version: String
+  var installState: AgentMarketplaceInstallState
+  var enabled: Bool
+  var trusted: Bool
+  var capabilities: Set<String>
+  var permissions: [AgentMarketplacePermission]
+  var permissionDiff: AgentMarketplacePermissionDiff
+  var installedVersion: String
+  var availableVersion: String
+  var updateAvailable: Bool
+  var rollbackVersions: [String]
+  var revocable: Bool
+  var revoked: Bool
+  var updatedAtMillis: Int64
+
+  enum CodingKeys: String, CodingKey {
+    case desktopId = "desktop_id"
+    case desktopName = "desktop_name"
+    case id
+    case kind
+    case name
+    case summary
+    case version
+    case installState = "install_state"
+    case enabled
+    case trusted
+    case capabilities
+    case permissions
+    case permissionDiff = "permission_diff"
+    case installedVersion = "installed_version"
+    case availableVersion = "available_version"
+    case updateAvailable = "update_available"
+    case rollbackVersions = "rollback_versions"
+    case revocable
+    case revoked
+    case updatedAtMillis = "updated_at"
+  }
+}
+
+struct AgentDesktopMarketplaceManifest: Codable, Equatable {
+  var desktopId: String
+  var desktopName: String
+  var updatedAtMillis: Int64
+  var items: [AgentDesktopMarketplaceItem]
+
+  enum CodingKeys: String, CodingKey {
+    case desktopId = "desktop_id"
+    case desktopName = "desktop_name"
+    case updatedAtMillis = "updated_at"
+    case items
+  }
+}
+
+final class AgentDesktopMarketplaceStore {
+  private static let maxItemsPerDesktop = 512
+  private static let maxText = 500
+  private var manifests: [String: AgentDesktopMarketplaceManifest] = [:]
+  private let lock = NSLock()
+
+  @discardableResult
+  func update(payload: AgentMcpJSONObject, nowMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)) -> Bool {
+    guard let manifest = Self.manifest(from: payload, nowMillis: nowMillis) else {
+      return false
+    }
+    lock.lock()
+    manifests[manifest.desktopId] = manifest
+    lock.unlock()
+    return true
+  }
+
+  func remove(desktopId: String) {
+    lock.lock()
+    manifests.removeValue(forKey: desktopId)
+    lock.unlock()
+  }
+
+  func list(
+    selectedKind: AgentCapabilityCatalogKind? = nil,
+    pairedDesktopIds: Set<String>,
+    desktopSessionDesktopIds: Set<String>
+  ) -> [AgentDesktopMarketplaceItem] {
+    let eligible = pairedDesktopIds.intersection(desktopSessionDesktopIds)
+    lock.lock()
+    let currentManifests = manifests
+    lock.unlock()
+    return currentManifests.values.flatMap { manifest -> [AgentDesktopMarketplaceItem] in
+      guard eligible.contains(manifest.desktopId) else {
+        return []
+      }
+      return manifest.items.compactMap { source -> AgentDesktopMarketplaceItem? in
+        guard selectedKind == nil || source.kind == selectedKind else {
+          return nil
+        }
+        var item = source
+        item.desktopName = manifest.desktopName.nonEmpty ?? manifest.desktopId
+        item.version = item.version.nonEmpty ?? "1.0.0"
+        item.availableVersion = item.availableVersion.nonEmpty ?? item.version
+        item.updatedAtMillis = manifest.updatedAtMillis
+        return item
+      }
+    }.sorted {
+      let desktopComparison = $0.desktopName.lowercased().localizedStandardCompare($1.desktopName.lowercased())
+      if desktopComparison != .orderedSame {
+        return desktopComparison == .orderedAscending
+      }
+      return $0.name.lowercased().localizedStandardCompare($1.name.lowercased()) == .orderedAscending
+    }
+  }
+
+  private static func manifest(
+    from payload: AgentMcpJSONObject,
+    nowMillis: Int64
+  ) -> AgentDesktopMarketplaceManifest? {
+    guard payload.string("type") == "capability_manifest",
+          let server = payload.object("server"),
+          let marketplace = payload.object("tool_marketplace"),
+          let values = marketplace["items"]?.arrayValue else {
+      return nil
+    }
+    let desktopId = server.string("id").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !desktopId.isBlank else { return nil }
+    let desktopName = String(server.string("name").prefix(160))
+    let items = values
+      .prefix(maxItemsPerDesktop)
+      .compactMap { item(from: $0.objectValue, desktopId: desktopId, desktopName: desktopName, updatedAtMillis: nowMillis) }
+    return AgentDesktopMarketplaceManifest(
+      desktopId: desktopId,
+      desktopName: desktopName,
+      updatedAtMillis: nowMillis,
+      items: items
+    )
+  }
+
+  private static func item(
+    from source: AgentMcpJSONObject?,
+    desktopId: String,
+    desktopName: String,
+    updatedAtMillis: Int64
+  ) -> AgentDesktopMarketplaceItem? {
+    guard let source,
+          let kind = kind(source.string("kind")),
+          let installState = state(source.string("install_state")) else {
+      return nil
+    }
+    let permissionDiff = source.object("permission_diff") ?? [:]
+    return AgentDesktopMarketplaceItem(
+      desktopId: desktopId,
+      desktopName: desktopName,
+      id: source.clippedString("id", limit: maxText),
+      kind: kind,
+      name: source.clippedString("name", limit: maxText),
+      summary: source.clippedString("summary", limit: maxText),
+      version: source.clippedString("version", limit: 80),
+      installState: installState,
+      enabled: source.bool("enabled"),
+      trusted: source["trusted"] == nil ? true : source.bool("trusted"),
+      capabilities: Set(boundedStrings(source["capabilities"], limit: 96)),
+      permissions: boundedPermissions(source["permissions"]),
+      permissionDiff: AgentMarketplacePermissionDiff(
+        added: boundedPermissions(permissionDiff["added"]),
+        removed: boundedPermissions(permissionDiff["removed"]),
+        unchanged: boundedPermissions(permissionDiff["unchanged"])
+      ),
+      installedVersion: source.clippedString("installed_version", limit: 80),
+      availableVersion: source.clippedString("available_version", limit: 80),
+      updateAvailable: source.bool("update_available"),
+      rollbackVersions: boundedStrings(source["rollback_versions"], limit: 8),
+      revocable: source.bool("revocable"),
+      revoked: source.bool("revoked"),
+      updatedAtMillis: updatedAtMillis
+    )
+  }
+
+  private static func kind(_ value: String) -> AgentCapabilityCatalogKind? {
+    AgentCapabilityCatalogKind.allCases.first { $0.rawValue == value }
+  }
+
+  private static func state(_ value: String) -> AgentMarketplaceInstallState? {
+    AgentMarketplaceInstallState.allCases.first { $0.rawValue == value }
+  }
+
+  private static func boundedStrings(_ value: AgentMcpJSONValue?, limit: Int) -> [String] {
+    (value?.arrayValue ?? [])
+      .prefix(limit)
+      .compactMap { item -> String? in
+        let normalized = item.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !normalized.isBlank else { return nil }
+        return String(normalized.prefix(160))
+      }
+  }
+
+  private static func boundedPermissions(_ value: AgentMcpJSONValue?) -> [AgentMarketplacePermission] {
+    (value?.arrayValue ?? [])
+      .prefix(96)
+      .compactMap { permission(from: $0.objectValue) }
+  }
+
+  private static func permission(from source: AgentMcpJSONObject?) -> AgentMarketplacePermission? {
+    guard let source else { return nil }
+    let id = source.string("id").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !id.isBlank else { return nil }
+    let clippedId = String(id.prefix(160))
+    let title = source.clippedString("title", limit: maxText).nonEmpty ?? clippedId
+    return AgentMarketplacePermission(
+      id: clippedId,
+      title: title,
+      description: source.clippedString("description", limit: maxText),
+      scope: source.clippedString("scope", limit: 80).nonEmpty ?? "item",
+      risk: source.clippedString("risk", limit: 40).nonEmpty ?? "medium"
+    )
+  }
+}
+
 enum AgentMcpDistribution: String, Codable, CaseIterable, Identifiable {
   case remote
   case localPackage = "local_package"
