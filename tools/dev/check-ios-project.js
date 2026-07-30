@@ -95,6 +95,8 @@ const requiredProjectSnippets = [
   "AgentSkillLifecycleTests.swift in Sources",
   "AgentSkillExecutionModels.swift in Sources",
   "AgentSkillExecutionTests.swift in Sources",
+  "AgentSkillPackageInstallerModels.swift in Sources",
+  "AgentSkillPackageInstallerTests.swift in Sources",
 ];
 
 const requiredSourceSnippets = [
@@ -965,6 +967,9 @@ const requiredSourceSnippets = [
   [models, "AgentConversationSkillCompiler"],
   [models, "AgentSkillExecutionEngine"],
   [models, "AgentSkillVersionManager"],
+  [models, "AgentSkillPackageInstaller"],
+  [models, "AgentSkillPackageExporter"],
+  [models, "allowUnsignedLocalPackage"],
   [models, "skill_explicit_match"],
   [models, "trigger_examples"],
   [models, "additional_properties"],
@@ -1493,6 +1498,9 @@ const requiredSourceSnippets = [
   [tests, "testAgentSkillExecutionEngineInvokesExpandedStepsAndRecordsUse"],
   [tests, "testAgentSkillExecutionEngineFallsBackBeforeUnsafeInvocation"],
   [tests, "testAgentSkillVersionManagerBuildsUpgradeAndRollsBack"],
+  [tests, "testAgentSkillPackageInstallerVerifiesManifestIntegrityAndInstallsDisabled"],
+  [tests, "testAgentSkillPackageInstallerRejectsTraversalExecutableAndTamperedPackages"],
+  [tests, "testAgentSkillPackageInstallerRequiresUnsignedLocalApproval"],
   [tests, "testAgentNativeToolResultModelsUseAndroidWireNames"],
   [tests, "testAgentNativeToolReplayStoreEvictsOldestAndClears"],
   [tests, "testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults"],
