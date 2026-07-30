@@ -58,12 +58,19 @@ enum AgentIOSSystemNativeToolCatalog {
     contactsDelete
   ]
 
+  static let calendarWriteToolIds: Set<String> = [
+    calendarEventUpsert,
+    calendarEventDelete
+  ]
+
   static let executableToolIds: Set<String> = handoffToolIds.union([
     calendarsList,
     calendarEventsQuery,
     contactsSearch,
     contactsUpsert,
     contactsDelete,
+    calendarEventUpsert,
+    calendarEventDelete,
     downloadEnqueue,
     downloadQuery,
     downloadRemove,
@@ -217,7 +224,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       calendarEventUpsert,
       "Create or update calendar event",
-      "Android calendar event write descriptor retained for planning; iOS requires an EventKit executor and explicit confirmation.",
+      "Creates or updates one iOS EventKit calendar event after permission, consent, and idempotency gates.",
       .high,
       ["calendar.write"],
       ["android.permission.WRITE_CALENDAR"],
@@ -236,7 +243,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       calendarEventDelete,
       "Delete calendar event",
-      "Android calendar event delete descriptor retained for planning; iOS requires an EventKit executor and explicit confirmation.",
+      "Deletes one iOS EventKit calendar event selected by the stable Android-compatible event id.",
       .high,
       ["calendar.delete"],
       ["android.permission.WRITE_CALENDAR"],
@@ -514,6 +521,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if calendarWriteToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosCalendarWritePermission,
+          title: "Write iOS Calendars",
+          description: "Allows EventKit event create, update, and delete operations after explicit consent."
+        )
+      ]
+    }
     if specification.id == biometricStatus {
       return [
         AgentNativePermissionRequirement(
@@ -580,6 +596,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == calendarsList || id == calendarEventsQuery {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Calendar read executor."
     }
+    if calendarWriteToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS Calendar write executor."
+    }
     if downloadToolIds.contains(id) {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS URLSession download executor."
     }
@@ -608,6 +627,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == calendarsList || id == calendarEventsQuery {
       return calendarReadAvailability
     }
+    if calendarWriteToolIds.contains(id) {
+      return calendarWriteAvailability
+    }
     if downloadToolIds.contains(id) {
       return downloadAvailability
     }
@@ -635,6 +657,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == calendarsList || id == calendarEventsQuery {
       return "eventkit_calendar_read_on_ios15"
+    }
+    if calendarWriteToolIds.contains(id) {
+      return "eventkit_calendar_write_on_ios15"
     }
     if downloadToolIds.contains(id) {
       return "url_session_download_manager_on_ios15"
@@ -691,6 +716,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor reads EventKit calendars and events after the Calendar permission gate."
+    )
+  }
+
+  private static var calendarWriteAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor writes EventKit events after permission, consent, and idempotency gates."
     )
   }
 
@@ -769,6 +801,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosContactsReadPermission = "signalasi.scope.ios_contacts_read"
   static let iosContactsWritePermission = "signalasi.scope.ios_contacts_write"
   static let iosCalendarReadPermission = "signalasi.scope.ios_calendar_read"
+  static let iosCalendarWritePermission = "signalasi.scope.ios_calendar_write"
   static let iosDownloadPermission = "signalasi.scope.ios_app_managed_downloads"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
 

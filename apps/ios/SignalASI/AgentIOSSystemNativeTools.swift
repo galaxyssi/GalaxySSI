@@ -3,6 +3,7 @@ import Foundation
 struct AgentIOSSystemNativeToolExecutor {
   var audioProvider: AgentIOSAudioStatusProviding
   var calendarProvider: AgentIOSCalendarReadProviding
+  var calendarWriteProvider: AgentIOSCalendarWriteProviding
   var contactsProvider: AgentIOSContactsSearchProviding
   var contactsWriteProvider: AgentIOSContactsWriteProviding
   var downloadProvider: AgentIOSDownloadManaging
@@ -13,6 +14,7 @@ struct AgentIOSSystemNativeToolExecutor {
   init(
     audioProvider: AgentIOSAudioStatusProviding = AgentIOSDefaultAudioStatusProvider(),
     calendarProvider: AgentIOSCalendarReadProviding = AgentIOSDefaultCalendarReadProvider(),
+    calendarWriteProvider: AgentIOSCalendarWriteProviding = AgentIOSDefaultCalendarWriteProvider(),
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
     contactsWriteProvider: AgentIOSContactsWriteProviding = AgentIOSDefaultContactsWriteProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
@@ -22,6 +24,7 @@ struct AgentIOSSystemNativeToolExecutor {
   ) {
     self.audioProvider = audioProvider
     self.calendarProvider = calendarProvider
+    self.calendarWriteProvider = calendarWriteProvider
     self.contactsProvider = contactsProvider
     self.contactsWriteProvider = contactsWriteProvider
     self.downloadProvider = downloadProvider
@@ -48,6 +51,10 @@ struct AgentIOSSystemNativeToolExecutor {
       return calendarProvider.listCalendars(nowMillis: max(0, nowMillis()))
     case AgentIOSSystemNativeToolCatalog.calendarEventsQuery:
       return calendarEventsQuery(invocation)
+    case AgentIOSSystemNativeToolCatalog.calendarEventUpsert:
+      return calendarEventUpsert(invocation)
+    case AgentIOSSystemNativeToolCatalog.calendarEventDelete:
+      return calendarEventDelete(invocation)
     case AgentIOSSystemNativeToolCatalog.contactsSearch:
       return contactsSearch(invocation)
     case AgentIOSSystemNativeToolCatalog.contactsUpsert:
@@ -125,6 +132,29 @@ struct AgentIOSSystemNativeToolExecutor {
       limit: max(1, min(200, limit)),
       nowMillis: max(0, nowMillis())
     )
+  }
+
+  private func calendarEventUpsert(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = calendarWriteProvider.upsertEvent(
+      eventId: invocation.input["event_id"]?.intValue ?? 0,
+      calendarId: invocation.input["calendar_id"]?.intValue ?? 0,
+      title: boundedString(invocation.input["title"]?.stringValue, limit: 240),
+      description: boundedString(invocation.input["description"]?.stringValue, limit: 2_000),
+      location: boundedString(invocation.input["location"]?.stringValue, limit: 240),
+      startEpochMillis: invocation.input["start_epoch_ms"]?.intValue ?? 0,
+      endEpochMillis: invocation.input["end_epoch_ms"]?.intValue ?? 0,
+      timezone: boundedString(invocation.input["timezone"]?.stringValue, limit: 80),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func calendarEventDelete(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = calendarWriteProvider.deleteEvent(
+      eventId: invocation.input["event_id"]?.intValue ?? 0,
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func contactsSearch(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
