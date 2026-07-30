@@ -35,6 +35,7 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private let port = NWEndpoint.Port(rawValue: 8883)!
   private let queue = DispatchQueue(label: "com.signalasi.ios.mqtt")
   private let inboundChunkAssembler = SignalASIMqttChunkAssembler()
+  private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private var connection: NWConnection?
   private var clientId = ""
   private var subscriptions: [String] = []
@@ -42,6 +43,10 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
   private var packetIdentifier: UInt16 = 1
   private var queuedPublishes: [(topic: String, payload: Data)] = []
   private var connected = false
+
+  init(diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger()) {
+    self.diagnosticLedger = diagnosticLedger
+  }
 
   func connect(clientId: String, serverLinks: [ServerLink]) {
     self.clientId = clientId
@@ -203,6 +208,12 @@ final class SignalASIMqttClient: ObservableObject, SignalASILinkTransport {
           self.onMessage?(topic, Data(assembled.utf8))
         }
       } catch {
+        diagnosticLedger.record(
+          kind: SignalASILinkTransportDiagnostics.classifyFragmentFailure(error),
+          endpointIdentity: topic,
+          messageIdentity: object.string("transfer_id"),
+          detailCode: String(describing: type(of: error))
+        )
         return
       }
       return
@@ -482,6 +493,7 @@ final class MessageCoordinator: ObservableObject {
 
   private let store: SignalASIStore
   private let deliveryStore: SignalASILinkDeliveryStore
+  private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let cloudClient: CloudModelClient
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   let mqttClient: SignalASIMqttClient
@@ -491,17 +503,19 @@ final class MessageCoordinator: ObservableObject {
   init(
     store: SignalASIStore,
     deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
+    diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger(),
     cloudClient: CloudModelClient = CloudModelClient(),
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
-    mqttClient: SignalASIMqttClient = SignalASIMqttClient()
+    mqttClient: SignalASIMqttClient? = nil
   ) {
     self.store = store
     self.deliveryStore = deliveryStore
+    self.diagnosticLedger = diagnosticLedger
     self.cloudClient = cloudClient
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
-    self.mqttClient = mqttClient
+    self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
         self?.handleIncoming(topic: topic, payload: payload)
@@ -746,19 +760,37 @@ final class MessageCoordinator: ObservableObject {
       scheduleOutboxFlush(after: 0)
       return
     }
+    let link = serverLink(for: topic, payload: object)
     let appPayload: [String: Any]
-    if let envelope = object.dictionary("envelope"),
-       let unwrapped = SignalASILinkProtocol.unwrapEnvelope(envelope) {
+    if let envelope = object.dictionary("envelope") {
+      guard let unwrapped = SignalASILinkProtocol.unwrapEnvelope(envelope) else {
+        recordLinkDiagnostic(
+          .decryptFailure,
+          link: link,
+          topic: topic,
+          messageIdentity: envelope.string("message_id").ifBlank(ciphertextReplayDigest(for: object)),
+          detailCode: "invalid_envelope"
+        )
+        return
+      }
       appPayload = unwrapped
     } else {
       appPayload = object
     }
+    let messageId = appPayload.string("message_id")
     if appPayload.string("type") == "delivery_ack" {
       handleDeliveryAck(appPayload)
+      if !messageId.isEmpty, !deliveryStore.claimIncoming(messageId: messageId) {
+        recordLinkDiagnostic(
+          .duplicateReceipt,
+          link: link,
+          topic: topic,
+          messageIdentity: messageId,
+          detailCode: "delivery_ack"
+        )
+      }
       return
     }
-    let messageId = appPayload.string("message_id")
-    let link = serverLink(for: topic, payload: object)
     if allowStage, !messageId.isEmpty {
       let digest = ciphertextReplayDigest(for: object)
       if !digest.isEmpty {
@@ -766,14 +798,38 @@ final class MessageCoordinator: ObservableObject {
           if known.receiptRequired {
             publishInboundReceipt(link: link, receivedMessageId: known.messageId)
           }
+          recordLinkDiagnostic(
+            .encryptedReplay,
+            link: link,
+            topic: topic,
+            messageIdentity: known.messageId,
+            detailCode: "pre_decrypt"
+          )
           return
         }
       }
       switch deliveryStore.stageIncoming(messageId: messageId, payload: originalPayload) {
       case .invalid:
         return
-      case .completed, .pending:
+      case .completed:
         publishInboundReceipt(link: link, receivedMessageId: messageId)
+        recordLinkDiagnostic(
+          .duplicateMessage,
+          link: link,
+          topic: topic,
+          messageIdentity: messageId,
+          detailCode: "completed"
+        )
+        return
+      case .pending:
+        publishInboundReceipt(link: link, receivedMessageId: messageId)
+        recordLinkDiagnostic(
+          .pendingReplay,
+          link: link,
+          topic: topic,
+          messageIdentity: messageId,
+          detailCode: "pending"
+        )
         return
       case .staged:
         if !digest.isEmpty {
@@ -841,6 +897,22 @@ final class MessageCoordinator: ObservableObject {
     Task {
       _ = await mqttClient.publish(topic: link.routes.controlTopic, payload: wire)
     }
+  }
+
+  private func recordLinkDiagnostic(
+    _ kind: SignalASILinkDiagnosticKind,
+    link: ServerLink?,
+    topic: String,
+    messageIdentity: String,
+    detailCode: String
+  ) {
+    let endpointIdentity = link?.desktopId.ifBlank(topic) ?? topic
+    diagnosticLedger.record(
+      kind: kind,
+      endpointIdentity: endpointIdentity,
+      messageIdentity: messageIdentity,
+      detailCode: detailCode
+    )
   }
 
   private func replayPendingIncoming() {
