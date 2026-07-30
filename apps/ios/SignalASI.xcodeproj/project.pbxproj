@@ -216,6 +216,7 @@
     A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */; };
     A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */; };
     A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000294 /* AgentDesktopControlTests.swift */; };
+    A10000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -430,6 +431,7 @@
     A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000294 /* AgentDesktopControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDesktopControlTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaNativeToolTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -666,6 +668,7 @@
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */,
         A20000000000000000000294 /* AgentDesktopControlTests.swift */,
+        A20000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -978,6 +981,7 @@
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */,
         A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */,
+        A10000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
