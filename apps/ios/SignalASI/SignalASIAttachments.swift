@@ -302,7 +302,10 @@ enum SignalASIAttachmentPayloadBuilder {
     }
   }
 
-  static func descriptors(for attachments: [SignalASIDraftAttachment]) -> [[String: Any]] {
+  static func descriptors(
+    for attachments: [SignalASIDraftAttachment],
+    mediaProfile: AgentMediaDeliveryProfile? = nil
+  ) -> [[String: Any]] {
     var remaining = maximumInlineBytes
     return attachments.prefix(maximumAttachmentCount).map { attachment in
       var item: [String: Any] = [
@@ -312,11 +315,24 @@ enum SignalASIAttachmentPayloadBuilder {
         "size": attachment.sizeBytes,
         "sha256": sha256(attachment.data)
       ]
-      if attachment.sizeBytes > 0, attachment.sizeBytes <= remaining {
-        item["data_b64"] = attachment.data.base64EncodedString()
-        item["transport_size"] = attachment.sizeBytes
-        item["transport_lossless"] = true
-        remaining -= attachment.sizeBytes
+      if let mediaProfile {
+        item["transport_profile"] = mediaProfile.id
+      }
+      if let inline = AgentMediaAttachmentTransportEncoder.inlinePayload(
+        for: attachment,
+        profile: mediaProfile,
+        remainingBytes: remaining
+      ) {
+        item["data_b64"] = inline.data.base64EncodedString()
+        item["transport_size"] = inline.data.count
+        item["transport_lossless"] = inline.lossless
+        if inline.mimeType != attachment.mimeType {
+          item["transport_mime_type"] = inline.mimeType
+        }
+        if inline.displayName != attachment.displayName {
+          item["transport_name"] = inline.displayName
+        }
+        remaining -= inline.data.count
       } else {
         item["inline_status"] = "metadata_only"
       }

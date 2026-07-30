@@ -11,6 +11,57 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var nextAttemptAt: Date
   var createdAt: Date
   var updatedAt: Date
+  var requiresValidatedNetwork: Bool
+
+  init(
+    messageId: String,
+    topic: String,
+    wirePayload: String,
+    status: String,
+    attempts: Int,
+    nextAttemptAt: Date,
+    createdAt: Date,
+    updatedAt: Date,
+    requiresValidatedNetwork: Bool = false
+  ) {
+    self.messageId = messageId
+    self.topic = topic
+    self.wirePayload = wirePayload
+    self.status = status
+    self.attempts = attempts
+    self.nextAttemptAt = nextAttemptAt
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+    self.requiresValidatedNetwork = requiresValidatedNetwork
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case messageId
+    case topic
+    case wirePayload
+    case status
+    case attempts
+    case nextAttemptAt
+    case createdAt
+    case updatedAt
+    case requiresValidatedNetwork = "requires_validated_network"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    messageId = try container.decode(String.self, forKey: .messageId)
+    topic = try container.decode(String.self, forKey: .topic)
+    wirePayload = try container.decode(String.self, forKey: .wirePayload)
+    status = try container.decode(String.self, forKey: .status)
+    attempts = try container.decode(Int.self, forKey: .attempts)
+    nextAttemptAt = try container.decode(Date.self, forKey: .nextAttemptAt)
+    createdAt = try container.decode(Date.self, forKey: .createdAt)
+    updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    requiresValidatedNetwork = try container.decodeIfPresent(
+      Bool.self,
+      forKey: .requiresValidatedNetwork
+    ) ?? false
+  }
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -79,7 +130,13 @@ final class SignalASILinkDeliveryStore {
     return true
   }
 
-  func enqueue(messageId: String, topic: String, wirePayload: String, now: Date = Date()) {
+  func enqueue(
+    messageId: String,
+    topic: String,
+    wirePayload: String,
+    requiresValidatedNetwork: Bool = false,
+    now: Date = Date()
+  ) {
     guard !messageId.isEmpty, !topic.isEmpty, !wirePayload.isEmpty else { return }
     guard !state.outbox.contains(where: { $0.messageId == messageId }) else { return }
     state.outbox.append(
@@ -91,7 +148,8 @@ final class SignalASILinkDeliveryStore {
         attempts: 0,
         nextAttemptAt: now,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        requiresValidatedNetwork: requiresValidatedNetwork
       )
     )
     save()
@@ -124,9 +182,17 @@ final class SignalASILinkDeliveryStore {
     }
   }
 
-  func pending(now: Date = Date()) -> [PendingLinkMessage] {
+  func pending(
+    now: Date = Date(),
+    allowValidatedNetworkMessages: Bool = true
+  ) -> [PendingLinkMessage] {
     state.outbox
-      .filter { $0.nextAttemptAt <= now }
+      .filter { item in
+        if item.requiresValidatedNetwork && !allowValidatedNetworkMessages {
+          return false
+        }
+        return item.nextAttemptAt <= now
+      }
       .sorted { left, right in
         if left.nextAttemptAt == right.nextAttemptAt {
           return left.createdAt < right.createdAt
@@ -135,8 +201,14 @@ final class SignalASILinkDeliveryStore {
       }
   }
 
-  func nextRetryDelay(now: Date = Date()) -> TimeInterval? {
+  func nextRetryDelay(
+    now: Date = Date(),
+    allowValidatedNetworkMessages: Bool = true
+  ) -> TimeInterval? {
     state.outbox
+      .filter { item in
+        !(item.requiresValidatedNetwork && !allowValidatedNetworkMessages)
+      }
       .map { max(0, $0.nextAttemptAt.timeIntervalSince(now)) }
       .min()
   }
