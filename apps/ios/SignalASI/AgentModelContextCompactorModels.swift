@@ -90,19 +90,29 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
   var callId: String
   var toolId: String
   var arguments: AgentMcpJSONObject
+  var toolVersion: String?
 
   var id: String { callId }
 
-  init(callId: String, toolId: String, arguments: AgentMcpJSONObject = [:]) {
+  init(
+    callId: String,
+    toolId: String,
+    arguments: AgentMcpJSONObject = [:],
+    toolVersion: String? = nil
+  ) {
     self.callId = String(callId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
     self.toolId = String(toolId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
     self.arguments = arguments
+    self.toolVersion = toolVersion?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
   }
 
   enum CodingKeys: String, CodingKey {
     case callId = "call_id"
     case toolId = "tool_id"
     case arguments
+    case toolVersion = "tool_version"
   }
 
   init(from decoder: Decoder) throws {
@@ -110,7 +120,8 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
     self.init(
       callId: try container.decodeIfPresent(String.self, forKey: .callId) ?? "",
       toolId: try container.decodeIfPresent(String.self, forKey: .toolId) ?? "",
-      arguments: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .arguments) ?? [:]
+      arguments: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .arguments) ?? [:],
+      toolVersion: try container.decodeIfPresent(String.self, forKey: .toolVersion)
     )
   }
 }
