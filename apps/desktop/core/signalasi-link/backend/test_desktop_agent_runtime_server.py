@@ -9,6 +9,7 @@ from desktop_agent_adapters import (
     AgentAdapterExecutionError,
     AgentAdapterRequest,
     AgentInvocationMode,
+    AgentRunPriority,
     DesktopAgentProvider,
     DesktopAgentStateStore,
 )
@@ -87,6 +88,7 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         route_id: str = "phone-1",
         turn_id: str = "",
         agent_id: str = "codex",
+        priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
     ) -> AgentAdapterRequest:
         return AgentAdapterRequest(
             agent_id=agent_id,
@@ -94,6 +96,7 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
             run_id=run_id,
             idempotency_key=idempotency_key or run_id,
             conversation_id=conversation_id,
+            priority=priority,
             checkpoint={
                 "client_route_id": route_id,
                 "task_id": run_id,
@@ -305,6 +308,82 @@ class DesktopAgentRuntimeServerTest(unittest.TestCase):
         for request in requests:
             server.execute(request)
         self.assertEqual(2, peak)
+
+    def test_background_run_does_not_block_foreground_chat(self):
+        background_started = threading.Event()
+        release_background = threading.Event()
+        foreground_completed = threading.Event()
+
+        def execute(agent_id, request):
+            self.calls.append((agent_id, request.prompt))
+            if request.priority == AgentRunPriority.BACKGROUND:
+                background_started.set()
+                release_background.wait(timeout=3)
+                return "background-done"
+            foreground_completed.set()
+            return "foreground-done"
+
+        server = self.server(execute, max_workers=1)
+        background = self.request(
+            "scheduled maintenance",
+            run_id="background-run",
+            priority=AgentRunPriority.BACKGROUND,
+        )
+        foreground = self.request(
+            "hello",
+            run_id="foreground-run",
+            priority=AgentRunPriority.FOREGROUND,
+        )
+
+        server.submit(background)
+        self.assertTrue(background_started.wait(timeout=1))
+        result = server.execute(foreground, timeout_seconds=1)
+
+        self.assertTrue(foreground_completed.is_set())
+        self.assertEqual("foreground-done", result.reply)
+        self.assertEqual("running", server.status(background.run_id)["state"])
+        health = server.health()
+        self.assertEqual(1, health["capacity"]["background_active_runs"])
+        self.assertEqual(0, health["capacity"]["foreground_active_runs"])
+
+        release_background.set()
+        self.assertEqual("completed", server.execute(background).state)
+
+    def test_background_runs_remain_serialized(self):
+        first_started = threading.Event()
+        second_started = threading.Event()
+        release_first = threading.Event()
+
+        def execute(_agent_id, request):
+            if request.run_id == "background-one":
+                first_started.set()
+                release_first.wait(timeout=3)
+            else:
+                second_started.set()
+            return request.prompt
+
+        server = self.server(execute, max_workers=2)
+        first = self.request(
+            "one",
+            run_id="background-one",
+            priority=AgentRunPriority.BACKGROUND,
+        )
+        second = self.request(
+            "two",
+            run_id="background-two",
+            priority=AgentRunPriority.BACKGROUND,
+        )
+
+        server.submit(first)
+        self.assertTrue(first_started.wait(timeout=1))
+        server.submit(second)
+        time.sleep(0.05)
+        self.assertFalse(second_started.is_set())
+
+        release_first.set()
+        self.assertEqual("completed", server.execute(first).state)
+        self.assertEqual("completed", server.execute(second).state)
+        self.assertTrue(second_started.is_set())
 
     def test_queued_run_can_be_cancelled_without_agent_execution(self):
         started = threading.Event()

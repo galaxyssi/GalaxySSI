@@ -987,6 +987,7 @@ class DesktopProactiveDispatcher:
                     or task.action.arguments.get("workspace_root")
                     or ""
                 ).strip(),
+                priority="background",
             )
         except Exception as exc:
             raise ProactiveTaskError(

@@ -76,6 +76,77 @@ class AgentTaskSupervisorTest {
     }
 
     @Test
+    fun foregroundChatStartsWhileBackgroundWorkUsesItsReservedCapacity() = runBlocking {
+        val store = InMemoryAgentWorkspaceStore()
+        val supervisor = AgentTaskSupervisor(store, maxConcurrentReadReasoningTasks = 2)
+        val backgroundStarted = CompletableDeferred<Unit>()
+        val secondBackgroundStarted = CompletableDeferred<Unit>()
+        val foregroundStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        val firstBackground = supervisor.submit(
+            workspace("background-one"),
+            AgentTaskLane.READ_REASONING,
+            AgentTaskPriority.BACKGROUND
+        ) {
+            backgroundStarted.complete(Unit)
+            release.await()
+        }
+        withTimeout(TEST_TIMEOUT_MILLIS) { backgroundStarted.await() }
+        val secondBackground = supervisor.submit(
+            workspace("background-two"),
+            AgentTaskLane.READ_REASONING,
+            AgentTaskPriority.BACKGROUND
+        ) {
+            secondBackgroundStarted.complete(Unit)
+            release.await()
+        }
+        val foreground = supervisor.submit(
+            workspace("foreground"),
+            AgentTaskLane.READ_REASONING,
+            AgentTaskPriority.FOREGROUND
+        ) {
+            foregroundStarted.complete(Unit)
+            release.await()
+        }
+
+        withTimeout(TEST_TIMEOUT_MILLIS) { foregroundStarted.await() }
+        assertFalse(secondBackgroundStarted.isCompleted)
+        assertEquals(1, AgentForegroundWorkCoordinator.activeCount)
+
+        release.complete(Unit)
+        listOf(firstBackground.job, secondBackground.job, foreground.job).joinAll()
+
+        assertTrue(secondBackgroundStarted.isCompleted)
+        assertEquals(0, AgentForegroundWorkCoordinator.activeCount)
+        supervisor.shutdown()
+    }
+
+    @Test
+    fun foregroundLeaseCoversQueuedAndRunningLifecycle() = runBlocking {
+        val store = InMemoryAgentWorkspaceStore()
+        val supervisor = AgentTaskSupervisor(store)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+
+        val handle = supervisor.submit(
+            workspace("foreground-lease"),
+            priority = AgentTaskPriority.FOREGROUND
+        ) {
+            started.complete(Unit)
+            release.await()
+        }
+
+        assertTrue(AgentForegroundWorkCoordinator.hasForegroundWork)
+        withTimeout(TEST_TIMEOUT_MILLIS) { started.await() }
+        release.complete(Unit)
+        handle.join()
+
+        assertFalse(AgentForegroundWorkCoordinator.hasForegroundWork)
+        supervisor.shutdown()
+    }
+
+    @Test
     fun sideEffectLaneRunsOneTaskAtATime() = runBlocking {
         val store = InMemoryAgentWorkspaceStore()
         val supervisor = AgentTaskSupervisor(store)

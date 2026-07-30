@@ -43,6 +43,7 @@ from desktop_agent_adapters import (
     AgentAdapterRequest,
     AgentDeliveryMode,
     AgentInvocationMode,
+    AgentRunPriority,
     DesktopAgentProvider,
     DesktopAgentStateStore,
     MAX_HANDOFF_DEPTH,
@@ -794,6 +795,7 @@ def _execute_agent_adapter_request(agent_id: str, request: AgentAdapterRequest) 
                         "actor_id": collaboration_actor_id,
                         "collaboration_channel_ids": collaboration_channel_ids,
                     },
+                    priority=request.priority,
                 )
         harness.account_usage(
             output_tokens=estimate_text_tokens(str(raw_reply or "")),
@@ -1828,6 +1830,7 @@ def deliver_agent_sync(
     caller_agent_id: str = "",
     parent_run_id: str = "",
     handoff_chain: tuple[str, ...] = (),
+    priority: str | AgentRunPriority = AgentRunPriority.FOREGROUND,
 ) -> dict:
     from agent_execution_harness import execution_policy_for
 
@@ -1865,6 +1868,7 @@ def deliver_agent_sync(
                 source_message_id=source_message_id,
                 return_path=return_path,
                 response_language=response_language,
+                priority=AgentRunPriority.parse(priority),
                 checkpoint={
                     "task_id": resolved_task_id,
                     "client_route_id": client_route_id,
@@ -1941,6 +1945,7 @@ def _ask_agent_sync_inner(
     plan_only: bool = False,
     working_directory: Path | None = None,
     file_access_context: dict | None = None,
+    priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
 ) -> str:
     if spec is None:
         return f"[SignalASI] \u672a\u77e5 Agent: {contact_id}"
@@ -1958,6 +1963,7 @@ def _ask_agent_sync_inner(
         plan_only=plan_only,
         working_directory=working_directory,
         file_access_context=file_access_context,
+        priority=priority,
     )
 
 
@@ -2123,6 +2129,7 @@ def ask_cli_agent(
     plan_only: bool = False,
     working_directory: Path | None = None,
     file_access_context: dict | None = None,
+    priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
 ) -> str:
     command = _command_for(spec)
     if not command:
@@ -2142,6 +2149,7 @@ def ask_cli_agent(
             plan_only=plan_only,
             working_directory=working_directory,
             file_access_context=file_access_context,
+            priority=priority,
         )
 
 
@@ -2167,6 +2175,7 @@ def ask_evolution_agent(
         response_language="en",
         restricted_workspace=True,
         working_directory=candidate,
+        priority=AgentRunPriority.BACKGROUND,
     )
 
 
@@ -2248,6 +2257,7 @@ def _ask_cli_agent_locked(
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
     file_access_context: dict | None = None,
+    priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
 ) -> str:
     from agent_conversation_sessions import agent_conversation_sessions
 
@@ -2309,6 +2319,7 @@ def _ask_cli_agent_locked(
         retried_stale_session=retried_stale_session,
         working_directory=working_directory,
         file_access_context=file_access_context,
+        priority=priority,
     )
 
 
@@ -2326,6 +2337,7 @@ def _run_cli_agent_process(
     retried_stale_session: bool = False,
     working_directory: Path | None = None,
     file_access_context: dict | None = None,
+    priority: AgentRunPriority = AgentRunPriority.FOREGROUND,
 ) -> str:
     process: subprocess.Popen | None = None
     workspace_capture = None
@@ -2440,6 +2452,7 @@ def _run_cli_agent_process(
                     working_directory=str(execution_directory),
                     response_language=response_language,
                     timeout_seconds=spec.timeout,
+                    priority=priority.value,
                     metadata={
                         "desktop_access_profile": "desktop_executor",
                         "transport": "signalasi-jsonl-v1",
@@ -2516,6 +2529,7 @@ def _run_cli_agent_process(
                     retried_stale_session=True,
                     working_directory=working_directory,
                     file_access_context=file_access_context,
+                    priority=priority,
                 )
             return f"[{spec.name}] \u8c03\u7528\u5931\u8d25\uff1a{failure[:200]}"
         raw = (stdout_text or stderr_text).strip()

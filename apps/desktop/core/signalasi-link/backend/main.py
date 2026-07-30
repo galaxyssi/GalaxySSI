@@ -42,6 +42,7 @@ from desktop_agent_adapters import (
     AgentAdapterRequest,
     AgentDeliveryMode,
     AgentInvocationMode,
+    AgentRunPriority,
 )
 from agent_collaboration_channels import (
     AgentCollaborationAccessError,
@@ -667,6 +668,7 @@ class AgentRuntimeSubmitReq(BaseModel):
     protocol: str = "1.0"
     required_features: list[str] = Field(default_factory=list)
     response_language: str = ""
+    priority: str = "foreground"
     desktop_access_profile: str = "restricted"
     collaboration_channel_ids: list[str] = Field(default_factory=list)
     collaboration_actor_id: str = ""
@@ -1424,6 +1426,7 @@ def api_submit_agent_runtime_run(req: AgentRuntimeSubmitReq, request: Request):
                 source_message_id=req.source_message_id,
                 return_path=req.return_path,
                 response_language=req.response_language,
+                priority=AgentRunPriority.parse(req.priority),
                 checkpoint={
                     "client_route_id": req.client_route_id,
                     "conversation_id": req.conversation_id,
