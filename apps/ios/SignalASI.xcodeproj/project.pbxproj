@@ -109,6 +109,7 @@
     A10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */; };
     A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000186 /* AgentActiveTurnPolicy.swift */; };
     A10000000000000000000187 /* AgentResponseSelfCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000187 /* AgentResponseSelfCheck.swift */; };
+    A10000000000000000000188 /* AgentTaskBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000188 /* AgentTaskBudgetModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -165,6 +166,7 @@
     A10000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */; };
     A10000000000000000000255 /* AgentActiveTurnPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000255 /* AgentActiveTurnPolicyTests.swift */; };
     A10000000000000000000256 /* AgentResponseSelfCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000256 /* AgentResponseSelfCheckTests.swift */; };
+    A10000000000000000000257 /* AgentTaskBudgetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000257 /* AgentTaskBudgetTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -272,6 +274,7 @@
     A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000186 /* AgentActiveTurnPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActiveTurnPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000187 /* AgentResponseSelfCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSelfCheck.swift; sourceTree = "<group>"; };
+    A20000000000000000000188 /* AgentTaskBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -328,6 +331,7 @@
     A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceBoundsPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000255 /* AgentActiveTurnPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActiveTurnPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000256 /* AgentResponseSelfCheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSelfCheckTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000257 /* AgentTaskBudgetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskBudgetTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -436,6 +440,7 @@
         A20000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift */,
         A20000000000000000000186 /* AgentActiveTurnPolicy.swift */,
         A20000000000000000000187 /* AgentResponseSelfCheck.swift */,
+        A20000000000000000000188 /* AgentTaskBudgetModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -513,6 +518,7 @@
         A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */,
         A20000000000000000000255 /* AgentActiveTurnPolicyTests.swift */,
         A20000000000000000000256 /* AgentResponseSelfCheckTests.swift */,
+        A20000000000000000000257 /* AgentTaskBudgetTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -697,6 +703,7 @@
         A10000000000000000000185 /* AgentWorkspaceBoundsPolicy.swift in Sources */,
         A10000000000000000000186 /* AgentActiveTurnPolicy.swift in Sources */,
         A10000000000000000000187 /* AgentResponseSelfCheck.swift in Sources */,
+        A10000000000000000000188 /* AgentTaskBudgetModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -774,6 +781,7 @@
         A10000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift in Sources */,
         A10000000000000000000255 /* AgentActiveTurnPolicyTests.swift in Sources */,
         A10000000000000000000256 /* AgentResponseSelfCheckTests.swift in Sources */,
+        A10000000000000000000257 /* AgentTaskBudgetTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
