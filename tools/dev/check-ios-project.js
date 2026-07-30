@@ -121,6 +121,8 @@ const requiredProjectSnippets = [
   "GuardedModelAgentPlannerTests.swift in Sources",
   "CloudModelAgentPlanningProvider.swift in Sources",
   "CloudModelAgentPlanningProviderTests.swift in Sources",
+  "AgentModelPlannerContactResolver.swift in Sources",
+  "AgentModelPlannerContactResolverTests.swift in Sources",
 ];
 
 const requiredSourceSnippets = [
@@ -1004,6 +1006,7 @@ const requiredSourceSnippets = [
   [readme, "Android-style model planning prompt builder"],
   [readme, "Android-style guarded model agent planner core"],
   [readme, "Android-style cloud model planning provider"],
+  [readme, "Android-style model planner contact resolution"],
   [models, "AgentModelContextCompactor"],
   [models, "AgentModelMessage"],
   [models, "ConversationContextBudget"],
@@ -1046,6 +1049,9 @@ const requiredSourceSnippets = [
   [models, "CloudModelAgentPlanningProvider"],
   [models, "CloudModelStructuredSending"],
   [models, "sendStructured"],
+  [models, "AgentModelPlannerContactResolver"],
+  [models, "AgentModelPlannerContactResolution"],
+  [models, "makePlanningProvider"],
   [models, "skill_explicit_match"],
   [models, "trigger_examples"],
   [models, "additional_properties"],
@@ -1619,6 +1625,10 @@ const requiredSourceSnippets = [
   [tests, "testAgentModelPlanningInvocationUsesAndroidWireNames"],
   [tests, "testCloudModelAgentPlanningProviderForwardsStructuredInvocation"],
   [tests, "testCloudModelClientStructuredRejectsPlaceholderCredentialBeforeNetwork"],
+  [tests, "testAgentModelPlannerContactResolverPrefersConfiguredReadyContact"],
+  [tests, "testAgentModelPlannerContactResolverFallsBackToFirstReadyStoredContact"],
+  [tests, "testAgentModelPlannerContactResolverRejectsUnsafeCandidates"],
+  [tests, "testAgentModelPlannerContactResolverUsesSelectedModelAndNormalizesInvalidSelection"],
   [tests, "testAgentNativeToolResultModelsUseAndroidWireNames"],
   [tests, "testAgentNativeToolReplayStoreEvictsOldestAndClears"],
   [tests, "testAgentNativeToolReplaySnapshotStoreKeepsSuccessfulFreshResults"],
