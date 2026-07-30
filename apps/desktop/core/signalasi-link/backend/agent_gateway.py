@@ -2376,6 +2376,14 @@ def _run_cli_agent_process(
 ) -> str:
     process: subprocess.Popen | None = None
     workspace_capture = None
+
+    def finish_workspace_capture() -> None:
+        nonlocal workspace_capture
+        capture = workspace_capture
+        workspace_capture = None
+        if capture is not None:
+            capture.finish()
+
     try:
         from task_workspace import task_workspace
 
@@ -2423,7 +2431,7 @@ def _run_cli_agent_process(
         )
         if not execution_directory.is_dir():
             raise RuntimeError("Agent working directory is unavailable")
-        if not isinstance(file_access_context, dict) and working_directory is not None:
+        if not isinstance(file_access_context, dict):
             from agent_file_access_ledger import (
                 FileAccessScope,
                 repository_identity as file_repository_identity,
@@ -2504,6 +2512,7 @@ def _run_cli_agent_process(
                 cwd=pool_root,
                 process_limit=cli_runtime["pool_size"],
             )
+            finish_workspace_capture()
             if pooled.session_id and conversation_id:
                 from agent_conversation_sessions import agent_conversation_sessions
 
@@ -2535,6 +2544,7 @@ def _run_cli_agent_process(
             input=stdin_text.encode("utf-8") if stdin_text is not None else None,
             timeout=None if task_id else spec.timeout,
         )
+        finish_workspace_capture()
         if task_id:
             agent_task_manager.record_exit_code(task_id, process.returncode)
         stdout_text = decode_output(stdout or b"").strip()
@@ -2594,7 +2604,7 @@ def _run_cli_agent_process(
     finally:
         if workspace_capture is not None:
             try:
-                workspace_capture.finish()
+                finish_workspace_capture()
             except Exception:
                 log.debug(
                     "Agent workspace file access capture failed",

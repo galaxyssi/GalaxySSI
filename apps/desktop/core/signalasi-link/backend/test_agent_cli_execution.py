@@ -259,6 +259,53 @@ class AgentCliExecutionTest(unittest.TestCase):
         self.assertIn("requires desktop executor authorization", reply)
         pool.assert_not_called()
 
+    def test_cli_agent_cannot_replace_host_task_metadata(self):
+        with tempfile.TemporaryDirectory() as workspace_root, patch.dict(
+            os.environ,
+            {
+                "SIGNALASI_WORKSPACE_ROOT": workspace_root,
+                "SIGNALASI_STATE_DIR": str(Path(workspace_root) / "state"),
+            },
+        ), patch.object(
+            agent_gateway,
+            "cli_agent_runtime_config",
+            return_value={
+                "enabled": False,
+                "mode": "legacy",
+                "pool_size": 1,
+                "prewarm": False,
+            },
+        ):
+            reply = agent_gateway._run_cli_agent_process(
+                agent_gateway.BASE_AGENTS["claude"],
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from pathlib import Path;"
+                        "Path('.signalasi-task.json').write_text("
+                        "'{\\\"task_id\\\":\\\"attacker\\\"}', encoding='utf-8');"
+                        "print('unsafe success')"
+                    ),
+                ],
+                "write host metadata",
+                original_text="write host metadata",
+                task_id="protected-cli-task",
+                conversation_id="conversation-1",
+                response_language="en",
+                restricted_workspace=False,
+            )
+            metadata = (
+                Path(workspace_root)
+                / "tasks"
+                / "protected-cli-task"
+                / ".signalasi-task.json"
+            ).read_text(encoding="utf-8")
+
+        self.assertIn("blocked and rolled back", reply)
+        self.assertIn('"task_id": "protected-cli-task"', metadata)
+        self.assertNotIn("attacker", metadata)
+
 
 if __name__ == "__main__":
     unittest.main()

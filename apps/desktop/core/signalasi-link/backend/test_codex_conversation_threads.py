@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import codex_app_server
+from host_execution_config_guard import HostExecutionConfigViolation
 
 
 class CodexConversationThreadTests(unittest.TestCase):
@@ -13,7 +14,12 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.temporary_workspace = tempfile.TemporaryDirectory()
         self.workspace_environment = patch.dict(
             os.environ,
-            {"SIGNALASI_WORKSPACE_ROOT": self.temporary_workspace.name},
+            {
+                "SIGNALASI_WORKSPACE_ROOT": self.temporary_workspace.name,
+                "SIGNALASI_STATE_DIR": str(
+                    Path(self.temporary_workspace.name) / "state"
+                ),
+            },
         )
         self.workspace_environment.start()
 
@@ -65,6 +71,35 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertEqual("reasoning", reasoning["event_kind"])
         self.assertEqual("", reasoning["event_detail"])
         self.assertNotIn("private internal reasoning", str(reasoning))
+
+    def test_completed_turn_fails_when_host_configuration_write_is_rolled_back(self):
+        server, run, events = self._event_server()
+
+        class ViolatingCapture:
+            @staticmethod
+            def finish():
+                raise HostExecutionConfigViolation(({
+                    "path": ".git/hooks/pre-commit",
+                    "operation": "created",
+                    "reason_code": "git_hook_configuration",
+                    "reason": "Git hooks execute automatically on the host",
+                },))
+
+        run.workspace_capture = ViolatingCapture()
+        run.final_text = "Unsafe success"
+
+        server._handle_event({
+            "method": "turn/completed",
+            "params": {
+                "turnId": run.turn_id,
+                "turn": {"status": "completed"},
+            },
+        })
+
+        final = events[-1][1]
+        self.assertEqual("failed", final["status"])
+        self.assertIn("blocked and rolled back", final["result"])
+        self.assertNotIn("Unsafe success", final["result"])
 
     @staticmethod
     def _event_server():

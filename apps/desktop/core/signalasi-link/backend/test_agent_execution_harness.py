@@ -19,6 +19,7 @@ from agent_execution_harness import (
     AgentTaskBudgetLimit,
     AgentTaskBudgetProfile,
     AgentTaskBudgetUsage,
+    execution_checkpoint_paths,
     AgentTaskNetworkPolicy,
     AgentTaskIntent,
     AgentTaskKind,
@@ -369,7 +370,10 @@ class AgentExecutionHarnessTests(unittest.TestCase):
     def test_task_budget_usage_persists_without_counting_process_downtime(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ,
-            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+            {
+                "SIGNALASI_WORKSPACE_ROOT": temporary,
+                "SIGNALASI_STATE_DIR": str(Path(temporary) / "state"),
+            },
         ):
             policy = execution_policy_for(
                 "Build a small program",
@@ -387,11 +391,10 @@ class AgentExecutionHarnessTests(unittest.TestCase):
                 policy=policy,
             )
             harness.account_usage(input_tokens=8, output_tokens=3, estimated=True)
-            checkpoint = (
-                task_workspace("task-resource-budget", "codex")
-                / ".signalasi"
-                / "execution-checkpoint.json"
-            )
+            checkpoint = execution_checkpoint_paths(
+                "task-resource-budget",
+                "codex",
+            )[0]
             value = json.loads(checkpoint.read_text(encoding="utf-8"))
             value["active_elapsed_seconds"] = 5
             value["active_started_at"] = 1
@@ -414,7 +417,10 @@ class AgentExecutionHarnessTests(unittest.TestCase):
     def test_checkpoint_and_same_failure_budget_are_persistent(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ,
-            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+            {
+                "SIGNALASI_WORKSPACE_ROOT": temporary,
+                "SIGNALASI_STATE_DIR": str(Path(temporary) / "state"),
+            },
         ):
             harness = AgentExecutionHarness(
                 "task-checkpoint",
@@ -429,11 +435,10 @@ class AgentExecutionHarnessTests(unittest.TestCase):
                 "command",
                 "python verify.py exited 2",
             )
-            checkpoint = (
-                task_workspace("task-checkpoint", "hermes")
-                / ".signalasi"
-                / "execution-checkpoint.json"
-            )
+            checkpoint = execution_checkpoint_paths(
+                "task-checkpoint",
+                "hermes",
+            )[0]
             data = json.loads(checkpoint.read_text(encoding="utf-8"))
 
             self.assertTrue(can_replan)
@@ -462,7 +467,10 @@ class AgentExecutionHarnessTests(unittest.TestCase):
     def test_concurrent_checkpoint_progress_keeps_valid_json(self):
         with tempfile.TemporaryDirectory() as temporary, patch.dict(
             os.environ,
-            {"SIGNALASI_WORKSPACE_ROOT": temporary},
+            {
+                "SIGNALASI_WORKSPACE_ROOT": temporary,
+                "SIGNALASI_STATE_DIR": str(Path(temporary) / "state"),
+            },
         ):
             harness = AgentExecutionHarness(
                 "task-concurrent-checkpoint",
@@ -486,11 +494,10 @@ class AgentExecutionHarnessTests(unittest.TestCase):
             for thread in threads:
                 thread.join()
 
-            checkpoint = (
-                task_workspace("task-concurrent-checkpoint", "codex")
-                / ".signalasi"
-                / "execution-checkpoint.json"
-            )
+            checkpoint = execution_checkpoint_paths(
+                "task-concurrent-checkpoint",
+                "codex",
+            )[0]
             data = json.loads(checkpoint.read_text(encoding="utf-8"))
             temporary_files = list(checkpoint.parent.glob("*.tmp"))
 
