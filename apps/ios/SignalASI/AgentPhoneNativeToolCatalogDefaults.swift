@@ -2,7 +2,7 @@ import Foundation
 
 extension AgentPhoneNativeToolCatalog {
   static func defaultRegistry(
-    workspaceStore: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor(),
+    workspaceStore: AgentWorkspaceNativeToolExecutor? = nil,
     actionExecutor: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
@@ -27,8 +27,12 @@ extension AgentPhoneNativeToolCatalog {
       fileManager: fileManager,
       nowMillis: nowMillis
     )
+    let resolvedWorkspaceStore = workspaceStore ?? AgentWorkspaceNativeToolExecutor(
+      nowMillis: nowMillis,
+      stateStore: stores.workspaceStateStore
+    )
     return try createRegistry(
-      workspaceStore: workspaceStore,
+      workspaceStore: resolvedWorkspaceStore,
       actionExecutor: actionExecutor,
       screenProvider: screenProvider,
       capabilityStatuses: capabilityStatuses,
@@ -49,7 +53,7 @@ extension AgentPhoneNativeToolCatalog {
   }
 
   static func createDefault(
-    workspaceStore: AgentWorkspaceNativeToolExecutor = AgentWorkspaceNativeToolExecutor(),
+    workspaceStore: AgentWorkspaceNativeToolExecutor? = nil,
     actionExecutor: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
     capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
