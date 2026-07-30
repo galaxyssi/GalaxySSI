@@ -12689,6 +12689,429 @@ struct AgentIOSSystemNativeToolExecutor {
   }
 }
 
+protocol AgentIOSHardwareStatusProviding {
+  func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func powerStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func storageStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject
+}
+
+struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
+  func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    [
+      "percent": .null,
+      "charging": .bool(false),
+      "plugged": .string("unknown"),
+      "status": .string("unknown"),
+      "health": .string("unknown"),
+      "scope": .string("app_visible_ios"),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  func powerStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    [
+      "interactive": .bool(true),
+      "low_power_mode": .bool(ProcessInfo.processInfo.isLowPowerModeEnabled),
+      "thermal_state": .string(thermalState(ProcessInfo.processInfo.thermalState)),
+      "settings_changed": .bool(false),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  func storageStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    let attributes = (try? FileManager.default.attributesOfFileSystem(forPath: NSHomeDirectory())) ?? [:]
+    let total = int64(attributes[.systemSize])
+    let available = int64(attributes[.systemFreeSize])
+    return [
+      "scope": .string("app_private_volume"),
+      "total_bytes": .int(total),
+      "available_bytes": .int(available),
+      "used_bytes": .int(max(0, total - available)),
+      "low_storage": .bool(total > 0 && available < max(100 * 1_024 * 1_024, total / 20)),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    [
+      "connected": .bool(false),
+      "validated": .bool(false),
+      "metered": .bool(false),
+      "roaming": .bool(false),
+      "transports": .array([]),
+      "identifiers_included": .bool(false),
+      "scope": .string("app_visible_ios_requires_network_probe"),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  private func int64(_ value: Any?) -> Int64 {
+    if let value = value as? NSNumber {
+      return max(0, value.int64Value)
+    }
+    if let value = value as? Int64 {
+      return max(0, value)
+    }
+    if let value = value as? Int {
+      return max(0, Int64(value))
+    }
+    return 0
+  }
+
+  private func thermalState(_ state: ProcessInfo.ThermalState) -> String {
+    switch state {
+    case .nominal:
+      return "nominal"
+    case .fair:
+      return "fair"
+    case .serious:
+      return "serious"
+    case .critical:
+      return "critical"
+    @unknown default:
+      return "unknown"
+    }
+  }
+}
+
+enum AgentIOSHardwareNativeToolCatalog {
+  static let batteryStatus = AgentPhoneCapabilityNativeCoverage.batteryStatus
+  static let powerStatus = AgentPhoneCapabilityNativeCoverage.powerStatus
+  static let storageStatus = "signalasi.hardware.storage.status"
+  static let networkStatus = AgentPhoneCapabilityNativeCoverage.networkStatus
+  static let locationForegroundRead = AgentPhoneCapabilityNativeCoverage.locationForegroundRead
+  static let sensorsList = AgentPhoneCapabilityNativeCoverage.sensorsList
+  static let sensorSample = AgentPhoneCapabilityNativeCoverage.sensorSample
+  static let flashlightSet = "signalasi.hardware.flashlight.set"
+  static let bluetoothStatus = AgentPhoneCapabilityNativeCoverage.bluetoothStatus
+  static let bluetoothDiscoveryForeground = AgentPhoneCapabilityNativeCoverage.bluetoothDiscoveryForeground
+  static let bluetoothPairingHandoff = AgentPhoneCapabilityNativeCoverage.bluetoothPairingHandoff
+  static let nfcStatus = AgentPhoneCapabilityNativeCoverage.nfcStatus
+  static let installedAppsList = AgentPhoneCapabilityNativeCoverage.installedAppsList
+  static let packageDetail = AgentPhoneCapabilityNativeCoverage.packageDetail
+
+  static let executorId = "signalasi.ios.hardware_native"
+  static let hardwareStatusPermission = "signalasi.scope.ios_app_visible_hardware_status"
+  static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
+
+  static let executableToolIds: Set<String> = [
+    batteryStatus,
+    powerStatus,
+    storageStatus,
+    networkStatus,
+    bluetoothPairingHandoff
+  ]
+
+  static var orderedToolIds: [String] {
+    specifications.map(\.id)
+  }
+
+  static var toolIds: Set<String> {
+    Set(orderedToolIds)
+  }
+
+  static func definitions() -> [AgentPhoneNativeToolDefinition] {
+    specifications.map(definition)
+  }
+
+  static func descriptors() -> [AgentNativeToolDescriptor] {
+    definitions().map(\.descriptor)
+  }
+
+  private struct Specification {
+    var id: String
+    var title: String
+    var description: String
+    var risk: AgentNativeToolRisk
+    var capabilities: Set<String>
+    var permissions: [AgentNativePermissionRequirement]
+    var consents: [AgentNativeConsentRequirement]
+    var availability: AgentNativeToolAvailability
+  }
+
+  private static let specifications: [Specification] = [
+    statusSpec(batteryStatus, "Read battery status", "Reads app-visible iOS battery status without vendor diagnostics.", ["battery.status"]),
+    statusSpec(powerStatus, "Read power status", "Reads app-visible iOS power and thermal status without changing settings.", ["power.status"]),
+    statusSpec(storageStatus, "Read storage status", "Reads bounded app-volume storage capacity signals.", ["storage.status"]),
+    statusSpec(networkStatus, "Read network status", "Returns identifier-free app-visible network state from the iOS status provider.", ["network.status"]),
+    unavailableSpec(
+      locationForegroundRead,
+      "Read foreground location",
+      "Requires a CoreLocation foreground executor and runtime permission prompt before iOS can return a bounded fix.",
+      .high,
+      ["location.foreground_once"],
+      ["NSLocationWhenInUseUsageDescription"],
+      ["signalasi.consent.location.foreground_once"]
+    ),
+    unavailableSpec(
+      sensorsList,
+      "List iOS sensors",
+      "Requires a CoreMotion sensor catalog executor; health and background streams remain excluded.",
+      .medium,
+      ["sensors.metadata"],
+      [],
+      []
+    ),
+    unavailableSpec(
+      sensorSample,
+      "Sample iOS sensor once",
+      "Requires a foreground CoreMotion sample executor and per-invocation consent.",
+      .medium,
+      ["sensors.non_health_allowlist"],
+      [],
+      ["signalasi.consent.sensor.foreground_once"]
+    ),
+    unavailableSpec(
+      flashlightSet,
+      "Set flashlight",
+      "Requires an AVFoundation torch executor, camera permission, and explicit user consent.",
+      .medium,
+      ["flashlight.control"],
+      ["NSCameraUsageDescription"],
+      ["signalasi.consent.flashlight.control"]
+    ),
+    unavailableSpec(
+      bluetoothStatus,
+      "Read Bluetooth status",
+      "Requires a CoreBluetooth executor and iOS Bluetooth permission before status can be reported.",
+      .medium,
+      ["bluetooth.status"],
+      ["NSBluetoothAlwaysUsageDescription"],
+      []
+    ),
+    unavailableSpec(
+      bluetoothDiscoveryForeground,
+      "Discover Bluetooth devices once",
+      "Requires a foreground CoreBluetooth scan executor and per-invocation consent.",
+      .high,
+      ["bluetooth.discovery.foreground"],
+      ["NSBluetoothAlwaysUsageDescription"],
+      ["signalasi.consent.bluetooth.discovery.foreground_once"]
+    ),
+    handoffSpec(
+      bluetoothPairingHandoff,
+      "Open Bluetooth pairing settings",
+      "Returns a user-visible iOS Settings handoff request; iOS does not allow silent Bluetooth pairing."
+    ),
+    unavailableSpec(
+      nfcStatus,
+      "Read NFC capability status",
+      "Requires a CoreNFC executor; tag reading still needs a foreground user-visible session.",
+      .medium,
+      ["nfc.status"],
+      ["NFCReaderUsageDescription"],
+      []
+    ),
+    unavailableSpec(
+      installedAppsList,
+      "List visible apps",
+      "iOS cannot enumerate all installed apps; only declared URL-scheme or document handoff visibility can be modeled.",
+      .medium,
+      ["apps.query_visible"],
+      [],
+      ["signalasi.consent.installed_apps.query_visible"]
+    ),
+    unavailableSpec(
+      packageDetail,
+      "Read visible app detail",
+      "iOS cannot inspect arbitrary package metadata; only declared integrations can be modeled.",
+      .medium,
+      ["apps.package_detail"],
+      [],
+      ["signalasi.consent.package_detail.query_visible"]
+    )
+  ]
+
+  private static func definition(_ specification: Specification) -> AgentPhoneNativeToolDefinition {
+    let descriptor = try! AgentNativeToolDescriptor(
+      id: specification.id,
+      version: AgentPhoneNativeToolCatalog.version,
+      title: specification.title,
+      description: specification.description,
+      location: .application,
+      inputSchema: AgentNativeToolDescriptor.objectSchema(),
+      outputSchema: AgentNativeToolDescriptor.objectSchema(),
+      risk: specification.risk,
+      capabilities: specification.capabilities,
+      requiredPermissions: specification.permissions,
+      requiredConsents: specification.consents,
+      timeoutMillis: 15_000,
+      idempotency: .nonIdempotent,
+      availability: specification.availability
+    )
+    return AgentPhoneNativeToolDefinition(
+      descriptor: descriptor,
+      executorId: executorId,
+      provenanceMetadata: [
+        "platform": "ios",
+        "compatibility_source": "AgentHardwareNativeTools",
+        "result_policy": "bounded-v1",
+        "background_capture": "false",
+        "silent_settings_changes": "false"
+      ]
+    )
+  }
+
+  private static func statusSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String,
+    _ capabilities: Set<String>
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .low,
+      capabilities: capabilities,
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: hardwareStatusPermission,
+          title: "App-visible hardware status",
+          description: "Limits execution to bounded status fields visible to the iOS app process."
+        )
+      ],
+      consents: [noExtraConsent],
+      availability: .available
+    )
+  }
+
+  private static func handoffSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .high,
+      capabilities: ["bluetooth.no_silent_pairing"],
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: hardwareStatusPermission,
+          title: "iOS handoff scope",
+          description: "Limits execution to a user-visible Settings handoff request."
+        )
+      ],
+      consents: [
+        AgentNativeConsentRequirement(
+          id: userVisibleHandoffConsent,
+          title: "Open iOS Settings",
+          description: "Requires user confirmation before opening a system settings surface."
+        )
+      ],
+      availability: .available
+    )
+  }
+
+  private static func unavailableSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String,
+    _ risk: AgentNativeToolRisk,
+    _ capabilities: Set<String>,
+    _ permissions: [String],
+    _ consents: [String]
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: risk,
+      capabilities: capabilities,
+      permissions: ([AgentNativePermissionRequirement(
+        id: hardwareStatusPermission,
+        title: "iOS hardware executor boundary",
+        description: "Requires an iOS app-layer hardware executor before this tool can run."
+      )] + permissions.map {
+        AgentNativePermissionRequirement(id: $0, title: $0)
+      }).sorted { $0.id < $1.id },
+      consents: (consents.map {
+        AgentNativeConsentRequirement(id: $0, title: $0.replacingOccurrences(of: "signalasi.consent.", with: ""))
+      } + [noExtraConsent]).sorted { $0.id < $1.id },
+      availability: AgentNativeToolAvailability(
+        status: .unavailable,
+        reason: "This Android hardware native tool needs a dedicated iOS 15+ framework executor before it can run."
+      )
+    )
+  }
+
+  private static let noExtraConsent = AgentNativeConsentRequirement(
+    id: "signalasi.consent.none",
+    title: "No additional consent",
+    description: "No additional interactive consent is required.",
+    required: false
+  )
+}
+
+struct AgentIOSHardwareNativeToolExecutor {
+  var provider: AgentIOSHardwareStatusProviding
+  var nowMillis: () -> Int64
+
+  init(
+    provider: AgentIOSHardwareStatusProviding = AgentIOSDefaultHardwareStatusProvider(),
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+  ) {
+    self.provider = provider
+    self.nowMillis = nowMillis
+  }
+
+  func executableDefinition(_ definition: AgentPhoneNativeToolDefinition) -> AgentNativeToolExecutableDefinition {
+    AgentNativeToolExecutableDefinition(
+      definition: definition,
+      executor: { invocation in
+        try invocation.checkpoint()
+        let result = self.execute(invocation)
+        try invocation.checkpoint()
+        return result
+      }
+    )
+  }
+
+  private func execute(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let now = max(0, nowMillis())
+    switch invocation.descriptor.id {
+    case AgentIOSHardwareNativeToolCatalog.batteryStatus:
+      return status(provider.batteryStatus(nowMillis: now), "Battery status read")
+    case AgentIOSHardwareNativeToolCatalog.powerStatus:
+      return status(provider.powerStatus(nowMillis: now), "Power status read")
+    case AgentIOSHardwareNativeToolCatalog.storageStatus:
+      return status(provider.storageStatus(nowMillis: now), "Storage status read")
+    case AgentIOSHardwareNativeToolCatalog.networkStatus:
+      return status(provider.networkStatus(nowMillis: now), "Network status read")
+    case AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff:
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "handoff_kind": .string("settings"),
+          "url": .string("app-settings:"),
+          "settings_target": .string("bluetooth"),
+          "requires_user_action": .bool(true),
+          "completion_untrusted": .bool(true),
+          "platform": .string("ios"),
+          "tool_id": .string(invocation.descriptor.id)
+        ],
+        message: "Bluetooth settings handoff prepared; iOS requires user-controlled pairing.",
+        metadata: ["handoff_required": .bool(true), "background_capture": .bool(false)]
+      )
+    default:
+      return AgentNativeToolExecutionResult.failure(
+        code: "ios_hardware_tool_unavailable",
+        message: "This hardware native tool is not executable on iOS yet."
+      )
+    }
+  }
+
+  private func status(_ output: AgentMcpJSONObject, _ message: String) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.success(
+      output: output,
+      message: message,
+      metadata: ["background_capture": .bool(false), "identifiers_included": .bool(false)]
+    )
+  }
+}
+
 struct AgentNativeValidationIssue: Codable, Equatable {
   var path: String
   var code: String
@@ -13973,7 +14396,9 @@ enum AgentPhoneNativeToolCatalog {
 
   static let toolIds: Set<String> = Set(workspaceToolIds + supportedActionKinds.map {
     AgentNativeToolAgentActionAdapter.defaultToolId($0)
-  }).union(AgentIOSSystemNativeToolCatalog.toolIds)
+  })
+    .union(AgentIOSSystemNativeToolCatalog.toolIds)
+    .union(AgentIOSHardwareNativeToolCatalog.toolIds)
 
   static let defaultToolIds: Set<String> = toolIds
     .union(AgentPhoneCapabilityNativeCoverage.coveredToolIds)
@@ -13990,7 +14415,8 @@ enum AgentPhoneNativeToolCatalog {
   ) -> [AgentPhoneNativeToolDefinition] {
     workspaceDefinitions() +
       actionDefinitions(capabilityStatuses: capabilityStatuses) +
-      AgentIOSSystemNativeToolCatalog.definitions()
+      AgentIOSSystemNativeToolCatalog.definitions() +
+      AgentIOSHardwareNativeToolCatalog.definitions()
   }
 
   static func descriptors(
@@ -14010,6 +14436,14 @@ enum AgentPhoneNativeToolCatalog {
   ) -> [AgentNativeToolExecutableDefinition] {
     AgentIOSSystemNativeToolCatalog.definitions()
       .filter { AgentIOSSystemNativeToolCatalog.handoffToolIds.contains($0.id) }
+      .map(executor.executableDefinition)
+  }
+
+  static func hardwareExecutableDefinitions(
+    executor: AgentIOSHardwareNativeToolExecutor = AgentIOSHardwareNativeToolExecutor()
+  ) -> [AgentNativeToolExecutableDefinition] {
+    AgentIOSHardwareNativeToolCatalog.definitions()
+      .filter { AgentIOSHardwareNativeToolCatalog.executableToolIds.contains($0.id) }
       .map(executor.executableDefinition)
   }
 
