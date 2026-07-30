@@ -1124,6 +1124,20 @@ struct AgentRecordedRun: Codable, Equatable, Identifiable {
   var conversationId: String
   var taskThreadId: String
   var originalRequest: String
+  var normalizedIntent: String
+  var extractedInputs: AgentMcpJSONObject
+  var agentPlan: [AgentMcpJSONValue]
+  var toolCalls: [AgentToolCallRecord]
+  var sources: [AgentMcpJSONValue]
+  var transformations: [AgentMcpJSONValue]
+  var finalOutput: AgentMcpJSONObject
+  var renderSpec: AgentMcpJSONObject
+  var artifacts: [AgentArtifactReference]
+  var userFeedback: [String]
+  var activeSkillId: String
+  var executionResourceId: String
+  var parentRunId: String
+  var revisionNumber: Int
   var status: AgentRecordedRunStatus
   var createdAtMillis: Int64
   var completedAtMillis: Int64
@@ -1135,6 +1149,20 @@ struct AgentRecordedRun: Codable, Equatable, Identifiable {
     conversationId: String,
     taskThreadId: String,
     originalRequest: String,
+    normalizedIntent: String = "",
+    extractedInputs: AgentMcpJSONObject = [:],
+    agentPlan: [AgentMcpJSONValue] = [],
+    toolCalls: [AgentToolCallRecord] = [],
+    sources: [AgentMcpJSONValue] = [],
+    transformations: [AgentMcpJSONValue] = [],
+    finalOutput: AgentMcpJSONObject = [:],
+    renderSpec: AgentMcpJSONObject = [:],
+    artifacts: [AgentArtifactReference] = [],
+    userFeedback: [String] = [],
+    activeSkillId: String = "",
+    executionResourceId: String = "",
+    parentRunId: String = "",
+    revisionNumber: Int = 1,
     status: AgentRecordedRunStatus = .running,
     createdAtMillis: Int64 = 0,
     completedAtMillis: Int64 = 0
@@ -1143,6 +1171,20 @@ struct AgentRecordedRun: Codable, Equatable, Identifiable {
     self.conversationId = conversationId
     self.taskThreadId = taskThreadId
     self.originalRequest = originalRequest
+    self.normalizedIntent = normalizedIntent
+    self.extractedInputs = extractedInputs
+    self.agentPlan = agentPlan
+    self.toolCalls = Array(toolCalls.prefix(AgentSkillLimits.maxToolCalls))
+    self.sources = sources
+    self.transformations = transformations
+    self.finalOutput = finalOutput
+    self.renderSpec = renderSpec
+    self.artifacts = Array(artifacts.prefix(AgentSkillLimits.maxArtifacts))
+    self.userFeedback = userFeedback.prefix(32).map { String($0.prefix(AgentSkillLimits.maxFeedbackCharacters)) }
+    self.activeSkillId = String(activeSkillId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
+    self.executionResourceId = String(executionResourceId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
+    self.parentRunId = String(parentRunId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
+    self.revisionNumber = max(revisionNumber, 1)
     self.status = status
     self.createdAtMillis = createdAtMillis
     self.completedAtMillis = completedAtMillis
@@ -1153,22 +1195,81 @@ struct AgentRecordedRun: Codable, Equatable, Identifiable {
     case conversationId = "conversation_id"
     case taskThreadId = "task_thread_id"
     case originalRequest = "original_request"
+    case normalizedIntent = "normalized_intent"
+    case extractedInputs = "extracted_inputs"
+    case agentPlan = "agent_plan"
+    case toolCalls = "tool_calls"
+    case sources
+    case transformations
+    case finalOutput = "final_output"
+    case renderSpec = "render_spec"
+    case artifacts
+    case userFeedback = "user_feedback"
+    case activeSkillId = "active_skill_id"
+    case executionResourceId = "execution_resource_id"
+    case parentRunId = "parent_run_id"
+    case revisionNumber = "revision_number"
     case status
     case createdAtMillis = "created_at_millis"
     case completedAtMillis = "completed_at_millis"
+    case createdAtAndroid = "created_at"
+    case completedAtAndroid = "completed_at"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let createdAt = try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .createdAtAndroid)) ?? 0
+    let completedAt = try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ??
+      (try container.decodeIfPresent(Int64.self, forKey: .completedAtAndroid)) ?? 0
     self.init(
       runId: try container.decodeIfPresent(String.self, forKey: .runId) ?? "",
       conversationId: try container.decodeIfPresent(String.self, forKey: .conversationId) ?? "",
       taskThreadId: try container.decodeIfPresent(String.self, forKey: .taskThreadId) ?? "",
       originalRequest: try container.decodeIfPresent(String.self, forKey: .originalRequest) ?? "",
+      normalizedIntent: try container.decodeIfPresent(String.self, forKey: .normalizedIntent) ?? "",
+      extractedInputs: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .extractedInputs) ?? [:],
+      agentPlan: try container.decodeIfPresent([AgentMcpJSONValue].self, forKey: .agentPlan) ?? [],
+      toolCalls: try container.decodeIfPresent([AgentToolCallRecord].self, forKey: .toolCalls) ?? [],
+      sources: try container.decodeIfPresent([AgentMcpJSONValue].self, forKey: .sources) ?? [],
+      transformations: try container.decodeIfPresent([AgentMcpJSONValue].self, forKey: .transformations) ?? [],
+      finalOutput: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .finalOutput) ?? [:],
+      renderSpec: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .renderSpec) ?? [:],
+      artifacts: try container.decodeIfPresent([AgentArtifactReference].self, forKey: .artifacts) ?? [],
+      userFeedback: try container.decodeIfPresent([String].self, forKey: .userFeedback) ?? [],
+      activeSkillId: try container.decodeIfPresent(String.self, forKey: .activeSkillId) ?? "",
+      executionResourceId: try container.decodeIfPresent(String.self, forKey: .executionResourceId) ?? "",
+      parentRunId: try container.decodeIfPresent(String.self, forKey: .parentRunId) ?? "",
+      revisionNumber: try container.decodeIfPresent(Int.self, forKey: .revisionNumber) ?? 1,
       status: try container.decodeIfPresent(AgentRecordedRunStatus.self, forKey: .status) ?? .running,
-      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? 0,
-      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
+      createdAtMillis: createdAt,
+      completedAtMillis: completedAt
     )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(runId, forKey: .runId)
+    try container.encode(conversationId, forKey: .conversationId)
+    try container.encode(taskThreadId, forKey: .taskThreadId)
+    try container.encode(originalRequest, forKey: .originalRequest)
+    try container.encode(normalizedIntent, forKey: .normalizedIntent)
+    try container.encode(extractedInputs, forKey: .extractedInputs)
+    try container.encode(agentPlan, forKey: .agentPlan)
+    try container.encode(toolCalls, forKey: .toolCalls)
+    try container.encode(sources, forKey: .sources)
+    try container.encode(transformations, forKey: .transformations)
+    try container.encode(finalOutput, forKey: .finalOutput)
+    try container.encode(renderSpec, forKey: .renderSpec)
+    try container.encode(artifacts, forKey: .artifacts)
+    try container.encode(userFeedback, forKey: .userFeedback)
+    try container.encode(activeSkillId, forKey: .activeSkillId)
+    try container.encode(executionResourceId, forKey: .executionResourceId)
+    try container.encode(parentRunId, forKey: .parentRunId)
+    try container.encode(revisionNumber, forKey: .revisionNumber)
+    try container.encode(status, forKey: .status)
+    try container.encode(createdAtMillis, forKey: .createdAtMillis)
+    try container.encode(completedAtMillis, forKey: .completedAtMillis)
   }
 }
 
