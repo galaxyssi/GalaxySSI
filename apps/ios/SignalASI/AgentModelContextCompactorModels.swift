@@ -91,6 +91,8 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
   var toolId: String
   var arguments: AgentMcpJSONObject
   var toolVersion: String?
+  var idempotencyKey: String?
+  var depth: Int
 
   var id: String { callId }
 
@@ -98,7 +100,9 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
     callId: String,
     toolId: String,
     arguments: AgentMcpJSONObject = [:],
-    toolVersion: String? = nil
+    toolVersion: String? = nil,
+    idempotencyKey: String? = nil,
+    depth: Int = 1
   ) {
     self.callId = String(callId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
     self.toolId = String(toolId.trimmingCharacters(in: .whitespacesAndNewlines).prefix(AgentSkillLimits.maxIdCharacters))
@@ -106,6 +110,10 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
     self.toolVersion = toolVersion?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
+    self.idempotencyKey = idempotencyKey?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
+    self.depth = depth
   }
 
   enum CodingKeys: String, CodingKey {
@@ -113,6 +121,8 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
     case toolId = "tool_id"
     case arguments
     case toolVersion = "tool_version"
+    case idempotencyKey = "idempotency_key"
+    case depth
   }
 
   init(from decoder: Decoder) throws {
@@ -121,7 +131,9 @@ struct AgentModelToolCall: Codable, Equatable, Identifiable {
       callId: try container.decodeIfPresent(String.self, forKey: .callId) ?? "",
       toolId: try container.decodeIfPresent(String.self, forKey: .toolId) ?? "",
       arguments: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .arguments) ?? [:],
-      toolVersion: try container.decodeIfPresent(String.self, forKey: .toolVersion)
+      toolVersion: try container.decodeIfPresent(String.self, forKey: .toolVersion),
+      idempotencyKey: try container.decodeIfPresent(String.self, forKey: .idempotencyKey),
+      depth: try container.decodeIfPresent(Int.self, forKey: .depth) ?? 1
     )
   }
 }
@@ -132,7 +144,10 @@ struct AgentModelToolResultContent: Codable, Equatable, Identifiable {
   var status: String
   var output: AgentMcpJSONObject
   var message: String
+  var error: AgentNativeToolError?
   var errorMessage: String
+  var invocationId: String?
+  var retryCount: Int
   var receipt: AgentNativeToolReceipt?
   var nativeResult: AgentNativeToolResult?
 
@@ -144,7 +159,10 @@ struct AgentModelToolResultContent: Codable, Equatable, Identifiable {
     status: String,
     output: AgentMcpJSONObject = [:],
     message: String = "",
+    error: AgentNativeToolError? = nil,
     errorMessage: String = "",
+    invocationId: String? = nil,
+    retryCount: Int = 0,
     receipt: AgentNativeToolReceipt? = nil,
     nativeResult: AgentNativeToolResult? = nil
   ) {
@@ -153,7 +171,10 @@ struct AgentModelToolResultContent: Codable, Equatable, Identifiable {
     self.status = String(status.trimmingCharacters(in: .whitespacesAndNewlines).prefix(64)).ifBlank("unknown")
     self.output = output
     self.message = String(message.prefix(AgentSkillLimits.maxFeedbackCharacters))
-    self.errorMessage = String(errorMessage.prefix(AgentSkillLimits.maxFeedbackCharacters))
+    self.error = error
+    self.errorMessage = String((errorMessage.nilIfEmpty ?? error?.message ?? "").prefix(AgentSkillLimits.maxFeedbackCharacters))
+    self.invocationId = invocationId?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+    self.retryCount = max(0, retryCount)
     self.receipt = receipt
     self.nativeResult = nativeResult
   }
@@ -166,8 +187,22 @@ struct AgentModelToolResultContent: Codable, Equatable, Identifiable {
       "output": .object(output),
       "message": .string(message)
     ]
-    if !errorMessage.isBlank {
+    if let error {
+      object["error"] = .object([
+        "code": .string(error.code),
+        "message": .string(error.message),
+        "retryable": .bool(error.retryable),
+        "details": .object(error.details)
+      ])
+    } else if !errorMessage.isBlank {
       object["error"] = .string(errorMessage)
+    }
+    if let invocationId {
+      object["invocation_id"] = .string(invocationId)
+    }
+    object["retry_count"] = .int(Int64(retryCount))
+    if !errorMessage.isBlank {
+      object["error_message"] = .string(errorMessage)
     }
     return .object(object)
   }
@@ -178,20 +213,38 @@ struct AgentModelToolResultContent: Codable, Equatable, Identifiable {
     case status
     case output
     case message
-    case errorMessage = "error"
+    case error
+    case errorMessage = "error_message"
+    case invocationId = "invocation_id"
+    case retryCount = "retry_count"
     case receipt
     case nativeResult = "native_result"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let decodedError: AgentNativeToolError?
+    do {
+      decodedError = try container.decodeIfPresent(AgentNativeToolError.self, forKey: .error)
+    } catch {
+      decodedError = nil
+    }
+    let legacyErrorMessage: String
+    do {
+      legacyErrorMessage = try container.decodeIfPresent(String.self, forKey: .error) ?? ""
+    } catch {
+      legacyErrorMessage = ""
+    }
     self.init(
       callId: try container.decodeIfPresent(String.self, forKey: .callId) ?? "",
       toolId: try container.decodeIfPresent(String.self, forKey: .toolId) ?? "",
       status: try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown",
       output: try container.decodeIfPresent(AgentMcpJSONObject.self, forKey: .output) ?? [:],
       message: try container.decodeIfPresent(String.self, forKey: .message) ?? "",
-      errorMessage: try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? "",
+      error: decodedError,
+      errorMessage: (try container.decodeIfPresent(String.self, forKey: .errorMessage)) ?? legacyErrorMessage,
+      invocationId: try container.decodeIfPresent(String.self, forKey: .invocationId),
+      retryCount: try container.decodeIfPresent(Int.self, forKey: .retryCount) ?? 0,
       receipt: try container.decodeIfPresent(AgentNativeToolReceipt.self, forKey: .receipt),
       nativeResult: try container.decodeIfPresent(AgentNativeToolResult.self, forKey: .nativeResult)
     )
@@ -470,7 +523,13 @@ enum AgentModelContextCompactor {
               "compacted": .bool(true),
               "summary": .string(ConversationContextCompactor.fitTextToTokenBudget(summary, 160))
             ],
-            message: ConversationContextCompactor.fitTextToTokenBudget(result.message.ifBlank(summary), 160)
+            message: ConversationContextCompactor.fitTextToTokenBudget(result.message.ifBlank(summary), 160),
+            error: result.error,
+            errorMessage: result.errorMessage,
+            invocationId: result.invocationId,
+            retryCount: result.retryCount,
+            receipt: result.receipt,
+            nativeResult: result.nativeResult
           )
           current[index] = AgentModelMessage(id: message.id, role: .tool, toolResult: compactedResult)
         }
@@ -480,7 +539,14 @@ enum AgentModelContextCompactor {
           role: .assistant,
           text: ConversationContextCompactor.fitTextToTokenBudget(message.text, 256),
           toolCalls: message.toolCalls.map {
-            AgentModelToolCall(callId: $0.callId, toolId: $0.toolId, arguments: compactObject($0.arguments, tokenLimit: 80))
+            AgentModelToolCall(
+              callId: $0.callId,
+              toolId: $0.toolId,
+              arguments: compactObject($0.arguments, tokenLimit: 80),
+              toolVersion: $0.toolVersion,
+              idempotencyKey: $0.idempotencyKey,
+              depth: $0.depth
+            )
           }
         )
       case .system, .user:
