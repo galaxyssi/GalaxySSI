@@ -124,6 +124,8 @@ const requiredProjectSnippets = [
   "AgentAutonomyGuardTests.swift in Sources",
   "AgentConfirmationPolicy.swift in Sources",
   "AgentConfirmationPolicyTests.swift in Sources",
+  "AgentPermissionGrantLedgerModels.swift in Sources",
+  "AgentPermissionGrantLedgerTests.swift in Sources",
   "AgentMediaNetworkPolicyModels.swift in Sources",
   "AgentMediaNetworkPolicyTests.swift in Sources",
   "VoiceRealtimeHealthModels.swift in Sources",
