@@ -457,6 +457,7 @@ final class MessageCoordinator: ObservableObject {
   private let store: SignalASIStore
   private let deliveryStore: SignalASILinkDeliveryStore
   private let cloudClient: CloudModelClient
+  private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
   private let transportEpoch = "v7-flow-control"
@@ -465,11 +466,15 @@ final class MessageCoordinator: ObservableObject {
     store: SignalASIStore,
     deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
     cloudClient: CloudModelClient = CloudModelClient(),
+    mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
+      AgentMediaNetworkDetector.shared.currentProfile
+    },
     mqttClient: SignalASIMqttClient = SignalASIMqttClient()
   ) {
     self.store = store
     self.deliveryStore = deliveryStore
     self.cloudClient = cloudClient
+    self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient
     self.mqttClient.onMessage = { [weak self] topic, payload in
       Task { @MainActor in
@@ -620,7 +625,17 @@ final class MessageCoordinator: ObservableObject {
       "client_message_id": outgoing.id.uuidString,
       "time": Int64(Date().timeIntervalSince1970 * 1000)
     ]
-    let attachmentDescriptors = SignalASIAttachmentPayloadBuilder.descriptors(for: attachments)
+    let mediaProfile = mediaNetworkProfileProvider()
+    AgentMediaLinkPayloadPolicy.payloadMetadata(
+      attachments: attachments,
+      profile: mediaProfile
+    ).forEach { entry in
+      payload[entry.key] = entry.value
+    }
+    let attachmentDescriptors = SignalASIAttachmentPayloadBuilder.descriptors(
+      for: attachments,
+      mediaProfile: attachments.isEmpty ? nil : mediaProfile
+    )
     if !attachmentDescriptors.isEmpty {
       payload["attachments"] = attachmentDescriptors
     }
@@ -636,7 +651,27 @@ final class MessageCoordinator: ObservableObject {
       "envelope": envelope
     ])
     let wireText = String(decoding: wire, as: UTF8.self)
-    deliveryStore.enqueue(messageId: outgoing.id.uuidString, topic: link.routes.upTopic, wirePayload: wireText)
+    let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
+      attachments: attachments,
+      profile: mediaProfile
+    )
+    deliveryStore.enqueue(
+      messageId: outgoing.id.uuidString,
+      topic: link.routes.upTopic,
+      wirePayload: wireText,
+      requiresValidatedNetwork: requiresValidatedNetwork
+    )
+    if requiresValidatedNetwork {
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "queued",
+        detail: "Waiting for validated network before uploading media.",
+        status: .queued
+      )
+      scheduleOutboxFlushFromStore()
+      return
+    }
     deliveryStore.markAttempt(messageId: outgoing.id.uuidString)
     let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire)
     switch result {
@@ -796,7 +831,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func flushPendingOutbox() async {
-    let pending = deliveryStore.pending()
+    let mediaProfile = mediaNetworkProfileProvider()
+    let pending = deliveryStore.pending(
+      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
+    )
     guard !pending.isEmpty else { return }
     for item in pending {
       deliveryStore.markAttempt(messageId: item.messageId)
@@ -809,7 +847,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func scheduleOutboxFlushFromStore() {
-    if let delay = deliveryStore.nextRetryDelay() {
+    let mediaProfile = mediaNetworkProfileProvider()
+    if let delay = deliveryStore.nextRetryDelay(
+      allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
+    ) {
       scheduleOutboxFlush(after: delay)
     }
   }

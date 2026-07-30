@@ -14,6 +14,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-compatible `signalasi_contact` QR export/import with pending friend requests, approve/reject handling, and verified contact creation
 - Local contact management with Android-style remark rename, soft delete, optional chat deletion, and private data reset
 - Explicit file/photo attachments with Android-compatible descriptors, inline `data_b64` transport for small payloads, metadata-only fallback for larger files, and chat composer previews
+- Android-style weak-network media delivery profiles for normal, constrained, and offline links, including compact image/audio targets, media payload profile metadata, and validated-network outbox gates for deferred media
 - Android-style attachment workspace staging into app-private agent-native workspaces with safe names, per-turn limits, SHA-256 metadata, and stable workspace IDs
 - Android-style animated image timing normalization for zero-delay GIF frames
 - Direct cloud model contacts for OpenAI-compatible, Anthropic, and Gemini-style APIs, with provider-level model selection, readiness checks, and API keys stored in Keychain
