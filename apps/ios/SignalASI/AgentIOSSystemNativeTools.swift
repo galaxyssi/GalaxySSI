@@ -11,6 +11,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var downloadProvider: AgentIOSDownloadManaging
   var telephonyProvider: AgentIOSTelephonyStatusProviding
   var vpnProvider: AgentIOSVPNStatusProviding
+  var wifiScanProvider: AgentIOSWifiScanProviding
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
   var nowMillis: () -> Int64
@@ -26,6 +27,7 @@ struct AgentIOSSystemNativeToolExecutor {
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
     telephonyProvider: AgentIOSTelephonyStatusProviding = AgentIOSDefaultTelephonyStatusProvider(),
     vpnProvider: AgentIOSVPNStatusProviding = AgentIOSDefaultVPNStatusProvider(),
+    wifiScanProvider: AgentIOSWifiScanProviding = AgentIOSDefaultWifiScanProvider(),
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
@@ -40,6 +42,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.downloadProvider = downloadProvider
     self.telephonyProvider = telephonyProvider
     self.vpnProvider = vpnProvider
+    self.wifiScanProvider = wifiScanProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
     self.nowMillis = nowMillis
@@ -89,6 +92,10 @@ struct AgentIOSSystemNativeToolExecutor {
       return devicePolicyStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiStatus:
       return wifiStatus(invocation)
+    case AgentIOSSystemNativeToolCatalog.wifiScanResults:
+      return wifiScanResults(invocation)
+    case AgentIOSSystemNativeToolCatalog.wifiScanStart:
+      return wifiScanStart(invocation)
     case AgentIOSSystemNativeToolCatalog.audioStatus:
       return audioStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.biometricStatus:
@@ -300,6 +307,20 @@ struct AgentIOSSystemNativeToolExecutor {
         "settings_changed": .bool(false)
       ]
     )
+  }
+
+  private func wifiScanResults(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let limit = Int(invocation.input["limit"]?.intValue ?? 30)
+    let result = wifiScanProvider.wifiScanResults(
+      limit: max(1, min(100, limit)),
+      nowMillis: max(0, nowMillis())
+    )
+    return annotatedSystemResult(result, invocation: invocation)
+  }
+
+  private func wifiScanStart(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let result = wifiScanProvider.startWifiScan(nowMillis: max(0, nowMillis()))
+    return annotatedSystemResult(result, invocation: invocation)
   }
 
   private func biometricStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
