@@ -1023,54 +1023,6 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
-  func permissionGrant(
-    grantId: String = "grant-location",
-    lifetime: AgentPermissionGrantLifetime,
-    subjectId: String = "android.location",
-    scope: String = "location.foreground",
-    action: String = "read",
-    resource: String = "",
-    target: String = "",
-    constraintsJson: String = "{}",
-    expiresAtMillis: Int64 = 0,
-    maxUses: Int? = nil,
-    createdAtMillis: Int64 = 1_000
-  ) -> AgentPermissionGrant {
-    AgentPermissionGrant(
-      grantId: grantId,
-      subjectType: .tool,
-      subjectId: subjectId,
-      scope: scope,
-      action: action,
-      resource: resource,
-      target: target,
-      constraintsJson: constraintsJson,
-      issuer: .user,
-      evidence: "approval-dialog:turn-1",
-      lifetime: lifetime,
-      maxUses: maxUses,
-      createdAtMillis: createdAtMillis,
-      expiresAtMillis: expiresAtMillis
-    )
-  }
-
-  func permissionRequest(
-    subjectId: String = "android.location",
-    scope: String = "location.foreground",
-    action: String = "read",
-    resource: String = "",
-    target: String = ""
-  ) -> AgentPermissionRequest {
-    AgentPermissionRequest(
-      subjectType: .tool,
-      subjectId: subjectId,
-      scope: scope,
-      action: action,
-      resource: resource,
-      target: target
-    )
-  }
-
   func remoteApprovalTaskEvent(
     sourceMessageId: Int64 = 42,
     actionHash: String = String(repeating: "a", count: 64),
