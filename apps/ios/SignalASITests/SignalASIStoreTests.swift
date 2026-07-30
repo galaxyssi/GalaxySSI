@@ -11163,6 +11163,91 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(AgentMcpToolSecurityPolicy.provisionalRisk(toolName: "delete_device"), .high)
   }
 
+  func testAgentMcpAuditStoreAppendsListsBoundsAndClears() {
+    let store = InMemoryAgentMcpAuditStore()
+    store.append(mcpAuditRecord("audit-1", connectionId: "conn-a", timestampMillis: 1))
+    store.append(mcpAuditRecord("audit-2", connectionId: "conn-b", timestampMillis: 2))
+    store.append(mcpAuditRecord("audit-3", connectionId: "conn-a", timestampMillis: 3))
+
+    XCTAssertEqual(store.list(limit: 2).map(\.auditId), ["audit-3", "audit-2"])
+    XCTAssertEqual(store.list(connectionId: "conn-a", limit: 10).map(\.auditId), ["audit-3", "audit-1"])
+    XCTAssertEqual(store.clear(connectionId: "conn-a"), 2)
+    XCTAssertEqual(store.list(limit: 10).map(\.auditId), ["audit-2"])
+
+    let bounded = InMemoryAgentMcpAuditStore()
+    for index in 0..<1_005 {
+      bounded.append(mcpAuditRecord("bulk-\(index)", connectionId: "bulk", timestampMillis: Int64(index)))
+    }
+    XCTAssertEqual(bounded.list(limit: 1).first?.auditId, "bulk-1004")
+    XCTAssertEqual(bounded.list(limit: 1_000).count, 500)
+    XCTAssertEqual(bounded.clear(connectionId: ""), 1_000)
+  }
+
+  func testAgentMcpAuditRecordFactoryAndCodecUseAndroidWireNames() throws {
+    let connection = AgentMcpConnection(
+      id: "conn-a",
+      displayName: "Relay",
+      endpoint: "https://relay.example/mcp",
+      distribution: .remote,
+      transport: .streamableHTTP,
+      authProfile: try AgentMcpAuthProfile(.none),
+      authState: .notRequired,
+      permissionMode: .askForChanges
+    )
+    let assessment = AgentMcpToolSecurityPolicy.assess(
+      tool: mcpTool("delete_project", destructive: true),
+      arguments: [
+        "api_token": .string("secret-value"),
+        "url": .string("https://example.test/mcp?api_key=secret")
+      ],
+      transport: .streamableHTTP
+    )
+    let decision = AgentMcpToolSecurityPolicy.decide(
+      mode: .askForChanges,
+      assessment: assessment,
+      explicitlyApproved: false
+    )
+    let context = AgentNativeToolInvocationContext(
+      conversationId: "chat-1",
+      callerId: "planner",
+      attributes: ["task_id": "task-1"]
+    )
+
+    let record = AgentMcpAuditRecord.toolCall(
+      connection: connection,
+      toolName: "delete_project",
+      assessment: assessment,
+      decision: decision,
+      context: context,
+      status: "failed",
+      durationMillis: -5,
+      outputSha256: String(repeating: "b", count: 64),
+      errorCode: "mcp_call_failed",
+      errorMessage: "token=inline-secret at https://example.test/mcp?api_key=secret",
+      auditId: "audit-fixed",
+      timestampMillis: 12_345
+    )
+    let encoded = AgentMcpAuditCodec.encode([record])
+    let decoded = try XCTUnwrap(AgentMcpAuditCodec.decode(encoded).first)
+
+    XCTAssertEqual(record.source, "ios-mcp:conn-a")
+    XCTAssertEqual(record.durationMillis, 0)
+    XCTAssertEqual(record.permissions, assessment.permissions.sorted())
+    XCTAssertEqual(record.parameterPreview["api_token"], .string("[REDACTED]"))
+    XCTAssertTrue(encoded.contains(#""audit_id":"audit-fixed""#))
+    XCTAssertTrue(encoded.contains(#""timestamp_ms":12345"#))
+    XCTAssertTrue(encoded.contains(#""permission_decision":"mcp_high_risk_approval_required""#))
+    XCTAssertFalse(encoded.contains("secret-value"))
+    XCTAssertFalse(encoded.contains("inline-secret"))
+    XCTAssertFalse(encoded.contains("api_key=secret"))
+    XCTAssertEqual(decoded.auditId, "audit-fixed")
+    XCTAssertEqual(decoded.connectionId, "conn-a")
+    XCTAssertEqual(decoded.taskId, "task-1")
+    XCTAssertEqual(decoded.conversationId, "chat-1")
+    XCTAssertEqual(decoded.risk, "high")
+    XCTAssertEqual(decoded.errorCode, "mcp_call_failed")
+  }
+
   func testUnifiedCommandProtocolRequestPayloadUsesAndroidDesktopMqttContract() throws {
     let payload = try UnifiedCommandProtocol.requestPayload(
       commandId: "commands.list",
@@ -13375,6 +13460,33 @@ final class SignalASIStoreTests: XCTestCase {
       target: .currentConversation,
       kind: kind,
       createdAtMillis: createdAtMillis
+    )
+  }
+
+  private func mcpAuditRecord(
+    _ auditId: String,
+    connectionId: String,
+    timestampMillis: Int64
+  ) -> AgentMcpAuditRecord {
+    AgentMcpAuditRecord(
+      auditId: auditId,
+      timestampMillis: timestampMillis,
+      connectionId: connectionId,
+      connectionName: "Relay",
+      toolName: "relay.switch",
+      transport: "streamable_http",
+      source: "ios-mcp:\(connectionId)",
+      callerId: "planner",
+      taskId: "task-\(auditId)",
+      conversationId: "chat",
+      risk: "medium",
+      permissions: ["mcp.network.connect", "mcp.data.write"],
+      permissionMode: "ask_for_changes",
+      permissionDecision: "allowed_explicit_change",
+      parameterPreview: ["enabled": .bool(true)],
+      inputSha256: String(repeating: "a", count: 64),
+      status: "succeeded",
+      durationMillis: 10
     )
   }
 
