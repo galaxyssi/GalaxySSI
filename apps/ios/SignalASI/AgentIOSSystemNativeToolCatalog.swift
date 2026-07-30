@@ -91,6 +91,7 @@ enum AgentIOSSystemNativeToolCatalog {
     downloadRemove,
     wifiStatus,
     audioStatus,
+    vpnStatus,
     biometricStatus
   ])
 
@@ -377,7 +378,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       vpnStatus,
       "Read VPN status",
-      "Android VPN transport descriptor retained for planning; iOS VPN state is not exposed through this Android API.",
+      "Reads app-managed iOS NetworkExtension VPN connection status without enumerating global VPN transports.",
       .low,
       ["vpn.status"]
     ),
@@ -572,6 +573,15 @@ enum AgentIOSSystemNativeToolCatalog {
         )
       ]
     }
+    if specification.id == vpnStatus {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosVPNStatusPermission,
+          title: "App-managed iOS VPN status",
+          description: "Limits execution to NetworkExtension connection status visible to the SignalASI app."
+        )
+      ]
+    }
     if downloadToolIds.contains(specification.id) {
       return [
         AgentNativePermissionRequirement(
@@ -644,6 +654,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == biometricStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS biometric status executor."
     }
+    if id == vpnStatus {
+      return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS NetworkExtension VPN status executor."
+    }
     return "Acknowledges that this Android wire tool is discoverable on iOS but has no iOS executor."
   }
 
@@ -681,6 +694,9 @@ enum AgentIOSSystemNativeToolCatalog {
     if id == biometricStatus {
       return biometricStatusAvailability
     }
+    if id == vpnStatus {
+      return vpnStatusAvailability
+    }
     return unavailableAvailability
   }
 
@@ -717,6 +733,9 @@ enum AgentIOSSystemNativeToolCatalog {
     }
     if id == biometricStatus {
       return "local_authentication_status_on_ios15"
+    }
+    if id == vpnStatus {
+      return "network_extension_vpn_status_on_ios15"
     }
     return "descriptor_only_unavailable_on_ios15"
   }
@@ -805,6 +824,13 @@ enum AgentIOSSystemNativeToolCatalog {
     )
   }
 
+  private static var vpnStatusAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor reads app-managed NetworkExtension VPN status without enumerating global VPN transports."
+    )
+  }
+
   private static func handoffOutputSchema() -> AgentMcpJSONObject {
     input([
       "handoff_kind": stringSchema(maxLength: 64),
@@ -877,6 +903,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
   static let iosSMSComposePermission = "signalasi.scope.ios_user_visible_sms_compose"
   static let iosTelephonyStatusPermission = "signalasi.scope.ios_app_visible_telephony_status"
+  static let iosVPNStatusPermission = "signalasi.scope.ios_app_managed_vpn_status"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"

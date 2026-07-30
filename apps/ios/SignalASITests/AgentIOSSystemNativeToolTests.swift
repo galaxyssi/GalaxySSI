@@ -67,6 +67,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("LocalAuthentication"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "local_authentication_status_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.vpnStatus {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("NetworkExtension"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "network_extension_vpn_status_on_ios15")
       } else {
         XCTAssertEqual(descriptor.availability.status, .unavailable)
         XCTAssertTrue(descriptor.availability.reason.contains("iOS 15+ app sandbox"), descriptor.id)
@@ -132,6 +136,13 @@ extension SignalASIStoreTests {
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.biometricStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosBiometricStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.vpnStatus {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosVPNStatusPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -220,6 +231,13 @@ extension SignalASIStoreTests {
     XCTAssertTrue(downloadEnqueue.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.download" })
     XCTAssertEqual(downloadRemove.descriptor.risk, .high)
     XCTAssertEqual(downloadRemove.descriptor.idempotency, .idempotencyKeyRequired)
+
+    let vpnStatus = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.vpnStatus })
+    XCTAssertEqual(vpnStatus.descriptor.risk, .low)
+    XCTAssertEqual(vpnStatus.descriptor.availability.status, .available)
+    XCTAssertTrue(vpnStatus.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosVPNStatusPermission
+    })
 
     let registry = try AgentNativeToolRegistry(definitions: definitions)
     let authorized = registry.authorize(
@@ -472,6 +490,59 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["authentication_prompted"], .bool(false))
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(22_000))
     XCTAssertEqual(result.metadata["authentication_prompted"], .bool(false))
+    XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReadsVPNStatus() throws {
+    struct FakeVPNProvider: AgentIOSVPNStatusProviding {
+      func vpnStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        [
+          "active": .bool(true),
+          "vpn_networks": .array([
+            .object([
+              "network": .string("app_managed_vpn"),
+              "status": .string("connected"),
+              "validated": .null,
+              "internet": .null,
+              "scope": .string("network_extension_connection_status")
+            ])
+          ]),
+          "consent_granted": .null,
+          "connection_status": .string("connected"),
+          "configuration_scope": .string("app_managed_network_extension"),
+          "global_vpn_enumeration_supported": .bool(false),
+          "framework": .string("NetworkExtension"),
+          "identifiers_included": .bool(false),
+          "scope": .string("ios_app_managed_vpn_status"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+    }
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          vpnProvider: FakeVPNProvider(),
+          nowMillis: { 23_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosVPNStatusPermission]
+    )
+
+    let result = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.vpnStatus,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["active"], .bool(true))
+    XCTAssertEqual(result.output["connection_status"], .string("connected"))
+    XCTAssertEqual(result.output["global_vpn_enumeration_supported"], .bool(false))
+    XCTAssertEqual(result.output["identifiers_included"], .bool(false))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(23_000))
+    XCTAssertEqual(result.metadata["identifiers_included"], .bool(false))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
