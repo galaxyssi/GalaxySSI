@@ -128,6 +128,8 @@
     A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000275 /* AgentPolicyFirewallModels.swift */; };
     A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */; };
     A10000000000000000000278 /* AgentIOSSystemNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */; };
+    A10000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift */; };
+    A10000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift */; };
     A10000000000000000000280 /* AgentIOSHardwareNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */; };
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
@@ -346,6 +348,8 @@
     A20000000000000000000275 /* AgentPolicyFirewallModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPolicyFirewallModels.swift; sourceTree = "<group>"; };
     A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeTools.swift; sourceTree = "<group>"; };
+    A20000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolProviders.swift; sourceTree = "<group>"; };
+    A20000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeToolCatalog.swift; sourceTree = "<group>"; };
     A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
@@ -565,6 +569,8 @@
         A20000000000000000000275 /* AgentPolicyFirewallModels.swift */,
         A20000000000000000000276 /* AgentPhoneCapabilityCatalog.swift */,
         A20000000000000000000278 /* AgentIOSSystemNativeTools.swift */,
+        A20000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift */,
+        A20000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift */,
         A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */,
         A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */,
         A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */,
@@ -881,6 +887,8 @@
         A10000000000000000000275 /* AgentPolicyFirewallModels.swift in Sources */,
         A10000000000000000000276 /* AgentPhoneCapabilityCatalog.swift in Sources */,
         A10000000000000000000278 /* AgentIOSSystemNativeTools.swift in Sources */,
+        A10000000000000000000299 /* AgentIOSSystemNativeToolProviders.swift in Sources */,
+        A10000000000000000000300 /* AgentIOSSystemNativeToolCatalog.swift in Sources */,
         A10000000000000000000280 /* AgentIOSHardwareNativeTools.swift in Sources */,
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,
