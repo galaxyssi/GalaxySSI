@@ -40,11 +40,17 @@ enum AgentIOSSystemNativeToolCatalog {
 
   static let handoffToolIds: Set<String> = [
     telephonyDialHandoff,
+    smsSend,
     smsComposeHandoff,
     wifiPanelOpen,
     wifiHotspotPanelOpen,
     biometricEnrollmentOpen,
     vpnConsentOpen
+  ]
+
+  static let smsHandoffToolIds: Set<String> = [
+    smsSend,
+    smsComposeHandoff
   ]
 
   static let downloadToolIds: Set<String> = [
@@ -152,7 +158,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       smsSend,
       "Send SMS message",
-      "Android direct SMS send descriptor retained for planning; iOS requires a user-visible Messages compose handoff.",
+      "Prepares a user-visible iOS Messages compose handoff for the Android direct SMS send tool; iOS requires the user to review and send.",
       .high,
       ["sms.send"],
       ["android.permission.SEND_SMS"],
@@ -162,7 +168,7 @@ enum AgentIOSSystemNativeToolCatalog {
     spec(
       smsComposeHandoff,
       "Open SMS composer",
-      "Android SMS composer handoff descriptor retained for planning; iOS needs a dedicated user-visible compose executor.",
+      "Prepares a user-visible iOS Messages compose handoff with a bounded recipient and optional body.",
       .medium,
       ["sms.compose_handoff"],
       inputSchema: input(["phone_number": stringSchema(maxLength: 64), "message": stringSchema(maxLength: 2_000)], required: ["phone_number"])
@@ -476,6 +482,15 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func permissionRequirements(_ specification: Specification) -> [AgentNativePermissionRequirement] {
+    if smsHandoffToolIds.contains(specification.id) {
+      return [
+        AgentNativePermissionRequirement(
+          id: iosSMSComposePermission,
+          title: "User-visible iOS SMS compose",
+          description: "Limits SMS execution to an iOS Messages compose handoff that requires the user to review and send."
+        )
+      ]
+    }
     if specification.id == audioStatus {
       return [
         AgentNativePermissionRequirement(
@@ -581,6 +596,9 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func compatibilityConsentDescription(_ id: String) -> String {
+    if smsHandoffToolIds.contains(id) {
+      return "Acknowledges that this Android wire tool is fulfilled by a user-visible iOS Messages compose handoff."
+    }
     if id == audioStatus {
       return "Acknowledges that this Android wire tool is fulfilled by a bounded iOS audio status executor."
     }
@@ -609,6 +627,9 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func availability(_ id: String) -> AgentNativeToolAvailability {
+    if smsHandoffToolIds.contains(id) {
+      return smsHandoffAvailability
+    }
     if handoffToolIds.contains(id) {
       return handoffAvailability
     }
@@ -640,6 +661,9 @@ enum AgentIOSSystemNativeToolCatalog {
   }
 
   private static func executionPolicy(_ id: String) -> String {
+    if smsHandoffToolIds.contains(id) {
+      return "sms_compose_handoff_on_ios15"
+    }
     if handoffToolIds.contains(id) {
       return "handoff_request_on_ios15"
     }
@@ -681,6 +705,13 @@ enum AgentIOSSystemNativeToolCatalog {
     AgentNativeToolAvailability(
       status: .available,
       reason: "iOS executor returns a user-visible handoff request; the app UI must present the system URL or settings surface."
+    )
+  }
+
+  private static var smsHandoffAvailability: AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS executor returns a user-visible Messages compose handoff; direct background SMS send is not available on iOS."
     )
   }
 
@@ -751,7 +782,13 @@ enum AgentIOSSystemNativeToolCatalog {
       "phone_number": stringSchema(maxLength: 64),
       "prefill_body": stringSchema(maxLength: 2_000),
       "body_in_url": boolSchema(),
-      "settings_target": stringSchema(maxLength: 80)
+      "settings_target": stringSchema(maxLength: 80),
+      "requested_direct_send": boolSchema(),
+      "direct_send_supported": boolSchema(),
+      "submitted_to_system": boolSchema(),
+      "can_send_text": boolSchema(),
+      "handoff_transport": stringSchema(maxLength: 64),
+      "observed_at_epoch_ms": integerSchema(minimum: 0)
     ], required: [
       "handoff_kind",
       "url",
@@ -804,6 +841,7 @@ enum AgentIOSSystemNativeToolCatalog {
   static let iosCalendarWritePermission = "signalasi.scope.ios_calendar_write"
   static let iosDownloadPermission = "signalasi.scope.ios_app_managed_downloads"
   static let iosBiometricStatusPermission = "signalasi.scope.ios_app_visible_biometric_status"
+  static let iosSMSComposePermission = "signalasi.scope.ios_user_visible_sms_compose"
 
   private static let consentSmsSend = "signalasi.consent.sms.send"
   private static let consentContactsWrite = "signalasi.consent.contacts.write"

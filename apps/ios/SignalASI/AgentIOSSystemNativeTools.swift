@@ -6,6 +6,7 @@ struct AgentIOSSystemNativeToolExecutor {
   var calendarWriteProvider: AgentIOSCalendarWriteProviding
   var contactsProvider: AgentIOSContactsSearchProviding
   var contactsWriteProvider: AgentIOSContactsWriteProviding
+  var communicationHandoffProvider: AgentIOSCommunicationHandoffProviding
   var downloadProvider: AgentIOSDownloadManaging
   var wifiProvider: AgentIOSWifiStatusProviding
   var biometricProvider: AgentIOSBiometricStatusProviding
@@ -17,6 +18,7 @@ struct AgentIOSSystemNativeToolExecutor {
     calendarWriteProvider: AgentIOSCalendarWriteProviding = AgentIOSDefaultCalendarWriteProvider(),
     contactsProvider: AgentIOSContactsSearchProviding = AgentIOSDefaultContactsSearchProvider(),
     contactsWriteProvider: AgentIOSContactsWriteProviding = AgentIOSDefaultContactsWriteProvider(),
+    communicationHandoffProvider: AgentIOSCommunicationHandoffProviding = AgentIOSDefaultCommunicationHandoffProvider(),
     downloadProvider: AgentIOSDownloadManaging = AgentIOSDefaultDownloadProvider.shared,
     wifiProvider: AgentIOSWifiStatusProviding = AgentIOSDefaultWifiStatusProvider(),
     biometricProvider: AgentIOSBiometricStatusProviding = AgentIOSDefaultBiometricStatusProvider(),
@@ -27,6 +29,7 @@ struct AgentIOSSystemNativeToolExecutor {
     self.calendarWriteProvider = calendarWriteProvider
     self.contactsProvider = contactsProvider
     self.contactsWriteProvider = contactsWriteProvider
+    self.communicationHandoffProvider = communicationHandoffProvider
     self.downloadProvider = downloadProvider
     self.wifiProvider = wifiProvider
     self.biometricProvider = biometricProvider
@@ -75,6 +78,8 @@ struct AgentIOSSystemNativeToolExecutor {
       return biometricStatus(invocation)
     case AgentIOSSystemNativeToolCatalog.telephonyDialHandoff:
       return dialHandoff(invocation)
+    case AgentIOSSystemNativeToolCatalog.smsSend:
+      return smsSendHandoff(invocation)
     case AgentIOSSystemNativeToolCatalog.smsComposeHandoff:
       return smsComposeHandoff(invocation)
     case AgentIOSSystemNativeToolCatalog.wifiPanelOpen:
@@ -258,39 +263,37 @@ struct AgentIOSSystemNativeToolExecutor {
   }
 
   private func dialHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
-    guard let phoneNumber = normalizedPhoneNumber(invocation.input["phone_number"]?.stringValue) else {
+    communicationHandoffProvider.dialHandoff(
+      phoneNumber: boundedString(invocation.input["phone_number"]?.stringValue, limit: 64),
+      toolId: invocation.descriptor.id,
+      nowMillis: max(0, nowMillis())
+    )
+  }
+
+  private func smsSendHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    let body = boundedString(invocation.input["message"]?.stringValue, limit: 2_000)
+    guard !body.isEmpty else {
       return AgentNativeToolExecutionResult.failure(
-        code: "invalid_phone_number",
-        message: "Phone number must contain only bounded dialable characters."
+        code: "invalid_message",
+        message: "SMS message is empty."
       )
     }
-    return handoffResult(
-      invocation,
-      kind: "dial",
-      url: "tel:\(phoneNumber)",
-      message: "Dialer handoff prepared for user confirmation.",
-      extra: ["phone_number": .string(phoneNumber)]
+    return communicationHandoffProvider.smsComposeHandoff(
+      phoneNumber: boundedString(invocation.input["phone_number"]?.stringValue, limit: 64),
+      message: body,
+      toolId: invocation.descriptor.id,
+      requestedDirectSend: true,
+      nowMillis: max(0, nowMillis())
     )
   }
 
   private func smsComposeHandoff(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
-    guard let phoneNumber = normalizedPhoneNumber(invocation.input["phone_number"]?.stringValue) else {
-      return AgentNativeToolExecutionResult.failure(
-        code: "invalid_phone_number",
-        message: "Phone number must contain only bounded dialable characters."
-      )
-    }
-    let body = String((invocation.input["message"]?.stringValue ?? "").prefix(2_000))
-    return handoffResult(
-      invocation,
-      kind: "sms_compose",
-      url: "sms:\(phoneNumber)",
-      message: "SMS compose handoff prepared; iOS requires the user to review and send.",
-      extra: [
-        "phone_number": .string(phoneNumber),
-        "prefill_body": .string(body),
-        "body_in_url": .bool(false)
-      ]
+    communicationHandoffProvider.smsComposeHandoff(
+      phoneNumber: boundedString(invocation.input["phone_number"]?.stringValue, limit: 64),
+      message: boundedString(invocation.input["message"]?.stringValue, limit: 2_000),
+      toolId: invocation.descriptor.id,
+      requestedDirectSend: false,
+      nowMillis: max(0, nowMillis())
     )
   }
 
@@ -334,19 +337,6 @@ struct AgentIOSSystemNativeToolExecutor {
         "executor_id": .string(AgentIOSSystemNativeToolCatalog.executorId)
       ]
     )
-  }
-
-  private func normalizedPhoneNumber(_ value: String?) -> String? {
-    var normalized = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    for removable in [" ", "-", "(", ")", "."] {
-      normalized = normalized.replacingOccurrences(of: removable, with: "")
-    }
-    guard !normalized.isEmpty,
-          normalized.count <= 64,
-          normalized.range(of: #"^[+0-9*#,;]+$"#, options: .regularExpression) != nil else {
-      return nil
-    }
-    return normalized
   }
 
   private func isHTTPSURL(_ value: String) -> Bool {
