@@ -1023,41 +1023,6 @@ final class SignalASIStoreTests: XCTestCase {
     )
   }
 
-  func remoteApprovalTaskEvent(
-    sourceMessageId: Int64 = 42,
-    actionHash: String = String(repeating: "a", count: 64),
-    taskStatus: String = "waiting_approval",
-    expiresAtMillis: Int64 = 2_000_000
-  ) -> String {
-    let payload: [String: Any] = [
-      "type": "agent_task_event",
-      "task_status": taskStatus,
-      "task_id": "task-approval",
-      "client_route_id": "client-route",
-      "conversation_id": "conversation-approval",
-      "turn_id": "turn-approval",
-      "contact_id": "codex-contact",
-      "source_message_id": sourceMessageId,
-      "approval_request": [
-        "approval_id": "approval-12345678",
-        "action_hash": actionHash,
-        "kind": "command",
-        "title": "Run a command",
-        "detail": "python verify.py",
-        "target": "python verify.py",
-        "reason": "Verify the result",
-        "requested_at_ms": expiresAtMillis - 300_000,
-        "expires_at_ms": expiresAtMillis,
-        "parameters": [
-          "command": "python verify.py",
-          "cwd": "C:/workspace"
-        ]
-      ]
-    ]
-    let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-    return String(decoding: data, as: UTF8.self)
-  }
-
   private var remoteReputationDesktopId: String { "desktop_0123456789abcdef" }
   private var remoteReputationTaskId: String { "task-123" }
   private var remoteReputationContactId: String { "\(remoteReputationDesktopId):codex" }
