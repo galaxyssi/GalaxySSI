@@ -319,6 +319,97 @@ extension SignalASIStoreTests {
     XCTAssertEqual(definition.descriptor.availability.status, .available)
     XCTAssertEqual(definition.provenanceMetadata["credential_exposure"], "none")
   }
+
+  func testAgentHomeAssistantPromptRouterBuildsAndroidCompatibleServiceCalls() throws {
+    func assertRoute(
+      _ prompt: String,
+      defaultEntityId: String = "",
+      serviceDomain: String,
+      service: String,
+      entityId: String,
+      serviceData: AgentMcpJSONObject = [:],
+      file: StaticString = #filePath,
+      line: UInt = #line
+    ) throws {
+      let request = try XCTUnwrap(
+        AgentHomeAssistantPromptRouter.serviceCall(for: prompt, defaultEntityId: defaultEntityId),
+        file: file,
+        line: line
+      )
+      XCTAssertEqual(request.serviceDomain, serviceDomain, file: file, line: line)
+      XCTAssertEqual(request.service, service, file: file, line: line)
+      XCTAssertEqual(request.entityId, entityId, file: file, line: line)
+      XCTAssertEqual(request.serviceData, serviceData, file: file, line: line)
+      XCTAssertEqual(request.nativeToolInput["service_domain"], .string(serviceDomain), file: file, line: line)
+      XCTAssertEqual(request.nativeToolInput["service"], .string(service), file: file, line: line)
+      XCTAssertEqual(request.nativeToolInput["entity_id"], .string(entityId), file: file, line: line)
+      XCTAssertEqual(request.nativeToolInput["service_data"], .object(serviceData), file: file, line: line)
+    }
+
+    try assertRoute(
+      "Turn on light.office",
+      serviceDomain: "homeassistant",
+      service: "turn_on",
+      entityId: "light.office"
+    )
+    try assertRoute(
+      "Turn off",
+      defaultEntityId: " switch.kitchen ",
+      serviceDomain: "homeassistant",
+      service: "turn_off",
+      entityId: "switch.kitchen"
+    )
+    try assertRoute(
+      "Run automation automation.good_morning with skip condition",
+      serviceDomain: "automation",
+      service: "trigger",
+      entityId: "automation.good_morning",
+      serviceData: ["skip_condition": .bool(true)]
+    )
+    try assertRoute(
+      "Run script script.morning",
+      serviceDomain: "script",
+      service: "turn_on",
+      entityId: "script.morning"
+    )
+    try assertRoute(
+      "Activate scene scene.movie",
+      serviceDomain: "scene",
+      service: "turn_on",
+      entityId: "scene.movie"
+    )
+    try assertRoute(
+      "Unlock lock.front_door",
+      serviceDomain: "lock",
+      service: "unlock",
+      entityId: "lock.front_door"
+    )
+    try assertRoute(
+      "Open cover.garage",
+      serviceDomain: "cover",
+      service: "open_cover",
+      entityId: "cover.garage"
+    )
+    try assertRoute(
+      "Close valve.water",
+      serviceDomain: "valve",
+      service: "close_valve",
+      entityId: "valve.water"
+    )
+    try assertRoute(
+      "\u{6253}\u{5f00} light.office",
+      serviceDomain: "homeassistant",
+      service: "turn_on",
+      entityId: "light.office"
+    )
+
+    XCTAssertNil(AgentHomeAssistantPromptRouter.serviceCall(for: "Run automation script.morning"))
+    XCTAssertNil(AgentHomeAssistantPromptRouter.serviceCall(for: "Turn on the office light"))
+    XCTAssertEqual(
+      AgentHomeAssistantRiskPolicy.entityId(for: "Turn on the default light", defaultEntityId: "switch.kitchen"),
+      "switch.kitchen"
+    )
+  }
 }
 
 private final class TestHomeAssistantRESTTransport: AgentIOSHomeAssistantRESTTransport {

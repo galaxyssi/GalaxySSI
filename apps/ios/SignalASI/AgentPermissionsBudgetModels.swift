@@ -420,10 +420,7 @@ enum AgentHomeAssistantRiskPolicy {
   }
 
   static func entityId(for prompt: String, defaultEntityId: String = "") -> String {
-    if let range = prompt.range(of: entityIdPattern, options: .regularExpression) {
-      return String(prompt[range]).lowercased()
-    }
-    return defaultEntityId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    AgentHomeAssistantPromptRouter.entityId(for: prompt, defaultEntityId: defaultEntityId)
   }
 
   private static func riskForEntity(prompt: String, entityId: String) -> AgentRisk {
@@ -447,7 +444,6 @@ enum AgentHomeAssistantRiskPolicy {
     return .low
   }
 
-  private static let entityIdPattern = #"[A-Za-z0-9_]+\.[A-Za-z0-9_]+"#
   private static let highRiskControlDomains: Set<String> = [
     "alarm_control_panel",
     "automation",
