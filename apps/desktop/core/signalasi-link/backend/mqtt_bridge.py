@@ -847,6 +847,7 @@ def _desktop_control_status_payload(paired_client: dict, reason: str = "status")
         "desktop_fingerprint": get_signal_bundle().get("identityKeySha256", ""),
         "server_route_id": server_route_id(),
         "contract_version": own.get("contract_version"),
+        "surface_contract": own.get("desktop_surface_contract"),
         "authorized_app_contract": own.get("authorized_app_contract"),
         "pairing_access": client_grant(paired_client),
         "enabled": bool(own.get("enabled")),
@@ -5082,6 +5083,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
         "desktop_native_tools": native_manifest,
         "desktop_control": {
             "contract_version": control_status.get("contract_version"),
+            "surface_contract": control_status.get("desktop_surface_contract"),
             "enabled": bool(control_status.get("enabled")),
             "require_unlocked": bool(control_status.get("require_unlocked")),
             "allowed_tools": list(control_status.get("allowed_tools") or []),
@@ -5119,6 +5121,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "desktop_control_authorization_v1",
             "desktop_control_screenshot_v1",
             "desktop_control_input_v1",
+            "desktop_surface_sessions_v1",
             "explicit_tool_handles_v1",
             "desktop_session_handles_v1",
             "mcp_connection_handles_v1",

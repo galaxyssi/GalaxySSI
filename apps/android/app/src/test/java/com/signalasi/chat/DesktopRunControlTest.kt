@@ -95,7 +95,7 @@ class DesktopRunControlTest {
             "signalasi:phone"
         )
 
-        assertEquals("signalasi.desktop-control/1.5", DesktopControlReceiptProtocol.CONTRACT_VERSION)
+        assertEquals("signalasi.desktop-control/1.6", DesktopControlReceiptProtocol.CONTRACT_VERSION)
         assertEquals(DesktopRemoteControl.TASK_PAUSE, pause.toolId)
         assertNotEquals(pause.inputSha256, anotherTask.inputSha256)
         assertNotEquals(pause.requestSha256, continueRequest.requestSha256)
