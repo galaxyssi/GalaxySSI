@@ -27,7 +27,7 @@ extension SignalASIStoreTests {
       try AgentPhoneNativeToolCatalog.defaultRegistry(
         actionExecutor: actionExecutor,
         screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
-        capabilityStatuses: readyPhoneCapabilityStatuses(),
+        capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
         storageRootURL: root,
         nowMillis: { now }
       )

@@ -5,7 +5,9 @@ extension AgentPhoneNativeToolCatalog {
     workspaceStore: AgentWorkspaceNativeToolExecutor? = nil,
     actionExecutor: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
-    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus] = {
+      AgentPhoneCapabilityCatalog.declaredStatuses()
+    },
     storageRootURL: URL = AgentNativeToolDefaultStorePaths.applicationSupportRootURL(),
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = {
@@ -35,7 +37,7 @@ extension AgentPhoneNativeToolCatalog {
       workspaceStore: resolvedWorkspaceStore,
       actionExecutor: actionExecutor,
       screenProvider: screenProvider,
-      capabilityStatuses: capabilityStatuses,
+      capabilityStatusProvider: capabilityStatusProvider,
       replayStore: stores.replayStore,
       auditStore: stores.auditStore,
       nowMillis: nowMillis,
@@ -56,7 +58,9 @@ extension AgentPhoneNativeToolCatalog {
     workspaceStore: AgentWorkspaceNativeToolExecutor? = nil,
     actionExecutor: AgentActionExecutor,
     screenProvider: @escaping (AgentNativeToolInvocation) -> AgentScreenContext,
-    capabilityStatuses: [AgentPhoneCapabilityStatus] = AgentPhoneCapabilityCatalog.declaredStatuses(),
+    capabilityStatusProvider: @escaping () -> [AgentPhoneCapabilityStatus] = {
+      AgentPhoneCapabilityCatalog.declaredStatuses()
+    },
     storageRootURL: URL = AgentNativeToolDefaultStorePaths.applicationSupportRootURL(),
     fileManager: FileManager = .default,
     nowMillis: @escaping () -> Int64 = {
@@ -67,7 +71,7 @@ extension AgentPhoneNativeToolCatalog {
       workspaceStore: workspaceStore,
       actionExecutor: actionExecutor,
       screenProvider: screenProvider,
-      capabilityStatuses: capabilityStatuses,
+      capabilityStatusProvider: capabilityStatusProvider,
       storageRootURL: storageRootURL,
       fileManager: fileManager,
       nowMillis: nowMillis
