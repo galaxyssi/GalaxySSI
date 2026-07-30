@@ -31,6 +31,10 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("EventKit"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "eventkit_calendar_read_on_ios15")
+      } else if AgentIOSSystemNativeToolCatalog.calendarWriteToolIds.contains(descriptor.id) {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("EventKit"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "eventkit_calendar_write_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.contactsSearch {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("Contacts"), descriptor.id)
@@ -71,6 +75,13 @@ extension SignalASIStoreTests {
           descriptor.id == AgentIOSSystemNativeToolCatalog.calendarEventsQuery {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosCalendarReadPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if AgentIOSSystemNativeToolCatalog.calendarWriteToolIds.contains(descriptor.id) {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosCalendarWritePermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -140,6 +151,17 @@ extension SignalASIStoreTests {
     XCTAssertTrue(contactsUpsert.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.contacts.write" })
     XCTAssertEqual(contactsDelete.descriptor.risk, .high)
     XCTAssertEqual(contactsDelete.descriptor.idempotency, .idempotencyKeyRequired)
+
+    let calendarUpsert = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.calendarEventUpsert })
+    let calendarDelete = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.calendarEventDelete })
+    XCTAssertEqual(calendarUpsert.descriptor.risk, .high)
+    XCTAssertEqual(calendarUpsert.descriptor.idempotency, .idempotencyKeyRequired)
+    XCTAssertTrue(calendarUpsert.descriptor.requiredPermissions.contains {
+      $0.id == AgentIOSSystemNativeToolCatalog.iosCalendarWritePermission
+    })
+    XCTAssertTrue(calendarUpsert.descriptor.requiredConsents.contains { $0.id == "signalasi.consent.calendar.write" })
+    XCTAssertEqual(calendarDelete.descriptor.risk, .high)
+    XCTAssertEqual(calendarDelete.descriptor.idempotency, .idempotencyKeyRequired)
 
     let downloadEnqueue = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.downloadEnqueue })
     let downloadRemove = try XCTUnwrap(definitions.first { $0.id == AgentIOSSystemNativeToolCatalog.downloadRemove })
@@ -613,6 +635,177 @@ extension SignalASIStoreTests {
     XCTAssertEqual(provider.capturedNow, 55_000)
     XCTAssertEqual(events.output["events"]?.arrayValue?.first?.objectValue?["title"], .string("Planning"))
     XCTAssertEqual(events.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorWritesCalendarEvents() throws {
+    final class FakeCalendarWriteProvider: AgentIOSCalendarWriteProviding {
+      var upsertCalls: [
+        (
+          eventId: Int64,
+          calendarId: Int64,
+          title: String,
+          description: String,
+          location: String,
+          start: Int64,
+          end: Int64,
+          timezone: String,
+          nowMillis: Int64
+        )
+      ] = []
+      var deleteCalls: [(eventId: Int64, nowMillis: Int64)] = []
+
+      func upsertEvent(
+        eventId: Int64,
+        calendarId: Int64,
+        title: String,
+        description: String,
+        location: String,
+        startEpochMillis: Int64,
+        endEpochMillis: Int64,
+        timezone: String,
+        nowMillis: Int64
+      ) -> AgentNativeToolExecutionResult {
+        upsertCalls.append((
+          eventId,
+          calendarId,
+          title,
+          description,
+          location,
+          startEpochMillis,
+          endEpochMillis,
+          timezone,
+          nowMillis
+        ))
+        if eventId <= 0 {
+          return AgentNativeToolExecutionResult.success(
+            output: [
+              "event_id": .int(404),
+              "calendar_id": .int(calendarId),
+              "title": .string(title),
+              "start_epoch_ms": .int(startEpochMillis),
+              "end_epoch_ms": .int(endEpochMillis),
+              "location": .string(location),
+              "created": .bool(true),
+              "authorization_status": .string("authorized"),
+              "scope": .string("ios_calendar_write"),
+              "platform": .string("ios"),
+              "observed_at_epoch_ms": .int(nowMillis)
+            ],
+            message: "Calendar event created"
+          )
+        }
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "event_id": .int(eventId),
+            "calendar_id": .int(calendarId),
+            "title": .string(title),
+            "start_epoch_ms": .int(startEpochMillis),
+            "end_epoch_ms": .int(endEpochMillis),
+            "location": .string(location),
+            "updated_rows": .int(1),
+            "event_found": .bool(true),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_calendar_write"),
+            "platform": .string("ios"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Calendar event updated"
+        )
+      }
+
+      func deleteEvent(eventId: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        deleteCalls.append((eventId, nowMillis))
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "event_id": .int(eventId),
+            "deleted_rows": .int(1),
+            "event_found": .bool(true),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_calendar_write"),
+            "platform": .string("ios"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Calendar event delete completed"
+        )
+      }
+    }
+    let provider = FakeCalendarWriteProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          calendarWriteProvider: provider,
+          nowMillis: { 88_000 }
+        )
+      )
+    )
+    func context(_ key: String) -> AgentNativeToolInvocationContext {
+      AgentNativeToolInvocationContext(
+        idempotencyKey: key,
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosCalendarWritePermission],
+        grantedConsents: ["signalasi.consent.calendar.write"]
+      )
+    }
+
+    let created = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.calendarEventUpsert,
+      input: [
+        "calendar_id": .int(7),
+        "title": .string("Planning"),
+        "description": .string("Roadmap"),
+        "location": .string("Office"),
+        "start_epoch_ms": .int(10_000),
+        "end_epoch_ms": .int(20_000),
+        "timezone": .string("America/Los_Angeles")
+      ],
+      context: context("calendar-create-1")
+    )
+    let updated = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.calendarEventUpsert,
+      input: [
+        "event_id": .int(11),
+        "calendar_id": .int(7),
+        "title": .string("Planning updated"),
+        "start_epoch_ms": .int(30_000),
+        "end_epoch_ms": .int(40_000)
+      ],
+      context: context("calendar-update-1")
+    )
+    let missingKey = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.calendarEventUpsert,
+      input: [
+        "calendar_id": .int(7),
+        "title": .string("No Key"),
+        "start_epoch_ms": .int(10_000),
+        "end_epoch_ms": .int(20_000)
+      ],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosCalendarWritePermission],
+        grantedConsents: ["signalasi.consent.calendar.write"]
+      )
+    )
+    let deleted = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.calendarEventDelete,
+      input: ["event_id": .int(11)],
+      context: context("calendar-delete-1")
+    )
+
+    XCTAssertTrue(created.isSuccess)
+    XCTAssertEqual(created.output["created"], .bool(true))
+    XCTAssertEqual(created.output["event_id"], .int(404))
+    XCTAssertEqual(created.metadata["executor_id"], .string(AgentIOSSystemNativeToolCatalog.executorId))
+    XCTAssertTrue(updated.isSuccess)
+    XCTAssertEqual(updated.output["updated_rows"], .int(1))
+    XCTAssertEqual(provider.upsertCalls.count, 2)
+    XCTAssertEqual(provider.upsertCalls.first?.title, "Planning")
+    XCTAssertEqual(provider.upsertCalls.first?.timezone, "America/Los_Angeles")
+    XCTAssertEqual(provider.upsertCalls.last?.eventId, 11)
+    XCTAssertEqual(provider.upsertCalls.last?.nowMillis, 88_000)
+    XCTAssertEqual(missingKey.status, .rejected)
+    XCTAssertEqual(missingKey.error?.code, "missing_idempotency_key")
+    XCTAssertTrue(deleted.isSuccess)
+    XCTAssertEqual(deleted.output["deleted_rows"], .int(1))
+    XCTAssertEqual(provider.deleteCalls.first?.eventId, 11)
+    XCTAssertEqual(deleted.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorManagesDownloads() throws {
