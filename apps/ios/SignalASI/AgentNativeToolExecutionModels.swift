@@ -608,12 +608,15 @@ final class AgentNativeToolRegistry {
   private var definitionsById: [String: AgentPhoneNativeToolDefinition] = [:]
   private var executableById: [String: AgentNativeToolExecutableDefinition] = [:]
   private let replayStore: InMemoryAgentNativeToolReplayStore
+  private let auditStore: AgentNativeToolAuditStore
 
   init(
     definitions: [AgentPhoneNativeToolDefinition] = [],
-    replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore()
+    replayStore: InMemoryAgentNativeToolReplayStore = InMemoryAgentNativeToolReplayStore(),
+    auditStore: AgentNativeToolAuditStore = InMemoryAgentNativeToolAuditStore()
   ) throws {
     self.replayStore = replayStore
+    self.auditStore = auditStore
     try registerAll(definitions)
   }
 
@@ -679,7 +682,7 @@ final class AgentNativeToolRegistry {
     let matchingDefinitions = definitionsById.values.filter { predicate($0.descriptor) }
     let matchingIds = Set(matchingDefinitions.map(\.id))
     let matchingExecutables = executableById.values.filter { matchingIds.contains($0.id) }
-    let registry = try AgentNativeToolRegistry(replayStore: replayStore)
+    let registry = try AgentNativeToolRegistry(replayStore: replayStore, auditStore: auditStore)
     if matchingExecutables.isEmpty {
       return try registry.registerAll(matchingDefinitions)
     }
@@ -698,6 +701,14 @@ final class AgentNativeToolRegistry {
 
   func catalogJson() -> String {
     AgentMcpJSONCodec.stringify(catalogObject())
+  }
+
+  func audit(
+    limit: Int = 100,
+    toolId: String = "",
+    status: AgentNativeToolResultStatus? = nil
+  ) -> [AgentNativeToolAuditRecord] {
+    auditStore.list(limit: limit, toolId: toolId, status: status)
   }
 
   func validateInput(_ id: String, input: AgentMcpJSONObject) -> AgentNativeValidationResult {
@@ -882,7 +893,21 @@ final class AgentNativeToolRegistry {
     hooks: AgentNativeToolInvocationHooks = AgentNativeToolInvocationHooks()
   ) -> AgentNativeToolResult {
     guard let executable = executableById[id] else {
-      if lookup(id) == nil {
+      if let definition = lookup(id) {
+        return finishSynthetic(
+          id,
+          input: input,
+          context: context,
+          hooks: hooks,
+          startedAtEpochMillis: hooks.nowMillis(),
+          status: .unavailable,
+          error: AgentNativeToolError(
+            code: "missing_executor",
+            message: "No executable native tool implementation is registered for id \(id)"
+          ),
+          risk: definition.descriptor.risk
+        )
+      } else {
         return finishSynthetic(
           id,
           input: input,
@@ -893,21 +918,10 @@ final class AgentNativeToolRegistry {
           error: AgentNativeToolError(
             code: "unknown_tool",
             message: "No native tool is registered with id \(id)"
-          )
+          ),
+          risk: .blocked
         )
       }
-      return finishSynthetic(
-        id,
-        input: input,
-        context: context,
-        hooks: hooks,
-        startedAtEpochMillis: hooks.nowMillis(),
-        status: .unavailable,
-        error: AgentNativeToolError(
-          code: "missing_executor",
-          message: "No executable native tool implementation is registered for id \(id)"
-        )
-      )
     }
 
     let descriptor = executable.descriptor
@@ -951,6 +965,7 @@ final class AgentNativeToolRegistry {
         replayed: replayed,
         originalInvocationId: originalInvocationId
       )
+      appendAudit(result, context: context, risk: descriptor.risk)
       hooks.onFinished(result)
       return result
     }
@@ -969,6 +984,7 @@ final class AgentNativeToolRegistry {
           startedAtEpochMillis: startedAt,
           finishedAtEpochMillis: hooks.nowMillis()
         )
+        appendAudit(result, context: context, risk: descriptor.risk)
         hooks.onFinished(result)
         return result
       }
@@ -1142,7 +1158,8 @@ final class AgentNativeToolRegistry {
     hooks: AgentNativeToolInvocationHooks,
     startedAtEpochMillis: Int64,
     status: AgentNativeToolResultStatus,
-    error: AgentNativeToolError
+    error: AgentNativeToolError,
+    risk: AgentNativeToolRisk
   ) -> AgentNativeToolResult {
     let result = makeResult(
       id,
@@ -1154,8 +1171,17 @@ final class AgentNativeToolRegistry {
       startedAtEpochMillis: startedAtEpochMillis,
       finishedAtEpochMillis: hooks.nowMillis()
     )
+    appendAudit(result, context: context, risk: risk)
     hooks.onFinished(result)
     return result
+  }
+
+  private func appendAudit(
+    _ result: AgentNativeToolResult,
+    context: AgentNativeToolInvocationContext,
+    risk: AgentNativeToolRisk
+  ) {
+    auditStore.append(AgentNativeToolAuditRecord.from(result: result, context: context, risk: risk))
   }
 
   private func validationDetails(_ result: AgentNativeValidationResult) -> AgentMcpJSONObject {

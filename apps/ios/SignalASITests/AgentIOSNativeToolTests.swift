@@ -783,6 +783,132 @@ extension SignalASIStoreTests {
     XCTAssertEqual(conflict.error?.code, "idempotency_key_conflict")
   }
 
+  func testAgentNativeToolRegistryAuditsReplayFailureAndUnknownTools() throws {
+    var executions = 0
+    let replayStore = InMemoryAgentNativeToolReplayStore()
+    let auditStore = InMemoryAgentNativeToolAuditStore()
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.audit",
+      inputSchema: [
+        "type": .string("object"),
+        "properties": .object(["secret": .object(["type": .string("string")])]),
+        "required": .array([.string("secret")]),
+        "additionalProperties": .bool(false)
+      ],
+      idempotency: .idempotencyKeyRequired
+    )
+    let registry = try AgentNativeToolRegistry(replayStore: replayStore, auditStore: auditStore)
+      .registerExecutable(AgentNativeToolExecutableDefinition(
+        definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.audit"),
+        executor: { invocation in
+          executions += 1
+          if invocation.input["secret"] == .string("fail-me") {
+            return .failure(code: "expected_failure", message: "Sensitive value was rejected")
+          }
+          return .success(output: ["private_result": .string("hidden")])
+        }
+      ))
+
+    func context(_ invocationId: String, key: String? = nil) -> AgentNativeToolInvocationContext {
+      AgentNativeToolInvocationContext(
+        invocationId: invocationId,
+        sessionId: "session-secret",
+        conversationId: "conversation-secret",
+        turnId: "turn-secret",
+        callerId: "agent",
+        idempotencyKey: key,
+        attributes: ["task_id": "task-secret"]
+      )
+    }
+
+    _ = registry.invoke(descriptor.id, input: ["secret": .string("missing-key")], context: context("missing-key"))
+    let first = registry.invoke(
+      descriptor.id,
+      input: ["secret": .string("keep-private")],
+      context: context("first", key: "request-1")
+    )
+    let replay = registry.invoke(
+      descriptor.id,
+      input: ["secret": .string("keep-private")],
+      context: context("second", key: "request-1")
+    )
+    _ = registry.invoke(
+      descriptor.id,
+      input: ["secret": .string("fail-me")],
+      context: context("failed", key: "request-2")
+    )
+    _ = registry.invoke(
+      "signalasi.test.audit.missing",
+      input: ["secret": .string("never-store")],
+      context: context("unknown")
+    )
+
+    let records = registry.audit()
+    XCTAssertEqual(executions, 2)
+    XCTAssertEqual(first.output, replay.output)
+    XCTAssertTrue(replay.receipt.replayed)
+    XCTAssertEqual(records.map(\.status), [.rejected, .failed, .succeeded, .succeeded, .rejected])
+    XCTAssertEqual(records.map(\.replayed), [false, false, true, false, false])
+    XCTAssertEqual(records[1].errorCode, "expected_failure")
+    XCTAssertEqual(
+      registry.audit(toolId: descriptor.id, status: .succeeded).map(\.invocationId),
+      ["second", "first"]
+    )
+
+    let serialized = String(data: try JSONEncoder().encode(records), encoding: .utf8) ?? ""
+    XCTAssertFalse(serialized.contains("keep-private"))
+    XCTAssertFalse(serialized.contains("hidden"))
+    XCTAssertFalse(serialized.contains("never-store"))
+    XCTAssertFalse(serialized.contains("session-secret"))
+    XCTAssertFalse(serialized.contains("conversation-secret"))
+    XCTAssertFalse(serialized.contains("task-secret"))
+    XCTAssertTrue(records.allSatisfy { $0.inputSha256.count == 64 && $0.recordSha256.count == 64 })
+    XCTAssertTrue(records[1].identityHashes.keys.contains("session_id_sha256"))
+    XCTAssertTrue(records[1].identityHashes.keys.contains("conversation_id_sha256"))
+    XCTAssertTrue(records[1].identityHashes.keys.contains("turn_id_sha256"))
+    XCTAssertTrue(records[1].identityHashes.keys.contains("task_id_sha256"))
+  }
+
+  func testAgentNativeToolAuditStoresBoundFilterAndPersistRecords() throws {
+    let memoryStore = InMemoryAgentNativeToolAuditStore()
+    let context = AgentNativeToolInvocationContext(
+      sessionId: "session-a",
+      conversationId: "conversation-a",
+      turnId: "turn-a",
+      attributes: ["task_id": "task-a"]
+    )
+    let success = AgentNativeToolAuditRecord.from(
+      result: nativeToolResult(invocationId: "success", idempotencyKey: nil),
+      context: context,
+      risk: .low
+    )
+    let failure = AgentNativeToolAuditRecord.from(
+      result: nativeToolResult(status: .failed, invocationId: "failure", idempotencyKey: nil),
+      context: context,
+      risk: .high
+    )
+    memoryStore.append(success)
+    memoryStore.append(failure)
+
+    XCTAssertEqual(memoryStore.list(limit: 10, toolId: "", status: nil).map(\.invocationId), ["failure", "success"])
+    XCTAssertEqual(memoryStore.list(limit: 10, toolId: success.toolId, status: .failed).map(\.errorCode), ["test_failure"])
+    memoryStore.clear()
+    XCTAssertEqual(memoryStore.list(limit: 10, toolId: "", status: nil), [])
+
+    let root = try temporaryDirectory("native-tool-audit")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fileURL = relativeFile("audit/records.json", under: root)
+    let fileStore = FileAgentNativeToolAuditStore(fileURL: fileURL)
+    fileStore.append(success)
+    fileStore.append(failure)
+
+    let restored = FileAgentNativeToolAuditStore(fileURL: fileURL)
+    XCTAssertEqual(restored.list(limit: 10, toolId: "", status: nil).map(\.auditId), [failure.auditId, success.auditId])
+    XCTAssertEqual(restored.list(limit: 1, toolId: "", status: nil).map(\.auditId), [failure.auditId])
+    restored.clear()
+    XCTAssertEqual(FileAgentNativeToolAuditStore(fileURL: fileURL).list(limit: 10, toolId: "", status: nil), [])
+  }
+
   func testAgentActionNativeToolExecutorRunsLegacyExecutorThroughRegistry() throws {
     var capturedAction: AgentAction?
     var capturedScreen: AgentScreenContext?
