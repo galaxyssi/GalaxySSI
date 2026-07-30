@@ -120,6 +120,8 @@ const requiredProjectSnippets = [
   "GlobalBackgroundExecutionBudgetTests.swift in Sources",
   "GlobalModelCallBudgetModels.swift in Sources",
   "GlobalModelCallBudgetTests.swift in Sources",
+  "AgentAutonomyGuardModels.swift in Sources",
+  "AgentAutonomyGuardTests.swift in Sources",
   "AgentMediaNetworkPolicyModels.swift in Sources",
   "AgentMediaNetworkPolicyTests.swift in Sources",
   "VoiceRealtimeHealthModels.swift in Sources",
