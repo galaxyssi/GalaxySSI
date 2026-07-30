@@ -53,6 +53,7 @@
     A10000000000000000000129 /* GlobalMemoryAuditModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000129 /* GlobalMemoryAuditModels.swift */; };
     A10000000000000000000130 /* GlobalMemoryEvolutionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000130 /* GlobalMemoryEvolutionStore.swift */; };
     A10000000000000000000131 /* LocalModelRuntimePreflightModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000131 /* LocalModelRuntimePreflightModels.swift */; };
+    A10000000000000000000132 /* LocalModelAcceleratorCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000132 /* LocalModelAcceleratorCapabilities.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -67,6 +68,7 @@
     A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000212 /* GlobalMemoryAuditTests.swift */; };
     A10000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */; };
     A10000000000000000000214 /* LocalModelRuntimePreflightTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */; };
+    A10000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -118,6 +120,7 @@
     A20000000000000000000129 /* GlobalMemoryAuditModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryAuditModels.swift; sourceTree = "<group>"; };
     A20000000000000000000130 /* GlobalMemoryEvolutionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryEvolutionStore.swift; sourceTree = "<group>"; };
     A20000000000000000000131 /* LocalModelRuntimePreflightModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRuntimePreflightModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000132 /* LocalModelAcceleratorCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAcceleratorCapabilities.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -132,6 +135,7 @@
     A20000000000000000000212 /* GlobalMemoryAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryAuditTests.swift; sourceTree = "<group>"; };
     A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryEvolutionStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelRuntimePreflightTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAcceleratorCapabilityTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -184,6 +188,7 @@
         A20000000000000000000129 /* GlobalMemoryAuditModels.swift */,
         A20000000000000000000130 /* GlobalMemoryEvolutionStore.swift */,
         A20000000000000000000131 /* LocalModelRuntimePreflightModels.swift */,
+        A20000000000000000000132 /* LocalModelAcceleratorCapabilities.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -219,6 +224,7 @@
         A20000000000000000000212 /* GlobalMemoryAuditTests.swift */,
         A20000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift */,
         A20000000000000000000214 /* LocalModelRuntimePreflightTests.swift */,
+        A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -347,6 +353,7 @@
         A10000000000000000000129 /* GlobalMemoryAuditModels.swift in Sources */,
         A10000000000000000000130 /* GlobalMemoryEvolutionStore.swift in Sources */,
         A10000000000000000000131 /* LocalModelRuntimePreflightModels.swift in Sources */,
+        A10000000000000000000132 /* LocalModelAcceleratorCapabilities.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -382,6 +389,7 @@
         A10000000000000000000212 /* GlobalMemoryAuditTests.swift in Sources */,
         A10000000000000000000213 /* GlobalMemoryEvolutionStoreTests.swift in Sources */,
         A10000000000000000000214 /* LocalModelRuntimePreflightTests.swift in Sources */,
+        A10000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
