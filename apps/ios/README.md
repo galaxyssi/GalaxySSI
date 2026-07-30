@@ -125,6 +125,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style model tool-loop context compactor for preserving assistant tool-call/result pairs, summarizing older tool activity, keeping unresolved calls, and shrinking oversized tool outputs under token pressure
 - Android-style model tool protocol adapters for OpenAI-compatible, Anthropic, and Gemini providers, including native tool catalog encoding, conversation history encoding, tool-call decoding, usage metadata, bounded tool results, and malformed/unknown tool rejection
 - Android-style model tool loop for iterative model-native tool execution, manifest hashing, budget enforcement, repeated-call detection, approval pause/resume, idempotent retries, cancellation propagation, and workspace binding before native tool invocation
+- Android-style model plan parser for fenced/raw JSON action plans, allowed action kinds, dependency and output graph validation, local screen/app/native-tool resolution, task-complete replan markers, native-tool risk mapping, and bounded fallback-ready rejection
 - Android-style agent plan factory for connector dedupe, empty-plan reasoning fallback, route resolution, and paired-contact permission projection
 - Android-style native tool registry for descriptor lookup, JSON-schema input validation, permission and consent gates, deterministic catalog export, and idempotency-key replay protection
 - Android-style AgentAction native tool adapter for legacy phone action calls, receipts, provenance, result metadata, and preflight rejection results
