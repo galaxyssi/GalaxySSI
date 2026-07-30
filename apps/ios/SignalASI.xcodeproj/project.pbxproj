@@ -56,6 +56,7 @@
     A10000000000000000000132 /* LocalModelAcceleratorCapabilities.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000132 /* LocalModelAcceleratorCapabilities.swift */; };
     A10000000000000000000133 /* VoiceProviderCapabilityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000133 /* VoiceProviderCapabilityModels.swift */; };
     A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000134 /* AgentControlPlaneModels.swift */; };
+    A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */; };
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
@@ -73,6 +74,7 @@
     A10000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */; };
     A10000000000000000000216 /* VoiceProviderCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000216 /* VoiceProviderCapabilityTests.swift */; };
     A10000000000000000000217 /* AgentControlPlaneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000217 /* AgentControlPlaneTests.swift */; };
+    A10000000000000000000218 /* AgentControlPlaneAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000218 /* AgentControlPlaneAdapterTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -127,6 +129,7 @@
     A20000000000000000000132 /* LocalModelAcceleratorCapabilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAcceleratorCapabilities.swift; sourceTree = "<group>"; };
     A20000000000000000000133 /* VoiceProviderCapabilityModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProviderCapabilityModels.swift; sourceTree = "<group>"; };
     A20000000000000000000134 /* AgentControlPlaneModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneAdapterModels.swift; sourceTree = "<group>"; };
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
@@ -144,6 +147,7 @@
     A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalModelAcceleratorCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000216 /* VoiceProviderCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProviderCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000217 /* AgentControlPlaneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000218 /* AgentControlPlaneAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentControlPlaneAdapterTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -199,6 +203,7 @@
         A20000000000000000000132 /* LocalModelAcceleratorCapabilities.swift */,
         A20000000000000000000133 /* VoiceProviderCapabilityModels.swift */,
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
+        A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
         A20000000000000000000002 /* SignalASILinkProtocol.swift */,
@@ -237,6 +242,7 @@
         A20000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift */,
         A20000000000000000000216 /* VoiceProviderCapabilityTests.swift */,
         A20000000000000000000217 /* AgentControlPlaneTests.swift */,
+        A20000000000000000000218 /* AgentControlPlaneAdapterTests.swift */,
       );
       path = SignalASITests;
       sourceTree = "<group>";
@@ -368,6 +374,7 @@
         A10000000000000000000132 /* LocalModelAcceleratorCapabilities.swift in Sources */,
         A10000000000000000000133 /* VoiceProviderCapabilityModels.swift in Sources */,
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
+        A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
         A10000000000000000000002 /* SignalASILinkProtocol.swift in Sources */,
@@ -406,6 +413,7 @@
         A10000000000000000000215 /* LocalModelAcceleratorCapabilityTests.swift in Sources */,
         A10000000000000000000216 /* VoiceProviderCapabilityTests.swift in Sources */,
         A10000000000000000000217 /* AgentControlPlaneTests.swift in Sources */,
+        A10000000000000000000218 /* AgentControlPlaneAdapterTests.swift in Sources */,
       );
       runOnlyForDeploymentPostprocessing = 0;
     };
