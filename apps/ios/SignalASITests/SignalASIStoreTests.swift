@@ -2597,7 +2597,7 @@ final class SignalASIStoreTests: XCTestCase {
   func testAgentMcpPackageInstallerAcceptsDeflatedZipEntries() throws {
     let manifest = mcpLocalStdioPackageManifest()
     let runtime = "print('server')"
-    let inspection = try AgentMcpPackageInstaller().inspect(deflatedMcpPackage(
+    let inspection = try AgentMcpPackageInstaller().inspect(deflatedZipArchive(
       ("mcp.json", manifest),
       ("integrity.json", mcpPackageIntegrity(for: manifest)),
       ("runtime/server.py", runtime)
@@ -6152,6 +6152,89 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(listedEntries.compactMap { $0["path"]?.stringValue }, createdEntries.compactMap { $0["path"]?.stringValue })
     XCTAssertTrue(extractedZip.isSuccess)
     XCTAssertEqual(extractedZip.output["extracted_entries"], .int(4))
+    XCTAssertEqual(extractedZip.output["extracted_bytes"], .int(9))
+    XCTAssertEqual(unpackedFirst.output["text"], .string("alpha"))
+    XCTAssertEqual(unpackedSecond.output["text"], .string("beta"))
+  }
+
+  func testAgentWorkspaceNativeToolExecutorExtractsDeflatedZipArchives() throws {
+    let store = AgentWorkspaceNativeToolExecutor(nowMillis: { 6_000 })
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.workspaceExecutableDefinitions(store: store)
+    )
+    func writeContext(_ invocationId: String, _ idempotencyKey: String) -> AgentNativeToolInvocationContext {
+      AgentNativeToolInvocationContext(
+        invocationId: invocationId,
+        idempotencyKey: idempotencyKey,
+        grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+        grantedConsents: [AgentPhoneNativeToolCatalog.workspaceWriteConsent]
+      )
+    }
+    let readContext = AgentNativeToolInvocationContext(
+      invocationId: "zip-deflate-read",
+      grantedPermissions: [AgentPhoneNativeToolCatalog.workspacePrivatePermission],
+      grantedConsents: [AgentPhoneNativeToolCatalog.workspaceReadConsent]
+    )
+
+    _ = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      input: ["workspace_id": .string("zip-deflate")],
+      context: writeContext("zip-deflate-init", "zip-deflate-init-key")
+    )
+    let createdZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceCreateBytes,
+      input: [
+        "workspace_id": .string("zip-deflate"),
+        "path": .string("bundle.zip"),
+        "base64": .string(deflatedZipArchive(
+          ("docs/a.txt", "alpha"),
+          ("docs/nested/b.txt", "beta")
+        ).base64EncodedString())
+      ],
+      context: writeContext("zip-deflate-create", "zip-deflate-create-key")
+    )
+    let listedZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceZipList,
+      input: [
+        "workspace_id": .string("zip-deflate"),
+        "archive_path": .string("bundle.zip")
+      ],
+      context: readContext
+    )
+    let extractedZip = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceZipExtract,
+      input: [
+        "workspace_id": .string("zip-deflate"),
+        "archive_path": .string("bundle.zip"),
+        "destination_path": .string("unpacked")
+      ],
+      context: writeContext("zip-deflate-extract", "zip-deflate-extract-key")
+    )
+    let unpackedFirst = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: [
+        "workspace_id": .string("zip-deflate"),
+        "path": .string("unpacked/docs/a.txt")
+      ],
+      context: readContext
+    )
+    let unpackedSecond = registry.invoke(
+      AgentPhoneNativeToolCatalog.workspaceReadText,
+      input: [
+        "workspace_id": .string("zip-deflate"),
+        "path": .string("unpacked/docs/nested/b.txt")
+      ],
+      context: readContext
+    )
+
+    let listedEntries = listedZip.output["entries"]?.arrayValue?.compactMap(\.objectValue) ?? []
+
+    XCTAssertTrue(createdZip.isSuccess)
+    XCTAssertTrue(listedZip.isSuccess)
+    XCTAssertEqual(listedEntries.compactMap { $0["path"]?.stringValue }, ["docs/a.txt", "docs/nested/b.txt"])
+    XCTAssertEqual(listedZip.output["total_uncompressed_bytes"], .int(9))
+    XCTAssertTrue(extractedZip.isSuccess)
+    XCTAssertEqual(extractedZip.output["extracted_entries"], .int(2))
     XCTAssertEqual(extractedZip.output["extracted_bytes"], .int(9))
     XCTAssertEqual(unpackedFirst.output["text"], .string("alpha"))
     XCTAssertEqual(unpackedSecond.output["text"], .string("beta"))
@@ -14042,7 +14125,7 @@ final class SignalASIStoreTests: XCTestCase {
     return output
   }
 
-  private func deflatedMcpPackage(_ files: (String, String)...) -> Data {
+  private func deflatedZipArchive(_ files: (String, String)...) -> Data {
     var output = Data()
     var centralRecords: [(name: String, body: Data, compressed: Data, crc32: UInt32, localOffset: Int)] = []
     for file in files {

@@ -17840,7 +17840,7 @@ struct AgentMcpPackageInstaller {
       }
       content = compressed
     case 8:
-      content = try inflateDeflate(compressed, expectedBytes: entry.uncompressedBytes, maxBytes: maxBytes)
+      content = try Self.inflateDeflate(compressed, expectedBytes: entry.uncompressedBytes, maxBytes: maxBytes)
     default:
       throw AgentRuntimeCapabilityError.invalid("MCP package ZIP compression method is not supported on iOS yet")
     }
@@ -17853,7 +17853,7 @@ struct AgentMcpPackageInstaller {
     return content
   }
 
-  private func inflateDeflate(_ compressed: Data, expectedBytes: Int64, maxBytes: Int) throws -> Data {
+  static func inflateDeflate(_ compressed: Data, expectedBytes: Int64, maxBytes: Int) throws -> Data {
     guard expectedBytes <= Int64(maxBytes) else {
       throw AgentRuntimeCapabilityError.invalid("MCP package content exceeds \(maxBytes) bytes")
     }
@@ -17893,7 +17893,7 @@ struct AgentMcpPackageInstaller {
     return output
   }
 
-  private func inflateStoredBlock(
+  private static func inflateStoredBlock(
     reader: inout DeflateBitReader,
     output: inout Data,
     maxBytes: Int
@@ -17910,7 +17910,7 @@ struct AgentMcpPackageInstaller {
     output.append(try reader.readBytes(length))
   }
 
-  private func inflateCompressedBlock(
+  private static func inflateCompressedBlock(
     reader: inout DeflateBitReader,
     literalTable: DeflateHuffmanTable,
     distanceTable: DeflateHuffmanTable,
@@ -17942,7 +17942,7 @@ struct AgentMcpPackageInstaller {
     }
   }
 
-  private func copyDeflateMatch(length: Int, distance: Int, output: inout Data, maxBytes: Int) throws {
+  private static func copyDeflateMatch(length: Int, distance: Int, output: inout Data, maxBytes: Int) throws {
     guard distance > 0, distance <= output.count else {
       throw AgentRuntimeCapabilityError.invalid("MCP package deflate distance is invalid")
     }
@@ -17954,7 +17954,7 @@ struct AgentMcpPackageInstaller {
     }
   }
 
-  private func dynamicDeflateTables(reader: inout DeflateBitReader) throws -> (literal: DeflateHuffmanTable, distance: DeflateHuffmanTable) {
+  private static func dynamicDeflateTables(reader: inout DeflateBitReader) throws -> (literal: DeflateHuffmanTable, distance: DeflateHuffmanTable) {
     let literalCount = try reader.readBits(5) + 257
     let distanceCount = try reader.readBits(5) + 1
     let codeLengthCount = try reader.readBits(4) + 4
@@ -24576,7 +24576,7 @@ final class AgentWorkspaceNativeToolExecutor {
     }
 
     for entry in inspection.entries {
-      if entry.method != 0 {
+      if entry.method != 0 && entry.method != 8 {
         return failure(.unsupportedFileType, "zip_extract", entry.path, "ZIP compression method is not supported on iOS yet")
       }
       let target = joinedPath(destination, entry.path)
@@ -24616,12 +24616,12 @@ final class AgentWorkspaceNativeToolExecutor {
         }
         continue
       }
-      let data = archiveEntry.data.subdata(in: entry.dataOffset..<(entry.dataOffset + entry.dataLength))
-      guard Int64(data.count) == entry.uncompressedBytes else {
-        return failure(.invalidArchive, "zip_extract", entry.path, "ZIP entry size changed during extraction")
-      }
-      guard crc32(data) == entry.crc32 else {
-        return failure(.invalidArchive, "zip_extract", entry.path, "ZIP entry CRC did not match")
+      let data: Data
+      switch zipEntryData(entry, archiveData: archiveEntry.data) {
+      case .success(let value):
+        data = value
+      case .failure(let error):
+        return .failure(error)
       }
       guard let nextBytes = checkedAdd(extractedBytes, Int64(data.count)) else {
         return failure(.limitExceeded, "zip_extract", entry.path, "ZIP extracted byte count overflow")
@@ -24644,6 +24644,38 @@ final class AgentWorkspaceNativeToolExecutor {
       "extracted_entries": .int(Int64(inspection.entries.count)),
       "extracted_bytes": .int(extractedBytes)
     ])
+  }
+
+  private func zipEntryData(_ entry: ZipArchiveEntry, archiveData: Data) -> AgentWorkspaceFileResult<Data> {
+    guard rangeFits(start: entry.dataOffset, length: entry.dataLength, in: archiveData) else {
+      return failure(.invalidArchive, "zip_extract", entry.path, "ZIP local entry is out of bounds")
+    }
+    let compressed = archiveData.subdata(in: entry.dataOffset..<(entry.dataOffset + entry.dataLength))
+    let data: Data
+    switch entry.method {
+    case 0:
+      data = compressed
+    case 8:
+      do {
+        data = try AgentMcpPackageInstaller.inflateDeflate(
+          compressed,
+          expectedBytes: entry.uncompressedBytes,
+          maxBytes: Int(min(policy.maxZipEntryBytes, Int64(Int.max)))
+        )
+      } catch {
+        let detail = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        return failure(.invalidArchive, "zip_extract", entry.path, detail)
+      }
+    default:
+      return failure(.unsupportedFileType, "zip_extract", entry.path, "ZIP compression method is not supported on iOS yet")
+    }
+    guard Int64(data.count) == entry.uncompressedBytes else {
+      return failure(.invalidArchive, "zip_extract", entry.path, "ZIP entry size changed during extraction")
+    }
+    guard crc32(data) == entry.crc32 else {
+      return failure(.invalidArchive, "zip_extract", entry.path, "ZIP entry CRC did not match")
+    }
+    return .success(data)
   }
 
   private func readZipArchive(
