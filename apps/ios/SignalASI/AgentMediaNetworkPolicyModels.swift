@@ -20,6 +20,7 @@ struct AgentMediaNetworkProbe: Codable, Equatable {
   var restricted: Bool
   var congested: Bool
   var cellular: Bool
+  var transports: [String]
   var downstreamKbps: Int
   var upstreamKbps: Int
 
@@ -32,6 +33,7 @@ struct AgentMediaNetworkProbe: Codable, Equatable {
     restricted: Bool = false,
     congested: Bool = false,
     cellular: Bool = false,
+    transports: [String] = [],
     downstreamKbps: Int = 20_000,
     upstreamKbps: Int = 5_000
   ) {
@@ -43,6 +45,7 @@ struct AgentMediaNetworkProbe: Codable, Equatable {
     self.restricted = restricted
     self.congested = congested
     self.cellular = cellular
+    self.transports = transports
     self.downstreamKbps = downstreamKbps
     self.upstreamKbps = upstreamKbps
   }
@@ -56,8 +59,26 @@ struct AgentMediaNetworkProbe: Codable, Equatable {
     case restricted
     case congested
     case cellular
+    case transports
     case downstreamKbps = "downstream_kbps"
     case upstreamKbps = "upstream_kbps"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      networkPresent: try container.decodeIfPresent(Bool.self, forKey: .networkPresent) ?? true,
+      internetCapable: try container.decodeIfPresent(Bool.self, forKey: .internetCapable) ?? true,
+      validated: try container.decodeIfPresent(Bool.self, forKey: .validated) ?? true,
+      metered: try container.decodeIfPresent(Bool.self, forKey: .metered) ?? false,
+      roaming: try container.decodeIfPresent(Bool.self, forKey: .roaming) ?? false,
+      restricted: try container.decodeIfPresent(Bool.self, forKey: .restricted) ?? false,
+      congested: try container.decodeIfPresent(Bool.self, forKey: .congested) ?? false,
+      cellular: try container.decodeIfPresent(Bool.self, forKey: .cellular) ?? false,
+      transports: try container.decodeIfPresent([String].self, forKey: .transports) ?? [],
+      downstreamKbps: try container.decodeIfPresent(Int.self, forKey: .downstreamKbps) ?? 20_000,
+      upstreamKbps: try container.decodeIfPresent(Int.self, forKey: .upstreamKbps) ?? 5_000
+    )
   }
 }
 
@@ -153,6 +174,7 @@ final class AgentMediaNetworkDetector {
   private let deviceProfileProvider: () -> AgentDeviceProfile
   private let queue = DispatchQueue(label: "com.signalasi.ios.media-network")
   private let lock = NSLock()
+  private var probe: AgentMediaNetworkProbe
   private var profile: AgentMediaDeliveryProfile
 
   init(
@@ -161,7 +183,9 @@ final class AgentMediaNetworkDetector {
   ) {
     self.monitor = monitor
     self.deviceProfileProvider = deviceProfileProvider
-    self.profile = deviceProfileProvider().adaptMedia(AgentMediaNetworkPolicy.evaluate(AgentMediaNetworkProbe()))
+    let initialProbe = AgentMediaNetworkProbe()
+    self.probe = initialProbe
+    self.profile = deviceProfileProvider().adaptMedia(AgentMediaNetworkPolicy.evaluate(initialProbe))
     self.monitor.pathUpdateHandler = { [weak self] path in
       self?.update(path: path)
     }
@@ -174,9 +198,17 @@ final class AgentMediaNetworkDetector {
     return profile
   }
 
-  func update(path: NWPath) {
-    let next = deviceProfileProvider().adaptMedia(AgentMediaNetworkPolicy.evaluate(Self.probe(for: path)))
+  var currentProbe: AgentMediaNetworkProbe {
     lock.lock()
+    defer { lock.unlock() }
+    return probe
+  }
+
+  func update(path: NWPath) {
+    let nextProbe = Self.probe(for: path)
+    let next = deviceProfileProvider().adaptMedia(AgentMediaNetworkPolicy.evaluate(nextProbe))
+    lock.lock()
+    probe = nextProbe
     profile = next
     lock.unlock()
   }
@@ -191,9 +223,24 @@ final class AgentMediaNetworkDetector {
       restricted: path.isConstrained,
       congested: false,
       cellular: path.usesInterfaceType(.cellular),
+      transports: transports(for: path),
       downstreamKbps: 0,
       upstreamKbps: 0
     )
+  }
+
+  private static func transports(for path: NWPath) -> [String] {
+    var transports: [String] = []
+    if path.usesInterfaceType(.wifi) {
+      transports.append("wifi")
+    }
+    if path.usesInterfaceType(.cellular) {
+      transports.append("cellular")
+    }
+    if path.usesInterfaceType(.wiredEthernet) {
+      transports.append("ethernet")
+    }
+    return transports
   }
 
   deinit {

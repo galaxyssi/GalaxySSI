@@ -63,7 +63,7 @@ final class AgentMediaNetworkPolicyTests: XCTestCase {
       AgentMediaNetworkPolicy.profile(for: .constrained)
     )
     let encodedProbe = try JSONEncoder().encode(
-      AgentMediaNetworkProbe(metered: true, downstreamKbps: 900, upstreamKbps: 256)
+      AgentMediaNetworkProbe(metered: true, cellular: true, transports: ["cellular"], downstreamKbps: 900, upstreamKbps: 256)
     )
     let profile = try XCTUnwrap(JSONSerialization.jsonObject(with: encodedProfile) as? [String: Any])
     let probe = try XCTUnwrap(JSONSerialization.jsonObject(with: encodedProbe) as? [String: Any])
@@ -76,8 +76,23 @@ final class AgentMediaNetworkPolicyTests: XCTestCase {
     XCTAssertEqual(profile["defer_media_upload"] as? Bool, false)
     XCTAssertEqual(probe["network_present"] as? Bool, true)
     XCTAssertEqual(probe["internet_capable"] as? Bool, true)
+    XCTAssertEqual(probe["transports"] as? [String], ["cellular"])
     XCTAssertEqual((probe["downstream_kbps"] as? NSNumber)?.intValue, 900)
     XCTAssertEqual((probe["upstream_kbps"] as? NSNumber)?.intValue, 256)
+  }
+
+  func testMediaNetworkProbeDecodesLegacyPayloadWithoutTransports() throws {
+    let decoded = try JSONDecoder().decode(
+      AgentMediaNetworkProbe.self,
+      from: Data(#"{"network_present":false,"internet_capable":false,"validated":false}"#.utf8)
+    )
+
+    XCTAssertFalse(decoded.networkPresent)
+    XCTAssertFalse(decoded.internetCapable)
+    XCTAssertFalse(decoded.validated)
+    XCTAssertEqual(decoded.transports, [])
+    XCTAssertEqual(decoded.downstreamKbps, 20_000)
+    XCTAssertEqual(decoded.upstreamKbps, 5_000)
   }
 
   func testAttachmentDescriptorsCarryTransportProfileAndRespectImageBudget() {
