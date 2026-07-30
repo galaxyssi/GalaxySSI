@@ -26,6 +26,11 @@ extension SignalASIStoreTests {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("handoff request"), descriptor.id)
         XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "handoff_request_on_ios15")
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.calendarsList ||
+          descriptor.id == AgentIOSSystemNativeToolCatalog.calendarEventsQuery {
+        XCTAssertEqual(descriptor.availability.status, .available)
+        XCTAssertTrue(descriptor.availability.reason.contains("EventKit"), descriptor.id)
+        XCTAssertEqual(definition.provenanceMetadata["execution_policy"], "eventkit_calendar_read_on_ios15")
       } else if descriptor.id == AgentIOSSystemNativeToolCatalog.contactsSearch {
         XCTAssertEqual(descriptor.availability.status, .available)
         XCTAssertTrue(descriptor.availability.reason.contains("Contacts"), descriptor.id)
@@ -50,6 +55,14 @@ extension SignalASIStoreTests {
       if descriptor.id == AgentIOSSystemNativeToolCatalog.audioStatus {
         XCTAssertTrue(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.iosAudioStatusPermission
+        }, descriptor.id)
+        XCTAssertFalse(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
+        }, descriptor.id)
+      } else if descriptor.id == AgentIOSSystemNativeToolCatalog.calendarsList ||
+          descriptor.id == AgentIOSSystemNativeToolCatalog.calendarEventsQuery {
+        XCTAssertTrue(descriptor.requiredPermissions.contains {
+          $0.id == AgentIOSSystemNativeToolCatalog.iosCalendarReadPermission
         }, descriptor.id)
         XCTAssertFalse(descriptor.requiredPermissions.contains {
           $0.id == AgentIOSSystemNativeToolCatalog.androidSystemPermission
@@ -325,6 +338,109 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["contacts"]?.arrayValue?.first?.objectValue?["display_name"], .string("Alice Example"))
     XCTAssertEqual(result.output["contacts"]?.arrayValue?.first?.objectValue?["phone_number"], .string("+15551234567"))
     XCTAssertEqual(result.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
+  }
+
+  func testAgentIOSSystemNativeToolExecutorReadsCalendarsAndEvents() throws {
+    final class FakeCalendarProvider: AgentIOSCalendarReadProviding {
+      var capturedStart: Int64 = 0
+      var capturedEnd: Int64 = 0
+      var capturedLimit = 0
+      var capturedNow: Int64 = 0
+
+      func listCalendars(nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        AgentNativeToolExecutionResult.success(
+          output: [
+            "calendars": .array([
+              .object([
+                "calendar_id": .int(7),
+                "display_name": .string("Work"),
+                "account_name": .string("iCloud"),
+                "visible": .bool(true),
+                "platform": .string("ios")
+              ])
+            ]),
+            "count": .int(1),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_calendar_read"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Calendars listed"
+        )
+      }
+
+      func queryEvents(
+        startEpochMillis: Int64,
+        endEpochMillis: Int64,
+        limit: Int,
+        nowMillis: Int64
+      ) -> AgentNativeToolExecutionResult {
+        capturedStart = startEpochMillis
+        capturedEnd = endEpochMillis
+        capturedLimit = limit
+        capturedNow = nowMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "events": .array([
+              .object([
+                "event_id": .int(11),
+                "title": .string("Planning"),
+                "start_epoch_ms": .int(startEpochMillis),
+                "end_epoch_ms": .int(endEpochMillis),
+                "location": .string("Office"),
+                "calendar_id": .int(7),
+                "platform": .string("ios")
+              ])
+            ]),
+            "count": .int(1),
+            "start_epoch_ms": .int(startEpochMillis),
+            "end_epoch_ms": .int(endEpochMillis),
+            "limit": .int(Int64(limit)),
+            "authorization_status": .string("authorized"),
+            "scope": .string("ios_calendar_read"),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Calendar events queried"
+        )
+      }
+    }
+    let provider = FakeCalendarProvider()
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.systemExecutableDefinitions(
+        executor: AgentIOSSystemNativeToolExecutor(
+          calendarProvider: provider,
+          nowMillis: { 55_000 }
+        )
+      )
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSystemNativeToolCatalog.iosCalendarReadPermission]
+    )
+
+    let calendars = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.calendarsList,
+      input: [:],
+      context: context
+    )
+    let events = registry.invoke(
+      AgentIOSSystemNativeToolCatalog.calendarEventsQuery,
+      input: [
+        "start_epoch_ms": .int(1_000),
+        "end_epoch_ms": .int(2_000),
+        "limit": .int(3)
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(calendars.isSuccess)
+    XCTAssertEqual(calendars.output["count"], .int(1))
+    XCTAssertEqual(calendars.output["calendars"]?.arrayValue?.first?.objectValue?["display_name"], .string("Work"))
+    XCTAssertTrue(events.isSuccess)
+    XCTAssertEqual(provider.capturedStart, 1_000)
+    XCTAssertEqual(provider.capturedEnd, 2_000)
+    XCTAssertEqual(provider.capturedLimit, 3)
+    XCTAssertEqual(provider.capturedNow, 55_000)
+    XCTAssertEqual(events.output["events"]?.arrayValue?.first?.objectValue?["title"], .string("Planning"))
+    XCTAssertEqual(events.provenance.executorId, AgentIOSSystemNativeToolCatalog.executorId)
   }
 
   func testAgentIOSSystemNativeToolExecutorBuildsUserVisibleHandoffs() throws {

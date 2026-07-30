@@ -1134,6 +1134,8 @@
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes.";
+        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
+        INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
@@ -1167,6 +1169,8 @@
         ENABLE_PREVIEWS = YES;
         GENERATE_INFOPLIST_FILE = YES;
         INFOPLIST_KEY_NSCameraUsageDescription = "Scan SignalASI pairing QR codes.";
+        INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
+        INFOPLIST_KEY_NSCalendarsUsageDescription = "Read calendars only when you grant SignalASI calendar access.";
         INFOPLIST_KEY_NSContactsUsageDescription = "Search contacts only when you grant SignalASI contacts access.";
         INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record voice prompts.";
         INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Transcribe voice prompts.";
