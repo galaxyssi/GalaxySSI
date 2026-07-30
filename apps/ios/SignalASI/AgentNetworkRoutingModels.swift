@@ -2330,13 +2330,13 @@ private extension AgentRegistration {
   }
 }
 
-private func searchTokens(_ value: String) -> Set<String> {
+func searchTokens(_ value: String) -> Set<String> {
   Set(normalizeSearchText(value)
     .components(separatedBy: CharacterSet.alphanumerics.inverted)
     .filter { $0.count >= 2 })
 }
 
-private func normalizeSearchText(_ value: String) -> String {
+func normalizeSearchText(_ value: String) -> String {
   value
     .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     .lowercased()
