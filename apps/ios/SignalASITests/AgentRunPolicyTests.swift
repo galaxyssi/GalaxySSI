@@ -15,6 +15,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(desktop.executorLabel, "Codex")
     XCTAssertEqual(desktop.locationLabelHint, "WORKSTATION")
     XCTAssertEqual(desktop.locationKind, .desktop)
+    XCTAssertEqual(desktop.runtimeKind, .desktopAgent)
     XCTAssertTrue(desktop.cancellable)
 
     let phone = AgentExecutionPresentationPolicy.local(
@@ -36,14 +37,21 @@ extension SignalASIStoreTests {
 
     XCTAssertEqual(phone.locationKind, .phone)
     XCTAssertEqual(phone.executorLabel, "SignalASI")
-    XCTAssertEqual(cloud.locationKind, .cloud)
+    XCTAssertEqual(phone.runtimeKind, .phoneNative)
+    XCTAssertEqual(cloud.locationKind, .phone)
+    XCTAssertEqual(cloud.runtimeKind, .phoneCloudAPI)
     XCTAssertEqual(cloud.executorLabel, "DeepSeek")
 
     let completed = AgentExecutionPresentationPolicy.remote(
       executorId: "codex",
       executorLabel: "Codex",
       locationKind: "desktop",
+      locationId: "desktop-1",
       locationName: "WORKSTATION",
+      runtimeKind: "desktop_tool",
+      runtimeId: "terminal",
+      runtimeName: "Terminal",
+      contract: AgentExecutionLocationContract.version,
       status: "completed",
       currentStep: "",
       startedAtMillis: 1_000,
@@ -54,18 +62,91 @@ extension SignalASIStoreTests {
     XCTAssertFalse(completed.cancellable)
     XCTAssertEqual(completed.phase, .completed)
     XCTAssertEqual(completed.locationKind, .desktop)
+    XCTAssertEqual(completed.runtimeKind, .desktopTool)
+    XCTAssertEqual(completed.runtimeId, "terminal")
+    XCTAssertEqual(completed.runtimeLabelHint, "Terminal")
+    XCTAssertEqual(completed.locationId, "desktop-1")
+    XCTAssertTrue(completed.locationTrusted)
+  }
+
+  func testAgentExecutionPresentationPolicyResolvesRouteActionAndTaskRecordLocations() {
+    let desktopRoute = AgentRoute(
+      kind: .localModel,
+      targetId: "ollama",
+      targetTitle: "Ollama \u{00b7} MINI",
+      executionDeviceId: "desktop-1",
+      executionDeviceName: "Mac Mini"
+    )
+    let desktop = AgentExecutionPresentationPolicy.location(route: desktopRoute)
+
+    XCTAssertEqual(desktop.locationKind, .desktop)
+    XCTAssertEqual(desktop.runtimeKind, .desktopAgent)
+    XCTAssertEqual(desktop.locationId, "desktop-1")
+    XCTAssertEqual(desktop.locationName, "Mac Mini")
+    XCTAssertEqual(desktop.runtimeId, "ollama")
+
+    let runtimeAction = AgentAction(
+      id: "runtime",
+      kind: .callConnector,
+      target: "runtime",
+      risk: .medium,
+      status: .proposed,
+      description: "Run in local runtime",
+      parameters: ["tool_id": AgentIOSOnDeviceRuntimeNativeToolCatalog.execute]
+    )
+    let linux = AgentExecutionPresentationPolicy.location(
+      route: AgentRoute(kind: .localSystem, targetTitle: "SignalASI"),
+      action: runtimeAction
+    )
+
+    XCTAssertEqual(linux.locationKind, .phone)
+    XCTAssertEqual(linux.runtimeKind, .phoneLinux)
+    XCTAssertEqual(linux.runtimeId, AgentIOSOnDeviceRuntimeNativeToolCatalog.execute)
+
+    let record = AgentTaskRecord(
+      taskId: "task",
+      sessionId: "conversation",
+      goal: "Inspect desktop",
+      phase: .executing,
+      routeKind: .localSystem,
+      targetTitle: "SignalASI",
+      risk: .low,
+      blocked: false,
+      executionLocationKind: .desktop,
+      executionRuntimeKind: .desktopTool,
+      executionLocationId: "desktop-2",
+      executionLocationName: "Studio PC",
+      executionRuntimeId: "shell",
+      executionLocationTrusted: false
+    )
+    let restored = AgentExecutionPresentationPolicy.location(record: record)
+
+    XCTAssertEqual(restored.locationKind, .desktop)
+    XCTAssertEqual(restored.runtimeKind, .desktopTool)
+    XCTAssertEqual(restored.locationId, "desktop-2")
+    XCTAssertEqual(restored.locationName, "Studio PC")
+    XCTAssertEqual(restored.runtimeId, "shell")
+    XCTAssertFalse(restored.trusted)
   }
 
   func testAgentExecutionPresentationPolicyDecodesAndroidWireNames() throws {
     let phase = try JSONDecoder.signalASI.decode(AgentPhase.self, from: Data(#""WAITING_RESPONSE""#.utf8))
     let route = try JSONDecoder.signalASI.decode(AgentRouteKind.self, from: Data(#""DESKTOP_AGENT""#.utf8))
+    let location = try JSONDecoder.signalASI.decode(AgentExecutionLocationKind.self, from: Data(#""connected_device""#.utf8))
+    let runtime = try JSONDecoder.signalASI.decode(AgentExecutionRuntimeKind.self, from: Data(#""PHONE_LINUX""#.utf8))
     let fallbackPhase = try JSONDecoder.signalASI.decode(AgentPhase.self, from: Data(#""not-supported""#.utf8))
     let fallbackRoute = try JSONDecoder.signalASI.decode(AgentRouteKind.self, from: Data(#""not-supported""#.utf8))
+    let fallbackLocation = try JSONDecoder.signalASI.decode(AgentExecutionLocationKind.self, from: Data(#""not-supported""#.utf8))
+    let fallbackRuntime = try JSONDecoder.signalASI.decode(AgentExecutionRuntimeKind.self, from: Data(#""not-supported""#.utf8))
 
     XCTAssertEqual(phase, .waitingResponse)
     XCTAssertEqual(route, .desktopAgent)
+    XCTAssertEqual(location, .connectedDevice)
+    XCTAssertEqual(runtime, .phoneLinux)
     XCTAssertEqual(fallbackPhase, .executing)
     XCTAssertEqual(fallbackRoute, .unknown)
+    XCTAssertEqual(fallbackLocation, .unknown)
+    XCTAssertEqual(fallbackRuntime, .unknown)
     XCTAssertFalse(AgentExecutionPresentationPolicy.isCancellable(.blocked))
     XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("timed_out"), .failed)
     XCTAssertEqual(AgentExecutionPresentationPolicy.phaseForRemoteStatus("waiting_approval"), .paused)
@@ -1864,6 +1945,9 @@ extension SignalASIStoreTests {
     XCTAssertEqual(decodedTask.phase, .completed)
     XCTAssertEqual(decodedTask.routeKind, .desktopAgent)
     XCTAssertEqual(decodedTask.risk, .low)
+    XCTAssertEqual(decodedTask.executionLocationKind, .unknown)
+    XCTAssertEqual(decodedTask.executionRuntimeKind, .unknown)
+    XCTAssertTrue(decodedTask.executionLocationTrusted)
     XCTAssertEqual(decodedTask.outputFiles, ["report.md"])
     XCTAssertEqual(decodedTask.executionLog, ["step"])
     XCTAssertEqual(fallbackTask.phase, .executing)
@@ -1871,6 +1955,8 @@ extension SignalASIStoreTests {
     XCTAssertEqual(fallbackTask.risk, .medium)
     XCTAssertTrue(encodedTask.contains(#""updated_at_millis":2"#))
     XCTAssertTrue(encodedTask.contains(#""route_kind":"DESKTOP_AGENT""#))
+    XCTAssertTrue(encodedTask.contains(#""execution_location_kind":"UNKNOWN""#))
+    XCTAssertTrue(encodedTask.contains(#""execution_runtime_kind":"UNKNOWN""#))
     XCTAssertTrue(encodedRecovery.contains(#""conversation_id":"conversation""#))
     XCTAssertTrue(encodedRecovery.contains(#""turn_id":"turn""#))
   }

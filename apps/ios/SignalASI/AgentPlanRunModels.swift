@@ -10,6 +10,12 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
   var targetTitle: String
   var risk: AgentRisk
   var blocked: Bool
+  var executionLocationKind: AgentExecutionLocationKind
+  var executionRuntimeKind: AgentExecutionRuntimeKind
+  var executionLocationId: String
+  var executionLocationName: String
+  var executionRuntimeId: String
+  var executionLocationTrusted: Bool
   var result: String
   var verification: String
   var outputFiles: [String]
@@ -28,6 +34,12 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     targetTitle: String,
     risk: AgentRisk,
     blocked: Bool,
+    executionLocationKind: AgentExecutionLocationKind = .unknown,
+    executionRuntimeKind: AgentExecutionRuntimeKind = .unknown,
+    executionLocationId: String = "",
+    executionLocationName: String = "",
+    executionRuntimeId: String = "",
+    executionLocationTrusted: Bool = true,
     result: String = "",
     verification: String = "",
     outputFiles: [String] = [],
@@ -43,6 +55,12 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     self.targetTitle = targetTitle
     self.risk = risk
     self.blocked = blocked
+    self.executionLocationKind = executionLocationKind
+    self.executionRuntimeKind = executionRuntimeKind
+    self.executionLocationId = executionLocationId
+    self.executionLocationName = executionLocationName
+    self.executionRuntimeId = executionRuntimeId
+    self.executionLocationTrusted = executionLocationTrusted
     self.result = result
     self.verification = verification
     self.outputFiles = outputFiles
@@ -60,6 +78,12 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
     case targetTitle = "target_title"
     case risk
     case blocked
+    case executionLocationKind = "execution_location_kind"
+    case executionRuntimeKind = "execution_runtime_kind"
+    case executionLocationId = "execution_location_id"
+    case executionLocationName = "execution_location_name"
+    case executionRuntimeId = "execution_runtime_id"
+    case executionLocationTrusted = "execution_location_trusted"
     case result
     case verification
     case outputFiles = "output_files"
@@ -79,6 +103,12 @@ struct AgentTaskRecord: Codable, Equatable, Identifiable {
       targetTitle: try container.decodeIfPresent(String.self, forKey: .targetTitle) ?? "",
       risk: try container.decodeIfPresent(AgentRisk.self, forKey: .risk) ?? .medium,
       blocked: try container.decodeIfPresent(Bool.self, forKey: .blocked) ?? false,
+      executionLocationKind: try container.decodeIfPresent(AgentExecutionLocationKind.self, forKey: .executionLocationKind) ?? .unknown,
+      executionRuntimeKind: try container.decodeIfPresent(AgentExecutionRuntimeKind.self, forKey: .executionRuntimeKind) ?? .unknown,
+      executionLocationId: try container.decodeIfPresent(String.self, forKey: .executionLocationId) ?? "",
+      executionLocationName: try container.decodeIfPresent(String.self, forKey: .executionLocationName) ?? "",
+      executionRuntimeId: try container.decodeIfPresent(String.self, forKey: .executionRuntimeId) ?? "",
+      executionLocationTrusted: try container.decodeIfPresent(Bool.self, forKey: .executionLocationTrusted) ?? true,
       result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
       verification: try container.decodeIfPresent(String.self, forKey: .verification) ?? "",
       outputFiles: try container.decodeIfPresent([String].self, forKey: .outputFiles) ?? [],
@@ -218,6 +248,10 @@ struct AgentRoute: Codable, Equatable {
   var status: String
   var deliveryMode: String
   var capabilities: [String]
+  var executionLocationKind: AgentExecutionLocationKind
+  var executionRuntimeKind: AgentExecutionRuntimeKind
+  var executionDeviceId: String
+  var executionDeviceName: String
 
   init(
     routeId: String = "",
@@ -226,7 +260,11 @@ struct AgentRoute: Codable, Equatable {
     targetTitle: String = "",
     status: String = "",
     deliveryMode: String = "",
-    capabilities: [String] = []
+    capabilities: [String] = [],
+    executionLocationKind: AgentExecutionLocationKind = .unknown,
+    executionRuntimeKind: AgentExecutionRuntimeKind = .unknown,
+    executionDeviceId: String = "",
+    executionDeviceName: String = ""
   ) {
     self.routeId = routeId
     self.kind = kind
@@ -235,6 +273,10 @@ struct AgentRoute: Codable, Equatable {
     self.status = status
     self.deliveryMode = deliveryMode
     self.capabilities = capabilities
+    self.executionLocationKind = executionLocationKind
+    self.executionRuntimeKind = executionRuntimeKind
+    self.executionDeviceId = executionDeviceId
+    self.executionDeviceName = executionDeviceName
   }
 
   enum CodingKeys: String, CodingKey {
@@ -245,6 +287,10 @@ struct AgentRoute: Codable, Equatable {
     case status
     case deliveryMode = "delivery_mode"
     case capabilities
+    case executionLocationKind = "execution_location_kind"
+    case executionRuntimeKind = "execution_runtime_kind"
+    case executionDeviceId = "execution_device_id"
+    case executionDeviceName = "execution_device_name"
   }
 
   init(from decoder: Decoder) throws {
@@ -256,7 +302,11 @@ struct AgentRoute: Codable, Equatable {
       targetTitle: try container.decodeIfPresent(String.self, forKey: .targetTitle) ?? "",
       status: try container.decodeIfPresent(String.self, forKey: .status) ?? "",
       deliveryMode: try container.decodeIfPresent(String.self, forKey: .deliveryMode) ?? "",
-      capabilities: try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+      capabilities: try container.decodeIfPresent([String].self, forKey: .capabilities) ?? [],
+      executionLocationKind: try container.decodeIfPresent(AgentExecutionLocationKind.self, forKey: .executionLocationKind) ?? .unknown,
+      executionRuntimeKind: try container.decodeIfPresent(AgentExecutionRuntimeKind.self, forKey: .executionRuntimeKind) ?? .unknown,
+      executionDeviceId: try container.decodeIfPresent(String.self, forKey: .executionDeviceId) ?? "",
+      executionDeviceName: try container.decodeIfPresent(String.self, forKey: .executionDeviceName) ?? ""
     )
   }
 }
