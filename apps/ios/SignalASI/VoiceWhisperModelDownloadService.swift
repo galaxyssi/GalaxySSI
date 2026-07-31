@@ -66,21 +66,33 @@ final class VoiceWhisperModelDownloadService {
     _ model: VoiceWhisperModelProfile,
     allowsCellularAccess: Bool = true
   ) async throws -> VoiceWhisperModelDownloadState {
-    let request = try manager.enqueue(model, allowsCellularAccess: allowsCellularAccess)
+    let requests = try manager.downloadRequests(for: model, allowsCellularAccess: allowsCellularAccess)
     _ = manager.recordProgress(model, downloadedBytes: 0, totalBytes: 0)
-    do {
-      let downloaded = try await downloader.download(request)
-      if let statusCode = downloaded.statusCode, !(200...299).contains(statusCode) {
-        throw VoiceWhisperModelDownloadServiceError.httpStatus(statusCode)
+    var lastError: Error?
+    for (index, request) in requests.enumerated() {
+      let lastAttempt = index == requests.index(before: requests.endIndex)
+      do {
+        let downloaded = try await downloader.download(request)
+        if let statusCode = downloaded.statusCode, !(200...299).contains(statusCode) {
+          try? FileManager.default.removeItem(at: downloaded.temporaryFileURL)
+          throw VoiceWhisperModelDownloadServiceError.httpStatus(statusCode)
+        }
+        if let byteCount = downloaded.byteCount {
+          _ = manager.recordProgress(model, downloadedBytes: byteCount, totalBytes: byteCount)
+        }
+        return try manager.recordCompleted(model, temporaryFileURL: downloaded.temporaryFileURL)
+      } catch {
+        lastError = error
+        if lastAttempt {
+          _ = manager.recordFailure(model, errorCode: errorCode(error))
+          throw error
+        }
+        _ = manager.recordProgress(model, downloadedBytes: 0, totalBytes: 0)
       }
-      if let byteCount = downloaded.byteCount {
-        _ = manager.recordProgress(model, downloadedBytes: byteCount, totalBytes: byteCount)
-      }
-      return try manager.recordCompleted(model, temporaryFileURL: downloaded.temporaryFileURL)
-    } catch {
-      _ = manager.recordFailure(model, errorCode: errorCode(error))
-      throw error
     }
+    let error = lastError ?? VoiceWhisperModelManagerError.missingDownloadURL(model.id)
+    _ = manager.recordFailure(model, errorCode: errorCode(error))
+    throw error
   }
 
   private static func defaultErrorCode(_ error: Error) -> String {

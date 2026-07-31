@@ -55,6 +55,39 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     XCTAssertEqual(state, VoiceWhisperModelDownloadState(status: .successful, progress: 100))
     XCTAssertEqual(downloader.requests.first?.requestId, "download-1")
     XCTAssertFalse(downloader.requests.first?.allowsCellularAccess ?? true)
+    XCTAssertEqual(downloader.requests.count, 1)
+    XCTAssertTrue(manager.isAvailable(model))
+  }
+
+  func testDownloadServiceRetriesNextTrustedSourceAfterHttpFailure() async throws {
+    let env = try Environment()
+    let model = env.testModel(minimumBytes: 8)
+    let manager = env.manager(requestId: "download-retry")
+    let downloader = FakeDownloader(
+      results: [
+        .success(
+          VoiceWhisperModelDownloadedFile(
+            temporaryFileURL: try env.writeTemporaryFile(bytes: 8),
+            statusCode: 503,
+            byteCount: 8
+          )
+        ),
+        .success(
+          VoiceWhisperModelDownloadedFile(
+            temporaryFileURL: try env.writeTemporaryFile(bytes: 8),
+            statusCode: 200,
+            byteCount: 8
+          )
+        ),
+      ]
+    )
+    let service = VoiceWhisperModelDownloadService(manager: manager, downloader: downloader)
+
+    let state = try await service.start(model)
+
+    XCTAssertEqual(state, VoiceWhisperModelDownloadState(status: .successful, progress: 100))
+    XCTAssertEqual(downloader.requests.compactMap(\.sourceURL.host), ["hf-mirror.com", "huggingface.co"])
+    XCTAssertEqual(Set(downloader.requests.map(\.requestId)), ["download-retry"])
     XCTAssertTrue(manager.isAvailable(model))
   }
 
@@ -79,21 +112,29 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     } catch {
       XCTAssertEqual(error as? VoiceWhisperModelDownloadServiceError, .httpStatus(503))
     }
+    XCTAssertEqual(downloader.requests.count, 2)
     XCTAssertEqual(manager.downloadState(for: model).status, .failed)
     XCTAssertFalse(manager.isAvailable(model))
   }
 
   private final class FakeDownloader: VoiceWhisperModelDownloading {
     var requests: [VoiceWhisperModelDownloadRequest] = []
-    var result: Result<VoiceWhisperModelDownloadedFile, Error>
+    var results: [Result<VoiceWhisperModelDownloadedFile, Error>]
 
     init(result: Result<VoiceWhisperModelDownloadedFile, Error>) {
-      self.result = result
+      self.results = [result]
+    }
+
+    init(results: [Result<VoiceWhisperModelDownloadedFile, Error>]) {
+      self.results = results
     }
 
     func download(_ request: VoiceWhisperModelDownloadRequest) async throws -> VoiceWhisperModelDownloadedFile {
       requests.append(request)
-      return try result.get()
+      if results.count > 1 {
+        return try results.removeFirst().get()
+      }
+      return try XCTUnwrap(results.first).get()
     }
   }
 
