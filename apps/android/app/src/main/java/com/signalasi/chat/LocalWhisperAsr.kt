@@ -1,13 +1,21 @@
 package com.signalasi.chat
 
 import android.content.Context
+import android.icu.text.Transliterator
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.os.Build
-import android.util.Log
-import android.icu.text.Transliterator
 import android.os.SystemClock
+import android.util.Log
+import com.signalasi.chat.voice.VoiceFeatureFlags
+import com.signalasi.chat.voice.asr.local.AbortReason
+import com.signalasi.chat.voice.asr.local.DefaultLocalWhisperRuntime
+import com.signalasi.chat.voice.asr.local.LocalWhisperSessionConfig
+import com.signalasi.chat.voice.asr.local.NativeWhisperCode
+import com.signalasi.chat.voice.asr.local.WhisperDecodeRequest
+import com.signalasi.chat.voice.asr.local.WhisperLoadOptions
+import com.signalasi.chat.voice.asr.local.WhisperRuntimeState
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
@@ -20,107 +28,149 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import kotlin.math.floor
+import kotlin.math.roundToInt
+
+class LocalWhisperException(
+    val code: NativeWhisperCode,
+    message: String
+) : IllegalStateException(message)
 
 object LocalWhisperAsr {
     private const val TAG = "SignalASILocalASR"
     private const val TARGET_SAMPLE_RATE = 16_000
     private val mutex = Mutex()
-    @Volatile private var whisperContext: WhisperContext? = null
-    @Volatile private var loadedModelId: String? = null
+    @Volatile private var whisperRuntime: DefaultLocalWhisperRuntime? = null
+    @Volatile private var legacyContext: WhisperContext? = null
+    @Volatile private var legacyModelId: String? = null
 
     suspend fun transcribe(
         context: Context,
         audioFile: File,
         language: String = "auto",
         traceId: String = VoiceLatencyTraceContext.currentTraceId()
+    ): String {
+        val decodeStartedAtNs = SystemClock.elapsedRealtimeNanos()
+        trace(context, traceId, VoiceTraceEvents.ASR_DECODE_STARTED, mapOf("audio_source" to "compatibility_file"))
+        val samples = decodeFileTo16kMonoPcm16(audioFile)
+        val decodeDurationMs = (SystemClock.elapsedRealtimeNanos() - decodeStartedAtNs) / 1_000_000L
+        trace(
+            context,
+            traceId,
+            VoiceTraceEvents.ASR_DECODE_COMPLETED,
+            mapOf(
+                "audio_source" to "compatibility_file",
+                "duration_ms" to decodeDurationMs.toString(),
+                "audio_duration_ms" to durationMs(samples).toString()
+            )
+        )
+        return transcribePcm(context, samples, TARGET_SAMPLE_RATE, language, traceId, "compatibility_file")
+    }
+
+    suspend fun transcribePcm(
+        context: Context,
+        pcm16: ShortArray,
+        sampleRateHz: Int = TARGET_SAMPLE_RATE,
+        language: String = "auto",
+        traceId: String = VoiceLatencyTraceContext.currentTraceId(),
+        source: String = "audio_record_pcm16"
     ): String = mutex.withLock {
+        require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
+        require(pcm16.isNotEmpty()) { "PCM16 audio is empty" }
         val startedAtNs = SystemClock.elapsedRealtimeNanos()
         val selected = WhisperModelManager.model(VoiceAssistantSettings.get(context).asrModel)
+        val threadCount = minOf(4, Runtime.getRuntime().availableProcessors()).coerceAtLeast(1)
+        val audioDurationMs = durationMs(pcm16)
         val baseAttributes = mapOf(
             "asr_provider" to "whisper.cpp",
             "model_profile_id" to selected.id,
-            "execution_mode" to "full_file",
-            "thread_count" to minOf(4, Runtime.getRuntime().availableProcessors()).toString()
+            "execution_mode" to "final",
+            "thread_count" to threadCount.toString(),
+            "audio_source" to source,
+            "audio_duration_ms" to audioDurationMs.toString()
         )
         trace(context, traceId, VoiceTraceEvents.ASR_FINAL_STARTED, baseAttributes, once = true)
         try {
-            trace(context, traceId, VoiceTraceEvents.ASR_DECODE_STARTED, baseAttributes)
-            val decodeStartedAtNs = SystemClock.elapsedRealtimeNanos()
-            val samples = decodeTo16kMono(audioFile)
-            require(samples.isNotEmpty()) { "Decoded audio is empty" }
-            val decodeDurationMs = (SystemClock.elapsedRealtimeNanos() - decodeStartedAtNs) / 1_000_000L
-            val audioDurationMs = samples.size.toLong() * 1_000L / TARGET_SAMPLE_RATE
-            val audioAttributes = baseAttributes + mapOf(
-                "audio_duration_ms" to audioDurationMs.toString(),
-                "duration_ms" to decodeDurationMs.toString()
-            )
-            trace(context, traceId, VoiceTraceEvents.ASR_DECODE_COMPLETED, audioAttributes)
             require(WhisperModelManager.isAvailable(context, selected)) {
                 "ASR model ${selected.displayName} is not downloaded"
             }
-            if (loadedModelId != selected.id) {
-                whisperContext?.release()
-                whisperContext = null
-                WhisperModelManager.markUnloaded(loadedModelId)
-                loadedModelId = null
-            }
-            val coldStart = whisperContext == null
-            if (coldStart) {
-                trace(
-                    context,
-                    traceId,
-                    VoiceTraceEvents.ASR_MODEL_LOAD_STARTED,
-                    audioAttributes + ("cold_start" to "true")
-                )
-            }
-            val model = whisperContext ?: WhisperContext.createContextFromFile(
-                WhisperModelManager.ensureVerifiedFile(context, selected).absolutePath
-            ).also {
-                whisperContext = it
-                loadedModelId = selected.id
-                WhisperModelManager.markLoaded(selected.id)
-            }
-            if (coldStart) {
-                trace(
-                    context,
-                    traceId,
-                    VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED,
-                    audioAttributes + ("cold_start" to "true")
-                )
-            }
             val normalizedLanguage = language.substringBefore('-').lowercase()
                 .takeIf { it in setOf("zh", "en") } ?: "auto"
-            val inferenceStartedAtNs = SystemClock.elapsedRealtimeNanos()
-            trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, audioAttributes)
-            val rawText = model.transcribeData(samples, normalizedLanguage, printTimestamp = false).trim()
-            val inferenceDurationMs = (SystemClock.elapsedRealtimeNanos() - inferenceStartedAtNs) / 1_000_000L
-            val rtf = if (audioDurationMs > 0L) {
-                String.format(Locale.US, "%.4f", inferenceDurationMs.toDouble() / audioDurationMs)
+            val rawText: String
+            val inferenceDurationMs: Long
+            val rtf: String
+            if (VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
+                releaseLegacyContext()
+                val runtime = whisperRuntime ?: DefaultLocalWhisperRuntime(context.applicationContext).also {
+                    whisperRuntime = it
+                }
+                val coldStart = (runtime.state.value as? WhisperRuntimeState.Ready)
+                    ?.model?.profile?.id != selected.id
+                if (coldStart) {
+                    trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_STARTED, baseAttributes + ("cold_start" to "true"))
+                }
+                runtime.load(selected, WhisperLoadOptions(threadCount = threadCount))
+                if (coldStart) {
+                    trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED, baseAttributes + ("cold_start" to "true"))
+                }
+                trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, baseAttributes)
+                val session = runtime.createSession(
+                    LocalWhisperSessionConfig(
+                        language = normalizedLanguage,
+                        noContext = true,
+                        mode = selected.recommendedMode
+                    )
+                )
+                val result = try {
+                    session.decode(
+                        WhisperDecodeRequest(
+                            pcm16 = pcm16,
+                            mode = selected.recommendedMode
+                        )
+                    )
+                } finally {
+                    session.close()
+                }
+                if (!result.successful) {
+                    throw LocalWhisperException(result.code, result.message ?: "Whisper decode failed (${result.code})")
+                }
+                rawText = result.text
+                inferenceDurationMs = result.timings.totalMs.toLong().coerceAtLeast(0L)
+                rtf = String.format(Locale.US, "%.4f", result.timings.realTimeFactor)
             } else {
-                "0"
+                rawText = transcribeWithLegacyRuntime(
+                    context,
+                    selected.id,
+                    WhisperModelManager.ensureVerifiedFile(context, selected),
+                    pcm16,
+                    normalizedLanguage,
+                    threadCount,
+                    traceId,
+                    baseAttributes
+                )
+                inferenceDurationMs = (SystemClock.elapsedRealtimeNanos() - startedAtNs) / 1_000_000L
+                rtf = if (audioDurationMs > 0L) {
+                    String.format(Locale.US, "%.4f", inferenceDurationMs.toDouble() / audioDurationMs)
+                } else "0"
             }
             trace(
                 context,
                 traceId,
                 VoiceTraceEvents.WHISPER_FULL_COMPLETED,
-                audioAttributes + mapOf(
-                    "duration_ms" to inferenceDurationMs.toString(),
-                    "rtf" to rtf
-                )
+                baseAttributes + mapOf("duration_ms" to inferenceDurationMs.toString(), "rtf" to rtf)
             )
-            val text = normalizeChineseScript(rawText, language)
+            val text = normalizeChineseScript(rawText.trim(), language)
             val totalDurationMs = (SystemClock.elapsedRealtimeNanos() - startedAtNs) / 1_000_000L
             trace(
                 context,
                 traceId,
                 VoiceTraceEvents.ASR_FINAL_RECEIVED,
-                audioAttributes + mapOf("duration_ms" to totalDurationMs.toString(), "success" to "true"),
+                baseAttributes + mapOf("duration_ms" to totalDurationMs.toString(), "success" to "true"),
                 once = true
             )
             Log.i(
                 TAG,
-                "Local transcription completed model=${selected.id} samples=${samples.size} " +
-                    "language=$normalizedLanguage elapsed=${totalDurationMs}ms"
+                "Local transcription completed model=${selected.id} samples=${pcm16.size} " +
+                    "language=$normalizedLanguage source=$source elapsed=${totalDurationMs}ms"
             )
             text
         } catch (error: Throwable) {
@@ -131,12 +181,53 @@ object LocalWhisperAsr {
                 baseAttributes + mapOf(
                     "duration_ms" to ((SystemClock.elapsedRealtimeNanos() - startedAtNs) / 1_000_000L).toString(),
                     "success" to "false",
-                    "error_code" to error.javaClass.simpleName
+                    "error_code" to ((error as? LocalWhisperException)?.code?.name ?: error.javaClass.simpleName)
                 ),
                 once = true
             )
             throw error
         }
+    }
+
+    fun requestAbort(reason: AbortReason = AbortReason.USER_STOP) {
+        whisperRuntime?.requestAbortAll(reason)
+    }
+
+    suspend fun release() = mutex.withLock {
+        whisperRuntime?.close()
+        whisperRuntime = null
+        releaseLegacyContext()
+    }
+
+    private suspend fun transcribeWithLegacyRuntime(
+        context: Context,
+        modelId: String,
+        modelFile: File,
+        pcm16: ShortArray,
+        language: String,
+        threadCount: Int,
+        traceId: String,
+        attributes: Map<String, String>
+    ): String {
+        if (legacyModelId != modelId) releaseLegacyContext()
+        val coldStart = legacyContext == null
+        if (coldStart) trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_STARTED, attributes + ("cold_start" to "true"))
+        val model = legacyContext ?: WhisperContext.createContextFromFile(modelFile.absolutePath).also {
+            legacyContext = it
+            legacyModelId = modelId
+            WhisperModelManager.markLoaded(modelId)
+        }
+        if (coldStart) trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED, attributes + ("cold_start" to "true"))
+        trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, attributes)
+        val floatSamples = FloatArray(pcm16.size) { pcm16[it] / 32768f }
+        return model.transcribeData(floatSamples, language, printTimestamp = false)
+    }
+
+    private suspend fun releaseLegacyContext() {
+        legacyContext?.release()
+        legacyContext = null
+        WhisperModelManager.markUnloaded(legacyModelId)
+        legacyModelId = null
     }
 
     private fun trace(
@@ -146,24 +237,20 @@ object LocalWhisperAsr {
         attributes: Map<String, String>,
         once: Boolean = false
     ) {
-        if (traceId.isNotBlank()) {
-            VoiceLatencyTelemetry.record(context, traceId, event, attributes, once)
-        }
+        if (traceId.isNotBlank()) VoiceLatencyTelemetry.record(context, traceId, event, attributes, once)
     }
 
     private fun normalizeChineseScript(text: String, language: String): String {
         if (!language.equals("zh-CN", ignoreCase = true) || text.isBlank()) return text
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             Transliterator.getInstance("Traditional-Simplified").transliterate(text)
-        } else {
-            text
-        }
+        } else text
     }
 
-    private fun decodeTo16kMono(file: File): FloatArray {
-        if (file.extension.equals("wav", ignoreCase = true)) {
-            return decodePcmWave(file)
-        }
+    private fun durationMs(samples: ShortArray): Long = samples.size.toLong() * 1_000L / TARGET_SAMPLE_RATE
+
+    private fun decodeFileTo16kMonoPcm16(file: File): ShortArray {
+        if (file.extension.equals("wav", ignoreCase = true)) return decodePcmWave(file)
         val extractor = MediaExtractor()
         extractor.setDataSource(file.absolutePath)
         val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
@@ -209,9 +296,7 @@ object LocalWhisperAsr {
                             if (info.size > 0) {
                                 output.position(info.offset)
                                 output.limit(info.offset + info.size)
-                                val bytes = ByteArray(info.size)
-                                output.get(bytes)
-                                pcm.write(bytes)
+                                ByteArray(info.size).also { bytes -> output.get(bytes); pcm.write(bytes) }
                             }
                         }
                         decoder.releaseOutputBuffer(outputIndex, false)
@@ -227,7 +312,7 @@ object LocalWhisperAsr {
         return resamplePcm16(pcm.toByteArray(), sampleRate, channels)
     }
 
-    private fun decodePcmWave(file: File): FloatArray {
+    private fun decodePcmWave(file: File): ShortArray {
         val bytes = file.readBytes()
         require(bytes.size >= 44 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" &&
             String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "Invalid PCM wave file" }
@@ -259,25 +344,28 @@ object LocalWhisperAsr {
         return resamplePcm16(requireNotNull(pcmBytes) { "PCM wave data is missing" }, sampleRate, channels)
     }
 
-    private fun resamplePcm16(bytes: ByteArray, sourceRate: Int, channels: Int): FloatArray {
+    private fun resamplePcm16(bytes: ByteArray, sourceRate: Int, channels: Int): ShortArray {
         val shorts = bytes.size / 2
-        if (shorts == 0 || sourceRate <= 0 || channels <= 0) return FloatArray(0)
-        val buffer = java.nio.ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+        if (shorts == 0 || sourceRate <= 0 || channels <= 0) return ShortArray(0)
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
         val frames = shorts / channels
-        val mono = FloatArray(frames)
+        val mono = ShortArray(frames)
         for (frame in 0 until frames) {
-            var sum = 0f
-            for (channel in 0 until channels) sum += buffer.get(frame * channels + channel) / 32768f
-            mono[frame] = sum / channels
+            var sum = 0L
+            for (channel in 0 until channels) sum += buffer.get(frame * channels + channel).toLong()
+            mono[frame] = (sum / channels).coerceIn(Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong()).toShort()
         }
         if (sourceRate == TARGET_SAMPLE_RATE) return mono
         val outputSize = (frames.toLong() * TARGET_SAMPLE_RATE / sourceRate).toInt().coerceAtLeast(1)
-        return FloatArray(outputSize) { index ->
+        return ShortArray(outputSize) { index ->
             val source = index.toDouble() * sourceRate / TARGET_SAMPLE_RATE
             val left = floor(source).toInt().coerceIn(0, mono.lastIndex)
             val right = (left + 1).coerceAtMost(mono.lastIndex)
-            val fraction = (source - left).toFloat()
-            mono[left] + (mono[right] - mono[left]) * fraction
+            val fraction = source - left
+            (mono[left] + (mono[right] - mono[left]) * fraction)
+                .roundToInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+                .toShort()
         }
     }
 }

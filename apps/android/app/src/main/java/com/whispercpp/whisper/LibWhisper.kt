@@ -10,11 +10,10 @@ import java.util.concurrent.Executors
 
 private const val LOG_TAG = "LibWhisper"
 
-class WhisperContext private constructor(private var ptr: Long) {
+class WhisperContext private constructor(private var ptr: Long) : AutoCloseable {
     // Meet Whisper C++ constraint: Don't access from more than one thread at a time.
-    private val scope: CoroutineScope = CoroutineScope(
-        Executors.newSingleThreadExecutor().asCoroutineDispatcher()
-    )
+    private val dispatcher = Executors.newSingleThreadExecutor().asCoroutineDispatcher()
+    private val scope: CoroutineScope = CoroutineScope(dispatcher)
 
     suspend fun transcribeData(
         data: FloatArray,
@@ -47,17 +46,19 @@ class WhisperContext private constructor(private var ptr: Long) {
         return@withContext WhisperLib.benchGgmlMulMat(nthreads)
     }
 
-    suspend fun release() = withContext(scope.coroutineContext) {
-        if (ptr != 0L) {
-            WhisperLib.freeContext(ptr)
-            ptr = 0
+    suspend fun release() {
+        if (ptr == 0L) return
+        withContext(scope.coroutineContext) {
+            if (ptr != 0L) {
+                WhisperLib.freeContext(ptr)
+                ptr = 0
+            }
         }
+        dispatcher.close()
     }
 
-    protected fun finalize() {
-        runBlocking {
-            release()
-        }
+    override fun close() = runBlocking {
+        release()
     }
 
     companion object {

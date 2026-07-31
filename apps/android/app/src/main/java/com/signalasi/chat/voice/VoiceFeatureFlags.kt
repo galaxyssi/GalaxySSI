@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 
 const val VOICE_COORDINATOR_FLAG = "voice.coordinator_v1"
 const val VOICE_PCM_CAPTURE_FLAG = "voice.audio_record_pcm_v1"
+const val VOICE_LOCAL_WHISPER_RUNTIME_V2_FLAG = "voice.local_whisper_runtime_v2"
 
 object VoiceFeatureFlags {
     private const val PREFERENCES = "signalasi_voice_feature_flags"
@@ -34,6 +35,20 @@ object VoiceFeatureFlags {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(VOICE_PCM_CAPTURE_FLAG, enabled)
+            .apply()
+    }
+
+    fun isLocalWhisperRuntimeV2Enabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(
+                VOICE_LOCAL_WHISPER_RUNTIME_V2_FLAG,
+                (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            )
+
+    fun setLocalWhisperRuntimeV2Enabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(VOICE_LOCAL_WHISPER_RUNTIME_V2_FLAG, enabled)
             .apply()
     }
 }
