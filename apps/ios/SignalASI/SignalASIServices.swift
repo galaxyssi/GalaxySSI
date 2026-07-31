@@ -1246,6 +1246,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var task: SFSpeechRecognitionTask?
   private var recognizer: SFSpeechRecognizer?
   private var currentRecognitionModelProfileId = ""
+  private var pcmTapPipeline: VoicePcmTapPipeline?
+  private var pcmTapSpeechStarted = false
+  private var pcmTapSpeechEnded = false
+  private var pcmTapEndpointRequested = false
 
   init(coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge()) {
     self.coordinatorBridge = coordinatorBridge
@@ -1306,9 +1310,25 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     request.shouldReportPartialResults = true
     let input = audioEngine.inputNode
     let format = input.outputFormat(forBus: 0)
+    let pcmCaptureEnabled = coordinatorConfig != nil && VoiceFeatureFlags.isPcmCaptureEnabled()
+    if pcmCaptureEnabled {
+      pcmTapPipeline = VoicePcmTapPipeline(
+        config: VoiceAudioSessionConfig(
+          capture: PcmCaptureConfig(sampleRateHz: max(1, Int(format.sampleRate.rounded()))),
+          endpoint: AdaptiveEndpointConfig(),
+          autoEndpoint: coordinatorConfig?.source.localizedCaseInsensitiveContains("wake") == true
+        )
+      )
+    } else {
+      pcmTapPipeline = nil
+    }
+    pcmTapSpeechStarted = false
+    pcmTapSpeechEnded = false
+    pcmTapEndpointRequested = false
     input.removeTap(onBus: 0)
-    input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+    input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
       request.append(buffer)
+      self?.processPcmTap(buffer)
     }
     VoiceRuntimeHealthRegistry.begin(runtimeChannel)
     do {
@@ -1326,7 +1346,9 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     isRecording = true
     if coordinatorConfig != nil {
       coordinatorBridge.capturePrepared()
-      coordinatorBridge.speechStarted()
+      if pcmTapPipeline == nil {
+        coordinatorBridge.speechStarted()
+      }
     }
     task = recognizer.recognitionTask(with: request) { [weak self] result, error in
       DispatchQueue.main.async {
@@ -1386,8 +1408,43 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     task = nil
     request = nil
     currentRecognitionModelProfileId = ""
+    pcmTapPipeline = nil
+    pcmTapSpeechStarted = false
+    pcmTapSpeechEnded = false
+    pcmTapEndpointRequested = false
     if wasRecording {
       VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+    }
+  }
+
+  private func processPcmTap(_ buffer: AVAudioPCMBuffer) {
+    guard let update = pcmTapPipeline?.accept(buffer: buffer) else { return }
+    coordinatorBridge.dispatchAudioLevel(update.decision.rms)
+    if update.endpoint.speechStarted, !pcmTapSpeechStarted {
+      pcmTapSpeechStarted = true
+      coordinatorBridge.speechStarted(atElapsedNs: update.frame.captureTimeNanos)
+    }
+    if update.endpoint.speechEndedCandidate, !pcmTapSpeechEnded {
+      pcmTapSpeechEnded = true
+      coordinatorBridge.speechEnded(atElapsedNs: update.frame.captureTimeNanos)
+    }
+    guard let reason = update.endpoint.endpointReason else { return }
+    let code = reason == .noSpeechTimeout ? "no_speech_timeout" :
+      reason == .maxDuration ? "max_duration" : "trailing_silence"
+    if reason != .noSpeechTimeout, !pcmTapSpeechEnded {
+      pcmTapSpeechEnded = true
+      coordinatorBridge.speechEnded(atElapsedNs: update.frame.captureTimeNanos)
+    }
+    guard !pcmTapEndpointRequested else { return }
+    pcmTapEndpointRequested = true
+    Task { [weak self] in
+      await MainActor.run {
+        guard let self = self, self.isRecording else { return }
+        if reason == .noSpeechTimeout {
+          _ = self.coordinatorBridge.cancelCurrent(reasonCode: code)
+        }
+        self.stop()
+      }
     }
   }
 

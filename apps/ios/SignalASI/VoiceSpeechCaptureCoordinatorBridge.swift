@@ -99,6 +99,11 @@ final class VoiceSpeechCaptureCoordinatorBridge {
   }
 
   @discardableResult
+  func dispatchAudioLevel(_ rms: Float) -> VoiceInteractionTransition {
+    dispatchCurrent { .audioLevel(sessionId: $0, rms: max(0, min(rms, 1))) }
+  }
+
+  @discardableResult
   func finalizationStarted() -> VoiceInteractionTransition {
     let transition = dispatchCurrent { .finalizationStarted(sessionId: $0) }
     if transition.accepted {
