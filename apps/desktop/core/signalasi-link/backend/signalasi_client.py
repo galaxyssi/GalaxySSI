@@ -13,12 +13,25 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from secure_state import derived_storage_key
+
 SIDECAR_PORT = int(os.environ.get("SIGNALASI_LINK_PORT", os.environ.get("HERMES_SIGNAL_PORT", "18766")))
 SIDECAR_BASE = f"http://127.0.0.1:{SIDECAR_PORT}"
 ROOT = Path(__file__).resolve().parent
 SIDECAR_DIR = ROOT / "signal_sidecar"
 SIDECAR_BIN_DIR = SIDECAR_DIR / "build" / "install" / "signalasi-link-sidecar" / "bin"
 SIDECAR_SCRIPT = SIDECAR_BIN_DIR / ("signalasi-link-sidecar.bat" if os.name == "nt" else "signalasi-link-sidecar")
+DEFAULT_DATA_DIR = (
+    Path(os.environ["APPDATA"]) / "signalasi-desktop" / "runtime"
+    if os.name == "nt" and os.environ.get("APPDATA")
+    else Path.home() / ".signalasi"
+)
+SIGNAL_STORE_PATH = Path(
+    os.environ.get(
+        "SIGNALASI_SIGNAL_STORE_PATH",
+        str(Path(os.environ.get("SIGNALASI_DATA_DIR", DEFAULT_DATA_DIR)) / "signal_protocol_store.json"),
+    )
+)
 
 _process: subprocess.Popen | None = None
 _peer_locks: dict[tuple[str, int], threading.RLock] = {}
@@ -45,11 +58,22 @@ def start_signal_sidecar() -> None:
 
     with open(SIDECAR_DIR / "sidecar.out.log", "ab", buffering=0) as out, \
             open(SIDECAR_DIR / "sidecar.err.log", "ab", buffering=0) as err:
+        storage_key = base64.urlsafe_b64encode(
+            derived_storage_key(
+                SIGNAL_STORE_PATH,
+                "signal-protocol-store",
+            )
+        ).decode("ascii").rstrip("=")
         popen_kwargs = {
             "cwd": str(SIDECAR_DIR),
             "stdout": out,
             "stderr": err,
-            "env": {**os.environ, "SIGNALASI_LINK_PORT": str(SIDECAR_PORT)},
+            "env": {
+                **os.environ,
+                "SIGNALASI_LINK_PORT": str(SIDECAR_PORT),
+                "SIGNALASI_LINK_STORE_PATH": str(SIGNAL_STORE_PATH),
+                "SIGNALASI_LINK_STORAGE_KEY": storage_key,
+            },
         }
         if os.name == "nt":
             popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -203,6 +227,7 @@ def _is_healthy() -> bool:
             and int(status.get("apiVersion") or 0) == 1
             and status.get("removePeer") is True
             and status.get("identitySigning") is True
+            and status.get("encryptedStorage") is True
         )
     except Exception:
         return False

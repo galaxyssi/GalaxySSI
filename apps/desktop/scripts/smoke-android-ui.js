@@ -4,6 +4,7 @@ const path = require("node:path");
 const { createAdb } = require("./android-adb");
 const { probeChatHistory, requireProbeMatch } = require("./android-chat-history-probe");
 const { establishFreshSecurePairing } = require("./android-live-pairing");
+const { snapshotSecureState } = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -45,10 +46,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function readAppStore() {
-  return adb(["shell", "run-as", packageName, "cat", "shared_prefs/signalasi_app_store.xml"]);
-}
-
 function slimPairingPayload() {
   const identityKey = crypto.randomBytes(32);
   const fingerprint = crypto.createHash("sha256").update(identityKey).digest("hex");
@@ -79,8 +76,12 @@ function hasAnyText(value, texts) {
   return texts.some((text) => value.includes(text));
 }
 
-function requireStoreText(store, text, stage) {
-  if (!store.includes(text)) {
+function secureContactText(state) {
+  return JSON.stringify(Array.isArray(state.contacts) ? state.contacts : []);
+}
+
+function requireStoreText(state, text, stage) {
+  if (!secureContactText(state).includes(text)) {
     fail(`${stage}: app store did not include ${text}`);
   }
 }
@@ -95,14 +96,6 @@ function dumpWindowTo(fileName, remoteName) {
   adb(["shell", "uiautomator", "dump", `/sdcard/${remoteName}`]);
   adb(["pull", `/sdcard/${remoteName}`, fileName]);
   return fs.readFileSync(fileName, "utf8");
-}
-
-function readTrustStore() {
-  try {
-    return adb(["shell", "run-as", packageName, "cat", "shared_prefs/signalasi_signal_trust.xml"]);
-  } catch {
-    return "";
-  }
 }
 
 async function openDebugPageAndVerify(extraName, titleTexts, requiredGroups) {
@@ -173,9 +166,14 @@ async function runSmoke(onPairingStateTouched) {
     "true"
   ]);
   await sleep(1800);
-  const invalidTrustStore = readTrustStore();
-  const invalidAppStore = readAppStore();
-  if (invalidTrustStore.includes(invalidPayload.identity_key_sha256) || invalidAppStore.includes("BAD-PC")) {
+  const invalidState = await snapshotSecureState({
+    adb,
+    packageName,
+    activityName,
+    expectedPcFingerprint: invalidPayload.identity_key_sha256
+  });
+  if (invalidState.trust?.expected_pc_fingerprint_matches ||
+      secureContactText(invalidState).includes("BAD-PC")) {
     fail("Mismatched Desktop QR was accepted into trust or contact state");
   }
   adb(["shell", "am", "force-stop", packageName]);
@@ -198,15 +196,15 @@ async function runSmoke(onPairingStateTouched) {
     pairingPayload.desktop_name,
     "pc_connector"
   ];
-  let slimQrStore = "";
+  let slimQrState = {};
   const contactsDeadline = Date.now() + 20_000;
   while (Date.now() < contactsDeadline) {
-    slimQrStore = readAppStore();
-    if (requiredContactText.every((text) => slimQrStore.includes(text))) break;
+    slimQrState = await snapshotSecureState({ adb, packageName, activityName });
+    if (requiredContactText.every((text) => secureContactText(slimQrState).includes(text))) break;
     await sleep(500);
   }
   for (const text of requiredContactText) {
-    requireStoreText(slimQrStore, text, "live QR scan");
+    requireStoreText(slimQrState, text, "live QR scan");
   }
 
   log("opening AI Agent page with debug connector status");
@@ -246,12 +244,17 @@ async function runSmoke(onPairingStateTouched) {
     fail(`Window dump still exposes Desktop Cloud Model. Dump saved at ${windowDump}`);
   }
 
-  const pairedStore = readAppStore();
-  if (pairedStore.includes("&quot;agent_id&quot;:&quot;cloud-model&quot;") || pairedStore.includes(":cloud-model")) {
+  const pairedState = await snapshotSecureState({ adb, packageName, activityName });
+  const pairedContacts = Array.isArray(pairedState.contacts) ? pairedState.contacts : [];
+  if (pairedContacts.some((contact) =>
+    contact.agent_id === "cloud-model" ||
+    contact.agent_kind === "cloud-model" ||
+    String(contact.id || "").endsWith(":cloud-model")
+  )) {
     fail("App store still exposes Desktop Cloud Model as a connector contact");
   }
   for (const text of ["research-agent", "Research Agent", "pc_connector"]) {
-    if (!pairedStore.includes(text)) {
+    if (!secureContactText(pairedState).includes(text)) {
       fail(`App store did not include ${text} after debug status sync`);
     }
   }
@@ -288,13 +291,19 @@ async function runSmoke(onPairingStateTouched) {
     contentToken: historyToken,
     deleteMatches: true
   });
-  let pairedTrustStore = "";
+  let pairedTrustMatches = false;
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    pairedTrustStore = readTrustStore();
-    if (pairedTrustStore.includes("DEBUG_PC_FINGERPRINT_FOR_UI_TEST")) break;
+    const state = await snapshotSecureState({
+      adb,
+      packageName,
+      activityName,
+      expectedPcFingerprint: "DEBUG_PC_FINGERPRINT_FOR_UI_TEST_000000000000000000000000"
+    });
+    pairedTrustMatches = state.trust?.expected_pc_fingerprint_matches === true;
+    if (pairedTrustMatches) break;
     await sleep(500);
   }
-  if (!pairedTrustStore.includes("DEBUG_PC_FINGERPRINT_FOR_UI_TEST")) {
+  if (!pairedTrustMatches) {
     fail("Trust store did not include debug PC fingerprint after debug pairing");
   }
 
@@ -462,10 +471,13 @@ async function runSmoke(onPairingStateTouched) {
   }), "utf8").toString("base64");
   adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_incoming_b64", slimRevoke]);
   await sleep(1200);
-  const trustStore = readTrustStore();
-  const cleanStore = readAppStore();
-  const activeResearchAgent = /research-agent[\s\S]{0,1600}&quot;deleted&quot;:false/.test(cleanStore);
-  if (trustStore.includes("verified_pc_identity_sha256") || activeResearchAgent) {
+  const cleanState = await snapshotSecureState({ adb, packageName, activityName });
+  const activeResearchAgent = (cleanState.contacts || []).some((contact) =>
+    (contact.id === "research-agent" || contact.agent_id === "research-agent") &&
+    contact.deleted !== true &&
+    contact.trust_state !== "deleted"
+  );
+  if (cleanState.trust?.pc_verified || activeResearchAgent) {
     fail("Debug pairing cleanup failed; trust or dynamic contact remains");
   }
 }
@@ -489,10 +501,14 @@ async function restoreLivePairing() {
   ];
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
-    const trustStore = readTrustStore();
-    const appStore = readAppStore();
-    const trustRestored = trustStore.includes(payload.identity_key_sha256);
-    const contactsRestored = requiredContactText.every((text) => appStore.includes(text));
+    const state = await snapshotSecureState({
+      adb,
+      packageName,
+      activityName,
+      expectedPcFingerprint: payload.identity_key_sha256
+    });
+    const trustRestored = state.trust?.expected_pc_fingerprint_matches === true;
+    const contactsRestored = requiredContactText.every((text) => secureContactText(state).includes(text));
     if (trustRestored && contactsRestored) {
       log(`live Desktop pairing restored for route ${client.client_route_id.slice(-8)}`);
       return;

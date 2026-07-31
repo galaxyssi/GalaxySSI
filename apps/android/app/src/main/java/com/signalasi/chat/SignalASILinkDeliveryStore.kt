@@ -58,13 +58,11 @@ object SignalASILinkDeliveryStore {
     @Synchronized
     fun ensureTransportEpoch(context: Context, epoch: String): Boolean {
         require(epoch.isNotBlank()) { "Transport epoch is required" }
-        val preferences = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (preferences.getString(KEY_TRANSPORT_EPOCH, "") == epoch) return false
+        val preferences = preferences(context)
+        if (preferences.readString(KEY_TRANSPORT_EPOCH, "") == epoch) return false
         clearOutboxFiles(context)
-        preferences.edit()
-            .putString(KEY_OUTBOX, "[]")
-            .putString(KEY_TRANSPORT_EPOCH, epoch)
-            .commit()
+        preferences.writeString(KEY_OUTBOX, "[]")
+        preferences.writeString(KEY_TRANSPORT_EPOCH, epoch)
         return true
     }
 
@@ -449,7 +447,7 @@ object SignalASILinkDeliveryStore {
     @Synchronized
     fun clear(context: Context) {
         clearOutboxFiles(context)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        preferences(context).clear()
         inboundDatabase(context).clear()
     }
 
@@ -512,13 +510,16 @@ object SignalASILinkDeliveryStore {
     }
 
     private fun readArray(context: Context, key: String): JSONArray {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "[]") ?: "[]"
+        val raw = preferences(context).readString(key, "[]")
         return runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
     }
 
     private fun writeArray(context: Context, key: String, value: JSONArray) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value.toString()).commit()
+        preferences(context).writeString(key, value.toString())
     }
+
+    private fun preferences(context: Context): AgentEncryptedPreferences =
+        AgentEncryptedPreferences(context.applicationContext, PREFS)
 
     private fun writeWirePayload(context: Context, messageId: String, payload: String): String {
         val directory = outboxDirectory(context)

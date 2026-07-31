@@ -18082,6 +18082,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val backupRoundtripToken = intent?.getStringExtra("signalasi_debug_backup_roundtrip")?.trim().orEmpty()
         val cloudModelsRoundtripToken = intent?.getStringExtra("signalasi_debug_cloud_models_roundtrip")?.trim().orEmpty()
         val chatHistoryProbeEncoded = intent?.getStringExtra("signalasi_debug_chat_history_probe_b64")?.trim().orEmpty()
+        val secureStateProbeEncoded = intent?.getStringExtra("signalasi_debug_secure_state_probe_b64")?.trim().orEmpty()
         val voiceSettingsRoundtripToken = intent?.getStringExtra("signalasi_debug_voice_settings_roundtrip")?.trim().orEmpty()
         val controlCenterRoundtripToken = intent?.getStringExtra("signalasi_debug_control_center_roundtrip")?.trim().orEmpty()
         val controlCenterThemeToken = intent?.getStringExtra("signalasi_debug_control_center_theme")?.trim().orEmpty()
@@ -18174,6 +18175,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         if (chatHistoryProbeEncoded.isNotBlank()) {
             runDebugChatHistoryProbe(chatHistoryProbeEncoded)
+            return
+        }
+        if (secureStateProbeEncoded.isNotBlank()) {
+            runDebugSecureStateProbe(secureStateProbeEncoded)
             return
         }
         if (voiceSettingsRoundtripToken.isNotBlank()) {
@@ -18423,10 +18428,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     includeMessages = true
                 )
                 val backupText = backup.readText(Charsets.UTF_8)
-                getSharedPreferences("signalasi_app_store", MODE_PRIVATE).edit()
-                    .putString("contacts", JSONArray().toString())
-                    .putString("friend_requests", JSONArray().toString())
-                    .commit()
+                AgentEncryptedPreferences(this, "signalasi_app_store").apply {
+                    writeString("contacts", JSONArray().toString())
+                    writeString("friend_requests", JSONArray().toString())
+                }
                 ChatHistoryStore.replaceAll(this, JSONObject())
 
                 AppStore.importBackup(this, backup, password, includeMessages = true)
@@ -18494,6 +18499,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .putString("chat_history_probe_result", result.toString())
                 .commit()
         }
+    }
+
+    private fun runDebugSecureStateProbe(encodedRequest: String) {
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return
+        val prefs = getSharedPreferences("signalasi_debug", MODE_PRIVATE)
+        var requestId = ""
+        val result = runCatching {
+            val decoded = String(Base64.decode(encodedRequest, Base64.DEFAULT), Charsets.UTF_8)
+            val request = JSONObject(decoded)
+            requestId = request.optString("request_id")
+            DebugSecureStateProbe.run(this, request)
+        }.getOrElse { error ->
+            JSONObject()
+                .put("request_id", requestId)
+                .put("ok", false)
+                .put("storage", "android-keystore-aes-gcm")
+                .put("error", error.message ?: error.javaClass.simpleName)
+        }
+        prefs.edit()
+            .putString("secure_state_probe_result", result.toString())
+            .commit()
+        refreshContactList()
+        refreshDirectoryContacts()
     }
 
     private fun runDebugCloudModelsRoundtrip(token: String) {

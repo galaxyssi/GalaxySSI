@@ -48,6 +48,7 @@ internal object DebugIntentExtras {
         "signalasi_debug_revoke",
         "signalasi_debug_scan_payload",
         "signalasi_debug_scan_payload_b64",
+        "signalasi_debug_secure_state_probe_b64",
         "signalasi_debug_seed_cloud_provider",
         "signalasi_debug_status",
         "signalasi_debug_voice_settings_roundtrip"

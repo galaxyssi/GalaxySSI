@@ -113,6 +113,41 @@ class LinkDeliveryTest(unittest.TestCase):
                 link_delivery.remove_task_result("task-1")
                 self.assertEqual([], link_delivery.pending_task_results())
 
+    def test_route_topic_and_payload_are_not_plaintext_at_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "delivery.db"
+            with patch.object(link_delivery, "DB_PATH", database):
+                link_delivery.queue_outbound(
+                    "client-route-secret",
+                    "message-secret",
+                    "signalasichat/v1/server-secret/client-route-secret/down",
+                    '{"content":"payload-secret"}',
+                )
+                link_delivery.queue_task_result(
+                    "task-secret",
+                    "client-route-secret",
+                    {"body": "wire-secret"},
+                    {"content": "result-secret"},
+                )
+
+                self.assertEqual(
+                    "client-route-secret",
+                    link_delivery.pending_outbound()[0]["client_route_id"],
+                )
+                self.assertEqual(
+                    "result-secret",
+                    link_delivery.pending_task_results()[0]["payload"]["content"],
+                )
+                persisted = database.read_bytes()
+                for secret in (
+                    b"client-route-secret",
+                    b"server-secret",
+                    b"payload-secret",
+                    b"wire-secret",
+                    b"result-secret",
+                ):
+                    self.assertNotIn(secret, persisted)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,7 @@ from pairing_access import (
     has_full_executor,
 )
 from pairing_state import DATA_DIR
+from secure_state import SecureStateError, read_secure_json, write_secure_json
 from signalasi_client import get_signal_bundle, sign_signal_identity
 from tool_handle_registry import (
     TOOL_HANDLE_CONTRACT,
@@ -166,6 +167,7 @@ RECEIPT_SIGNED_FIELDS = (
 
 IdentityProvider = Callable[[], dict[str, str]]
 ReceiptSigner = Callable[[bytes], dict[str, str]]
+CONTROL_STATE_PURPOSE = "desktop-control-authorizations"
 
 
 class DesktopControlError(RuntimeError):
@@ -1880,11 +1882,18 @@ class DesktopControlManager:
         return "executed desktop action"
 
     def _load(self) -> dict[str, Any]:
+        legacy_plaintext = False
         try:
-            value = json.loads(self.state_path.read_text(encoding="utf-8"))
+            document = read_secure_json(
+                self.state_path,
+                purpose=CONTROL_STATE_PURPOSE,
+                allow_legacy_plaintext=True,
+            )
+            value = document.value
+            legacy_plaintext = document.legacy_plaintext
             if not isinstance(value, dict):
                 raise ValueError("invalid state")
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError, json.JSONDecodeError, SecureStateError):
             value = _default_state()
         defaults = _default_state()
         for key in (
@@ -1919,16 +1928,23 @@ class DesktopControlManager:
                     "error": {"code": "action_state_ambiguous", "retryable": False},
                     "replayed": True,
                 }
+        if legacy_plaintext:
+            write_secure_json(
+                self.state_path,
+                value,
+                purpose=CONTROL_STATE_PURPOSE,
+            )
         return value
 
     def _save_locked(self) -> None:
         if hasattr(self, "_surfaces"):
             self._state["surface_sessions"] = self._surfaces.export()
         self._state["updated_at"] = int(self.now() * 1_000)
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = self.state_path.with_suffix(self.state_path.suffix + ".tmp")
-        temporary.write_text(json.dumps(self._state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        temporary.replace(self.state_path)
+        write_secure_json(
+            self.state_path,
+            self._state,
+            purpose=CONTROL_STATE_PURPOSE,
+        )
 
 
 class WindowsInputController:

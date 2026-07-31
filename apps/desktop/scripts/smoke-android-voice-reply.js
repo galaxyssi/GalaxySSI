@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createAdb } = require("./android-adb");
 const { probeChatHistory, requireProbeMatch } = require("./android-chat-history-probe");
+const { snapshotSecureState } = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -47,23 +48,9 @@ function restoreAppFile(file, snapshot) {
   adb(["shell", "run-as", packageName, "tee", file], { input: snapshot, stdio: ["pipe", "ignore", "pipe"] });
 }
 
-function decodeXml(value) {
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
-function prefString(xml, name, fallback) {
-  const match = xml.match(new RegExp(`<string name="${name}">([\\s\\S]*?)<\\/string>`));
-  return match ? decodeXml(match[1]) : fallback;
-}
-
-function resolveHermesContactId() {
-  const xml = readAppFile(appStorePrefs);
-  const contacts = JSON.parse(prefString(xml, "contacts", "[]"));
+async function resolveHermesContactId() {
+  const state = await snapshotSecureState({ adb, packageName, activityName });
+  const contacts = Array.isArray(state.contacts) ? state.contacts : [];
   const target = contacts.find((contact) =>
     contact.deleted !== true &&
     contact.trust_state !== "deleted" &&
@@ -134,7 +121,7 @@ async function main() {
     if (!readyXml.includes("com.signalasi.chat:id/wakePage")) {
       fail(`Voice page did not open before reply injection. Dump saved at ${voiceDump}`);
     }
-    const targetContactId = resolveHermesContactId();
+    const targetContactId = await resolveHermesContactId();
     const payloadB64 = Buffer.from(JSON.stringify({
       sender: targetContactId,
       contact_id: targetContactId,
@@ -182,7 +169,7 @@ async function main() {
 
     log(`OK: voice reply panel and Hermes chat preserve full replies. Dumps: ${voiceDump}, ${chatDump}`);
   } finally {
-    const targetContactId = resolveHermesContactId();
+    const targetContactId = await resolveHermesContactId();
     try {
       await probeChatHistory({
         adb,

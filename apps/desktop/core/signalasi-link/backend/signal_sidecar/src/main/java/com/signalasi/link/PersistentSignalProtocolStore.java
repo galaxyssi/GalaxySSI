@@ -21,15 +21,28 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 final class PersistentSignalProtocolStore implements SignalProtocolStore {
+    private static final String STORAGE_PROTOCOL = "signalasi.signal-store/2.0";
+    private static final String STORAGE_CIPHER = "AES-256-GCM";
+    private static final byte[] STORAGE_AAD =
+            (STORAGE_PROTOCOL + "|signal-protocol-store").getBytes(StandardCharsets.US_ASCII);
+    private static final SecureRandom RANDOM = new SecureRandom();
     private final Path path;
+    private final SecretKeySpec storageKey;
     private final IdentityKeyPair identityKeyPair;
     private final int registrationId;
     private final Map<String, String> identities = new HashMap<>();
@@ -39,11 +52,15 @@ final class PersistentSignalProtocolStore implements SignalProtocolStore {
     private final Map<String, String> sessions = new HashMap<>();
     private final Map<String, String> senderKeys = new HashMap<>();
 
-    PersistentSignalProtocolStore(Path path) throws Exception {
+    PersistentSignalProtocolStore(Path path, byte[] storageKey) throws Exception {
         this.path = path;
+        if (storageKey == null || storageKey.length != 32) {
+            throw new IllegalArgumentException("Signal storage key must contain 32 bytes");
+        }
+        this.storageKey = new SecretKeySpec(storageKey.clone(), "AES");
         Files.createDirectories(path.getParent());
         JSONObject root = Files.exists(path)
-                ? new JSONObject(Files.readString(path, StandardCharsets.UTF_8))
+                ? readEncryptedOrLegacy()
                 : new JSONObject();
         if (root.has("identityKeyPair")) {
             identityKeyPair = new IdentityKeyPair(b64d(root.getString("identityKeyPair")));
@@ -314,7 +331,76 @@ final class PersistentSignalProtocolStore implements SignalProtocolStore {
                 .put("kyberPreKeys", intMapJson(kyberPreKeys))
                 .put("sessions", stringMapJson(sessions))
                 .put("senderKeys", stringMapJson(senderKeys));
-        Files.writeString(path, root.toString(2), StandardCharsets.UTF_8);
+        try {
+            byte[] nonce = new byte[12];
+            RANDOM.nextBytes(nonce);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, storageKey, new GCMParameterSpec(128, nonce));
+            cipher.updateAAD(STORAGE_AAD);
+            byte[] ciphertext = cipher.doFinal(root.toString().getBytes(StandardCharsets.UTF_8));
+            JSONObject envelope = new JSONObject()
+                    .put("protocol", STORAGE_PROTOCOL)
+                    .put("cipher", STORAGE_CIPHER)
+                    .put("keyId", keyId())
+                    .put("nonce", b64e(nonce))
+                    .put("ciphertext", b64e(ciphertext));
+            Path temporary = path.resolveSibling("." + path.getFileName() + ".tmp");
+            Files.writeString(temporary, envelope.toString(), StandardCharsets.US_ASCII);
+            try {
+                Files.move(
+                        temporary,
+                        path,
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING
+                );
+            } catch (IOException atomicMoveFailure) {
+                Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING);
+            } finally {
+                Files.deleteIfExists(temporary);
+            }
+        } catch (GeneralSecurityException exc) {
+            throw new IOException("Failed to encrypt Signal protocol store", exc);
+        }
+    }
+
+    private JSONObject readEncryptedOrLegacy() throws Exception {
+        JSONObject envelope = new JSONObject(Files.readString(path, StandardCharsets.UTF_8));
+        if (!STORAGE_PROTOCOL.equals(envelope.optString("protocol"))) {
+            // One-time migration from the early plaintext development store.
+            return envelope;
+        }
+        if (!STORAGE_CIPHER.equals(envelope.optString("cipher"))
+                || !keyId().equals(envelope.optString("keyId"))) {
+            throw new IOException("Signal protocol store belongs to another storage key");
+        }
+        byte[] nonce = b64d(envelope.getString("nonce"));
+        byte[] ciphertext = b64d(envelope.getString("ciphertext"));
+        if (nonce.length != 12 || ciphertext.length < 16) {
+            throw new IOException("Signal protocol store envelope is malformed");
+        }
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, storageKey, new GCMParameterSpec(128, nonce));
+            cipher.updateAAD(STORAGE_AAD);
+            return new JSONObject(
+                    new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8)
+            );
+        } catch (GeneralSecurityException exc) {
+            throw new IOException("Signal protocol store authentication failed", exc);
+        }
+    }
+
+    private String keyId() throws GeneralSecurityException {
+        byte[] digest = MessageDigest.getInstance("SHA-256").digest(storageKey.getEncoded());
+        return hex(digest).substring(0, 24);
+    }
+
+    private static String hex(byte[] value) {
+        StringBuilder result = new StringBuilder(value.length * 2);
+        for (byte item : value) {
+            result.append(String.format("%02x", item & 0xff));
+        }
+        return result.toString();
     }
 
     private static String addressKey(SignalProtocolAddress address) {

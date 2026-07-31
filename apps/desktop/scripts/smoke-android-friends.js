@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { createAdb } = require("./android-adb");
+const { replaceSecureAppStore, snapshotSecureState } = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -10,7 +11,7 @@ const packageName = "com.signalasi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
 const outDir = path.join(root, "ui-smoke");
-const storeDump = path.join(outDir, "android-friends-app-store.xml");
+const storeDump = path.join(outDir, "android-friends-app-store.json");
 
 function log(message) {
   console.log(`[android-friends-smoke] ${message}`);
@@ -43,27 +44,12 @@ function restoreAppFile(file, snapshot) {
   adb(["shell", "run-as", packageName, "tee", file], { input: snapshot, stdio: ["pipe", "ignore", "pipe"] });
 }
 
-function decodeXml(value) {
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
-function prefString(xml, name, fallback) {
-  const pattern = new RegExp(`<string name="${name}">([\\s\\S]*?)<\\/string>`);
-  const match = xml.match(pattern);
-  return match ? decodeXml(match[1]) : fallback;
-}
-
-function readStore() {
-  const xml = readAppFile(appStorePrefs);
+async function readStore() {
+  const state = await snapshotSecureState({ adb, packageName, activityName });
   return {
-    xml,
-    contacts: JSON.parse(prefString(xml, "contacts", "[]")),
-    friendRequests: JSON.parse(prefString(xml, "friend_requests", "[]"))
+    state,
+    contacts: Array.isArray(state.contacts) ? state.contacts : [],
+    friendRequests: Array.isArray(state.friend_requests) ? state.friend_requests : []
   };
 }
 
@@ -131,7 +117,10 @@ async function main() {
 
   try {
     log("resetting app store snapshot for isolated friend request flow");
-    restoreAppFile(appStorePrefs, "");
+    await replaceSecureAppStore(
+      { adb, packageName, activityName },
+      { contacts: [], friend_requests: [] }
+    );
     adb(["shell", "am", "force-stop", packageName]);
 
     log("scanning contact QR: should create a pending New Friend only");
@@ -139,8 +128,8 @@ async function main() {
       ["--es", "signalasi_debug_scan_payload_b64", payloadB64]
     ]);
     await sleep(4000);
-    let store = readStore();
-    fs.writeFileSync(storeDump, store.xml);
+    let store = await readStore();
+    fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
     let request = findRequest(store, contactId);
     if (!request || request.status !== "pending") {
       fail(`scan did not create a pending friend request. Store dump: ${storeDump}`);
@@ -152,7 +141,7 @@ async function main() {
       ["--es", "signalasi_debug_approve_friend", contactId]
     ]);
     await sleep(2500);
-    store = readStore();
+    store = await readStore();
     request = findRequest(store, contactId);
     if (!request || request.status !== "approved") {
       fail("approval did not mark friend request approved");
@@ -164,7 +153,7 @@ async function main() {
       ["--es", "signalasi_debug_delete_contact", contactId]
     ]);
     await sleep(2500);
-    store = readStore();
+    store = await readStore();
     request = findRequest(store, contactId);
     if (!request || request.status !== "deleted" || request.readd_required !== true) {
       fail("delete did not mark the friend request as re-add required");
@@ -176,7 +165,7 @@ async function main() {
       ["--es", "signalasi_debug_scan_payload_b64", payloadB64]
     ]);
     await sleep(4000);
-    store = readStore();
+    store = await readStore();
     request = findRequest(store, contactId);
     if (!request || request.status !== "pending" || request.previously_deleted !== true || request.readd_required !== true) {
       fail("re-scan did not create a pending re-add request");
@@ -188,7 +177,7 @@ async function main() {
       ["--es", "signalasi_debug_approve_friend", contactId]
     ]);
     await sleep(2500);
-    store = readStore();
+    store = await readStore();
     request = findRequest(store, contactId);
     if (!request || request.status !== "approved" || !request.readded_at) {
       fail("re-add approval did not preserve re-added request evidence");

@@ -25,6 +25,7 @@ from desktop_control import (
     WINDOW_ACTIVATE,
     WINDOW_SWITCH,
     RECEIPT_SIGNED_FIELDS,
+    CONTROL_STATE_PURPOSE,
     DesktopControlError,
     DesktopControlManager,
     WindowsInputController,
@@ -32,6 +33,7 @@ from desktop_control import (
     allowed_tools_for_scopes,
 )
 from desktop_run_control import TASK_PAUSE
+from secure_state import PROTOCOL, read_secure_json
 from tool_handle_registry import ToolHandleRegistry, ToolHandleScope
 
 
@@ -190,6 +192,18 @@ class DesktopControlTests(unittest.TestCase):
 
     def tearDown(self):
         self.temporary.cleanup()
+
+    def raw_state(self) -> str:
+        return (Path(self.temporary.name) / "control.json").read_text(
+            encoding="ascii"
+        )
+
+    def decrypted_state_text(self) -> str:
+        value = read_secure_json(
+            Path(self.temporary.name) / "control.json",
+            purpose=CONTROL_STATE_PURPOSE,
+        ).value
+        return str(value)
 
     def authorize(self):
         self.manager.update_settings(enabled=True)
@@ -395,8 +409,11 @@ class DesktopControlTests(unittest.TestCase):
         self.assertTrue(replay["replayed"])
         self.assertTrue(self.identity.verify(replay))
         self.assertEqual(1, self.screenshot_calls)
-        state_text = (Path(self.temporary.name) / "control.json").read_text(encoding="utf-8")
+        state_text = self.raw_state()
         self.assertNotIn("/9j/2Q==", state_text)
+        self.assertIn(PROTOCOL, state_text)
+        self.assertNotIn(authorization["authorization_id"], state_text)
+        self.assertNotIn(self.client["identity_fingerprint"], state_text)
 
     def test_low_rate_stream_frame_is_signed_without_persisting_activity(self):
         authorization = self.authorize()
@@ -507,7 +524,7 @@ class DesktopControlTests(unittest.TestCase):
         replay = self.manager.execute_request(request, self.client)
         self.assertTrue(replay["replayed"])
         self.assertEqual(1, len(calls))
-        persisted = (Path(self.temporary.name) / "control.json").read_text(encoding="utf-8")
+        persisted = self.raw_state()
         self.assertNotIn("Private OCR", persisted)
         self.assertNotIn("Private control", persisted)
         self.assertNotIn("Private window", persisted)
@@ -617,9 +634,9 @@ class DesktopControlTests(unittest.TestCase):
             self.client,
         )
         self.assertEqual("succeeded", typed["status"])
-        state_text = (Path(self.temporary.name) / "control.json").read_text(encoding="utf-8")
+        state_text = self.raw_state()
         self.assertNotIn(secret, state_text)
-        self.assertIn("typed 41 chars", state_text)
+        self.assertIn("typed 41 chars", self.decrypted_state_text())
 
     def test_window_switch_and_file_select_use_standard_tools(self):
         authorization = self.authorize()
@@ -663,11 +680,12 @@ class DesktopControlTests(unittest.TestCase):
             self.input.calls,
         )
         self.assertEqual("private project.txt", file_selection["output"]["file_name"])
-        state_text = (Path(self.temporary.name) / "control.json").read_text(
-            encoding="utf-8"
-        )
+        state_text = self.raw_state()
         self.assertNotIn(str(selected), state_text)
-        self.assertIn("selected an existing file in the active file dialog", state_text)
+        self.assertIn(
+            "selected an existing file in the active file dialog",
+            self.decrypted_state_text(),
+        )
 
     def test_file_select_rejects_missing_files_without_input(self):
         authorization = self.authorize()

@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createAdb } = require("./android-adb");
 const { establishFreshSecurePairing } = require("./android-live-pairing");
+const { snapshotSecureState } = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -11,7 +12,7 @@ const packageName = "com.signalasi.chat";
 const activityName = `${packageName}/.MainActivity`;
 const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
 const outDir = path.join(root, "ui-smoke");
-const storeDump = path.join(outDir, "android-contact-rename-app-store.xml");
+const storeDump = path.join(outDir, "android-contact-rename-app-store.json");
 const detailDump = path.join(outDir, "android-contact-rename-detail.xml");
 
 function log(message) {
@@ -45,26 +46,11 @@ function restoreAppFile(file, snapshot) {
   adb(["shell", "run-as", packageName, "tee", file], { input: snapshot, stdio: ["pipe", "ignore", "pipe"] });
 }
 
-function decodeXml(value) {
-  return value
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
-}
-
-function prefString(xml, name, fallback) {
-  const pattern = new RegExp(`<string name="${name}">([\\s\\S]*?)<\\/string>`);
-  const match = xml.match(pattern);
-  return match ? decodeXml(match[1]) : fallback;
-}
-
-function readStore() {
-  const xml = readAppFile(appStorePrefs);
+async function readStore() {
+  const state = await snapshotSecureState({ adb, packageName, activityName });
   return {
-    xml,
-    contacts: JSON.parse(prefString(xml, "contacts", "[]"))
+    state,
+    contacts: Array.isArray(state.contacts) ? state.contacts : []
   };
 }
 
@@ -118,23 +104,23 @@ async function main() {
   try {
     log("pairing with the live Desktop and waiting for its verified Codex contact");
     await establishFreshSecurePairing({ adb, packageName, activityName, log });
-    let store = { xml: "", contacts: [] };
+    let store = { state: {}, contacts: [] };
     let contact;
     const contactDeadline = Date.now() + 20_000;
     while (Date.now() < contactDeadline) {
-      store = readStore();
+      store = await readStore();
       contact = findCodexContact(store);
       if (contact) break;
       await sleep(500);
     }
     if (!contact) {
-      fs.writeFileSync(storeDump, store.xml || "");
+      fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
       fail(`Live Desktop did not publish a Codex connector contact. Store dump: ${storeDump}`);
     }
-    pairedAppStore = store.xml;
+    pairedAppStore = readAppFile(appStorePrefs);
     const resolvedContactId = contact.signalasi_id || contact.id;
     if (!resolvedContactId) {
-      fs.writeFileSync(storeDump, store.xml || "");
+      fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
       fail(`Codex connector contact did not include an id. Store dump: ${storeDump}`);
     }
     const originalIdentity = {
@@ -152,8 +138,8 @@ async function main() {
     ]);
     await sleep(2500);
 
-    store = readStore();
-    fs.writeFileSync(storeDump, store.xml || "");
+    store = await readStore();
+    fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
     contact = store.contacts.find((item) => item.id === resolvedContactId || item.signalasi_id === resolvedContactId);
     if (!contact) {
       fail(`Renamed contact disappeared. Store dump: ${storeDump}`);

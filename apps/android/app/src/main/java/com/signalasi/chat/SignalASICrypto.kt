@@ -24,7 +24,6 @@ object SignalASICrypto {
     private const val REMOTE_DEVICE_ID = 1
     private const val DEFAULT_DEVICE_ID = 1
     private const val PREFS = "signalasi_signal_trust"
-    private const val SIGNAL_STORE_PREFS = "signalasi_signal_store"
     private const val KEY_VERIFIED_PC_SHA256 = "verified_pc_identity_sha256"
 
     private val remoteAddress = SignalProtocolAddress(REMOTE_NAME, REMOTE_DEVICE_ID)
@@ -44,14 +43,10 @@ object SignalASICrypto {
     fun isReady(): Boolean = hasPcBundle
 
     fun verifiedPcFingerprint(): String =
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(KEY_VERIFIED_PC_SHA256, "")
-            .orEmpty()
+        trustStore().readString(KEY_VERIFIED_PC_SHA256, "")
 
     fun verifiedDesktopFingerprint(desktopId: String): String =
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString("verified_desktop_identity_sha256_$desktopId", "")
-            .orEmpty()
+        trustStore().readString("verified_desktop_identity_sha256_$desktopId", "")
 
     @Synchronized
     fun hasDesktopSession(context: Context, desktopId: String): Boolean {
@@ -73,20 +68,14 @@ object SignalASICrypto {
             Log.w(TAG, "Debug PC identity seed ignored in non-debuggable build")
             return
         }
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_VERIFIED_PC_SHA256, fingerprint)
-            .apply()
+        trustStore().writeString(KEY_VERIFIED_PC_SHA256, fingerprint)
         Log.i(TAG, "Debug PC identity seeded. sha256=${fingerprint.take(16)}")
     }
 
     @Synchronized
     fun clearPcTrust(context: Context) {
         initialize(context.applicationContext)
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .remove(KEY_VERIFIED_PC_SHA256)
-            .apply()
+        trustStore().remove(KEY_VERIFIED_PC_SHA256)
         store.deleteSession(remoteAddress)
         store.deleteAllSessions(REMOTE_NAME)
         store.deleteIdentity(remoteAddress)
@@ -103,10 +92,7 @@ object SignalASICrypto {
         store.deleteSession(address)
         store.deleteAllSessions(desktopId)
         store.deleteIdentity(address)
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .remove("verified_desktop_identity_sha256_$desktopId")
-            .commit()
+        trustStore().remove("verified_desktop_identity_sha256_$desktopId")
         Log.i(TAG, "Desktop Signal trust removed desktop=$desktopId")
     }
 
@@ -125,14 +111,8 @@ object SignalASICrypto {
     @Synchronized
     fun resetLocalIdentity(context: Context) {
         appContext = context.applicationContext
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .commit()
-        appContext.getSharedPreferences(SIGNAL_STORE_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-            .commit()
+        trustStore().clear()
+        AndroidPersistentSignalStore.clear(appContext)
         store = AndroidPersistentSignalStore(appContext)
         hasPcBundle = false
         pendingPcBundle = null
@@ -190,38 +170,14 @@ object SignalASICrypto {
 
     fun exportSignalStoreJson(context: Context): JSONObject {
         initialize(context.applicationContext)
-        val prefs = context.applicationContext.getSharedPreferences(SIGNAL_STORE_PREFS, Context.MODE_PRIVATE)
-        val root = JSONObject()
-        for ((key, value) in prefs.all) {
-            when (value) {
-                is String -> root.put(key, value)
-                is Int -> root.put(key, value)
-                is Long -> root.put(key, value)
-                is Boolean -> root.put(key, value)
-            }
-        }
-        return root
+        return store.exportJson()
             .put("exported_at", System.currentTimeMillis())
             .put("local_signalasi_id", localSignalasiId())
             .put("local_identity_sha256", localIdentitySha256())
     }
 
     fun importSignalStoreJson(context: Context, json: JSONObject) {
-        val editor = context.applicationContext
-            .getSharedPreferences(SIGNAL_STORE_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .clear()
-        json.keys().forEach { key ->
-            if (key == "exported_at" || key == "local_signalasi_id" || key == "local_hermes_id" || key == "local_identity_sha256") return@forEach
-            val value = json.opt(key)
-            when (value) {
-                is String -> editor.putString(key, value)
-                is Int -> editor.putInt(key, value)
-                is Long -> editor.putLong(key, value)
-                is Boolean -> editor.putBoolean(key, value)
-            }
-        }
-        editor.apply()
+        AndroidPersistentSignalStore.importJson(context.applicationContext, json)
         appContext = context.applicationContext
         store = AndroidPersistentSignalStore(appContext)
         hasPcBundle = false
@@ -241,11 +197,11 @@ object SignalASICrypto {
         if (identityKey.isBlank() || declaredHash.isBlank()) return false
         val computed = sha256Hex(b64d(identityKey))
         if (!computed.equals(declaredHash, ignoreCase = true)) return false
-        appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_VERIFIED_PC_SHA256, computed)
-            .putString("verified_desktop_identity_sha256_${desktopIdFromQr(json)}", computed)
-            .apply()
+        trustStore().writeString(KEY_VERIFIED_PC_SHA256, computed)
+        trustStore().writeString(
+            "verified_desktop_identity_sha256_${desktopIdFromQr(json)}",
+            computed
+        )
         json.optJSONObject("signal_bundle")?.let { bundle ->
             processPcBundleForDesktop(
                 desktopIdFromQr(json),
@@ -388,10 +344,10 @@ object SignalASICrypto {
                 )
                 SessionBuilder(store, address).process(bundle)
             }
-            appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putString("verified_desktop_identity_sha256_$desktopId", bundleHash)
-                .apply()
+            trustStore().writeString(
+                "verified_desktop_identity_sha256_$desktopId",
+                bundleHash
+            )
             Log.i(TAG, "Desktop Signal bundle processed. desktop=$desktopId sha256=${bundleHash.take(16)}")
             true
         } catch (exc: Exception) {
@@ -524,6 +480,9 @@ object SignalASICrypto {
 
     private fun b64d(value: String): ByteArray =
         Base64.decode(value, Base64.DEFAULT)
+
+    private fun trustStore(): AgentEncryptedPreferences =
+        AgentEncryptedPreferences(appContext, PREFS)
 
     private fun ensureInitialized() {
         check(::store.isInitialized) { "SignalASICrypto.initialize(context) must be called first" }

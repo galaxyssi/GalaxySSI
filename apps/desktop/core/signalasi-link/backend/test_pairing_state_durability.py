@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -9,6 +8,7 @@ from unittest.mock import patch
 
 import pairing_state
 from link_protocol import new_route_id
+from secure_state import PROTOCOL, read_secure_json
 
 
 class PairingStateDurabilityTests(unittest.TestCase):
@@ -41,6 +41,12 @@ class PairingStateDurabilityTests(unittest.TestCase):
         pairing_state._last_good_state = None
         pairing_state._last_good_path = ""
 
+    def _persisted_state(self) -> dict:
+        return read_secure_json(
+            self.registry,
+            purpose=pairing_state.STATE_PURPOSE,
+        ).value
+
     def test_registry_and_clients_survive_process_restart(self):
         server_route = pairing_state.server_route_id()
         paired = self._pair_client()
@@ -60,7 +66,7 @@ class PairingStateDurabilityTests(unittest.TestCase):
 
         self.assertEqual(server_route, recovered["server_route_id"])
         self.assertIn(paired["client_route_id"], recovered["clients"])
-        self.assertEqual(server_route, json.loads(self.registry.read_text())["server_route_id"])
+        self.assertEqual(server_route, self._persisted_state()["server_route_id"])
 
     def test_missing_primary_recovers_from_backup(self):
         server_route = pairing_state.server_route_id()
@@ -94,8 +100,18 @@ class PairingStateDurabilityTests(unittest.TestCase):
         state = pairing_state._read_state()
 
         self.assertEqual(set(routes), set(state["clients"]))
-        self.assertEqual(32, len(json.loads(self.registry.read_text())["clients"]))
+        self.assertEqual(32, len(self._persisted_state()["clients"]))
         self.assertFalse(list(self.registry.parent.glob(f".{self.registry.name}.*.tmp")))
+
+    def test_registry_hides_route_fingerprint_and_authorization_at_rest(self):
+        paired = self._pair_client()
+
+        raw = self.registry.read_text(encoding="ascii")
+
+        self.assertIn(PROTOCOL, raw)
+        self.assertNotIn(paired["client_route_id"], raw)
+        self.assertNotIn("a" * 64, raw)
+        self.assertNotIn("desktop.executor.full", raw)
 
 
 if __name__ == "__main__":
