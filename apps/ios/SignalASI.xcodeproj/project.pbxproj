@@ -38,6 +38,8 @@
     A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */; };
     A10000000000000000000413 /* AgentMemoryPersistentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000413 /* AgentMemoryPersistentStore.swift */; };
     A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */; };
+    A10000000000000000000415 /* AgentLargeOutputPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000415 /* AgentLargeOutputPolicy.swift */; };
+    A10000000000000000000416 /* AgentLargeOutputPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000416 /* AgentLargeOutputPolicyTests.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
@@ -300,6 +302,8 @@
     A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryCausalDeletionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000413 /* AgentMemoryPersistentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryPersistentStore.swift; sourceTree = "<group>"; };
     A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryPersistentStoreTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000415 /* AgentLargeOutputPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLargeOutputPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000416 /* AgentLargeOutputPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLargeOutputPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000103 /* AgentTeamDelegationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000104 /* AgentNativeToolCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolCore.swift; sourceTree = "<group>"; };
     A20000000000000000000105 /* AgentPhoneNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeTools.swift; sourceTree = "<group>"; };
@@ -589,6 +593,7 @@
         A20000000000000000000117 /* AgentPlanRunModels.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
+        A20000000000000000000415 /* AgentLargeOutputPolicy.swift */,
         A20000000000000000000120 /* AgentRuntimePackModels.swift */,
         A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */,
         A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */,
@@ -728,6 +733,7 @@
         A20000000000000000000206 /* AgentRunPolicyTests.swift */,
         A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */,
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
+        A20000000000000000000416 /* AgentLargeOutputPolicyTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
         A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */,
@@ -949,6 +955,7 @@
         A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
+        A10000000000000000000415 /* AgentLargeOutputPolicy.swift in Sources */,
         A10000000000000000000120 /* AgentRuntimePackModels.swift in Sources */,
         A10000000000000000000121 /* AgentFailureResponsePolicyModels.swift in Sources */,
         A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */,
@@ -1088,6 +1095,7 @@
         A10000000000000000000206 /* AgentRunPolicyTests.swift in Sources */,
         A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */,
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
+        A10000000000000000000416 /* AgentLargeOutputPolicyTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
         A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */,

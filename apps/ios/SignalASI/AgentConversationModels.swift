@@ -72,6 +72,12 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
   var sourceConversationId: String
   var sourceConversationTitle: String
   var sourceEntryId: String
+  var textChunkCount: Int
+  var textLength: Int
+  var textSha256: String
+  var richOutputChunkCount: Int
+  var richOutputLength: Int
+  var richOutputSha256: String
 
   enum CodingKeys: String, CodingKey {
     case id
@@ -86,6 +92,12 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
     case sourceConversationId = "source_conversation_id"
     case sourceConversationTitle = "source_conversation_title"
     case sourceEntryId = "source_entry_id"
+    case textChunkCount = "text_chunk_count"
+    case textLength = "text_length"
+    case textSha256 = "text_sha256"
+    case richOutputChunkCount = "rich_output_chunk_count"
+    case richOutputLength = "rich_output_length"
+    case richOutputSha256 = "rich_output_sha256"
   }
 
   init(
@@ -100,7 +112,13 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
     richOutputJson: String = "",
     sourceConversationId: String = "",
     sourceConversationTitle: String = "",
-    sourceEntryId: String = ""
+    sourceEntryId: String = "",
+    textChunkCount: Int = 0,
+    textLength: Int = 0,
+    textSha256: String = "",
+    richOutputChunkCount: Int = 0,
+    richOutputLength: Int = 0,
+    richOutputSha256: String = ""
   ) {
     self.id = id
     self.role = role
@@ -114,6 +132,12 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
     self.sourceConversationId = sourceConversationId
     self.sourceConversationTitle = sourceConversationTitle
     self.sourceEntryId = sourceEntryId
+    self.textChunkCount = textChunkCount
+    self.textLength = textLength
+    self.textSha256 = textSha256
+    self.richOutputChunkCount = richOutputChunkCount
+    self.richOutputLength = richOutputLength
+    self.richOutputSha256 = richOutputSha256
   }
 
   init(from decoder: Decoder) throws {
@@ -130,6 +154,12 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
     sourceConversationId = try container.decodeIfPresent(String.self, forKey: .sourceConversationId) ?? ""
     sourceConversationTitle = try container.decodeIfPresent(String.self, forKey: .sourceConversationTitle) ?? ""
     sourceEntryId = try container.decodeIfPresent(String.self, forKey: .sourceEntryId) ?? ""
+    textChunkCount = try container.decodeIfPresent(Int.self, forKey: .textChunkCount) ?? 0
+    textLength = try container.decodeIfPresent(Int.self, forKey: .textLength) ?? 0
+    textSha256 = try container.decodeIfPresent(String.self, forKey: .textSha256) ?? ""
+    richOutputChunkCount = try container.decodeIfPresent(Int.self, forKey: .richOutputChunkCount) ?? 0
+    richOutputLength = try container.decodeIfPresent(Int.self, forKey: .richOutputLength) ?? 0
+    richOutputSha256 = try container.decodeIfPresent(String.self, forKey: .richOutputSha256) ?? ""
   }
 
   func encode(to encoder: Encoder) throws {
@@ -146,6 +176,12 @@ struct AgentTranscriptEntry: Codable, Equatable, Identifiable {
     try container.encode(sourceConversationId, forKey: .sourceConversationId)
     try container.encode(sourceConversationTitle, forKey: .sourceConversationTitle)
     try container.encode(sourceEntryId, forKey: .sourceEntryId)
+    try container.encode(textChunkCount, forKey: .textChunkCount)
+    try container.encode(textLength, forKey: .textLength)
+    try container.encode(textSha256, forKey: .textSha256)
+    try container.encode(richOutputChunkCount, forKey: .richOutputChunkCount)
+    try container.encode(richOutputLength, forKey: .richOutputLength)
+    try container.encode(richOutputSha256, forKey: .richOutputSha256)
   }
 }
 
