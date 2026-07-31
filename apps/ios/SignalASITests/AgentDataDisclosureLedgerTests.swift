@@ -173,6 +173,21 @@ final class AgentDataDisclosureLedgerTests: XCTestCase {
     XCTAssertTrue(reloaded.blockedDestinationIds().contains("desktop-codex"))
   }
 
+  func testFileStoreDestroyPersistentStoreRemovesHistoryAndBlocks() throws {
+    let fileURL = temporaryLedgerURL()
+    defer { try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent()) }
+    let store = FileAgentDataDisclosureStore(fileURL: fileURL)
+    let record = disclosureRecord(destinationId: "cloud-openai")
+    store.append(record)
+    store.setDestinationBlocked(destinationId: "cloud-openai", blocked: true)
+
+    FileAgentDataDisclosureStore.destroyPersistentStore(fileURL: fileURL)
+
+    let reloaded = FileAgentDataDisclosureStore(fileURL: fileURL)
+    XCTAssertTrue(reloaded.list().isEmpty)
+    XCTAssertTrue(reloaded.blockedDestinationIds().isEmpty)
+  }
+
   private func disclosureRecord(
     destinationId: String,
     location: AgentResourceLocation = .cloud,
