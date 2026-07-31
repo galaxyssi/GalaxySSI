@@ -718,7 +718,11 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(1_200))
     XCTAssertEqual(result.output["width"], .int(640))
     XCTAssertEqual(result.output["height"], .int(480))
-    XCTAssertEqual(result.output["quality_score"], .double(0.92))
+    XCTAssertEqual(result.output["layout_mode"], .string("sparse"))
+    let quality = try XCTUnwrap(doubleValue(result.output["quality_score"]))
+    XCTAssertGreaterThan(quality, 0.80)
+    XCTAssertLessThan(quality, 0.90)
+    XCTAssertEqual(result.output["warnings"]?.arrayValue, [.string("low_resolution")])
     let lines = try XCTUnwrap(result.output["lines"]?.arrayValue)
     XCTAssertEqual(lines.first?.objectValue?["text"], .string("Invoice Total"))
     let blocks = try XCTUnwrap(result.output["blocks"]?.arrayValue)
@@ -885,4 +889,10 @@ extension SignalASIStoreTests {
     XCTAssertEqual(transport.requests.count, 2)
   }
 
+  private func doubleValue(_ value: AgentMcpJSONValue?) -> Double? {
+    guard case .double(let double) = value else {
+      return nil
+    }
+    return double
+  }
 }
