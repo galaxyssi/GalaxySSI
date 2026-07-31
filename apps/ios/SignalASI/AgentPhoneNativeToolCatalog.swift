@@ -106,6 +106,10 @@ enum AgentPhoneNativeToolCatalog {
       runtimeProvider: resolvedOnDeviceRuntimeProvider,
       nowMillis: nowMillis
     )
+    let resolvedMcpProvider = defaultMcpProvider(
+      AgentIOSUnavailableMcpNativeToolProvider(),
+      nowMillis: nowMillis
+    )
     return workspaceDefinitions() +
       actionDefinitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis) +
       AgentIOSSystemNativeToolCatalog.definitions() +
@@ -118,7 +122,7 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSMediaNativeToolCatalog.definitions(provider: resolvedMediaProvider) +
       AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: resolvedSelfEvolutionProvider) +
       AgentIOSDesktopRemoteNativeToolCatalog.definitions() +
-      AgentMcpNativeTools.definitions() +
+      AgentMcpNativeTools.definitions(provider: resolvedMcpProvider) +
       AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: resolvedOnDeviceRuntimeProvider)
   }
 
@@ -156,6 +160,8 @@ enum AgentPhoneNativeToolCatalog {
     selfEvolutionProvider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider(),
     desktopRemoteProvider: AgentIOSDesktopRemoteToolProviding = AgentIOSUnavailableDesktopRemoteToolProvider(),
     mcpProvider: AgentIOSMcpNativeToolProviding = AgentIOSUnavailableMcpNativeToolProvider(),
+    mcpPackageRootURL: URL? = nil,
+    mcpAuditStore: AgentMcpAuditStore = InMemoryAgentMcpAuditStore(),
     onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding = AgentIOSUnavailableOnDeviceRuntimeToolProvider()
   ) throws -> AgentNativeToolRegistry {
     let registry = try AgentNativeToolRegistry(
@@ -183,6 +189,12 @@ enum AgentPhoneNativeToolCatalog {
       runtimeProvider: resolvedOnDeviceRuntimeProvider,
       nowMillis: nowMillis
     )
+    let resolvedMcpProvider = defaultMcpProvider(
+      mcpProvider,
+      packageRootURL: mcpPackageRootURL,
+      auditStore: mcpAuditStore,
+      nowMillis: nowMillis
+    )
     let executables =
       workspaceExecutableDefinitions(store: workspaceStore) +
       actionExecutableDefinitions(
@@ -201,7 +213,7 @@ enum AgentPhoneNativeToolCatalog {
       mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
       selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
-      mcpExecutableDefinitions(provider: mcpProvider) +
+      mcpExecutableDefinitions(provider: resolvedMcpProvider) +
       onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider)
     return try registry.registerExecutables(executables)
   }
@@ -350,6 +362,24 @@ enum AgentPhoneNativeToolCatalog {
         fileManager: fileManager
       ),
       runtimeProvider: runtimeProvider,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func defaultMcpProvider(
+    _ provider: AgentIOSMcpNativeToolProviding,
+    packageRootURL: URL? = nil,
+    auditStore: AgentMcpAuditStore = InMemoryAgentMcpAuditStore(),
+    fileManager: FileManager = .default,
+    nowMillis: @escaping () -> Int64
+  ) -> AgentIOSMcpNativeToolProviding {
+    guard provider is AgentIOSUnavailableMcpNativeToolProvider else {
+      return provider
+    }
+    return AgentIOSMcpClientNativeProvider(
+      auditStore: auditStore,
+      packageRootURL: packageRootURL,
+      fileManager: fileManager,
       nowMillis: nowMillis
     )
   }

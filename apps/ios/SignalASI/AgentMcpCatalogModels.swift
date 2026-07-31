@@ -1067,7 +1067,10 @@ enum AgentMcpNativeTools {
         "host": "ios",
         "compatibility_source": "AgentMcpNativeTools",
         "permission_enforcement": "mcp_security_policy"
-      ]
+      ],
+      availabilityProvider: AgentNativeToolAvailabilityProvider { _ in
+        provider.availability(operation: operation)
+      }
     )
   }
 

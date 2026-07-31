@@ -145,6 +145,11 @@ extension AgentPhoneNativeToolCatalog {
       selfEvolutionProvider: resolvedSelfEvolutionProvider,
       desktopRemoteProvider: desktopRemoteProvider,
       mcpProvider: mcpProvider,
+      mcpPackageRootURL: AgentIOSMcpClientNativeProvider.defaultPackageRootURL(storageRootURL: storageRootURL),
+      mcpAuditStore: FileAgentMcpAuditStore(
+        fileURL: AgentIOSMcpClientNativeProvider.defaultAuditFileURL(storageRootURL: storageRootURL),
+        fileManager: fileManager
+      ),
       onDeviceRuntimeProvider: resolvedOnDeviceRuntimeProvider
     )
   }
