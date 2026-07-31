@@ -493,6 +493,7 @@ final class MessageCoordinator: ObservableObject {
 
   private let store: SignalASIStore
   private let deliveryStore: SignalASILinkDeliveryStore
+  private let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let cloudClient: CloudModelClient
   private let disclosureStore: AgentDataDisclosureStore
@@ -504,6 +505,7 @@ final class MessageCoordinator: ObservableObject {
   init(
     store: SignalASIStore,
     deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
+    attachmentTransferStore: AgentOutboundAttachmentTransferStore = AgentOutboundAttachmentTransferStore(),
     diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger(),
     cloudClient: CloudModelClient = CloudModelClient(),
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
@@ -516,6 +518,7 @@ final class MessageCoordinator: ObservableObject {
   ) {
     self.store = store
     self.deliveryStore = deliveryStore
+    self.attachmentTransferStore = attachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
     self.cloudClient = cloudClient
     self.disclosureStore = disclosureStore
@@ -727,33 +730,68 @@ final class MessageCoordinator: ObservableObject {
     ).forEach { entry in
       payload[entry.key] = entry.value
     }
-    let attachmentDescriptors = SignalASIAttachmentPayloadBuilder.descriptors(
-      for: attachments,
-      mediaProfile: attachments.isEmpty ? nil : mediaProfile
-    )
-    if !attachmentDescriptors.isEmpty {
-      payload["attachments"] = attachmentDescriptors
+    let outboundAttachments: [AgentPreparedOutboundAttachment]
+    if attachments.isEmpty {
+      outboundAttachments = []
+    } else {
+      let scope = try AgentAttachmentTransferScope(
+        contactId: contact.id,
+        desktopId: link.desktopId,
+        clientRouteId: link.routes.clientRouteId,
+        conversationId: outgoing.conversationId.ifBlank("ios-\(contact.id)"),
+        taskId: outgoing.id.uuidString,
+        turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString),
+        clientMessageId: outgoing.id.uuidString
+      )
+      outboundAttachments = try attachmentTransferStore.prepare(
+        scope: scope,
+        attachments: attachments,
+        mediaProfile: mediaProfile
+      )
+      payload["attachments"] = outboundAttachments.map { $0.descriptor() }
     }
-    let envelope = try SignalASILinkProtocol.makeEnvelope(
-      payload: payload,
-      sourceId: store.profile.signalASIId,
-      targetId: link.desktopId
-    )
-    let wire = try SignalASILinkProtocol.jsonData([
-      "scheme": "signalasi-link-ios-preview",
-      "from": store.profile.signalASIId,
-      "to": link.desktopId,
-      "envelope": envelope
-    ])
-    let wireText = String(decoding: wire, as: UTF8.self)
+    if outboundAttachments.isEmpty {
+      let attachmentDescriptors = SignalASIAttachmentPayloadBuilder.descriptors(
+        for: attachments,
+        mediaProfile: attachments.isEmpty ? nil : mediaProfile
+      )
+      if !attachmentDescriptors.isEmpty {
+        payload["attachments"] = attachmentDescriptors
+      }
+    }
+    let wire = try linkWirePayload(payload, link: link)
     let requiresValidatedNetwork = AgentMediaLinkPayloadPolicy.requiresValidatedNetwork(
       attachments: attachments,
       profile: mediaProfile
     )
+    if !outboundAttachments.isEmpty {
+      deliveryStore.enqueue(
+        messageId: wire.messageId,
+        topic: link.routes.upTopic,
+        wirePayload: wire.wireText,
+        requiresValidatedNetwork: requiresValidatedNetwork,
+        blockedByAttachmentTransferIds: outboundAttachments.map(\.transferId)
+      )
+      do {
+        try enqueueOutboundAttachmentTransfers(outboundAttachments, link: link)
+      } catch {
+        _ = deliveryStore.discardBlockedByAttachmentTransfers(outboundAttachments.map(\.transferId))
+        throw error
+      }
+      store.appendDeliveryTrace(
+        outgoing.id,
+        contactId: contact.id,
+        stage: "queued",
+        detail: "Queued attachment transfer manifests and chunks.",
+        status: .queued
+      )
+      scheduleOutboxFlush(after: 0)
+      return .queued
+    }
     deliveryStore.enqueue(
-      messageId: outgoing.id.uuidString,
+      messageId: wire.messageId,
       topic: link.routes.upTopic,
-      wirePayload: wireText,
+      wirePayload: wire.wireText,
       requiresValidatedNetwork: requiresValidatedNetwork
     )
     if requiresValidatedNetwork {
@@ -767,11 +805,11 @@ final class MessageCoordinator: ObservableObject {
       scheduleOutboxFlushFromStore()
       return .queued
     }
-    deliveryStore.markAttempt(messageId: outgoing.id.uuidString)
-    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire)
+    deliveryStore.markAttempt(messageId: wire.messageId)
+    let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire.wireData)
     switch result {
     case .published:
-      deliveryStore.markPublished(messageId: outgoing.id.uuidString)
+      deliveryStore.markPublished(messageId: wire.messageId)
       store.appendDeliveryTrace(
         outgoing.id,
         contactId: contact.id,
@@ -794,6 +832,68 @@ final class MessageCoordinator: ObservableObject {
     case .failed:
       throw SignalASIError.transportUnavailable
     }
+  }
+
+  private func enqueueOutboundAttachmentTransfers(
+    _ attachments: [AgentPreparedOutboundAttachment],
+    link: ServerLink
+  ) throws {
+    for attachment in attachments {
+      try enqueueLinkPayload(
+        attachment.manifestPayload(resume: false),
+        link: link,
+        topic: link.routes.upTopic,
+        requiresValidatedNetwork: attachment.requiresValidatedNetwork
+      )
+      for index in 0..<attachment.chunkCount {
+        try enqueueLinkPayload(
+          attachment.chunkPayload(index: index),
+          link: link,
+          topic: link.routes.upTopic,
+          requiresValidatedNetwork: attachment.requiresValidatedNetwork
+        )
+      }
+    }
+  }
+
+  @discardableResult
+  private func enqueueLinkPayload(
+    _ payload: [String: Any],
+    link: ServerLink,
+    topic: String,
+    requiresValidatedNetwork: Bool? = nil,
+    blockedByAttachmentTransferIds: [String] = []
+  ) throws -> String {
+    let wire = try linkWirePayload(payload, link: link)
+    deliveryStore.enqueue(
+      messageId: wire.messageId,
+      topic: topic,
+      wirePayload: wire.wireText,
+      requiresValidatedNetwork: requiresValidatedNetwork ?? (payload["defer_media_upload"] as? Bool ?? false),
+      blockedByAttachmentTransferIds: blockedByAttachmentTransferIds
+    )
+    return wire.messageId
+  }
+
+  private func linkWirePayload(
+    _ payload: [String: Any],
+    link: ServerLink
+  ) throws -> (messageId: String, wireText: String, wireData: Data) {
+    var appPayload = payload
+    let messageId = appPayload.string("message_id").ifBlank(UUID().uuidString)
+    appPayload["message_id"] = messageId
+    let envelope = try SignalASILinkProtocol.makeEnvelope(
+      payload: appPayload,
+      sourceId: store.profile.signalASIId,
+      targetId: link.desktopId
+    )
+    let wireData = try SignalASILinkProtocol.jsonData([
+      "scheme": "signalasi-link-ios-preview",
+      "from": store.profile.signalASIId,
+      "to": link.desktopId,
+      "envelope": envelope
+    ])
+    return (messageId, String(decoding: wireData, as: UTF8.self), wireData)
   }
 
   private func handleIncoming(topic: String, payload: Data) {
@@ -845,6 +945,13 @@ final class MessageCoordinator: ObservableObject {
           messageIdentity: messageId,
           detailCode: "delivery_ack"
         )
+      }
+      return
+    }
+    if appPayload.string("type") == "input_attachment_receipt" {
+      handleInputAttachmentReceipt(appPayload, link: link)
+      if !messageId.isEmpty {
+        deliveryStore.completeIncoming(messageId: messageId)
       }
       return
     }
@@ -912,6 +1019,48 @@ final class MessageCoordinator: ObservableObject {
       deliveryStore.completeIncoming(messageId: messageId)
     }
     NotificationService.notify(title: store.contact(id: contactId)?.displayName ?? "SignalASI", body: content)
+  }
+
+  private func handleInputAttachmentReceipt(_ payload: [String: Any], link: ServerLink?) {
+    let transferId = payload.string("transfer_id").lowercased()
+    guard let link,
+          let transfer = attachmentTransferStore.find(transferId),
+          transfer.scope.desktopId == link.desktopId,
+          transfer.scope.clientRouteId == link.routes.clientRouteId,
+          payload.string("client_route_id") == transfer.scope.clientRouteId else {
+      return
+    }
+    if payload.string("status") == "stored" {
+      guard let releasedTransferId = attachmentTransferStore.acknowledgeStored(payload: payload) else {
+        return
+      }
+      if deliveryStore.releaseAttachmentDependency(releasedTransferId) > 0 {
+        scheduleOutboxFlush(after: 0)
+      } else {
+        scheduleOutboxFlushFromStore()
+      }
+      return
+    }
+    guard payload.string("status") == "missing",
+          let requested = try? AgentAttachmentTransferProtocol.expandMissingRanges(
+            payload["missing_ranges"],
+            chunkCount: transfer.chunkCount
+          ),
+          !requested.isEmpty else {
+      return
+    }
+    for index in requested {
+      guard let chunkPayload = try? transfer.chunkPayload(index: index) else {
+        continue
+      }
+      try? enqueueLinkPayload(
+        chunkPayload,
+        link: link,
+        topic: link.routes.upTopic,
+        requiresValidatedNetwork: transfer.requiresValidatedNetwork
+      )
+    }
+    scheduleOutboxFlush(after: 0)
   }
 
   private func handleDeliveryAck(_ payload: [String: Any]) {
@@ -986,6 +1135,10 @@ final class MessageCoordinator: ObservableObject {
   }
 
   private func flushPendingOutbox() async {
+    let discardedTransfers = attachmentTransferStore.prune()
+    if !discardedTransfers.isEmpty {
+      _ = deliveryStore.discardBlockedByAttachmentTransfers(discardedTransfers)
+    }
     let mediaProfile = mediaNetworkProfileProvider()
     let pending = deliveryStore.pending(
       allowValidatedNetworkMessages: mediaProfile.canUploadDeferredMedia
