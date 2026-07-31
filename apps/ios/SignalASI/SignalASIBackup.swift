@@ -121,6 +121,8 @@ struct SignalASIBackupPrivacyManifest: Codable, Equatable {
 
 struct SignalASIBackupAgentData: Codable, Equatable {
   var serverLinks: [ServerLink]
+  var memory: [AgentMemoryItem]?
+  var memoryDeletionIndex: [AgentMemoryDeletionTombstone]?
   var voiceSettings: VoiceSettings
   var languagePolicy: LanguagePolicySettings
   var displaySettings: AppDisplaySettings
@@ -133,6 +135,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
 
   static let empty = SignalASIBackupAgentData(
     serverLinks: [],
+    memory: nil,
+    memoryDeletionIndex: nil,
     voiceSettings: .default,
     languagePolicy: .default,
     displaySettings: .default,
@@ -146,6 +150,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
 
   init(
     serverLinks: [ServerLink],
+    memory: [AgentMemoryItem]? = nil,
+    memoryDeletionIndex: [AgentMemoryDeletionTombstone]? = nil,
     voiceSettings: VoiceSettings,
     languagePolicy: LanguagePolicySettings = .default,
     displaySettings: AppDisplaySettings = .default,
@@ -157,6 +163,10 @@ struct SignalASIBackupAgentData: Codable, Equatable {
     modelPlannerSettings: AgentModelPlannerSettings = .default
   ) {
     self.serverLinks = serverLinks
+    self.memory = memory.map { Array($0.suffix(AgentMemoryPolicy.maxItems)) }
+    self.memoryDeletionIndex = memoryDeletionIndex.map {
+      AgentMemoryCausalDeletionPolicy.merge(current: [], incoming: $0)
+    }
     self.voiceSettings = voiceSettings
     self.languagePolicy = languagePolicy
     self.displaySettings = displaySettings
@@ -170,6 +180,8 @@ struct SignalASIBackupAgentData: Codable, Equatable {
 
   enum CodingKeys: String, CodingKey {
     case serverLinks = "server_links"
+    case memory
+    case memoryDeletionIndex = "memory_deletion_index"
     case voiceSettings = "voice_settings"
     case languagePolicy = "language_policy"
     case displaySettings = "display_settings"
@@ -184,6 +196,15 @@ struct SignalASIBackupAgentData: Codable, Equatable {
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     serverLinks = try container.decodeIfPresent([ServerLink].self, forKey: .serverLinks) ?? []
+    memory = try container.decodeIfPresent([AgentMemoryItem].self, forKey: .memory).map {
+      Array($0.suffix(AgentMemoryPolicy.maxItems))
+    }
+    memoryDeletionIndex = try container.decodeIfPresent(
+      [AgentMemoryDeletionTombstone].self,
+      forKey: .memoryDeletionIndex
+    ).map {
+      AgentMemoryCausalDeletionPolicy.merge(current: [], incoming: $0)
+    }
     voiceSettings = try container.decodeIfPresent(VoiceSettings.self, forKey: .voiceSettings) ?? .default
     languagePolicy = try container.decodeIfPresent(LanguagePolicySettings.self, forKey: .languagePolicy) ?? .default
     displaySettings = try container.decodeIfPresent(AppDisplaySettings.self, forKey: .displaySettings) ?? .default

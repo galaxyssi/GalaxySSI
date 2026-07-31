@@ -2036,6 +2036,13 @@ enum AgentPrivateDataInventory {
       exportPolicy: .optionalSessionHistory
     ),
     item("memory", "Long-term memory", "user_defaults:signalasi_agent_memory_v2", backupPath: "agent.memory"),
+    item(
+      "memory_deletion_index",
+      "Causal memory deletion tombstones",
+      "user_defaults:signalasi_agent_memory_deletions_v1",
+      backupPath: "agent.memory_deletion_index",
+      sensitivity: .secret
+    ),
     item("knowledge", "Personal knowledge index", "user_defaults:signalasi_agent_knowledge", backupPath: "agent.knowledge"),
     item(
       "tasks",
