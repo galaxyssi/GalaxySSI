@@ -58,10 +58,7 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   var title: String { model.displayName }
 
   var detail: String {
-    if model.bundled {
-      return "\(model.sizeLabel) · Included with the app"
-    }
-    return "\(model.sizeLabel) · Download required"
+    "\(model.sizeLabel) - \(model.quantization.rawValue)\n\(lifecycleDetail)"
   }
 
   var action: VoiceWhisperModelRowAction {
@@ -82,6 +79,22 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
 
   var removable: Bool {
     available && !model.bundled && !selected
+  }
+
+  private var lifecycleDetail: String {
+    if model.bundled {
+      return "Included with the app"
+    }
+    if available {
+      return "Installed"
+    }
+    if activeDownload || [.pending, .running, .paused].contains(downloadState.status) {
+      return downloadState.progress > 0 ? "Downloading \(downloadState.progress)%" : "Waiting to download"
+    }
+    if downloadState.status == .failed {
+      return "Install failed"
+    }
+    return "Download required"
   }
 }
 
