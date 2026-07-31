@@ -40,6 +40,7 @@ const CLOUD_PROVIDER_PRESETS = Object.freeze({
   }
 });
 const LANGUAGE_POLICY_CHOICES = new Set(["auto", "zh-CN", "en-US", "zh-HK", "zh-TW"]);
+const FONT_SCALE_CHOICES = new Set([100, 115, 130, 145, 160]);
 const TASK_BUDGET_PROFILES = Object.freeze({
   adaptive: {
     profile: "adaptive",
@@ -152,6 +153,11 @@ function normalizeLanguagePolicy(value) {
   return LANGUAGE_POLICY_CHOICES.has(candidate) ? candidate : "auto";
 }
 
+function normalizeFontScale(value) {
+  const scale = Number.parseInt(String(value ?? ""), 10);
+  return FONT_SCALE_CHOICES.has(scale) ? scale : 130;
+}
+
 function systemLanguageTag() {
   const language = String(navigator.language || "en-US").replace("_", "-").toLowerCase();
   if (language.startsWith("zh-hk") || language.startsWith("zh-mo")) return "zh-HK";
@@ -166,10 +172,14 @@ function resolveLanguagePolicy(value) {
 }
 
 const savedInterfaceLanguage = localStorage.getItem("signalasi-desktop-language") || "auto";
+const savedFontScale = normalizeFontScale(
+  localStorage.getItem("signalasi-desktop-font-scale") || "130"
+);
 const state = {
   languagePreference: ["auto", "en", "zh-CN"].includes(savedInterfaceLanguage) ? savedInterfaceLanguage : "auto",
   language: savedInterfaceLanguage === "zh-CN" || (savedInterfaceLanguage === "auto" && systemLanguageTag().startsWith("zh")) ? "zh-CN" : "en",
   locale: {},
+  fontScale: savedFontScale,
   backend: null,
   agents: DEFAULT_AGENT_CONTACTS,
   agentConfig: null,
@@ -457,6 +467,17 @@ function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.hidden = false;
   state.toastTimer = window.setTimeout(() => { elements.toast.hidden = true; }, 3200);
+}
+
+function setFontScale(value, persist = true) {
+  state.fontScale = normalizeFontScale(value);
+  document.documentElement.style.fontSize = `${state.fontScale / 10}px`;
+  document.documentElement.dataset.fontScale = String(state.fontScale);
+  if (persist) {
+    localStorage.setItem("signalasi-desktop-font-scale", String(state.fontScale));
+  }
+  const select = $("#fontScaleSelect");
+  if (select) select.value = String(state.fontScale);
 }
 
 async function setLanguage(language, persist = true) {
@@ -4448,6 +4469,7 @@ function bindEvents() {
   $("#createEvolutionButton").addEventListener("click", createEvolutionCandidate);
   $("#evolutionTaskList").addEventListener("click", handleEvolutionAction);
   $("#languageSelect").addEventListener("change", (event) => setLanguage(event.target.value));
+  $("#fontScaleSelect").addEventListener("change", (event) => setFontScale(event.target.value));
   $("#responseLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
   $("#asrLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
   $("#ttsLanguageSelect").addEventListener("change", () => saveLanguagePolicySettings().catch((error) => showToast(error.message || String(error))));
@@ -4462,6 +4484,7 @@ function bindEvents() {
 
 async function init() {
   bindEvents();
+  setFontScale(state.fontScale, false);
   const appVersion = await window.signalasi.getAppVersion();
   elements.desktopVersion.textContent = `v${appVersion}`;
   await setLanguage(state.languagePreference, false);

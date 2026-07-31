@@ -489,7 +489,15 @@ for (const pauseContract of [
   }
 }
 
-for (const requiredLocaleKey of ["Language", "Desktop Connector", "{done}/{total} setup steps complete", "Detecting", "Super agent"]) {
+for (const requiredLocaleKey of [
+  "Language",
+  "Desktop Connector",
+  "{done}/{total} setup steps complete",
+  "Detecting",
+  "Super agent",
+  "Font size",
+  "Adjust all text in SignalASI Desktop"
+]) {
   if (!localeZh[requiredLocaleKey]) {
     throw new Error(`Chinese desktop locale missing key: ${requiredLocaleKey}`);
   }
@@ -512,18 +520,23 @@ if (
 if (
   !html.includes('class="lucide lucide-square-pen"')
   || !html.includes('class="sidebar-settings-icon"')
+  || !html.includes('id="fontScaleSelect"')
+  || !html.includes('value="130" data-i18n="Large (130%)"')
   || html.includes('class="line-icon settings-icon"')
   || !/\.new-task-button\s*\{[^}]*height:\s*34px;[^}]*justify-content:\s*flex-start;[^}]*background:\s*#eef5f8;/s.test(styles)
-  || !/\.new-task-button b\s*\{[^}]*font-size:\s*10px;[^}]*font-weight:\s*400;/s.test(styles)
+  || !/\.new-task-button b\s*\{[^}]*font-size:\s*1rem;[^}]*font-weight:\s*400;/s.test(styles)
   || !/\.sidebar-settings-icon\s*\{[^}]*stroke-width:\s*1\.7;/s.test(styles)
-  || !/\.sidebar-version\s*\{[^}]*font-size:\s*12px;/s.test(styles)
+  || !/\.sidebar-version\s*\{[^}]*font-size:\s*1\.2rem;/s.test(styles)
+  || !/:root\s*\{[^}]*font-size:\s*13px;/s.test(styles)
+  || !workspaceRenderer.includes('localStorage.getItem("signalasi-desktop-font-scale")')
+  || !workspaceRenderer.includes("document.documentElement.style.fontSize")
 ) {
-  throw new Error("Desktop sidebar must use the compact Codex-style new-task row, phone Settings icon, and readable version");
+  throw new Error("Desktop typography and sidebar controls must preserve the configurable 130% default");
 }
 
 if (
-  !/\.workspace-title h1\s*\{[^}]*font-size:\s*11\.2px;[^}]*font-weight:\s*400;/s.test(styles)
-  || !/\.empty-state h2\s*\{[^}]*font-size:\s*11\.2px;[^}]*font-weight:\s*400;/s.test(styles)
+  !/\.workspace-title h1\s*\{[^}]*font-size:\s*1\.12rem;[^}]*font-weight:\s*400;/s.test(styles)
+  || !/\.empty-state h2\s*\{[^}]*font-size:\s*1\.12rem;[^}]*font-weight:\s*400;/s.test(styles)
   || !/\.pairing-qr-surface img\s*\{[^}]*width:\s*min\(160px,\s*100%\);/s.test(styles)
 ) {
   throw new Error("Desktop task headings must use the reduced regular weight and the Gateway QR must stay compact");
