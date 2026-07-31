@@ -16,7 +16,8 @@ internal data class AgentAttachmentTransferScope(
     val conversationId: String,
     val taskId: String,
     val turnId: String,
-    val clientMessageId: Long?
+    val clientMessageId: Long?,
+    val attachmentRequestId: String = ""
 ) {
     init {
         require(contactId.isNotBlank() && contactId.length <= 256)
@@ -25,6 +26,11 @@ internal data class AgentAttachmentTransferScope(
         require(conversationId.isNotBlank() && conversationId.length <= 256)
         require(taskId.isNotBlank() && taskId.length <= 256)
         require(turnId.isNotBlank() && turnId.length <= 256)
+        require(attachmentRequestId.isBlank() || attachmentRequestId.matches(REQUEST_ID))
+    }
+
+    private companion object {
+        val REQUEST_ID = Regex("[a-f0-9]{32}")
     }
 }
 
@@ -105,6 +111,9 @@ internal data class AgentPreparedOutboundAttachment(
         .put("time", System.currentTimeMillis())
         .also { payload ->
             scope.clientMessageId?.let { payload.put("client_message_id", it) }
+            if (scope.attachmentRequestId.isNotBlank()) {
+                payload.put("attachment_request_id", scope.attachmentRequestId)
+            }
             if (requiresValidatedNetwork) payload.put("defer_media_upload", true)
         }
 }
@@ -328,6 +337,7 @@ internal object AgentOutboundAttachmentTransferStore {
                 .put("task_id", scope.taskId)
                 .put("turn_id", scope.turnId)
                 .put("client_message_id", scope.clientMessageId)
+                .put("attachment_request_id", scope.attachmentRequestId)
                 .put("created_at", System.currentTimeMillis())
             writeManifest(destination, manifest)
             return readPrepared(destination) ?: error("Attachment transfer manifest is invalid")
@@ -374,7 +384,8 @@ internal object AgentOutboundAttachmentTransferStore {
                 conversationId = manifest.getString("conversation_id"),
                 taskId = manifest.getString("task_id"),
                 turnId = manifest.getString("turn_id"),
-                clientMessageId = manifest.optLong("client_message_id", -1L).takeIf { it >= 0L }
+                clientMessageId = manifest.optLong("client_message_id", -1L).takeIf { it >= 0L },
+                attachmentRequestId = manifest.optString("attachment_request_id")
             ),
             dataFile = data
         )

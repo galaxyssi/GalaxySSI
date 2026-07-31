@@ -35,6 +35,11 @@ class AttachmentTransferReceipt:
     transfer_id: str
     status: str
     sha256: str
+    attachment_id: str
+    attachment_request_id: str
+    name: str
+    mime_type: str
+    size_bytes: int
     client_route_id: str
     conversation_id: str
     task_id: str
@@ -49,6 +54,11 @@ class AttachmentTransferReceipt:
             "transfer_id": self.transfer_id,
             "status": self.status,
             "sha256": self.sha256,
+            "attachment_id": self.attachment_id,
+            "attachment_request_id": self.attachment_request_id,
+            "name": self.name,
+            "mime_type": self.mime_type,
+            "size_bytes": self.size_bytes,
             "client_route_id": self.client_route_id,
             "conversation_id": self.conversation_id,
             "task_id": self.task_id,
@@ -61,6 +71,19 @@ class AttachmentTransferReceipt:
         if self.status == "missing":
             result["missing_ranges"] = [list(value) for value in self.missing_ranges]
         return result
+
+    def descriptor(self) -> dict:
+        return {
+            "id": self.attachment_id,
+            "transfer_id": self.transfer_id,
+            "name": self.name,
+            "mime_type": self.mime_type,
+            "size": self.size_bytes,
+            "transport_size": self.size_bytes,
+            "sha256": self.sha256,
+            "transport_status": "chunked",
+            "attachment_request_id": self.attachment_request_id,
+        }
 
 
 def ingest_manifest(payload: dict, *, client_route_id: str) -> AttachmentTransferReceipt | None:
@@ -250,6 +273,9 @@ def _validated_manifest(payload: dict, *, client_route_id: str) -> dict:
     turn_id = _identity(payload, "turn_id")
     contact_id = _identity(payload, "contact_id")
     attachment_id = _identity(payload, "attachment_id")
+    attachment_request_id = str(payload.get("attachment_request_id") or "").strip()
+    if attachment_request_id and not re.fullmatch(r"[a-f0-9]{32}", attachment_request_id):
+        raise ValueError("Attachment request identity is invalid")
     transfer_id = str(payload.get("transfer_id") or "").lower()
     digest = str(payload.get("sha256") or "").lower()
     if not SHA256_PATTERN.fullmatch(transfer_id) or not SHA256_PATTERN.fullmatch(digest):
@@ -278,6 +304,7 @@ def _validated_manifest(payload: dict, *, client_route_id: str) -> dict:
     return {
         "transfer_id": transfer_id,
         "attachment_id": attachment_id,
+        "attachment_request_id": attachment_request_id,
         "attachment_ordinal": ordinal,
         "name": name,
         "original_name": str(payload.get("original_name") or name)[:256],
@@ -306,6 +333,7 @@ def _require_same_manifest(existing: dict, candidate: dict) -> None:
     immutable = (
         "transfer_id",
         "attachment_id",
+        "attachment_request_id",
         "attachment_ordinal",
         "name",
         "mime_type",
@@ -341,6 +369,11 @@ def _receipt_for(
         transfer_id=str(manifest["transfer_id"]),
         status=status,
         sha256=str(manifest["sha256"]),
+        attachment_id=str(manifest["attachment_id"]),
+        attachment_request_id=str(manifest.get("attachment_request_id") or ""),
+        name=str(manifest["name"]),
+        mime_type=str(manifest["mime_type"]),
+        size_bytes=int(manifest["size_bytes"]),
         client_route_id=str(manifest["client_route_id"]),
         conversation_id=str(manifest["conversation_id"]),
         task_id=str(manifest["task_id"]),
