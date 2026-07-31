@@ -493,28 +493,57 @@ struct AgentIOSMediaNativeToolExecutor {
     guard let request = transcodeRequest(invocation) else {
       return failure("invalid_transcode_source", "Media conversion requires exactly one content_uri or source_path")
     }
-    if let invalidPath = firstUnsafePath([request.sourcePath, request.destinationPath]) {
-      return failure("unsafe_path", "Media workspace path is unsafe: \(invalidPath)")
+    let plannedRequest: AgentIOSMediaTranscodeRequest
+    do {
+      plannedRequest = try validatedTranscodeRequest(request)
+    } catch {
+      return failure(
+        "invalid_transcode_request",
+        error.localizedDescription.ifBlank("Media conversion request is invalid")
+      )
     }
-    if !request.destinationPath.isEmpty,
-       let expected = AgentIOSMediaNativeToolCatalog.targetExtension(request.targetFormat),
-       !request.destinationPath.lowercased().hasSuffix(".\(expected)") {
-      return failure("extension_mismatch", "Destination extension must match \(request.targetFormat)")
+    if !plannedRequest.destinationPath.isEmpty,
+       let expected = AgentIOSMediaNativeToolCatalog.targetExtension(plannedRequest.targetFormat),
+       !plannedRequest.destinationPath.lowercased().hasSuffix(".\(expected)") {
+      return failure("extension_mismatch", "Destination extension must match \(plannedRequest.targetFormat)")
     }
-    let execution = provider.transcode(request: request, invocation: invocation)
+    let execution = provider.transcode(request: plannedRequest, invocation: invocation)
     guard execution.isSuccess else { return execution }
     var output = execution.output
-    output["target_format"] = output["target_format"] ?? .string(request.targetFormat)
-    output["mime_type"] = output["mime_type"] ?? .string(AgentIOSMediaNativeToolCatalog.targetMimeType(request.targetFormat) ?? "")
+    output["target_format"] = output["target_format"] ?? .string(plannedRequest.targetFormat)
+    output["mime_type"] = output["mime_type"] ?? .string(AgentIOSMediaNativeToolCatalog.targetMimeType(plannedRequest.targetFormat) ?? "")
     output["network_enabled"] = output["network_enabled"] ?? .bool(false)
     output["completed_at_epoch_ms"] = output["completed_at_epoch_ms"] ?? .int(max(0, nowMillis()))
     var metadata = execution.metadata
     metadata["media_implementation"] = metadata["media_implementation"] ?? .string(provider.implementationId)
+    if !plannedRequest.sourcePath.isEmpty, let plan = try? AgentIOSFfmpegTranscodePlanner.create(request: plannedRequest) {
+      metadata["ffmpeg_argument_count"] = .int(Int64(plan.arguments.count))
+      metadata["ffmpeg_network_enabled"] = .bool(false)
+    }
     return AgentNativeToolExecutionResult.success(
       output: output,
       message: execution.message.isEmpty ? "Media converted in the local iOS FFmpeg runtime" : execution.message,
       metadata: metadata
     )
+  }
+
+  private func validatedTranscodeRequest(
+    _ request: AgentIOSMediaTranscodeRequest
+  ) throws -> AgentIOSMediaTranscodeRequest {
+    var output = request
+    if !request.sourcePath.isEmpty {
+      let plan = try AgentIOSFfmpegTranscodePlanner.create(request: request)
+      output.sourcePath = plan.sourcePath
+      output.destinationPath = plan.destinationPath
+      return output
+    }
+    if !request.destinationPath.isEmpty {
+      output.destinationPath = try AgentIOSMediaWorkspacePaths.normalizeRelative(
+        request.destinationPath,
+        field: "destination_path"
+      )
+    }
+    return output
   }
 
   private func transcodeRequest(_ invocation: AgentNativeToolInvocation) -> AgentIOSMediaTranscodeRequest? {
@@ -554,16 +583,6 @@ struct AgentIOSMediaNativeToolExecutor {
 
   private func isAuthorizedMediaReference(_ value: String) -> Bool {
     value.hasPrefix("content://") || value.hasPrefix("file://")
-  }
-
-  private func firstUnsafePath(_ paths: [String]) -> String? {
-    paths.first { path in
-      let clean = path.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !clean.isEmpty else { return false }
-      if clean.hasPrefix("/") || clean.hasPrefix("\\") || clean.contains(":") { return true }
-      let parts = clean.replacingOccurrences(of: "\\", with: "/").split(separator: "/")
-      return parts.contains { $0 == ".." }
-    }
   }
 
   private func workspaceId(_ context: AgentNativeToolInvocationContext) -> String {
