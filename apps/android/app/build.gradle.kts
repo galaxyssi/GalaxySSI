@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     kotlin("android")
@@ -8,6 +10,47 @@ val runtimeAssetRoot = rootProject.file("../../build/runtime/android-assets")
 val requireEmbeddedRuntime = providers.gradleProperty("signalasi.requireEmbeddedRuntime")
     .map(String::toBoolean)
     .orElse(true)
+val bundledWhisperAsset = file("src/main/assets/ggml-tiny.bin")
+val bundledWhisperAssets = fileTree("src/main/assets") {
+    include("ggml-*.bin")
+}
+val bundledWhisperVerification = tasks.register("verifyBundledWhisperModel") {
+    inputs.files(bundledWhisperAssets)
+    val receipt = layout.buildDirectory.file("verification/whisper-tiny.sha256")
+    outputs.file(receipt)
+    doLast {
+        val expectedSize = 77_691_713L
+        val expectedSha256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+        check(bundledWhisperAsset.isFile) { "Bundled Whisper Tiny model is missing" }
+        check(bundledWhisperAsset.length() == expectedSize) {
+            "Bundled Whisper Tiny size does not match the pinned catalog"
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+        bundledWhisperAsset.inputStream().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { byte: Byte -> "%02x".format(byte) }
+        check(actual == expectedSha256) { "Bundled Whisper Tiny SHA-256 does not match the pinned catalog" }
+        val unexpected = file("src/main/assets").listFiles().orEmpty()
+            .filter { it.name.startsWith("ggml-") && it.name.endsWith(".bin") && it.name != bundledWhisperAsset.name }
+        check(unexpected.isEmpty()) {
+            "Only Whisper Tiny may be bundled; found ${unexpected.joinToString { it.name }}"
+        }
+        receipt.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(actual)
+        }
+    }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(bundledWhisperVerification)
+}
 
 android {
     namespace = "com.signalasi.chat"
@@ -17,8 +60,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 305
-        versionName = "0.3.5"
+        versionCode = 306
+        versionName = "0.3.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {

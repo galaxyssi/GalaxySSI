@@ -61,6 +61,7 @@ object LocalWhisperAsr {
             if (loadedModelId != selected.id) {
                 whisperContext?.release()
                 whisperContext = null
+                WhisperModelManager.markUnloaded(loadedModelId)
                 loadedModelId = null
             }
             val coldStart = whisperContext == null
@@ -72,13 +73,12 @@ object LocalWhisperAsr {
                     audioAttributes + ("cold_start" to "true")
                 )
             }
-            val model = whisperContext ?: if (selected.bundled) {
-                WhisperContext.createContextFromAsset(context.applicationContext.assets, selected.fileName)
-            } else {
-                WhisperContext.createContextFromFile(WhisperModelManager.downloadedFile(context, selected).absolutePath)
-            }.also {
+            val model = whisperContext ?: WhisperContext.createContextFromFile(
+                WhisperModelManager.ensureVerifiedFile(context, selected).absolutePath
+            ).also {
                 whisperContext = it
                 loadedModelId = selected.id
+                WhisperModelManager.markLoaded(selected.id)
             }
             if (coldStart) {
                 trace(
