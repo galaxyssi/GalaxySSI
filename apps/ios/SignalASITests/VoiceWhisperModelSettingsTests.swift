@@ -27,7 +27,7 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
       activeDownloadIds: [large.id]
     )
 
-    XCTAssertEqual(rows.map(\.model.id), ["tiny", "base", "small", "medium", "large"])
+    XCTAssertEqual(rows.map(\.model.id), VoiceWhisperModelCatalog.models.map(\.id))
     XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.action, .current)
     XCTAssertEqual(rows.first { $0.model.id == base.id }?.action, .use)
     XCTAssertEqual(rows.first { $0.model.id == small.id }?.action, .waiting(progress: 42))
