@@ -20,6 +20,7 @@ endforeach()
 
 add_library(whisper SHARED
     whisper_jni.c
+    whisper_jni_v2.cpp
     ${WHISPER_ROOT}/src/whisper.cpp
 )
 

@@ -191,7 +191,9 @@ static bool ggml_graph_compute_helper(
       ggml_backend_sched_t   sched,
         struct ggml_cgraph * graph,
                        int   n_threads,
-                      bool   sched_reset = true) {
+                      bool   sched_reset = true,
+       ggml_abort_callback   abort_callback = nullptr,
+                     void * abort_callback_data = nullptr) {
     for (int i = 0; i < ggml_backend_sched_get_n_backends(sched); ++i) {
         ggml_backend_t backend = ggml_backend_sched_get_backend(sched, i);
         ggml_backend_dev_t dev = ggml_backend_get_device(backend);
@@ -200,6 +202,12 @@ static bool ggml_graph_compute_helper(
         auto * fn_set_n_threads = (ggml_backend_set_n_threads_t) ggml_backend_reg_get_proc_address(reg, "ggml_backend_set_n_threads");
         if (fn_set_n_threads) {
             fn_set_n_threads(backend, n_threads);
+        }
+
+        auto * fn_set_abort_callback = (ggml_backend_set_abort_callback_t) ggml_backend_reg_get_proc_address(
+                reg, "ggml_backend_set_abort_callback");
+        if (fn_set_abort_callback) {
+            fn_set_abort_callback(backend, abort_callback, abort_callback_data);
         }
     }
 
@@ -2403,7 +2411,7 @@ static bool whisper_encode_internal(
         }
 
         if (!whisper_encode_external(wstate)) {
-            if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
+            if (!ggml_graph_compute_helper(sched, gf, n_threads, true, abort_callback, abort_callback_data)) {
                 return false;
             }
         } else {
@@ -2428,7 +2436,7 @@ static bool whisper_encode_internal(
             return false;
         }
 
-        if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
+        if (!ggml_graph_compute_helper(sched, gf, n_threads, true, abort_callback, abort_callback_data)) {
             return false;
         }
     }
@@ -2444,7 +2452,7 @@ static bool whisper_encode_internal(
             return false;
         }
 
-        if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
+        if (!ggml_graph_compute_helper(sched, gf, n_threads, true, abort_callback, abort_callback_data)) {
             return false;
         }
     }
@@ -2941,7 +2949,7 @@ static bool whisper_decode_internal(
 
         logits = ggml_graph_node(gf, -1);
 
-        if (!ggml_graph_compute_helper(sched, gf, n_threads)) {
+        if (!ggml_graph_compute_helper(sched, gf, n_threads, true, abort_callback, abort_callback_data)) {
             return false;
         }
     }
@@ -4261,12 +4269,23 @@ struct whisper_timings * whisper_get_timings(struct whisper_context * ctx) {
         return nullptr;
     }
     whisper_timings * timings = new whisper_timings;
-    timings->sample_ms = 1e-3f * ctx->state->t_sample_us / std::max(1, ctx->state->n_sample);
-    timings->encode_ms = 1e-3f * ctx->state->t_encode_us / std::max(1, ctx->state->n_encode);
-    timings->decode_ms = 1e-3f * ctx->state->t_decode_us / std::max(1, ctx->state->n_decode);
-    timings->batchd_ms = 1e-3f * ctx->state->t_batchd_us / std::max(1, ctx->state->n_batchd);
-    timings->prompt_ms = 1e-3f * ctx->state->t_prompt_us / std::max(1, ctx->state->n_prompt);
+    whisper_get_timings_from_state(ctx->state, timings);
     return timings;
+}
+
+void whisper_get_timings_from_state(struct whisper_state * state, struct whisper_timings * timings) {
+    if (timings == nullptr) {
+        return;
+    }
+    *timings = {};
+    if (state == nullptr) {
+        return;
+    }
+    timings->sample_ms = 1e-3f * state->t_sample_us / std::max(1, state->n_sample);
+    timings->encode_ms = 1e-3f * state->t_encode_us / std::max(1, state->n_encode);
+    timings->decode_ms = 1e-3f * state->t_decode_us / std::max(1, state->n_decode);
+    timings->batchd_ms = 1e-3f * state->t_batchd_us / std::max(1, state->n_batchd);
+    timings->prompt_ms = 1e-3f * state->t_prompt_us / std::max(1, state->n_prompt);
 }
 
 void whisper_print_timings(struct whisper_context * ctx) {
@@ -4295,19 +4314,24 @@ void whisper_print_timings(struct whisper_context * ctx) {
 
 void whisper_reset_timings(struct whisper_context * ctx) {
     ctx->t_start_us = ggml_time_us();
-    if (ctx->state != nullptr) {
-        ctx->state->t_mel_us = 0;
-        ctx->state->t_sample_us = 0;
-        ctx->state->t_encode_us = 0;
-        ctx->state->t_decode_us = 0;
-        ctx->state->t_batchd_us = 0;
-        ctx->state->t_prompt_us = 0;
-        ctx->state->n_sample = 0;
-        ctx->state->n_encode = 0;
-        ctx->state->n_decode = 0;
-        ctx->state->n_batchd = 0;
-        ctx->state->n_prompt = 0;
+    whisper_reset_timings_from_state(ctx->state);
+}
+
+void whisper_reset_timings_from_state(struct whisper_state * state) {
+    if (state == nullptr) {
+        return;
     }
+    state->t_mel_us = 0;
+    state->t_sample_us = 0;
+    state->t_encode_us = 0;
+    state->t_decode_us = 0;
+    state->t_batchd_us = 0;
+    state->t_prompt_us = 0;
+    state->n_sample = 0;
+    state->n_encode = 0;
+    state->n_decode = 0;
+    state->n_batchd = 0;
+    state->n_prompt = 0;
 }
 
 static int whisper_has_coreml(void) {

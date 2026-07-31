@@ -91,6 +91,7 @@ import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
+import com.signalasi.chat.voice.asr.local.AbortReason
 import com.signalasi.chat.voice.audio.VoiceAudioSession
 import com.signalasi.chat.voice.audio.VoiceAudioSessionConfig
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
@@ -21160,6 +21161,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun startPcmRecording(purpose: String, autoEndpoint: Boolean): Boolean {
         if (isVoiceCaptureActive()) return false
+        LocalWhisperAsr.requestAbort(AbortReason.NEW_UTTERANCE)
         val traceId = VoiceLatencyTelemetry.startSession(
             this,
             mapOf("recording_source" to purpose)
@@ -21489,19 +21491,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         waveFile,
                         result.snapshot.durationMs,
                         traceId,
-                        coordinatorSessionId
+                        coordinatorSessionId,
+                        result.snapshot.samples,
+                        result.snapshot.sampleRateHz
                     )
                     purpose == "voice_wakeup" -> finalizePcmVoiceCommand(
                         waveFile,
                         result.snapshot.durationMs,
                         traceId,
-                        coordinatorSessionId
+                        coordinatorSessionId,
+                        result.snapshot.samples,
+                        result.snapshot.sampleRateHz
                     )
                     else -> finalizePcmChatMessage(
                         waveFile,
                         result.snapshot.durationMs,
                         traceId,
-                        coordinatorSessionId
+                        coordinatorSessionId,
+                        result.snapshot.samples,
+                        result.snapshot.sampleRateHz
                     )
                 }
             }
@@ -21521,7 +21529,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         file: File,
         durationMs: Long,
         traceId: String,
-        coordinatorSessionId: String
+        coordinatorSessionId: String,
+        pcmSamples: ShortArray,
+        sampleRateHz: Int
     ) {
         if (coordinatorSessionId.isNotBlank()) {
             dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
@@ -21534,7 +21544,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             seconds = seconds,
             label = "${getString(R.string.message_voice_prefix)} ${seconds}s",
             source = "chat_hold_to_talk_pcm",
-            traceId = traceId
+            traceId = traceId,
+            pcmSamples = pcmSamples,
+            sampleRateHz = sampleRateHz
         )
     }
 
@@ -21542,7 +21554,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         file: File,
         durationMs: Long,
         traceId: String,
-        coordinatorSessionId: String
+        coordinatorSessionId: String,
+        pcmSamples: ShortArray,
+        sampleRateHz: Int
     ) {
         if (coordinatorSessionId.isNotBlank()) {
             dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
@@ -21554,14 +21568,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             dedupeKey = "agent-voice-pending:${file.name}"
         )
         refreshAgentTranscriptWindow()
-        requestAgentInputTranscription(file, traceId)
+        requestAgentInputTranscription(file, traceId, pcmSamples, sampleRateHz)
     }
 
     private fun finalizePcmVoiceCommand(
         file: File,
         durationMs: Long,
         traceId: String,
-        coordinatorSessionId: String
+        coordinatorSessionId: String,
+        pcmSamples: ShortArray,
+        sampleRateHz: Int
     ) {
         if (coordinatorSessionId.isNotBlank()) {
             dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
@@ -21572,7 +21588,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         selectedContact = contact
         val nativeAgentRoute = config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
         val sent = if (nativeAgentRoute) {
-            requestVoiceAgentTranscription(file, contact, traceId)
+            requestVoiceAgentTranscription(file, contact, traceId, pcmSamples, sampleRateHz)
         } else {
             sendVoiceRecordingThroughPipeline(
                 sourceFile = file,
@@ -21580,7 +21596,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 seconds = seconds,
                 label = getString(R.string.voice_command_label, seconds),
                 source = "voice_wakeup_pcm",
-                traceId = traceId
+                traceId = traceId,
+                pcmSamples = pcmSamples,
+                sampleRateHz = sampleRateHz
             )
         }
         updateWakeVoiceUi(
@@ -21815,8 +21833,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         requestAgentInputTranscription(file, traceId)
     }
 
-    private fun requestAgentInputTranscription(sourceFile: File, traceId: String): Boolean {
-        transcribeLocally(sourceFile, traceId = traceId, onSuccess = { transcript ->
+    private fun requestAgentInputTranscription(
+        sourceFile: File,
+        traceId: String,
+        pcmSamples: ShortArray? = null,
+        sampleRateHz: Int = 16_000
+    ): Boolean {
+        transcribeLocally(sourceFile, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, onSuccess = { transcript ->
             agentGoalInput.setText(transcript)
             agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
             submitAgentGoal(traceId)
@@ -21830,7 +21853,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         seconds: Long,
         label: String,
         source: String,
-        traceId: String = ""
+        traceId: String = "",
+        pcmSamples: ShortArray? = null,
+        sampleRateHz: Int = 16_000
     ): Boolean {
         if (!sourceFile.exists()) return false
         val msgId = newMessageId()
@@ -21843,19 +21868,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val msg = ChatMessage(msgId, label, true, CONTACT_ME)
         addMessage(msg)
         Log.i("SignalASIVoice", "Voice pipeline send source=$source target=${contact.id} seconds=$seconds bytes=${finalFile.length()} messageId=$msgId")
-        publishInlineVoiceFile(msg.id, contact, finalFile, traceId)
+        publishInlineVoiceFile(msg.id, contact, finalFile, traceId, pcmSamples, sampleRateHz)
         return true
     }
 
     private fun requestVoiceAgentTranscription(
         sourceFile: File,
         contact: Contact,
-        traceId: String
+        traceId: String,
+        pcmSamples: ShortArray? = null,
+        sampleRateHz: Int = 16_000
     ): Boolean {
         if (!sourceFile.exists()) return false
         transcribeLocally(
             sourceFile,
             traceId = traceId,
+            pcmSamples = pcmSamples,
+            sampleRateHz = sampleRateHz,
             onSuccess = { transcript -> submitVoiceAgentGoal(transcript, traceId) }
         )
         return true
@@ -21865,10 +21894,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         messageId: Long,
         contact: Contact,
         file: File,
-        traceId: String
+        traceId: String,
+        pcmSamples: ShortArray? = null,
+        sampleRateHz: Int = 16_000
     ) {
         updateMessageStatus(messageId, contact.id, getString(R.string.voice_status_transcribing))
-        transcribeLocally(file, traceId = traceId, onSuccess = { transcript ->
+        transcribeLocally(file, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, onSuccess = { transcript ->
             updateMessageStatus(messageId, contact.id, getString(R.string.voice_status_transcribed))
             sendOutgoingText(contact, transcript, traceId)
         }, onFailure = {
@@ -21879,6 +21910,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun transcribeLocally(
         sourceFile: File,
         traceId: String = "",
+        pcmSamples: ShortArray? = null,
+        sampleRateHz: Int = 16_000,
         onSuccess: (String) -> Unit,
         onFailure: () -> Unit = {}
     ) {
@@ -21888,7 +21921,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
         voiceAssistantScope.launch {
             val result = runCatching {
-                LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language, traceId)
+                if (pcmSamples != null) {
+                    LocalWhisperAsr.transcribePcm(
+                        this@MainActivity,
+                        pcmSamples,
+                        sampleRateHz,
+                        language,
+                        traceId,
+                        source = "audio_record_pcm16"
+                    )
+                } else {
+                    LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language, traceId)
+                }
             }
             sourceFile.delete()
             runOnUiThread {
