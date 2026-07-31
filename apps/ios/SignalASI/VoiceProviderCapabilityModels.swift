@@ -288,16 +288,18 @@ enum VoiceProviderCapabilityDetector {
     settings: VoiceSettings,
     validatedNetworkAvailable: Bool,
     whisperRuntimeLibraryNames: Set<String> = bundledRuntimeNames(),
-    whisperModelAvailable: Bool = false,
+    whisperModelManager: VoiceWhisperModelManager = VoiceWhisperModelManager(),
+    whisperModelAvailable: Bool? = nil,
     ttsInitialized: Bool = true,
     checkedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> VoiceProviderCapabilitySnapshot {
+    let whisperModel = VoiceWhisperModelCatalog.model(settings.asrModelId)
     VoiceProviderCapabilityPolicy.evaluate(
       probe(
         settings: settings,
         validatedNetworkAvailable: validatedNetworkAvailable,
         whisperRuntimeLibraryNames: whisperRuntimeLibraryNames,
-        whisperModelAvailable: whisperModelAvailable,
+        whisperModelAvailable: whisperModelAvailable ?? whisperModelManager.isAvailable(whisperModel),
         ttsInitialized: ttsInitialized
       ),
       checkedAtMillis: checkedAtMillis
