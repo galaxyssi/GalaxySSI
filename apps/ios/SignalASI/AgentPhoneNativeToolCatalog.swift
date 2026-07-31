@@ -376,9 +376,14 @@ enum AgentPhoneNativeToolCatalog {
     guard provider is AgentIOSUnavailableMcpNativeToolProvider else {
       return provider
     }
+    let rootURL = packageRootURL ?? AgentIOSMcpClientNativeProvider.defaultPackageRootURL(fileManager: fileManager)
     return AgentIOSMcpClientNativeProvider(
+      registry: AgentMcpRegistry(
+        FileAgentMcpStore(rootURL: rootURL, fileManager: fileManager),
+        nowMillis: nowMillis
+      ),
       auditStore: auditStore,
-      packageRootURL: packageRootURL,
+      packageRootURL: rootURL,
       fileManager: fileManager,
       nowMillis: nowMillis
     )

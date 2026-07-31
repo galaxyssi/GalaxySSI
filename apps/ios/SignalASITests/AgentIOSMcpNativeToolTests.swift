@@ -310,4 +310,47 @@ extension SignalASIStoreTests {
     XCTAssertEqual(networking.requests.count, 4)
   }
 
+  func testAgentIOSDefaultRegistryLoadsPersistentMcpConnections() throws {
+    let root = try temporaryDirectory("ios-default-mcp-store")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now: () -> Int64 = { 40_000 }
+    let mcpRoot = AgentIOSMcpClientNativeProvider.defaultPackageRootURL(storageRootURL: root)
+    let mcpRegistry = AgentMcpRegistry(
+      FileAgentMcpStore(rootURL: mcpRoot),
+      nowMillis: now
+    )
+    let connection = try mcpRegistry.addRemote(
+      displayName: "Persisted Relay",
+      endpoint: "https://persisted.example/rpc",
+      authProfile: try AgentMcpAuthProfile(.none),
+      catalogId: "signalasi.mcp.persisted",
+      id: "persisted-relay"
+    )
+    _ = try mcpRegistry.markConnected(connection.id, toolIds: ["persisted.status"])
+    let nativeRegistry = try AgentPhoneNativeToolCatalog.defaultRegistry(
+      actionExecutor: TestAgentActionExecutor { action, _ in
+        AgentActionResult(actionId: action.id, success: true, message: "Executed")
+      },
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
+      storageRootURL: root,
+      nowMillis: now
+    )
+
+    let result = nativeRegistry.invoke(
+      AgentMcpNativeTools.listConnections,
+      input: [:],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentMcpNativeTools.mcpHostPermission]
+      )
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["ready_connection_count"], .int(1))
+    let listed = try XCTUnwrap(result.output["connections"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(listed["id"], .string("persisted-relay"))
+    XCTAssertEqual(listed["tools"]?.arrayValue, [.string("persisted.status")])
+    XCTAssertEqual(listed["endpoint"]?.objectValue?["host"], .string("persisted.example"))
+  }
+
 }
