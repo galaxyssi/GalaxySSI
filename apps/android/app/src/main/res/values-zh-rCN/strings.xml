@@ -710,7 +710,7 @@
     <string name="settings_status_language">显示语言与本地化</string>
     <string name="settings_status_identity">本地身份 · 点击复制完整指纹</string>
     <string name="settings_developer_options">开发者选项</string>
-    <string name="settings_control_center_title">控制中心</string>
+    <string name="settings_control_center_title">我的智能体</string>
     <string name="settings_my_signalasi">我的 SignalASI</string>
     <string name="settings_control_center_subtitle">本机 Agent 控制中心</string>
     <string name="settings_agent_capabilities">Agent 能力</string>
