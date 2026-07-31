@@ -297,6 +297,7 @@ final class SignalASIStoreTests: XCTestCase {
       $0.wakeWords = VoiceSettings.wakeWords(from: " SignalASI, , hello, custom wake ")
       $0.wakeThreshold = 2
       $0.welcomeText = "  "
+      $0.asrModelId = "does-not-exist"
       $0.targetContactId = ""
       $0.speakReplies = false
       $0.routingMode = .contact
@@ -305,6 +306,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.voiceSettings.wakeWords, ["SignalASI", "hello", "custom wake"])
     XCTAssertEqual(store.voiceSettings.wakeThreshold, 0.99)
     XCTAssertEqual(store.voiceSettings.welcomeText, VoiceSettings.defaultWelcomeText)
+    XCTAssertEqual(store.voiceSettings.asrModelId, "tiny")
     XCTAssertEqual(store.voiceSettings.targetContactId, "hermes")
     XCTAssertFalse(store.voiceSettings.speakReplies)
     XCTAssertEqual(store.voiceSettings.routingMode, .contact)

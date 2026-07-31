@@ -319,14 +319,15 @@ enum VoiceProviderCapabilityDetector {
     ttsLanguageSupported: Bool? = nil
   ) -> VoiceDeviceCapabilityProbe {
     let locale = normalizedLocale(settings.preferredLocaleIdentifier)
+    let whisperModel = VoiceWhisperModelCatalog.model(settings.asrModelId)
     let resolvedTtsEngineCount = ttsEngineCount ?? Self.ttsEngineCount()
     return VoiceDeviceCapabilityProbe(
       hasMicrophone: hasMicrophone,
       microphonePermissionGranted: microphonePermissionGranted,
       whisperRuntimeAvailable: whisperRuntimeAvailable(whisperRuntimeLibraryNames),
       whisperModelAvailable: whisperModelAvailable,
-      whisperModelId: defaultWhisperModelId,
-      whisperModelName: defaultWhisperModelName,
+      whisperModelId: whisperModel.id,
+      whisperModelName: whisperModel.displayName,
       systemAsrAvailable: systemAsrAvailable ?? speechRecognizerAvailable(localeIdentifier: locale),
       offlineAsrAvailable: offlineAsrAvailable ?? offlineSpeechRecognizerAvailable(localeIdentifier: locale),
       validatedNetworkAvailable: validatedNetworkAvailable,
@@ -437,8 +438,6 @@ enum VoiceProviderCapabilityDetector {
     #endif
   }
 
-  private static let defaultWhisperModelId = "whisper-ios-local"
-  private static let defaultWhisperModelName = "Local Whisper"
   private static let whisperRuntimeSignals: Set<String> = [
     "whisper",
     "whisperkit",
