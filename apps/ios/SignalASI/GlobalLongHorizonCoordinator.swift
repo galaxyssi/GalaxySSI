@@ -214,7 +214,8 @@ final class GlobalLongHorizonCoordinator {
         return updated
       case .some(.completed):
         guard let run = runsById[cleanRunId] else { return goal }
-        let completedGoal = run.review.decision.goalState == .completed && completionSupported(run.actions)
+        let completedGoal = run.review.decision.goalState == .completed &&
+          GlobalAutonomousRunPolicy.completionSupported(run.actions)
         var updated = goal
         updated.status = completedGoal ? .completed : .active
         updated.activeRunId = ""
@@ -321,14 +322,6 @@ final class GlobalLongHorizonCoordinator {
   private func ensureLifecycleMessages(goals: [GlobalLongHorizonGoal]) {
     for message in goals.compactMap(GlobalLongHorizonLifecyclePolicy.proactiveMessage) {
       runtimeStore.appendProactiveMessage(message)
-    }
-  }
-
-  private func completionSupported(_ actions: [GlobalAutonomousAction]) -> Bool {
-    let completed = actions.filter { $0.status == .completed }
-    guard !completed.isEmpty else { return false }
-    return completed.allSatisfy {
-      [.supported, .verified].contains($0.verificationStatus)
     }
   }
 
