@@ -229,6 +229,7 @@ extension SignalASIStoreTests {
     defer { try? FileManager.default.removeItem(at: root) }
     let now: () -> Int64 = { 30_000 }
     let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let auditStore = InMemoryAgentMcpAuditStore()
     let mcpRegistry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: now)
     let connection = try mcpRegistry.addRemote(
       displayName: "Relay MCP",
@@ -257,6 +258,7 @@ extension SignalASIStoreTests {
     let manager = AgentMcpClientManager(
       registry: mcpRegistry,
       packageRepository: repository,
+      auditStore: auditStore,
       remoteSessionFactory: { sessionConnection, headers in
         XCTAssertEqual(sessionConnection.id, connection.id)
         XCTAssertTrue(headers.isEmpty)
@@ -273,6 +275,7 @@ extension SignalASIStoreTests {
       registry: mcpRegistry,
       clientManager: manager,
       packageRepository: repository,
+      auditStore: auditStore,
       nowMillis: now
     )
     let nativeRegistry = try AgentNativeToolRegistry(nowMillis: now).registerExecutables(
@@ -296,6 +299,11 @@ extension SignalASIStoreTests {
       ],
       context: context
     )
+    let activity = nativeRegistry.invoke(
+      AgentMcpNativeTools.listConnections,
+      input: [:],
+      context: context
+    )
 
     XCTAssertTrue(tools.isSuccess)
     XCTAssertEqual(tools.output["tool_count"], .int(1))
@@ -307,6 +315,13 @@ extension SignalASIStoreTests {
     XCTAssertEqual(call.metadata["protocol"], .string("mcp"))
     XCTAssertEqual(call.metadata["implementation"], .string("signalasi.ios.mcp_client_manager"))
     XCTAssertEqual(call.metadata["mcp_permission_decision"], .string("allowed_low_risk"))
+    XCTAssertTrue(activity.isSuccess)
+    let listed = try XCTUnwrap(activity.output["connections"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(listed["recent_activity_count"], .int(1))
+    let recent = try XCTUnwrap(listed["recent_activity"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(recent["tool_name"], .string("relay.status"))
+    XCTAssertEqual(recent["status"], .string("succeeded"))
+    XCTAssertEqual(recent["permission_decision"], .string("allowed_low_risk"))
     XCTAssertEqual(networking.requests.count, 4)
   }
 

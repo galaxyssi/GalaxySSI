@@ -5,6 +5,7 @@ struct AgentIOSMcpClientNativeProvider: AgentIOSMcpNativeToolProviding {
 
   private let registry: AgentMcpRegistry
   private let clientManager: AgentMcpClientManager
+  private let auditStore: AgentMcpAuditStore
   private let nowMillis: () -> Int64
 
   init(
@@ -23,6 +24,7 @@ struct AgentIOSMcpClientNativeProvider: AgentIOSMcpNativeToolProviding {
       fileManager: fileManager
     )
     self.registry = registry
+    self.auditStore = auditStore
     self.nowMillis = nowMillis
     self.clientManager = clientManager ?? AgentMcpClientManager(
       registry: registry,
@@ -217,6 +219,26 @@ struct AgentIOSMcpClientNativeProvider: AgentIOSMcpNativeToolProviding {
     if !connection.lastError.isEmpty {
       value["last_error"] = .string(Self.bounded(connection.lastError, limit: 1_000))
     }
+    let recentActivity = auditStore.list(connectionId: connection.id, limit: Self.recentActivityLimit)
+    value["recent_activity"] = .array(recentActivity.map { .object(auditValue($0)) })
+    value["recent_activity_count"] = .int(Int64(recentActivity.count))
+    return value
+  }
+
+  private func auditValue(_ record: AgentMcpAuditRecord) -> AgentMcpJSONObject {
+    var value: AgentMcpJSONObject = [
+      "audit_id": .string(record.auditId),
+      "timestamp_ms": .int(record.timestampMillis),
+      "tool_name": .string(record.toolName),
+      "status": .string(record.status),
+      "risk": .string(record.risk),
+      "permission_decision": .string(record.permissionDecision),
+      "duration_ms": .int(record.durationMillis),
+      "source": .string(record.source)
+    ]
+    if !record.errorCode.isEmpty {
+      value["error_code"] = .string(record.errorCode)
+    }
     return value
   }
 
@@ -306,6 +328,8 @@ struct AgentIOSMcpClientNativeProvider: AgentIOSMcpNativeToolProviding {
   private static func bounded(_ value: String, limit: Int) -> String {
     String(value.prefix(limit))
   }
+
+  private static let recentActivityLimit = 3
 
   private static func awaitBlocking<T>(_ operation: @escaping () async throws -> T) throws -> T {
     let semaphore = DispatchSemaphore(value: 0)
