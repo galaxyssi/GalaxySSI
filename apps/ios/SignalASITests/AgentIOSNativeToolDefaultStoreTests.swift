@@ -100,4 +100,65 @@ extension SignalASIStoreTests {
     XCTAssertTrue(FileManager.default.fileExists(atPath: paths.auditFileURL.path))
     XCTAssertTrue(FileManager.default.fileExists(atPath: paths.workspaceFileURL.path))
   }
+
+  func testAgentPhoneNativeToolCatalogDefaultRuntimeExecutesNativeToolActions() throws {
+    let root = try temporaryDirectory("native-tool-default-runtime")
+    defer { try? FileManager.default.removeItem(at: root) }
+    var delegatedAction: AgentAction?
+    let delegate = TestAgentActionExecutor { action, _ in
+      delegatedAction = action
+      return AgentActionResult(actionId: action.id, success: true, message: "delegated")
+    }
+    let runtime = try AgentPhoneNativeToolCatalog.defaultRuntime(
+      actionExecutor: delegate,
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
+      storageRootURL: root,
+      nowMillis: { 20_000 }
+    )
+    let nativeAction = AgentAction(
+      id: "runtime-init",
+      kind: .callNativeTool,
+      target: "Workspace",
+      risk: .medium,
+      status: .running,
+      description: "Initialize the current workspace",
+      parameters: [
+        "tool_id": AgentPhoneNativeToolCatalog.workspaceInitialize,
+        "input_json": #"{"workspace_id":"foreign"}"#,
+        "_signalasi_conversation_id": "runtime-conversation"
+      ],
+      requiresConfirmation: false
+    )
+    let openURL = AgentAction(
+      id: "runtime-open",
+      kind: .openURL,
+      target: "https://signalasi.com",
+      risk: .low,
+      status: .running,
+      description: "Open SignalASI"
+    )
+
+    let nativeResult = runtime.actionExecutor.execute(
+      action: nativeAction,
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent")
+    )
+    let delegatedResult = runtime.actionExecutor.execute(
+      action: openURL,
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent")
+    )
+
+    XCTAssertTrue(nativeResult.success)
+    XCTAssertEqual(nativeResult.metadata["native_tool_id"], AgentPhoneNativeToolCatalog.workspaceInitialize)
+    XCTAssertEqual(nativeResult.metadata["idempotency_key"], "runtime-init")
+    XCTAssertEqual(nativeResult.metadata["serialized_side_effect"], "true")
+    XCTAssertTrue(
+      (nativeResult.metadata["native_tool_output"] ?? "")
+        .contains(AgentWorkspaceScope.id(conversationId: "runtime-conversation"))
+    )
+    XCTAssertTrue(delegatedResult.success)
+    XCTAssertEqual(delegatedResult.metadata["serialized_side_effect"], "true")
+    XCTAssertEqual(delegate.callCount, 1)
+    XCTAssertEqual(delegatedAction?.id, "runtime-open")
+  }
 }
