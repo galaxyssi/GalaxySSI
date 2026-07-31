@@ -13,12 +13,15 @@ import com.signalasi.chat.voice.asr.local.AbortReason
 import com.signalasi.chat.voice.asr.local.DefaultLocalWhisperRuntime
 import com.signalasi.chat.voice.asr.local.LocalWhisperSessionConfig
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
+import com.signalasi.chat.voice.asr.local.NativeWhisperResult
 import com.signalasi.chat.voice.asr.local.WhisperDecodeRequest
 import com.signalasi.chat.voice.asr.local.WhisperLoadOptions
 import com.signalasi.chat.voice.asr.local.WhisperRuntimeState
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
+import com.signalasi.chat.voice.model.WhisperExecutionMode
+import com.signalasi.chat.voice.model.WhisperModelProfile
 import com.whispercpp.whisper.WhisperContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -34,6 +37,11 @@ class LocalWhisperException(
     val code: NativeWhisperCode,
     message: String
 ) : IllegalStateException(message)
+
+data class LocalWhisperDecodeOutcome(
+    val profileId: String,
+    val result: NativeWhisperResult
+)
 
 object LocalWhisperAsr {
     private const val TAG = "SignalASILocalASR"
@@ -99,37 +107,16 @@ object LocalWhisperAsr {
             val inferenceDurationMs: Long
             val rtf: String
             if (VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
-                releaseLegacyContext()
-                val runtime = whisperRuntime ?: DefaultLocalWhisperRuntime(context.applicationContext).also {
-                    whisperRuntime = it
-                }
-                val coldStart = (runtime.state.value as? WhisperRuntimeState.Ready)
-                    ?.model?.profile?.id != selected.id
-                if (coldStart) {
-                    trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_STARTED, baseAttributes + ("cold_start" to "true"))
-                }
-                runtime.load(selected, WhisperLoadOptions(threadCount = threadCount))
-                if (coldStart) {
-                    trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED, baseAttributes + ("cold_start" to "true"))
-                }
-                trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, baseAttributes)
-                val session = runtime.createSession(
-                    LocalWhisperSessionConfig(
-                        language = normalizedLanguage,
-                        noContext = true,
-                        mode = selected.recommendedMode
-                    )
+                val result = decodeWithRuntimeV2(
+                    context = context,
+                    profile = selected,
+                    pcm16 = pcm16,
+                    normalizedLanguage = normalizedLanguage,
+                    mode = WhisperExecutionMode.FINAL_ONLY,
+                    threadCount = threadCount,
+                    traceId = traceId,
+                    attributes = baseAttributes
                 )
-                val result = try {
-                    session.decode(
-                        WhisperDecodeRequest(
-                            pcm16 = pcm16,
-                            mode = selected.recommendedMode
-                        )
-                    )
-                } finally {
-                    session.close()
-                }
                 if (!result.successful) {
                     throw LocalWhisperException(result.code, result.message ?: "Whisper decode failed (${result.code})")
                 }
@@ -189,6 +176,62 @@ object LocalWhisperAsr {
         }
     }
 
+    internal suspend fun decodePcmWindow(
+        context: Context,
+        pcm16: ShortArray,
+        sampleRateHz: Int,
+        language: String,
+        mode: WhisperExecutionMode,
+        traceId: String,
+        source: String,
+        modelProfileId: String
+    ): LocalWhisperDecodeOutcome = mutex.withLock {
+        require(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
+            "Local Whisper Runtime v2 is disabled"
+        }
+        require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
+        require(pcm16.isNotEmpty()) { "PCM16 audio is empty" }
+        val profile = WhisperModelManager.model(modelProfileId)
+        require(WhisperModelManager.isAvailable(context, profile)) {
+            "ASR model ${profile.displayName} is not downloaded"
+        }
+        val threadCount = minOf(4, Runtime.getRuntime().availableProcessors()).coerceAtLeast(1)
+        val normalizedLanguage = language.substringBefore('-').lowercase()
+            .takeIf { it in setOf("zh", "en") } ?: "auto"
+        val attributes = mapOf(
+            "asr_provider" to "whisper.cpp",
+            "model_profile_id" to profile.id,
+            "execution_mode" to mode.name.lowercase(Locale.US),
+            "thread_count" to threadCount.toString(),
+            "audio_source" to source,
+            "audio_duration_ms" to durationMs(pcm16).toString()
+        )
+        val result = decodeWithRuntimeV2(
+            context = context,
+            profile = profile,
+            pcm16 = pcm16,
+            normalizedLanguage = normalizedLanguage,
+            mode = mode,
+            threadCount = threadCount,
+            traceId = traceId,
+            attributes = attributes
+        )
+        trace(
+            context,
+            traceId,
+            VoiceTraceEvents.WHISPER_FULL_COMPLETED,
+            attributes + mapOf(
+                "duration_ms" to result.timings.totalMs.toLong().coerceAtLeast(0L).toString(),
+                "rtf" to String.format(Locale.US, "%.4f", result.timings.realTimeFactor),
+                "success" to result.successful.toString()
+            )
+        )
+        if (!result.successful) {
+            throw LocalWhisperException(result.code, result.message ?: "Whisper decode failed (${result.code})")
+        }
+        LocalWhisperDecodeOutcome(profile.id, normalizeResultScript(result, language))
+    }
+
     fun requestAbort(reason: AbortReason = AbortReason.USER_STOP) {
         whisperRuntime?.requestAbortAll(reason)
     }
@@ -197,6 +240,41 @@ object LocalWhisperAsr {
         whisperRuntime?.close()
         whisperRuntime = null
         releaseLegacyContext()
+    }
+
+    private suspend fun decodeWithRuntimeV2(
+        context: Context,
+        profile: WhisperModelProfile,
+        pcm16: ShortArray,
+        normalizedLanguage: String,
+        mode: WhisperExecutionMode,
+        threadCount: Int,
+        traceId: String,
+        attributes: Map<String, String>
+    ): NativeWhisperResult {
+        releaseLegacyContext()
+        val runtime = whisperRuntime ?: DefaultLocalWhisperRuntime(context.applicationContext).also {
+            whisperRuntime = it
+        }
+        val coldStart = (runtime.state.value as? WhisperRuntimeState.Ready)?.model?.profile?.id != profile.id
+        if (coldStart) {
+            trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_STARTED, attributes + ("cold_start" to "true"))
+        }
+        runtime.load(profile, WhisperLoadOptions(threadCount = threadCount))
+        if (coldStart) {
+            trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED, attributes + ("cold_start" to "true"))
+        }
+        trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, attributes)
+        return runtime.createSession(
+            LocalWhisperSessionConfig(
+                language = normalizedLanguage,
+                noContext = true,
+                singleSegment = mode == WhisperExecutionMode.REALTIME_PARTIAL,
+                mode = mode
+            )
+        ).use { session ->
+            session.decode(WhisperDecodeRequest(pcm16 = pcm16, mode = mode))
+        }
     }
 
     private suspend fun transcribeWithLegacyRuntime(
@@ -246,6 +324,12 @@ object LocalWhisperAsr {
             Transliterator.getInstance("Traditional-Simplified").transliterate(text)
         } else text
     }
+
+    private fun normalizeResultScript(result: NativeWhisperResult, language: String): NativeWhisperResult = result.copy(
+        segments = result.segments.map { segment ->
+            segment.copy(text = normalizeChineseScript(segment.text, language))
+        }.toTypedArray()
+    )
 
     private fun durationMs(samples: ShortArray): Long = samples.size.toLong() * 1_000L / TARGET_SAMPLE_RATE
 

@@ -33,6 +33,23 @@ class PcmRingBufferTest {
         assertEquals(7, snapshot.samples.last().toInt())
     }
 
+    @Test
+    fun partialSnapshotOnlyCopiesTheNewestRollingWindow() {
+        val store = InMemorySpeechSegmentStore(sampleRateHz = 1_000, maxDurationMs = 20_000)
+        repeat(120) { sequence ->
+            frame(sequence.toLong(), ShortArray(100) { sequence.toShort() }).use { store.append(it) }
+            if (sequence == 5) store.markSpeechStart(5)
+        }
+
+        val partial = store.snapshotWindow(maxDurationMs = 4_000L, SegmentRange(preRollMs = 0, postRollMs = 0))
+
+        assertEquals(4_000, partial.samples.size)
+        assertEquals(8_000L, partial.captureStartSample)
+        assertEquals(12_000L, partial.captureEndSampleExclusive)
+        assertEquals(80, partial.samples.first().toInt())
+        assertEquals(119, partial.samples.last().toInt())
+    }
+
     private fun frame(sequence: Long, values: ShortArray) = AudioFrame(
         sequence = sequence,
         captureTimeNanos = sequence,
