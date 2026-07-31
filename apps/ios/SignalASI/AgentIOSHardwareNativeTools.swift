@@ -2,6 +2,9 @@ import Foundation
 #if canImport(AVFoundation) && os(iOS)
 import AVFoundation
 #endif
+#if canImport(CoreBluetooth) && os(iOS)
+import CoreBluetooth
+#endif
 #if canImport(CoreMotion) && os(iOS)
 import CoreMotion
 #endif
@@ -17,6 +20,7 @@ protocol AgentIOSHardwareStatusProviding {
   func powerStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func storageStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func bluetoothStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func nfcStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject
   func setFlashlight(enabled: Bool, nowMillis: Int64) -> AgentNativeToolExecutionResult
@@ -105,6 +109,49 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
       "observed_at_epoch_ms": .int(nowMillis)
     ]
   }
+
+  func bluetoothStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    #if canImport(CoreBluetooth) && os(iOS)
+    let framework = "core_bluetooth"
+    let authorization = bluetoothAuthorization(CBCentralManager.authorization)
+    let supported = true
+    #else
+    let framework = "unavailable"
+    let authorization = "unavailable"
+    let supported = false
+    #endif
+    return [
+      "supported": .bool(supported),
+      "enabled": .bool(false),
+      "enabled_state": .string("unknown_without_foreground_observation"),
+      "discovering": .bool(false),
+      "bonded_device_count": .null,
+      "device_identifiers_included": .bool(false),
+      "state_observation_started": .bool(false),
+      "foreground_observation_required": .bool(true),
+      "framework": .string(framework),
+      "authorization": .string(authorization),
+      "scope": .string("ios_corebluetooth_status_boundary"),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  #if canImport(CoreBluetooth) && os(iOS)
+  private func bluetoothAuthorization(_ authorization: CBManagerAuthorization) -> String {
+    switch authorization {
+    case .allowedAlways:
+      return "allowed_always"
+    case .denied:
+      return "denied"
+    case .notDetermined:
+      return "not_determined"
+    case .restricted:
+      return "restricted"
+    @unknown default:
+      return "unknown"
+    }
+  }
+  #endif
 
   func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject {
     let boundedLimit = max(1, min(AgentIOSHardwareNativeToolCatalog.maxSensorResults, limit))
@@ -390,6 +437,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     networkStatus,
     sensorsList,
     flashlightSet,
+    bluetoothStatus,
     nfcStatus,
     bluetoothPairingHandoff,
     installedAppsList,
@@ -462,14 +510,10 @@ enum AgentIOSHardwareNativeToolCatalog {
       "Set flashlight",
       "Requests an explicit iOS torch state through AVFoundation after consent; no camera image is captured."
     ),
-    unavailableSpec(
+    bluetoothStatusSpec(
       bluetoothStatus,
       "Read Bluetooth status",
-      "Requires a CoreBluetooth executor and iOS Bluetooth permission before status can be reported.",
-      .medium,
-      ["bluetooth.status"],
-      ["NSBluetoothAlwaysUsageDescription"],
-      []
+      "Reads iOS CoreBluetooth permission/framework boundary without device identifiers or discovery."
     ),
     unavailableSpec(
       bluetoothDiscoveryForeground,
@@ -634,6 +678,32 @@ enum AgentIOSHardwareNativeToolCatalog {
     )
   }
 
+  private static func bluetoothStatusSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .medium,
+      capabilities: ["bluetooth.status.read", "bluetooth.no_device_identifiers", "bluetooth.no_discovery"],
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: "NSBluetoothAlwaysUsageDescription",
+          title: "Bluetooth state",
+          description: "iOS Bluetooth scope is used only for adapter/status boundary reporting; no discovery is started."
+        )
+      ],
+      consents: [noExtraConsent],
+      availability: AgentNativeToolAvailability(
+        status: .available,
+        reason: "iOS CoreBluetooth state is exposed as a no-discovery status boundary without bonded-device identifiers."
+      )
+    )
+  }
+
   private static func appVisibilityBoundarySpec(
     _ id: String,
     _ title: String,
@@ -783,6 +853,8 @@ struct AgentIOSHardwareNativeToolExecutor {
         enabled: invocation.input["enabled"]?.boolValue == true,
         nowMillis: now
       )
+    case AgentIOSHardwareNativeToolCatalog.bluetoothStatus:
+      return status(provider.bluetoothStatus(nowMillis: now), "Bluetooth adapter status boundary read")
     case AgentIOSHardwareNativeToolCatalog.nfcStatus:
       return status(provider.nfcStatus(nowMillis: now), "NFC capability status read")
     case AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff:

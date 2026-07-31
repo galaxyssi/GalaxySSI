@@ -112,6 +112,23 @@ extension SignalASIStoreTests {
         ]
       }
 
+      func bluetoothStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        [
+          "supported": .bool(true),
+          "enabled": .bool(false),
+          "enabled_state": .string("unknown_without_foreground_observation"),
+          "discovering": .bool(false),
+          "bonded_device_count": .null,
+          "device_identifiers_included": .bool(false),
+          "state_observation_started": .bool(false),
+          "foreground_observation_required": .bool(true),
+          "framework": .string("core_bluetooth"),
+          "authorization": .string("allowed_always"),
+          "scope": .string("ios_corebluetooth_status_boundary"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
+
       func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject {
         let sensors: [AgentMcpJSONObject] = [
           [
@@ -183,7 +200,8 @@ extension SignalASIStoreTests {
       grantedPermissions: [
         AgentIOSHardwareNativeToolCatalog.hardwareStatusPermission,
         AgentIOSHardwareNativeToolCatalog.appVisibilityBoundaryPermission,
-        "NSCameraUsageDescription"
+        "NSCameraUsageDescription",
+        "NSBluetoothAlwaysUsageDescription"
       ],
       grantedConsents: [
         AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent,
@@ -220,6 +238,7 @@ extension SignalASIStoreTests {
       input: ["enabled": .bool(true)],
       context: context
     )
+    let bluetooth = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothStatus, input: [:], context: context)
     let nfc = registry.invoke(AgentIOSHardwareNativeToolCatalog.nfcStatus, input: [:], context: context)
     let pairing = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, input: [:], context: context)
     let installedApps = registry.invoke(
@@ -247,6 +266,9 @@ extension SignalASIStoreTests {
     let flashlightDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.flashlightSet }
     )
+    let bluetoothDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.bluetoothStatus }
+    )
 
     XCTAssertTrue(battery.isSuccess)
     XCTAssertEqual(battery.output["percent"], .int(73))
@@ -269,6 +291,13 @@ extension SignalASIStoreTests {
     XCTAssertEqual(flashlight.output["settings_changed"], .bool(false))
     XCTAssertEqual(flashlight.metadata["camera_capture"], .bool(false))
     XCTAssertEqual(flashlight.metadata["continuous_state_guarantee"], .bool(false))
+    XCTAssertTrue(bluetooth.isSuccess)
+    XCTAssertEqual(bluetooth.output["supported"], .bool(true))
+    XCTAssertEqual(bluetooth.output["discovering"], .bool(false))
+    XCTAssertEqual(bluetooth.output["bonded_device_count"], .null)
+    XCTAssertEqual(bluetooth.output["device_identifiers_included"], .bool(false))
+    XCTAssertEqual(bluetooth.output["state_observation_started"], .bool(false))
+    XCTAssertEqual(bluetooth.output["scope"], .string("ios_corebluetooth_status_boundary"))
     XCTAssertTrue(nfc.isSuccess)
     XCTAssertEqual(nfc.output["supported"], .bool(true))
     XCTAssertEqual(nfc.output["tag_capture_started"], .bool(false))
@@ -299,6 +328,9 @@ extension SignalASIStoreTests {
     XCTAssertEqual(flashlightDefinition.descriptor.availability.status, .available)
     XCTAssertEqual(flashlightDefinition.descriptor.idempotency, .idempotent)
     XCTAssertTrue(flashlightDefinition.descriptor.capabilities.contains("flashlight.no_camera_capture"))
+    XCTAssertEqual(bluetoothDefinition.descriptor.availability.status, .available)
+    XCTAssertTrue(bluetoothDefinition.descriptor.capabilities.contains("bluetooth.no_device_identifiers"))
+    XCTAssertTrue(bluetoothDefinition.descriptor.capabilities.contains("bluetooth.no_discovery"))
     XCTAssertEqual(location.descriptor.availability.status, .unavailable)
     XCTAssertEqual(location.descriptor.risk, .high)
   }
