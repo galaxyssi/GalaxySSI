@@ -59,6 +59,69 @@ final class AgentTaskLivenessWorkspaceReducerTests: XCTestCase {
     XCTAssertEqual(reduction.workspace.eventJournal.last?.payloadJson, #"{"stage":"observe"}"#)
   }
 
+  func testNativeToolWorkspaceProgressBridgeMatchesAndroidSupervisorProgress() {
+    let started = AgentNativeToolLifecycleEvent(
+      stage: .started,
+      toolId: "signalasi.workspace.file.read.text",
+      invocationId: "invoke-1",
+      stepId: "step-1",
+      conversationId: "conversation",
+      turnId: "workspace",
+      timestampMillis: 1_200
+    )
+    let progress = AgentNativeToolLifecycleEvent(
+      stage: .progress,
+      toolId: "signalasi.workspace.file.read.text",
+      invocationId: "invoke-1",
+      stepId: "step-1",
+      conversationId: "conversation",
+      turnId: "workspace",
+      progressStage: "reading",
+      message: "Reading file",
+      percent: 64,
+      sequence: 2,
+      timestampMillis: 1_250
+    )
+    let finished = AgentNativeToolLifecycleEvent(
+      stage: .finished,
+      toolId: "signalasi.workspace.file.read.text",
+      invocationId: "invoke-1",
+      stepId: "step-1",
+      conversationId: "conversation",
+      turnId: "workspace",
+      status: .succeeded,
+      timestampMillis: 1_300
+    )
+
+    let first = AgentNativeToolWorkspaceProgressBridge.record(event: started, in: workspace(status: .running))
+    let second = AgentNativeToolWorkspaceProgressBridge.record(event: progress, in: first.workspace)
+    let third = AgentNativeToolWorkspaceProgressBridge.record(event: finished, in: second.workspace)
+    let terminal = AgentNativeToolWorkspaceProgressBridge.record(event: progress, in: workspace(status: .completed))
+
+    XCTAssertEqual(AgentNativeToolWorkspaceProgressBridge.workspaceId(for: progress), "workspace")
+    XCTAssertTrue(first.changed)
+    XCTAssertTrue(second.changed)
+    XCTAssertTrue(third.changed)
+    XCTAssertFalse(terminal.changed)
+    XCTAssertEqual(third.workspace.eventJournal.map(\.kind), [
+      AgentTaskEventKinds.progress,
+      AgentTaskEventKinds.progress,
+      AgentTaskEventKinds.progress
+    ])
+    XCTAssertEqual(third.workspace.eventJournal.map(\.message), [
+      "signalasi.workspace.file.read.text",
+      "Reading file",
+      "signalasi.workspace.file.read.text"
+    ])
+    XCTAssertEqual(third.workspace.eventJournal.map(\.payloadJson), [
+      #"{"stage":"tool.started"}"#,
+      #"{"stage":"tool.progress"}"#,
+      #"{"stage":"tool.finished"}"#
+    ])
+    XCTAssertEqual(third.workspace.eventJournal.map(\.timestampMillis), [1_200, 1_250, 1_300])
+    XCTAssertEqual(third.workspace.eventSequence, 3)
+  }
+
   func testRecordActivityThrottlesDuplicateHeartbeatWithoutUnresolvedStall() {
     let active = workspace(
       status: .running,
