@@ -7,7 +7,9 @@ enum AgentDirectNativeToolPlanner {
     }
     var plan = AgentPlanFactory.singleAction(request: request, action: action)
     plan.plannerProfile = "rule-based-direct-native-tool"
-    plan.routeRationale = "A deterministic iOS native-tool route matched this phone operation."
+    plan.routeRationale = action.risk == .blocked
+      ? "A deterministic iOS safety block matched this protected operation."
+      : "A deterministic iOS native-tool route matched this phone operation."
     plan.validation = AgentPlanValidator.validate(plan)
     return plan
   }
@@ -43,6 +45,10 @@ enum AgentDirectNativeToolPlanner {
         input: ["phone_number": .string(phoneNumber)],
         responseLanguage: responseLanguage(for: goal)
       )
+    }
+
+    if let blocked = blockedSensitiveAction(goal: goal, lower: lower) {
+      return blocked
     }
 
     if isCameraCaptureGoal(lower),
@@ -461,6 +467,105 @@ enum AgentDirectNativeToolPlanner {
     containsAny(
       lower,
       ["explain", "what is", "what are", "how does", "how do", "\u{89e3}\u{91ca}", "\u{4ecb}\u{7ecd}", "\u{8bf4}\u{660e}"]
+    )
+  }
+
+  private static func blockedSensitiveAction(goal: String, lower: String) -> AgentAction? {
+    if containsAny(
+      lower,
+      ["install apk", "install app", "unknown app sources", "install unknown apps", "apk install permission"]
+    ) {
+      return blockedAction(
+        id: "blocked-app-installation",
+        target: "Package Manager",
+        description: "App installation or installation-source changes require explicit owner control.",
+        goal: goal
+      )
+    }
+    if containsAny(
+      lower,
+      [
+        "uninstall app", "delete app", "factory reset", "erase phone", "clear all data",
+        "\u{5378}\u{8f7d}", "\u{6062}\u{590d}\u{51fa}\u{5382}"
+      ]
+    ) {
+      return blockedAction(
+        id: "blocked-device-wipe-or-removal",
+        target: "Device Administration",
+        description: "App removal or device wipe requests are blocked by phone safety policy.",
+        goal: goal
+      )
+    }
+    if containsAny(lower, ["unlock phone", "disable lock", "change screen lock"]) {
+      return blockedAction(
+        id: "blocked-lock-control",
+        target: "Screen Lock",
+        description: "Unlocking or weakening the screen lock is blocked by phone safety policy.",
+        goal: goal
+      )
+    }
+    if containsAny(lower, ["answer call", "listen call", "record call"]) {
+      return blockedAction(
+        id: "blocked-call-control",
+        target: "Phone Call",
+        description: "Phone call handling or call recording requires explicit owner control.",
+        goal: goal
+      )
+    }
+    if containsAny(lower, ["send wechat", "reply wechat", "send message to"]) {
+      return blockedAction(
+        id: "blocked-third-party-send",
+        target: "Third-party messaging",
+        description: "Sending third-party messages is blocked unless routed through an explicit supported tool.",
+        goal: goal
+      )
+    }
+    if containsAny(
+      lower,
+      [
+        "make payment", "transfer money", "purchase", "checkout", "place order",
+        "\u{652f}\u{4ed8}", "\u{8f6c}\u{8d26}", "\u{8d2d}\u{4e70}"
+      ]
+    ) ||
+      lower.hasPrefix("pay ") {
+      return blockedAction(
+        id: "blocked-payment-order",
+        target: "Payment or Order",
+        description: "Payment, transfer, purchase, and order submission are blocked by phone safety policy.",
+        goal: goal
+      )
+    }
+    if containsAny(
+      lower,
+      [
+        "authorize login", "approve login", "grant permission", "share password", "share private key",
+        "export private key", "export api key", "seed phrase", "\u{6388}\u{6743}\u{767b}\u{5f55}",
+        "\u{5206}\u{4eab}\u{5bc6}\u{7801}", "\u{5bfc}\u{51fa}\u{79c1}\u{94a5}"
+      ]
+    ) {
+      return blockedAction(
+        id: "blocked-credential-permission",
+        target: "Credentials and Permissions",
+        description: "Credentials, login approvals, and permission grants are blocked by phone safety policy.",
+        goal: goal
+      )
+    }
+    return nil
+  }
+
+  private static func blockedAction(id: String, target: String, description: String, goal: String) -> AgentAction {
+    AgentAction(
+      id: id,
+      kind: .draftPlan,
+      target: target,
+      risk: .blocked,
+      status: .blocked,
+      description: description,
+      parameters: [
+        "blocked_reason": description,
+        "original_goal": goal.prefixString(500)
+      ],
+      requiresConfirmation: false
     )
   }
 

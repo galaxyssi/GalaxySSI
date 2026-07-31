@@ -64,6 +64,35 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try inputObject(sms)["message"] as? String, "hello")
     XCTAssertTrue(sms.requiresConfirmation)
 
+    let blockedInstall = try XCTUnwrap(action("Install APK from Downloads"))
+    XCTAssertEqual(blockedInstall.id, "blocked-app-installation")
+    XCTAssertEqual(blockedInstall.kind, .draftPlan)
+    XCTAssertEqual(blockedInstall.risk, .blocked)
+    XCTAssertEqual(blockedInstall.status, .blocked)
+    XCTAssertFalse(blockedInstall.requiresConfirmation)
+    XCTAssertTrue(blockedInstall.parameters["blocked_reason"]?.contains("installation") == true)
+
+    let blockedMessage = try XCTUnwrap(action("Send message to Alice on WeChat"))
+    XCTAssertEqual(blockedMessage.id, "blocked-third-party-send")
+    XCTAssertEqual(blockedMessage.risk, .blocked)
+
+    let blockedPayment = try XCTUnwrap(action("Make payment for this order"))
+    XCTAssertEqual(blockedPayment.id, "blocked-payment-order")
+    XCTAssertEqual(blockedPayment.risk, .blocked)
+
+    let blockedCredential = try XCTUnwrap(action("Export private key"))
+    XCTAssertEqual(blockedCredential.id, "blocked-credential-permission")
+    XCTAssertEqual(blockedCredential.risk, .blocked)
+
+    let blockedPlan = try XCTUnwrap(AgentDirectNativeToolPlanner.plan(request: AgentPlanRequest(
+      goal: "Export private key",
+      screen: screen,
+      nativeTools: requestTools
+    )))
+    XCTAssertEqual(blockedPlan.actions.first?.status, .blocked)
+    XCTAssertEqual(blockedPlan.routeRationale, "A deterministic iOS safety block matched this protected operation.")
+    XCTAssertTrue(blockedPlan.validation.valid)
+
     let camera = try XCTUnwrap(action("Open camera and take a photo"))
     XCTAssertEqual(camera.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture)
     XCTAssertEqual(try inputObject(camera)["facing"] as? String, "back")
