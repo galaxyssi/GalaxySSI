@@ -24,6 +24,11 @@
     A10000000000000000000015 /* SignalASIContactExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* SignalASIContactExchangeTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
+    A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
+    A10000000000000000000402 /* AgentReputationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000402 /* AgentReputationModels.swift */; };
+    A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000403 /* AgentResourceProfileModels.swift */; };
+    A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000404 /* AgentProviderProfileCatalog.swift */; };
+    A10000000000000000000405 /* AgentNetworkSearchIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000405 /* AgentNetworkSearchIndex.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
@@ -521,6 +526,11 @@
         A20000000000000000000001 /* SignalASIModels.swift */,
         A20000000000000000000101 /* SignalASICoreModels.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
+        A20000000000000000000401 /* AgentConnectorModels.swift */,
+        A20000000000000000000402 /* AgentReputationModels.swift */,
+        A20000000000000000000403 /* AgentResourceProfileModels.swift */,
+        A20000000000000000000404 /* AgentProviderProfileCatalog.swift */,
+        A20000000000000000000405 /* AgentNetworkSearchIndex.swift */,
         A20000000000000000000103 /* AgentTeamDelegationModels.swift */,
         A20000000000000000000104 /* AgentNativeToolCore.swift */,
         A20000000000000000000105 /* AgentPhoneNativeTools.swift */,
@@ -867,6 +877,11 @@
         A10000000000000000000001 /* SignalASIModels.swift in Sources */,
         A10000000000000000000101 /* SignalASICoreModels.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
+        A10000000000000000000401 /* AgentConnectorModels.swift in Sources */,
+        A10000000000000000000402 /* AgentReputationModels.swift in Sources */,
+        A10000000000000000000403 /* AgentResourceProfileModels.swift in Sources */,
+        A10000000000000000000404 /* AgentProviderProfileCatalog.swift in Sources */,
+        A10000000000000000000405 /* AgentNetworkSearchIndex.swift in Sources */,
         A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */,
         A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */,
         A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */,
