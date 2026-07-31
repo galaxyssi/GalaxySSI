@@ -5,7 +5,9 @@ extension SignalASIStoreTests {
   func testAgentDirectNativeToolPlannerRoutesCommonPhoneOperations() throws {
     let requestTools = AgentPhoneNativeToolCatalog.descriptors(
       capabilityStatuses: readyPhoneCapabilityStatuses()
-    )
+    ) + AgentIOSVisibleCaptureNativeToolCatalog.definitions(
+      provider: DirectPlannerVisibleCaptureProvider()
+    ).map(\.descriptor)
     let screen = AgentScreenContext(foregroundApp: "com.signalasi.chat", pageTitle: "SignalASI")
 
     func action(_ goal: String) -> AgentAction? {
@@ -62,6 +64,29 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try inputObject(sms)["message"] as? String, "hello")
     XCTAssertTrue(sms.requiresConfirmation)
 
+    let camera = try XCTUnwrap(action("Open camera and take a photo"))
+    XCTAssertEqual(camera.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture)
+    XCTAssertEqual(try inputObject(camera)["facing"] as? String, "back")
+    XCTAssertFalse(camera.requiresConfirmation)
+
+    let chineseCamera = try XCTUnwrap(action("\u{6253}\u{5f00}\u{624b}\u{673a}\u{6444}\u{50cf}\u{5934}\u{62cd}\u{7167}"))
+    XCTAssertEqual(chineseCamera.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture)
+    XCTAssertNil(action("Explain how camera sensors work"))
+
+    let microphone = try XCTUnwrap(action("Record audio for five seconds"))
+    XCTAssertEqual(microphone.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord)
+    XCTAssertEqual(try inputObject(microphone)["max_duration_seconds"] as? Int, 5)
+    XCTAssertTrue(microphone.requiresConfirmation)
+
+    let chineseMicrophone = try XCTUnwrap(action("\u{5f55}\u{97f3} 8 \u{79d2}"))
+    XCTAssertEqual(chineseMicrophone.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord)
+    XCTAssertEqual(try inputObject(chineseMicrophone)["max_duration_seconds"] as? Int, 8)
+
+    let clampedMicrophone = try XCTUnwrap(action("Record audio for one minute"))
+    XCTAssertEqual(clampedMicrophone.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord)
+    XCTAssertEqual(try inputObject(clampedMicrophone)["max_duration_seconds"] as? Int, 30)
+    XCTAssertNil(action("Explain how microphones work"))
+
     let plan = try XCTUnwrap(AgentDirectNativeToolPlanner.plan(request: AgentPlanRequest(
       goal: "Set media volume 30",
       screen: screen,
@@ -85,6 +110,18 @@ extension SignalASIStoreTests {
     )))
 
     XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
+      goal: "Open camera and take a photo",
+      screen: screen,
+      nativeTools: requestTools
+    )))
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
+      goal: "\u{5f55}\u{97f3} 8 \u{79d2}",
+      screen: screen,
+      nativeTools: requestTools
+    )))
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
       goal: "Set media volume 30",
       screen: screen,
       nativeTools: requestTools.filter { $0.id == AgentIOSHardwareNativeToolCatalog.batteryStatus }
@@ -94,5 +131,27 @@ extension SignalASIStoreTests {
   private func inputObject(_ action: AgentAction) throws -> [String: Any] {
     let inputJson = try XCTUnwrap(action.parameters["input_json"])
     return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(inputJson.utf8)) as? [String: Any])
+  }
+}
+
+private struct DirectPlannerVisibleCaptureProvider: AgentIOSVisibleCaptureToolProviding {
+  let implementationId = "fake.ios.visible_capture.direct_planner"
+
+  func availability(kind: AgentIOSVisibleCaptureKind) -> AgentNativeToolAvailability {
+    .available
+  }
+
+  func capturePhoto(
+    facing: String,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentIOSVisibleCaptureOutcome {
+    AgentIOSVisibleCaptureOutcome(status: .cancelled)
+  }
+
+  func recordAudio(
+    maxDurationSeconds: Int,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentIOSVisibleCaptureOutcome {
+    AgentIOSVisibleCaptureOutcome(status: .cancelled)
   }
 }

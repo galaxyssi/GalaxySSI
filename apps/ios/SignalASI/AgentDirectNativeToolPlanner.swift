@@ -45,6 +45,30 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isCameraCaptureGoal(lower),
+       let descriptor = descriptor(AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "open-camera",
+        target: "Camera",
+        description: "Take one user-visible photo",
+        input: ["facing": .string("back")],
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
+    if isMicrophoneCaptureGoal(lower),
+       let descriptor = descriptor(AgentIOSVisibleCaptureNativeToolCatalog.microphoneRecord, in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "record-audio",
+        target: "Microphone",
+        description: "Record user-visible audio",
+        input: ["max_duration_seconds": .int(Int64(audioDurationSeconds(for: lower)))],
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
     if isVolumeSetGoal(lower),
        let percent = firstPercent(in: lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.audioVolumeSet, in: request) {
@@ -296,6 +320,100 @@ enum AgentDirectNativeToolPlanner {
 
   private static func isSMSGoal(_ lower: String) -> Bool {
     containsAny(lower, ["send sms", "text ", "send message", "\u{53d1}\u{9001}\u{77ed}\u{4fe1}", "\u{53d1}\u{6d88}\u{606f}"])
+  }
+
+  private static func isCameraCaptureGoal(_ lower: String) -> Bool {
+    guard !isExplanationOnlyGoal(lower) else { return false }
+    let hasCamera = containsAny(lower, ["camera", "\u{76f8}\u{673a}", "\u{6444}\u{50cf}\u{5934}"])
+    let hasCapture = containsAny(lower, ["take photo", "take a photo", "capture photo", "snap photo", "\u{62cd}\u{7167}"])
+    let hasOpenAction = containsAny(
+      lower,
+      ["open", "launch", "use", "\u{6253}\u{5f00}", "\u{542f}\u{52a8}", "\u{8c03}\u{7528}", "\u{4f7f}\u{7528}"]
+    )
+    return hasCapture || (hasCamera && hasOpenAction)
+  }
+
+  private static func isMicrophoneCaptureGoal(_ lower: String) -> Bool {
+    guard !isExplanationOnlyGoal(lower) else { return false }
+    let hasMicrophone = containsAny(lower, ["microphone", "mic", "\u{9ea6}\u{514b}\u{98ce}"])
+    let hasRecording = containsAny(
+      lower,
+      ["record audio", "record voice", "record sound", "start recording", "\u{5f55}\u{97f3}", "\u{5f55}\u{5236}"]
+    )
+    let hasUseAction = containsAny(
+      lower,
+      ["open", "start", "use", "\u{6253}\u{5f00}", "\u{5f00}\u{59cb}", "\u{8c03}\u{7528}", "\u{4f7f}\u{7528}"]
+    )
+    return hasRecording || (hasMicrophone && hasUseAction)
+  }
+
+  private static func audioDurationSeconds(for lower: String) -> Int {
+    clampAudioDuration(durationSecondsFromDigitUnit(in: lower) ?? durationSecondsFromSpokenUnit(in: lower) ??
+      AgentIOSVisibleCaptureNativeToolCatalog.defaultAudioDurationSeconds)
+  }
+
+  private static func durationSecondsFromDigitUnit(in value: String) -> Int? {
+    let pattern = "([0-9]+)\\s*" +
+      "(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|\u{79d2}\u{949f}?|\u{5206}\u{949f}?|\u{5c0f}\u{65f6})"
+    guard let regex = try? NSRegularExpression(pattern: pattern) else {
+      return nil
+    }
+    let nsValue = value as NSString
+    let range = NSRange(location: 0, length: nsValue.length)
+    guard let match = regex.firstMatch(in: value, range: range),
+          match.numberOfRanges >= 3,
+          let amount = Int(nsValue.substring(with: match.range(at: 1))) else {
+      return nil
+    }
+    return amount * durationMultiplier(for: nsValue.substring(with: match.range(at: 2)))
+  }
+
+  private static func durationSecondsFromSpokenUnit(in value: String) -> Int? {
+    for (phrase, amount) in spokenDurations {
+      if containsDurationPhrase(value, phrase: phrase, unitTerms: ["second", "seconds", "sec", "secs"]) {
+        return amount
+      }
+      if containsDurationPhrase(value, phrase: phrase, unitTerms: ["minute", "minutes", "min", "mins"]) {
+        return amount * 60
+      }
+      if containsDurationPhrase(value, phrase: phrase, unitTerms: ["hour", "hours", "hr", "hrs"]) {
+        return amount * 3_600
+      }
+    }
+    return nil
+  }
+
+  private static func containsDurationPhrase(_ value: String, phrase: String, unitTerms: [String]) -> Bool {
+    unitTerms.contains { value.contains("\(phrase) \($0)") }
+  }
+
+  private static func durationMultiplier(for unit: String) -> Int {
+    if unit.hasPrefix("h") || unit == "\u{5c0f}\u{65f6}" {
+      return 3_600
+    }
+    if unit.hasPrefix("m") || unit.hasPrefix("\u{5206}") {
+      return 60
+    }
+    return 1
+  }
+
+  private static func clampAudioDuration(_ seconds: Int) -> Int {
+    max(1, min(seconds, AgentIOSVisibleCaptureNativeToolCatalog.maxAudioDurationSeconds))
+  }
+
+  private static let spokenDurations: [(String, Int)] = [
+    ("forty five", 45), ("forty-five", 45), ("thirty", 30), ("twenty", 20),
+    ("fifteen", 15), ("fourteen", 14), ("thirteen", 13), ("twelve", 12),
+    ("eleven", 11), ("ten", 10), ("nine", 9), ("eight", 8), ("seven", 7),
+    ("six", 6), ("five", 5), ("four", 4), ("three", 3), ("two", 2),
+    ("one", 1), ("an", 1), ("a", 1)
+  ]
+
+  private static func isExplanationOnlyGoal(_ lower: String) -> Bool {
+    containsAny(
+      lower,
+      ["explain", "what is", "what are", "how does", "how do", "\u{89e3}\u{91ca}", "\u{4ecb}\u{7ecd}", "\u{8bf4}\u{660e}"]
+    )
   }
 
   private static func isFlashlightGoal(_ lower: String) -> Bool {
