@@ -490,6 +490,7 @@ struct CloudModelClient {
 final class MessageCoordinator: ObservableObject {
   @Published var pairingStatus = ""
   @Published var lastError = ""
+  var onIncomingMessage: ((ChatMessage) -> Void)?
 
   private let store: SignalASIStore
   private let deliveryStore: SignalASILinkDeliveryStore
@@ -599,6 +600,7 @@ final class MessageCoordinator: ObservableObject {
           status: .delivered
         )
         let incoming = store.appendIncoming(reply, from: contact.id)
+        onIncomingMessage?(incoming)
         store.appendDeliveryTrace(
           incoming.id,
           contactId: contact.id,
@@ -1014,7 +1016,8 @@ final class MessageCoordinator: ObservableObject {
       }
       return
     }
-    store.appendIncoming(content, from: contactId, remoteMessageId: appPayload.string("message_id"))
+    let incoming = store.appendIncoming(content, from: contactId, remoteMessageId: appPayload.string("message_id"))
+    onIncomingMessage?(incoming)
     if !messageId.isEmpty {
       deliveryStore.completeIncoming(messageId: messageId)
     }
