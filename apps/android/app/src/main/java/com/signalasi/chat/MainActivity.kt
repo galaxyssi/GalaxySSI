@@ -2446,20 +2446,30 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val title = getString(when (reason) {
             AgentNoReplyReason.NETWORK_UNAVAILABLE -> R.string.agent_no_reply_network_title
             AgentNoReplyReason.DESKTOP_OFFLINE -> R.string.agent_no_reply_desktop_title
+            AgentNoReplyReason.DESKTOP_AGENT_START_FAILED -> R.string.agent_no_reply_desktop_start_title
             AgentNoReplyReason.AGENT_BUSY -> R.string.agent_no_reply_busy_title
             AgentNoReplyReason.PERMISSION_WAITING -> R.string.agent_no_reply_permission_title
+            AgentNoReplyReason.AUTHENTICATION_REQUIRED -> R.string.agent_no_reply_auth_title
+            AgentNoReplyReason.CONFIGURATION_REQUIRED -> R.string.agent_no_reply_configuration_title
+            AgentNoReplyReason.TOOL_UNAVAILABLE -> R.string.agent_no_reply_tool_title
             AgentNoReplyReason.AGENT_UNAVAILABLE -> R.string.agent_no_reply_unavailable_title
             AgentNoReplyReason.TIMED_OUT -> R.string.agent_no_reply_timeout_title
+            AgentNoReplyReason.INVALID_REQUEST -> R.string.agent_no_reply_invalid_title
             AgentNoReplyReason.UNKNOWN -> R.string.agent_no_reply_unknown_title
         })
         val message = getString(
             when (reason) {
                 AgentNoReplyReason.NETWORK_UNAVAILABLE -> R.string.agent_no_reply_network_message
                 AgentNoReplyReason.DESKTOP_OFFLINE -> R.string.agent_no_reply_desktop_message
+                AgentNoReplyReason.DESKTOP_AGENT_START_FAILED -> R.string.agent_no_reply_desktop_start_message
                 AgentNoReplyReason.AGENT_BUSY -> R.string.agent_no_reply_busy_message
                 AgentNoReplyReason.PERMISSION_WAITING -> R.string.agent_no_reply_permission_message
+                AgentNoReplyReason.AUTHENTICATION_REQUIRED -> R.string.agent_no_reply_auth_message
+                AgentNoReplyReason.CONFIGURATION_REQUIRED -> R.string.agent_no_reply_configuration_message
+                AgentNoReplyReason.TOOL_UNAVAILABLE -> R.string.agent_no_reply_tool_message
                 AgentNoReplyReason.AGENT_UNAVAILABLE -> R.string.agent_no_reply_unavailable_message
                 AgentNoReplyReason.TIMED_OUT -> R.string.agent_no_reply_timeout_message
+                AgentNoReplyReason.INVALID_REQUEST -> R.string.agent_no_reply_invalid_message
                 AgentNoReplyReason.UNKNOWN -> R.string.agent_no_reply_unknown_message
             },
             targetLabel
@@ -14422,7 +14432,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() },
                 routeKind = route?.kind ?: AgentRouteKind.UNKNOWN,
                 routeStatus = route?.status
-            ).takeUnless { it.reason == AgentNoReplyReason.UNKNOWN }
+            )
         } else {
             null
         }

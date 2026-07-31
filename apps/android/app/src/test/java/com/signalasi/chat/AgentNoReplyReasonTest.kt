@@ -64,12 +64,63 @@ class AgentNoReplyReasonTest {
     @Test
     fun setupAndStartFailuresAreActionable() {
         assertEquals(
-            AgentNoReplyReason.AGENT_UNAVAILABLE,
+            AgentNoReplyReason.DESKTOP_AGENT_START_FAILED,
             AgentNoReplyReasonPolicy.classify(
                 AgentNoReplySignal(
                     taskStatus = "failed",
                     error = "Codex could not start",
+                    routeKind = AgentRouteKind.DESKTOP_AGENT,
                     routeStatus = AgentConnectorStatus.AVAILABLE
+                )
+            )
+        )
+        assertEquals(
+            AgentNoReplyReason.CONFIGURATION_REQUIRED,
+            AgentNoReplyReasonPolicy.classify(
+                AgentNoReplySignal(
+                    routeStatus = AgentConnectorStatus.NEEDS_SETUP
+                )
+            )
+        )
+    }
+
+    @Test
+    fun authenticationConfigurationToolsAndInvalidInputHaveDistinctReasons() {
+        assertEquals(
+            AgentNoReplyReason.AUTHENTICATION_REQUIRED,
+            AgentNoReplyReasonPolicy.classify(
+                AgentNoReplySignal(error = "HTTP 401: invalid API key")
+            )
+        )
+        assertEquals(
+            AgentNoReplyReason.CONFIGURATION_REQUIRED,
+            AgentNoReplyReasonPolicy.classify(
+                AgentNoReplySignal(error = "Cloud provider is not configured")
+            )
+        )
+        assertEquals(
+            AgentNoReplyReason.TOOL_UNAVAILABLE,
+            AgentNoReplyReasonPolicy.classify(
+                AgentNoReplySignal(error = "python: command not found")
+            )
+        )
+        assertEquals(
+            AgentNoReplyReason.INVALID_REQUEST,
+            AgentNoReplyReasonPolicy.classify(
+                AgentNoReplySignal(error = "Unsupported file format")
+            )
+        )
+    }
+
+    @Test
+    fun desktopStartFailureRequiresAnOnlineDesktopRoute() {
+        assertEquals(
+            AgentNoReplyReason.DESKTOP_OFFLINE,
+            AgentNoReplyReasonPolicy.classify(
+                AgentNoReplySignal(
+                    error = "Codex could not start",
+                    routeKind = AgentRouteKind.DESKTOP_AGENT,
+                    routeStatus = AgentConnectorStatus.DISCONNECTED
                 )
             )
         )
@@ -77,7 +128,9 @@ class AgentNoReplyReasonTest {
             AgentNoReplyReason.AGENT_UNAVAILABLE,
             AgentNoReplyReasonPolicy.classify(
                 AgentNoReplySignal(
-                    routeStatus = AgentConnectorStatus.NEEDS_SETUP
+                    error = "Codex could not start",
+                    routeKind = AgentRouteKind.UNKNOWN,
+                    routeStatus = AgentConnectorStatus.AVAILABLE
                 )
             )
         )
