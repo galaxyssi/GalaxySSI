@@ -545,6 +545,9 @@ const gatewayNavIndex = html.indexOf('data-open-panel="gateway"');
 const menuNavIndex = html.indexOf('id="workspaceMenuButton"');
 if (
   !html.includes('<div class="sidebar-footer">\n        <button class="sidebar-action sidebar-settings-row"')
+  || !html.includes('id="sidebarTaskSummary"')
+  || !html.includes('<button data-open-panel="commands" data-i18n="Commands">Commands</button>')
+  || html.includes('class="sidebar-action" data-open-panel="commands"')
   || html.includes('class="sidebar-action" data-open-panel="agents"')
   || html.includes('class="sidebar-action" data-open-panel="capabilities"')
   || html.includes('class="sidebar-action" data-open-panel="gateway"')
@@ -556,7 +559,7 @@ if (
     && gatewayNavIndex < menuNavIndex
   )
 ) {
-  throw new Error("Desktop header must expose Agent, capability, and Mobile Gateway navigation without a duplicate Computer entry");
+  throw new Error("Desktop navigation must prioritize task status while keeping commands in the workspace menu");
 }
 
 if (

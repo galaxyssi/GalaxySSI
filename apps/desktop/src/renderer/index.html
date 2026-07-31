@@ -22,16 +22,11 @@
         <b data-i18n="New task">New task</b>
       </button>
 
+      <div class="sidebar-task-heading">
+        <span data-i18n="Tasks">Tasks</span>
+        <em id="sidebarTaskSummary" aria-live="polite">0</em>
+      </div>
       <div id="taskHistory" class="task-history" aria-label="Task history"></div>
-
-      <button class="sidebar-action" data-open-panel="commands">
-        <svg class="sidebar-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M4 6h16"></path>
-          <path d="M4 12h16"></path>
-          <path d="M4 18h10"></path>
-        </svg>
-        <b data-i18n="Commands">Commands</b>
-      </button>
 
       <div class="sidebar-footer">
         <button class="sidebar-action sidebar-settings-row" data-open-panel="settings">
@@ -60,6 +55,7 @@
         <div id="workspaceMenu" class="workspace-menu" hidden>
           <button id="cancelRunningTask" data-i18n="Stop running task">Stop running task</button>
           <button id="revealWorkspaceButton" data-i18n="Show task workspace">Show task workspace</button>
+          <button data-open-panel="commands" data-i18n="Commands">Commands</button>
           <button id="deleteConversationButton" class="danger-text" data-i18n="Delete conversation">Delete conversation</button>
         </div>
       </header>
