@@ -329,6 +329,17 @@ final class FileAgentDataDisclosureStore: AgentDataDisclosureStore {
     self.fileManager = fileManager
   }
 
+  static func destroyPersistentStore(
+    fileURL: URL = AgentDataDisclosureStorePaths.ledgerURL(),
+    fileManager: FileManager = .default
+  ) {
+    try? fileManager.removeItem(at: fileURL)
+    let directory = fileURL.deletingLastPathComponent()
+    if let entries = try? fileManager.contentsOfDirectory(atPath: directory.path), entries.isEmpty {
+      try? fileManager.removeItem(at: directory)
+    }
+  }
+
   func append(_ record: AgentDataDisclosureRecord) {
     lock.lock()
     defer { lock.unlock() }

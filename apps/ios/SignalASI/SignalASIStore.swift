@@ -426,6 +426,7 @@ final class SignalASIStore: ObservableObject {
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
     defaults.removeObject(forKey: storageKey)
+    FileAgentDataDisclosureStore.destroyPersistentStore()
     resetToFreshState()
     save()
   }

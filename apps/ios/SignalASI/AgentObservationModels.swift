@@ -2106,6 +2106,7 @@ enum AgentPrivateDataInventory {
     localOnly("provider_health", "Per-runtime health and circuit state", "user_defaults:signalasi_agent_provider_health", .ephemeral),
     localOnly("run_workspaces", "Active Run workspaces and checkpoints", "user_defaults:signalasi_agent_workspaces", .ephemeral),
     localOnly("run_events", "Run event ledger", "user_defaults:signalasi_agent_runs", .ephemeral),
+    localOnly("data_disclosure_ledger", "Model and Agent data-flow metadata and destination blocks", "files:AgentDataDisclosure/agent-data-disclosure-ledger.json", .secret),
     localOnly("connector_responses", "Pending connector responses", "user_defaults:signalasi_agent_connector_responses", .ephemeral),
     localOnly("mcp_credentials", "MCP connections and credentials", "user_defaults:signalasi_mcp_connections", .secret),
     localOnly("mcp_tool_audit", "Redacted MCP permission decisions and tool receipts", "user_defaults:signalasi_mcp_tool_audit", .ephemeral),

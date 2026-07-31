@@ -1347,6 +1347,7 @@ extension SignalASIStoreTests {
     XCTAssertTrue(excluded.contains("transcript"))
     XCTAssertTrue(excluded.contains("permission_grants"))
     XCTAssertTrue(excluded.contains("run_start_receipts"))
+    XCTAssertTrue(excluded.contains("data_disclosure_ledger"))
     XCTAssertTrue(excluded.contains("runtime_files"))
     XCTAssertEqual(Set(manifest.eraseStoreIds), Set(AgentPrivateDataInventory.descriptors.map(\.id)))
   }
@@ -1368,6 +1369,7 @@ extension SignalASIStoreTests {
     XCTAssertTrue(Set(manifest.secretStoreIds).contains("home_assistant"))
     XCTAssertTrue(excluded.contains("permission_grants"))
     XCTAssertTrue(excluded.contains("run_start_receipts"))
+    XCTAssertTrue(excluded.contains("data_disclosure_ledger"))
     XCTAssertTrue(excluded.contains("mcp_credentials"))
     XCTAssertEqual(included.union(excluded), all)
     XCTAssertTrue(included.intersection(excluded).isEmpty)
