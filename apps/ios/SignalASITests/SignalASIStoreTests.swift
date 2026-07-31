@@ -295,21 +295,59 @@ final class SignalASIStoreTests: XCTestCase {
 
     store.updateVoiceSettings {
       $0.wakeWords = VoiceSettings.wakeWords(from: " SignalASI, , hello, custom wake ")
+      $0.wakeProvider = .androidASR
+      $0.wakeModel = "missing.onnx"
       $0.wakeThreshold = 2
       $0.welcomeText = "  "
+      $0.asrProvider = .localWhisperCpp
       $0.asrModelId = "does-not-exist"
+      $0.ttsProvider = .microsoftEdge
+      $0.microsoftVoice = "  "
       $0.targetContactId = ""
       $0.speakReplies = false
       $0.routingMode = .contact
     }
 
     XCTAssertEqual(store.voiceSettings.wakeWords, ["SignalASI", "hello", "custom wake"])
+    XCTAssertEqual(store.voiceSettings.wakeProvider, .androidASR)
+    XCTAssertEqual(store.voiceSettings.wakeModel, VoiceSettings.defaultWakeModel)
     XCTAssertEqual(store.voiceSettings.wakeThreshold, 0.99)
     XCTAssertEqual(store.voiceSettings.welcomeText, VoiceSettings.defaultWelcomeText)
+    XCTAssertEqual(store.voiceSettings.asrProvider, .localWhisperCpp)
     XCTAssertEqual(store.voiceSettings.asrModelId, "tiny")
+    XCTAssertEqual(store.voiceSettings.ttsProvider, .microsoftEdge)
+    XCTAssertEqual(store.voiceSettings.microsoftVoice, VoiceSettings.defaultMicrosoftVoice)
     XCTAssertEqual(store.voiceSettings.targetContactId, "hermes")
     XCTAssertFalse(store.voiceSettings.speakReplies)
     XCTAssertEqual(store.voiceSettings.routingMode, .contact)
+  }
+
+  func testVoiceSettingsDecodeAndroidProviderWireValues() throws {
+    let settings = try JSONDecoder.signalASI.decode(
+      VoiceSettings.self,
+      from: Data(#"{"wake_provider":"android_asr","wake_model":"hello_world.onnx","asr_provider":"local_whisper_cpp","tts_provider":"microsoft_edge","microsoft_voice":" en-US-AriaNeural ","asr_model":"base"}"#.utf8)
+    )
+    let fallback = try JSONDecoder.signalASI.decode(
+      VoiceSettings.self,
+      from: Data(#"{"wake_provider":"bad","wake_model":"bad.onnx","asr_provider":"bad","tts_provider":"bad","microsoft_voice":" "}"#.utf8)
+    )
+    let encoded = try JSONEncoder.signalASI.encode(settings)
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+    XCTAssertEqual(settings.wakeProvider, .androidASR)
+    XCTAssertEqual(settings.wakeModel, VoiceSettings.defaultWakeModel)
+    XCTAssertEqual(settings.asrProvider, .localWhisperCpp)
+    XCTAssertEqual(settings.ttsProvider, .microsoftEdge)
+    XCTAssertEqual(settings.microsoftVoice, "en-US-AriaNeural")
+    XCTAssertEqual(settings.asrModelId, "base")
+    XCTAssertEqual(fallback.wakeProvider, .androidASR)
+    XCTAssertEqual(fallback.wakeModel, VoiceSettings.defaultWakeModel)
+    XCTAssertEqual(fallback.ttsProvider, .system)
+    XCTAssertEqual(fallback.microsoftVoice, VoiceSettings.defaultMicrosoftVoice)
+    XCTAssertEqual(object["wake_provider"] as? String, "android_asr")
+    XCTAssertEqual(object["asr_provider"] as? String, "local_whisper_cpp")
+    XCTAssertEqual(object["tts_provider"] as? String, "microsoft_edge")
+    XCTAssertEqual(object["microsoft_voice"] as? String, "en-US-AriaNeural")
   }
 
   func testDisplaySettingsNormalizeAndroidTextScaleWireValues() throws {

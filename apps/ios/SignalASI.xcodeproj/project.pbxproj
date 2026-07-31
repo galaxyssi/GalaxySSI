@@ -114,6 +114,7 @@
     A10000000000000000000644 /* VoiceWhisperModelDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000644 /* VoiceWhisperModelDownloadService.swift */; };
     A10000000000000000000645 /* VoiceWhisperModelSettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */; };
     A10000000000000000000646 /* VoiceWhisperModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */; };
+    A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000648 /* VoiceProviderSettings.swift */; };
     A10000000000000000000629 /* VoicePcmRingBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000629 /* VoicePcmRingBufferTests.swift */; };
     A10000000000000000000630 /* VoiceAdaptiveDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000630 /* VoiceAdaptiveDetectionTests.swift */; };
     A10000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift */; };
@@ -621,6 +622,7 @@
     A20000000000000000000644 /* VoiceWhisperModelDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelDownloadService.swift; sourceTree = "<group>"; };
     A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsModels.swift; sourceTree = "<group>"; };
     A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsView.swift; sourceTree = "<group>"; };
+    A20000000000000000000648 /* VoiceProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProviderSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
@@ -1029,6 +1031,7 @@
         A20000000000000000000644 /* VoiceWhisperModelDownloadService.swift */,
         A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */,
         A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */,
+        A20000000000000000000648 /* VoiceProviderSettings.swift */,
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
         A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */,
@@ -1542,6 +1545,7 @@
         A10000000000000000000644 /* VoiceWhisperModelDownloadService.swift in Sources */,
         A10000000000000000000645 /* VoiceWhisperModelSettingsModels.swift in Sources */,
         A10000000000000000000646 /* VoiceWhisperModelSettingsView.swift in Sources */,
+        A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */,
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
         A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */,

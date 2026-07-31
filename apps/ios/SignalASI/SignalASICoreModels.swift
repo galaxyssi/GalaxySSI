@@ -549,9 +549,14 @@ struct VoiceSettings: Codable, Equatable {
   var autoSendTranscripts: Bool
   var preferredLocaleIdentifier: String
   var wakeWords: [String]
+  var wakeProvider: VoiceWakeProvider
+  var wakeModel: String
   var wakeThreshold: Double
   var welcomeText: String
+  var asrProvider: VoiceASRProvider
   var asrModelId: String
+  var ttsProvider: VoiceTTSProvider
+  var microsoftVoice: String
   var targetContactId: String
   var speakReplies: Bool
   var routingMode: VoiceRoutingMode
@@ -563,9 +568,14 @@ struct VoiceSettings: Codable, Equatable {
     autoSendTranscripts: Bool,
     preferredLocaleIdentifier: String,
     wakeWords: [String] = VoiceSettings.defaultWakeWords,
+    wakeProvider: VoiceWakeProvider = VoiceWakeProvider.defaultValue,
+    wakeModel: String = VoiceSettings.defaultWakeModel,
     wakeThreshold: Double = 0.5,
     welcomeText: String = VoiceSettings.defaultWelcomeText,
+    asrProvider: VoiceASRProvider = VoiceASRProvider.defaultValue,
     asrModelId: String = VoiceSettings.defaultAsrModelId,
+    ttsProvider: VoiceTTSProvider = VoiceTTSProvider.defaultValue,
+    microsoftVoice: String = VoiceSettings.defaultMicrosoftVoice,
     targetContactId: String = "hermes",
     speakReplies: Bool = true,
     routingMode: VoiceRoutingMode = .nativeAgent
@@ -576,9 +586,14 @@ struct VoiceSettings: Codable, Equatable {
     self.autoSendTranscripts = autoSendTranscripts
     self.preferredLocaleIdentifier = preferredLocaleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Locale.current.identifier)
     self.wakeWords = Self.normalizedWakeWords(wakeWords)
+    self.wakeProvider = wakeProvider
+    self.wakeModel = Self.normalizedWakeModel(wakeModel)
     self.wakeThreshold = min(max(wakeThreshold, 0.01), 0.99)
     self.welcomeText = welcomeText.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultWelcomeText)
+    self.asrProvider = asrProvider
     self.asrModelId = VoiceWhisperModelCatalog.normalizedModelId(asrModelId)
+    self.ttsProvider = ttsProvider
+    self.microsoftVoice = microsoftVoice.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultMicrosoftVoice)
     self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
     self.speakReplies = speakReplies
     self.routingMode = routingMode
@@ -591,9 +606,14 @@ struct VoiceSettings: Codable, Equatable {
     autoSendTranscripts: false,
     preferredLocaleIdentifier: Locale.current.identifier,
     wakeWords: defaultWakeWords,
+    wakeProvider: VoiceWakeProvider.defaultValue,
+    wakeModel: defaultWakeModel,
     wakeThreshold: 0.5,
     welcomeText: defaultWelcomeText,
+    asrProvider: VoiceASRProvider.defaultValue,
     asrModelId: defaultAsrModelId,
+    ttsProvider: VoiceTTSProvider.defaultValue,
+    microsoftVoice: defaultMicrosoftVoice,
     targetContactId: "hermes",
     speakReplies: true,
     routingMode: .nativeAgent
@@ -608,7 +628,10 @@ struct VoiceSettings: Codable, Equatable {
   ]
 
   static let defaultWelcomeText = "I am here. Welcome to SignalASI. Say your question or task."
+  static let defaultWakeModel = "hello_world.onnx"
+  static let supportedWakeModels = [defaultWakeModel]
   static let defaultAsrModelId = "tiny"
+  static let defaultMicrosoftVoice = "zh-CN-XiaoxiaoNeural"
 
   var wakeWordsText: String {
     wakeWords.joined(separator: ", ")
@@ -622,9 +645,14 @@ struct VoiceSettings: Codable, Equatable {
       autoSendTranscripts: autoSendTranscripts,
       preferredLocaleIdentifier: preferredLocaleIdentifier,
       wakeWords: wakeWords,
+      wakeProvider: wakeProvider,
+      wakeModel: wakeModel,
       wakeThreshold: wakeThreshold,
       welcomeText: welcomeText,
+      asrProvider: asrProvider,
       asrModelId: asrModelId,
+      ttsProvider: ttsProvider,
+      microsoftVoice: microsoftVoice,
       targetContactId: targetContactId,
       speakReplies: speakReplies,
       routingMode: routingMode
@@ -638,9 +666,14 @@ struct VoiceSettings: Codable, Equatable {
     case autoSendTranscripts
     case preferredLocaleIdentifier
     case wakeWords = "wake_words"
+    case wakeProvider = "wake_provider"
+    case wakeModel = "wake_model"
     case wakeThreshold = "wake_threshold"
     case welcomeText = "welcome_text"
+    case asrProvider = "asr_provider"
     case asrModelId = "asr_model"
+    case ttsProvider = "tts_provider"
+    case microsoftVoice = "microsoft_voice"
     case targetContactId = "target_contact_id"
     case speakReplies = "speak_replies"
     case routingMode = "routing_mode"
@@ -655,9 +688,14 @@ struct VoiceSettings: Codable, Equatable {
       autoSendTranscripts: try container.decodeIfPresent(Bool.self, forKey: .autoSendTranscripts) ?? false,
       preferredLocaleIdentifier: try container.decodeIfPresent(String.self, forKey: .preferredLocaleIdentifier) ?? Locale.current.identifier,
       wakeWords: try container.decodeIfPresent([String].self, forKey: .wakeWords) ?? Self.defaultWakeWords,
+      wakeProvider: VoiceWakeProvider.normalized(try container.decodeIfPresent(String.self, forKey: .wakeProvider)),
+      wakeModel: try container.decodeIfPresent(String.self, forKey: .wakeModel) ?? Self.defaultWakeModel,
       wakeThreshold: try container.decodeIfPresent(Double.self, forKey: .wakeThreshold) ?? 0.5,
       welcomeText: try container.decodeIfPresent(String.self, forKey: .welcomeText) ?? Self.defaultWelcomeText,
+      asrProvider: VoiceASRProvider.normalized(try container.decodeIfPresent(String.self, forKey: .asrProvider)),
       asrModelId: try container.decodeIfPresent(String.self, forKey: .asrModelId) ?? Self.defaultAsrModelId,
+      ttsProvider: VoiceTTSProvider.normalized(try container.decodeIfPresent(String.self, forKey: .ttsProvider)),
+      microsoftVoice: try container.decodeIfPresent(String.self, forKey: .microsoftVoice) ?? Self.defaultMicrosoftVoice,
       targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",
       speakReplies: try container.decodeIfPresent(Bool.self, forKey: .speakReplies) ?? true,
       routingMode: try container.decodeIfPresent(VoiceRoutingMode.self, forKey: .routingMode) ?? .nativeAgent
@@ -673,6 +711,11 @@ struct VoiceSettings: Codable, Equatable {
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
     return normalized.isEmpty ? defaultWakeWords : Array(normalized.prefix(12))
+  }
+
+  private static func normalizedWakeModel(_ value: String) -> String {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return supportedWakeModels.contains(normalized) ? normalized : defaultWakeModel
   }
 }
 

@@ -50,9 +50,14 @@ final class SignalASIBackupTests: XCTestCase {
       $0.wakeListeningEnabled = true
       $0.preferredLocaleIdentifier = "en-US"
       $0.wakeWords = ["SignalASI", "custom wake"]
+      $0.wakeProvider = .androidASR
+      $0.wakeModel = VoiceSettings.defaultWakeModel
       $0.wakeThreshold = 0.72
       $0.welcomeText = "Ready for voice work."
+      $0.asrProvider = .localWhisperCpp
       $0.asrModelId = "base"
+      $0.ttsProvider = .microsoftEdge
+      $0.microsoftVoice = "zh-CN-YunxiNeural"
       $0.targetContactId = "cloud:openai"
       $0.speakReplies = false
       $0.routingMode = .contact
@@ -162,9 +167,14 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.modelPlannerSettings.noProgressTimeoutSeconds, 600)
     XCTAssertTrue(restored.voiceSettings.wakeListeningEnabled)
     XCTAssertEqual(restored.voiceSettings.wakeWords, ["SignalASI", "custom wake"])
+    XCTAssertEqual(restored.voiceSettings.wakeProvider, .androidASR)
+    XCTAssertEqual(restored.voiceSettings.wakeModel, VoiceSettings.defaultWakeModel)
     XCTAssertEqual(restored.voiceSettings.wakeThreshold, 0.72)
     XCTAssertEqual(restored.voiceSettings.welcomeText, "Ready for voice work.")
+    XCTAssertEqual(restored.voiceSettings.asrProvider, .localWhisperCpp)
     XCTAssertEqual(restored.voiceSettings.asrModelId, "base")
+    XCTAssertEqual(restored.voiceSettings.ttsProvider, .microsoftEdge)
+    XCTAssertEqual(restored.voiceSettings.microsoftVoice, "zh-CN-YunxiNeural")
     XCTAssertEqual(restored.voiceSettings.targetContactId, "cloud:openai")
     XCTAssertFalse(restored.voiceSettings.speakReplies)
     XCTAssertEqual(restored.voiceSettings.routingMode, .contact)

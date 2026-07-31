@@ -27,6 +27,8 @@ enum VoiceReplyPlaybackPolicy {
         .prefix(maximumSpokenCharacters)
     )
     guard settings.speakReplies,
+          settings.textToSpeechEnabled,
+          settings.ttsProvider == .system,
           !sessionId.isEmpty,
           !targetContactId.isEmpty,
           message.contactId == targetContactId,
@@ -40,8 +42,8 @@ enum VoiceReplyPlaybackPolicy {
       utteranceId: "signalasi_voice_\(message.id.uuidString)",
       text: text,
       language: LanguagePolicySettings.resolve(languagePolicy.ttsLanguage),
-      providerId: "ios_system_tts",
-      runtimeChannel: .androidSystemTTS
+      providerId: settings.ttsProvider.rawValue,
+      runtimeChannel: settings.ttsProvider.runtimeChannel
     )
   }
 }
