@@ -60,6 +60,13 @@
     <string name="cc_app_services_title">消息 · 通讯录 · 发现</string>
     <string name="cc_app_services_subtitle">应用模块、媒体、联系人、Provider 与通知</string>
     <string name="cc_section_general">通用</string>
+    <string name="cc_section_my_identity">我的身份</string>
+    <string name="cc_section_connected_devices">连接设备</string>
+    <string name="cc_section_models_runtime">模型与运行环境</string>
+    <string name="cc_section_voice_interaction">语音与交互</string>
+    <string name="cc_section_memory_knowledge">记忆与知识</string>
+    <string name="cc_section_skills_tasks">技能与任务</string>
+    <string name="cc_section_security_data">安全与数据</string>
     <string name="cc_general_title">通用与关于</string>
     <string name="cc_general_subtitle">语言、通知、诊断、版本与重置</string>
 

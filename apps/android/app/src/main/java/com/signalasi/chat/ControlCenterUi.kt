@@ -61,6 +61,66 @@ enum class ControlCenterRoute(val wireValue: String) {
     }
 }
 
+enum class ControlCenterHomeGroup {
+    IDENTITY,
+    CONNECTED_DEVICES,
+    MODELS,
+    VOICE_INTERACTION,
+    MEMORY_KNOWLEDGE,
+    SKILLS_TASKS,
+    SECURITY_DATA
+}
+
+object ControlCenterHomeGrouping {
+    val orderedGroups: List<ControlCenterHomeGroup> = ControlCenterHomeGroup.entries
+
+    private val routesByGroup = linkedMapOf(
+        ControlCenterHomeGroup.IDENTITY to listOf(
+            ControlCenterRoute.PROFILE,
+            ControlCenterRoute.GLOBAL_AGENT
+        ),
+        ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
+            ControlCenterRoute.NODES,
+            ControlCenterRoute.PHONE_CAPABILITIES,
+            ControlCenterRoute.SMART_SPACES
+        ),
+        ControlCenterHomeGroup.MODELS to listOf(
+            ControlCenterRoute.RESOURCE_ROUTING,
+            ControlCenterRoute.ON_DEVICE_RUNTIME
+        ),
+        ControlCenterHomeGroup.VOICE_INTERACTION to listOf(
+            ControlCenterRoute.VOICE,
+            ControlCenterRoute.APP_TOOLS,
+            ControlCenterRoute.APP_SERVICES
+        ),
+        ControlCenterHomeGroup.MEMORY_KNOWLEDGE to listOf(
+            ControlCenterRoute.MEMORY,
+            ControlCenterRoute.KNOWLEDGE,
+            ControlCenterRoute.LEARNING
+        ),
+        ControlCenterHomeGroup.SKILLS_TASKS to listOf(
+            ControlCenterRoute.AGENT_CORE,
+            ControlCenterRoute.TASKS,
+            ControlCenterRoute.MCP,
+            ControlCenterRoute.SELF_EVOLUTION
+        ),
+        ControlCenterHomeGroup.SECURITY_DATA to listOf(
+            ControlCenterRoute.SYSTEM_STATUS,
+            ControlCenterRoute.SECURITY,
+            ControlCenterRoute.PRIVACY,
+            ControlCenterRoute.PERMISSIONS_AUDIT,
+            ControlCenterRoute.DATA_BACKUP,
+            ControlCenterRoute.GENERAL
+        )
+    )
+
+    fun routes(group: ControlCenterHomeGroup): List<ControlCenterRoute> =
+        routesByGroup[group].orEmpty()
+
+    fun groupFor(route: ControlCenterRoute): ControlCenterHomeGroup? =
+        routesByGroup.entries.firstOrNull { route in it.value }?.key
+}
+
 data class ControlCenterBadgeSpec(
     val text: String,
     val tone: ControlCenterTone = ControlCenterTone.NEUTRAL

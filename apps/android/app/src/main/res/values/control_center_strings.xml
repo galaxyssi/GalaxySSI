@@ -60,6 +60,13 @@
     <string name="cc_app_services_title">Messages · Contacts · Discover</string>
     <string name="cc_app_services_subtitle">App modules, media, contacts, providers, and notifications</string>
     <string name="cc_section_general">General</string>
+    <string name="cc_section_my_identity">My identity</string>
+    <string name="cc_section_connected_devices">Connected devices</string>
+    <string name="cc_section_models_runtime">Models &amp; runtime</string>
+    <string name="cc_section_voice_interaction">Voice &amp; interaction</string>
+    <string name="cc_section_memory_knowledge">Memory &amp; knowledge</string>
+    <string name="cc_section_skills_tasks">Skills &amp; tasks</string>
+    <string name="cc_section_security_data">Security &amp; data</string>
     <string name="cc_general_title">General &amp; About</string>
     <string name="cc_general_subtitle">Language, notifications, diagnostics, version, and reset</string>
 
