@@ -97,6 +97,50 @@ function resultTools(result) {
   return new Set([...explicit, ...fromEvents].map(normalizedLower).filter(Boolean));
 }
 
+function resultToolSequence(result) {
+  const fromEvents = resultEvents(result)
+    .map((event) => event.tool || event.tool_name || event.tool_id)
+    .map(normalizedLower)
+    .filter(Boolean);
+  if (fromEvents.length > 0) {
+    return fromEvents;
+  }
+  return asArray(result.tools)
+    .map((tool) => (
+      typeof tool === "string" ? tool : tool?.name || tool?.tool_id || tool?.id
+    ))
+    .map(normalizedLower)
+    .filter(Boolean);
+}
+
+function resultPlanText(result) {
+  const explicit = Array.isArray(result.plan)
+    ? result.plan
+    : asArray(result.plan?.steps);
+  const planRows = explicit.map((step) => (
+    typeof step === "string"
+      ? step
+      : step?.title || step?.description || step?.action || step?.name
+  ));
+  const eventRows = resultEvents(result)
+    .filter((event) => canonicalEventPhase(event) === "plan")
+    .map((event) => event.message || event.title || event.name || event.action);
+  return [...planRows, ...eventRows].map(normalizedLower).filter(Boolean).join("\n");
+}
+
+function isOrderedSubsequence(actual, expected) {
+  let cursor = 0;
+  for (const value of actual) {
+    if (value === expected[cursor]) {
+      cursor += 1;
+      if (cursor === expected.length) {
+        return true;
+      }
+    }
+  }
+  return expected.length === 0;
+}
+
 function resultArtifacts(result) {
   return asArray(result.artifacts).filter((artifact) => (
     artifact && typeof artifact === "object"
@@ -203,7 +247,9 @@ export function evaluateScenario(scenario, rawResult) {
   const response = resultResponse(result);
   const events = resultEvents(result);
   const phases = new Set(events.map(canonicalEventPhase).filter(Boolean));
+  const phaseSequence = events.map(canonicalEventPhase).filter(Boolean);
   const tools = resultTools(result);
+  const toolSequence = resultToolSequence(result);
   const artifacts = resultArtifacts(result);
   const assertions = [];
 
@@ -244,6 +290,28 @@ export function evaluateScenario(scenario, rawResult) {
     ));
   }
 
+  const orderedPhases = asArray(expectation.ordered_phases).map(normalizedLower);
+  if (orderedPhases.length > 0) {
+    assertions.push(assertion(
+      "phase_order",
+      isOrderedSubsequence(phaseSequence, orderedPhases),
+      `expected ${orderedPhases.join(" -> ")}, received ${phaseSequence.join(" -> ")}`
+    ));
+  }
+
+  const requiredPlanSteps = asArray(expectation.required_plan_steps)
+    .map(normalizedLower)
+    .filter(Boolean);
+  if (requiredPlanSteps.length > 0) {
+    const planText = resultPlanText(result);
+    const missing = requiredPlanSteps.filter((step) => !planText.includes(step));
+    assertions.push(assertion(
+      "plan_contract",
+      missing.length === 0,
+      missing.length > 0 ? `missing ${missing.join(", ")}` : requiredPlanSteps.join(", ")
+    ));
+  }
+
   const requiredTools = asArray(expectation.required_tools).map(normalizedLower);
   if (requiredTools.length > 0) {
     const missing = requiredTools.filter((tool) => !tools.has(tool));
@@ -261,6 +329,15 @@ export function evaluateScenario(scenario, rawResult) {
       "forbidden_tools",
       found.length === 0,
       found.length > 0 ? `used ${found.join(", ")}` : "none used"
+    ));
+  }
+
+  const orderedTools = asArray(expectation.ordered_tools).map(normalizedLower);
+  if (orderedTools.length > 0) {
+    assertions.push(assertion(
+      "tool_order",
+      isOrderedSubsequence(toolSequence, orderedTools),
+      `expected ${orderedTools.join(" -> ")}, received ${toolSequence.join(" -> ")}`
     ));
   }
 
@@ -401,4 +478,3 @@ export function evaluateBenchmark(manifestInput, resultInput, options = {}) {
 export function readJson(path) {
   return JSON.parse(fs.readFileSync(path, "utf8"));
 }
-

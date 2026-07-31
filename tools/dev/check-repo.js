@@ -17,6 +17,10 @@ const releaseAuditScript = path.join(root, "tools", "dev", "release-audit.js");
 const agentBenchmarkDoc = path.join(root, "docs", "testing", "AGENT_BENCHMARK.md");
 const agentBenchmarkManifest = path.join(root, "benchmarks", "agent", "manifest.json");
 const agentBenchmarkRunner = path.join(root, "tools", "benchmark", "run-agent-benchmark.mjs");
+const agentRegressionSuite = path.join(root, "benchmarks", "agent", "regression-suite.json");
+const agentRegressionRunner = path.join(root, "tools", "benchmark", "run-agent-regression.mjs");
+const agentRegressionLibrary = path.join(root, "tools", "benchmark", "agent-regression-dsl.mjs");
+const agentRegressionTest = path.join(root, "tools", "benchmark", "agent-regression-dsl.test.mjs");
 const coreRegressionManifest = path.join(root, "tools", "dev", "core-regression-manifest.json");
 const coreRegressionRunner = path.join(root, "tools", "dev", "run-core-regressions.mjs");
 const memoryLoCoMoCorpus = path.join(root, "benchmarks", "memory", "locomo-corpus.json");
@@ -156,6 +160,10 @@ function checkAgentBenchmark() {
     agentBenchmarkDoc,
     agentBenchmarkManifest,
     agentBenchmarkRunner,
+    agentRegressionSuite,
+    agentRegressionRunner,
+    agentRegressionLibrary,
+    agentRegressionTest,
     path.join(root, "benchmarks", "agent", "reference-results.json"),
     path.join(root, "tools", "benchmark", "agent-benchmark-lib.mjs"),
     path.join(root, "tools", "benchmark", "agent-benchmark.test.mjs")
@@ -165,7 +173,12 @@ function checkAgentBenchmark() {
       throw new Error(`Missing Agent benchmark asset: ${path.relative(root, file)}`);
     }
   }
-  for (const scriptName of ["benchmark:agent", "test:benchmark:agent"]) {
+  for (const scriptName of [
+    "benchmark:agent",
+    "test:benchmark:agent",
+    "regression:agent",
+    "test:regression:agent"
+  ]) {
     if (!packageJson.scripts?.[scriptName]) {
       throw new Error(`Missing Agent benchmark script: ${scriptName}`);
     }
@@ -173,6 +186,16 @@ function checkAgentBenchmark() {
   const manifest = JSON.parse(fs.readFileSync(agentBenchmarkManifest, "utf8"));
   if (manifest.schema_version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 10) {
     throw new Error("Agent benchmark manifest must provide at least 10 schema v1 scenarios");
+  }
+  const regressionSuite = JSON.parse(fs.readFileSync(agentRegressionSuite, "utf8"));
+  if (
+    regressionSuite.dsl_version !== "signalasi.agent-regression.v1" ||
+    !Array.isArray(regressionSuite.cases) ||
+    regressionSuite.cases.length < 5
+  ) {
+    throw new Error(
+      "Agent regression DSL must provide at least 5 signalasi.agent-regression.v1 cases"
+    );
   }
 }
 

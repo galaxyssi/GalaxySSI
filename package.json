@@ -45,6 +45,8 @@
     "test:security-red-team": "python -m unittest discover -s apps/desktop/core/signalasi-link/backend -p \"test_security_red_team.py\" -v",
     "benchmark:agent": "node tools/benchmark/run-agent-benchmark.mjs",
     "test:benchmark:agent": "node --test tools/benchmark/agent-benchmark.test.mjs",
+    "regression:agent": "node tools/benchmark/run-agent-regression.mjs",
+    "test:regression:agent": "node --test tools/benchmark/agent-regression-dsl.test.mjs",
     "benchmark:memory-locomo": "node tools/benchmark/run-memory-locomo.mjs",
     "test:benchmark:memory-locomo": "node --test tools/benchmark/memory-locomo.test.mjs",
     "test:trusted-pr-review": "node --test tools/security/trusted-pr-review.test.mjs",

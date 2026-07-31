@@ -26,6 +26,33 @@ The command writes a machine-readable report to
 scenario schema, scoring, and release threshold remain deterministic. They are not a substitute
 for live product evaluation.
 
+## Agent Regression DSL
+
+The versioned regression DSL describes each case as four product contracts:
+
+- `input`: prompt, attachments, context, and route identity;
+- `expect.plan`: ordered lifecycle phases and required plan content;
+- `expect.tools`: required, forbidden, and ordered tool calls;
+- `expect.result`: terminal state, response shape, latency, recovery, and artifact evidence.
+
+Safety, isolation, and timeline requirements are represented as separate nested contracts. Unknown
+fields fail validation so a misspelled expectation cannot silently weaken a release gate.
+
+Run the deterministic DSL suite and its schema tests with:
+
+```bash
+npm run test:regression:agent
+npm run regression:agent
+```
+
+The runner compiles `benchmarks/agent/regression-suite.json` into the shared benchmark execution
+contract and writes `build/reports/agent-regression/report.json`. Captured Runs can be evaluated
+without changing the suite:
+
+```bash
+npm run regression:agent -- --results C:\path\to\captured-results.json
+```
+
 ## Captured Runs
 
 Export normalized Agent Run results and evaluate them with:
@@ -63,4 +90,4 @@ The benchmark fails when:
 
 Add product scenarios to `benchmarks/agent/manifest.json`. Keep prompts deterministic, avoid
 secrets, and update `reference-results.json` only when the expected product contract changes.
-
+Add executable input/plan/tool/result contracts to `benchmarks/agent/regression-suite.json`.

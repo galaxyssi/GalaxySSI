@@ -14,6 +14,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | Repository policy | `npm run check` | Public docs and code stay English-first outside i18n files, Desktop structure is intact, protocol naming is SignalASI-only, and required capability markers still exist. |
 | Security red team | `npm run test:security-red-team` | Malicious README, web, MCP, and model-output payloads remain untrusted, cannot forge authority, and fail integrity checks after tampering. |
 | Agent product benchmark | `npm run benchmark:agent` | Versioned Agent scenarios score response quality, planning, tool use, approval, isolation, recovery, memory, artifact integrity, timeline order, and latency instead of only source-level correctness. |
+| Agent regression DSL | `npm run regression:agent` | Structured input, plan, ordered tool, safety, isolation, and result contracts compile into deterministic executable regressions. |
 | Long-term memory benchmark | `npm run benchmark:memory-locomo` | A versioned LoCoMo-style multi-session corpus drives the production Android memory planner and prompt compiler, then scores retrieval, temporal reasoning, contamination, privacy, and abstention. |
 | Pull request core regressions | `npm run test:core-regressions` | Android, Desktop Agent Runtime, MQTT, memory, remote control, and Agent benchmark contracts pass together without packaging an APK or Desktop installer. |
 | Android build | `npm run check:android` | The Android app compiles into a debug APK with the current Gradle wrapper and Android project layout. |
@@ -49,6 +50,9 @@ Run `npm run test:release:device` to execute the Android device gates sequential
 Run `npm run benchmark:agent` for the deterministic Agent contract baseline. Use the live Desktop
 mode and captured Run evaluation described in [AGENT_BENCHMARK.md](AGENT_BENCHMARK.md) before a
 release candidate is promoted.
+
+Run `npm run test:regression:agent` and `npm run regression:agent` for the versioned structured
+input, plan, tool, and result contracts described in [AGENT_BENCHMARK.md](AGENT_BENCHMARK.md).
 
 Run `npm run benchmark:memory-locomo` for the long-term memory corpus described in
 [MEMORY_LOCOMO_BENCHMARK.md](MEMORY_LOCOMO_BENCHMARK.md).
