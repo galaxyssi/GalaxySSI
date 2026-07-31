@@ -108,6 +108,10 @@ final class VoiceWhisperModelDownloadService {
         return "BUNDLED_MODEL"
       case .missingDownloadURL:
         return "MISSING_DOWNLOAD_URL"
+      case .meteredDownloadConfirmationRequired:
+        return "METERED_CONFIRMATION_REQUIRED"
+      case .downloadUnavailable(_, let decision, _, _):
+        return decision.rawValue
       case .temporaryFileMissing:
         return "TEMPORARY_FILE_MISSING"
       case .downloadedFileTooSmall:

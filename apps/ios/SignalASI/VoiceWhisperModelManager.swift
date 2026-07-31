@@ -58,6 +58,13 @@ struct VoiceWhisperModelDownloadRequest: Equatable {
 enum VoiceWhisperModelManagerError: LocalizedError, Equatable {
   case bundledModelDoesNotNeedDownload(String)
   case missingDownloadURL(String)
+  case meteredDownloadConfirmationRequired(modelId: String)
+  case downloadUnavailable(
+    modelId: String,
+    decision: VoiceWhisperDownloadDecision,
+    requiredBytes: Int64,
+    availableBytes: Int64
+  )
   case temporaryFileMissing
   case downloadedFileTooSmall(modelId: String, bytes: Int64)
   case installFailed(modelId: String, failure: VoiceWhisperModelInstallFailure)
@@ -68,6 +75,10 @@ enum VoiceWhisperModelManagerError: LocalizedError, Equatable {
       return "Bundled Whisper model does not need downloading: \(modelId)"
     case .missingDownloadURL(let modelId):
       return "Whisper model download URL is missing: \(modelId)"
+    case .meteredDownloadConfirmationRequired(let modelId):
+      return "Metered network confirmation is required for Whisper model: \(modelId)"
+    case .downloadUnavailable(let modelId, let decision, let requiredBytes, let availableBytes):
+      return "Whisper model download is unavailable: \(modelId), \(decision.rawValue), required \(requiredBytes), available \(availableBytes)"
     case .temporaryFileMissing:
       return "Completed Whisper model temporary file is missing."
     case .downloadedFileTooSmall(let modelId, let bytes):
@@ -132,6 +143,8 @@ final class VoiceWhisperModelManager {
   private let storage: VoiceWhisperModelStorage
   private let bundle: Bundle
   private let sourceLocale: Locale
+  private let networkClass: () -> VoiceWhisperNetworkClass
+  private let availableFreeBytes: () -> Int64
   private let requestIdFactory: () -> String
   private let clockMillis: () -> Int64
   private let nativeVerificationLock = NSLock()
@@ -146,6 +159,8 @@ final class VoiceWhisperModelManager {
     storage: VoiceWhisperModelStorage? = nil,
     bundle: Bundle = .main,
     sourceLocale: Locale = .current,
+    networkClass: @escaping () -> VoiceWhisperNetworkClass = { .unknown },
+    availableFreeBytes: (() -> Int64)? = nil,
     requestIdFactory: @escaping () -> String = { UUID().uuidString },
     clockMillis: @escaping () -> Int64 = VoiceWhisperModelManager.defaultClockMillis
   ) {
@@ -159,6 +174,10 @@ final class VoiceWhisperModelManager {
     )
     self.bundle = bundle
     self.sourceLocale = sourceLocale
+    self.networkClass = networkClass
+    self.availableFreeBytes = availableFreeBytes ?? {
+      VoiceWhisperModelManager.defaultAvailableFreeBytes(at: modelsDirectory)
+    }
     self.requestIdFactory = requestIdFactory
     self.clockMillis = clockMillis
   }
@@ -256,6 +275,7 @@ final class VoiceWhisperModelManager {
         createdAtMillis: current.updatedAtMillis
       )
     }
+    try enforceDownloadPolicy(for: model, meteredConfirmed: allowsCellularAccess)
     try prepareDirectory()
     storage.invalidate(model)
     clearNativeFingerprint(for: model.id)
@@ -422,6 +442,31 @@ final class VoiceWhisperModelManager {
     )
   }
 
+  private func enforceDownloadPolicy(
+    for model: VoiceWhisperModelProfile,
+    meteredConfirmed: Bool
+  ) throws {
+    let policy = VoiceWhisperModelDownloadPolicy.evaluate(
+      profile: model,
+      network: networkClass(),
+      availableFreeBytes: availableFreeBytes(),
+      meteredConfirmed: meteredConfirmed
+    )
+    switch policy.decision {
+    case .allow:
+      return
+    case .requireMeteredConfirmation:
+      throw VoiceWhisperModelManagerError.meteredDownloadConfirmationRequired(modelId: model.id)
+    case .waitForNetwork, .insufficientSpace:
+      throw VoiceWhisperModelManagerError.downloadUnavailable(
+        modelId: model.id,
+        decision: policy.decision,
+        requiredBytes: policy.requiredFreeBytes,
+        availableBytes: policy.availableFreeBytes
+      )
+    }
+  }
+
   private func downloadSourceURLs(for model: VoiceWhisperModelProfile) -> [URL] {
     VoiceWhisperModelDownloadPolicy.orderedSources(profile: model, locale: sourceLocale)
       .compactMap(URL.init(string:))
@@ -568,6 +613,24 @@ final class VoiceWhisperModelManager {
 
   private static func defaultClockMillis() -> Int64 {
     Int64(Date().timeIntervalSince1970 * 1_000)
+  }
+
+  private static func defaultAvailableFreeBytes(at directory: URL) -> Int64 {
+    let target = directory.deletingLastPathComponent()
+    let keys: Set<URLResourceKey> = [
+      .volumeAvailableCapacityForImportantUsageKey,
+      .volumeAvailableCapacityKey,
+    ]
+    guard let values = try? target.resourceValues(forKeys: keys) else {
+      return -1
+    }
+    if let important = values.volumeAvailableCapacityForImportantUsage {
+      return important
+    }
+    if let capacity = values.volumeAvailableCapacity {
+      return Int64(capacity)
+    }
+    return -1
   }
 }
 
