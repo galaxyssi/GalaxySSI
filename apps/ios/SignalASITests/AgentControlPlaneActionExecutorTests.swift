@@ -157,6 +157,72 @@ extension SignalASIStoreTests {
     XCTAssertEqual(waiting?.payload["source_message_id"]?.stringValue, "73")
   }
 
+  func testActionExecutorAgentProviderRecordsNativeToolLifecycleEventsIntoRunStream() async throws {
+    let registration = actionExecutorRegistration()
+    var eventSink = AgentNativeToolLifecycleEventSink.none
+    let delegate = TestAgentActionExecutor { _, _ in
+      eventSink.emit(
+        AgentNativeToolLifecycleEvent(
+          stage: .progress,
+          toolId: "signalasi.workspace.file.read.text",
+          invocationId: "native-invoke",
+          stepId: "native-step",
+          conversationId: "conversation",
+          turnId: "message",
+          progressStage: "reading",
+          message: "Reading file",
+          percent: 64,
+          sequence: 5,
+          timestampMillis: 12_000
+        )
+      )
+      return AgentActionResult(actionId: "route-codex", success: true, message: "Done")
+    }
+    let provider = ActionExecutorAgentProvider(
+      registrationSource: { [registration] },
+      delegate: delegate
+    )
+    eventSink = provider.nativeToolLifecycleEventSink()
+    let adapter = try XCTUnwrap(try await provider.adapter(agentId: "codex"))
+    let request = AgentRunRequest(
+      conversationId: "conversation",
+      messageId: "message",
+      taskId: "turn",
+      runId: "run-native-tool",
+      goal: "Read a workspace file",
+      context: ["managed_team": .bool(true)],
+      idempotencyKey: "run-native-tool"
+    )
+    provider.prepare(
+      agentId: "codex",
+      request: request,
+      action: actionExecutorConnectorAction(id: "native-step"),
+      screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent")
+    )
+
+    _ = try await adapter.startRun(request)
+    var iterator = adapter.observeEvents(runId: request.runId).makeAsyncIterator()
+    let connected = await iterator.next()
+    let native = try XCTUnwrap(await iterator.next())
+    let completed = await iterator.next()
+
+    XCTAssertEqual(connected?.type, .agentConnected)
+    XCTAssertEqual(native.type, .toolProgress)
+    XCTAssertEqual(native.runId, "run-native-tool")
+    XCTAssertEqual(native.messageId, "message")
+    XCTAssertEqual(native.taskId, "message")
+    XCTAssertEqual(native.stepId, "native-step")
+    XCTAssertEqual(native.toolCallId, "native-invoke")
+    XCTAssertEqual(native.agentId, "signalasi-mobile")
+    XCTAssertEqual(native.deviceId, "desktop-device")
+    XCTAssertEqual(native.sequence, 5)
+    XCTAssertEqual(native.payload["timeline_kind"]?.stringValue, "tool")
+    XCTAssertEqual(native.payload["tool_id"]?.stringValue, "signalasi.workspace.file.read.text")
+    XCTAssertEqual(native.payload["progress_stage"]?.stringValue, "reading")
+    XCTAssertEqual(native.payload["percent"]?.intValue, 64)
+    XCTAssertEqual(completed?.type, .runCompleted)
+  }
+
   func actionExecutorConnectorAction(
     id: String = "route-codex",
     parameters: [String: String] = [:]

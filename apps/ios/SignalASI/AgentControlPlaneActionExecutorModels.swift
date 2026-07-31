@@ -284,6 +284,32 @@ final class ActionExecutorAgentProvider: AgentProvider {
   }
 
   @discardableResult
+  func recordNativeToolLifecycleEvent(
+    _ event: AgentNativeToolLifecycleEvent,
+    agentId: String = "signalasi-mobile",
+    deviceId: String = ""
+  ) -> AgentRunControlEvent? {
+    lock.lock()
+    let transports = Array(transportsByAgentId.values)
+    lock.unlock()
+    for transport in transports {
+      if let recorded = transport.recordNativeToolLifecycleEvent(event, agentId: agentId, deviceId: deviceId) {
+        return recorded
+      }
+    }
+    return nil
+  }
+
+  func nativeToolLifecycleEventSink(
+    agentId: String = "signalasi-mobile",
+    deviceId: String = ""
+  ) -> AgentNativeToolLifecycleEventSink {
+    AgentNativeToolLifecycleEventSink { [weak self] event in
+      _ = self?.recordNativeToolLifecycleEvent(event, agentId: agentId, deviceId: deviceId)
+    }
+  }
+
+  @discardableResult
   func acceptConnectorTerminalStatus(
     sourceMessageId: Int64,
     contactId: String,
@@ -500,6 +526,12 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     var contactId: String
   }
 
+  private struct RunEventContext {
+    var request: AgentRunRequest
+    var action: AgentAction
+    var registration: AgentRegistration
+  }
+
   private let registrationSource: () -> [AgentRegistration]
   private let delegate: AgentActionExecutor
   private let recoverableSource: () -> [AgentRecoverableRun]
@@ -508,6 +540,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   private var preparedByRunId: [String: PreparedAction] = [:]
   private var resultsByRunId: [String: AgentActionResult] = [:]
   private var activeByRunId: [String: ActiveRun] = [:]
+  private var eventContextsByRunId: [String: RunEventContext] = [:]
   private var eventBuffersByRunId: [String: [AgentRunControlEvent]] = [:]
   private var continuationsByRunId: [String: [UUID: AsyncStream<AgentRunControlEvent>.Continuation]] = [:]
 
@@ -538,6 +571,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   func discardPrepared(runId: String) {
     lock.lock()
     preparedByRunId.removeValue(forKey: runId)
+    eventContextsByRunId.removeValue(forKey: runId)
     trimIfNeeded(&resultsByRunId)
     lock.unlock()
   }
@@ -562,6 +596,14 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       lock.unlock()
       throw AgentControlPlaneAdapterError(message: "No prepared connector action for Run \(request.runId)")
     }
+    lock.lock()
+    eventContextsByRunId[request.runId] = RunEventContext(
+      request: request,
+      action: item.action,
+      registration: item.registration
+    )
+    trimIfNeeded(&eventContextsByRunId)
+    lock.unlock()
     emit(request: request, registration: item.registration, type: .agentConnected, sequence: 1)
     let result = delegate.execute(action: item.action, screen: item.screen)
     lock.lock()
@@ -594,6 +636,11 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
         "error": .string(result.success ? "" : result.message)
       ]
     )
+    if !(awaitingResponse && sourceMessageId > 0) {
+      lock.lock()
+      eventContextsByRunId.removeValue(forKey: request.runId)
+      lock.unlock()
+    }
     let remoteRunId = (result.metadata["remote_task_id"] ?? "")
       .ifBlank(result.metadata["source_message_id"] ?? "")
       .ifBlank(request.runId)
@@ -616,6 +663,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     lock.lock()
     preparedByRunId.removeValue(forKey: runId)
     let active = activeByRunId.removeValue(forKey: runId)
+    eventContextsByRunId.removeValue(forKey: runId)
     let current = resultsByRunId[runId]
     var metadata = current?.metadata ?? [:]
     metadata["cancelled"] = "true"
@@ -659,6 +707,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     resultsByRunId[runId] = resolved.result
     if resolved.shouldDeactivateRun {
       activeByRunId.removeValue(forKey: runId)
+      eventContextsByRunId.removeValue(forKey: runId)
     }
     lock.unlock()
     if let eventType = settlement.eventType {
@@ -760,6 +809,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     resultsByRunId[match.key] = resolved.result
     if resolved.shouldDeactivateRun {
       activeByRunId.removeValue(forKey: match.key)
+      eventContextsByRunId.removeValue(forKey: match.key)
     }
     lock.unlock()
     emit(
@@ -815,6 +865,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     steered = resolved
     resultsByRunId[match.key] = resolved.result
     activeByRunId.removeValue(forKey: match.key)
+    eventContextsByRunId.removeValue(forKey: match.key)
     lock.unlock()
     emit(
       request: active.request,
@@ -842,6 +893,7 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       nowMillis: nowMillis
     )
     resultsByRunId[runId] = timeout.result
+    eventContextsByRunId.removeValue(forKey: runId)
     lock.unlock()
     emit(
       request: active.request,
@@ -875,6 +927,31 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
     recoverableSource().filter { $0.handle.agentId == agentId }
   }
 
+  func recordNativeToolLifecycleEvent(
+    _ event: AgentNativeToolLifecycleEvent,
+    agentId: String,
+    deviceId: String
+  ) -> AgentRunControlEvent? {
+    lock.lock()
+    guard let context = matchedEventContextLocked(event) else {
+      lock.unlock()
+      return nil
+    }
+    lock.unlock()
+    let controlEvent = AgentNativeToolRunControlAdapter.controlEvent(
+      from: event,
+      runId: context.request.runId,
+      conversationId: context.request.conversationId,
+      messageId: event.turnId.ifBlank(context.request.messageId),
+      taskId: event.turnId.ifBlank(context.request.taskId),
+      agentId: agentId.ifBlank("signalasi-mobile"),
+      deviceId: deviceId.ifBlank(context.registration.deviceId),
+      sequence: event.sequence
+    )
+    append(controlEvent)
+    return controlEvent
+  }
+
   private func currentRegistration() throws -> AgentRegistration {
     guard let registration = registrationSource().first(where: { $0.agentId == agentId }) else {
       throw AgentControlPlaneAdapterError(message: "Agent registration is no longer available: \(agentId)")
@@ -900,13 +977,60 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
       sequence: sequence,
       payload: payload
     )
+    append(event)
+  }
+
+  private func append(_ event: AgentRunControlEvent) {
     lock.lock()
-    var buffer = eventBuffersByRunId[request.runId] ?? []
+    var buffer = eventBuffersByRunId[event.runId] ?? []
     buffer.append(event)
-    eventBuffersByRunId[request.runId] = Array(buffer.suffix(Self.eventReplay))
-    let continuations = continuationsByRunId[request.runId].map { Array($0.values) } ?? []
+    eventBuffersByRunId[event.runId] = Array(buffer.suffix(Self.eventReplay))
+    let continuations = continuationsByRunId[event.runId].map { Array($0.values) } ?? []
     lock.unlock()
     continuations.forEach { $0.yield(event) }
+  }
+
+  private func matchedEventContextLocked(_ event: AgentNativeToolLifecycleEvent) -> RunEventContext? {
+    let contexts = Array(eventContextsByRunId.values)
+    return contexts.first { matchesTurn(event, context: $0) && matchesConversation(event, context: $0) } ??
+      contexts.first { matchesInvocation(event, context: $0) && matchesConversation(event, context: $0) }
+  }
+
+  private func matchesTurn(_ event: AgentNativeToolLifecycleEvent, context: RunEventContext) -> Bool {
+    let turnId = event.turnId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !turnId.isEmpty else { return false }
+    let actionTurnId = context.action.parameters["_signalasi_turn_id"] ?? ""
+    return [
+      context.request.messageId,
+      context.request.taskId,
+      context.request.runId,
+      actionTurnId
+    ].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines) == turnId }
+  }
+
+  private func matchesInvocation(_ event: AgentNativeToolLifecycleEvent, context: RunEventContext) -> Bool {
+    let ids = [
+      event.invocationId,
+      event.stepId
+    ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    guard !ids.isEmpty else { return false }
+    let actionInvocationId = context.action.parameters["invocation_id"] ?? ""
+    let known = [
+      context.action.id,
+      actionInvocationId,
+      context.request.runId
+    ].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    return ids.contains { known.contains($0) }
+  }
+
+  private func matchesConversation(_ event: AgentNativeToolLifecycleEvent, context: RunEventContext) -> Bool {
+    let conversationId = event.conversationId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !conversationId.isEmpty else { return true }
+    let actionConversationId = context.action.parameters["_signalasi_conversation_id"] ?? ""
+    return [
+      context.request.conversationId,
+      actionConversationId
+    ].contains { $0.trimmingCharacters(in: .whitespacesAndNewlines) == conversationId }
   }
 
   private func trimIfNeeded<T>(_ map: inout [String: T]) {
