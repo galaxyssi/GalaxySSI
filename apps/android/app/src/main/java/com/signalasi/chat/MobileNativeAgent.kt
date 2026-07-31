@@ -6597,6 +6597,26 @@ class MobileNativeAgent(
 
     private fun saveTaskRecord(result: String = lastActionResult?.message.orEmpty()) {
         val plan = currentPlan ?: return
+        val goalMayBeStored = sensitiveMemoryReason(currentGoal, currentScreen) == null
+        val existingTask = taskStore.find(plan.planId)
+        val actionLog = (plan.actionHistory + plan.actions)
+            .distinctBy(AgentAction::id)
+            .map { action ->
+                buildString {
+                    append(action.status.name.lowercase(Locale.ROOT))
+                    append(": ")
+                    append(
+                        if (goalMayBeStored) {
+                            action.description.ifBlank { action.kind.name.lowercase(Locale.ROOT) }
+                        } else {
+                            action.kind.name.lowercase(Locale.ROOT)
+                        }
+                    )
+                }
+            }
+        val executionLog = (existingTask?.executionLog.orEmpty() + actionLog)
+            .distinct()
+            .takeLast(MAX_TASK_EXECUTION_LOG_ITEMS)
         val execution = AgentExecutionPresentationPolicy.location(
             route = plan.route,
             action = plan.actions.lastOrNull { action ->
@@ -6611,7 +6631,7 @@ class MobileNativeAgent(
             AgentTaskRecord(
                 taskId = plan.planId,
                 sessionId = activeConversationContext.conversationId.ifBlank { sessionId },
-                goal = if (sensitiveMemoryReason(currentGoal, currentScreen) == null) currentGoal else "Sensitive goal withheld",
+                goal = if (goalMayBeStored) currentGoal else "Sensitive goal withheld",
                 phase = phase,
                 routeKind = plan.route.kind,
                 targetTitle = plan.route.targetTitle.ifBlank { plan.selectedAgentOrModel },
@@ -6626,7 +6646,8 @@ class MobileNativeAgent(
                 result = result.ifBlank { plan.safetyReview.reason }.take(MAX_TASK_RESULT_CHARACTERS),
                 verification = plan.verificationResults.lastOrNull()?.let { verification ->
                     "${verification.observedApp}:${verification.observedTitle}:${verification.success}"
-                }.orEmpty()
+                }.orEmpty(),
+                executionLog = executionLog
             )
         )
     }
@@ -6762,6 +6783,7 @@ class MobileNativeAgent(
         private const val MAX_CONNECTOR_RESPONSE_CHARACTERS = 24_000
         private const val MAX_NATIVE_TOOL_EVIDENCE_CHARACTERS = 128 * 1_024
         private const val MAX_TASK_RESULT_CHARACTERS = 4_000
+        private const val MAX_TASK_EXECUTION_LOG_ITEMS = 200
         private const val MAX_SPECIALIZED_ADAPTER_REPLANS = 8
         private const val MAX_PHONE_DEVELOPMENT_REPAIRS = 2
         private val ACTIVE_EXECUTION_PHASES = setOf(

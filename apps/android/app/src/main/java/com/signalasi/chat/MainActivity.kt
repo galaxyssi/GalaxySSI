@@ -369,6 +369,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val historySaveRunnable = Runnable { enqueuePendingChatHistorySave() }
     private lateinit var mobileNativeAgent: MobileNativeAgent
     private lateinit var agentTranscriptStore: AgentTranscriptStore
+    private val agentTaskCenter by lazy(LazyThreadSafetyMode.NONE) {
+        AgentTaskCenter(SQLiteAgentTaskStore(this))
+    }
     private lateinit var globalSuperAgentRuntime: GlobalSuperAgentRuntime
     private var openLatestGlobalInsightWhenDelivered = false
     private var requestedGlobalInsightConversationId = ""
@@ -17667,6 +17670,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 textSize = 12f
                 setTypeface(null, android.graphics.Typeface.BOLD)
                 text = statusText
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dp(8)
+            })
+            addView(ImageButton(this@MainActivity).apply {
+                setImageResource(R.drawable.ic_more_horizontal)
+                imageTintList = android.content.res.ColorStateList.valueOf(
+                    getColorCompat(R.color.text_secondary)
+                )
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                setPadding(dp(7), dp(7), dp(7), dp(7))
+                background = null
+                contentDescription = getString(R.string.agent_task_center_actions)
+                setOnClickListener { anchor -> showAgentTaskCenterMenu(task, anchor) }
+            }, LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                marginStart = dp(4)
             })
             isClickable = true
             isFocusable = true
@@ -17675,8 +17696,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showAgentTaskDetails(task: AgentTaskRecord) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.agent_task_detail_title))
+            .setMessage(agentTaskDetailText(task))
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun agentTaskDetailText(task: AgentTaskRecord): String {
         val execution = AgentExecutionPresentationPolicy.location(task)
-        val detail = buildString {
+        return buildString {
             appendLine(task.goal)
             appendLine()
             appendLine("${getString(R.string.agent_task_detail_status)}: ${agentTaskStatusText(task)}")
@@ -17713,10 +17742,113 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 append(task.executionLog.joinToString("\n"))
             }
         }.trim()
+    }
+
+    private fun showAgentTaskCenterMenu(task: AgentTaskRecord, anchor: View) {
+        val actions = AgentTaskCenterPolicy.actions(task)
+        PopupMenu(this, anchor).apply {
+            actions.forEachIndexed { order, action ->
+                menu.add(0, action.ordinal, order, agentTaskCenterActionLabel(action))
+            }
+            setOnMenuItemClickListener { item ->
+                actions.firstOrNull { it.ordinal == item.itemId }?.let { action ->
+                    handleAgentTaskCenterAction(task, action)
+                    true
+                } ?: false
+            }
+            show()
+        }
+    }
+
+    private fun agentTaskCenterActionLabel(action: AgentTaskCenterAction): String =
+        getString(when (action) {
+            AgentTaskCenterAction.RETRY -> R.string.common_retry
+            AgentTaskCenterAction.COPY -> R.string.common_copy
+            AgentTaskCenterAction.VIEW_LOG -> R.string.agent_task_center_view_log
+            AgentTaskCenterAction.DELETE -> R.string.agent_task_center_delete
+        })
+
+    private fun handleAgentTaskCenterAction(
+        task: AgentTaskRecord,
+        action: AgentTaskCenterAction
+    ) {
+        when (action) {
+            AgentTaskCenterAction.RETRY -> retryAgentTask(task)
+            AgentTaskCenterAction.COPY -> {
+                getSystemService(ClipboardManager::class.java).setPrimaryClip(
+                    ClipData.newPlainText(
+                        getString(R.string.agent_task_detail_title),
+                        agentTaskDetailText(task)
+                    )
+                )
+                Toast.makeText(
+                    this,
+                    getString(R.string.agent_task_center_copied),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            AgentTaskCenterAction.VIEW_LOG -> showAgentTaskLog(task)
+            AgentTaskCenterAction.DELETE -> confirmDeleteAgentTask(task)
+        }
+    }
+
+    private fun retryAgentTask(task: AgentTaskRecord) {
+        if (!AgentTaskCenterPolicy.isReusableGoal(task.goal)) {
+            Toast.makeText(
+                this,
+                getString(R.string.agent_task_center_retry_unavailable),
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        val destination = agentTranscriptStore.resolveMergedConversationId(task.sessionId)
+        if (
+            destination != null &&
+            agentTranscriptStore.conversation(destination) != null
+        ) {
+            openAgentConversation(destination)
+        } else {
+            showMainTab(PAGE_AGENT)
+            createAgentConversation()
+        }
+        agentGoalInput.setText(task.goal)
+        agentGoalInput.setSelection(agentGoalInput.text.length)
+        agentGoalInput.post { submitAgentGoal() }
+    }
+
+    private fun showAgentTaskLog(task: AgentTaskRecord) {
+        val log = task.executionLog
+            .takeIf(List<String>::isNotEmpty)
+            ?.joinToString("\n")
+            ?: getString(R.string.agent_task_center_log_empty)
         android.app.AlertDialog.Builder(this)
-            .setTitle(getString(R.string.agent_task_detail_title))
-            .setMessage(detail)
+            .setTitle(getString(R.string.agent_task_center_log_title))
+            .setMessage(log)
             .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
+    private fun confirmDeleteAgentTask(task: AgentTaskRecord) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.agent_task_center_delete_title))
+            .setMessage(getString(R.string.agent_task_center_delete_message, task.goal))
+            .setPositiveButton(getString(R.string.common_delete)) { _, _ ->
+                val deleted = agentTaskCenter.deleteTask(task.taskId)
+                Toast.makeText(
+                    this,
+                    getString(
+                        if (deleted) {
+                            R.string.agent_task_center_deleted
+                        } else {
+                            R.string.agent_task_center_delete_failed
+                        }
+                    ),
+                    Toast.LENGTH_SHORT
+                ).show()
+                renderAgentRecentTasks(mobileNativeAgent.snapshot())
+                showAgentRecentTasksPage()
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
             .show()
     }
 

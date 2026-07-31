@@ -1739,6 +1739,17 @@
     <string name="agent_session_yesterday">Yesterday</string>
     <string name="agent_session_earlier">Earlier</string>
     <string name="agent_task_detail_timeline">Execution timeline</string>
+    <string name="agent_task_center_actions">Task actions</string>
+    <string name="agent_task_center_view_log">View log</string>
+    <string name="agent_task_center_delete">Delete task</string>
+    <string name="agent_task_center_copied">Task details copied</string>
+    <string name="agent_task_center_retry_unavailable">This task cannot be retried because its goal is unavailable</string>
+    <string name="agent_task_center_log_title">Execution log</string>
+    <string name="agent_task_center_log_empty">No execution log was recorded for this task.</string>
+    <string name="agent_task_center_delete_title">Delete task?</string>
+    <string name="agent_task_center_delete_message">Delete the task record for “%1$s”? The conversation will remain available.</string>
+    <string name="agent_task_center_deleted">Task deleted</string>
+    <string name="agent_task_center_delete_failed">The task could not be deleted</string>
     <string name="agent_session_input_tokens">Cloud input tokens</string>
     <string name="agent_session_output_tokens">Cloud output tokens</string>
     <string name="agent_session_context_compacted">Older context summarized</string>

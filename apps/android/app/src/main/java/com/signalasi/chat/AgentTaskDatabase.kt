@@ -173,6 +173,22 @@ internal class AgentTaskDatabase(
     }
 
     @Synchronized
+    fun deleteByTaskIds(values: Set<String>) {
+        val cleanValues = values.map(String::trim).filter(String::isNotBlank).distinct()
+        if (cleanValues.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            cleanValues.forEach { value ->
+                db.delete(TABLE_TASKS, "task_id = ?", arrayOf(value))
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
     fun clear() {
         writableDatabase.delete(TABLE_TASKS, null, null)
     }

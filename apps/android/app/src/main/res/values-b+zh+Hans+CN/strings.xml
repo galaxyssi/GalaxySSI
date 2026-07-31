@@ -1246,4 +1246,15 @@
     <string name="agent_no_reply_timeout_message">%1$s 未在预期时间内返回结果。可以重试、切换智能体或查看诊断。</string>
     <string name="agent_no_reply_unknown_title">没有得到有效结果</string>
     <string name="agent_no_reply_unknown_message">%1$s 已停止，但没有返回经过验证的结果。可以重试或查看诊断。</string>
+    <string name="agent_task_center_actions">任务操作</string>
+    <string name="agent_task_center_view_log">查看日志</string>
+    <string name="agent_task_center_delete">删除任务</string>
+    <string name="agent_task_center_copied">已复制任务详情</string>
+    <string name="agent_task_center_retry_unavailable">此任务的目标不可用，无法重试</string>
+    <string name="agent_task_center_log_title">执行日志</string>
+    <string name="agent_task_center_log_empty">此任务没有记录执行日志。</string>
+    <string name="agent_task_center_delete_title">删除任务？</string>
+    <string name="agent_task_center_delete_message">删除“%1$s”的任务记录？对应会话仍会保留。</string>
+    <string name="agent_task_center_deleted">任务已删除</string>
+    <string name="agent_task_center_delete_failed">未能删除任务</string>
 </resources>
