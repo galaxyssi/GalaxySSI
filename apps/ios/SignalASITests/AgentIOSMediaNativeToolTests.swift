@@ -213,4 +213,112 @@ extension SignalASIStoreTests {
     XCTAssertEqual(unavailableProvider.transcodeCalls, 0)
   }
 
+  func testAgentIOSAVFoundationMediaProviderBridgesFileMetadataAndPlayback() throws {
+    final class FakeMetadataInspector: AgentIOSMediaMetadataInspecting {
+      var implementationId = "fake.ios.media_metadata"
+      var availability: AgentNativeToolAvailability = .available
+      var inspectedURL: URL?
+      var inspectedContentUri = ""
+
+      func inspect(fileURL: URL, contentUri: String) throws -> AgentIOSMediaMetadataSnapshot {
+        inspectedURL = fileURL
+        inspectedContentUri = contentUri
+        return AgentIOSMediaMetadataSnapshot(
+          contentUri: contentUri,
+          contentType: "video/quicktime",
+          displayName: "clip.mov",
+          sizeBytes: 4,
+          durationMillis: 12_345,
+          width: 1_280,
+          height: 720,
+          rotationDegrees: 450,
+          hasAudio: true,
+          hasVideo: true
+        )
+      }
+    }
+
+    final class FakePlaybackOpener: AgentIOSMediaPlaybackOpening {
+      var implementationId = "fake.ios.media_playback"
+      var availability: AgentNativeToolAvailability = .available
+      var openedURL: URL?
+      var openedContentType = ""
+
+      func open(fileURL: URL, contentType: String) throws -> AgentIOSMediaPlaybackOpenResult {
+        openedURL = fileURL
+        openedContentType = contentType
+        return AgentIOSMediaPlaybackOpenResult(
+          launched: true,
+          action: "ios.media.open",
+          handlerPackage: "com.apple.UIKit"
+        )
+      }
+    }
+
+    let root = try temporaryDirectory("ios-avfoundation-media-provider")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let mediaURL = root.appendingPathComponent("clip.mov", isDirectory: false)
+    try Data([0, 1, 2, 3]).write(to: mediaURL)
+
+    let inspector = FakeMetadataInspector()
+    let opener = FakePlaybackOpener()
+    let provider = AgentIOSAVFoundationMediaProvider(
+      metadataInspector: inspector,
+      playbackOpener: opener,
+      nowMillis: { 9_000 }
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.mediaExecutableDefinitions(provider: provider, nowMillis: { 9_500 })
+    )
+    let contentContext = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSMediaNativeToolCatalog.contentUriPermission],
+      grantedConsents: [AgentIOSMediaNativeToolCatalog.contentUriReadConsent]
+    )
+    let playbackContext = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSMediaNativeToolCatalog.contentUriPermission],
+      grantedConsents: [
+        AgentIOSMediaNativeToolCatalog.contentUriReadConsent,
+        AgentIOSMediaNativeToolCatalog.mediaPlaybackConsent
+      ]
+    )
+    let fileUri = mediaURL.absoluteString
+
+    let metadata = registry.invoke(
+      AgentIOSMediaNativeToolCatalog.mediaMetadata,
+      input: ["content_uri": .string(fileUri)],
+      context: contentContext
+    )
+    let playback = registry.invoke(
+      AgentIOSMediaNativeToolCatalog.mediaPlaybackHandoff,
+      input: [
+        "content_uri": .string(fileUri),
+        "content_type": .string("video/quicktime")
+      ],
+      context: playbackContext
+    )
+    let androidOnlyContentUri = registry.invoke(
+      AgentIOSMediaNativeToolCatalog.mediaMetadata,
+      input: ["content_uri": .string("content://media/item-7")],
+      context: contentContext
+    )
+
+    XCTAssertTrue(metadata.isSuccess)
+    XCTAssertEqual(inspector.inspectedURL?.standardizedFileURL, mediaURL.standardizedFileURL)
+    XCTAssertEqual(inspector.inspectedContentUri, fileUri)
+    XCTAssertEqual(metadata.output["content_type"], .string("video/quicktime"))
+    XCTAssertEqual(metadata.output["duration_ms"], .int(12_345))
+    XCTAssertEqual(metadata.output["rotation_degrees"], .int(90))
+    XCTAssertEqual(metadata.output["observed_at_epoch_ms"], .int(9_000))
+    XCTAssertEqual(metadata.metadata["media_implementation"], .string("fake.ios.media_metadata"))
+    XCTAssertEqual(metadata.metadata["media_provider"], .string("signalasi.ios.avfoundation_media"))
+    XCTAssertTrue(playback.isSuccess)
+    XCTAssertEqual(opener.openedURL?.standardizedFileURL, mediaURL.standardizedFileURL)
+    XCTAssertEqual(opener.openedContentType, "video/quicktime")
+    XCTAssertEqual(playback.output["launched"], .bool(true))
+    XCTAssertEqual(playback.output["completed"], .bool(false))
+    XCTAssertEqual(playback.metadata["playback_implementation"], .string("fake.ios.media_playback"))
+    XCTAssertEqual(androidOnlyContentUri.status, .failed)
+    XCTAssertEqual(androidOnlyContentUri.error?.code, "unsupported_content_uri")
+  }
+
 }

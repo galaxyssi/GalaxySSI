@@ -91,7 +91,8 @@ enum AgentPhoneNativeToolCatalog {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
   ) -> [AgentPhoneNativeToolDefinition] {
-    workspaceDefinitions() +
+    let resolvedMediaProvider = defaultCatalogMediaProvider(nowMillis: nowMillis)
+    return workspaceDefinitions() +
       actionDefinitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis) +
       AgentIOSSystemNativeToolCatalog.definitions() +
       AgentIOSHardwareNativeToolCatalog.definitions() +
@@ -100,7 +101,7 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSVisibleCaptureNativeToolCatalog.definitions() +
       AgentIOSWebMediaNativeToolCatalog.definitions() +
       AgentIOSWebIntelligenceNativeToolCatalog.definitions() +
-      AgentIOSMediaNativeToolCatalog.definitions() +
+      AgentIOSMediaNativeToolCatalog.definitions(provider: resolvedMediaProvider) +
       AgentIOSSelfEvolutionNativeToolCatalog.definitions() +
       AgentIOSDesktopRemoteNativeToolCatalog.definitions() +
       AgentMcpNativeTools.definitions() +
@@ -254,9 +255,15 @@ enum AgentPhoneNativeToolCatalog {
     }
     return AgentIOSSignedFfmpegMediaProvider(
       runtime: AgentIOSOnDeviceFfmpegRuntimeAdapter(provider: onDeviceRuntimeProvider, nowMillis: nowMillis),
-      passthroughProvider: mediaProvider,
+      passthroughProvider: defaultCatalogMediaProvider(nowMillis: nowMillis),
       nowMillis: nowMillis
     )
+  }
+
+  private static func defaultCatalogMediaProvider(
+    nowMillis: @escaping () -> Int64
+  ) -> AgentIOSMediaNativeToolProviding {
+    AgentIOSAVFoundationMediaProvider(nowMillis: nowMillis)
   }
 
   private static func defaultNotificationProvider(
