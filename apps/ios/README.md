@@ -60,6 +60,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style task liveness signal action policy for pending connector consumption, recoverable run reconciliation, active timeout cleanup, and watchdog timeout forcing
 - Android-style task liveness workspace reducer for sweep-time stalled/timed-out event projection, progress recovery signals, heartbeat throttling, and bounded event journals
 - Android-style task workspace control reducer for cancellation transitions, permission-revocation pauses, execution cancellation intents, and bounded event journals
+- Android-style process-lifetime task supervisor for read-reasoning and side-effect lanes, foreground leases, cancellation checkpoints, durable resume hooks, watchdog sweeps, and late connector recovery
 - Android-style Agent workspace runtime metadata for parent/Agent/device/run identities, delivery mode, snapshots, permissions, handoffs, tool calls, checkpoints, artifacts, and Android store timestamp compatibility
 - Android-style late connector response reconciliation for authenticated remote results that arrive after local timeout and are bound to the original handoff
 - Android-style Agent workspace execution snapshot reducer for status projection, plan/result/error retention, tool call/artifact ledgers, permission and handoff merging, and remote sequence advancement
