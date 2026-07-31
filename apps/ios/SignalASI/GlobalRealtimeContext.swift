@@ -783,10 +783,74 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
 }
 
 struct GlobalRunReplanDecision: Codable, Equatable {
+  var goalState: GlobalGoalProgressState
   var summary: String
+  var cancelActionIds: Set<String>
+  var actions: [GlobalAutonomousAction]
+  var nextCheckHours: Int
+  var confidence: Double
 
-  init(summary: String = "") {
-    self.summary = summary
+  init(
+    goalState: GlobalGoalProgressState = .active,
+    summary: String = "",
+    cancelActionIds: Set<String> = [],
+    actions: [GlobalAutonomousAction] = [],
+    nextCheckHours: Int = 24,
+    confidence: Double = 0
+  ) {
+    self.goalState = goalState
+    self.summary = String(summary.prefix(2_000))
+    self.cancelActionIds = Set(cancelActionIds
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .sorted()
+      .prefix(12))
+    self.actions = Array(actions.prefix(6))
+    self.nextCheckHours = max(1, min(nextCheckHours, 24 * 30))
+    self.confidence = GlobalRealtimeMath.clamp01(confidence)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case goalState = "goal_state"
+    case summary
+    case cancelActionIds = "cancel_action_ids"
+    case actions
+    case nextCheckHours = "next_check_hours"
+    case confidence
+  }
+
+  enum LegacyCodingKeys: String, CodingKey {
+    case goalState
+    case cancelActionIds
+    case nextCheckHours
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let legacy = try? decoder.container(keyedBy: LegacyCodingKeys.self)
+    let legacyGoalState: GlobalGoalProgressState?
+    let legacyCancelActionIds: Set<String>?
+    let legacyNextCheckHours: Int?
+    if let legacy = legacy {
+      legacyGoalState = try legacy.decodeIfPresent(GlobalGoalProgressState.self, forKey: .goalState)
+      legacyCancelActionIds = try legacy.decodeIfPresent(Set<String>.self, forKey: .cancelActionIds)
+      legacyNextCheckHours = try legacy.decodeIfPresent(Int.self, forKey: .nextCheckHours)
+    } else {
+      legacyGoalState = nil
+      legacyCancelActionIds = nil
+      legacyNextCheckHours = nil
+    }
+    self.init(
+      goalState: try container.decodeIfPresent(GlobalGoalProgressState.self, forKey: .goalState) ??
+        legacyGoalState ?? .active,
+      summary: try container.decodeIfPresent(String.self, forKey: .summary) ?? "",
+      cancelActionIds: try container.decodeIfPresent(Set<String>.self, forKey: .cancelActionIds) ??
+        legacyCancelActionIds ?? [],
+      actions: try container.decodeIfPresent([GlobalAutonomousAction].self, forKey: .actions) ?? [],
+      nextCheckHours: try container.decodeIfPresent(Int.self, forKey: .nextCheckHours) ??
+        legacyNextCheckHours ?? 24,
+      confidence: try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0
+    )
   }
 }
 

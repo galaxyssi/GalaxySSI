@@ -61,6 +61,21 @@ final class GlobalModelUnderstandingTests: XCTestCase {
     XCTAssertEqual(decoded.longHorizonGoalId, "")
   }
 
+  func testRunReplanDecisionDecodesAndroidWireKeys() throws {
+    let data = #"{"goal_state":"BLOCKED","summary":"Waiting on resource","cancel_action_ids":["old-step"],"next_check_hours":9999,"confidence":1.2}"#.data(using: .utf8)!
+
+    let decoded = try JSONDecoder().decode(GlobalRunReplanDecision.self, from: data)
+    let encoded = try jsonObject(decoded) as? [String: Any]
+
+    XCTAssertEqual(decoded.goalState, .blocked)
+    XCTAssertEqual(decoded.summary, "Waiting on resource")
+    XCTAssertEqual(decoded.cancelActionIds, ["old-step"])
+    XCTAssertEqual(decoded.nextCheckHours, 720)
+    XCTAssertEqual(decoded.confidence, 1)
+    XCTAssertNotNil(encoded?["goal_state"])
+    XCTAssertNil(encoded?["goalState"])
+  }
+
   private func jsonObject<T: Encodable>(_ value: T) throws -> Any {
     let data = try JSONEncoder().encode(value)
     return try JSONSerialization.jsonObject(with: data)
