@@ -245,6 +245,7 @@ const state = {
 
 const elements = {
   history: $("#taskHistory"),
+  sidebarTaskSummary: $("#sidebarTaskSummary"),
   title: $("#conversationTitle"),
   taskState: $("#taskStateText"),
   route: $("#routeText"),
@@ -499,6 +500,20 @@ function conversationGroups() {
 
 function renderHistory() {
   const groups = conversationGroups();
+  const runningCount = groups.filter((group) =>
+    group.tasks.some((task) => !TERMINAL_STATES.has(task.status))
+  ).length;
+  elements.sidebarTaskSummary.textContent = runningCount > 0
+    ? `${runningCount}/${groups.length}`
+    : String(groups.length);
+  elements.sidebarTaskSummary.classList.toggle("active", runningCount > 0);
+  elements.sidebarTaskSummary.title = runningCount > 0
+    ? `${runningCount} ${t("running")}`
+    : t("Ready");
+  elements.sidebarTaskSummary.setAttribute(
+    "aria-label",
+    `${groups.length} ${t("Tasks")}; ${runningCount} ${t("running")}`
+  );
   if (!groups.length) {
     elements.history.innerHTML = `<div class="history-empty">${escapeHtml(t("Tasks will appear here after you send the first request."))}</div>`;
     return;
@@ -4119,7 +4134,10 @@ function bindEvents() {
     state.attachments.splice(Number(button.dataset.removeAttachment), 1);
     renderAttachmentTray();
   });
-  $$('[data-open-panel]').forEach((button) => button.addEventListener("click", () => openPanel(button.dataset.openPanel)));
+  $$('[data-open-panel]').forEach((button) => button.addEventListener("click", () => {
+    $("#workspaceMenu").hidden = true;
+    openPanel(button.dataset.openPanel);
+  }));
   $("#closeDrawer").addEventListener("click", closePanel);
   elements.backdrop.addEventListener("click", closePanel);
   $("#refreshAgentsButton").addEventListener("click", () =>
