@@ -26,6 +26,8 @@
     A10000000000000000000481 /* AgentOutboundAttachmentTransfer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */; };
     A10000000000000000000482 /* AgentNoReplyReason.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000482 /* AgentNoReplyReason.swift */; };
     A10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000483 /* AgentNoReplyReasonTests.swift */; };
+    A10000000000000000000484 /* AgentResponseSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000484 /* AgentResponseSections.swift */; };
+    A10000000000000000000485 /* AgentResponseSectionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000485 /* AgentResponseSectionsTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -338,6 +340,8 @@
     A20000000000000000000481 /* AgentOutboundAttachmentTransfer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOutboundAttachmentTransfer.swift; sourceTree = "<group>"; };
     A20000000000000000000482 /* AgentNoReplyReason.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReason.swift; sourceTree = "<group>"; };
     A20000000000000000000483 /* AgentNoReplyReasonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNoReplyReasonTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000484 /* AgentResponseSections.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSections.swift; sourceTree = "<group>"; };
+    A20000000000000000000485 /* AgentResponseSectionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentResponseSectionsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
@@ -737,6 +741,7 @@
         A20000000000000000000139 /* AgentDeviceProfileModels.swift */,
         A20000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift */,
         A20000000000000000000141 /* AgentRichContentModels.swift */,
+        A20000000000000000000484 /* AgentResponseSections.swift */,
         A20000000000000000000142 /* AgentDesktopArtifactModels.swift */,
         A20000000000000000000143 /* AgentDesktopArtifactActionModels.swift */,
         A20000000000000000000144 /* AgentRuntimeArtifactUiModels.swift */,
@@ -926,6 +931,7 @@
         A20000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift */,
         A20000000000000000000255 /* AgentActiveTurnPolicyTests.swift */,
         A20000000000000000000256 /* AgentResponseSelfCheckTests.swift */,
+        A20000000000000000000485 /* AgentResponseSectionsTests.swift */,
         A20000000000000000000257 /* AgentTaskBudgetTests.swift */,
         A20000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift */,
         A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */,
@@ -1131,6 +1137,7 @@
         A10000000000000000000139 /* AgentDeviceProfileModels.swift in Sources */,
         A10000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift in Sources */,
         A10000000000000000000141 /* AgentRichContentModels.swift in Sources */,
+        A10000000000000000000484 /* AgentResponseSections.swift in Sources */,
         A10000000000000000000142 /* AgentDesktopArtifactModels.swift in Sources */,
         A10000000000000000000143 /* AgentDesktopArtifactActionModels.swift in Sources */,
         A10000000000000000000144 /* AgentRuntimeArtifactUiModels.swift in Sources */,
@@ -1336,6 +1343,7 @@
         A10000000000000000000254 /* AgentWorkspaceBoundsPolicyTests.swift in Sources */,
         A10000000000000000000255 /* AgentActiveTurnPolicyTests.swift in Sources */,
         A10000000000000000000256 /* AgentResponseSelfCheckTests.swift in Sources */,
+        A10000000000000000000485 /* AgentResponseSectionsTests.swift in Sources */,
         A10000000000000000000257 /* AgentTaskBudgetTests.swift in Sources */,
         A10000000000000000000258 /* GlobalBackgroundExecutionBudgetTests.swift in Sources */,
         A10000000000000000000259 /* GlobalModelCallBudgetTests.swift in Sources */,
