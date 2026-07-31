@@ -51,6 +51,7 @@
     A10000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */; };
     A10000000000000000000322 /* AgentNativeToolActionExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */; };
     A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */; };
+    A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */; };
     A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000117 /* AgentPlanRunModels.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
@@ -297,6 +298,7 @@
     A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentHomeAssistantNativeToolPlanBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolActionExecutor.swift; sourceTree = "<group>"; };
     A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolLifecycleEvents.swift; sourceTree = "<group>"; };
+    A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolRunControlAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000117 /* AgentPlanRunModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanRunModels.swift; sourceTree = "<group>"; };
     A20000000000000000000118 /* AgentAutomationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
@@ -544,6 +546,7 @@
         A20000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift */,
         A20000000000000000000322 /* AgentNativeToolActionExecutor.swift */,
         A20000000000000000000325 /* AgentNativeToolLifecycleEvents.swift */,
+        A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */,
         A20000000000000000000117 /* AgentPlanRunModels.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
@@ -888,6 +891,7 @@
         A10000000000000000000321 /* AgentHomeAssistantNativeToolPlanBridge.swift in Sources */,
         A10000000000000000000322 /* AgentNativeToolActionExecutor.swift in Sources */,
         A10000000000000000000325 /* AgentNativeToolLifecycleEvents.swift in Sources */,
+        A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */,
         A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
