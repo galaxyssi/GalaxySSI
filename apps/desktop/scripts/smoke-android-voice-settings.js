@@ -64,7 +64,9 @@ function prefString(xml, name, fallback = "") {
 }
 
 async function waitForRoundtrip(token) {
-  for (let attempt = 0; attempt < 12; attempt += 1) {
+  // A first launch after isolated state reset can spend tens of seconds rebuilding
+  // secure stores and the local Agent runtime on older devices.
+  for (let attempt = 0; attempt < 60; attempt += 1) {
     await sleep(700);
     const xml = readAppFile(debugPrefs);
     const raw = prefString(xml, "voice_settings_roundtrip_result", "");
