@@ -24,6 +24,11 @@ struct GuardedModelAgentPlanner {
     if fallback.plannerProfile.hasPrefix("specialized-adapter:") {
       return fallback
     }
+    if safetySettings.localActionsAllowed,
+       safetySettings.deviceControlAllowed,
+       let directNativeToolPlan = AgentDirectNativeToolPlanner.plan(request: request.planRequest) {
+      return directNativeToolPlan
+    }
     if !normalizedSettings.enabled || !safetySettings.connectorCallsAllowed {
       return fallback.copyForGuardedPlanner(profile: "rule-based-local")
     }

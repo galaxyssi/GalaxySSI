@@ -57,6 +57,41 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertTrue(provider.invocations.isEmpty)
   }
 
+  func testGuardedModelAgentPlannerUsesDirectNativeToolPlanBeforeModel() async throws {
+    let battery = try nativeToolDescriptor(id: AgentIOSHardwareNativeToolCatalog.batteryStatus, risk: .low)
+    let provider = RecordingModelPlanningProvider(raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#)
+    let planner = GuardedModelAgentPlanner(provider: provider, modelProfile: "planner-model")
+
+    let plan = await planner.plan(
+      request: promptRequest(
+        goal: "Read the current battery level on this phone.",
+        nativeTools: [battery]
+      ),
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan()
+    )
+
+    XCTAssertEqual(provider.invocations.count, 0)
+    XCTAssertEqual(plan.plannerProfile, "rule-based-direct-native-tool")
+    XCTAssertEqual(plan.actions.singleValue().kind, .callNativeTool)
+    XCTAssertEqual(plan.actions.singleValue().parameters["tool_id"], AgentIOSHardwareNativeToolCatalog.batteryStatus)
+    XCTAssertTrue(plan.validation.valid)
+
+    let blocked = await planner.plan(
+      request: promptRequest(
+        goal: "Read the current battery level on this phone.",
+        nativeTools: [battery]
+      ),
+      settings: AgentModelPlannerSettings(enabled: true),
+      safetySettings: AgentSafetySettings(deviceControlAllowed: false),
+      fallbackPlan: fallbackPlan()
+    )
+
+    XCTAssertEqual(provider.invocations.count, 1)
+    XCTAssertEqual(blocked.plannerProfile, "guarded-model:planner-model")
+    XCTAssertEqual(blocked.actions.singleValue().kind, .readScreen)
+  }
+
   func testGuardedModelAgentPlannerFallsBackOnProviderErrorAndInvalidPlan() async throws {
     let throwingProvider = RecordingModelPlanningProvider(error: .unavailable("offline"))
     let throwingPlanner = GuardedModelAgentPlanner(provider: throwingProvider, modelProfile: "planner-model")
@@ -134,6 +169,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
   }
 
   private func promptRequest(
+    goal: String = "Plan this task",
     screen: AgentScreenContext = AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
     requirements: AgentTaskRequirements = AgentTaskRequirements(mode: .quality),
     nativeTools: [AgentNativeToolDescriptor] = [],
@@ -141,7 +177,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
   ) -> AgentModelPlanningPromptRequest {
     AgentModelPlanningPromptRequest(
       planRequest: AgentPlanRequest(
-        goal: "Plan this task",
+        goal: goal,
         screen: screen,
         targets: [target()],
         nativeTools: nativeTools,
