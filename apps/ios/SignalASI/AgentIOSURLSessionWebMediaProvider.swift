@@ -32,6 +32,7 @@ protocol AgentIOSURLSessionWebTransporting {
 
 enum AgentIOSURLSessionWebError: Error {
   case invalidURL
+  case invalidSearchQuery
   case invalidMethod
   case invalidTimeout
   case invalidLimit
@@ -177,13 +178,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
 
   func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
     switch operation {
-    case .contentExtract, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
+    case .contentExtract, .webSearch, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
       return .available
-    case .webSearch:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: "iOS Web search requires a configured search provider."
-      )
     case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose:
       return AgentNativeToolAvailability(
         status: .requiresSetup,
@@ -208,6 +204,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     invocation: AgentNativeToolInvocation
   ) -> AgentNativeToolExecutionResult {
     switch operation {
+    case .webSearch:
+      return executeSearch(input: input, invocation: invocation)
     case .webHead:
       return executeWeb(operation: operation, input: input, invocation: invocation, method: .head)
     case .webFetch:
@@ -224,13 +222,83 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         code: "unexpected_provider_call",
         message: "content.extract is handled by the iOS WebMedia executor."
       )
-    case .webSearch, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,
-         .fileDownload, .webDownload, .ocrRecognizeContent:
+    case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose, .fileDownload, .webDownload, .ocrRecognizeContent:
       return AgentNativeToolExecutionResult.failure(
         code: "web_media_provider_unavailable",
         message: "The iOS URLSession WebMedia provider does not implement \(operation.rawValue).",
         retryable: false
       )
+    }
+  }
+
+  private func executeSearch(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    do {
+      let query = string(input, "query", limit: 1_024)
+      guard !query.isEmpty else {
+        throw AgentIOSURLSessionWebError.invalidSearchQuery
+      }
+      let requestedMaxResults = input["max_results"]?.intValue ?? 5
+      let maxResults = Int(max(Int64(1), min(requestedMaxResults, Int64(10))))
+      let timeoutMillis = try boundedTimeout(input, invocation: invocation)
+      let deadline = min(invocation.startedAtEpochMillis + timeoutMillis, invocation.deadlineEpochMillis)
+      let endpoints = try searchEndpoints(query: query, maxResults: maxResults)
+      var lastError: AgentIOSURLSessionWebError?
+
+      for (index, endpoint) in endpoints.enumerated() {
+        if invocation.isCancellationRequested {
+          throw AgentIOSURLSessionWebError.cancelled
+        }
+        let remaining = min(deadline - nowMillis(), invocation.remainingTimeMillis)
+        guard remaining >= 250 else { break }
+        do {
+          let resource = try requestResource(
+            requestedURL: endpoint.url,
+            method: .get,
+            maxBodyBytes: AgentIOSWebMediaNativeToolCatalog.maxFetchBytes,
+            timeoutMillis: min(4_000, remaining),
+            invocation: invocation
+          )
+          let charset = charsetName(from: resource.selectedHeaders)
+          let html = decode(resource.body, charset: charset)
+          let results = parseSearchResults(html, maxResults: maxResults)
+          if !results.isEmpty {
+            var output = commonOutput(resource)
+            output["query"] = .string(query)
+            output["results"] = .array(results.map { result in
+              .object([
+                "title": .string(result.title),
+                "url": .string(result.url)
+              ])
+            })
+            output["result_count"] = .int(Int64(results.count))
+            var resultMetadata = metadata(operation: .webSearch, method: .get)
+            resultMetadata["provider"] = .string(endpoint.provider)
+            resultMetadata["fallback_count"] = .int(Int64(index))
+            return AgentNativeToolExecutionResult.success(
+              output: output,
+              message: message(.webSearch, method: .get),
+              metadata: resultMetadata
+            )
+          }
+        } catch let error as AgentIOSURLSessionWebError {
+          lastError = error
+        }
+      }
+      if let lastError {
+        return failure(lastError)
+      }
+      return failure(
+        "search_no_results",
+        "Public search providers returned no readable results",
+        retryable: true
+      )
+    } catch let error as AgentIOSURLSessionWebError {
+      return failure(error)
+    } catch {
+      return failure(.transportFailed(error.localizedDescription))
     }
   }
 
@@ -284,6 +352,131 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     } catch {
       return failure(.transportFailed(error.localizedDescription))
     }
+  }
+
+  private func searchEndpoints(query: String, maxResults: Int) throws -> [(provider: String, url: URL)] {
+    let orderedProviders: [String] = query.unicodeScalars.contains { $0.value > 127 }
+      ? ["baidu", "bing", "duckduckgo"]
+      : ["bing", "baidu", "duckduckgo"]
+    return try orderedProviders.map { provider in
+      let components: URLComponents
+      switch provider {
+      case "baidu":
+        components = searchComponents(
+          scheme: "https",
+          host: "www.baidu.com",
+          path: "/s",
+          queryItems: [
+            URLQueryItem(name: "wd", value: query),
+            URLQueryItem(name: "rn", value: String(maxResults))
+          ]
+        )
+      case "duckduckgo":
+        components = searchComponents(
+          scheme: "https",
+          host: "html.duckduckgo.com",
+          path: "/html/",
+          queryItems: [URLQueryItem(name: "q", value: query)]
+        )
+      default:
+        components = searchComponents(
+          scheme: "https",
+          host: "cn.bing.com",
+          path: "/search",
+          queryItems: [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "count", value: String(maxResults))
+          ]
+        )
+      }
+      guard let url = components.url else {
+        throw AgentIOSURLSessionWebError.invalidURL
+      }
+      return (provider, try validatedPublicHTTPSURL(url.absoluteString))
+    }
+  }
+
+  private func searchComponents(
+    scheme: String,
+    host: String,
+    path: String,
+    queryItems: [URLQueryItem]
+  ) -> URLComponents {
+    var components = URLComponents()
+    components.scheme = scheme
+    components.host = host
+    components.path = path
+    components.queryItems = queryItems
+    return components
+  }
+
+  private func parseSearchResults(_ html: String, maxResults: Int) -> [AgentIOSWebSearchResult] {
+    let patterns = [
+      #"<div[^>]+class=["'][^"']*b_algoheader[^"']*["'][^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h2[^>]*>(.*?)</h2>"#,
+      #"<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
+      #"<li[^>]+class=["'][^"']*b_algo[^"']*["'][^>]*>.*?<h2[^>]*>\s*<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
+      #"<h3[^>]+class=["'][^"']*(?:c-title|\bt\b)[^"']*["'][^>]*>.*?<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>"#,
+      #"<a[^>]+href=["']([^"']+)["'][^>]*>\s*<h3[^>]*>(.*?)</h3>"#
+    ]
+    let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
+    var seenURLs: Set<String> = []
+    var results: [AgentIOSWebSearchResult] = []
+    for pattern in patterns {
+      guard let regex = try? NSRegularExpression(
+        pattern: pattern,
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+      ) else {
+        continue
+      }
+      for match in regex.matches(in: html, options: [], range: nsRange) {
+        guard results.count < maxResults,
+              match.numberOfRanges >= 3,
+              let urlRange = Range(match.range(at: 1), in: html),
+              let titleRange = Range(match.range(at: 2), in: html),
+              let url = normalizedSearchResultURL(String(html[urlRange])) else {
+          continue
+        }
+        let title = String(readableText(String(html[titleRange])).prefix(4_096))
+        guard !title.isEmpty, !seenURLs.contains(url) else {
+          continue
+        }
+        seenURLs.insert(url)
+        results.append(AgentIOSWebSearchResult(title: title, url: url))
+      }
+      if results.count >= maxResults {
+        break
+      }
+    }
+    return results
+  }
+
+  private func normalizedSearchResultURL(_ value: String) -> String? {
+    let decoded = decodeHTMLEntities(value).trimmingCharacters(in: .whitespacesAndNewlines)
+    let candidate: String
+    if decoded.hasPrefix("//") {
+      candidate = "https:\(decoded)"
+    } else if decoded.hasPrefix("/") {
+      candidate = duckDuckGoRedirectTarget(decoded) ?? decoded
+    } else {
+      candidate = duckDuckGoRedirectTarget(decoded) ?? decoded
+    }
+    let lower = candidate.lowercased()
+    guard lower.hasPrefix("http://") || lower.hasPrefix("https://") else {
+      return nil
+    }
+    return String(candidate.prefix(Int(AgentIOSWebMediaNativeToolCatalog.maxUrlCharacters)))
+  }
+
+  private func duckDuckGoRedirectTarget(_ value: String) -> String? {
+    let urlString = value.hasPrefix("/")
+      ? "https://duckduckgo.com\(value)"
+      : value
+    guard let components = URLComponents(string: urlString),
+          let target = components.queryItems?.first(where: { $0.name == "uddg" })?.value,
+          !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return nil
+    }
+    return decodeHTMLEntities(target).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private func requestResource(
@@ -561,6 +754,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     method: AgentIOSURLSessionWebRequest.Method
   ) -> String {
     switch operation {
+    case .webSearch:
+      return "Public web search completed"
     case .webHead:
       return "Public HTTPS resource inspected"
     case .webFetch:
@@ -569,7 +764,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return method == .head ? "Public HTTPS HEAD request completed" : "Public HTTPS GET request completed"
     case .webOpen, .browserRender:
       return "Public HTTPS page extracted"
-    case .contentExtract, .webSearch, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,
+    case .contentExtract, .browserSessionCreate, .browserSessionNavigate, .browserSessionClose,
          .fileDownload, .webDownload, .ocrRecognizeContent:
       return "WebMedia operation completed"
     }
@@ -579,6 +774,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     switch error {
     case .invalidURL:
       return failure("invalid_url", "WebMedia tools only accept public HTTPS URLs")
+    case .invalidSearchQuery:
+      return failure("invalid_query", "Search query must not be blank")
     case .invalidMethod:
       return failure("invalid_method", "HTTP method must be GET or HEAD")
     case .invalidTimeout:
@@ -768,6 +965,16 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
+  private func decodeHTMLEntities(_ source: String) -> String {
+    source
+      .replacingOccurrences(of: "&nbsp;", with: " ", options: [.caseInsensitive])
+      .replacingOccurrences(of: "&amp;", with: "&", options: [.caseInsensitive])
+      .replacingOccurrences(of: "&lt;", with: "<", options: [.caseInsensitive])
+      .replacingOccurrences(of: "&gt;", with: ">", options: [.caseInsensitive])
+      .replacingOccurrences(of: "&quot;", with: "\"", options: [.caseInsensitive])
+      .replacingOccurrences(of: "&#39;", with: "'", options: [.caseInsensitive])
+  }
+
   private func boundedText(_ value: String, maxCharacters: Int64) -> String {
     String(value.prefix(Int(max(0, maxCharacters))))
   }
@@ -789,6 +996,11 @@ private struct AgentIOSURLSessionWebRedirect {
   var statusCode: Int
   var fromURL: String
   var toURL: String
+}
+
+private struct AgentIOSWebSearchResult {
+  var title: String
+  var url: String
 }
 
 private struct AgentIOSURLSessionWebResource {

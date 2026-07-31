@@ -332,7 +332,19 @@ extension SignalASIStoreTests {
     let textBody = Data("hello".utf8)
     let jsonBody = Data("{\"ok\":true}".utf8)
     let htmlBody = Data("<html><body><h1>Hello&nbsp;ASI</h1><script>secret()</script><p>Done</p></body></html>".utf8)
+    let searchBody = Data("""
+      <html><body>
+      <li class='b_algo'><h2><a href='https://docs.signalasi.example'>SignalASI Docs</a></h2></li>
+      <a class='result__a' href='/l/?uddg=https%3A%2F%2Fblog.signalasi.example'>SignalASI Blog</a>
+      </body></html>
+      """.utf8)
     let transport = FakeURLSessionWebTransport(responses: [
+      response(
+        statusCode: 200,
+        url: "https://cn.bing.com/search?q=SignalASI&count=2",
+        headers: ["content-type": "text/html; charset=utf-8"],
+        body: searchBody
+      ),
       response(
         statusCode: 302,
         url: "https://signalasi.example/start",
@@ -379,7 +391,7 @@ extension SignalASIStoreTests {
     XCTAssertEqual(defaultFetch.descriptor.availability.status, .available)
     XCTAssertEqual(defaultFetch.provenanceMetadata["network_policy"], "public_https_urlsession_revalidated_v1")
     XCTAssertEqual(defaultFetch.provenanceMetadata["redirect_policy"], "manual_revalidate_each_hop")
-    XCTAssertEqual(defaultSearch.descriptor.availability.status, .requiresSetup)
+    XCTAssertEqual(defaultSearch.descriptor.availability.status, .available)
 
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
@@ -390,6 +402,12 @@ extension SignalASIStoreTests {
     )
     let hooks = AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
 
+    let search = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.webSearch,
+      input: ["query": .string("SignalASI"), "max_results": .int(2)],
+      context: context,
+      hooks: hooks
+    )
     let fetched = registry.invoke(
       AgentIOSWebMediaNativeToolCatalog.webFetch,
       input: ["url": .string("https://signalasi.example/start"), "max_bytes": .int(1_024)],
@@ -417,6 +435,15 @@ extension SignalASIStoreTests {
       context: context,
       hooks: hooks
     )
+
+    XCTAssertTrue(search.isSuccess)
+    XCTAssertEqual(search.output["query"], .string("SignalASI"))
+    XCTAssertEqual(search.output["result_count"], .int(2))
+    XCTAssertEqual(search.metadata["provider"], .string("bing"))
+    XCTAssertEqual(search.metadata["fallback_count"], .int(0))
+    let searchResults = try XCTUnwrap(search.output["results"]?.arrayValue)
+    XCTAssertEqual(searchResults.first?.objectValue?["url"], .string("https://docs.signalasi.example"))
+    XCTAssertEqual(searchResults.last?.objectValue?["url"], .string("https://blog.signalasi.example"))
 
     XCTAssertTrue(fetched.isSuccess)
     XCTAssertEqual(fetched.output["method"], .string("get"))
@@ -449,9 +476,10 @@ extension SignalASIStoreTests {
     XCTAssertEqual(opened.metadata["javascript"], .bool(false))
     XCTAssertEqual(
       transport.requests.map(\.method),
-      [.get, .get, .head, .get, .get]
+      [.get, .get, .get, .head, .get, .get]
     )
-    XCTAssertEqual(transport.requests[1].url.absoluteString, "https://signalasi.example/final")
+    XCTAssertTrue(transport.requests[0].url.absoluteString.hasPrefix("https://cn.bing.com/search?"))
+    XCTAssertEqual(transport.requests[2].url.absoluteString, "https://signalasi.example/final")
   }
 
   func testAgentIOSURLSessionWebMediaProviderRejectsNonTextResponses() throws {
