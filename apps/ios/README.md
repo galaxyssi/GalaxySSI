@@ -119,6 +119,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style connector route selection for reasoning-capable Agent/model targets and routed fallbacks
 - Android-style agent resource catalog projection for callable targets, system tools, and native tools
 - Android-style global realtime context projection for cognition, research, autonomous runs, long-horizon goals, and event-pipeline health with secret-safe model prompt rendering
+- Android-style iOS global autonomous action authority and graph policy for host-owned proposal normalization, dependency resolution, cycle rejection, ready action ordering, and lease reservation
 - Android-style iOS global proactive discovery policy for cross-topic conflicts, synthesis candidates, durable-goal stalls, material risks, high-value opportunities, daily task budgets, scan leases, changed-finding cooldowns, and backup-safe discovery state codec
 - Android-style routing requirement analyzer for live data, private/offline, background, long-running, and Chinese task signals
 - Android-style phone capability catalog with iOS 15+ permission, consent, availability, and native coverage boundaries
