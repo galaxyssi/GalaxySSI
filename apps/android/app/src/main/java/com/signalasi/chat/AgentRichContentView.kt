@@ -1097,31 +1097,50 @@ class AgentRichContentView(
                 setPadding(0, dp(5), 0, dp(5))
             })
         }
-        val actionRow = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        val actionRows = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
         }
-        block.actions.forEachIndexed { index, action ->
-            actionRow.addView(Button(activity).apply {
-                text = action.label
-                textSize = 14f
-                isAllCaps = false
-                minWidth = 0
-                minimumWidth = 0
-                setPadding(dp(6), 0, dp(6), 0)
-                val confirm = action.verb == "approve_task"
-                setTextColor(Color.parseColor(if (confirm) "#087F69" else "#33404D"))
-                background = roundedBackground(
-                    if (confirm) "#EFFAF8" else "#F4F6F8",
-                    6f,
-                    if (confirm) "#0A9480" else "#D9E0E7"
-                )
-                setOnClickListener { onAction(action) }
-            }, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
-                if (index > 0) marginStart = dp(8)
+        val columns = if (block.actions.size > 2) 2 else block.actions.size.coerceAtLeast(1)
+        block.actions.chunked(columns).forEachIndexed { rowIndex, rowActions ->
+            actionRows.addView(LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                rowActions.forEachIndexed { index, action ->
+                    addView(Button(activity).apply {
+                        text = action.label
+                        textSize = 14f
+                        isAllCaps = false
+                        minWidth = 0
+                        minimumWidth = 0
+                        setPadding(dp(6), 0, dp(6), 0)
+                        val scopedDecision = action.verb in setOf(
+                            "decide_task_permission",
+                            "decide_remote_task_permission"
+                        )
+                        val denied = action.value == AgentPermissionChoice.DENY_ALWAYS.wireValue ||
+                            action.value.contains(
+                                "\"decision_scope\":\"${AgentPermissionChoice.DENY_ALWAYS.wireValue}\""
+                            )
+                        val confirm = scopedDecision && !denied
+                        setTextColor(Color.parseColor(if (confirm) "#087F69" else "#33404D"))
+                        background = roundedBackground(
+                            if (confirm) "#EFFAF8" else "#F4F6F8",
+                            6f,
+                            if (confirm) "#0A9480" else "#D9E0E7"
+                        )
+                        setOnClickListener { onAction(action) }
+                    }, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
+                        if (index > 0) marginStart = dp(8)
+                    })
+                }
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                if (rowIndex > 0) topMargin = dp(8)
             })
         }
-        addView(actionRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+        addView(actionRows, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin = dp(10)
         })
     }

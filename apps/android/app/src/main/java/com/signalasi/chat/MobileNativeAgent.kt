@@ -559,7 +559,9 @@ class MobileNativeAgent(
     ): AgentReputationRecordResult = reputationLedger.record(attestation)
 
     fun startNewConversation(conversationId: String): AgentUiState {
-        PhoneExecutionAuthority.requestCancellation(sessionId)
+        val previousSessionId = sessionId
+        PhoneExecutionAuthority.requestCancellation(previousSessionId)
+        confirmationConsentStore.endSession(previousSessionId)
         sessionId = UUID.randomUUID().toString()
         PhoneExecutionAuthority.clearCancellation(sessionId)
         activeConversationContext = AgentConversationContext(conversationId, "", emptyList(), false)
@@ -668,7 +670,10 @@ class MobileNativeAgent(
         val scopedInput = AgentWorkspaceScope.bindToolInput(toolId, input, workspaceId)
         val confirmationTier = AgentConfirmationPolicy.tier(action)
         val rememberedConsent = confirmationTier == AgentConfirmationTier.CONFIRM_ONCE &&
-            confirmationConsentStore.isRemembered(AgentConfirmationPolicy.consentKey(action))
+            confirmationConsentStore.decision(
+                AgentConfirmationPolicy.consentKey(action),
+                sessionId
+            ).allowed
         val grantedConsents = if (
             userConfirmed || confirmationTier == AgentConfirmationTier.DIRECT || rememberedConsent
         ) {
@@ -1868,7 +1873,7 @@ class MobileNativeAgent(
             registrations = connectorRegistry.registrations(),
             reputation = reputationLedger
         )
-        val safetyReview = safetyPolicy.review(draftPlan)
+        val safetyReview = safetyPolicy.review(draftPlan, sessionId)
         if (activeTaskExecutionMode == AgentTaskExecutionMode.PLAN_ONLY) {
             val proposedPlan = draftPlan.copy(
                 executionMode = AgentTaskExecutionMode.PLAN_ONLY,
@@ -1949,16 +1954,23 @@ class MobileNativeAgent(
         return snapshot()
     }
 
-    fun approveNextAction(highRiskConfirmed: Boolean = false): AgentUiState =
-        reconcileExecutionLoop(approveNextActionInternal(highRiskConfirmed))
+    fun approveNextAction(
+        highRiskConfirmed: Boolean = false,
+        permissionChoice: AgentPermissionChoice = AgentPermissionChoice.ALLOW_ONCE
+    ): AgentUiState = reconcileExecutionLoop(
+        approveNextActionInternal(highRiskConfirmed, permissionChoice)
+    )
 
-    private fun approveNextActionInternal(highRiskConfirmed: Boolean): AgentUiState {
+    private fun approveNextActionInternal(
+        highRiskConfirmed: Boolean,
+        permissionChoice: AgentPermissionChoice
+    ): AgentUiState {
         val plan = currentPlan ?: return snapshot()
         if (phase == AgentPhase.PAUSED) return snapshot()
         val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
         val preparedPlan = hardenedPlan
             .blockActionsWithFailedDependencies()
-            .let { it.withSafetyReview(safetyPolicy.review(it)) }
+            .let { it.withSafetyReview(safetyPolicy.review(it, sessionId)) }
         currentPlan = preparedPlan
         if (preparedPlan.safetyReview.blocked) {
             phase = AgentPhase.BLOCKED
@@ -1972,6 +1984,24 @@ class MobileNativeAgent(
             return snapshot()
         }
         val nextAction = preparedPlan.nextRunnableAction() ?: return noRunnableActionState(preparedPlan)
+        if (permissionChoice == AgentPermissionChoice.DENY_ALWAYS) {
+            safetyPolicy.recordDecision(nextAction, sessionId, permissionChoice)
+            val reason = "The user permanently denied this tool permission"
+            lastActionResult = AgentActionResult(nextAction.id, false, reason)
+            currentPlan = preparedPlan.markAction(
+                nextAction.id,
+                AgentActionStatus.BLOCKED,
+                lastActionResult
+            )
+            phase = AgentPhase.BLOCKED
+            recordAudit(
+                AgentAuditEvent.ACTION_BLOCKED,
+                "permission_denied_always:${AgentConfirmationPolicy.consentKey(nextAction)}"
+            )
+            saveTaskRecord()
+            persistSession()
+            return snapshot()
+        }
         if (nextAction.risk.weight >= AgentRisk.HIGH.weight && !highRiskConfirmed) {
             phase = AgentPhase.WAITING_CONFIRMATION
             lastActionResult = AgentActionResult(
@@ -1983,7 +2013,7 @@ class MobileNativeAgent(
             persistSession()
             return snapshot()
         }
-        safetyPolicy.recordApproval(nextAction)
+        safetyPolicy.recordDecision(nextAction, sessionId, permissionChoice)
         return executePlannedAction(preparedPlan, nextAction, userConfirmed = true)
     }
 
@@ -2013,7 +2043,7 @@ class MobileNativeAgent(
         val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
         val preparedPlan = hardenedPlan
             .blockActionsWithFailedDependencies()
-            .let { it.withSafetyReview(safetyPolicy.review(it)) }
+            .let { it.withSafetyReview(safetyPolicy.review(it, sessionId)) }
         currentPlan = preparedPlan
         if (preparedPlan.safetyReview.blocked || preparedPlan.safetyReview.requiresConfirmation) {
             phase = if (preparedPlan.safetyReview.blocked) AgentPhase.BLOCKED else AgentPhase.WAITING_CONFIRMATION
@@ -2049,7 +2079,7 @@ class MobileNativeAgent(
     ): AgentUiState {
         val hardenedPlan = AgentActionRiskHardener.enforce(appContext, plan)
         val hardenedAction = hardenedPlan.actions.firstOrNull { it.id == nextAction.id } ?: nextAction
-        val reviewedPlan = hardenedPlan.withSafetyReview(safetyPolicy.review(hardenedPlan))
+        val reviewedPlan = hardenedPlan.withSafetyReview(safetyPolicy.review(hardenedPlan, sessionId))
         currentPlan = reviewedPlan
         if (reviewedPlan.safetyReview.blocked) {
             phase = if (safetySettingsStore.load().executionPaused) AgentPhase.PAUSED else AgentPhase.BLOCKED
@@ -3103,7 +3133,7 @@ class MobileNativeAgent(
         val plan = currentPlan ?: return snapshot()
         val failedAction = plan.actions.lastOrNull { it.status == AgentActionStatus.FAILED } ?: return snapshot()
         val resetPlan = plan.resetActionForRetry(failedAction.id)
-        val reviewedPlan = resetPlan.withSafetyReview(safetyPolicy.review(resetPlan))
+        val reviewedPlan = resetPlan.withSafetyReview(safetyPolicy.review(resetPlan, sessionId))
         currentPlan = reviewedPlan
         if (reviewedPlan.safetyReview.blocked) {
             phase = AgentPhase.BLOCKED
@@ -3332,7 +3362,7 @@ class MobileNativeAgent(
         )
         merged = merged.copy(validation = AgentPlanValidator.validate(merged))
         merged = AgentActionRiskHardener.enforce(appContext, merged)
-        val reviewed = merged.withSafetyReview(safetyPolicy.review(merged))
+        val reviewed = merged.withSafetyReview(safetyPolicy.review(merged, sessionId))
         currentPlan = reviewed
         phase = when {
             reviewed.safetyReview.blocked -> AgentPhase.BLOCKED
@@ -3431,7 +3461,7 @@ class MobileNativeAgent(
         )
         revised = revised.copy(validation = AgentPlanValidator.validate(revised))
         if (!revised.validation.valid) return null
-        val reviewed = revised.withSafetyReview(safetyPolicy.review(revised))
+        val reviewed = revised.withSafetyReview(safetyPolicy.review(revised, sessionId))
         recordAudit(
             AgentAuditEvent.PLAN_REPLANNED,
             "revision=$revision; reason=${reason.take(120)}; actions=${revisedActions.size}"
@@ -6243,7 +6273,7 @@ class MobileNativeAgent(
             runtimeContext = context
         )
         val plan = AgentPlanFactory.singleAction(request, action)
-        val review = safetyPolicy.review(plan)
+        val review = safetyPolicy.review(plan, sessionId)
         currentPlan = plan.withSafetyReview(review)
         phase = if (review.blocked) AgentPhase.BLOCKED else AgentPhase.WAITING_CONFIRMATION
         lastActionResult = null
@@ -8530,8 +8560,12 @@ object AgentPlanValidator {
 interface AgentSafetyPolicy {
     fun permissionMode(): PermissionMode
     fun highRiskGuardEnabled(): Boolean
-    fun review(plan: AgentPlan): AgentSafetyReview
-    fun recordApproval(action: AgentAction) = Unit
+    fun review(plan: AgentPlan, sessionId: String = ""): AgentSafetyReview
+    fun recordDecision(
+        action: AgentAction,
+        sessionId: String,
+        choice: AgentPermissionChoice
+    ) = Unit
 }
 
 class DefaultAgentSafetyPolicy(
@@ -8544,7 +8578,7 @@ class DefaultAgentSafetyPolicy(
     override fun highRiskGuardEnabled(): Boolean =
         settingsStore?.load()?.highRiskGuard ?: true
 
-    override fun review(plan: AgentPlan): AgentSafetyReview {
+    override fun review(plan: AgentPlan, sessionId: String): AgentSafetyReview {
         val settings = settingsStore?.load() ?: AgentSafetySettings()
         val mode = permissionMode()
         val highestRisk = plan.actions.maxByOrNull { it.risk.weight }?.risk ?: AgentRisk.LOW
@@ -8592,12 +8626,22 @@ class DefaultAgentSafetyPolicy(
         val pendingActions = plan.actions.filter {
             it.status == AgentActionStatus.PENDING_CONFIRMATION || it.status == AgentActionStatus.PROPOSED
         }
+        val consentDecisions = pendingActions.associateWith { action ->
+            confirmationConsentStore?.decision(
+                AgentConfirmationPolicy.consentKey(action),
+                sessionId
+            )
+        }
+        val permanentlyDeniedAction = pendingActions.firstOrNull { action ->
+            consentDecisions[action]?.denied == true
+        }
+        val permissionDecisionBlocked = permanentlyDeniedAction != null
         val requiresTierConfirmation = pendingActions.any { action ->
             when (AgentConfirmationPolicy.tier(action)) {
                 AgentConfirmationTier.DIRECT -> false
                 AgentConfirmationTier.CONFIRM_ALWAYS -> true
                 AgentConfirmationTier.CONFIRM_ONCE ->
-                    confirmationConsentStore?.isRemembered(AgentConfirmationPolicy.consentKey(action)) != true
+                    consentDecisions[action]?.allowed != true
             }
         }
         runCatching {
@@ -8615,7 +8659,10 @@ class DefaultAgentSafetyPolicy(
             PermissionMode.OBSERVE_ONLY,
             PermissionMode.SUGGEST_ONLY -> false
             PermissionMode.ASK_BEFORE_ACTION -> pendingActions.any {
-                AgentConfirmationPolicy.tier(it) != AgentConfirmationTier.DIRECT &&
+                val tier = AgentConfirmationPolicy.tier(it)
+                tier != AgentConfirmationTier.DIRECT &&
+                    (tier == AgentConfirmationTier.CONFIRM_ALWAYS ||
+                        consentDecisions[it]?.allowed != true) &&
                     it.kind != AgentActionKind.READ_SCREEN &&
                     it.kind != AgentActionKind.DRAFT_PLAN &&
                     it.kind != AgentActionKind.CALL_CONNECTOR &&
@@ -8627,10 +8674,14 @@ class DefaultAgentSafetyPolicy(
             if (highestRisk == AgentRisk.BLOCKED) add("blocked_action")
             if (highestRisk.weight >= AgentRisk.HIGH.weight) add("high_risk_action")
             if (deniedPermissions.isNotEmpty()) add("missing_required_permission")
+            if (permissionDecisionBlocked) add("permission_permanently_denied")
             if (blocksScreenAction) add("observe_only_mode")
             if (blocksExecution) add("suggest_only_mode")
         }
         val reason = when {
+            permissionDecisionBlocked ->
+                "Tool permission was permanently denied: " +
+                    AgentConfirmationPolicy.consentKey(requireNotNull(permanentlyDeniedAction))
             "execution_paused" in deniedCapabilities -> "All Agent execution is paused"
             deniedPermissions.isNotEmpty() -> "Missing required permission: ${deniedPermissions.joinToString(", ")}"
             blocksScreenAction -> "Observe-only mode blocks screen actions"
@@ -8640,8 +8691,8 @@ class DefaultAgentSafetyPolicy(
         }
         return AgentSafetyReview(
             risk = highestRisk,
-            requiresConfirmation = requiresConfirmation || blocked,
-            blocked = blocked,
+            requiresConfirmation = requiresConfirmation || blocked || permissionDecisionBlocked,
+            blocked = blocked || permissionDecisionBlocked,
             mode = mode,
             deniedPermissions = deniedPermissions,
             warnings = warnings,
@@ -8649,10 +8700,29 @@ class DefaultAgentSafetyPolicy(
         )
     }
 
-    override fun recordApproval(action: AgentAction) {
-        if (AgentConfirmationPolicy.tier(action) == AgentConfirmationTier.CONFIRM_ONCE) {
-            confirmationConsentStore?.remember(AgentConfirmationPolicy.consentKey(action))
+    override fun recordDecision(
+        action: AgentAction,
+        sessionId: String,
+        choice: AgentPermissionChoice
+    ) {
+        val tier = AgentConfirmationPolicy.tier(action)
+        if (tier == AgentConfirmationTier.DIRECT) return
+        val effectiveChoice = if (
+            tier == AgentConfirmationTier.CONFIRM_ALWAYS &&
+            choice in setOf(
+                AgentPermissionChoice.ALLOW_SESSION,
+                AgentPermissionChoice.ALLOW_ALWAYS
+            )
+        ) {
+            AgentPermissionChoice.ALLOW_ONCE
+        } else {
+            choice
         }
+        confirmationConsentStore?.record(
+            AgentConfirmationPolicy.consentKey(action),
+            effectiveChoice,
+            sessionId
+        )
     }
 }
 

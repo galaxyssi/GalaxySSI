@@ -17,9 +17,12 @@ class AgentRemoteApprovalTest {
         assertEquals("python verify.py", request.detail)
         assertEquals("aaaaaaaa...aaaaaaaa", request.compactActionHash)
 
-        val approved = AgentRemoteApprovalDecision.decode(request.decision(true).encode())
+        val approved = AgentRemoteApprovalDecision.decode(
+            request.decision(AgentPermissionChoice.ALLOW_SESSION).encode()
+        )
         requireNotNull(approved)
         assertTrue(approved.approved)
+        assertEquals(AgentPermissionChoice.ALLOW_SESSION, approved.choice)
         assertEquals(request.taskId, approved.taskId)
         assertEquals(request.clientRouteId, approved.clientRouteId)
         assertEquals(request.conversationId, approved.conversationId)
@@ -50,12 +53,12 @@ class AgentRemoteApprovalTest {
     @Test
     fun decisionDecoderRejectsChangedIdentityFields() {
         val request = requireNotNull(AgentRemoteApprovalRequest.fromTaskEvent(taskEvent()))
-        val raw = JSONObject(request.decision(false).encode())
+        val raw = JSONObject(request.decision(AgentPermissionChoice.DENY_ALWAYS).encode())
             .put("approval_id", "short")
             .toString()
 
         assertNull(AgentRemoteApprovalDecision.decode(raw))
-        assertFalse(request.decision(false).approved)
+        assertFalse(request.decision(AgentPermissionChoice.DENY_ALWAYS).approved)
     }
 
     private fun taskEvent(

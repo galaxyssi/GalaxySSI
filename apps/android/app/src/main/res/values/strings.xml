@@ -23,6 +23,15 @@
     <string name="agent_remote_approval_denied">Action denied</string>
     <string name="agent_remote_approval_expired">This approval request has expired.</string>
     <string name="agent_remote_approval_failed">The action could not be approved. Review the request and try again.</string>
+    <string name="agent_permission_allow_once">Allow once</string>
+    <string name="agent_permission_allow_session">Allow this session</string>
+    <string name="agent_permission_allow_always">Always allow</string>
+    <string name="agent_permission_deny_always">Always deny</string>
+    <string name="agent_permission_saved_title">Saved tool permissions</string>
+    <string name="agent_permission_scope_label">%1$s permission</string>
+    <string name="agent_permission_revoke">Revoke</string>
+    <string name="agent_permission_revoked">Tool permission revoked</string>
+    <string name="agent_permission_revoke_failed">This tool permission is no longer active</string>
     <string name="device_admin_description">Allows explicitly confirmed device-policy actions such as locking a managed device.</string>
     <string name="agent_native_permissions_result">Granted %1$d of %2$d requested Android permissions. Run the task again to use them.</string>
     <string name="agent_native_confirmation_title">Confirm phone action</string>

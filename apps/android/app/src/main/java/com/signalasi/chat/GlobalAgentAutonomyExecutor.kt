@@ -609,7 +609,7 @@ class GlobalAutonomousRunExecutor(context: Context) {
             val failed = failActionAndRequestReview(run, action, "Autonomous tool execution is disabled")
             return finishOrWait(failed)
         }
-        val decision = autonomousToolHost.inspect(action)
+        val decision = autonomousToolHost.inspect(action, run.id)
         when (decision.status) {
             GlobalAutonomousToolDecisionStatus.WAITING_CONFIRMATION -> {
                 val waiting = updateAction(run, action.copy(

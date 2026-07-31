@@ -23,6 +23,15 @@
     <string name="agent_remote_approval_denied">已拒绝操作</string>
     <string name="agent_remote_approval_expired">审批请求已过期。</string>
     <string name="agent_remote_approval_failed">无法完成审批，请核对请求后重试。</string>
+    <string name="agent_permission_allow_once">本次允许</string>
+    <string name="agent_permission_allow_session">本会话允许</string>
+    <string name="agent_permission_allow_always">永久允许</string>
+    <string name="agent_permission_deny_always">永久拒绝</string>
+    <string name="agent_permission_saved_title">已保存的工具权限</string>
+    <string name="agent_permission_scope_label">工具权限：%1$s</string>
+    <string name="agent_permission_revoke">撤销</string>
+    <string name="agent_permission_revoked">已撤销工具权限</string>
+    <string name="agent_permission_revoke_failed">该工具权限已不再生效</string>
     <string name="device_admin_description">允许执行经过明确确认的设备策略操作，例如锁定受管理设备。</string>
     <string name="agent_native_permissions_result">已授予 %1$d/%2$d 项 Android 权限，请重新执行任务。</string>
     <string name="agent_native_confirmation_title">确认手机操作</string>

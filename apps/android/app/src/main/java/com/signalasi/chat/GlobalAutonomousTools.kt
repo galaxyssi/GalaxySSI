@@ -149,7 +149,10 @@ class GlobalAutonomousToolHost(
     fun relevantCatalog(goal: String, maximumTools: Int = 8): List<AgentNativeToolDescriptor> =
         GlobalAutonomousToolCatalogPolicy.select(allDescriptors(), goal, maximumTools)
 
-    fun inspect(action: GlobalAutonomousAction): GlobalAutonomousToolDecision {
+    fun inspect(
+        action: GlobalAutonomousAction,
+        sessionId: String = ""
+    ): GlobalAutonomousToolDecision {
         if (action.kind != GlobalAutonomousActionKind.INVOKE_TOOL) {
             return GlobalAutonomousToolDecision(
                 GlobalAutonomousToolDecisionStatus.REJECTED,
@@ -212,7 +215,7 @@ class GlobalAutonomousToolHost(
             expectedResult = action.expectedResult.ifBlank { action.goal },
             plannerProfile = "global-super-agent-native-tool"
         )
-        val review = safetyPolicy.review(plan)
+        val review = safetyPolicy.review(plan, sessionId)
         if (review.blocked) {
             return GlobalAutonomousToolDecision(
                 GlobalAutonomousToolDecisionStatus.REJECTED,
@@ -224,7 +227,10 @@ class GlobalAutonomousToolHost(
         }
         val approved = action.confirmationGranted ||
             (AgentConfirmationPolicy.tier(agentAction) == AgentConfirmationTier.CONFIRM_ONCE &&
-                consentStore.isRemembered(AgentConfirmationPolicy.consentKey(agentAction)))
+                consentStore.decision(
+                    AgentConfirmationPolicy.consentKey(agentAction),
+                    sessionId
+                ).allowed)
         if (review.requiresConfirmation && !approved) {
             return GlobalAutonomousToolDecision(
                 GlobalAutonomousToolDecisionStatus.WAITING_CONFIRMATION,
@@ -250,14 +256,23 @@ class GlobalAutonomousToolHost(
         require(decision.status == GlobalAutonomousToolDecisionStatus.READY)
         val descriptor = requireNotNull(decision.descriptor)
         val agentAction = requireNotNull(decision.agentAction)
-        if (action.confirmationGranted) safetyPolicy.recordApproval(agentAction)
+        if (action.confirmationGranted) {
+            safetyPolicy.recordDecision(
+                agentAction,
+                run.id,
+                AgentPermissionChoice.ALLOW_ONCE
+            )
+        }
         val workspaceId = AgentWorkspaceScope.id(run.sourceConversationId, run.id)
         val scopedInput = AgentWorkspaceScope.bindToolInput(descriptor.id, decision.input, workspaceId)
         val confirmationTier = AgentConfirmationPolicy.tier(agentAction)
         val consentGranted = action.confirmationGranted ||
             confirmationTier == AgentConfirmationTier.DIRECT ||
             (confirmationTier == AgentConfirmationTier.CONFIRM_ONCE &&
-                consentStore.isRemembered(AgentConfirmationPolicy.consentKey(agentAction)))
+                consentStore.decision(
+                    AgentConfirmationPolicy.consentKey(agentAction),
+                    run.id
+                ).allowed)
         val invocationId = "global-${GlobalAgentText.stableKey(run.id, action.id).take(24)}"
         val invocationContext = AgentNativeToolInvocationContext(
             invocationId = invocationId,

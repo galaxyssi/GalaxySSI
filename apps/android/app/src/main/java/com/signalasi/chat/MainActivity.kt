@@ -2452,20 +2452,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     title = remoteAgentApprovalTitle(request),
                     text = remoteAgentApprovalDetail(request, targetName),
                     fallbackText = getString(R.string.agent_remote_approval_waiting),
-                    actions = listOf(
+                    actions = agentPermissionChoices(AgentConfirmationTier.CONFIRM_ONCE).map { choice ->
                         AgentRichAction(
-                            id = "deny:${request.approvalId}",
-                            label = getString(R.string.agent_remote_approval_deny),
-                            verb = "reject_remote_task",
-                            value = request.decision(false).encode()
-                        ),
-                        AgentRichAction(
-                            id = "allow:${request.approvalId}",
-                            label = getString(R.string.agent_remote_approval_allow),
-                            verb = "approve_remote_task",
-                            value = request.decision(true).encode()
+                            id = "${choice.wireValue}:${request.approvalId}",
+                            label = agentPermissionChoiceLabel(choice),
+                            verb = "decide_remote_task_permission",
+                            value = request.decision(choice).encode()
                         )
-                    ),
+                    },
                     metadata = mapOf(
                         "approval_id" to request.approvalId,
                         "action_hash" to request.actionHash,
@@ -2495,6 +2489,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 else -> R.string.agent_remote_approval_title
             }
         )
+
+    private fun agentPermissionChoices(
+        tier: AgentConfirmationTier
+    ): List<AgentPermissionChoice> = if (tier == AgentConfirmationTier.CONFIRM_ALWAYS) {
+        listOf(
+            AgentPermissionChoice.ALLOW_ONCE,
+            AgentPermissionChoice.DENY_ALWAYS
+        )
+    } else {
+        listOf(
+            AgentPermissionChoice.ALLOW_ONCE,
+            AgentPermissionChoice.ALLOW_SESSION,
+            AgentPermissionChoice.ALLOW_ALWAYS,
+            AgentPermissionChoice.DENY_ALWAYS
+        )
+    }
+
+    private fun agentPermissionChoiceLabel(choice: AgentPermissionChoice): String = getString(
+        when (choice) {
+            AgentPermissionChoice.ALLOW_ONCE -> R.string.agent_permission_allow_once
+            AgentPermissionChoice.ALLOW_SESSION -> R.string.agent_permission_allow_session
+            AgentPermissionChoice.ALLOW_ALWAYS -> R.string.agent_permission_allow_always
+            AgentPermissionChoice.DENY_ALWAYS -> R.string.agent_permission_deny_always
+        }
+    )
 
     private fun remoteAgentApprovalDetail(
         request: AgentRemoteApprovalRequest,
@@ -7669,6 +7688,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             return
         }
+        if (actionId.startsWith("permissions.tool_grant:")) {
+            val grantId = actionId.substringAfter("permissions.tool_grant:").trim()
+            val grant = EncryptedAgentPermissionGrantStore(this)
+                .list(includeInactive = false)
+                .firstOrNull { it.grantId == grantId }
+            val revoked = grant?.let {
+                SharedPreferencesAgentConfirmationConsentStore(this).forget(it.scope)
+            } == true
+            Toast.makeText(
+                this,
+                getString(
+                    if (revoked) {
+                        R.string.agent_permission_revoked
+                    } else {
+                        R.string.agent_permission_revoke_failed
+                    }
+                ),
+                Toast.LENGTH_SHORT
+            ).show()
+            controlCenterHomeRefreshPolicy.invalidate()
+            renderCurrentControlCenterDestination()
+            return
+        }
         controlCenterHomeRefreshPolicy.invalidate()
         when (actionId) {
             "global.toggle_enabled" -> updateGlobalAgentSettings { it.copy(enabled = !it.enabled) }
@@ -12296,6 +12338,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val microphone = checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val camera = checkSelfPermission(android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         val granted = listOf(accessibility, notificationAccess, microphone, camera).count { it }
+        val toolGrants = EncryptedAgentPermissionGrantStore(this)
+            .list(includeInactive = false)
+            .filter {
+                it.subjectType == AgentPermissionSubjectType.CONSEQUENTIAL_ACTION &&
+                    it.lifetime != AgentPermissionGrantLifetime.SINGLE_USE
+            }
+            .take(24)
         showControlCenterFeature(
             getString(R.string.cc_permissions_title),
             ControlCenterPageSpec(
@@ -12310,21 +12359,53 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         ControlCenterMetricSpec(getString(R.string.cc_status_secure), getString(R.string.cc_metric_security))
                     )
                 ),
-                sections = listOf(
-                    ControlCenterSectionSpec(
-                        getString(R.string.cc_section_android_permissions),
-                        listOf(
-                            permissionRow("permissions.accessibility", R.string.cc_accessibility_title, R.string.cc_accessibility_subtitle, R.drawable.ic_agent_control, accessibility),
-                            permissionRow("permissions.notifications", R.string.cc_notification_access_title, R.string.cc_notification_access_subtitle, R.drawable.ic_settings_notification, notificationAccess),
-                            permissionRow("permissions.microphone", R.string.cc_microphone_permission_title, R.string.cc_microphone_permission_subtitle, R.drawable.ic_input_voice, microphone),
-                            permissionRow("permissions.camera", R.string.cc_camera_permission_title, R.string.cc_camera_permission_subtitle, R.drawable.ic_scan, camera)
+                sections = buildList {
+                    add(ControlCenterSectionSpec(
+                            getString(R.string.cc_section_android_permissions),
+                            listOf(
+                                permissionRow("permissions.accessibility", R.string.cc_accessibility_title, R.string.cc_accessibility_subtitle, R.drawable.ic_agent_control, accessibility),
+                                permissionRow("permissions.notifications", R.string.cc_notification_access_title, R.string.cc_notification_access_subtitle, R.drawable.ic_settings_notification, notificationAccess),
+                                permissionRow("permissions.microphone", R.string.cc_microphone_permission_title, R.string.cc_microphone_permission_subtitle, R.drawable.ic_input_voice, microphone),
+                                permissionRow("permissions.camera", R.string.cc_camera_permission_title, R.string.cc_camera_permission_subtitle, R.drawable.ic_scan, camera)
+                            )
                         )
-                    ),
-                    ControlCenterSectionSpec(
-                        getString(R.string.feature_audit_log),
-                        listOf(ControlCenterRowSpec("audit.operations", getString(R.string.cc_recent_operations_title), getString(R.string.cc_recent_operations_subtitle), R.drawable.ic_agent_history, getString(R.string.common_view), ControlCenterTone.VIOLET))
                     )
-                )
+                    if (toolGrants.isNotEmpty()) {
+                        add(ControlCenterSectionSpec(
+                                getString(R.string.agent_permission_saved_title),
+                                toolGrants.map { grant ->
+                                    val choice = when {
+                                        grant.effect == AgentPermissionGrantEffect.DENY ->
+                                            AgentPermissionChoice.DENY_ALWAYS
+                                        grant.lifetime == AgentPermissionGrantLifetime.SESSION ->
+                                            AgentPermissionChoice.ALLOW_SESSION
+                                        else -> AgentPermissionChoice.ALLOW_ALWAYS
+                                    }
+                                    ControlCenterRowSpec(
+                                        actionId = "permissions.tool_grant:${grant.grantId}",
+                                        title = getString(
+                                            R.string.agent_permission_scope_label,
+                                            grant.scope
+                                        ),
+                                        subtitle = agentPermissionChoiceLabel(choice),
+                                        iconRes = R.drawable.ic_security_shield,
+                                        status = getString(R.string.agent_permission_revoke),
+                                        tone = if (choice.approved) {
+                                            ControlCenterTone.GREEN
+                                        } else {
+                                            ControlCenterTone.AMBER
+                                        }
+                                    )
+                                }
+                            )
+                        )
+                    }
+                    add(ControlCenterSectionSpec(
+                            getString(R.string.feature_audit_log),
+                            listOf(ControlCenterRowSpec("audit.operations", getString(R.string.cc_recent_operations_title), getString(R.string.cc_recent_operations_subtitle), R.drawable.ic_agent_history, getString(R.string.common_view), ControlCenterTone.VIOLET))
+                        )
+                    )
+                }
             )
         )
     }
@@ -13403,14 +13484,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             agentRiskLabel(pending.risk)
                         ),
                         fallbackText = getString(R.string.agent_inline_approval_waiting),
-                        actions = listOf(
-                            AgentRichAction("cancel", getString(R.string.common_cancel), "reject_task"),
+                        actions = agentPermissionChoices(
+                            AgentConfirmationPolicy.tier(pending)
+                        ).map { choice ->
                             AgentRichAction(
-                                "confirm",
-                                getString(R.string.agent_inline_approval_confirm),
-                                "approve_task"
+                                id = "${choice.wireValue}:${pending.id}",
+                                label = agentPermissionChoiceLabel(choice),
+                                verb = "decide_task_permission",
+                                value = choice.wireValue
                             )
-                        )
+                        }
                     )
                 ))
                 agentTranscriptStore.append(
@@ -13933,10 +14016,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         entry.taskId.isNotBlank() && AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
             block.type == AgentRichBlockType.APPROVAL && block.actions.any { action ->
                 action.verb in setOf(
-                    "approve_task",
-                    "reject_task",
-                    "approve_remote_task",
-                    "reject_remote_task"
+                    "decide_task_permission",
+                    "decide_remote_task_permission"
                 )
             }
         }
@@ -13944,14 +14025,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun isLocalAgentApprovalEntry(entry: AgentTranscriptEntry): Boolean =
         entry.taskId.isNotBlank() && AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
             block.type == AgentRichBlockType.APPROVAL && block.actions.any { action ->
-                action.verb == "approve_task" || action.verb == "reject_task"
+                action.verb == "decide_task_permission"
             }
         }
 
     private fun isRemoteAgentApprovalEntry(entry: AgentTranscriptEntry): Boolean =
         entry.taskId.isNotBlank() && AgentRichContentCodec.decode(entry.richOutputJson).any { block ->
             block.type == AgentRichBlockType.APPROVAL && block.actions.any { action ->
-                action.verb == "approve_remote_task" || action.verb == "reject_remote_task"
+                action.verb == "decide_remote_task_permission"
             }
         }
 
@@ -14675,15 +14756,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "set_input" -> setAgentRichInput(action.value, submit = false)
             "submit_prompt" -> setAgentRichInput(action.value, submit = true)
             "open_conversation" -> openAgentConversation(action.value)
-            "approve_task", "reject_task" -> runAgentRichTaskDecision(
-                entry,
-                approved = action.verb == "approve_task"
-            )
-            "approve_remote_task", "reject_remote_task" -> runRemoteAgentTaskDecision(
-                entry,
-                action,
-                approved = action.verb == "approve_remote_task"
-            )
+            "decide_task_permission" -> runAgentRichTaskDecision(entry, action)
+            "decide_remote_task_permission" -> runRemoteAgentTaskDecision(entry, action)
             "recover_agent_task" -> runAgentFailureRecovery(entry, action)
             "preview_runtime_artifact" -> previewRuntimeArtifact(action.value)
             "save_runtime_artifact" -> saveRuntimeArtifact(action.value)
@@ -14932,7 +15006,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun runAgentRichTaskDecision(entry: AgentTranscriptEntry, approved: Boolean) {
+    private fun runAgentRichTaskDecision(
+        entry: AgentTranscriptEntry,
+        action: AgentRichAction
+    ) {
+        val choice = AgentPermissionChoice.fromWireValue(action.value)
+        if (choice == null) {
+            Toast.makeText(this, R.string.agent_remote_approval_invalid, Toast.LENGTH_LONG).show()
+            return
+        }
         val runtimes = buildList {
             addAll(activeAgentTasks.values)
             addAll(provisionalAgentTasks)
@@ -14950,15 +15032,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         refreshAgentTranscriptWindow(entry.conversationId)
         thread(name = "signalasi-rich-decision") {
             bindAgentExecutionLoop(runtime, entry.turnId)
-            if (!approved && entry.turnId.isNotBlank()) {
-                AgentTaskRuntime.supervisor(this).cancellationSource(entry.turnId)
-                    ?.cancel("User rejected the Agent action")
-            }
-            var state = if (approved) {
-                runtime.approveNextAction(highRiskConfirmed = true)
-            } else {
-                runtime.cancelCurrentTask()
-            }
+            var state = runtime.approveNextAction(
+                highRiskConfirmed = true,
+                permissionChoice = choice
+            )
             if (entry.turnId.isNotBlank()) {
                 state = finalizeAgentExecutionLoop(runtime, entry.turnId, state)
                 persistAgentWorkspaceSnapshot(entry.turnId, state, runtime)
@@ -14969,14 +15046,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun runRemoteAgentTaskDecision(
         entry: AgentTranscriptEntry,
-        action: AgentRichAction,
-        approved: Boolean
+        action: AgentRichAction
     ) {
         val encodedDecision = AgentRemoteApprovalDecision.decode(action.value)
         val decision = encodedDecision?.takeIf {
             it.taskId == entry.taskId &&
-                entry.dedupeKey == "remote-approval:${it.taskId}:${it.approvalId}" &&
-                it.approved == approved
+                entry.dedupeKey == "remote-approval:${it.taskId}:${it.approvalId}"
         }
         if (decision == null) {
             Toast.makeText(this, R.string.agent_remote_approval_invalid, Toast.LENGTH_LONG).show()

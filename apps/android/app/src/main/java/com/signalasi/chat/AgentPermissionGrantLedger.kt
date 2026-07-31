@@ -18,8 +18,14 @@ enum class AgentPermissionSubjectType {
 
 enum class AgentPermissionGrantLifetime {
     SINGLE_USE,
+    SESSION,
     TEMPORARY,
     PERMANENT
+}
+
+enum class AgentPermissionGrantEffect {
+    ALLOW,
+    DENY
 }
 
 enum class AgentPermissionGrantStatus {
@@ -48,6 +54,8 @@ data class AgentPermissionGrant(
     val issuer: AgentPermissionGrantIssuer,
     val evidence: String,
     val lifetime: AgentPermissionGrantLifetime,
+    val effect: AgentPermissionGrantEffect = AgentPermissionGrantEffect.ALLOW,
+    val sessionId: String = "",
     val status: AgentPermissionGrantStatus = AgentPermissionGrantStatus.ACTIVE,
     val maxUses: Int = if (lifetime == AgentPermissionGrantLifetime.SINGLE_USE) 1 else 0,
     val uses: Int = 0,
@@ -68,7 +76,8 @@ data class AgentPermissionRequest(
     val scope: String,
     val action: String = "",
     val resource: String = "",
-    val target: String = ""
+    val target: String = "",
+    val sessionId: String = ""
 )
 
 data class AgentPermissionDecision(
@@ -90,6 +99,7 @@ interface AgentPermissionGrantStore {
     fun list(includeInactive: Boolean = true): List<AgentPermissionGrant>
     fun revokeGrant(grantId: String, reason: String): AgentPermissionRevocation
     fun revokeScope(scope: String, reason: String): AgentPermissionRevocation
+    fun revokeSession(sessionId: String, reason: String): AgentPermissionRevocation
     fun clear()
 }
 
@@ -115,6 +125,8 @@ abstract class AbstractAgentPermissionGrantStore(
                 existing.target == normalized.target &&
                 existing.constraintsJson == normalized.constraintsJson &&
                 existing.lifetime == normalized.lifetime &&
+                existing.effect == normalized.effect &&
+                existing.sessionId == normalized.sessionId &&
                 existing.expiresAtMillis == normalized.expiresAtMillis
         }
         if (equivalent != null) {
@@ -136,8 +148,20 @@ abstract class AbstractAgentPermissionGrantStore(
         val normalizedRequest = normalize(request)
         val now = now()
         val grants = refreshExpired(readPersisted(), now).toMutableList()
-        val match = grants
+        val matches = grants
             .filter { it.isUsable(now) && it.matches(normalizedRequest) }
+        val denied = matches
+            .filter { it.effect == AgentPermissionGrantEffect.DENY }
+            .maxWithOrNull(
+                compareBy<AgentPermissionGrant> { it.matchSpecificity(normalizedRequest) }
+                    .thenBy { it.createdAtMillis }
+            )
+        if (denied != null) {
+            writePersisted(bound(grants))
+            return AgentPermissionDecision(false, denied, "host_grant_denied")
+        }
+        val match = matches
+            .filter { it.effect == AgentPermissionGrantEffect.ALLOW }
             .maxWithOrNull(
                 compareBy<AgentPermissionGrant> { it.matchSpecificity(normalizedRequest) }
                     .thenBy { it.createdAtMillis }
@@ -190,6 +214,16 @@ abstract class AbstractAgentPermissionGrantStore(
     }
 
     @Synchronized
+    final override fun revokeSession(sessionId: String, reason: String): AgentPermissionRevocation {
+        val cleanSessionId = sessionId.trim()
+        if (cleanSessionId.isBlank()) return emptyRevocation(reason)
+        return revoke(reason) {
+            it.lifetime == AgentPermissionGrantLifetime.SESSION &&
+                it.sessionId == cleanSessionId
+        }
+    }
+
+    @Synchronized
     final override fun clear() = clearPersisted()
 
     private fun revoke(
@@ -230,12 +264,25 @@ abstract class AbstractAgentPermissionGrantStore(
         require(grant.status == AgentPermissionGrantStatus.ACTIVE) {
             "Only active permission grants can be issued"
         }
+        if (grant.effect == AgentPermissionGrantEffect.DENY) {
+            require(grant.lifetime == AgentPermissionGrantLifetime.PERMANENT && grant.maxUses == 0) {
+                "Denied permission decisions must be permanent"
+            }
+        }
         require(grant.uses == 0 && grant.consumedAtMillis == 0L && grant.revokedAtMillis == 0L) {
             "A new permission grant cannot contain prior usage or revocation state"
         }
         when (grant.lifetime) {
             AgentPermissionGrantLifetime.SINGLE_USE -> require(grant.maxUses == 1) {
                 "Single-use permission grants must allow exactly one use"
+            }
+            AgentPermissionGrantLifetime.SESSION -> {
+                require(grant.sessionId.isNotBlank()) {
+                    "Session permission grants require a session id"
+                }
+                require(grant.expiresAtMillis == 0L && grant.maxUses == 0) {
+                    "Session permission grants are revoked when their session ends"
+                }
             }
             AgentPermissionGrantLifetime.TEMPORARY -> require(grant.expiresAtMillis > createdAt) {
                 "Temporary permission grants require a future expiry"
@@ -251,6 +298,7 @@ abstract class AbstractAgentPermissionGrantStore(
             action = grant.action.trim().take(MAX_SCOPE_CHARS),
             resource = grant.resource.trim().take(MAX_RESOURCE_CHARS),
             target = grant.target.trim().take(MAX_RESOURCE_CHARS),
+            sessionId = grant.sessionId.trim().take(MAX_ID_CHARS),
             constraintsJson = normalizeJson(grant.constraintsJson),
             evidence = evidence,
             createdAtMillis = createdAt,
@@ -263,7 +311,8 @@ abstract class AbstractAgentPermissionGrantStore(
         scope = required(request.scope, MAX_SCOPE_CHARS, "scope"),
         action = request.action.trim().take(MAX_SCOPE_CHARS),
         resource = request.resource.trim().take(MAX_RESOURCE_CHARS),
-        target = request.target.trim().take(MAX_RESOURCE_CHARS)
+        target = request.target.trim().take(MAX_RESOURCE_CHARS),
+        sessionId = request.sessionId.trim().take(MAX_ID_CHARS)
     )
 
     private fun refreshExpired(
@@ -281,14 +330,16 @@ abstract class AbstractAgentPermissionGrantStore(
             (scope == request.scope || scope == WILDCARD) &&
             (action.isBlank() || action == request.action) &&
             (resource.isBlank() || resource == request.resource) &&
-            (target.isBlank() || target == request.target)
+            (target.isBlank() || target == request.target) &&
+            (lifetime != AgentPermissionGrantLifetime.SESSION || sessionId == request.sessionId)
 
     private fun AgentPermissionGrant.matchSpecificity(request: AgentPermissionRequest): Int =
         (if (subjectId == request.subjectId) 16 else 0) +
             (if (scope == request.scope) 8 else 0) +
             (if (action.isNotBlank()) 4 else 0) +
             (if (resource.isNotBlank()) 2 else 0) +
-            (if (target.isNotBlank()) 1 else 0)
+            (if (target.isNotBlank()) 1 else 0) +
+            (if (lifetime == AgentPermissionGrantLifetime.SESSION && sessionId == request.sessionId) 1 else 0)
 
     private fun bound(grants: List<AgentPermissionGrant>): List<AgentPermissionGrant> = grants
         .sortedWith(compareBy<AgentPermissionGrant> { it.createdAtMillis }.thenBy { it.grantId })
@@ -375,6 +426,8 @@ object AgentPermissionGrantJsonCodec {
                 .put("issuer", grant.issuer.name)
                 .put("evidence", grant.evidence)
                 .put("lifetime", grant.lifetime.name)
+                .put("effect", grant.effect.name)
+                .put("session_id", grant.sessionId)
                 .put("status", grant.status.name)
                 .put("max_uses", grant.maxUses)
                 .put("uses", grant.uses)
@@ -394,6 +447,9 @@ object AgentPermissionGrantJsonCodec {
                 val subjectType = enumOrNull<AgentPermissionSubjectType>(item.optString("subject_type")) ?: continue
                 val issuer = enumOrNull<AgentPermissionGrantIssuer>(item.optString("issuer")) ?: continue
                 val lifetime = enumOrNull<AgentPermissionGrantLifetime>(item.optString("lifetime")) ?: continue
+                val effect = enumOrNull<AgentPermissionGrantEffect>(
+                    item.optString("effect", AgentPermissionGrantEffect.ALLOW.name)
+                ) ?: continue
                 val status = enumOrNull<AgentPermissionGrantStatus>(item.optString("status")) ?: continue
                 add(AgentPermissionGrant(
                     grantId = item.optString("grant_id"),
@@ -407,6 +463,8 @@ object AgentPermissionGrantJsonCodec {
                     issuer = issuer,
                     evidence = item.optString("evidence"),
                     lifetime = lifetime,
+                    effect = effect,
+                    sessionId = item.optString("session_id"),
                     status = status,
                     maxUses = item.optInt("max_uses"),
                     uses = item.optInt("uses"),
