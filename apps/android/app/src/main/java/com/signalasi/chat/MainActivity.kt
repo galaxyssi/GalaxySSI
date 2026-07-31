@@ -26440,23 +26440,59 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 state.status == DownloadManager.STATUS_PAUSED
             if (isDownloading && pendingAsrModelSelection == null) pendingAsrModelSelection = model.id
             hasActiveDownload = hasActiveDownload || isDownloading
-            val subtitle = if (model.bundled) {
-                getString(R.string.voice_asr_model_bundled, model.sizeLabel)
+            val profileDetail = getString(
+                R.string.voice_asr_model_profile_detail,
+                model.sizeLabel,
+                model.quantization.name
+            )
+            val sourceDetail = if (model.bundled) {
+                getString(R.string.voice_asr_model_bundled)
             } else {
-                getString(R.string.voice_asr_model_download_size, model.sizeLabel)
+                getString(R.string.voice_asr_model_download_size)
             }
+            val lifecycleDetail = when {
+                available -> getString(R.string.voice_asr_model_installed_uncertified)
+                state.storageState == com.signalasi.chat.voice.model.WhisperModelStorageState.VERIFYING_SIZE ||
+                    state.storageState == com.signalasi.chat.voice.model.WhisperModelStorageState.VERIFYING_SHA256 ->
+                    getString(R.string.voice_asr_model_verifying)
+                state.storageState == com.signalasi.chat.voice.model.WhisperModelStorageState.ATOMIC_INSTALLING ->
+                    getString(R.string.voice_asr_model_installing)
+                isDownloading && state.progress > 0 ->
+                    getString(R.string.voice_asr_model_progress, state.progress)
+                state.status == DownloadManager.STATUS_FAILED ||
+                    state.storageState == com.signalasi.chat.voice.model.WhisperModelStorageState.FAILED ->
+                    getString(
+                        R.string.voice_asr_model_install_failed,
+                        state.failure?.name ?: state.detail.ifBlank { "UNKNOWN" }
+                    )
+                else -> sourceDetail
+            }
+            val subtitle = "$profileDetail\n$lifecycleDetail"
             val action = when {
-                isSelected -> getString(R.string.section_current)
+                isSelected && available -> getString(R.string.section_current)
                 available -> getString(R.string.settings_language_use)
-                isDownloading -> if (state.progress > 0) "${state.progress}%" else getString(R.string.voice_asr_model_waiting)
+                isDownloading && !model.bundled -> getString(R.string.voice_asr_model_cancel)
+                isDownloading -> getString(R.string.voice_asr_model_waiting)
                 state.status == DownloadManager.STATUS_FAILED -> getString(R.string.common_retry)
                 else -> getString(R.string.voice_asr_model_download)
             }
             featureContent.addView(featureRow(model.displayName, subtitle, R.drawable.ic_local_model, action).apply {
-                isClickable = !isSelected && !isDownloading
+                val canInteract = (!isSelected || !available) && !(isDownloading && model.bundled)
+                isClickable = canInteract
                 isFocusable = isClickable
-                setOnClickListener(if (!isSelected && !isDownloading) View.OnClickListener {
-                    if (available) {
+                setOnClickListener(if (canInteract) View.OnClickListener {
+                    if (isDownloading) {
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle(getString(R.string.voice_asr_model_cancel_title))
+                            .setMessage(getString(R.string.voice_asr_model_cancel_message, model.displayName))
+                            .setNegativeButton(getString(R.string.voice_asr_model_keep_downloading), null)
+                            .setPositiveButton(getString(R.string.voice_asr_model_cancel)) { _, _ ->
+                                WhisperModelManager.cancel(this@MainActivity, model)
+                                if (pendingAsrModelSelection == model.id) pendingAsrModelSelection = null
+                                showAsrProviderPage()
+                            }
+                            .show()
+                    } else if (available) {
                         VoiceAssistantSettings.setAsrModel(this@MainActivity, model.id)
                         showAsrProviderPage()
                     } else {
@@ -26466,11 +26502,32 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                                 Toast.makeText(this@MainActivity, getString(R.string.voice_asr_model_download_started, model.displayName), Toast.LENGTH_SHORT).show()
                                 handler.post(asrModelDownloadPoll)
                             }
-                            .onFailure {
-                                Toast.makeText(this@MainActivity, getString(R.string.voice_asr_model_download_failed), Toast.LENGTH_LONG).show()
+                            .onFailure { error ->
+                                showWhisperDownloadFailure(model, error)
                             }
                     }
                 } else null)
+                if (available && !model.bundled && !isSelected) {
+                    setOnLongClickListener {
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle(getString(R.string.voice_asr_model_remove_title, model.displayName))
+                            .setMessage(getString(R.string.voice_asr_model_remove_message))
+                            .setNegativeButton(getString(R.string.common_cancel), null)
+                            .setPositiveButton(getString(R.string.voice_asr_model_remove)) { _, _ ->
+                                runCatching { WhisperModelManager.delete(this@MainActivity, model) }
+                                    .onSuccess { showAsrProviderPage() }
+                                    .onFailure {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.voice_asr_model_install_failed, it.message.orEmpty()),
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
+                            }
+                            .show()
+                        true
+                    }
+                }
             })
         }
         featureContent.addView(TextView(this).apply {
@@ -26480,6 +26537,53 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setPadding(dp(4), dp(4), dp(4), dp(18))
         })
         if (hasActiveDownload) handler.postDelayed(asrModelDownloadPoll, 1_000L)
+    }
+
+    private fun showWhisperDownloadFailure(model: WhisperModel, error: Throwable) {
+        when (error) {
+            is WhisperMeteredDownloadConfirmationRequired -> {
+                android.app.AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.voice_asr_model_mobile_title))
+                    .setMessage(getString(R.string.voice_asr_model_mobile_message, model.displayName, model.sizeLabel))
+                    .setNegativeButton(getString(R.string.common_cancel), null)
+                    .setPositiveButton(getString(R.string.voice_asr_model_mobile_continue)) { _, _ ->
+                        runCatching { WhisperModelManager.enqueue(this, model, allowMetered = true) }
+                            .onSuccess {
+                                pendingAsrModelSelection = model.id
+                                handler.post(asrModelDownloadPoll)
+                                showAsrProviderPage()
+                            }
+                            .onFailure {
+                                Toast.makeText(this, getString(R.string.voice_asr_model_download_failed), Toast.LENGTH_LONG).show()
+                            }
+                    }
+                    .show()
+            }
+            is WhisperDownloadUnavailableException -> {
+                val message = if (error.decision == com.signalasi.chat.voice.model.WhisperDownloadDecision.INSUFFICIENT_SPACE) {
+                    getString(
+                        R.string.voice_asr_model_space_error,
+                        formatWhisperBytes(error.requiredBytes),
+                        formatWhisperBytes(error.availableBytes)
+                    )
+                } else {
+                    getString(R.string.voice_asr_model_network_error)
+                }
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+            else -> Toast.makeText(this, getString(R.string.voice_asr_model_download_failed), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun formatWhisperBytes(value: Long): String {
+        if (value < 0L) return "--"
+        val gib = 1_073_741_824.0
+        val mib = 1_048_576.0
+        return if (value >= gib) {
+            String.format(java.util.Locale.US, "%.1f GiB", value / gib)
+        } else {
+            String.format(java.util.Locale.US, "%.1f MiB", value / mib)
+        }
     }
 
     private fun showTtsProviderPage() {

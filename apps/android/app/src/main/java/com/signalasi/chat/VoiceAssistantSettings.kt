@@ -52,6 +52,11 @@ object VoiceAssistantSettings {
         val languagePolicy = LanguagePolicySettings.get(context)
         val defaultWakeWords = context.getString(R.string.voice_default_wake_words)
         val defaultWelcomeText = context.getString(R.string.voice_default_welcome_text)
+        val storedAsrModel = prefs.getString(KEY_ASR_MODEL, "tiny").orEmpty()
+        val canonicalAsrModel = WhisperModelManager.model(storedAsrModel).id
+        if (storedAsrModel != canonicalAsrModel) {
+            prefs.edit().putString(KEY_ASR_MODEL, canonicalAsrModel).apply()
+        }
         return VoiceAssistantConfig(
             enabled = prefs.getBoolean(KEY_ENABLED, true),
             wakeWords = prefs.getString(KEY_WAKE_WORDS, defaultWakeWords)
@@ -66,12 +71,7 @@ object VoiceAssistantSettings {
                 ?: DEFAULT_WAKE_MODEL,
             wakeThreshold = prefs.getFloat(KEY_WAKE_THRESHOLD, 0.5f).coerceIn(0.01f, 0.99f),
             asrProvider = ASR_PROVIDER_LOCAL_WHISPER,
-            asrModel = prefs.getString(KEY_ASR_MODEL, "tiny").orEmpty()
-                .takeIf { candidate ->
-                    WhisperModelManager.models.firstOrNull { it.id == candidate }
-                        ?.let { WhisperModelManager.isAvailable(context, it) } == true
-                }
-                ?: "tiny",
+            asrModel = canonicalAsrModel,
             asrLanguage = languagePolicy.asrLanguage,
             ttsProvider = prefs.getString(KEY_TTS_PROVIDER, PROVIDER_MICROSOFT_EDGE).orEmpty()
                 .takeIf { it == PROVIDER_ANDROID || it == PROVIDER_MICROSOFT_EDGE }
@@ -130,7 +130,7 @@ object VoiceAssistantSettings {
     }
 
     fun setAsrModel(context: Context, value: String) {
-        val model = value.takeIf { candidate -> WhisperModelManager.models.any { it.id == candidate } } ?: "tiny"
+        val model = WhisperModelManager.model(value).id
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_ASR_MODEL, model).apply()
     }
 
