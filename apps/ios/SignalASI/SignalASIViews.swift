@@ -771,7 +771,12 @@ struct VoiceSettingsView: View {
   @EnvironmentObject private var store: SignalASIStore
   @EnvironmentObject private var coordinator: MessageCoordinator
   @StateObject private var speech = SpeechCaptureService()
+  @StateObject private var replySpeech = VoiceReplySpeechService()
   @State private var permissionStatus = ""
+  @State private var activeVoiceReplySessionId = ""
+  @State private var activeVoiceReplyContactId = ""
+  @State private var activeVoiceReplyRouteKind: VoiceRouteKind?
+  @State private var activeVoiceReplyPlaybackSessionId = ""
 
   var body: some View {
     NavigationView {
@@ -853,6 +858,19 @@ struct VoiceSettingsView: View {
         }
       }
       .navigationTitle("Voice")
+      .onAppear {
+        coordinator.onIncomingMessage = handleIncomingVoiceReply
+      }
+      .onDisappear {
+        coordinator.onIncomingMessage = nil
+        replySpeech.stop()
+        if !activeVoiceReplySessionId.isEmpty {
+          _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+            .completed(sessionId: activeVoiceReplySessionId)
+          )
+          clearActiveVoiceReplySession(activeVoiceReplySessionId)
+        }
+      }
     }
   }
 
@@ -891,13 +909,89 @@ struct VoiceSettingsView: View {
     _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
       .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
     )
+    activeVoiceReplySessionId = plan.sessionId
+    activeVoiceReplyContactId = plan.contact.id
+    activeVoiceReplyRouteKind = plan.routeDecision.kind
     permissionStatus = "Sending voice transcript to \(plan.contact.displayName)"
     Task {
       await coordinator.send(plan.text, to: plan.contact)
-      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: plan.sessionId))
       await MainActor.run {
-        permissionStatus = ""
+        finishVoiceSendIfNoReplyPlaybackStarted(plan)
       }
+    }
+  }
+
+  private func handleIncomingVoiceReply(_ message: ChatMessage) {
+    guard let request = VoiceReplyPlaybackPolicy.request(
+      message: message,
+      settings: store.voiceSettings,
+      languagePolicy: store.languagePolicy,
+      activeSessionId: activeVoiceReplySessionId,
+      activeTargetContactId: activeVoiceReplyContactId
+    ) else {
+      return
+    }
+    switch activeVoiceReplyRouteKind {
+    case .remoteAgent:
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .agentAccepted(sessionId: request.sessionId, runId: message.id.uuidString)
+      )
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .agentProgress(sessionId: request.sessionId, runId: message.id.uuidString)
+      )
+    case .cloudModel:
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .modelDelta(sessionId: request.sessionId, text: request.text)
+      )
+    case .localAction, .none:
+      break
+    }
+    activeVoiceReplyPlaybackSessionId = request.sessionId
+    replySpeech.speak(request) { started in
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+        .playbackStarted(sessionId: started.sessionId, utteranceId: started.utteranceId)
+      )
+      permissionStatus = "Speaking reply"
+    } onDone: { done, _, _ in
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: done.sessionId))
+      if activeVoiceReplyPlaybackSessionId == done.sessionId {
+        activeVoiceReplyPlaybackSessionId = ""
+      }
+      clearActiveVoiceReplySession(done.sessionId)
+      permissionStatus = ""
+    }
+  }
+
+  private func finishVoiceSendIfNoReplyPlaybackStarted(_ plan: VoiceTranscriptRoutePlan) {
+    if plan.routeDecision.kind == .localAction {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.localActionCompleted(sessionId: plan.sessionId))
+      clearActiveVoiceReplySession(plan.sessionId)
+      permissionStatus = ""
+      return
+    }
+    if !store.voiceSettings.speakReplies {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: plan.sessionId))
+      clearActiveVoiceReplySession(plan.sessionId)
+      permissionStatus = ""
+      return
+    }
+    if plan.routeDecision.kind == .cloudModel,
+       activeVoiceReplyPlaybackSessionId != plan.sessionId,
+       !replySpeech.isSpeaking,
+       activeVoiceReplySessionId == plan.sessionId {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: plan.sessionId))
+      clearActiveVoiceReplySession(plan.sessionId)
+      permissionStatus = ""
+    }
+  }
+
+  private func clearActiveVoiceReplySession(_ sessionId: String) {
+    guard activeVoiceReplySessionId == sessionId else { return }
+    activeVoiceReplySessionId = ""
+    activeVoiceReplyContactId = ""
+    activeVoiceReplyRouteKind = nil
+    if activeVoiceReplyPlaybackSessionId == sessionId {
+      activeVoiceReplyPlaybackSessionId = ""
     }
   }
 }
