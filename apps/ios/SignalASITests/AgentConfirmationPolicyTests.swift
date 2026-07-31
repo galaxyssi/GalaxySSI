@@ -171,6 +171,85 @@ final class AgentConfirmationPolicyTests: XCTestCase {
     XCTAssertFalse(afterClear.isRemembered(consentKey: "microphone"))
   }
 
+  func testAgentConfirmationDecisionPolicyUsesRememberedConfirmOnceConsent() {
+    let store = AgentGrantBackedConfirmationConsentStore()
+    let bluetooth = nativeConfirmationAction(
+      "signalasi.hardware.bluetooth.discovery.foreground",
+      "Discover nearby Bluetooth devices once",
+      id: "bluetooth"
+    )
+    let sms = nativeConfirmationAction("signalasi.notifications.reply", "Reply to notification", id: "reply")
+
+    let first = AgentConfirmationDecisionPolicy.decision(
+      actions: [bluetooth],
+      permissionMode: .autoLowRisk,
+      consentStore: store
+    )
+    AgentConfirmationDecisionPolicy.recordApproval(action: bluetooth, consentStore: store)
+    let remembered = AgentConfirmationDecisionPolicy.decision(
+      actions: [bluetooth],
+      permissionMode: .autoLowRisk,
+      consentStore: store
+    )
+    let always = AgentConfirmationDecisionPolicy.decision(
+      actions: [sms],
+      permissionMode: .autoLowRisk,
+      consentStore: store
+    )
+
+    XCTAssertTrue(first.requiresConfirmation)
+    XCTAssertFalse(remembered.requiresConfirmation)
+    XCTAssertEqual(remembered.rememberedConsentKeys, ["bluetooth_discovery"])
+    XCTAssertTrue(always.requiresConfirmation)
+    XCTAssertEqual(always.alwaysConfirmActionIds, ["reply"])
+  }
+
+  func testAgentConfirmationDecisionPolicyMatchesAndroidPermissionModes() {
+    let store = AgentGrantBackedConfirmationConsentStore()
+    let direct = confirmationAction(id: "open-camera", kind: .openApp, description: "Open camera")
+    let connector = confirmationAction(id: "connector", kind: .callConnector, description: "Ask paired Agent")
+    let download = confirmationAction(id: "download", kind: .callNativeTool, description: "Download file")
+
+    XCTAssertFalse(AgentConfirmationDecisionPolicy.decision(
+      actions: [download],
+      permissionMode: .observeOnly,
+      consentStore: store
+    ).requiresConfirmation)
+    XCTAssertFalse(AgentConfirmationDecisionPolicy.decision(
+      actions: [download],
+      permissionMode: .suggestOnly,
+      consentStore: store
+    ).requiresConfirmation)
+    XCTAssertFalse(AgentConfirmationDecisionPolicy.decision(
+      actions: [direct, connector],
+      permissionMode: .askBeforeAction,
+      consentStore: store
+    ).requiresConfirmation)
+    XCTAssertTrue(AgentConfirmationDecisionPolicy.decision(
+      actions: [download],
+      permissionMode: .askBeforeAction,
+      consentStore: store
+    ).requiresConfirmation)
+    XCTAssertEqual(AgentConfirmationDecisionPolicy.decision(
+      actions: [download],
+      permissionMode: .askBeforeAction,
+      consentStore: store
+    ).pendingActionIds, ["download"])
+  }
+
+  func testAgentConfirmationDecisionPolicyRecordsOnlyConfirmOnceApprovals() {
+    let store = AgentGrantBackedConfirmationConsentStore()
+    let direct = confirmationAction(id: "open-camera", kind: .openApp, description: "Open camera")
+    let always = nativeConfirmationAction("signalasi.notifications.reply", "Reply to notification", id: "reply")
+    let once = confirmationAction(id: "location", kind: .callNativeTool, description: "Read location")
+
+    AgentConfirmationDecisionPolicy.recordApproval(action: direct, consentStore: store)
+    AgentConfirmationDecisionPolicy.recordApproval(action: always, consentStore: store)
+    AgentConfirmationDecisionPolicy.recordApproval(action: once, consentStore: store)
+
+    XCTAssertEqual(store.rememberedKeys(), Set(["location"]))
+  }
+
   private func confirmationAction(
     id: String,
     kind: AgentActionKind,
