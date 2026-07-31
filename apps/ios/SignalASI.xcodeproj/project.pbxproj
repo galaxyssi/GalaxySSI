@@ -52,6 +52,8 @@
     A10000000000000000000426 /* AgentExecutionLoopTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */; };
     A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000427 /* AgentExecutionContinuity.swift */; };
     A10000000000000000000428 /* AgentExecutionContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000428 /* AgentExecutionContinuityTests.swift */; };
+    A10000000000000000000429 /* AgentInlineMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000429 /* AgentInlineMarkdown.swift */; };
+    A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000430 /* AgentInlineMarkdownTests.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
@@ -328,6 +330,8 @@
     A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionLoopTimelineTests.swift; sourceTree = "<group>"; };
     A20000000000000000000427 /* AgentExecutionContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionContinuity.swift; sourceTree = "<group>"; };
     A20000000000000000000428 /* AgentExecutionContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionContinuityTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000429 /* AgentInlineMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInlineMarkdown.swift; sourceTree = "<group>"; };
+    A20000000000000000000430 /* AgentInlineMarkdownTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentInlineMarkdownTests.swift; sourceTree = "<group>"; };
     A20000000000000000000103 /* AgentTeamDelegationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000104 /* AgentNativeToolCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolCore.swift; sourceTree = "<group>"; };
     A20000000000000000000105 /* AgentPhoneNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeTools.swift; sourceTree = "<group>"; };
@@ -619,6 +623,7 @@
         A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
+        A20000000000000000000429 /* AgentInlineMarkdown.swift */,
         A20000000000000000000415 /* AgentLargeOutputPolicy.swift */,
         A20000000000000000000417 /* AgentSessionMemoryBudget.swift */,
         A20000000000000000000419 /* AgentMemoryPssTelemetry.swift */,
@@ -770,6 +775,7 @@
         A20000000000000000000424 /* AgentCronExpressionTests.swift */,
         A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */,
         A20000000000000000000428 /* AgentExecutionContinuityTests.swift */,
+        A20000000000000000000430 /* AgentInlineMarkdownTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
         A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */,
@@ -993,6 +999,7 @@
         A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
+        A10000000000000000000429 /* AgentInlineMarkdown.swift in Sources */,
         A10000000000000000000415 /* AgentLargeOutputPolicy.swift in Sources */,
         A10000000000000000000417 /* AgentSessionMemoryBudget.swift in Sources */,
         A10000000000000000000419 /* AgentMemoryPssTelemetry.swift in Sources */,
@@ -1144,6 +1151,7 @@
         A10000000000000000000424 /* AgentCronExpressionTests.swift in Sources */,
         A10000000000000000000426 /* AgentExecutionLoopTimelineTests.swift in Sources */,
         A10000000000000000000428 /* AgentExecutionContinuityTests.swift in Sources */,
+        A10000000000000000000430 /* AgentInlineMarkdownTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
         A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */,
