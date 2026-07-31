@@ -2,6 +2,172 @@ import XCTest
 @testable import SignalASI
 
 final class GlobalLongHorizonGoalPolicyTests: XCTestCase {
+  func testDurableCognitionCreatesPersistentLongHorizonGoal() {
+    let task = cognition(
+      durable: true,
+      goal: "Ship a reliable on-device Agent runtime",
+      result: GlobalModelUnderstanding(
+        topic: "SignalASI runtime",
+        goals: ["Ship a reliable on-device Agent runtime"],
+        actions: [GlobalAutonomousAction(kind: .createTopic, goal: "Create project workspace", priority: 0.9)],
+        confidence: 0.82
+      )
+    )
+
+    let goals = GlobalLongHorizonGoalPolicy.mergeCognition(
+      task: task,
+      current: [],
+      nowMillis: 1_000
+    )
+
+    XCTAssertEqual(goals.count, 1)
+    XCTAssertEqual(goals.first?.title, "Ship a reliable on-device Agent runtime")
+    XCTAssertEqual(goals.first?.topic, "SignalASI runtime")
+    XCTAssertEqual(goals.first?.priority, 0.9)
+    XCTAssertEqual(goals.first?.checkpointIntervalMillis, 60 * 60 * 1_000)
+    XCTAssertTrue((goals.first?.nextCheckAtMillis ?? 0) > 1_000)
+  }
+
+  func testNonDurableConversationDoesNotBecomeLongHorizonGoal() {
+    let task = cognition(
+      durable: false,
+      goal: "Answer this one question",
+      result: GlobalModelUnderstanding(
+        goals: ["Answer this one question"],
+        confidence: 0.9
+      )
+    )
+
+    XCTAssertTrue(
+      GlobalLongHorizonGoalPolicy.mergeCognition(
+        task: task,
+        current: [],
+        nowMillis: 1_000
+      ).isEmpty
+    )
+  }
+
+  func testSimilarDurableCognitionUpdatesOneGoalInsteadOfDuplicatingIt() {
+    let first = cognition(
+      id: "cognition-1",
+      eventId: "event-1",
+      durable: true,
+      goal: "Build a reliable on-device Agent runtime",
+      result: GlobalModelUnderstanding(
+        topic: "SignalASI runtime",
+        goals: ["Build a reliable on-device Agent runtime"],
+        confidence: 0.75
+      )
+    )
+    let current = GlobalLongHorizonGoalPolicy.mergeCognition(
+      task: first,
+      current: [],
+      nowMillis: 1_000
+    )
+    let second = cognition(
+      id: "cognition-2",
+      eventId: "event-2",
+      durable: true,
+      goal: "Build a reliable on-device Agent runtime",
+      result: GlobalModelUnderstanding(
+        topic: "SignalASI runtime",
+        goals: ["Build a reliable on-device Agent runtime"],
+        confidence: 0.9
+      )
+    )
+
+    let merged = GlobalLongHorizonGoalPolicy.mergeCognition(
+      task: second,
+      current: current,
+      nowMillis: 2_000
+    )
+
+    XCTAssertEqual(merged.count, 1)
+    XCTAssertEqual(merged.first?.sourceEventIds, ["event-1", "event-2"])
+    XCTAssertEqual(merged.first?.confidence, 0.9)
+  }
+
+  func testCognitionDependencyProposalsFeedGoalGraph() {
+    let task = cognition(
+      durable: true,
+      goal: "Ship mobile Agent",
+      result: GlobalModelUnderstanding(
+        topic: "SignalASI",
+        goals: ["Build runtime", "Ship mobile Agent"],
+        goalDependencies: [
+          GlobalGoalDependencyProposal(goal: "Ship mobile Agent", dependsOn: "Build runtime")
+        ],
+        confidence: 0.82
+      )
+    )
+
+    let goals = GlobalLongHorizonGoalPolicy.mergeCognition(
+      task: task,
+      current: [],
+      nowMillis: 1_000
+    )
+    let prerequisite = goals.first { $0.title == "Build runtime" }
+    let dependent = goals.first { $0.title == "Ship mobile Agent" }
+
+    XCTAssertEqual(goals.count, 2)
+    XCTAssertEqual(dependent?.dependencyGoalIds, Set([prerequisite?.id ?? ""]))
+    XCTAssertEqual(dependent?.status, .waitingDependency)
+  }
+
+  func testRepeatedLowCostWorldEvidenceCreatesGoalWithoutModelAvailability() {
+    let world = PersonalWorldModel(items: [
+      worldItem(
+        "world-goal",
+        kind: .goal,
+        topic: "SignalASI runtime",
+        value: "Build a reliable on-device Agent runtime",
+        confidence: 0.82,
+        evidenceCount: 2,
+        conversationIds: ["conversation-a", "conversation-b"],
+        evidenceEventIds: ["event-a", "event-b"]
+      )
+    ])
+
+    let goals = GlobalLongHorizonGoalPolicy.mergeWorld(
+      world: world,
+      current: [],
+      nowMillis: 1_000
+    )
+
+    XCTAssertEqual(goals.count, 1)
+    XCTAssertEqual(goals.first?.sourceConversationIds, Set(["conversation-a", "conversation-b"]))
+    XCTAssertEqual(goals.first?.sourceEventIds, ["event-a", "event-b"])
+    XCTAssertEqual(goals.first?.nextCheckAtMillis, 1_000 + 5 * 60 * 1_000)
+  }
+
+  func testUnchangedWorldEvidenceDoesNotChurnDurableGoalStore() {
+    let world = PersonalWorldModel(items: [
+      worldItem(
+        "world-goal",
+        kind: .goal,
+        topic: "SignalASI runtime",
+        value: "Build the persistent global Agent",
+        confidence: 0.84,
+        evidenceCount: 2,
+        conversationIds: ["conversation-a"],
+        evidenceEventIds: ["event-a", "event-b"]
+      )
+    ])
+    let first = GlobalLongHorizonGoalPolicy.mergeWorld(
+      world: world,
+      current: [],
+      nowMillis: 1_000
+    )
+
+    let second = GlobalLongHorizonGoalPolicy.mergeWorld(
+      world: world,
+      current: first,
+      nowMillis: 2_000
+    )
+
+    XCTAssertEqual(first, second)
+  }
+
   func testGoalSchedulerChoosesUrgentDueGoalsBeforeRoutineGoals() {
     let routine = goal("routine", title: "routine", priority: 0.4, nextCheckAtMillis: 100)
     let urgent = goal("urgent", title: "urgent", priority: 0.95, nextCheckAtMillis: 100)
@@ -233,6 +399,8 @@ final class GlobalLongHorizonGoalPolicyTests: XCTestCase {
     topic: String,
     value: String,
     confidence: Double,
+    evidenceCount: Int = 1,
+    conversationIds: Set<String> = [],
     evidenceEventIds: [String] = [],
     status: GlobalWorldItemStatus = .active
   ) -> GlobalWorldItem {
@@ -244,8 +412,37 @@ final class GlobalLongHorizonGoalPolicyTests: XCTestCase {
       topic: topic,
       value: value,
       confidence: confidence,
+      evidenceCount: evidenceCount,
+      conversationIds: conversationIds,
       evidenceEventIds: evidenceEventIds,
       status: status
+    )
+  }
+
+  private func cognition(
+    id: String = "cognition",
+    eventId: String = "event",
+    durable: Bool,
+    goal: String,
+    result: GlobalModelUnderstanding
+  ) -> GlobalCognitionTask {
+    GlobalCognitionTask(
+      id: id,
+      sourceEvent: GlobalConversationEvent(
+        id: eventId,
+        type: .messageCreated,
+        conversationId: "conversation-a",
+        actor: .user,
+        content: goal,
+        conversationTitle: "SignalASI"
+      ),
+      baselineUnderstanding: GlobalUnderstanding(
+        topic: "SignalASI",
+        goalCandidates: [goal],
+        urgency: 0.6,
+        durableFollowUpUseful: durable
+      ),
+      result: result
     )
   }
 }

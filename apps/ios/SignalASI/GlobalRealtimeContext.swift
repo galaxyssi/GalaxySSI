@@ -71,6 +71,8 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
   var nextAttemptAtMillis: Int64
   var leaseExpiresAtMillis: Int64
   var lastError: String
+  var result: GlobalModelUnderstanding
+  var longHorizonGoalId: String
   var createdAtMillis: Int64
   var updatedAtMillis: Int64
 
@@ -87,6 +89,8 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
     nextAttemptAtMillis: Int64 = 0,
     leaseExpiresAtMillis: Int64 = 0,
     lastError: String = "",
+    result: GlobalModelUnderstanding = GlobalModelUnderstanding(),
+    longHorizonGoalId: String = "",
     createdAtMillis: Int64 = GlobalRealtimeClock.nowMillis(),
     updatedAtMillis: Int64 = GlobalRealtimeClock.nowMillis()
   ) {
@@ -102,8 +106,52 @@ struct GlobalCognitionTask: Codable, Equatable, Identifiable {
     self.nextAttemptAtMillis = max(nextAttemptAtMillis, 0)
     self.leaseExpiresAtMillis = max(leaseExpiresAtMillis, 0)
     self.lastError = lastError
+    self.result = result
+    self.longHorizonGoalId = longHorizonGoalId
     self.createdAtMillis = max(createdAtMillis, 0)
     self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case sourceEvent
+    case baselineUnderstanding
+    case baselineIntent
+    case status
+    case resourceId
+    case attemptedResourceIds
+    case sourceMessageId
+    case attemptCount
+    case nextAttemptAtMillis
+    case leaseExpiresAtMillis
+    case lastError
+    case result
+    case longHorizonGoalId
+    case createdAtMillis
+    case updatedAtMillis
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      sourceEvent: try container.decode(GlobalConversationEvent.self, forKey: .sourceEvent),
+      baselineUnderstanding: try container.decodeIfPresent(GlobalUnderstanding.self, forKey: .baselineUnderstanding) ??
+        GlobalUnderstanding(),
+      baselineIntent: try container.decodeIfPresent(String.self, forKey: .baselineIntent) ?? "",
+      status: try container.decodeIfPresent(GlobalCognitionTaskStatus.self, forKey: .status) ?? .queued,
+      resourceId: try container.decodeIfPresent(String.self, forKey: .resourceId) ?? "",
+      attemptedResourceIds: try container.decodeIfPresent([String].self, forKey: .attemptedResourceIds) ?? [],
+      sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
+      attemptCount: try container.decodeIfPresent(Int.self, forKey: .attemptCount) ?? 0,
+      nextAttemptAtMillis: try container.decodeIfPresent(Int64.self, forKey: .nextAttemptAtMillis) ?? 0,
+      leaseExpiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .leaseExpiresAtMillis) ?? 0,
+      lastError: try container.decodeIfPresent(String.self, forKey: .lastError) ?? "",
+      result: try container.decodeIfPresent(GlobalModelUnderstanding.self, forKey: .result) ?? GlobalModelUnderstanding(),
+      longHorizonGoalId: try container.decodeIfPresent(String.self, forKey: .longHorizonGoalId) ?? "",
+      createdAtMillis: try container.decodeIfPresent(Int64.self, forKey: .createdAtMillis) ?? GlobalRealtimeClock.nowMillis(),
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? GlobalRealtimeClock.nowMillis()
+    )
   }
 }
 

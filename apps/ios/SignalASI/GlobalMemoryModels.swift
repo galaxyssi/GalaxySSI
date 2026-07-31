@@ -542,12 +542,137 @@ enum GlobalMemoryTemporalPolicy {
 }
 
 struct GlobalUnderstanding: Codable, Equatable {
+  var eventId: String
   var topic: String
   var project: String
+  var relatedTopics: Set<String>
+  var intent: String
+  var entities: Set<String>
+  var goalCandidates: [String]
+  var taskCandidates: [String]
+  var decisionCandidates: [String]
+  var preferenceCandidates: [String]
+  var riskCandidates: [String]
+  var opportunityCandidates: [String]
+  var crossConversationIds: Set<String>
+  var complexity: Double
+  var urgency: Double
+  var novelty: Double
+  var uncertainty: Double
+  var externalResearchUseful: Bool
+  var durableFollowUpUseful: Bool
 
-  init(topic: String = "", project: String = "") {
-    self.topic = topic
-    self.project = project
+  init(
+    eventId: String = "",
+    topic: String = "",
+    project: String = "",
+    relatedTopics: Set<String> = [],
+    intent: String = "",
+    entities: Set<String> = [],
+    goalCandidates: [String] = [],
+    taskCandidates: [String] = [],
+    decisionCandidates: [String] = [],
+    preferenceCandidates: [String] = [],
+    riskCandidates: [String] = [],
+    opportunityCandidates: [String] = [],
+    crossConversationIds: Set<String> = [],
+    complexity: Double = 0,
+    urgency: Double = 0,
+    novelty: Double = 0.5,
+    uncertainty: Double = 0,
+    externalResearchUseful: Bool = false,
+    durableFollowUpUseful: Bool = false
+  ) {
+    self.eventId = eventId
+    self.topic = Self.clean(topic, limit: 160)
+    self.project = Self.clean(project, limit: 160)
+    self.relatedTopics = Set(Self.cleanArray(Array(relatedTopics), limit: 16, itemLimit: 160))
+    self.intent = Self.clean(intent, limit: 120)
+    self.entities = Set(Self.cleanArray(Array(entities), limit: 48, itemLimit: 160))
+    self.goalCandidates = Self.cleanArray(goalCandidates, limit: 16, itemLimit: 1_000)
+    self.taskCandidates = Self.cleanArray(taskCandidates, limit: 32, itemLimit: 1_000)
+    self.decisionCandidates = Self.cleanArray(decisionCandidates, limit: 16, itemLimit: 1_000)
+    self.preferenceCandidates = Self.cleanArray(preferenceCandidates, limit: 16, itemLimit: 1_000)
+    self.riskCandidates = Self.cleanArray(riskCandidates, limit: 16, itemLimit: 1_000)
+    self.opportunityCandidates = Self.cleanArray(opportunityCandidates, limit: 16, itemLimit: 1_000)
+    self.crossConversationIds = Set(Self.cleanArray(Array(crossConversationIds), limit: 32, itemLimit: 160))
+    self.complexity = min(max(complexity, 0), 1)
+    self.urgency = min(max(urgency, 0), 1)
+    self.novelty = min(max(novelty, 0), 1)
+    self.uncertainty = min(max(uncertainty, 0), 1)
+    self.externalResearchUseful = externalResearchUseful
+    self.durableFollowUpUseful = durableFollowUpUseful
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case eventId
+    case topic
+    case project
+    case relatedTopics
+    case intent
+    case entities
+    case goalCandidates
+    case taskCandidates
+    case decisionCandidates
+    case preferenceCandidates
+    case riskCandidates
+    case opportunityCandidates
+    case crossConversationIds
+    case complexity
+    case urgency
+    case novelty
+    case uncertainty
+    case externalResearchUseful
+    case durableFollowUpUseful
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      eventId: try container.decodeIfPresent(String.self, forKey: .eventId) ?? "",
+      topic: try container.decodeIfPresent(String.self, forKey: .topic) ?? "",
+      project: try container.decodeIfPresent(String.self, forKey: .project) ?? "",
+      relatedTopics: try container.decodeIfPresent(Set<String>.self, forKey: .relatedTopics) ?? [],
+      intent: try container.decodeIfPresent(String.self, forKey: .intent) ?? "",
+      entities: try container.decodeIfPresent(Set<String>.self, forKey: .entities) ?? [],
+      goalCandidates: try container.decodeIfPresent([String].self, forKey: .goalCandidates) ?? [],
+      taskCandidates: try container.decodeIfPresent([String].self, forKey: .taskCandidates) ?? [],
+      decisionCandidates: try container.decodeIfPresent([String].self, forKey: .decisionCandidates) ?? [],
+      preferenceCandidates: try container.decodeIfPresent([String].self, forKey: .preferenceCandidates) ?? [],
+      riskCandidates: try container.decodeIfPresent([String].self, forKey: .riskCandidates) ?? [],
+      opportunityCandidates: try container.decodeIfPresent([String].self, forKey: .opportunityCandidates) ?? [],
+      crossConversationIds: try container.decodeIfPresent(Set<String>.self, forKey: .crossConversationIds) ?? [],
+      complexity: try container.decodeIfPresent(Double.self, forKey: .complexity) ?? 0,
+      urgency: try container.decodeIfPresent(Double.self, forKey: .urgency) ?? 0,
+      novelty: try container.decodeIfPresent(Double.self, forKey: .novelty) ?? 0.5,
+      uncertainty: try container.decodeIfPresent(Double.self, forKey: .uncertainty) ?? 0,
+      externalResearchUseful: try container.decodeIfPresent(Bool.self, forKey: .externalResearchUseful) ?? false,
+      durableFollowUpUseful: try container.decodeIfPresent(Bool.self, forKey: .durableFollowUpUseful) ?? false
+    )
+  }
+
+  private static func cleanArray(
+    _ values: [String],
+    limit: Int,
+    itemLimit: Int
+  ) -> [String] {
+    var seen = Set<String>()
+    var result: [String] = []
+    for value in values {
+      let clean = clean(value, limit: itemLimit)
+      let key = GlobalAgentText.normalize(clean)
+      guard !clean.isEmpty, seen.insert(key).inserted else { continue }
+      result.append(clean)
+      if result.count >= limit { break }
+    }
+    return result
+  }
+
+  private static func clean(_ value: String, limit: Int) -> String {
+    String(value
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+      .prefix(limit))
   }
 }
 
