@@ -50,6 +50,8 @@
     A10000000000000000000424 /* AgentCronExpressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000424 /* AgentCronExpressionTests.swift */; };
     A10000000000000000000425 /* AgentExecutionLoopTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000425 /* AgentExecutionLoopTimeline.swift */; };
     A10000000000000000000426 /* AgentExecutionLoopTimelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */; };
+    A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000427 /* AgentExecutionContinuity.swift */; };
+    A10000000000000000000428 /* AgentExecutionContinuityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000428 /* AgentExecutionContinuityTests.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
@@ -324,6 +326,8 @@
     A20000000000000000000424 /* AgentCronExpressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCronExpressionTests.swift; sourceTree = "<group>"; };
     A20000000000000000000425 /* AgentExecutionLoopTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionLoopTimeline.swift; sourceTree = "<group>"; };
     A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionLoopTimelineTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000427 /* AgentExecutionContinuity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionContinuity.swift; sourceTree = "<group>"; };
+    A20000000000000000000428 /* AgentExecutionContinuityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionContinuityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000103 /* AgentTeamDelegationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000104 /* AgentNativeToolCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolCore.swift; sourceTree = "<group>"; };
     A20000000000000000000105 /* AgentPhoneNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeTools.swift; sourceTree = "<group>"; };
@@ -612,6 +616,7 @@
         A20000000000000000000326 /* AgentNativeToolRunControlAdapter.swift */,
         A20000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift */,
         A20000000000000000000117 /* AgentPlanRunModels.swift */,
+        A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
         A20000000000000000000415 /* AgentLargeOutputPolicy.swift */,
@@ -764,6 +769,7 @@
         A20000000000000000000422 /* AgentTranscriptEntryStoreTests.swift */,
         A20000000000000000000424 /* AgentCronExpressionTests.swift */,
         A20000000000000000000426 /* AgentExecutionLoopTimelineTests.swift */,
+        A20000000000000000000428 /* AgentExecutionContinuityTests.swift */,
         A20000000000000000000208 /* AgentMemoryTests.swift */,
         A20000000000000000000412 /* AgentMemoryCausalDeletionTests.swift */,
         A20000000000000000000414 /* AgentMemoryPersistentStoreTests.swift */,
@@ -984,6 +990,7 @@
         A10000000000000000000326 /* AgentNativeToolRunControlAdapter.swift in Sources */,
         A10000000000000000000327 /* AgentNativeToolWorkspaceProgressBridge.swift in Sources */,
         A10000000000000000000117 /* AgentPlanRunModels.swift in Sources */,
+        A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
         A10000000000000000000415 /* AgentLargeOutputPolicy.swift in Sources */,
@@ -1136,6 +1143,7 @@
         A10000000000000000000422 /* AgentTranscriptEntryStoreTests.swift in Sources */,
         A10000000000000000000424 /* AgentCronExpressionTests.swift in Sources */,
         A10000000000000000000426 /* AgentExecutionLoopTimelineTests.swift in Sources */,
+        A10000000000000000000428 /* AgentExecutionContinuityTests.swift in Sources */,
         A10000000000000000000208 /* AgentMemoryTests.swift in Sources */,
         A10000000000000000000412 /* AgentMemoryCausalDeletionTests.swift in Sources */,
         A10000000000000000000414 /* AgentMemoryPersistentStoreTests.swift in Sources */,
