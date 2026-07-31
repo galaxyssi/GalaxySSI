@@ -299,6 +299,18 @@ final class VoiceInteractionCoordinatorTests: XCTestCase {
     XCTAssertTrue(VoiceFeatureFlags.isPcmCaptureEnabled(userDefaults: userDefaults, defaultEnabled: false))
   }
 
+  func testVoiceFeatureFlagPersistsLocalWhisperRuntimeV2Setting() {
+    let suiteName = "signalasi-voice-whisper-runtime-flags-\(UUID().uuidString)"
+    let userDefaults = UserDefaults(suiteName: suiteName)!
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    XCTAssertTrue(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(userDefaults: userDefaults, defaultEnabled: true))
+    VoiceFeatureFlags.setLocalWhisperRuntimeV2Enabled(false, userDefaults: userDefaults)
+    XCTAssertFalse(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(userDefaults: userDefaults, defaultEnabled: true))
+    VoiceFeatureFlags.setLocalWhisperRuntimeV2Enabled(true, userDefaults: userDefaults)
+    XCTAssertTrue(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(userDefaults: userDefaults, defaultEnabled: false))
+  }
+
 }
 
 private enum ObserverFailure: Error {
