@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreNFC) && os(iOS)
+import CoreNFC
+#endif
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -8,6 +11,7 @@ protocol AgentIOSHardwareStatusProviding {
   func powerStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func storageStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func nfcStatus(nowMillis: Int64) -> AgentMcpJSONObject
 }
 
 struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
@@ -69,6 +73,27 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
       "upstream_kbps": .int(Int64(max(0, probe.upstreamKbps))),
       "identifiers_included": .bool(false),
       "scope": .string("app_visible_ios"),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  func nfcStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+    #if canImport(CoreNFC) && os(iOS)
+    let readingAvailable = NFCNDEFReaderSession.readingAvailable
+    let framework = "core_nfc"
+    #else
+    let readingAvailable = false
+    let framework = "unavailable"
+    #endif
+    return [
+      "supported": .bool(readingAvailable),
+      "enabled": .bool(readingAvailable),
+      "secure_nfc_supported": .bool(false),
+      "secure_nfc_enabled": .bool(false),
+      "tag_capture_started": .bool(false),
+      "settings_changed": .bool(false),
+      "framework": .string(framework),
+      "scope": .string("ios_core_nfc_status_only"),
       "observed_at_epoch_ms": .int(nowMillis)
     ]
   }
@@ -179,6 +204,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     powerStatus,
     storageStatus,
     networkStatus,
+    nfcStatus,
     bluetoothPairingHandoff,
     installedAppsList,
     packageDetail
@@ -276,14 +302,11 @@ enum AgentIOSHardwareNativeToolCatalog {
       "Open Bluetooth pairing settings",
       "Returns a user-visible iOS Settings handoff request; iOS does not allow silent Bluetooth pairing."
     ),
-    unavailableSpec(
+    statusSpec(
       nfcStatus,
       "Read NFC capability status",
-      "Requires a CoreNFC executor; tag reading still needs a foreground user-visible session.",
-      .medium,
-      ["nfc.status"],
-      ["NFCReaderUsageDescription"],
-      []
+      "Reads iOS CoreNFC reader availability without starting a tag capture session.",
+      ["nfc.status.read", "nfc.no_tag_capture", "nfc.no_transaction"]
     ),
     appVisibilityBoundarySpec(
       installedAppsList,
@@ -526,6 +549,8 @@ struct AgentIOSHardwareNativeToolExecutor {
       return status(provider.storageStatus(nowMillis: now), "Storage status read")
     case AgentIOSHardwareNativeToolCatalog.networkStatus:
       return status(provider.networkStatus(nowMillis: now), "Network status read")
+    case AgentIOSHardwareNativeToolCatalog.nfcStatus:
+      return status(provider.nfcStatus(nowMillis: now), "NFC capability status read")
     case AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff:
       return AgentNativeToolExecutionResult.success(
         output: [

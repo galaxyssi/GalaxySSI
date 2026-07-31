@@ -97,6 +97,20 @@ extension SignalASIStoreTests {
           "observed_at_epoch_ms": .int(nowMillis)
         ]
       }
+
+      func nfcStatus(nowMillis: Int64) -> AgentMcpJSONObject {
+        [
+          "supported": .bool(true),
+          "enabled": .bool(true),
+          "secure_nfc_supported": .bool(false),
+          "secure_nfc_enabled": .bool(false),
+          "tag_capture_started": .bool(false),
+          "settings_changed": .bool(false),
+          "framework": .string("core_nfc"),
+          "scope": .string("ios_core_nfc_status_only"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
     }
 
     let ids = AgentIOSHardwareNativeToolCatalog.toolIds
@@ -135,6 +149,7 @@ extension SignalASIStoreTests {
     let power = registry.invoke(AgentIOSHardwareNativeToolCatalog.powerStatus, input: [:], context: context)
     let storage = registry.invoke(AgentIOSHardwareNativeToolCatalog.storageStatus, input: [:], context: context)
     let network = registry.invoke(AgentIOSHardwareNativeToolCatalog.networkStatus, input: [:], context: context)
+    let nfc = registry.invoke(AgentIOSHardwareNativeToolCatalog.nfcStatus, input: [:], context: context)
     let pairing = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, input: [:], context: context)
     let installedApps = registry.invoke(
       AgentIOSHardwareNativeToolCatalog.installedAppsList,
@@ -152,6 +167,9 @@ extension SignalASIStoreTests {
     let installedAppsDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.installedAppsList }
     )
+    let nfcDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.nfcStatus }
+    )
 
     XCTAssertTrue(battery.isSuccess)
     XCTAssertEqual(battery.output["percent"], .int(73))
@@ -162,6 +180,11 @@ extension SignalASIStoreTests {
     XCTAssertEqual(storage.output["used_bytes"], .int(700))
     XCTAssertTrue(network.isSuccess)
     XCTAssertEqual(network.output["identifiers_included"], .bool(false))
+    XCTAssertTrue(nfc.isSuccess)
+    XCTAssertEqual(nfc.output["supported"], .bool(true))
+    XCTAssertEqual(nfc.output["tag_capture_started"], .bool(false))
+    XCTAssertEqual(nfc.output["settings_changed"], .bool(false))
+    XCTAssertEqual(nfc.output["observed_at_epoch_ms"], .int(4_200))
     XCTAssertTrue(pairing.isSuccess)
     XCTAssertEqual(pairing.output["settings_target"], .string("bluetooth"))
     XCTAssertEqual(pairing.output["completion_untrusted"], .bool(true))
@@ -180,6 +203,8 @@ extension SignalASIStoreTests {
     XCTAssertEqual(packageDetail.metadata["package_inventory_exposed"], .bool(false))
     XCTAssertEqual(installedAppsDefinition.descriptor.availability.status, .available)
     XCTAssertTrue(installedAppsDefinition.descriptor.availability.reason.contains("full installed-app inventory"))
+    XCTAssertEqual(nfcDefinition.descriptor.availability.status, .available)
+    XCTAssertTrue(nfcDefinition.descriptor.capabilities.contains("nfc.no_tag_capture"))
     XCTAssertEqual(location.descriptor.availability.status, .unavailable)
     XCTAssertEqual(location.descriptor.risk, .high)
   }
