@@ -109,6 +109,68 @@ final class AgentConfirmationPolicyTests: XCTestCase {
     XCTAssertEqual(AgentConfirmationPolicy.tier(for: connectorAction), .direct)
   }
 
+  func testAgentConfirmationConsentStoreUsesGrantLedgerScopes() throws {
+    let grantStore = InMemoryAgentPermissionGrantStore(nowMillis: { 1_000 })
+    let store = AgentGrantBackedConfirmationConsentStore(grantStore: grantStore)
+    let unrelated = try grantStore.grant(AgentPermissionGrant(
+      subjectType: .tool,
+      subjectId: "tool-host",
+      scope: "bluetooth_discovery",
+      action: "bluetooth_discovery",
+      issuer: .user,
+      evidence: "tool_grant",
+      lifetime: .permanent
+    ))
+
+    XCTAssertFalse(store.isRemembered(consentKey: " "))
+    store.remember(consentKey: " bluetooth_discovery ")
+    store.remember(consentKey: "bluetooth_discovery")
+
+    XCTAssertTrue(store.isRemembered(consentKey: "bluetooth_discovery"))
+    XCTAssertEqual(store.rememberedKeys(), Set(["bluetooth_discovery"]))
+    let remembered = grantStore.list(includeInactive: false).filter { $0.subjectType == .consequentialAction }
+    XCTAssertEqual(remembered.count, 1)
+    XCTAssertEqual(remembered.first?.subjectId, "signalasi-host")
+    XCTAssertEqual(remembered.first?.issuer, .user)
+    XCTAssertEqual(remembered.first?.evidence, "user_confirmed_once")
+    XCTAssertEqual(remembered.first?.lifetime, .permanent)
+
+    XCTAssertTrue(store.forget(consentKey: "bluetooth_discovery"))
+    XCTAssertFalse(store.isRemembered(consentKey: "bluetooth_discovery"))
+    XCTAssertFalse(store.forget(consentKey: "bluetooth_discovery"))
+    XCTAssertTrue(try grantStore.authorize(AgentPermissionRequest(
+      subjectType: .tool,
+      subjectId: "tool-host",
+      scope: "bluetooth_discovery",
+      action: "bluetooth_discovery"
+    )).granted)
+    XCTAssertEqual(grantStore.list(includeInactive: false).first { $0.grantId == unrelated.grantId }?.status, .active)
+  }
+
+  func testUserDefaultsAgentConfirmationConsentStorePersistsRememberedKeys() throws {
+    let suite = "AgentConfirmationConsentStoreTests-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let first = UserDefaultsAgentConfirmationConsentStore(defaults: defaults, nowMillis: { 1_000 })
+
+    first.remember(consentKey: "home_assistant_control:light.office")
+
+    let restored = UserDefaultsAgentConfirmationConsentStore(defaults: defaults, nowMillis: { 2_000 })
+    XCTAssertTrue(restored.isRemembered(consentKey: "home_assistant_control:light.office"))
+    XCTAssertEqual(restored.rememberedKeys(), Set(["home_assistant_control:light.office"]))
+    XCTAssertTrue(restored.forget(consentKey: "home_assistant_control:light.office"))
+    XCTAssertFalse(restored.isRemembered(consentKey: "home_assistant_control:light.office"))
+
+    restored.remember(consentKey: "downloads")
+    restored.remember(consentKey: "microphone")
+    restored.clear()
+
+    let afterClear = UserDefaultsAgentConfirmationConsentStore(defaults: defaults, nowMillis: { 3_000 })
+    XCTAssertTrue(afterClear.rememberedKeys().isEmpty)
+    XCTAssertFalse(afterClear.isRemembered(consentKey: "downloads"))
+    XCTAssertFalse(afterClear.isRemembered(consentKey: "microphone"))
+  }
+
   private func confirmationAction(
     id: String,
     kind: AgentActionKind,

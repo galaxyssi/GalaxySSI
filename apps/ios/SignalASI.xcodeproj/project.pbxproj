@@ -126,6 +126,7 @@
     A10000000000000000000190 /* GlobalModelCallBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000190 /* GlobalModelCallBudgetModels.swift */; };
     A10000000000000000000191 /* AgentAutonomyGuardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000191 /* AgentAutonomyGuardModels.swift */; };
     A10000000000000000000192 /* AgentConfirmationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000192 /* AgentConfirmationPolicy.swift */; };
+    A10000000000000000000323 /* AgentConfirmationConsentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000323 /* AgentConfirmationConsentStore.swift */; };
     A10000000000000000000193 /* AgentPermissionGrantLedgerModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000193 /* AgentPermissionGrantLedgerModels.swift */; };
     A10000000000000000000194 /* AgentRemoteApprovalModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000194 /* AgentRemoteApprovalModels.swift */; };
     A10000000000000000000195 /* AgentClarificationPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000195 /* AgentClarificationPolicy.swift */; };
@@ -369,6 +370,7 @@
     A20000000000000000000190 /* GlobalModelCallBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalModelCallBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000191 /* AgentAutonomyGuardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutonomyGuardModels.swift; sourceTree = "<group>"; };
     A20000000000000000000192 /* AgentConfirmationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConfirmationPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000323 /* AgentConfirmationConsentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConfirmationConsentStore.swift; sourceTree = "<group>"; };
     A20000000000000000000193 /* AgentPermissionGrantLedgerModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionGrantLedgerModels.swift; sourceTree = "<group>"; };
     A20000000000000000000194 /* AgentRemoteApprovalModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteApprovalModels.swift; sourceTree = "<group>"; };
     A20000000000000000000195 /* AgentClarificationPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentClarificationPolicy.swift; sourceTree = "<group>"; };
@@ -613,6 +615,7 @@
         A20000000000000000000190 /* GlobalModelCallBudgetModels.swift */,
         A20000000000000000000191 /* AgentAutonomyGuardModels.swift */,
         A20000000000000000000192 /* AgentConfirmationPolicy.swift */,
+        A20000000000000000000323 /* AgentConfirmationConsentStore.swift */,
         A20000000000000000000193 /* AgentPermissionGrantLedgerModels.swift */,
         A20000000000000000000194 /* AgentRemoteApprovalModels.swift */,
         A20000000000000000000195 /* AgentClarificationPolicy.swift */,
@@ -954,6 +957,7 @@
         A10000000000000000000190 /* GlobalModelCallBudgetModels.swift in Sources */,
         A10000000000000000000191 /* AgentAutonomyGuardModels.swift in Sources */,
         A10000000000000000000192 /* AgentConfirmationPolicy.swift in Sources */,
+        A10000000000000000000323 /* AgentConfirmationConsentStore.swift in Sources */,
         A10000000000000000000193 /* AgentPermissionGrantLedgerModels.swift in Sources */,
         A10000000000000000000194 /* AgentRemoteApprovalModels.swift in Sources */,
         A10000000000000000000195 /* AgentClarificationPolicy.swift in Sources */,
