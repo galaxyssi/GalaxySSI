@@ -16,6 +16,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
 import kotlin.math.floor
@@ -160,6 +161,9 @@ object LocalWhisperAsr {
     }
 
     private fun decodeTo16kMono(file: File): FloatArray {
+        if (file.extension.equals("wav", ignoreCase = true)) {
+            return decodePcmWave(file)
+        }
         val extractor = MediaExtractor()
         extractor.setDataSource(file.absolutePath)
         val trackIndex = (0 until extractor.trackCount).firstOrNull { index ->
@@ -221,6 +225,38 @@ object LocalWhisperAsr {
             extractor.release()
         }
         return resamplePcm16(pcm.toByteArray(), sampleRate, channels)
+    }
+
+    private fun decodePcmWave(file: File): FloatArray {
+        val bytes = file.readBytes()
+        require(bytes.size >= 44 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF" &&
+            String(bytes, 8, 4, Charsets.US_ASCII) == "WAVE") { "Invalid PCM wave file" }
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        var offset = 12
+        var sampleRate = 0
+        var channels = 0
+        var bitsPerSample = 0
+        var audioFormat = 0
+        var pcmBytes: ByteArray? = null
+        while (offset + 8 <= bytes.size) {
+            val chunkId = String(bytes, offset, 4, Charsets.US_ASCII)
+            val chunkSize = buffer.getInt(offset + 4).coerceAtLeast(0)
+            val payloadOffset = offset + 8
+            if (payloadOffset + chunkSize > bytes.size) break
+            when (chunkId) {
+                "fmt " -> if (chunkSize >= 16) {
+                    audioFormat = buffer.getShort(payloadOffset).toInt() and 0xffff
+                    channels = buffer.getShort(payloadOffset + 2).toInt() and 0xffff
+                    sampleRate = buffer.getInt(payloadOffset + 4)
+                    bitsPerSample = buffer.getShort(payloadOffset + 14).toInt() and 0xffff
+                }
+                "data" -> pcmBytes = bytes.copyOfRange(payloadOffset, payloadOffset + chunkSize)
+            }
+            offset = payloadOffset + chunkSize + (chunkSize and 1)
+        }
+        require(audioFormat == 1 && bitsPerSample == 16) { "Only PCM16 wave audio is supported" }
+        require(sampleRate > 0 && channels > 0) { "PCM wave format is incomplete" }
+        return resamplePcm16(requireNotNull(pcmBytes) { "PCM wave data is missing" }, sampleRate, channels)
     }
 
     private fun resamplePcm16(bytes: ByteArray, sourceRate: Int, channels: Int): FloatArray {

@@ -38,7 +38,7 @@ async function requestSecureState({
   contactId,
   patch,
   expectedPcFingerprint,
-  timeoutMs = 10_000
+  timeoutMs = 30_000
 }) {
   const requestId = crypto.randomUUID();
   const request = {
