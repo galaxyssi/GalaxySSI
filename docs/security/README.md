@@ -5,3 +5,4 @@ Security documents describe pairing trust, key handling, encrypted transport, lo
 - `TRUST_MODEL.md` defines the current trust boundaries and security evidence.
 - `SELF_EVOLUTION_V2.md` defines the isolated candidate, credential, approval, and restore-gate
   boundaries for self-evolution.
+- `TRUSTED_PR_REVIEW.md` defines trusted automation reviewers and the green-CI approval boundary.

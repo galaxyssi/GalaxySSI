@@ -1,0 +1,22 @@
+{
+  "schema": "signalasi.trusted-pr-review.v1",
+  "trusted_bot_logins": [
+    "github-actions[bot]"
+  ],
+  "required_checks": [
+    "repository-check",
+    "android-build",
+    "desktop-source-smoke",
+    "core-regressions",
+    "package-win"
+  ],
+  "passing_conclusions": [
+    "success",
+    "neutral",
+    "skipped"
+  ],
+  "ignored_checks": [
+    "trusted-automation-review"
+  ],
+  "require_current_head": true
+}
