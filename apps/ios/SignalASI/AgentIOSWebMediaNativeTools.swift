@@ -128,7 +128,7 @@ enum AgentIOSWebMediaNativeToolCatalog {
   ]
 
   static func definitions(
-    provider: AgentIOSWebMediaToolProviding = AgentIOSUnavailableWebMediaToolProvider()
+    provider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider()
   ) -> [AgentPhoneNativeToolDefinition] {
     AgentIOSWebMediaOperation.allCases.map { operation in
       definition(provider: provider, operation: operation)
@@ -481,7 +481,13 @@ enum AgentIOSWebMediaNativeToolCatalog {
       metadata["recognition"] = "provider_bounded_ocr"
     case .webSearch, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
       metadata["android_executor_compat"] = androidWebExecutorId
-      metadata["network_policy"] = "public_https_pinned_dns_v1"
+      if provider is AgentIOSURLSessionWebMediaToolProvider {
+        metadata["network_policy"] = "public_https_urlsession_revalidated_v1"
+        metadata["redirect_policy"] = "manual_revalidate_each_hop"
+        metadata["dns_resolution"] = "urlsession_managed"
+      } else {
+        metadata["network_policy"] = "public_https_pinned_dns_v1"
+      }
       if operation == .webOpen || operation == .browserRender {
         metadata["javascript"] = "false"
       }
