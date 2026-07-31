@@ -21,6 +21,91 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     XCTAssertTrue(store.pending(now: now.addingTimeInterval(10)).isEmpty)
   }
 
+  func testOutboxAttachmentDependenciesBlockReleaseAndDiscard() {
+    let store = makeDeliveryStore()
+    let now = Date(timeIntervalSince1970: 100)
+    let transferId = String(repeating: "a", count: 64)
+
+    store.enqueue(
+      messageId: "blocked",
+      topic: "topic/up",
+      wirePayload: "{\"type\":\"text\"}",
+      blockedByAttachmentTransferIds: [transferId.uppercased(), transferId],
+      now: now
+    )
+    XCTAssertTrue(store.pending(now: now).isEmpty)
+    XCTAssertNil(store.nextRetryDelay(now: now))
+
+    XCTAssertEqual(store.releaseAttachmentDependency(transferId.uppercased(), now: now), 1)
+    XCTAssertEqual(store.pending(now: now).map(\.messageId), ["blocked"])
+    XCTAssertEqual(store.releaseAttachmentDependency(transferId, now: now), 0)
+
+    let discardStore = makeDeliveryStore()
+    discardStore.enqueue(
+      messageId: "blocked-discard",
+      topic: "topic/up",
+      wirePayload: "{\"type\":\"text\"}",
+      blockedByAttachmentTransferIds: [String(repeating: "b", count: 64)],
+      now: now
+    )
+    discardStore.enqueue(messageId: "ready", topic: "topic/up", wirePayload: "{\"type\":\"text\"}", now: now)
+
+    XCTAssertEqual(discardStore.discardBlockedByAttachmentTransfers([String(repeating: "b", count: 64)]), 1)
+    XCTAssertEqual(discardStore.pending(now: now).map(\.messageId), ["ready"])
+  }
+
+  func testPendingLinkMessageEncodesAndroidAttachmentDependencyKey() throws {
+    let transferId = String(repeating: "a", count: 64)
+    let message = PendingLinkMessage(
+      messageId: "m1",
+      topic: "topic/up",
+      wirePayload: "{}",
+      status: "queued",
+      attempts: 0,
+      nextAttemptAt: Date(timeIntervalSince1970: 100),
+      createdAt: Date(timeIntervalSince1970: 100),
+      updatedAt: Date(timeIntervalSince1970: 100),
+      blockedByAttachmentTransferIds: [transferId.uppercased(), "invalid", transferId]
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    let object = try XCTUnwrap(JSONSerialization.jsonObject(with: try encoder.encode(message)) as? [String: Any])
+
+    XCTAssertEqual(object["blocked_by_attachment_transfers"] as? [String], [transferId])
+    XCTAssertNil(object["blockedByAttachmentTransferIds"])
+  }
+
+  func testOutboxFileBacksLargeWirePayloads() throws {
+    let suite = "SignalASILinkReliabilityTests-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defaults.removePersistentDomain(forName: suite)
+    let payloadRoot = temporaryOutboxPayloadRoot()
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: payloadRoot.deletingLastPathComponent())
+    }
+    let store = SignalASILinkDeliveryStore(
+      defaults: defaults,
+      payloadStore: SignalASILinkOutboxPayloadStore(rootURL: payloadRoot)
+    )
+    let now = Date(timeIntervalSince1970: 100)
+    let largePayload = String(
+      repeating: "x",
+      count: SignalASILinkOutboxPayloadStore.fileBackedWireThresholdBytes + 1
+    )
+
+    store.enqueue(messageId: "large", topic: "topic/up", wirePayload: largePayload, now: now)
+
+    let persisted = try XCTUnwrap(defaults.data(forKey: "signalasi-ios-link-delivery-v1"))
+    XCTAssertFalse(String(decoding: persisted, as: UTF8.self).contains(largePayload))
+    XCTAssertEqual(store.pending(now: now).first?.wirePayload, largePayload)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).count, 1)
+
+    store.acknowledge(messageId: "large")
+
+    XCTAssertTrue((try? FileManager.default.contentsOfDirectory(atPath: payloadRoot.path).isEmpty) ?? true)
+  }
+
   func testIncomingStageDedupeAndCompletion() {
     let store = makeDeliveryStore()
 
@@ -154,6 +239,12 @@ final class SignalASILinkReliabilityTests: XCTestCase {
     let defaults = UserDefaults(suiteName: suite)!
     defaults.removePersistentDomain(forName: suite)
     return SignalASILinkDeliveryStore(defaults: defaults)
+  }
+
+  private func temporaryOutboxPayloadRoot() -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASILinkOutboxPayloadTests-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("signalasi-link-outbox-v1", isDirectory: true)
   }
 
   private func jsonObject(_ text: String) -> [String: Any] {

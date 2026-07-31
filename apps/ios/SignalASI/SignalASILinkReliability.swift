@@ -6,52 +6,61 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
   var messageId: String
   var topic: String
   var wirePayload: String
+  var wirePayloadFile: String?
   var status: String
   var attempts: Int
   var nextAttemptAt: Date
   var createdAt: Date
   var updatedAt: Date
   var requiresValidatedNetwork: Bool
+  var blockedByAttachmentTransferIds: [String]
 
   init(
     messageId: String,
     topic: String,
     wirePayload: String,
+    wirePayloadFile: String? = nil,
     status: String,
     attempts: Int,
     nextAttemptAt: Date,
     createdAt: Date,
     updatedAt: Date,
-    requiresValidatedNetwork: Bool = false
+    requiresValidatedNetwork: Bool = false,
+    blockedByAttachmentTransferIds: [String] = []
   ) {
     self.messageId = messageId
     self.topic = topic
     self.wirePayload = wirePayload
+    self.wirePayloadFile = wirePayloadFile
     self.status = status
     self.attempts = attempts
     self.nextAttemptAt = nextAttemptAt
     self.createdAt = createdAt
     self.updatedAt = updatedAt
     self.requiresValidatedNetwork = requiresValidatedNetwork
+    self.blockedByAttachmentTransferIds = Self.normalizedTransferIds(blockedByAttachmentTransferIds)
   }
 
   enum CodingKeys: String, CodingKey {
     case messageId
     case topic
     case wirePayload
+    case wirePayloadFile = "wire_payload_file"
     case status
     case attempts
     case nextAttemptAt
     case createdAt
     case updatedAt
     case requiresValidatedNetwork = "requires_validated_network"
+    case blockedByAttachmentTransferIds = "blocked_by_attachment_transfers"
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     messageId = try container.decode(String.self, forKey: .messageId)
     topic = try container.decode(String.self, forKey: .topic)
-    wirePayload = try container.decode(String.self, forKey: .wirePayload)
+    wirePayload = try container.decodeIfPresent(String.self, forKey: .wirePayload) ?? ""
+    wirePayloadFile = try container.decodeIfPresent(String.self, forKey: .wirePayloadFile)
     status = try container.decode(String.self, forKey: .status)
     attempts = try container.decode(Int.self, forKey: .attempts)
     nextAttemptAt = try container.decode(Date.self, forKey: .nextAttemptAt)
@@ -61,7 +70,24 @@ struct PendingLinkMessage: Codable, Equatable, Identifiable {
       Bool.self,
       forKey: .requiresValidatedNetwork
     ) ?? false
+    blockedByAttachmentTransferIds = Self.normalizedTransferIds(
+      try container.decodeIfPresent([String].self, forKey: .blockedByAttachmentTransferIds) ?? []
+    )
   }
+
+  static func normalizedTransferIds(_ transferIds: [String]) -> [String] {
+    var seen = Set<String>()
+    return transferIds.compactMap { transferId in
+      let clean = transferId.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+      guard clean.range(of: transferIdPattern, options: .regularExpression) != nil,
+            seen.insert(clean).inserted else {
+        return nil
+      }
+      return clean
+    }
+  }
+
+  private static let transferIdPattern = #"^[a-f0-9]{64}$"#
 }
 
 struct PendingIncomingLinkMessage: Codable, Equatable, Identifiable {
@@ -95,6 +121,7 @@ final class SignalASILinkDeliveryStore {
   }
 
   private let defaults: UserDefaults
+  private let payloadStore: SignalASILinkOutboxPayloadStore
   private let storageKey = "signalasi-ios-link-delivery-v1"
   private let maximumInboxIds = 4096
   private let maximumPendingIncoming = 256
@@ -103,8 +130,12 @@ final class SignalASILinkDeliveryStore {
 
   private var state: PersistedState
 
-  init(defaults: UserDefaults = .standard) {
+  init(
+    defaults: UserDefaults = .standard,
+    payloadStore: SignalASILinkOutboxPayloadStore = SignalASILinkOutboxPayloadStore()
+  ) {
     self.defaults = defaults
+    self.payloadStore = payloadStore
     if let data = defaults.data(forKey: storageKey),
        let saved = try? JSONDecoder.linkReliability.decode(PersistedState.self, from: data) {
       state = saved
@@ -125,7 +156,9 @@ final class SignalASILinkDeliveryStore {
     precondition(!epoch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     guard state.transportEpoch != epoch else { return false }
     state.transportEpoch = epoch
+    state.outbox.forEach(deleteWirePayload)
     state.outbox.removeAll()
+    payloadStore.clear()
     save()
     return true
   }
@@ -135,21 +168,26 @@ final class SignalASILinkDeliveryStore {
     topic: String,
     wirePayload: String,
     requiresValidatedNetwork: Bool = false,
+    blockedByAttachmentTransferIds: [String] = [],
     now: Date = Date()
   ) {
     guard !messageId.isEmpty, !topic.isEmpty, !wirePayload.isEmpty else { return }
     guard !state.outbox.contains(where: { $0.messageId == messageId }) else { return }
+    let transferDependencies = PendingLinkMessage.normalizedTransferIds(blockedByAttachmentTransferIds)
+    let wireReference = payloadStore.reference(messageId: messageId, wirePayload: wirePayload)
     state.outbox.append(
       PendingLinkMessage(
         messageId: messageId,
         topic: topic,
-        wirePayload: wirePayload,
+        wirePayload: wireReference.wirePayload,
+        wirePayloadFile: wireReference.wirePayloadFile,
         status: "queued",
         attempts: 0,
         nextAttemptAt: now,
         createdAt: now,
         updatedAt: now,
-        requiresValidatedNetwork: requiresValidatedNetwork
+        requiresValidatedNetwork: requiresValidatedNetwork,
+        blockedByAttachmentTransferIds: transferDependencies
       )
     )
     save()
@@ -176,6 +214,9 @@ final class SignalASILinkDeliveryStore {
   func acknowledge(messageId: String) {
     guard !messageId.isEmpty else { return }
     let before = state.outbox.count
+    state.outbox
+      .filter { $0.messageId == messageId }
+      .forEach(deleteWirePayload)
     state.outbox.removeAll { $0.messageId == messageId }
     if state.outbox.count != before {
       save()
@@ -187,11 +228,18 @@ final class SignalASILinkDeliveryStore {
     allowValidatedNetworkMessages: Bool = true
   ) -> [PendingLinkMessage] {
     state.outbox
-      .filter { item in
-        if item.requiresValidatedNetwork && !allowValidatedNetworkMessages {
-          return false
+      .compactMap { item -> PendingLinkMessage? in
+        if !item.blockedByAttachmentTransferIds.isEmpty {
+          return nil
         }
-        return item.nextAttemptAt <= now
+        if item.requiresValidatedNetwork && !allowValidatedNetworkMessages {
+          return nil
+        }
+        guard item.nextAttemptAt <= now,
+              let resolved = resolvedMessage(item) else {
+          return nil
+        }
+        return resolved
       }
       .sorted { left, right in
         if left.nextAttemptAt == right.nextAttemptAt {
@@ -207,7 +255,9 @@ final class SignalASILinkDeliveryStore {
   ) -> TimeInterval? {
     state.outbox
       .filter { item in
-        !(item.requiresValidatedNetwork && !allowValidatedNetworkMessages)
+        item.blockedByAttachmentTransferIds.isEmpty &&
+          hasWirePayload(item) &&
+          !(item.requiresValidatedNetwork && !allowValidatedNetworkMessages)
       }
       .map { max(0, $0.nextAttemptAt.timeIntervalSince(now)) }
       .min()
@@ -232,7 +282,53 @@ final class SignalASILinkDeliveryStore {
       routes.controlTopic
     ]
     let before = state.outbox.count
+    state.outbox
+      .filter { topics.contains($0.topic) }
+      .forEach(deleteWirePayload)
     state.outbox.removeAll { topics.contains($0.topic) }
+    let removed = before - state.outbox.count
+    if removed > 0 { save() }
+    return removed
+  }
+
+  @discardableResult
+  func releaseAttachmentDependency(_ transferId: String, now: Date = Date()) -> Int {
+    guard let normalized = PendingLinkMessage.normalizedTransferIds([transferId]).first else {
+      return 0
+    }
+    var changed = false
+    var released = 0
+    for index in state.outbox.indices {
+      let before = state.outbox[index].blockedByAttachmentTransferIds.count
+      state.outbox[index].blockedByAttachmentTransferIds.removeAll { $0 == normalized }
+      guard state.outbox[index].blockedByAttachmentTransferIds.count != before else {
+        continue
+      }
+      changed = true
+      state.outbox[index].updatedAt = now
+      if state.outbox[index].blockedByAttachmentTransferIds.isEmpty {
+        released += 1
+        state.outbox[index].status = "queued"
+        state.outbox[index].nextAttemptAt = now
+      }
+    }
+    if changed { save() }
+    return released
+  }
+
+  @discardableResult
+  func discardBlockedByAttachmentTransfers(_ transferIds: [String]) -> Int {
+    let normalized = Set(PendingLinkMessage.normalizedTransferIds(transferIds))
+    guard !normalized.isEmpty else { return 0 }
+    let before = state.outbox.count
+    state.outbox
+      .filter { item in
+        !Set(item.blockedByAttachmentTransferIds).isDisjoint(with: normalized)
+      }
+      .forEach(deleteWirePayload)
+    state.outbox.removeAll { item in
+      !Set(item.blockedByAttachmentTransferIds).isDisjoint(with: normalized)
+    }
     let removed = before - state.outbox.count
     if removed > 0 { save() }
     return removed
@@ -302,6 +398,7 @@ final class SignalASILinkDeliveryStore {
   }
 
   func clear() {
+    state.outbox.forEach(deleteWirePayload)
     state = PersistedState(
       transportEpoch: "",
       outbox: [],
@@ -309,7 +406,30 @@ final class SignalASILinkDeliveryStore {
       pendingIncoming: [:],
       ciphertextBindings: [:]
     )
+    payloadStore.clear()
     save()
+  }
+
+  private func resolvedMessage(_ item: PendingLinkMessage) -> PendingLinkMessage? {
+    let wirePayload = payloadStore.resolve(
+      inline: item.wirePayload,
+      fileName: item.wirePayloadFile
+    )
+    guard !wirePayload.isEmpty else { return nil }
+    var resolved = item
+    resolved.wirePayload = wirePayload
+    return resolved
+  }
+
+  private func hasWirePayload(_ item: PendingLinkMessage) -> Bool {
+    !payloadStore.resolve(
+      inline: item.wirePayload,
+      fileName: item.wirePayloadFile
+    ).isEmpty
+  }
+
+  private func deleteWirePayload(_ item: PendingLinkMessage) {
+    payloadStore.delete(fileName: item.wirePayloadFile)
   }
 
   private func updateOutbox(messageId: String, mutate: (inout PendingLinkMessage) -> Void) {

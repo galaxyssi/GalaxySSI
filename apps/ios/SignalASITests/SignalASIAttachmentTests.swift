@@ -189,9 +189,139 @@ final class SignalASIAttachmentTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: root.path))
   }
 
+  func testAgentAttachmentTransferProtocolMatchesAndroidRangesAndStableIdentity() throws {
+    let routeId = try SignalASILinkProtocol.newRouteId()
+    let scope = try AgentAttachmentTransferScope(
+      contactId: "contact-1",
+      desktopId: "desktop-1",
+      clientRouteId: routeId,
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      clientMessageId: "client-message-1"
+    )
+    let digest = AgentAttachmentTransferProtocol.sha256(Data("content".utf8))
+    let transferId = try AgentAttachmentTransferProtocol.transferId(
+      scope: scope,
+      attachmentId: "att-1",
+      sha256: digest
+    )
+    let sameTransferId = try AgentAttachmentTransferProtocol.transferId(
+      scope: scope,
+      attachmentId: "att-1",
+      sha256: digest
+    )
+    let nextTurnScope = try AgentAttachmentTransferScope(
+      contactId: "contact-1",
+      desktopId: "desktop-1",
+      clientRouteId: routeId,
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-2"
+    )
+
+    XCTAssertEqual(transferId, sameTransferId)
+    XCTAssertNotEqual(
+      transferId,
+      try AgentAttachmentTransferProtocol.transferId(
+        scope: nextTurnScope,
+        attachmentId: "att-1",
+        sha256: digest
+      )
+    )
+    XCTAssertEqual(transferId.count, 64)
+    XCTAssertEqual(
+      AgentAttachmentTransferProtocol.missingRanges([0, 1, 2, 5, 7, 8, 9]),
+      [[0, 2], [5, 5], [7, 9]]
+    )
+    XCTAssertEqual(
+      try AgentAttachmentTransferProtocol.expandMissingRanges([[0, 2], [5, 5], [7, 9]], chunkCount: 10),
+      [0, 1, 2, 5, 7, 8, 9]
+    )
+    XCTAssertThrowsError(
+      try AgentAttachmentTransferProtocol.expandMissingRanges([[0, 10]], chunkCount: 10)
+    )
+    XCTAssertEqual(
+      AgentOutboundAttachmentTransferStore.maxAttachmentBytes,
+      Int64(AgentOutboundAttachmentTransferStore.chunkBytes * AgentOutboundAttachmentTransferStore.maxChunks)
+    )
+  }
+
+  func testAgentOutboundAttachmentTransferStorePreparesChunksAndAcknowledgesStoredReceipt() throws {
+    let root = temporaryOutboundTransferRoot()
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let routeId = try SignalASILinkProtocol.newRouteId()
+    let scope = try AgentAttachmentTransferScope(
+      contactId: "contact-1",
+      desktopId: "desktop-1",
+      clientRouteId: routeId,
+      conversationId: "conversation-1",
+      taskId: "task-1",
+      turnId: "turn-1",
+      clientMessageId: "client-message-1"
+    )
+    let attachmentData = Data(repeating: 7, count: AgentOutboundAttachmentTransferStore.chunkBytes + 3)
+    let attachment = SignalASIDraftAttachment(
+      id: "att-1",
+      displayName: " ..bad/name?.bin ",
+      mimeType: "application/octet-stream",
+      data: attachmentData
+    )
+    let store = AgentOutboundAttachmentTransferStore(rootURL: root)
+
+    let prepared = try XCTUnwrap(
+      try store.prepare(
+        scope: scope,
+        attachments: [attachment],
+        mediaProfile: AgentMediaNetworkPolicy.profile(for: .normal)
+      ).first
+    )
+    let descriptor = prepared.descriptor()
+    let manifest = prepared.manifestPayload(resume: false, nowMillis: 123)
+    let firstChunk = try prepared.chunkPayload(index: 0, nowMillis: 456)
+    let secondChunk = try prepared.chunkPayload(index: 1, nowMillis: 789)
+
+    XCTAssertEqual(prepared.chunkCount, 2)
+    XCTAssertEqual(descriptor["id"] as? String, "att-1")
+    XCTAssertEqual(descriptor["name"] as? String, "bad_name_.bin")
+    XCTAssertEqual(descriptor["transport_status"] as? String, "chunked")
+    XCTAssertEqual(descriptor["chunk_count"] as? Int, 2)
+    XCTAssertEqual(descriptor["sha256"] as? String, prepared.sha256)
+    XCTAssertEqual(manifest["type"] as? String, "input_attachment_manifest")
+    XCTAssertEqual(manifest["resume"] as? Bool, false)
+    XCTAssertEqual(manifest["transfer_id"] as? String, prepared.transferId)
+    XCTAssertEqual(firstChunk["type"] as? String, "input_attachment_chunk")
+    XCTAssertEqual(firstChunk["chunk_index"] as? Int, 0)
+    XCTAssertEqual(firstChunk["chunk_size"] as? Int, AgentOutboundAttachmentTransferStore.chunkBytes)
+    XCTAssertEqual(secondChunk["chunk_index"] as? Int, 1)
+    XCTAssertEqual(secondChunk["chunk_size"] as? Int, 3)
+    XCTAssertEqual(store.pending().map(\.transferId), [prepared.transferId])
+    XCTAssertEqual(store.find(prepared.transferId)?.sha256, prepared.sha256)
+
+    let receipt: [String: Any] = [
+      "status": "stored",
+      "transfer_id": prepared.transferId,
+      "sha256": prepared.sha256,
+      "client_route_id": scope.clientRouteId,
+      "conversation_id": scope.conversationId,
+      "task_id": scope.taskId,
+      "turn_id": scope.turnId,
+      "contact_id": scope.contactId,
+      "source_message_id": "client-message-1"
+    ]
+    XCTAssertEqual(store.acknowledgeStored(payload: receipt), prepared.transferId)
+    XCTAssertTrue(store.pending().isEmpty)
+  }
+
   private func temporaryAttachmentRoot() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("SignalASIAttachmentTests-\(UUID().uuidString)", isDirectory: true)
       .appendingPathComponent("agent-native-workspaces", isDirectory: true)
+  }
+
+  private func temporaryOutboundTransferRoot() -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASIOutboundAttachmentTests-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("agent-link-outgoing-attachments-v1", isDirectory: true)
   }
 }
