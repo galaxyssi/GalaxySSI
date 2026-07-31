@@ -235,6 +235,7 @@ class EvolutionManager(legacy.EvolutionManager):
                     "desktop-runtime",
                     "--backend-dir", "core/signalasi-link/backend",
                     "--timeout", "75",
+                    "--reload-cycles", "2",
                 ),
                 cwd="apps/desktop",
                 timeout_seconds=120,

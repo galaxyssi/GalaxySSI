@@ -31,6 +31,7 @@ def main() -> int:
     desktop = subparsers.add_parser("desktop-runtime")
     desktop.add_argument("--backend-dir", default="apps/desktop/core/signalasi-link/backend")
     desktop.add_argument("--timeout", type=int, default=60)
+    desktop.add_argument("--reload-cycles", type=int, default=2)
 
     android = subparsers.add_parser("android-device")
     android.add_argument("--candidate", default="apps/android/app/build/outputs/apk/debug/app-debug.apk")
@@ -48,7 +49,11 @@ def main() -> int:
             print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
             return 0 if result["passed"] else 1
         if args.command == "desktop-runtime":
-            result = runtime_smoke(Path(args.backend_dir), args.timeout)
+            result = runtime_smoke(
+                Path(args.backend_dir),
+                args.timeout,
+                reload_cycles=args.reload_cycles,
+            )
             print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
             return 0
         if args.command == "android-device":

@@ -65,6 +65,8 @@ The approval hash binds the gate log and device manifest hashes.
   task's worktree.
 - An implementation Agent change to the active checkout blocks the candidate without resetting
   user files.
+- Desktop runtime validation performs two isolated reload cycles, reuses only the candidate's
+  ephemeral state, and proves every candidate process stops before the gate passes.
 - Candidate changes after review invalidate approval.
 - Audit tampering is detected and credential-shaped values are redacted.
 - Auto-publish and auto-merge remain disabled.
