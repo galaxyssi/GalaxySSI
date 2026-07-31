@@ -101,6 +101,11 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSUnavailableOnDeviceRuntimeToolProvider(),
       nowMillis: nowMillis
     )
+    let resolvedSelfEvolutionProvider = defaultSelfEvolutionProvider(
+      AgentIOSUnavailableSelfEvolutionToolProvider(),
+      runtimeProvider: resolvedOnDeviceRuntimeProvider,
+      nowMillis: nowMillis
+    )
     return workspaceDefinitions() +
       actionDefinitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis) +
       AgentIOSSystemNativeToolCatalog.definitions() +
@@ -111,7 +116,7 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSWebMediaNativeToolCatalog.definitions(provider: resolvedWebMediaProvider) +
       AgentIOSWebIntelligenceNativeToolCatalog.definitions(provider: resolvedWebIntelligenceProvider) +
       AgentIOSMediaNativeToolCatalog.definitions(provider: resolvedMediaProvider) +
-      AgentIOSSelfEvolutionNativeToolCatalog.definitions() +
+      AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: resolvedSelfEvolutionProvider) +
       AgentIOSDesktopRemoteNativeToolCatalog.definitions() +
       AgentMcpNativeTools.definitions() +
       AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: resolvedOnDeviceRuntimeProvider)
@@ -173,6 +178,11 @@ enum AgentPhoneNativeToolCatalog {
       nowMillis: nowMillis
     )
     let resolvedNotificationProvider = defaultNotificationProvider(notificationProvider)
+    let resolvedSelfEvolutionProvider = defaultSelfEvolutionProvider(
+      selfEvolutionProvider,
+      runtimeProvider: resolvedOnDeviceRuntimeProvider,
+      nowMillis: nowMillis
+    )
     let executables =
       workspaceExecutableDefinitions(store: workspaceStore) +
       actionExecutableDefinitions(
@@ -189,7 +199,7 @@ enum AgentPhoneNativeToolCatalog {
       webMediaExecutableDefinitions(provider: webMediaProvider) +
       webIntelligenceExecutableDefinitions(provider: resolvedWebIntelligenceProvider) +
       mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
-      selfEvolutionExecutableDefinitions(provider: selfEvolutionProvider, nowMillis: nowMillis) +
+      selfEvolutionExecutableDefinitions(provider: resolvedSelfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
       mcpExecutableDefinitions(provider: mcpProvider) +
       onDeviceRuntimeExecutableDefinitions(provider: resolvedOnDeviceRuntimeProvider)
@@ -320,6 +330,26 @@ enum AgentPhoneNativeToolCatalog {
     return AgentIOSDefaultOnDeviceRuntimeProvider(
       runtimeRootURL: runtimeRootURL ?? AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
       fileManager: fileManager,
+      nowMillis: nowMillis
+    )
+  }
+
+  static func defaultSelfEvolutionProvider(
+    _ provider: AgentIOSSelfEvolutionToolProviding,
+    storeFileURL: URL? = nil,
+    runtimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    fileManager: FileManager = .default,
+    nowMillis: @escaping () -> Int64
+  ) -> AgentIOSSelfEvolutionToolProviding {
+    guard provider is AgentIOSUnavailableSelfEvolutionToolProvider else {
+      return provider
+    }
+    return AgentIOSDefaultSelfEvolutionProvider(
+      store: AgentIOSFileSelfEvolutionTaskStore(
+        fileURL: storeFileURL ?? AgentIOSFileSelfEvolutionTaskStore.defaultFileURL(),
+        fileManager: fileManager
+      ),
+      runtimeProvider: runtimeProvider,
       nowMillis: nowMillis
     )
   }
