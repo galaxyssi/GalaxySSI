@@ -34,6 +34,8 @@
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
+    A10000000000000000000492 /* AgentExplicitToolHandles.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000492 /* AgentExplicitToolHandles.swift */; };
+    A10000000000000000000493 /* AgentExplicitToolHandlesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -354,6 +356,8 @@
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000492 /* AgentExplicitToolHandles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExplicitToolHandles.swift; sourceTree = "<group>"; };
+    A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExplicitToolHandlesTests.swift; sourceTree = "<group>"; };
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
@@ -752,6 +756,7 @@
         A20000000000000000000138 /* VoiceRealtimeHealthModels.swift */,
         A20000000000000000000139 /* AgentDeviceProfileModels.swift */,
         A20000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift */,
+        A20000000000000000000492 /* AgentExplicitToolHandles.swift */,
         A20000000000000000000486 /* AgentIdentityPresentation.swift */,
         A20000000000000000000488 /* AgentPreferenceMode.swift */,
         A20000000000000000000141 /* AgentRichContentModels.swift */,
@@ -958,6 +963,7 @@
         A20000000000000000000265 /* AgentSkillCommandParserTests.swift */,
         A20000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift */,
         A20000000000000000000267 /* AgentDynamicTeamCompilerTests.swift */,
+        A20000000000000000000493 /* AgentExplicitToolHandlesTests.swift */,
         A20000000000000000000487 /* AgentIdentityPresentationTests.swift */,
         A20000000000000000000489 /* AgentPreferenceModeTests.swift */,
         A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */,
@@ -1154,6 +1160,7 @@
         A10000000000000000000138 /* VoiceRealtimeHealthModels.swift in Sources */,
         A10000000000000000000139 /* AgentDeviceProfileModels.swift in Sources */,
         A10000000000000000000140 /* AgentRuntimeProjectWorkspaceModels.swift in Sources */,
+        A10000000000000000000492 /* AgentExplicitToolHandles.swift in Sources */,
         A10000000000000000000486 /* AgentIdentityPresentation.swift in Sources */,
         A10000000000000000000488 /* AgentPreferenceMode.swift in Sources */,
         A10000000000000000000141 /* AgentRichContentModels.swift in Sources */,
@@ -1376,6 +1383,7 @@
         A10000000000000000000265 /* AgentSkillCommandParserTests.swift in Sources */,
         A10000000000000000000266 /* AgentTaskRequirementAnalyzerTests.swift in Sources */,
         A10000000000000000000267 /* AgentDynamicTeamCompilerTests.swift in Sources */,
+        A10000000000000000000493 /* AgentExplicitToolHandlesTests.swift in Sources */,
         A10000000000000000000487 /* AgentIdentityPresentationTests.swift in Sources */,
         A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */,
         A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */,
