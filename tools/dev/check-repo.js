@@ -14,6 +14,9 @@ const trustModel = path.join(root, "docs", "security", "TRUST_MODEL.md");
 const windowsPackageWorkflow = path.join(root, ".github", "workflows", "windows-package.yml");
 const releaseAuditDoc = path.join(root, "docs", "testing", "RELEASE_AUDIT.md");
 const releaseAuditScript = path.join(root, "tools", "dev", "release-audit.js");
+const agentBenchmarkDoc = path.join(root, "docs", "testing", "AGENT_BENCHMARK.md");
+const agentBenchmarkManifest = path.join(root, "benchmarks", "agent", "manifest.json");
+const agentBenchmarkRunner = path.join(root, "tools", "benchmark", "run-agent-benchmark.mjs");
 
 function listTrackedFiles() {
   const result = spawnSync("git", ["ls-files", "-z"], {
@@ -122,7 +125,8 @@ function checkDocumentedRootScripts() {
     productRequirements,
     trustModel,
     releaseAuditDoc,
-    releaseAuditScript
+    releaseAuditScript,
+    agentBenchmarkDoc
   ];
   const missing = [];
   for (const file of docs) {
@@ -134,6 +138,32 @@ function checkDocumentedRootScripts() {
   }
   if (missing.length > 0) {
     throw new Error(`Documented npm scripts are missing from root package.json:\n${missing.join("\n")}`);
+  }
+}
+
+function checkAgentBenchmark() {
+  const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
+  const requiredFiles = [
+    agentBenchmarkDoc,
+    agentBenchmarkManifest,
+    agentBenchmarkRunner,
+    path.join(root, "benchmarks", "agent", "reference-results.json"),
+    path.join(root, "tools", "benchmark", "agent-benchmark-lib.mjs"),
+    path.join(root, "tools", "benchmark", "agent-benchmark.test.mjs")
+  ];
+  for (const file of requiredFiles) {
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing Agent benchmark asset: ${path.relative(root, file)}`);
+    }
+  }
+  for (const scriptName of ["benchmark:agent", "test:benchmark:agent"]) {
+    if (!packageJson.scripts?.[scriptName]) {
+      throw new Error(`Missing Agent benchmark script: ${scriptName}`);
+    }
+  }
+  const manifest = JSON.parse(fs.readFileSync(agentBenchmarkManifest, "utf8"));
+  if (manifest.schema_version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 10) {
+    throw new Error("Agent benchmark manifest must provide at least 10 schema v1 scenarios");
   }
 }
 
@@ -351,6 +381,10 @@ const checks = [
   {
     name: "documented npm scripts",
     run: checkDocumentedRootScripts
+  },
+  {
+    name: "Agent benchmark",
+    run: checkAgentBenchmark
   },
   {
     name: "product requirements",

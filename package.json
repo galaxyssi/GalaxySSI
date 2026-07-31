@@ -43,6 +43,8 @@
     "test:runtime-tools": "node --test tools/runtime/runtime-signing.test.mjs tools/runtime/runtime-build.integration.test.mjs tools/runtime/runtime-image.test.mjs tools/runtime/android-elf-bundle.test.mjs tools/runtime/android-elf-normalizer.test.mjs tools/runtime/android-default-runtime.test.mjs",
     "test:guest-runtime": "python -m unittest discover -s apps/android/runtime/guest -p \"test_*.py\"",
     "test:security-red-team": "python -m unittest discover -s apps/desktop/core/signalasi-link/backend -p \"test_security_red_team.py\" -v",
+    "benchmark:agent": "node tools/benchmark/run-agent-benchmark.mjs",
+    "test:benchmark:agent": "node --test tools/benchmark/agent-benchmark.test.mjs",
     "runtime:build-linux-base": "bash tools/runtime/build-linux-base.sh",
     "runtime:build-android-qemu": "bash tools/runtime/build-android-qemu.sh",
     "runtime:normalize-android-qemu": "node tools/runtime/normalize-android-elf-bundle.mjs",
