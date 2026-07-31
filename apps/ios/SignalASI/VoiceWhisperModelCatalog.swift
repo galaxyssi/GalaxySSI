@@ -9,6 +9,25 @@ enum VoiceWhisperModelFamily: String, Codable, Equatable {
   case largeV3Turbo = "LARGE_V3_TURBO"
 }
 
+enum VoiceWhisperQuantization: String, Codable, Equatable {
+  case f16 = "F16"
+  case f32 = "F32"
+  case q8_0 = "Q8_0"
+  case q6_k = "Q6_K"
+  case q5_1 = "Q5_1"
+  case q5_0 = "Q5_0"
+  case q4_1 = "Q4_1"
+  case q4_0 = "Q4_0"
+  case unknown = "UNKNOWN"
+}
+
+enum VoiceWhisperExecutionMode: String, Codable, Equatable {
+  case realtimePartial = "REALTIME_PARTIAL"
+  case finalOnly = "FINAL_ONLY"
+  case secondPass = "SECOND_PASS"
+  case remoteNode = "REMOTE_NODE"
+}
+
 struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
   var id: String
   var family: VoiceWhisperModelFamily
@@ -21,6 +40,16 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
   var expectedSizeBytes: Int64
   var sha256: String
   var minFreeStorageBytes: Int64
+  var quantization: VoiceWhisperQuantization
+  var multilingual: Bool
+  var recommendedMode: VoiceWhisperExecutionMode
+  var minAvailableRamBytes: Int64
+  var defaultPartialIntervalMillis: Int64
+  var maxWindowMillis: Int64
+  var enabledByDefault: Bool
+  var experimental: Bool
+  var manifestVersion: Int
+  var legacyIds: Set<String>
 
   init(
     id: String,
@@ -33,7 +62,17 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     minimumUsableBytes: Int64 = 0,
     expectedSizeBytes: Int64 = 0,
     sha256: String = "",
-    minFreeStorageBytes: Int64 = 0
+    minFreeStorageBytes: Int64 = 0,
+    quantization: VoiceWhisperQuantization = .unknown,
+    multilingual: Bool = true,
+    recommendedMode: VoiceWhisperExecutionMode = .finalOnly,
+    minAvailableRamBytes: Int64 = 0,
+    defaultPartialIntervalMillis: Int64 = 1_000,
+    maxWindowMillis: Int64 = 8_000,
+    enabledByDefault: Bool = false,
+    experimental: Bool = false,
+    manifestVersion: Int = 2,
+    legacyIds: Set<String> = []
   ) {
     self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("tiny")
     self.family = family
@@ -52,6 +91,20 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     )
     self.sha256 = sha256.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     self.minFreeStorageBytes = max(0, minFreeStorageBytes)
+    self.quantization = quantization
+    self.multilingual = multilingual
+    self.recommendedMode = recommendedMode
+    self.minAvailableRamBytes = max(0, minAvailableRamBytes)
+    self.defaultPartialIntervalMillis = max(1, defaultPartialIntervalMillis)
+    self.maxWindowMillis = max(1, maxWindowMillis)
+    self.enabledByDefault = enabledByDefault
+    self.experimental = experimental
+    self.manifestVersion = max(1, manifestVersion)
+    self.legacyIds = Set(
+      legacyIds
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        .filter { !$0.isEmpty }
+    )
   }
 
   enum CodingKeys: String, CodingKey {
@@ -66,6 +119,16 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     case expectedSizeBytes = "expected_size_bytes"
     case sha256
     case minFreeStorageBytes = "min_free_storage_bytes"
+    case quantization
+    case multilingual
+    case recommendedMode = "recommended_mode"
+    case minAvailableRamBytes = "min_available_ram_bytes"
+    case defaultPartialIntervalMillis = "default_partial_interval_ms"
+    case maxWindowMillis = "max_window_ms"
+    case enabledByDefault = "enabled_by_default"
+    case experimental
+    case manifestVersion = "manifest_version"
+    case legacyIds = "legacy_ids"
   }
 
   init(from decoder: Decoder) throws {
@@ -81,7 +144,17 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
       minimumUsableBytes: try container.decodeIfPresent(Int64.self, forKey: .minimumUsableBytes) ?? 0,
       expectedSizeBytes: try container.decodeIfPresent(Int64.self, forKey: .expectedSizeBytes) ?? 0,
       sha256: try container.decodeIfPresent(String.self, forKey: .sha256) ?? "",
-      minFreeStorageBytes: try container.decodeIfPresent(Int64.self, forKey: .minFreeStorageBytes) ?? 0
+      minFreeStorageBytes: try container.decodeIfPresent(Int64.self, forKey: .minFreeStorageBytes) ?? 0,
+      quantization: try container.decodeIfPresent(VoiceWhisperQuantization.self, forKey: .quantization) ?? .unknown,
+      multilingual: try container.decodeIfPresent(Bool.self, forKey: .multilingual) ?? true,
+      recommendedMode: try container.decodeIfPresent(VoiceWhisperExecutionMode.self, forKey: .recommendedMode) ?? .finalOnly,
+      minAvailableRamBytes: try container.decodeIfPresent(Int64.self, forKey: .minAvailableRamBytes) ?? 0,
+      defaultPartialIntervalMillis: try container.decodeIfPresent(Int64.self, forKey: .defaultPartialIntervalMillis) ?? 1_000,
+      maxWindowMillis: try container.decodeIfPresent(Int64.self, forKey: .maxWindowMillis) ?? 8_000,
+      enabledByDefault: try container.decodeIfPresent(Bool.self, forKey: .enabledByDefault) ?? false,
+      experimental: try container.decodeIfPresent(Bool.self, forKey: .experimental) ?? false,
+      manifestVersion: try container.decodeIfPresent(Int.self, forKey: .manifestVersion) ?? 2,
+      legacyIds: try container.decodeIfPresent(Set<String>.self, forKey: .legacyIds) ?? []
     )
   }
 
@@ -115,71 +188,266 @@ enum VoiceWhisperModelDownloadStatus: String, Codable, Equatable {
 }
 
 enum VoiceWhisperModelCatalog {
+  static let schemaVersion = 2
   static let catalogVersion = "2026.08.01"
   static let mirrorRoot = "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main"
+  private static let mib: Int64 = 1_048_576
 
   static let models: [VoiceWhisperModelProfile] = [
-    VoiceWhisperModelProfile(
+    profile(
       id: "tiny",
       family: .tiny,
       displayName: "Tiny",
       fileName: "ggml-tiny.bin",
       sizeLabel: "74.1 MiB",
-      bundled: true,
-      expectedSizeBytes: 77_691_713,
-      sha256: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
-      minFreeStorageBytes: 256 * 1_048_576
+      size: 77_691_713,
+      sha: "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21",
+      quantization: .f16,
+      mode: .realtimePartial,
+      ram: 512 * mib,
+      reserve: 256 * mib,
+      partialMillis: 750,
+      windowMillis: 8_000,
+      enabled: true,
+      bundled: true
     ),
-    VoiceWhisperModelProfile(
+    profile(
+      id: "tiny_q5_1",
+      family: .tiny,
+      displayName: "Tiny Q5_1",
+      fileName: "ggml-tiny-q5_1.bin",
+      sizeLabel: "30.7 MiB",
+      size: 32_152_673,
+      sha: "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7",
+      quantization: .q5_1,
+      mode: .realtimePartial,
+      ram: 384 * mib,
+      reserve: 192 * mib,
+      partialMillis: 650,
+      windowMillis: 8_000
+    ),
+    profile(
       id: "base",
       family: .base,
       displayName: "Base",
       fileName: "ggml-base.bin",
       sizeLabel: "141.1 MiB",
-      expectedSizeBytes: 147_951_465,
-      sha256: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
-      minFreeStorageBytes: 384 * 1_048_576
+      size: 147_951_465,
+      sha: "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe",
+      quantization: .f16,
+      mode: .realtimePartial,
+      ram: 768 * mib,
+      reserve: 384 * mib,
+      partialMillis: 1_100,
+      windowMillis: 10_000
     ),
-    VoiceWhisperModelProfile(
+    profile(
+      id: "base_q5_1",
+      family: .base,
+      displayName: "Base Q5_1",
+      fileName: "ggml-base-q5_1.bin",
+      sizeLabel: "56.9 MiB",
+      size: 59_707_625,
+      sha: "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+      quantization: .q5_1,
+      mode: .realtimePartial,
+      ram: 512 * mib,
+      reserve: 256 * mib,
+      partialMillis: 950,
+      windowMillis: 10_000
+    ),
+    profile(
       id: "small",
       family: .small,
       displayName: "Small",
       fileName: "ggml-small.bin",
       sizeLabel: "465.0 MiB",
-      expectedSizeBytes: 487_601_967,
-      sha256: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
-      minFreeStorageBytes: 768 * 1_048_576
+      size: 487_601_967,
+      sha: "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b",
+      quantization: .f16,
+      mode: .finalOnly,
+      ram: 1_340 * mib,
+      reserve: 768 * mib,
+      partialMillis: 2_200,
+      windowMillis: 12_000
     ),
-    VoiceWhisperModelProfile(
+    profile(
+      id: "small_q5_1",
+      family: .small,
+      displayName: "Small Q5_1",
+      fileName: "ggml-small-q5_1.bin",
+      sizeLabel: "181.3 MiB",
+      size: 190_085_487,
+      sha: "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb",
+      quantization: .q5_1,
+      mode: .finalOnly,
+      ram: 900 * mib,
+      reserve: 512 * mib,
+      partialMillis: 1_800,
+      windowMillis: 12_000
+    ),
+    profile(
       id: "medium",
       family: .medium,
       displayName: "Medium",
       fileName: "ggml-medium.bin",
       sizeLabel: "1.4 GiB",
-      expectedSizeBytes: 1_533_763_059,
-      sha256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
-      minFreeStorageBytes: 2_000 * 1_048_576
+      size: 1_533_763_059,
+      sha: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208",
+      quantization: .f16,
+      mode: .secondPass,
+      ram: 3_000 * mib,
+      reserve: 2_000 * mib,
+      partialMillis: 4_500,
+      windowMillis: 16_000,
+      experimental: true
     ),
-    VoiceWhisperModelProfile(
+    profile(
+      id: "medium_q5_0",
+      family: .medium,
+      displayName: "Medium Q5_0",
+      fileName: "ggml-medium-q5_0.bin",
+      sizeLabel: "514.2 MiB",
+      size: 539_212_467,
+      sha: "19fea4b380c3a618ec4723c3eef2eb785ffba0d0538cf43f8f235e7b3b34220f",
+      quantization: .q5_0,
+      mode: .secondPass,
+      ram: 1_700 * mib,
+      reserve: 1_000 * mib,
+      partialMillis: 3_500,
+      windowMillis: 16_000,
+      experimental: true
+    ),
+    profile(
       id: "large",
       family: .largeV3,
       displayName: "Large v3",
       fileName: "ggml-large-v3.bin",
       sizeLabel: "2.9 GiB",
-      expectedSizeBytes: 3_095_033_483,
-      sha256: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
-      minFreeStorageBytes: 4_000 * 1_048_576
+      size: 3_095_033_483,
+      sha: "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2",
+      quantization: .f16,
+      mode: .secondPass,
+      ram: 5_000 * mib,
+      reserve: 4_000 * mib,
+      partialMillis: 7_500,
+      windowMillis: 20_000,
+      experimental: true,
+      legacyIds: ["large_v3"]
     ),
+    profile(
+      id: "large_v3_q5_0",
+      family: .largeV3,
+      displayName: "Large v3 Q5_0",
+      fileName: "ggml-large-v3-q5_0.bin",
+      sizeLabel: "1.0 GiB",
+      size: 1_081_140_203,
+      sha: "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1",
+      quantization: .q5_0,
+      mode: .secondPass,
+      ram: 2_600 * mib,
+      reserve: 2_000 * mib,
+      partialMillis: 6_000,
+      windowMillis: 20_000,
+      experimental: true
+    ),
+    profile(
+      id: "large_v3_turbo",
+      family: .largeV3Turbo,
+      displayName: "Large v3 Turbo",
+      fileName: "ggml-large-v3-turbo.bin",
+      sizeLabel: "1.5 GiB",
+      size: 1_624_555_275,
+      sha: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69",
+      quantization: .f16,
+      mode: .secondPass,
+      ram: 3_200 * mib,
+      reserve: 2_000 * mib,
+      partialMillis: 2_800,
+      windowMillis: 16_000,
+      experimental: true
+    ),
+    profile(
+      id: "large_v3_turbo_q5_0",
+      family: .largeV3Turbo,
+      displayName: "Large v3 Turbo Q5_0",
+      fileName: "ggml-large-v3-turbo-q5_0.bin",
+      sizeLabel: "547.4 MiB",
+      size: 574_041_195,
+      sha: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+      quantization: .q5_0,
+      mode: .secondPass,
+      ram: 1_800 * mib,
+      reserve: 1_000 * mib,
+      partialMillis: 2_200,
+      windowMillis: 16_000,
+      experimental: true
+    )
   ]
 
+  private static let byId: [String: VoiceWhisperModelProfile] = {
+    Dictionary(uniqueKeysWithValues: models.map { ($0.id, $0) })
+  }()
+
+  private static let aliases: [String: String] = {
+    var values: [String: String] = ["large-v3": "large"]
+    for profile in models {
+      for legacyId in profile.legacyIds {
+        values[legacyId] = profile.id
+      }
+    }
+    return values
+  }()
+
   static func model(_ id: String?) -> VoiceWhisperModelProfile {
-    let normalized = normalizedModelId(id)
-    return models.first { $0.id == normalized } ?? models[0]
+    byId[normalizedModelId(id)] ?? models[0]
   }
 
   static func normalizedModelId(_ id: String?) -> String {
     let normalized = id?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() ?? ""
-    return models.first { $0.id == normalized }?.id ?? models[0].id
+    return byId[aliases[normalized] ?? normalized]?.id ?? models[0].id
+  }
+
+  private static func profile(
+    id: String,
+    family: VoiceWhisperModelFamily,
+    displayName: String,
+    fileName: String,
+    sizeLabel: String,
+    size: Int64,
+    sha: String,
+    quantization: VoiceWhisperQuantization,
+    mode: VoiceWhisperExecutionMode,
+    ram: Int64,
+    reserve: Int64,
+    partialMillis: Int64,
+    windowMillis: Int64,
+    enabled: Bool = false,
+    bundled: Bool = false,
+    experimental: Bool = false,
+    legacyIds: Set<String> = []
+  ) -> VoiceWhisperModelProfile {
+    VoiceWhisperModelProfile(
+      id: id,
+      family: family,
+      displayName: displayName,
+      fileName: fileName,
+      sizeLabel: sizeLabel,
+      bundled: bundled,
+      expectedSizeBytes: size,
+      sha256: sha,
+      minFreeStorageBytes: reserve,
+      quantization: quantization,
+      multilingual: true,
+      recommendedMode: mode,
+      minAvailableRamBytes: ram,
+      defaultPartialIntervalMillis: partialMillis,
+      maxWindowMillis: windowMillis,
+      enabledByDefault: enabled,
+      experimental: experimental,
+      manifestVersion: schemaVersion,
+      legacyIds: legacyIds
+    )
   }
 
   static func downloadURL(for model: VoiceWhisperModelProfile) -> URL? {

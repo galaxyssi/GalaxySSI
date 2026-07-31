@@ -7,7 +7,7 @@ final class VoiceWhisperModelDownloadPolicyTests: XCTestCase {
 
     XCTAssertEqual(
       VoiceWhisperModelDownloadPolicy.evaluate(
-        profile: VoiceWhisperModelCatalog.model("large"),
+        profile: VoiceWhisperModelCatalog.model("large_v3_turbo_q5_0"),
         network: .metered,
         availableFreeBytes: free
       ).decision,
@@ -15,7 +15,7 @@ final class VoiceWhisperModelDownloadPolicyTests: XCTestCase {
     )
     XCTAssertEqual(
       VoiceWhisperModelDownloadPolicy.evaluate(
-        profile: VoiceWhisperModelCatalog.model("large"),
+        profile: VoiceWhisperModelCatalog.model("large_v3_turbo_q5_0"),
         network: .metered,
         availableFreeBytes: free,
         meteredConfirmed: true

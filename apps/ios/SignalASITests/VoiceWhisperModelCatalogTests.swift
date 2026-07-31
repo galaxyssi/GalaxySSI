@@ -3,8 +3,28 @@ import XCTest
 
 final class VoiceWhisperModelCatalogTests: XCTestCase {
   func testCatalogMatchesAndroidWhisperModelChoices() {
-    XCTAssertEqual(VoiceWhisperModelCatalog.models.map(\.id), ["tiny", "base", "small", "medium", "large"])
+    XCTAssertEqual(
+      VoiceWhisperModelCatalog.models.map(\.id),
+      [
+        "tiny",
+        "tiny_q5_1",
+        "base",
+        "base_q5_1",
+        "small",
+        "small_q5_1",
+        "medium",
+        "medium_q5_0",
+        "large",
+        "large_v3_q5_0",
+        "large_v3_turbo",
+        "large_v3_turbo_q5_0",
+      ]
+    )
     XCTAssertEqual(VoiceWhisperModelCatalog.model("BASE").fileName, "ggml-base.bin")
+    XCTAssertEqual(VoiceWhisperModelCatalog.model("large-v3").id, "large")
+    XCTAssertEqual(VoiceWhisperModelCatalog.model("large_v3").id, "large")
+    XCTAssertEqual(VoiceWhisperModelCatalog.model("tiny_q5_1").quantization, .q5_1)
+    XCTAssertEqual(VoiceWhisperModelCatalog.model("large_v3_turbo_q5_0").recommendedMode, .secondPass)
     XCTAssertEqual(VoiceWhisperModelCatalog.model("unknown").id, "tiny")
     XCTAssertEqual(VoiceWhisperModelCatalog.normalizedModelId(" medium "), "medium")
     XCTAssertEqual(VoiceWhisperModelCatalog.model("large").family, .largeV3)
