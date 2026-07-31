@@ -67,6 +67,19 @@
     <string name="cc_section_memory_knowledge">Memory &amp; knowledge</string>
     <string name="cc_section_skills_tasks">Skills &amp; tasks</string>
     <string name="cc_section_security_data">Security &amp; data</string>
+    <string name="cc_agent_status_idle">Idle</string>
+    <string name="cc_agent_status_busy">Busy</string>
+    <string name="cc_agent_status_updating">Updating</string>
+    <string name="cc_agent_status_unreachable">Unreachable</string>
+    <string name="cc_agent_cost_latency">%1$s · %2$s</string>
+    <string name="cc_agent_cost_free">Free</string>
+    <string name="cc_agent_cost_low">Low cost</string>
+    <string name="cc_agent_cost_medium">Medium cost</string>
+    <string name="cc_agent_cost_high">High cost</string>
+    <string name="cc_agent_latency_instant">Instant</string>
+    <string name="cc_agent_latency_fast">Fast</string>
+    <string name="cc_agent_latency_normal">Normal</string>
+    <string name="cc_agent_latency_slow">Slow</string>
     <string name="cc_general_title">General &amp; About</string>
     <string name="cc_general_subtitle">Language, notifications, diagnostics, version, and reset</string>
 

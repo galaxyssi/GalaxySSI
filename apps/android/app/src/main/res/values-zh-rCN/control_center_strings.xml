@@ -67,6 +67,19 @@
     <string name="cc_section_memory_knowledge">记忆与知识</string>
     <string name="cc_section_skills_tasks">技能与任务</string>
     <string name="cc_section_security_data">安全与数据</string>
+    <string name="cc_agent_status_idle">空闲</string>
+    <string name="cc_agent_status_busy">忙碌</string>
+    <string name="cc_agent_status_updating">更新中</string>
+    <string name="cc_agent_status_unreachable">无法连接</string>
+    <string name="cc_agent_cost_latency">%1$s · %2$s</string>
+    <string name="cc_agent_cost_free">免费</string>
+    <string name="cc_agent_cost_low">低费用</string>
+    <string name="cc_agent_cost_medium">中等费用</string>
+    <string name="cc_agent_cost_high">高费用</string>
+    <string name="cc_agent_latency_instant">即时</string>
+    <string name="cc_agent_latency_fast">快速</string>
+    <string name="cc_agent_latency_normal">普通</string>
+    <string name="cc_agent_latency_slow">较慢</string>
     <string name="cc_general_title">通用与关于</string>
     <string name="cc_general_subtitle">语言、通知、诊断、版本与重置</string>
 

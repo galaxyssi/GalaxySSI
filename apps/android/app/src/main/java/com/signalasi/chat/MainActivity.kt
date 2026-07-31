@@ -41,6 +41,7 @@ import android.text.InputType
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.TextPaint
+import android.text.TextUtils
 import android.text.TextWatcher
 import android.text.style.CharacterStyle
 import android.text.style.ForegroundColorSpan
@@ -12230,23 +12231,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun renderControlCenterRoutingPage() {
         val targets = controlCenterResourceTargets(mobileNativeAgent.snapshot().callableTargets)
+        val registrations = mobileNativeAgent.agentRegistrySnapshot()
         val available = targets.count { it.status == AgentConnectorStatus.AVAILABLE }
         val resourceRows = targets
             .filterNot { it.id == "phone" || it.id == "local-system" }
             .distinctBy { it.id }
             .sortedWith(compareBy<AgentCallableTarget> { it.status != AgentConnectorStatus.AVAILABLE }.thenBy { it.title.lowercase(Locale.ROOT) })
             .take(12)
-            .map { target ->
-                ControlCenterRowSpec(
-                    actionId = "routing.target:${target.id}",
-                    title = target.title,
-                    subtitle = controlCenterTargetSubtitle(target),
-                    iconRes = controlCenterTargetIcon(target),
-                    status = controlCenterTargetStatus(target.status),
-                    tone = controlCenterTargetTone(target.status),
-                    preserveIconColor = target.id.contains("codex", true) || target.id.contains("claude", true) || target.id.contains("hermes", true)
-                )
-            }
+            .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
         showControlCenterFeature(
             getString(R.string.cc_resource_routing_title),
             ControlCenterPageSpec(
@@ -12374,6 +12366,84 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentConnectorStatus.NEEDS_SETUP -> ControlCenterTone.AMBER
         AgentConnectorStatus.DISCONNECTED -> ControlCenterTone.NEUTRAL
     }
+
+    private fun controlCenterAgentStatus(status: AgentEndpointStatus): String = getString(
+        when (status) {
+            AgentEndpointStatus.ONLINE -> R.string.status_online
+            AgentEndpointStatus.IDLE -> R.string.cc_agent_status_idle
+            AgentEndpointStatus.BUSY -> R.string.cc_agent_status_busy
+            AgentEndpointStatus.DEGRADED -> R.string.cc_status_degraded
+            AgentEndpointStatus.UPDATING -> R.string.cc_agent_status_updating
+            AgentEndpointStatus.PERMISSION_REQUIRED -> R.string.status_needs_setup
+            AgentEndpointStatus.OFFLINE -> R.string.status_disconnected
+            AgentEndpointStatus.UNREACHABLE -> R.string.cc_agent_status_unreachable
+        }
+    )
+
+    private fun controlCenterAgentTone(status: AgentEndpointStatus): ControlCenterTone = when (status) {
+        AgentEndpointStatus.ONLINE, AgentEndpointStatus.IDLE -> ControlCenterTone.GREEN
+        AgentEndpointStatus.BUSY, AgentEndpointStatus.PERMISSION_REQUIRED -> ControlCenterTone.AMBER
+        AgentEndpointStatus.UPDATING -> ControlCenterTone.BLUE
+        AgentEndpointStatus.DEGRADED, AgentEndpointStatus.UNREACHABLE -> ControlCenterTone.RED
+        AgentEndpointStatus.OFFLINE -> ControlCenterTone.NEUTRAL
+    }
+
+    private fun controlCenterAgentBadges(
+        presentation: AgentIdentityPresentation
+    ): List<ControlCenterBadgeSpec> {
+        val capabilityBadges = presentation.capabilities.take(2).mapIndexed { index, capability ->
+            ControlCenterBadgeSpec(
+                controlCenterCapabilityLabel(capability),
+                if (index == 0) ControlCenterTone.BLUE else ControlCenterTone.VIOLET
+            )
+        }
+        val executionBadge = ControlCenterBadgeSpec(
+            getString(
+                R.string.cc_agent_cost_latency,
+                controlCenterAgentCost(presentation.cost),
+                controlCenterAgentLatency(presentation.latency)
+            ),
+            ControlCenterTone.NEUTRAL
+        )
+        return capabilityBadges + executionBadge
+    }
+
+    private fun controlCenterAgentCost(cost: AgentResourceCost): String = getString(
+        when (cost) {
+            AgentResourceCost.FREE -> R.string.cc_agent_cost_free
+            AgentResourceCost.LOW -> R.string.cc_agent_cost_low
+            AgentResourceCost.MEDIUM -> R.string.cc_agent_cost_medium
+            AgentResourceCost.HIGH -> R.string.cc_agent_cost_high
+        }
+    )
+
+    private fun controlCenterAgentLatency(latency: AgentResourceLatency): String = getString(
+        when (latency) {
+            AgentResourceLatency.INSTANT -> R.string.cc_agent_latency_instant
+            AgentResourceLatency.FAST -> R.string.cc_agent_latency_fast
+            AgentResourceLatency.NORMAL -> R.string.cc_agent_latency_normal
+            AgentResourceLatency.SLOW -> R.string.cc_agent_latency_slow
+        }
+    )
+
+    private fun controlCenterAgentAvatar(style: AgentAvatarStyle): Int = when (style) {
+        AgentAvatarStyle.CODEX -> R.drawable.logo_codex_product
+        AgentAvatarStyle.CLAUDE -> R.drawable.logo_claude_code
+        AgentAvatarStyle.HERMES -> R.drawable.ic_avatar_hermes
+        AgentAvatarStyle.OPENCLAW -> R.drawable.ic_avatar_custom_agent
+        AgentAvatarStyle.LOCAL_MODEL -> R.drawable.ic_local_model
+        AgentAvatarStyle.CLOUD_MODEL -> R.drawable.ic_avatar_cloud_model
+        AgentAvatarStyle.DEVICE -> R.drawable.ic_device_node
+        AgentAvatarStyle.GENERIC -> R.drawable.ic_agent_node
+    }
+
+    private fun findAgentRegistration(
+        registrations: List<AgentRegistration>,
+        targetId: String
+    ): AgentRegistration? = registrations.firstOrNull { it.agentId == targetId }
+        ?: registrations.firstOrNull {
+            it.agentId.endsWith(":$targetId") || targetId.endsWith(":${it.agentId}")
+        }
 
     private fun controlCenterTargetIcon(target: AgentCallableTarget): Int = when {
         target.id.contains("codex", true) -> R.drawable.logo_codex_product
@@ -12559,6 +12629,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val state = mobileNativeAgent.snapshot()
         val desktops = desktopSecuritySummaries(activePcConnectorContacts())
         val targets = controlCenterResourceTargets(state.callableTargets).distinctBy { it.id }
+        val registrations = mobileNativeAgent.agentRegistrySnapshot()
         val availableTargetIds = targets
             .filter { it.status == AgentConnectorStatus.AVAILABLE }
             .mapTo(linkedSetOf()) { it.id }
@@ -12576,9 +12647,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             listOf(ControlCenterRowSpec("nodes.scan", getString(R.string.cc_no_desktop_title), getString(R.string.cc_no_desktop_subtitle), R.drawable.ic_scan, getString(R.string.security_scan), ControlCenterTone.AMBER))
         }
         val localRows = targets.filter { it.kind == AgentConnectorKind.MODEL && !it.id.startsWith("cloud:") }
-            .map { target -> controlCenterTargetRow(target) }
+            .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
         val cloudRows = targets.filter { it.id.startsWith("cloud:") }
-            .map { target -> controlCenterTargetRow(target) }
+            .map { target -> controlCenterTargetRow(target, findAgentRegistration(registrations, target.id)) }
             .ifEmpty {
                 listOf(ControlCenterRowSpec("routing.add_cloud", getString(R.string.cc_add_cloud_provider_title), getString(R.string.cc_add_cloud_provider_subtitle), R.drawable.ic_avatar_cloud_model, "+", ControlCenterTone.VIOLET))
             }
@@ -12601,16 +12672,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
     }
 
-    private fun controlCenterTargetRow(target: AgentCallableTarget): ControlCenterRowSpec =
-        ControlCenterRowSpec(
+    private fun controlCenterTargetRow(
+        target: AgentCallableTarget,
+        registration: AgentRegistration? = null
+    ): ControlCenterRowSpec {
+        val presentation = registration?.let(AgentIdentityPresenter::present)
+        return ControlCenterRowSpec(
             actionId = "routing.target:${target.id}",
-            title = target.title,
-            subtitle = controlCenterTargetSubtitle(target),
-            iconRes = controlCenterTargetIcon(target),
-            status = controlCenterTargetStatus(target.status),
-            tone = controlCenterTargetTone(target.status),
-            preserveIconColor = target.id.contains("codex", true) || target.id.contains("claude", true) || target.id.contains("hermes", true)
+            title = presentation?.displayName ?: target.title,
+            subtitle = presentation?.let {
+                "${controlCenterTargetKindLabel(target.kind)} · ${privacyLocationLabel(it.location)}"
+            } ?: controlCenterTargetSubtitle(target),
+            iconRes = presentation?.let { controlCenterAgentAvatar(it.avatarStyle) }
+                ?: controlCenterTargetIcon(target),
+            status = presentation?.let { controlCenterAgentStatus(it.status) }
+                ?: controlCenterTargetStatus(target.status),
+            tone = presentation?.let { controlCenterAgentTone(it.status) }
+                ?: controlCenterTargetTone(target.status),
+            preserveIconColor = presentation?.avatarStyle in setOf(
+                AgentAvatarStyle.CODEX,
+                AgentAvatarStyle.CLAUDE,
+                AgentAvatarStyle.HERMES
+            ),
+            badges = presentation?.let(::controlCenterAgentBadges).orEmpty()
         )
+    }
 
     private fun renderControlCenterSecurityPage() {
         val fingerprint = SignalASICrypto.localIdentitySha256()
@@ -21751,10 +21837,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             AgentUi("local-llm", agentName("local-llm", "Local LLM"), detail("local-llm", getString(R.string.agent_local_llm_subtitle)), R.drawable.ic_avatar_custom_agent, badge("local-llm", getString(R.string.common_paired)), color("local-llm", "#00A7A7"), connected("local-llm")),
             AgentUi("custom-agent", agentName("custom-agent", "Custom Agent"), detail("custom-agent", getString(R.string.agent_custom_subtitle)), R.drawable.ic_avatar_custom_agent, badge("custom-agent", getString(R.string.common_paired)), color("custom-agent", "#6C7A89"), connected("custom-agent"))
         )
-        val agents = coreAgents + dynamicConnectorAgents(fixedAgentIds) + listOf(
+        val registrations = mobileNativeAgent.agentRegistrySnapshot()
+        val agentRows = coreAgents + dynamicConnectorAgents(fixedAgentIds) + listOf(
             AgentUi("news_agent", "News Agent", getString(R.string.agent_news_subtitle), R.drawable.ic_agent_node, getString(R.string.badge_automation), "#F0A500", connected("news_agent")),
             AgentUi("home_hub", "Home Agent", getString(R.string.agent_home_subtitle), R.drawable.ic_device_node, getString(R.string.badge_device), "#6C7A89", connected("home_hub"))
         )
+        val agents = agentRows.map { agent ->
+            agent.copy(
+                identity = findAgentRegistration(registrations, agent.contactId)
+                    ?.let(AgentIdentityPresenter::present)
+            )
+        }
         showFeaturePage("AI Agent")
         addSegmentTabs(listOf(getString(R.string.discover_segment_all), getString(R.string.discover_segment_local), getString(R.string.discover_segment_official), getString(R.string.discover_segment_running)))
         featureContent.addView(featureRow(getString(R.string.discover_add_cloud_model), getString(R.string.discover_add_cloud_model_subtitle), R.drawable.ic_avatar_cloud_model, "+").apply {
@@ -26543,10 +26636,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val iconRes: Int,
         val badge: String,
         val badgeColor: String,
-        val connected: Boolean
+        val connected: Boolean,
+        val identity: AgentIdentityPresentation? = null
     )
 
     private fun agentFeatureRow(agent: AgentUi): View {
+        val identity = agent.identity
+        val statusText = identity?.let { controlCenterAgentStatus(it.status) }
+            ?: if (agent.connected) agent.badge else getString(R.string.status_disconnected)
+        val statusColor = identity?.let { agentEndpointStatusColor(it.status) }
+            ?: Color.parseColor(agent.badgeColor)
+        val icon = identity?.let { controlCenterAgentAvatar(it.avatarStyle) } ?: agent.iconRes
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -26554,39 +26654,39 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             isFocusable = true
             setPadding(dp(14), dp(12), dp(14), dp(12))
             background = getDrawable(R.drawable.glass_card_background)
-            addView(featureIcon(agent.iconRes, Color.parseColor(agent.badgeColor)))
+            addView(featureIcon(icon, statusColor))
             addView(LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(13), 0, 0, 0)
-                addView(LinearLayout(this@MainActivity).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    addView(TextView(this@MainActivity).apply {
-                        text = agent.title
-                        setTextColor(getColorCompat(R.color.text_primary))
-                        textSize = 16f
-                        setTypeface(typeface, android.graphics.Typeface.BOLD)
-                    })
-                    addView(statusPill(agent.badge, Color.parseColor(agent.badgeColor)), LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        dp(22)
-                    ).apply { leftMargin = dp(8) })
+                addView(TextView(this@MainActivity).apply {
+                    text = identity?.displayName ?: agent.title
+                    setTextColor(getColorCompat(R.color.text_primary))
+                    textSize = 16f
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
                 })
                 addView(TextView(this@MainActivity).apply {
                     text = agent.subtitle
                     setTextColor(getColorCompat(R.color.text_secondary))
                     textSize = 12.5f
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
                 })
+                identity?.let { presentation ->
+                    addView(agentIdentityBadgeRow(presentation))
+                }
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
             addView(TextView(this@MainActivity).apply {
-                text = if (agent.connected) agent.badge else getString(R.string.status_disconnected)
+                text = statusText
                 gravity = Gravity.CENTER
-                setTextColor(Color.parseColor(agent.badgeColor))
+                setTextColor(statusColor)
                 textSize = 12f
-            }, LinearLayout.LayoutParams(dp(54), dp(34)))
+                maxLines = 2
+            }, LinearLayout.LayoutParams(dp(62), dp(42)))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(76)
+                dp(if (identity == null) 76 else 94)
             ).apply { bottomMargin = dp(10) }
             setOnClickListener {
                 if (agent.connected) {
@@ -26597,6 +26697,44 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
     }
+
+    private fun agentIdentityBadgeRow(presentation: AgentIdentityPresentation): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, 0)
+            val badges = controlCenterAgentBadges(presentation)
+            badges.take(3).forEachIndexed { index, badge ->
+                val color = when (badge.tone) {
+                    ControlCenterTone.BLUE -> Color.parseColor("#286FD6")
+                    ControlCenterTone.VIOLET -> Color.parseColor("#7052CC")
+                    else -> Color.parseColor("#667085")
+                }
+                addView(
+                    statusPill(badge.text, color).apply {
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                        maxWidth = dp(if (index == 2) 112 else 88)
+                    },
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        dp(21)
+                    ).apply {
+                        if (index > 0) marginStart = dp(5)
+                    }
+                )
+            }
+        }
+
+    private fun agentEndpointStatusColor(status: AgentEndpointStatus): Int = Color.parseColor(
+        when (status) {
+            AgentEndpointStatus.ONLINE, AgentEndpointStatus.IDLE -> "#14875A"
+            AgentEndpointStatus.BUSY, AgentEndpointStatus.PERMISSION_REQUIRED -> "#B26B00"
+            AgentEndpointStatus.UPDATING -> "#286FD6"
+            AgentEndpointStatus.DEGRADED, AgentEndpointStatus.UNREACHABLE -> "#C7372F"
+            AgentEndpointStatus.OFFLINE -> "#667085"
+        }
+    )
 
     private fun dynamicConnectorAgents(excludeIds: Set<String>): List<AgentUi> {
         val contacts = AppStore.contacts(this)

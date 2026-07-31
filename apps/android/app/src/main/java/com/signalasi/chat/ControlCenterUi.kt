@@ -159,7 +159,8 @@ data class ControlCenterRowSpec(
     val switchValue: Boolean? = null,
     val showChevron: Boolean = true,
     val enabled: Boolean = true,
-    val preserveIconColor: Boolean = false
+    val preserveIconColor: Boolean = false,
+    val badges: List<ControlCenterBadgeSpec> = emptyList()
 )
 
 data class ControlCenterSectionSpec(
@@ -418,6 +419,28 @@ class ControlCenterRenderer(private val context: Context) {
                         maxLines = 2
                         ellipsize = TextUtils.TruncateAt.END
                         setPadding(0, dp(3), 0, 0)
+                    })
+                }
+                if (spec.badges.isNotEmpty()) {
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(0, dp(6), 0, 0)
+                        spec.badges.take(3).forEachIndexed { index, item ->
+                            addView(
+                                badge(item).apply {
+                                    maxLines = 1
+                                    ellipsize = TextUtils.TruncateAt.END
+                                    maxWidth = dp(if (index == 2) 112 else 92)
+                                },
+                                LinearLayout.LayoutParams(
+                                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                                    dp(21)
+                                ).apply {
+                                    if (index > 0) marginStart = dp(5)
+                                }
+                            )
+                        }
                     })
                 }
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
