@@ -296,6 +296,42 @@ extension SignalASIStoreTests {
     XCTAssertFalse(encoded.contains("session-token"))
   }
 
+  func testFileAgentMcpStorePersistsConnectionsAndSecrets() throws {
+    let root = try temporaryDirectory("mcp-file-store")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = FileAgentMcpStore(rootURL: root)
+    let connection = AgentMcpConnection(
+      id: "persisted-1",
+      catalogId: "signalasi.mcp.persisted",
+      displayName: "Persisted MCP",
+      endpoint: "https://persisted.example/mcp",
+      distribution: .remote,
+      transport: .streamableHTTP,
+      authProfile: try AgentMcpAuthProfile(.none),
+      authState: .notRequired,
+      state: .connected,
+      toolIds: ["persisted.search"]
+    )
+
+    store.upsert(connection)
+    store.writeSecrets(id: connection.id, values: ["access_token": "secret-token"])
+    let restored = FileAgentMcpStore(rootURL: root)
+
+    XCTAssertEqual(restored.list().map(\.id), ["persisted-1"])
+    XCTAssertEqual(restored.list().first?.toolIds, ["persisted.search"])
+    XCTAssertEqual(restored.readSecrets(id: connection.id)["access_token"], "secret-token")
+    XCTAssertTrue(restored.delete(id: connection.id))
+    XCTAssertTrue(FileAgentMcpStore(rootURL: root).list().isEmpty)
+    XCTAssertTrue(FileAgentMcpStore(rootURL: root).readSecrets(id: connection.id).isEmpty)
+
+    try "not-json".write(
+      to: FileAgentMcpStore.defaultConnectionsFileURL(rootURL: root),
+      atomically: true,
+      encoding: .utf8
+    )
+    XCTAssertTrue(FileAgentMcpStore(rootURL: root).list().isEmpty)
+  }
+
   func testAgentMcpAuthenticationCoordinatorSubmitsExchangeAndMapsToken() async throws {
     let root = try temporaryDirectory("mcp-auth-exchange-submit")
     defer { try? FileManager.default.removeItem(at: root) }
