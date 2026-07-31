@@ -14,9 +14,19 @@ final class VoiceReplyPlaybackPolicyTests: XCTestCase {
     XCTAssertEqual(request?.sessionId, "voice-1")
     XCTAssertEqual(request?.text, "Hello from Hermes")
     XCTAssertEqual(request?.language, "zh-CN")
-    XCTAssertEqual(request?.providerId, "ios_system_tts")
+    XCTAssertEqual(request?.providerId, "android")
     XCTAssertEqual(request?.runtimeChannel, .androidSystemTTS)
     XCTAssertTrue(request?.utteranceId.hasPrefix("signalasi_voice_") == true)
+  }
+
+  func testPolicyDoesNotPretendMicrosoftEdgeUsesSystemSpeechRuntime() {
+    XCTAssertNil(VoiceReplyPlaybackPolicy.request(
+      message: message("reply", contactId: "hermes"),
+      settings: settings(speakReplies: true, ttsProvider: .microsoftEdge),
+      languagePolicy: .default,
+      activeSessionId: "voice-1",
+      activeTargetContactId: "hermes"
+    ))
   }
 
   func testPolicySkipsWhenSpeakRepliesDisabledOrMessageIsNotTargetReply() {
@@ -89,13 +99,17 @@ final class VoiceReplyPlaybackPolicyTests: XCTestCase {
     ))
   }
 
-  private func settings(speakReplies: Bool) -> VoiceSettings {
+  private func settings(
+    speakReplies: Bool,
+    ttsProvider: VoiceTTSProvider = .system
+  ) -> VoiceSettings {
     VoiceSettings(
       wakeListeningEnabled: false,
       speechRecognitionEnabled: true,
       textToSpeechEnabled: true,
       autoSendTranscripts: true,
       preferredLocaleIdentifier: "en-US",
+      ttsProvider: ttsProvider,
       speakReplies: speakReplies,
       routingMode: .nativeAgent
     )

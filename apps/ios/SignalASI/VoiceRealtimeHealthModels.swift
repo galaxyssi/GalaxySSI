@@ -269,7 +269,7 @@ enum VoiceRealtimeHealthDetector {
     checkedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> VoiceRealtimeHealthSnapshot {
     let asr = preferredASRCapability(settings: settings, capabilities: capabilities)
-    let tts = preferredTTSCapability(capabilities)
+    let tts = preferredTTSCapability(settings: settings, capabilities: capabilities)
     return VoiceRealtimeHealthPolicy.evaluate(
       probes: [
         VoiceHealthProbe(
@@ -354,11 +354,12 @@ enum VoiceRealtimeHealthDetector {
   }
 
   private static func preferredTTSCapability(
-    _ capabilities: VoiceProviderCapabilitySnapshot
+    settings: VoiceSettings,
+    capabilities: VoiceProviderCapabilitySnapshot
   ) -> (capability: VoiceProviderCapability, channel: VoiceRuntimeChannel, provider: String) {
     let system = capabilities[.androidSystemTTS]
     let edge = capabilities[.microsoftEdgeTTS]
-    if !system.ready && edge.state != .unavailable {
+    if settings.ttsProvider == .microsoftEdge {
       return (edge, .microsoftEdgeTTS, "Microsoft Edge TTS")
     }
     return (system, .androidSystemTTS, "iOS System TTS")

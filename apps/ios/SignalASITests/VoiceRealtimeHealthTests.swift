@@ -120,7 +120,8 @@ final class VoiceRealtimeHealthTests: XCTestCase {
       speechRecognitionEnabled: true,
       textToSpeechEnabled: false,
       autoSendTranscripts: false,
-      preferredLocaleIdentifier: "en-US"
+      preferredLocaleIdentifier: "en-US",
+      ttsProvider: .microsoftEdge
     )
     let capabilities = VoiceProviderCapabilitySnapshot(
       capabilities: [
@@ -144,6 +145,34 @@ final class VoiceRealtimeHealthTests: XCTestCase {
     XCTAssertEqual(snapshot[.tts].provider, "Microsoft Edge TTS")
     XCTAssertEqual(snapshot[.tts].state, .disabled)
     XCTAssertEqual(snapshot[.tts].issue, .disabled)
+  }
+
+  func testVoiceRealtimeHealthDetectorUsesSelectedSystemTtsProvider() {
+    let settings = VoiceSettings(
+      wakeListeningEnabled: false,
+      speechRecognitionEnabled: false,
+      textToSpeechEnabled: true,
+      autoSendTranscripts: false,
+      preferredLocaleIdentifier: "en-US",
+      ttsProvider: .system
+    )
+    let capabilities = VoiceProviderCapabilitySnapshot(
+      capabilities: [
+        capability(.androidSystemTTS, .ready, .ready),
+        capability(.microsoftEdgeTTS, .needsNetwork, .networkRequired),
+      ],
+      checkedAtMillis: 1_000
+    )
+
+    let snapshot = VoiceRealtimeHealthDetector.detect(
+      settings: settings,
+      capabilities: capabilities,
+      checkedAtMillis: 1_000
+    )
+
+    XCTAssertEqual(snapshot[.tts].provider, "iOS System TTS")
+    XCTAssertEqual(snapshot[.tts].state, .ready)
+    XCTAssertEqual(snapshot[.tts].issue, .none)
   }
 
   func testVoiceRealtimeHealthDetectorFallsBackToIOSSpeechRuntimeWhenWhisperBlocked() {

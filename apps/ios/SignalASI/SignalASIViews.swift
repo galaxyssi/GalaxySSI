@@ -791,6 +791,22 @@ struct VoiceSettingsView: View {
             get: { store.voiceSettings.preferredLocaleIdentifier },
             set: { value in store.updateVoiceSettings { $0.preferredLocaleIdentifier = value } }
           ))
+          Picker("Wake Engine", selection: Binding(
+            get: { store.voiceSettings.wakeProvider },
+            set: { value in store.updateVoiceSettings { $0.wakeProvider = value } }
+          )) {
+            ForEach(VoiceWakeProvider.allCases) { provider in
+              Text(provider.displayTitle).tag(provider)
+            }
+          }
+          Picker("ASR Provider", selection: Binding(
+            get: { store.voiceSettings.asrProvider },
+            set: { value in store.updateVoiceSettings { $0.asrProvider = value } }
+          )) {
+            ForEach(VoiceASRProvider.allCases) { provider in
+              Text(provider.displayTitle).tag(provider)
+            }
+          }
           NavigationLink(destination: VoiceWhisperModelSettingsView()) {
             HStack {
               Text("ASR Model")
@@ -799,6 +815,18 @@ struct VoiceSettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          Picker("TTS Provider", selection: Binding(
+            get: { store.voiceSettings.ttsProvider },
+            set: { value in store.updateVoiceSettings { $0.ttsProvider = value } }
+          )) {
+            ForEach(VoiceTTSProvider.allCases) { provider in
+              Text(provider.displayTitle).tag(provider)
+            }
+          }
+          TextField("Microsoft Voice", text: Binding(
+            get: { store.voiceSettings.microsoftVoice },
+            set: { value in store.updateVoiceSettings { $0.microsoftVoice = value } }
+          ))
         }
         Section("Wake") {
           TextField("Wake Words", text: Binding(
