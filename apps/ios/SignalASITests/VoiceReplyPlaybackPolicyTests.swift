@@ -16,17 +16,22 @@ final class VoiceReplyPlaybackPolicyTests: XCTestCase {
     XCTAssertEqual(request?.language, "zh-CN")
     XCTAssertEqual(request?.providerId, "android")
     XCTAssertEqual(request?.runtimeChannel, .androidSystemTTS)
+    XCTAssertEqual(request?.voiceName, "")
     XCTAssertTrue(request?.utteranceId.hasPrefix("signalasi_voice_") == true)
   }
 
-  func testPolicyDoesNotPretendMicrosoftEdgeUsesSystemSpeechRuntime() {
-    XCTAssertNil(VoiceReplyPlaybackPolicy.request(
+  func testPolicyRoutesMicrosoftEdgeToNativeEdgeRuntime() {
+    let request = VoiceReplyPlaybackPolicy.request(
       message: message("reply", contactId: "hermes"),
-      settings: settings(speakReplies: true, ttsProvider: .microsoftEdge),
-      languagePolicy: .default,
+      settings: settings(speakReplies: true, ttsProvider: .microsoftEdge, microsoftVoice: "zh-CN-XiaoxiaoNeural"),
+      languagePolicy: LanguagePolicySettings(ttsLanguage: "en-US"),
       activeSessionId: "voice-1",
       activeTargetContactId: "hermes"
-    ))
+    )
+
+    XCTAssertEqual(request?.providerId, "microsoft_edge")
+    XCTAssertEqual(request?.runtimeChannel, .microsoftEdgeTTS)
+    XCTAssertEqual(request?.voiceName, "en-US-JennyNeural")
   }
 
   func testPolicySkipsWhenSpeakRepliesDisabledOrMessageIsNotTargetReply() {
@@ -101,7 +106,8 @@ final class VoiceReplyPlaybackPolicyTests: XCTestCase {
 
   private func settings(
     speakReplies: Bool,
-    ttsProvider: VoiceTTSProvider = .system
+    ttsProvider: VoiceTTSProvider = .system,
+    microsoftVoice: String = "zh-CN-XiaoxiaoNeural"
   ) -> VoiceSettings {
     VoiceSettings(
       wakeListeningEnabled: false,
@@ -110,6 +116,7 @@ final class VoiceReplyPlaybackPolicyTests: XCTestCase {
       autoSendTranscripts: true,
       preferredLocaleIdentifier: "en-US",
       ttsProvider: ttsProvider,
+      microsoftVoice: microsoftVoice,
       speakReplies: speakReplies,
       routingMode: .nativeAgent
     )
