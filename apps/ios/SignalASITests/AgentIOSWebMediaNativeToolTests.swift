@@ -517,4 +517,117 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.error?.details["content_type"], .string("image/png"))
   }
 
+  func testAgentIOSURLSessionWebMediaProviderManagesBrowserSessions() throws {
+    final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
+      var requests: [AgentIOSURLSessionWebRequest] = []
+      var responses: [AgentIOSURLSessionWebResponse]
+
+      init(responses: [AgentIOSURLSessionWebResponse]) {
+        self.responses = responses
+      }
+
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        requests.append(request)
+        guard !responses.isEmpty else {
+          throw AgentIOSURLSessionWebError.transportFailed("missing fake response")
+        }
+        return responses.removeFirst()
+      }
+    }
+
+    func response(url: String, body: String) -> AgentIOSURLSessionWebResponse {
+      AgentIOSURLSessionWebResponse(
+        statusCode: 200,
+        finalURL: URL(string: url)!,
+        headers: ["content-type": "text/html; charset=utf-8"],
+        body: Data(body.utf8),
+        retrievedAtEpochMillis: 1_100
+      )
+    }
+
+    let transport = FakeURLSessionWebTransport(responses: [
+      response(url: "https://signalasi.example/first", body: "<h1>First</h1><script>hidden()</script>"),
+      response(url: "https://signalasi.example/second", body: "<h1>Second</h1>")
+    ])
+    let provider = AgentIOSURLSessionWebMediaToolProvider(
+      transport: transport,
+      browserSessions: AgentIOSURLSessionBrowserSessionStore(),
+      nowMillis: { 1_000 }
+    )
+    let definitions = AgentIOSWebMediaNativeToolCatalog.definitions(provider: provider)
+    let createDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebMediaNativeToolCatalog.browserSessionCreate })
+    XCTAssertEqual(createDefinition.descriptor.availability.status, .available)
+
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
+    )
+    let context = AgentNativeToolInvocationContext(
+      sessionId: "ios-session",
+      conversationId: "conversation-1",
+      callerId: "agent-a",
+      grantedPermissions: [
+        AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission,
+        AgentIOSWebMediaNativeToolCatalog.browserSessionPermission
+      ],
+      grantedConsents: [
+        AgentIOSWebMediaNativeToolCatalog.publicWebConsent,
+        AgentIOSWebMediaNativeToolCatalog.browserSessionConsent
+      ]
+    )
+    let hooks = AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+
+    let created = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.browserSessionCreate,
+      input: ["url": .string("https://signalasi.example/first")],
+      context: context,
+      hooks: hooks
+    )
+    let browserId = try XCTUnwrap(created.output["browser_id"]?.stringValue)
+    let navigated = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+      input: [
+        "browser_id": .string(browserId),
+        "url": .string("https://signalasi.example/second")
+      ],
+      context: context,
+      hooks: hooks
+    )
+    let closed = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.browserSessionClose,
+      input: ["browser_id": .string(browserId)],
+      context: context,
+      hooks: hooks
+    )
+    let afterClose = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.browserSessionNavigate,
+      input: [
+        "browser_id": .string(browserId),
+        "url": .string("https://signalasi.example/third")
+      ],
+      context: context,
+      hooks: hooks
+    )
+
+    XCTAssertTrue(created.isSuccess)
+    XCTAssertTrue(browserId.hasPrefix("browser_session-"))
+    XCTAssertEqual(created.output["current_url"], .string("https://signalasi.example/first"))
+    XCTAssertEqual(created.output["history_count"], .int(1))
+    XCTAssertEqual(created.output["text"]?.stringValue?.contains("First"), true)
+    XCTAssertEqual(created.output["text"]?.stringValue?.contains("hidden"), false)
+    XCTAssertEqual(created.metadata["tool_handle_contract"], .string("signalasi.tool-handle/1.0"))
+    XCTAssertEqual(created.metadata["network_policy"], .string("public_https_urlsession_revalidated_v1"))
+
+    XCTAssertTrue(navigated.isSuccess)
+    XCTAssertEqual(navigated.output["current_url"], .string("https://signalasi.example/second"))
+    XCTAssertEqual(navigated.output["history_count"], .int(2))
+    XCTAssertEqual(navigated.output["text"]?.stringValue?.contains("Second"), true)
+
+    XCTAssertTrue(closed.isSuccess)
+    XCTAssertEqual(closed.output["browser_id"], .string(browserId))
+    XCTAssertEqual(closed.output["closed"], .bool(true))
+    XCTAssertEqual(afterClose.status, .failed)
+    XCTAssertEqual(afterClose.error?.code, "tool_handle_not_found")
+    XCTAssertEqual(transport.requests.count, 2)
+  }
+
 }

@@ -162,29 +162,28 @@ final class AgentIOSDefaultURLSessionWebTransport: AgentIOSURLSessionWebTranspor
 struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var implementationId: String
   var transport: AgentIOSURLSessionWebTransporting
+  var browserSessions: AgentIOSURLSessionBrowserSessionStore
   var nowMillis: () -> Int64
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
     implementationId: String = "signalasi.ios.urlsession_web_media",
+    browserSessions: AgentIOSURLSessionBrowserSessionStore? = nil,
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
   ) {
     self.transport = transport
     self.implementationId = implementationId
+    self.browserSessions = browserSessions ?? AgentIOSURLSessionBrowserSessionStore()
     self.nowMillis = nowMillis
   }
 
   func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
     switch operation {
-    case .contentExtract, .webSearch, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
+    case .contentExtract, .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate,
+         .browserSessionClose, .httpRequest, .webHead, .webFetch:
       return .available
-    case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: "iOS isolated browser sessions require a WebKit session provider."
-      )
     case .fileDownload, .webDownload:
       return AgentNativeToolAvailability(
         status: .requiresSetup,
@@ -206,6 +205,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     switch operation {
     case .webSearch:
       return executeSearch(input: input, invocation: invocation)
+    case .browserSessionCreate:
+      return executeBrowserSessionCreate(input: input, invocation: invocation)
+    case .browserSessionNavigate:
+      return executeBrowserSessionNavigate(input: input, invocation: invocation)
+    case .browserSessionClose:
+      return executeBrowserSessionClose(input: input, invocation: invocation)
     case .webHead:
       return executeWeb(operation: operation, input: input, invocation: invocation, method: .head)
     case .webFetch:
@@ -222,7 +227,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
         code: "unexpected_provider_call",
         message: "content.extract is handled by the iOS WebMedia executor."
       )
-    case .browserSessionCreate, .browserSessionNavigate, .browserSessionClose, .fileDownload, .webDownload, .ocrRecognizeContent:
+    case .fileDownload, .webDownload, .ocrRecognizeContent:
       return AgentNativeToolExecutionResult.failure(
         code: "web_media_provider_unavailable",
         message: "The iOS URLSession WebMedia provider does not implement \(operation.rawValue).",
@@ -297,6 +302,129 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       )
     } catch let error as AgentIOSURLSessionWebError {
       return failure(error)
+    } catch {
+      return failure(.transportFailed(error.localizedDescription))
+    }
+  }
+
+  private func executeBrowserSessionCreate(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    do {
+      let requestedURL = urlString(input)
+      let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
+      if requestedURL.isEmpty {
+        let snapshot = browserSessions.create(
+          scope: scope,
+          resourceId: invocation.context.invocationId,
+          currentURL: "",
+          nowMillis: nowMillis()
+        )
+        return AgentNativeToolExecutionResult.success(
+          output: browserSessionOutput(snapshot),
+          message: "Isolated browser session created",
+          metadata: browserSessionMetadata()
+        )
+      }
+
+      let url = try validatedPublicHTTPSURL(requestedURL)
+      let resource = try requestResource(
+        requestedURL: url,
+        method: .get,
+        maxBodyBytes: try boundedMaxBytes(input),
+        timeoutMillis: try boundedTimeout(input, invocation: invocation),
+        invocation: invocation
+      )
+      let snapshot = browserSessions.create(
+        scope: scope,
+        resourceId: invocation.context.invocationId,
+        currentURL: resource.finalURL,
+        nowMillis: nowMillis()
+      )
+      var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
+      let html = decode(resource.body, charset: charsetName(from: resource.selectedHeaders))
+      output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
+      output["html_sha256"] = .string(sha256(resource.body))
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "Isolated browser session created",
+        metadata: browserSessionMetadata()
+      )
+    } catch let error as AgentIOSURLSessionBrowserSessionStoreError {
+      return browserSessionFailure(error)
+    } catch let error as AgentIOSURLSessionWebError {
+      return failure(error)
+    } catch {
+      return failure(.transportFailed(error.localizedDescription))
+    }
+  }
+
+  private func executeBrowserSessionNavigate(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let browserId = string(input, "browser_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
+    let scope = AgentIOSURLSessionBrowserSessionScope(context: invocation.context)
+    do {
+      try browserSessions.validate(browserId: browserId, scope: scope, nowMillis: nowMillis())
+      let resource = try requestResource(
+        requestedURL: try validatedPublicHTTPSURL(urlString(input)),
+        method: .get,
+        maxBodyBytes: try boundedMaxBytes(input),
+        timeoutMillis: try boundedTimeout(input, invocation: invocation),
+        invocation: invocation
+      )
+      let snapshot = try browserSessions.navigate(
+        browserId: browserId,
+        scope: scope,
+        currentURL: resource.finalURL,
+        nowMillis: nowMillis()
+      )
+      var output = commonOutput(resource).merging(browserSessionOutput(snapshot)) { current, _ in current }
+      let html = decode(resource.body, charset: charsetName(from: resource.selectedHeaders))
+      output["text"] = .string(boundedText(readableText(html), maxCharacters: AgentIOSWebMediaNativeToolCatalog.maxContentCharacters))
+      output["html_sha256"] = .string(sha256(resource.body))
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "Browser session navigated",
+        metadata: browserSessionMetadata()
+      )
+    } catch let error as AgentIOSURLSessionBrowserSessionStoreError {
+      return browserSessionFailure(error)
+    } catch let error as AgentIOSURLSessionWebError {
+      return failure(error)
+    } catch {
+      return failure(.transportFailed(error.localizedDescription))
+    }
+  }
+
+  private func executeBrowserSessionClose(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let browserId = string(input, "browser_id", limit: Int(AgentIOSWebMediaNativeToolCatalog.maxBrowserHandleCharacters))
+    do {
+      let snapshot = try browserSessions.close(
+        browserId: browserId,
+        scope: AgentIOSURLSessionBrowserSessionScope(context: invocation.context),
+        nowMillis: nowMillis()
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "browser_id": .string(snapshot.browserId),
+          "closed": .bool(true),
+          "expires_at_epoch_ms": .int(snapshot.expiresAtEpochMillis)
+        ],
+        message: "Browser session closed",
+        metadata: [
+          "tool_handle_contract": .string(AgentIOSURLSessionBrowserSessionStore.toolHandleContract),
+          "state_model": .string("explicit_browser_id"),
+          "persistence": .string("process_lifetime")
+        ]
+      )
+    } catch let error as AgentIOSURLSessionBrowserSessionStoreError {
+      return browserSessionFailure(error)
     } catch {
       return failure(.transportFailed(error.localizedDescription))
     }
@@ -728,6 +856,35 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     ]
   }
 
+  private func browserSessionOutput(_ snapshot: AgentIOSURLSessionBrowserSessionSnapshot) -> AgentMcpJSONObject {
+    var output: AgentMcpJSONObject = [
+      "browser_id": .string(snapshot.browserId),
+      "history_count": .int(Int64(snapshot.historyCount)),
+      "expires_at_epoch_ms": .int(snapshot.expiresAtEpochMillis)
+    ]
+    if !snapshot.currentURL.isEmpty {
+      output["current_url"] = .string(snapshot.currentURL)
+    }
+    return output
+  }
+
+  private func browserSessionMetadata() -> AgentMcpJSONObject {
+    [
+      "implementation": .string(implementationId),
+      "platform": .string("ios_phone"),
+      "bounded": .bool(true),
+      "tool_handle_contract": .string(AgentIOSURLSessionBrowserSessionStore.toolHandleContract),
+      "state_model": .string("explicit_browser_id"),
+      "cookies": .string("none"),
+      "network_policy": .string("public_https_urlsession_revalidated_v1"),
+      "redirect_policy": .string("manual_revalidate_each_hop"),
+      "dns_resolution": .string("urlsession_managed"),
+      "javascript": .bool(false),
+      "script_execution": .bool(false),
+      "render_mode": .string("bounded_http")
+    ]
+  }
+
   private func metadata(
     operation: AgentIOSWebMediaOperation,
     method: AgentIOSURLSessionWebRequest.Method
@@ -826,6 +983,27 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
           "max_bytes": .int(maxBytes)
         ]
       )
+    }
+  }
+
+  private func browserSessionFailure(_ error: AgentIOSURLSessionBrowserSessionStoreError) -> AgentNativeToolExecutionResult {
+    switch error {
+    case .toolHandleNotFound:
+      return failure(
+        "tool_handle_not_found",
+        "Tool handle is missing, expired, or was released",
+        retryable: true
+      )
+    case .toolHandleExpired:
+      return failure(
+        "tool_handle_expired",
+        "Tool handle expired; create a new handle and retry",
+        retryable: true
+      )
+    case .toolHandleOwnerMismatch:
+      return failure("tool_handle_owner_mismatch", "Tool handle belongs to a different caller")
+    case .toolHandleContextMismatch:
+      return failure("tool_handle_context_mismatch", "Tool handle belongs to a different conversation context")
     }
   }
 
