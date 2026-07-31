@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CoreMotion) && os(iOS)
+import CoreMotion
+#endif
 #if canImport(CoreNFC) && os(iOS)
 import CoreNFC
 #endif
@@ -12,6 +15,7 @@ protocol AgentIOSHardwareStatusProviding {
   func storageStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func nfcStatus(nowMillis: Int64) -> AgentMcpJSONObject
+  func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject
 }
 
 struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
@@ -95,6 +99,75 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
       "framework": .string(framework),
       "scope": .string("ios_core_nfc_status_only"),
       "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject {
+    let boundedLimit = max(1, min(AgentIOSHardwareNativeToolCatalog.maxSensorResults, limit))
+    #if canImport(CoreMotion) && os(iOS)
+    let manager = CMMotionManager()
+    let sensors = [
+      sensorDescriptor(
+        available: manager.isAccelerometerAvailable,
+        type: "accelerometer",
+        androidType: 1,
+        name: "iOS Accelerometer"
+      ),
+      sensorDescriptor(
+        available: manager.isGyroAvailable,
+        type: "gyroscope",
+        androidType: 4,
+        name: "iOS Gyroscope"
+      ),
+      sensorDescriptor(
+        available: manager.isMagnetometerAvailable,
+        type: "magnetic_field",
+        androidType: 2,
+        name: "iOS Magnetometer"
+      ),
+      sensorDescriptor(
+        available: manager.isDeviceMotionAvailable,
+        type: "rotation_vector",
+        androidType: 11,
+        name: "iOS Device Motion"
+      )
+    ].compactMap { $0 }
+    let framework = "core_motion"
+    #else
+    let sensors: [AgentMcpJSONObject] = []
+    let framework = "unavailable"
+    #endif
+    let selected = Array(sensors.prefix(boundedLimit))
+    return [
+      "sensors": .array(selected.map { .object($0) }),
+      "result_count": .int(Int64(selected.count)),
+      "truncated": .bool(sensors.count > boundedLimit),
+      "sampling_started": .bool(false),
+      "framework": .string(framework),
+      "scope": .string("ios_coremotion_metadata"),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+  }
+
+  private func sensorDescriptor(
+    available: Bool,
+    type: String,
+    androidType: Int64,
+    name: String
+  ) -> AgentMcpJSONObject? {
+    guard available else { return nil }
+    return [
+      "type": .string(type),
+      "android_type": .int(androidType),
+      "name": .string(name),
+      "vendor": .string("Apple"),
+      "version": .int(1),
+      "maximum_range": .double(0),
+      "resolution": .double(0),
+      "power_milliamps": .double(0),
+      "reporting_mode": .string("continuous"),
+      "wake_up": .bool(false),
+      "runtime_permission": .null
     ]
   }
 
@@ -198,12 +271,14 @@ enum AgentIOSHardwareNativeToolCatalog {
   static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
   static let installedAppsConsent = "signalasi.consent.installed_apps.query_visible"
   static let packageDetailConsent = "signalasi.consent.package_detail.query_visible"
+  static let maxSensorResults = 64
 
   static let executableToolIds: Set<String> = [
     batteryStatus,
     powerStatus,
     storageStatus,
     networkStatus,
+    sensorsList,
     nfcStatus,
     bluetoothPairingHandoff,
     installedAppsList,
@@ -252,14 +327,14 @@ enum AgentIOSHardwareNativeToolCatalog {
       ["NSLocationWhenInUseUsageDescription"],
       ["signalasi.consent.location.foreground_once"]
     ),
-    unavailableSpec(
+    statusSpec(
       sensorsList,
       "List iOS sensors",
-      "Requires a CoreMotion sensor catalog executor; health and background streams remain excluded.",
-      .medium,
-      ["sensors.metadata"],
-      [],
-      []
+      "Lists bounded iOS CoreMotion sensor metadata without registering listeners or collecting samples.",
+      ["sensors.metadata.read", "sensors.no_sampling"],
+      inputSchema: inputSchema(properties: [
+        "limit": integerSchema(minimum: 1, maximum: Int64(maxSensorResults))
+      ])
     ),
     unavailableSpec(
       sensorSample,
@@ -366,7 +441,8 @@ enum AgentIOSHardwareNativeToolCatalog {
     _ id: String,
     _ title: String,
     _ description: String,
-    _ capabilities: Set<String>
+    _ capabilities: Set<String>,
+    inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
   ) -> Specification {
     Specification(
       id: id,
@@ -382,7 +458,8 @@ enum AgentIOSHardwareNativeToolCatalog {
         )
       ],
       consents: [noExtraConsent],
-      availability: .available
+      availability: .available,
+      inputSchema: inputSchema
     )
   }
 
@@ -549,6 +626,12 @@ struct AgentIOSHardwareNativeToolExecutor {
       return status(provider.storageStatus(nowMillis: now), "Storage status read")
     case AgentIOSHardwareNativeToolCatalog.networkStatus:
       return status(provider.networkStatus(nowMillis: now), "Network status read")
+    case AgentIOSHardwareNativeToolCatalog.sensorsList:
+      let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxSensorResults))
+      return status(
+        provider.sensorsList(limit: limit, nowMillis: now),
+        "Device sensor metadata listed"
+      )
     case AgentIOSHardwareNativeToolCatalog.nfcStatus:
       return status(provider.nfcStatus(nowMillis: now), "NFC capability status read")
     case AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff:
