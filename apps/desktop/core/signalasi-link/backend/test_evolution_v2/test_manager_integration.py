@@ -54,6 +54,22 @@ class ManagerIntegrationTests(unittest.TestCase):
         android = next(command for command in commands if command.id == "android-unit-build")
         self.assertNotIn("-Psignalasi.requireEmbeddedRuntime=false", android.argv)
 
+    def test_desktop_candidate_gate_requires_two_reload_cycles(self):
+        with tempfile.TemporaryDirectory() as root:
+            manager = self.manager(Path(root))
+            commands = manager._gate_commands([
+                "apps/desktop/core/signalasi-link/backend/feature.py"
+            ])
+
+        runtime = next(
+            command
+            for command in commands
+            if command.id == "desktop-isolated-runtime"
+        )
+        self.assertIn("--reload-cycles", runtime.argv)
+        reload_index = runtime.argv.index("--reload-cycles")
+        self.assertEqual("2", runtime.argv[reload_index + 1])
+
     def test_android_device_evidence_gate_is_required_after_build(self):
         with tempfile.TemporaryDirectory() as root:
             manager = self.manager(Path(root))

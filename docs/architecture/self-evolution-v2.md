@@ -57,6 +57,11 @@ Cancellation can stop a running task. Rollback discards a candidate waiting for 
 interrupted publish returns to `waiting_approval`; an interrupted execution is rolled back and may
 resume in a fresh worktree.
 
+Desktop source candidates also pass a two-cycle isolated reload gate. The candidate backend starts
+with an ephemeral state directory, answers its health probe, stops completely, then starts again
+against the same isolated state and must become healthy a second time. This validates reload and
+state continuity without replacing or restarting the stable Desktop process.
+
 Research objects never execute code. A proposal becomes executable only after an explicit
 `materialize` operation creates a scoped V1 task.
 

@@ -45,6 +45,8 @@ own gates or exfiltrate CI secrets.
 - The active checkout is fingerprinted before and after implementation. A detected change blocks
   the task and leaves user files untouched for inspection instead of attempting an unsafe reset.
 - Desktop candidate smoke tests use a temporary state directory and random loopback port.
+- Desktop candidates must survive two isolated start/health/stop cycles against the same ephemeral
+  state. A failed reload terminates the candidate and leaves the stable Desktop process untouched.
 - The Android device gate snapshots the stable package before installing a candidate and restores
   the stable package in a final cleanup path. Stable APK and private-data archives are hashed before
   candidate installation and verified again before restoration.
