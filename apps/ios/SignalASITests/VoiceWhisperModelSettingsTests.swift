@@ -160,6 +160,7 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
         store: store,
         modelsDirectory: models,
         sourceLocale: Locale(identifier: "zh_CN"),
+        availableFreeBytes: { -1 },
         requestIdFactory: { requestId },
         clockMillis: { 2_000 }
       )

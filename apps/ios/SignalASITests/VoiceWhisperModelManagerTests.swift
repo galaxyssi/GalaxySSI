@@ -158,6 +158,42 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
     XCTAssertFalse(manager.isAvailable(model))
   }
 
+  func testEnqueueEnforcesDownloadPolicyBeforeStartingRequest() throws {
+    let env = try Environment()
+    let meteredManager = env.manager(
+      requestId: "download-metered",
+      network: .metered,
+      availableFreeBytes: Int64.max
+    )
+    let large = VoiceWhisperModelCatalog.model("large_v3_turbo_q5_0")
+
+    XCTAssertThrowsError(try meteredManager.enqueue(large, allowsCellularAccess: false)) { error in
+      XCTAssertEqual(
+        error as? VoiceWhisperModelManagerError,
+        .meteredDownloadConfirmationRequired(modelId: large.id)
+      )
+    }
+
+    let confirmed = try meteredManager.enqueue(large, allowsCellularAccess: true)
+    XCTAssertEqual(confirmed.requestId, "download-metered")
+
+    let lowSpaceManager = env.manager(
+      requestId: "download-low-space",
+      network: .wifi,
+      availableFreeBytes: 1
+    )
+    let medium = VoiceWhisperModelCatalog.model("medium")
+    XCTAssertThrowsError(try lowSpaceManager.enqueue(medium)) { error in
+      guard let managerError = error as? VoiceWhisperModelManagerError,
+            case let .downloadUnavailable(modelId, decision, _, availableBytes) = managerError else {
+        return XCTFail("Expected download unavailable")
+      }
+      XCTAssertEqual(modelId, medium.id)
+      XCTAssertEqual(decision, .insufficientSpace)
+      XCTAssertEqual(availableBytes, 1)
+    }
+  }
+
   func testBundledModelDoesNotEnqueueDownload() throws {
     let env = try Environment()
     let manager = env.manager()
@@ -198,11 +234,18 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
       store = UserDefaultsVoiceWhisperModelDownloadRecordStore(defaults: defaults)
     }
 
-    func manager(requestId: String = "download", now: Int64 = 2_000) -> VoiceWhisperModelManager {
+    func manager(
+      requestId: String = "download",
+      now: Int64 = 2_000,
+      network: VoiceWhisperNetworkClass = .unknown,
+      availableFreeBytes: Int64 = -1
+    ) -> VoiceWhisperModelManager {
       VoiceWhisperModelManager(
         store: store,
         modelsDirectory: models,
         sourceLocale: Locale(identifier: "zh_CN"),
+        networkClass: { network },
+        availableFreeBytes: { availableFreeBytes },
         requestIdFactory: { requestId },
         clockMillis: { now }
       )
