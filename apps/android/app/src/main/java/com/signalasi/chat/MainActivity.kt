@@ -80,6 +80,19 @@ import com.signalasi.chat.voice.VoiceInteractionPhase
 import com.signalasi.chat.voice.VoiceRouteDecision
 import com.signalasi.chat.voice.VoiceRouteKind
 import com.signalasi.chat.voice.VoiceSessionConfig
+import com.signalasi.chat.voice.VoiceTtsRequest
+import com.signalasi.chat.voice.VoiceTtsRequestRegistry
+import com.signalasi.chat.voice.audio.AdaptiveEndpointConfig
+import com.signalasi.chat.voice.audio.AndroidPcmRecorder
+import com.signalasi.chat.voice.audio.EndpointReason
+import com.signalasi.chat.voice.audio.PcmCaptureConfig
+import com.signalasi.chat.voice.audio.PcmStopReason
+import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
+import com.signalasi.chat.voice.audio.VadDecision
+import com.signalasi.chat.voice.audio.VoiceAudioHub
+import com.signalasi.chat.voice.audio.VoiceAudioHubListener
+import com.signalasi.chat.voice.audio.VoiceAudioSession
+import com.signalasi.chat.voice.audio.VoiceAudioSessionConfig
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
@@ -452,10 +465,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var recordingPurpose = ""
     private var recordingVoiceTraceId = ""
     private var activeVoiceTraceId = ""
+    private var pcmVoiceAudioHub: VoiceAudioHub? = null
+    private var pcmVoiceSession: VoiceAudioSession? = null
+    private var pcmCaptureStopping = false
+    @Volatile private var pcmVoiceAmplitude = 0
+    private var lastPcmAudioLevelDispatchAt = 0L
     private val voiceTraceIdsByTurn = ConcurrentHashMap<String, String>()
     private lateinit var voiceInteractionCoordinator: VoiceInteractionCoordinator
     private var voiceCoordinatorObserverId = ""
-    private var activeVoiceCoordinatorSessionId = ""
     private var recordingVoiceCoordinatorSessionId = ""
     private val voiceCoordinatorIdsByTurn = ConcurrentHashMap<String, String>()
     private val voiceCoordinatorIdsBySourceMessage = ConcurrentHashMap<Long, String>()
@@ -513,6 +530,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var androidTts: TextToSpeech? = null
     private var androidTtsInitialized = false
     private var androidTtsReady = false
+    private val androidTtsRequests = VoiceTtsRequestRegistry()
     private lateinit var microsoftTts: MicrosoftEdgeTts
     private data class VoiceHealthRowBinding(
         val subtitle: TextView,
@@ -593,7 +611,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceInteractionCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
         if (VoiceFeatureFlags.isCoordinatorEnabled(this)) {
             voiceCoordinatorObserverId = voiceInteractionCoordinator.observe { state ->
-                if (state.sessionId.isNotBlank()) activeVoiceCoordinatorSessionId = state.sessionId
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
                     Log.d("SignalASIVoice", "Coordinator phase=${state.phase} revision=${state.revision}")
                 }
@@ -655,18 +672,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         )
                     }
                     override fun onDone(utteranceId: String?) {
-                        VoiceRuntimeHealthRegistry.success(
-                            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
-                        )
-                        runOnUiThread { onVoiceSpeechFinished() }
+                        runOnUiThread { onAndroidTtsFinished(utteranceId, success = true) }
                     }
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
-                        VoiceRuntimeHealthRegistry.failure(
-                            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
-                            "Android TTS utterance failed"
-                        )
-                        runOnUiThread { onVoiceSpeechFinished() }
+                        runOnUiThread { onAndroidTtsFinished(utteranceId, success = false) }
+                    }
+                    override fun onStop(utteranceId: String?, interrupted: Boolean) {
+                        runOnUiThread {
+                            if (androidTtsRequests.discard(utteranceId)) {
+                                voiceAssistantSpeaking = false
+                            }
+                        }
                     }
                 })
             }
@@ -1091,13 +1108,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentConnectorTimeoutCallbacks.values.forEach(handler::removeCallbacks)
         agentConnectorTimeoutCallbacks.clear()
         stopVoiceAssistant()
-        voiceAssistantScope.cancel()
         microsoftTts.shutdown()
         androidTts?.stop()
         androidTts?.shutdown()
         if (::holdToTalkController.isInitialized) holdToTalkController.release()
         if (::agentHoldToTalkController.isInitialized) agentHoldToTalkController.release()
         stopRecording(send = false)
+        pcmVoiceSession?.let { session ->
+            pcmVoiceAudioHub?.requestStop(session, PcmStopReason.USER_CANCEL)
+        }
+        voiceAssistantScope.cancel()
         flushChatHistoryAsync()
         SignalASIMqttClient.removeListener(this)
         AgentTaskRuntime.removeLivenessListener(agentTaskLivenessListener)
@@ -1190,6 +1210,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onPause() {
+        if (!isChangingConfigurations && isVoiceCaptureActive()) {
+            if (pcmVoiceSession != null) {
+                stopPcmRecording(send = false, reason = "app_background")
+            } else {
+                when (recordingPurpose) {
+                    "voice_wakeup" -> stopVoiceCommandRecording(send = false, reason = "app_background")
+                    "agent_input" -> stopAgentInputRecording(send = false)
+                    else -> stopRecording(send = false)
+                }
+            }
+        }
         DesktopRemoteControl.pauseScreenshotStreams()
         AgentConnectorResponseBus.removeListener(agentConnectorResponseListener)
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
@@ -3815,7 +3846,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
             },
             startRecording = { startRecording("agent_input") },
-            currentAmplitude = { recorder?.maxAmplitude ?: 0 },
+            currentAmplitude = { currentVoiceAmplitude() },
             finishRecording = { send -> stopAgentInputRecording(send) }
         )
         agentVoiceButton.setOnTouchListener(agentHoldToTalkController)
@@ -6833,6 +6864,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         speechRecognizer = null
         microsoftTts.stop()
         androidTts?.stop()
+        androidTtsRequests.clear()
         VoiceRuntimeChannel.entries.forEach(VoiceRuntimeHealthRegistry::idle)
     }
 
@@ -7017,7 +7049,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun startVoiceCommandRecording() {
         if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE) return
-        if (!ensureRecordPermission() || recorder != null) return
+        if (!ensureRecordPermission() || isVoiceCaptureActive()) return
+        if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
+            startPcmVoiceCommandRecording()
+            return
+        }
         val config = VoiceAssistantSettings.get(this)
         val contact = voiceAssistantTargetContact(config)
         val mediaProfile = AgentMediaNetworkDetector.detect(this)
@@ -7088,6 +7124,30 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun startPcmVoiceCommandRecording() {
+        val config = VoiceAssistantSettings.get(this)
+        val contact = voiceAssistantTargetContact(config)
+        voiceAssistantAwake = true
+        voiceAssistantRecordingCommand = true
+        voiceCommandSpeechDetected = false
+        voiceCommandLastVoiceAt = 0L
+        updateWakeVoiceUi(
+            getString(R.string.voice_status_awake_auto_recording),
+            getString(R.string.voice_status_auto_recording_detail)
+        )
+        if (!startPcmRecording("voice_wakeup", autoEndpoint = true)) {
+            voiceAssistantRecordingCommand = false
+            voiceAssistantAwake = false
+            updateWakeVoiceUi(
+                getString(R.string.voice_status_recording_failed),
+                getString(R.string.voice_status_check_microphone)
+            )
+            scheduleVoiceRestart(1_200L)
+            return
+        }
+        Log.i("SignalASIVoice", "PCM voice command requested target=${contact.id}")
+    }
+
     private fun monitorVoiceCommandRecording() {
         if (!voiceAssistantRecordingCommand) return
         val activeRecorder = recorder ?: return
@@ -7138,6 +7198,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun stopVoiceCommandRecording(send: Boolean, reason: String = "manual") {
+        if (pcmVoiceSession != null && recordingPurpose == "voice_wakeup") {
+            voiceAssistantRecordingCommand = false
+            stopPcmRecording(send, reason)
+            return
+        }
         val activeRecorder = recorder
         val traceId = recordingVoiceTraceId
         val coordinatorSessionId = recordingVoiceCoordinatorSessionId.ifBlank {
@@ -7697,6 +7762,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
         )
         val utteranceId = "signalasi_voice_${System.currentTimeMillis()}"
+        androidTtsRequests.begin(
+            VoiceTtsRequest(
+                utteranceId = utteranceId,
+                traceId = traceId,
+                onFinished = after
+            )
+        )
         configureAndroidTtsLanguage()
         val speakResult = androidTts?.speak(
             text,
@@ -7705,6 +7777,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             utteranceId
         )
         if (speakResult == TextToSpeech.ERROR) {
+            androidTtsRequests.discard(utteranceId)
             VoiceRuntimeHealthRegistry.failure(
                 VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
                 "Android TTS rejected the utterance"
@@ -7744,13 +7817,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         }
         handler.postDelayed({
-            if (voiceAssistantSpeaking) {
+            val request = androidTtsRequests.finish(utteranceId)
+            if (request != null) {
+                androidTts?.stop()
                 VoiceRuntimeHealthRegistry.failure(
                     VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
                     "Android TTS timed out"
                 )
                 voiceAssistantSpeaking = false
-                after()
+                VoiceLatencyTelemetry.record(
+                    this,
+                    request.traceId,
+                    VoiceTraceEvents.TTS_COMPLETED,
+                    mapOf(
+                        "tts_provider" to "android_system",
+                        "success" to "false",
+                        "error_code" to "TTS_TIMEOUT"
+                    ),
+                    once = true
+                )
+                request.onFinished()
             }
         }, 20_000L)
     }
@@ -7760,21 +7846,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         androidTts?.language = Locale.forLanguageTag(languageTag)
     }
 
-    private fun onVoiceSpeechFinished() {
-        if (!voiceAssistantSpeaking) return
+    private fun onAndroidTtsFinished(utteranceId: String?, success: Boolean) {
+        val request = androidTtsRequests.finish(utteranceId) ?: return
         voiceAssistantSpeaking = false
-        val traceId = activeVoiceTraceId
+        if (success) {
+            VoiceRuntimeHealthRegistry.success(VoiceRuntimeChannel.ANDROID_SYSTEM_TTS)
+        } else {
+            VoiceRuntimeHealthRegistry.failure(
+                VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
+                "Android TTS utterance failed"
+            )
+        }
         VoiceLatencyTelemetry.record(
             this,
-            traceId,
+            request.traceId,
             VoiceTraceEvents.TTS_COMPLETED,
-            mapOf("tts_provider" to "android_system", "success" to "true"),
+            mapOf(
+                "tts_provider" to "android_system",
+                "success" to success.toString(),
+                "error_code" to if (success) "" else "TTS_PLAYBACK_FAILED"
+            ),
             once = true
         )
-        completeVoiceTrace(traceId)
-        if (activeMainTab == PAGE_VOICE) {
-            if (voiceAssistantAwake) startCommandListening() else startWakeListening()
-        }
+        request.onFinished()
     }
 
     private fun completeVoiceTrace(traceId: String, phase: AgentPhase? = null) {
@@ -19503,7 +19597,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 requestPermissions(arrayOf(android.Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
             },
             startRecording = { startRecording("chat_message") },
-            currentAmplitude = { recorder?.maxAmplitude ?: 0 },
+            currentAmplitude = { currentVoiceAmplitude() },
             finishRecording = { send -> stopRecording(send) }
         )
         pressToTalkButton.setOnTouchListener(holdToTalkController)
@@ -20912,20 +21006,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         }.getOrNull() ?: return ""
         if (!transition.accepted) return ""
-        return transition.current.sessionId.also {
-            activeVoiceCoordinatorSessionId = it
-            recordingVoiceCoordinatorSessionId = it
-        }
+        return transition.current.sessionId.also { recordingVoiceCoordinatorSessionId = it }
     }
 
-    private fun voiceCoordinatorSession(traceId: String = ""): String {
+    private fun voiceCoordinatorSession(traceId: String): String {
         if (!::voiceInteractionCoordinator.isInitialized || !VoiceFeatureFlags.isCoordinatorEnabled(this)) return ""
+        if (traceId.isBlank()) return ""
         val current = voiceInteractionCoordinator.snapshot()
-        return when {
-            traceId.isNotBlank() -> traceId.takeIf { it == current.sessionId }.orEmpty()
-            activeVoiceCoordinatorSessionId == current.sessionId -> activeVoiceCoordinatorSessionId
-            else -> ""
-        }
+        return traceId.takeIf { it == current.sessionId }.orEmpty()
     }
 
     private fun dispatchVoiceCoordinator(event: VoiceInteractionEvent) {
@@ -20988,7 +21076,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     // ===== Recording =====
     private fun startRecording(purpose: String): Boolean {
-        if (recorder != null) return false
+        if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
+            return startPcmRecording(purpose, autoEndpoint = false)
+        }
+        if (isVoiceCaptureActive()) return false
         val mediaProfile = AgentMediaNetworkDetector.detect(this)
         val traceId = VoiceLatencyTelemetry.startSession(
             this,
@@ -21067,6 +21158,199 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun startPcmRecording(purpose: String, autoEndpoint: Boolean): Boolean {
+        if (isVoiceCaptureActive()) return false
+        val traceId = VoiceLatencyTelemetry.startSession(
+            this,
+            mapOf("recording_source" to purpose)
+        )
+        val coordinatorSessionId = beginVoiceCoordinatorSession(purpose, traceId)
+        activeVoiceTraceId = traceId
+        recordingVoiceTraceId = traceId
+        recordingStartedAt = System.currentTimeMillis()
+        recordingPurpose = purpose
+        recordingFile = null
+        pcmVoiceAmplitude = 0
+        pcmCaptureStopping = false
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.MICROPHONE_OPEN_STARTED,
+            mapOf("recording_source" to purpose),
+            once = true
+        )
+        val endpointConfig = AdaptiveEndpointConfig(
+            noSpeechTimeoutMs = 2_500L,
+            minimumSpeechMs = 240L,
+            shortUtteranceSilenceMs = 850L,
+            normalUtteranceSilenceMs = 650L,
+            longUtteranceSilenceMs = 500L,
+            maxDurationMs = 60_000L,
+            preRollMs = 300,
+            postRollMs = 200
+        )
+        val session = voiceAudioHub().start(
+            VoiceAudioSessionConfig(
+                capture = PcmCaptureConfig(maxDurationMs = endpointConfig.maxDurationMs),
+                endpoint = endpointConfig,
+                autoEndpoint = autoEndpoint
+            ),
+            object : VoiceAudioHubListener {
+                override fun onCaptureReady(session: VoiceAudioSession, state: com.signalasi.chat.voice.audio.PcmRecorderState) {
+                    runOnUiThread {
+                        if (pcmVoiceSession?.id != session.id) return@runOnUiThread
+                        if (coordinatorSessionId.isNotBlank()) {
+                            dispatchVoiceCoordinator(VoiceInteractionEvent.CapturePrepared(coordinatorSessionId))
+                        }
+                        VoiceLatencyTelemetry.record(
+                            this@MainActivity,
+                            traceId,
+                            VoiceTraceEvents.MICROPHONE_OPENED,
+                            mapOf("recording_source" to purpose),
+                            once = true
+                        )
+                        VoiceLatencyTelemetry.record(
+                            this@MainActivity,
+                            traceId,
+                            VoiceTraceEvents.PCM_CAPTURE_READY,
+                            mapOf(
+                                "recording_source" to purpose,
+                                "audio_source" to state.audioSource.toString(),
+                                "input_route" to state.inputRoute
+                            ),
+                            once = true
+                        )
+                        Log.i(
+                            "SignalASIVoice",
+                            "PCM capture ready purpose=$purpose source=${state.audioSource} route=${state.inputRoute}"
+                        )
+                    }
+                }
+
+                override fun onAudioLevel(session: VoiceAudioSession, decision: VadDecision) {
+                    pcmVoiceAmplitude = decision.peak
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastPcmAudioLevelDispatchAt >= 100L && coordinatorSessionId.isNotBlank()) {
+                        lastPcmAudioLevelDispatchAt = now
+                        dispatchVoiceCoordinator(
+                            VoiceInteractionEvent.AudioLevel(coordinatorSessionId, decision.rms)
+                        )
+                    }
+                }
+
+                override fun onSpeechStarted(session: VoiceAudioSession, sequence: Long) {
+                    runOnUiThread {
+                        if (pcmVoiceSession?.id != session.id) return@runOnUiThread
+                        if (purpose == "voice_wakeup") {
+                            voiceCommandSpeechDetected = true
+                            voiceCommandLastVoiceAt = System.currentTimeMillis()
+                            updateWakeVoiceUi(
+                                getString(R.string.voice_status_recording),
+                                getString(R.string.voice_status_recording_detail)
+                            )
+                        }
+                        if (coordinatorSessionId.isNotBlank()) {
+                            dispatchVoiceCoordinator(
+                                VoiceInteractionEvent.SpeechStarted(
+                                    coordinatorSessionId,
+                                    SystemClock.elapsedRealtimeNanos()
+                                )
+                            )
+                        }
+                        VoiceLatencyTelemetry.record(
+                            this@MainActivity,
+                            traceId,
+                            VoiceTraceEvents.SPEECH_STARTED,
+                            mapOf("recording_source" to purpose),
+                            once = true
+                        )
+                    }
+                }
+
+                override fun onEndpoint(session: VoiceAudioSession, reason: EndpointReason) {
+                    handler.post {
+                        if (pcmVoiceSession?.id != session.id || purpose != "voice_wakeup") return@post
+                        VoiceLatencyTelemetry.record(
+                            this@MainActivity,
+                            traceId,
+                            VoiceTraceEvents.VAD_ENDPOINT,
+                            mapOf("endpoint_reason" to endpointReasonCode(reason)),
+                            once = true
+                        )
+                        val send = reason != EndpointReason.NO_SPEECH_TIMEOUT && voiceCommandSpeechDetected
+                        stopVoiceCommandRecording(send, endpointReasonCode(reason))
+                    }
+                }
+
+                override fun onInputRouteChanged(session: VoiceAudioSession, route: String) {
+                    Log.i("SignalASIVoice", "PCM input route changed purpose=$purpose route=$route")
+                }
+
+                override fun onFailure(session: VoiceAudioSession, error: Throwable) {
+                    runOnUiThread { handlePcmCaptureFailure(session, purpose, traceId, error) }
+                }
+            }
+        ) ?: run {
+            recordingPurpose = ""
+            recordingVoiceTraceId = ""
+            recordingVoiceCoordinatorSessionId = ""
+            failVoiceCoordinator(traceId, "pcm_capture_busy")
+            return false
+        }
+        pcmVoiceSession = session
+        Log.i("SignalASIVoice", "PCM recording requested purpose=$purpose session=${session.id}")
+        return true
+    }
+
+    private fun voiceAudioHub(): VoiceAudioHub = pcmVoiceAudioHub ?: VoiceAudioHub(
+        recorder = AndroidPcmRecorder(this),
+        scope = voiceAssistantScope
+    ).also { pcmVoiceAudioHub = it }
+
+    private fun isVoiceCaptureActive(): Boolean =
+        recorder != null || pcmVoiceSession != null || pcmCaptureStopping
+
+    private fun currentVoiceAmplitude(): Int =
+        if (pcmVoiceSession != null) pcmVoiceAmplitude else recorder?.maxAmplitude ?: 0
+
+    private fun endpointReasonCode(reason: EndpointReason): String = when (reason) {
+        EndpointReason.TRAILING_SILENCE -> "trailing_silence"
+        EndpointReason.NO_SPEECH_TIMEOUT -> "no_speech_timeout"
+        EndpointReason.MAX_DURATION -> "max_duration"
+    }
+
+    private fun handlePcmCaptureFailure(
+        session: VoiceAudioSession,
+        purpose: String,
+        traceId: String,
+        error: Throwable
+    ) {
+        if (pcmVoiceSession?.id != session.id || pcmCaptureStopping) return
+        pcmVoiceSession = null
+        pcmVoiceAmplitude = 0
+        recordingPurpose = ""
+        recordingVoiceTraceId = ""
+        recordingVoiceCoordinatorSessionId = ""
+        if (purpose == "voice_wakeup") {
+            voiceAssistantRecordingCommand = false
+            voiceCommandSpeechDetected = false
+            updateWakeVoiceUi(
+                getString(R.string.voice_status_recording_failed),
+                error.message ?: getString(R.string.voice_status_check_microphone)
+            )
+            scheduleVoiceRestart(1_200L)
+        }
+        failVoiceCoordinator(traceId, (error as? com.signalasi.chat.voice.audio.PcmCaptureException)?.code ?: error.javaClass.simpleName)
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SESSION_FAILED,
+            mapOf("error_code" to error.javaClass.simpleName),
+            once = true
+        )
+        Log.e("SignalASIVoice", "PCM capture failed purpose=$purpose", error)
+    }
+
     private fun showVoiceOverlay() {
         val waveView = object : View(this) {
             private var phase = 0f
@@ -21079,7 +21363,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             override fun onDraw(canvas: Canvas) {
                 val w = width.toFloat()
                 val h = height.toFloat()
-                val amp = (recorder?.maxAmplitude ?: 0).coerceIn(0, 32767) / 32767f
+                val amp = currentVoiceAmplitude().coerceIn(0, 32767) / 32767f
                 val cy = h / 2f
                 val maxAmp = h * 0.4f * (amp * 0.8f + 0.2f)
                 val step = 2f
@@ -21111,9 +21395,288 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceOverlay = null
     }
 
+    private fun stopPcmRecording(send: Boolean, reason: String) {
+        val session = pcmVoiceSession ?: return
+        if (pcmCaptureStopping) return
+        pcmCaptureStopping = true
+        val purpose = recordingPurpose
+        val traceId = recordingVoiceTraceId
+        val coordinatorSessionId = recordingVoiceCoordinatorSessionId.ifBlank {
+            voiceCoordinatorSession(traceId)
+        }
+        val stopReason = pcmStopReason(send, reason)
+        val hub = voiceAudioHub()
+        hub.requestStop(session, stopReason)
+        Log.i("SignalASIVoice", "PCM capture stopping purpose=$purpose send=$send reason=$reason")
+        voiceAssistantScope.launch {
+            val captureResult = runCatching { hub.stop(session, stopReason) }
+            val result = captureResult.getOrNull()
+            val waveFile = if (send && result?.snapshot?.samples?.isNotEmpty() == true) {
+                runCatching {
+                    PcmWaveFileAdapter.write(
+                        result.snapshot,
+                        cacheDir,
+                        "voice_${System.currentTimeMillis()}"
+                    )
+                }.getOrNull()
+            } else null
+            runOnUiThread {
+                if (pcmVoiceSession?.id != session.id) {
+                    waveFile?.delete()
+                    return@runOnUiThread
+                }
+                pcmVoiceSession = null
+                pcmCaptureStopping = false
+                pcmVoiceAmplitude = 0
+                recordingFile = null
+                recordingPurpose = ""
+                recordingVoiceTraceId = ""
+                recordingVoiceCoordinatorSessionId = ""
+                VoiceLatencyTelemetry.record(
+                    this@MainActivity,
+                    traceId,
+                    VoiceTraceEvents.SPEECH_ENDED,
+                    mapOf("endpoint_reason" to reason),
+                    once = true
+                )
+                result?.let { completed ->
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        traceId,
+                        VoiceTraceEvents.PCM_CAPTURE_STOPPED,
+                        mapOf(
+                            "recording_source" to purpose,
+                            "endpoint_reason" to reason,
+                            "audio_source" to completed.audioSource.toString(),
+                            "input_route" to completed.inputRoute,
+                            "audio_duration_ms" to completed.snapshot.durationMs.toString(),
+                            "short_read_count" to completed.diagnostics.shortReadCount.toString(),
+                            "zero_read_count" to completed.diagnostics.zeroReadCount.toString(),
+                            "dropped_frame_count" to completed.diagnostics.droppedFrameCount.toString(),
+                            "overrun_count" to completed.diagnostics.suspectedOverrunCount.toString(),
+                            "route_change_count" to completed.diagnostics.inputRouteChangeCount.toString()
+                        ),
+                        once = true
+                    )
+                }
+                if (coordinatorSessionId.isNotBlank() && (result?.snapshot?.speechDetected == true || send)) {
+                    dispatchVoiceCoordinator(
+                        VoiceInteractionEvent.SpeechEnded(
+                            coordinatorSessionId,
+                            SystemClock.elapsedRealtimeNanos()
+                        )
+                    )
+                }
+                when {
+                    reason == "no_speech_timeout" -> {
+                        waveFile?.delete()
+                        completeSilentPcmCommand(traceId, coordinatorSessionId)
+                    }
+                    !send -> {
+                        waveFile?.delete()
+                        cancelPcmCapture(traceId, coordinatorSessionId, reason)
+                    }
+                    captureResult.isFailure || result == null || waveFile == null -> {
+                        waveFile?.delete()
+                        failPcmFinalization(
+                            traceId,
+                            coordinatorSessionId,
+                            captureResult.exceptionOrNull()?.javaClass?.simpleName ?: "pcm_snapshot_failed",
+                            purpose
+                        )
+                    }
+                    purpose == "agent_input" -> finalizePcmAgentInput(
+                        waveFile,
+                        result.snapshot.durationMs,
+                        traceId,
+                        coordinatorSessionId
+                    )
+                    purpose == "voice_wakeup" -> finalizePcmVoiceCommand(
+                        waveFile,
+                        result.snapshot.durationMs,
+                        traceId,
+                        coordinatorSessionId
+                    )
+                    else -> finalizePcmChatMessage(
+                        waveFile,
+                        result.snapshot.durationMs,
+                        traceId,
+                        coordinatorSessionId
+                    )
+                }
+            }
+        }
+    }
+
+    private fun pcmStopReason(send: Boolean, reason: String): PcmStopReason = when (reason) {
+        "trailing_silence" -> PcmStopReason.ADAPTIVE_ENDPOINT
+        "no_speech_timeout" -> PcmStopReason.NO_SPEECH_TIMEOUT
+        "max_duration" -> PcmStopReason.MAX_DURATION
+        "app_background" -> PcmStopReason.APP_BACKGROUND
+        "audio_interrupted" -> PcmStopReason.AUDIO_INTERRUPTED
+        else -> if (send) PcmStopReason.USER_SEND else PcmStopReason.USER_CANCEL
+    }
+
+    private fun finalizePcmChatMessage(
+        file: File,
+        durationMs: Long,
+        traceId: String,
+        coordinatorSessionId: String
+    ) {
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
+        }
+        val seconds = ((durationMs + 999L) / 1_000L).coerceAtLeast(1L)
+        val contact = selectedContact ?: CONTACT_HERMES
+        sendVoiceRecordingThroughPipeline(
+            sourceFile = file,
+            contact = contact,
+            seconds = seconds,
+            label = "${getString(R.string.message_voice_prefix)} ${seconds}s",
+            source = "chat_hold_to_talk_pcm",
+            traceId = traceId
+        )
+    }
+
+    private fun finalizePcmAgentInput(
+        file: File,
+        durationMs: Long,
+        traceId: String,
+        coordinatorSessionId: String
+    ) {
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
+        }
+        val seconds = ((durationMs + 999L) / 1_000L).coerceAtLeast(1L)
+        agentTranscriptStore.append(
+            AgentTranscriptRole.USER,
+            getString(R.string.agent_voice_message_label, seconds),
+            dedupeKey = "agent-voice-pending:${file.name}"
+        )
+        refreshAgentTranscriptWindow()
+        requestAgentInputTranscription(file, traceId)
+    }
+
+    private fun finalizePcmVoiceCommand(
+        file: File,
+        durationMs: Long,
+        traceId: String,
+        coordinatorSessionId: String
+    ) {
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.FinalizationStarted(coordinatorSessionId))
+        }
+        val config = VoiceAssistantSettings.get(this)
+        val contact = voiceAssistantTargetContact(config)
+        val seconds = ((durationMs + 999L) / 1_000L).coerceAtLeast(1L)
+        selectedContact = contact
+        val nativeAgentRoute = config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
+        val sent = if (nativeAgentRoute) {
+            requestVoiceAgentTranscription(file, contact, traceId)
+        } else {
+            sendVoiceRecordingThroughPipeline(
+                sourceFile = file,
+                contact = contact,
+                seconds = seconds,
+                label = getString(R.string.voice_command_label, seconds),
+                source = "voice_wakeup_pcm",
+                traceId = traceId
+            )
+        }
+        updateWakeVoiceUi(
+            when {
+                !sent -> getString(R.string.voice_status_transcription_failed)
+                nativeAgentRoute -> getString(R.string.voice_status_transcribing)
+                else -> getString(R.string.voice_status_command_sent)
+            },
+            when {
+                !sent -> getString(R.string.voice_status_retry_later)
+                nativeAgentRoute -> getString(R.string.voice_status_waiting_transcript, contact.name)
+                else -> getString(R.string.voice_status_waiting_reply, contact.name)
+            }
+        )
+        voiceCommandSpeechDetected = false
+        voiceCommandLastVoiceAt = 0L
+        if (!nativeAgentRoute || !sent) {
+            handler.postDelayed({
+                if (activeMainTab == PAGE_VOICE && wakePage.visibility == View.VISIBLE &&
+                    !voiceAssistantSpeaking && !voiceAssistantRecordingCommand
+                ) {
+                    startWakeListening()
+                }
+            }, 800L)
+        }
+    }
+
+    private fun completeSilentPcmCommand(traceId: String, coordinatorSessionId: String) {
+        voiceAssistantRecordingCommand = false
+        voiceCommandSpeechDetected = false
+        voiceCommandLastVoiceAt = 0L
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SESSION_COMPLETED,
+            mapOf("endpoint_reason" to "no_speech"),
+            once = true
+        )
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.Completed(coordinatorSessionId))
+        }
+        updateWakeVoiceUi(
+            getString(R.string.voice_status_no_speech),
+            getString(R.string.voice_status_waiting_wake)
+        )
+        if (activeMainTab == PAGE_VOICE) startWakeListening()
+    }
+
+    private fun cancelPcmCapture(traceId: String, coordinatorSessionId: String, reason: String) {
+        voiceAssistantRecordingCommand = false
+        voiceCommandSpeechDetected = false
+        voiceCommandLastVoiceAt = 0L
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.Cancelled(coordinatorSessionId, reason))
+        }
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SESSION_CANCELLED,
+            mapOf("endpoint_reason" to reason),
+            once = true
+        )
+        if (activeMainTab == PAGE_VOICE && reason != "app_background") startWakeListening()
+    }
+
+    private fun failPcmFinalization(
+        traceId: String,
+        coordinatorSessionId: String,
+        errorCode: String,
+        purpose: String
+    ) {
+        if (coordinatorSessionId.isNotBlank()) failVoiceCoordinator(traceId, errorCode)
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SESSION_FAILED,
+            mapOf("error_code" to errorCode),
+            once = true
+        )
+        if (purpose == "voice_wakeup") {
+            voiceAssistantRecordingCommand = false
+            updateWakeVoiceUi(
+                getString(R.string.voice_status_recording_failed),
+                getString(R.string.voice_status_retry_later)
+            )
+            scheduleVoiceRestart(1_200L)
+        }
+    }
+
     private fun stopRecording(send: Boolean) {
         if (recordingPurpose == "agent_input") {
             stopAgentInputRecording(send)
+            return
+        }
+        if (pcmVoiceSession != null) {
+            stopPcmRecording(send, if (send) "release_send" else "user_cancelled")
             return
         }
         val activeRecorder = recorder ?: return
@@ -21182,6 +21745,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun stopAgentInputRecording(send: Boolean) {
+        if (pcmVoiceSession != null) {
+            stopPcmRecording(send, if (send) "release_send" else "user_cancelled")
+            return
+        }
         val activeRecorder = recorder ?: return
         val purpose = recordingPurpose
         val traceId = recordingVoiceTraceId
@@ -21267,7 +21834,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     ): Boolean {
         if (!sourceFile.exists()) return false
         val msgId = newMessageId()
-        val voiceFile = File(cacheDir, "voices/msg_${msgId}.m4a").apply {
+        val extension = sourceFile.extension.lowercase().takeIf { it in setOf("wav", "m4a") } ?: "wav"
+        val voiceFile = File(cacheDir, "voices/msg_${msgId}.$extension").apply {
             parentFile?.mkdirs()
         }
         val moved = sourceFile.renameTo(voiceFile)
@@ -21364,7 +21932,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun playVoiceMessage(msgId: Long) {
-        val voiceFile = File(cacheDir, "voices/msg_${msgId}.m4a")
+        val voiceFile = listOf("wav", "m4a")
+            .map { File(cacheDir, "voices/msg_${msgId}.$it") }
+            .firstOrNull(File::exists)
+            ?: File(cacheDir, "voices/msg_${msgId}.wav")
         if (!voiceFile.exists()) {
             Toast.makeText(this, getString(R.string.voice_file_missing), Toast.LENGTH_SHORT).show()
             return

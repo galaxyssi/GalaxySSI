@@ -23,6 +23,9 @@ object VoiceTraceEvents {
     const val SESSION_CREATED = "voice_session_created"
     const val MICROPHONE_OPEN_STARTED = "microphone_open_started"
     const val MICROPHONE_OPENED = "microphone_opened"
+    const val PCM_CAPTURE_READY = "pcm_capture_ready"
+    const val PCM_CAPTURE_STOPPED = "pcm_capture_stopped"
+    const val VAD_ENDPOINT = "vad_endpoint"
     const val SPEECH_STARTED = "speech_started"
     const val SPEECH_ENDED = "speech_ended"
     const val ASR_FIRST_PARTIAL = "asr_first_partial"
@@ -288,12 +291,15 @@ object VoiceTracePrivacy {
         "battery_percent", "is_charging", "audio_duration_ms", "rtf",
         "agent_provider", "tts_provider", "error_code", "recording_source", "endpoint_reason",
         "http_status", "success", "cold_start", "queue_depth", "transport",
-        "task_status", "retry_count", "fallback", "duration_ms"
+        "task_status", "retry_count", "fallback", "duration_ms", "audio_source", "input_route",
+        "short_read_count", "zero_read_count", "dropped_frame_count", "overrun_count",
+        "route_change_count"
     )
     private val numericKeys = setOf(
         "android_api", "thread_count", "thermal_status", "battery_percent",
         "audio_duration_ms", "rtf", "http_status", "queue_depth", "retry_count",
-        "duration_ms"
+        "duration_ms", "audio_source", "short_read_count", "zero_read_count",
+        "dropped_frame_count", "overrun_count", "route_change_count"
     )
     private val booleanKeys = setOf("is_charging", "success", "cold_start", "fallback")
     private val identifierPattern = Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")

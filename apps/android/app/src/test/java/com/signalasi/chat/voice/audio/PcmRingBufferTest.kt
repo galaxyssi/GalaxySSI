@@ -1,0 +1,43 @@
+package com.signalasi.chat.voice.audio
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PcmRingBufferTest {
+    @Test
+    fun ringRetainsNewestSamplesAcrossWrap() {
+        val ring = PcmRingBuffer(6)
+        ring.append(shortArrayOf(1, 2, 3, 4), 4)
+        ring.append(shortArrayOf(5, 6, 7, 8), 4)
+
+        assertEquals(2L, ring.retainedStartSample())
+        assertArrayEquals(shortArrayOf(3, 4, 5, 6, 7, 8), ring.snapshot(0, 8))
+    }
+
+    @Test
+    fun speechSnapshotKeepsPreAndPostRoll() {
+        val store = InMemorySpeechSegmentStore(sampleRateHz = 1_000, maxDurationMs = 2_000)
+        repeat(10) { sequence ->
+            frame(sequence.toLong(), ShortArray(100) { sequence.toShort() }).use { store.append(it) }
+            if (sequence == 3) store.markSpeechStart(3)
+            if (sequence == 7) store.markSpeechEnd(7)
+        }
+
+        val snapshot = store.snapshot(SegmentRange(preRollMs = 200, postRollMs = 100))
+
+        assertTrue(snapshot.speechDetected)
+        assertEquals(700, snapshot.samples.size)
+        assertEquals(1, snapshot.samples.first().toInt())
+        assertEquals(7, snapshot.samples.last().toInt())
+    }
+
+    private fun frame(sequence: Long, values: ShortArray) = AudioFrame(
+        sequence = sequence,
+        captureTimeNanos = sequence,
+        samples = values,
+        validSamples = values.size,
+        releaseAction = {}
+    )
+}

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 
 const val VOICE_COORDINATOR_FLAG = "voice.coordinator_v1"
+const val VOICE_PCM_CAPTURE_FLAG = "voice.audio_record_pcm_v1"
 
 object VoiceFeatureFlags {
     private const val PREFERENCES = "signalasi_voice_feature_flags"
@@ -19,6 +20,20 @@ object VoiceFeatureFlags {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(VOICE_COORDINATOR_FLAG, enabled)
+            .apply()
+    }
+
+    fun isPcmCaptureEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(
+                VOICE_PCM_CAPTURE_FLAG,
+                (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            )
+
+    fun setPcmCaptureEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(VOICE_PCM_CAPTURE_FLAG, enabled)
             .apply()
     }
 }

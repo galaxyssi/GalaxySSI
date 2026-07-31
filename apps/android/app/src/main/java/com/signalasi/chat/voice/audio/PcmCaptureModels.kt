@@ -1,0 +1,113 @@
+package com.signalasi.chat.voice.audio
+
+import android.media.MediaRecorder
+import java.util.concurrent.atomic.AtomicBoolean
+
+data class PcmCaptureConfig(
+    val sampleRateHz: Int = 16_000,
+    val frameDurationMs: Int = 20,
+    val maxDurationMs: Long = 60_000L,
+    val preferredAudioSources: List<Int> = listOf(
+        MediaRecorder.AudioSource.VOICE_RECOGNITION,
+        MediaRecorder.AudioSource.MIC
+    ),
+    val enableAcousticEchoCanceler: Boolean = true,
+    val enableNoiseSuppressor: Boolean = true,
+    val enableAutomaticGainControl: Boolean = false,
+    val framePoolSize: Int = 16,
+    val outputQueueCapacity: Int = 8
+) {
+    val samplesPerFrame: Int
+        get() = (sampleRateHz * frameDurationMs / 1_000).coerceAtLeast(1)
+
+    init {
+        require(sampleRateHz > 0)
+        require(frameDurationMs in 10..100)
+        require(maxDurationMs > 0L)
+        require(preferredAudioSources.isNotEmpty())
+        require(framePoolSize >= 4)
+        require(outputQueueCapacity >= 1)
+    }
+}
+
+enum class PcmRecorderPhase {
+    IDLE,
+    STARTING,
+    RECORDING,
+    STOPPING,
+    STOPPED,
+    FAILED
+}
+
+enum class PcmStopReason {
+    USER_SEND,
+    USER_CANCEL,
+    ADAPTIVE_ENDPOINT,
+    NO_SPEECH_TIMEOUT,
+    MAX_DURATION,
+    APP_BACKGROUND,
+    AUDIO_INTERRUPTED,
+    CAPTURE_FAILURE
+}
+
+data class PcmRecorderDiagnostics(
+    val shortReadCount: Long = 0L,
+    val zeroReadCount: Long = 0L,
+    val droppedFrameCount: Long = 0L,
+    val suspectedOverrunCount: Long = 0L,
+    val inputRouteChangeCount: Long = 0L
+)
+
+data class PcmRecorderState(
+    val phase: PcmRecorderPhase = PcmRecorderPhase.IDLE,
+    val audioSource: Int? = null,
+    val audioSessionId: Int? = null,
+    val inputRoute: String = "",
+    val currentAmplitude: Int = 0,
+    val capturedSamples: Long = 0L,
+    val stopReason: PcmStopReason? = null,
+    val errorCode: String? = null,
+    val diagnostics: PcmRecorderDiagnostics = PcmRecorderDiagnostics()
+)
+
+class AudioFrame internal constructor(
+    val sequence: Long,
+    val captureTimeNanos: Long,
+    val samples: ShortArray,
+    val validSamples: Int,
+    private val releaseAction: (ShortArray) -> Unit
+) : AutoCloseable {
+    private val released = AtomicBoolean(false)
+
+    override fun close() {
+        if (released.compareAndSet(false, true)) releaseAction(samples)
+    }
+}
+
+data class PcmSnapshot(
+    val samples: ShortArray,
+    val sampleRateHz: Int,
+    val speechDetected: Boolean,
+    val speechStartSample: Long?,
+    val speechEndSampleExclusive: Long?,
+    val captureStartSample: Long,
+    val captureEndSampleExclusive: Long
+) {
+    val durationMs: Long
+        get() = samples.size.toLong() * 1_000L / sampleRateHz
+}
+
+data class VoiceAudioCaptureResult(
+    val sessionId: String,
+    val stopReason: PcmStopReason,
+    val snapshot: PcmSnapshot,
+    val diagnostics: PcmRecorderDiagnostics,
+    val audioSource: Int?,
+    val inputRoute: String
+)
+
+class PcmCaptureException(
+    val code: String,
+    message: String,
+    cause: Throwable? = null
+) : IllegalStateException(message, cause)
