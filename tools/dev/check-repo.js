@@ -20,6 +20,12 @@ const agentBenchmarkRunner = path.join(root, "tools", "benchmark", "run-agent-be
 const coreRegressionManifest = path.join(root, "tools", "dev", "core-regression-manifest.json");
 const coreRegressionRunner = path.join(root, "tools", "dev", "run-core-regressions.mjs");
 const memoryLoCoMoCorpus = path.join(root, "benchmarks", "memory", "locomo-corpus.json");
+const trustedPrReviewWorkflow = path.join(root, ".github", "workflows", "trusted-pr-review.yml");
+const trustedPrReviewPolicy = path.join(root, ".github", "trusted-pr-review-policy.json");
+const trustedPrReviewDoc = path.join(root, "docs", "security", "TRUSTED_PR_REVIEW.md");
+const trustedPrReviewChecker = path.join(root, "tools", "security", "check-trusted-pr-review.mjs");
+const trustedPrReviewLibrary = path.join(root, "tools", "security", "trusted-pr-review-lib.mjs");
+const trustedPrReviewTest = path.join(root, "tools", "security", "trusted-pr-review.test.mjs");
 
 function listTrackedFiles() {
   const result = spawnSync("git", ["ls-files", "-z"], {
@@ -402,6 +408,68 @@ function checkWindowsPackageWorkflow() {
   }
 }
 
+function checkTrustedPrReviewPolicy() {
+  const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
+  const requiredFiles = [
+    trustedPrReviewWorkflow,
+    trustedPrReviewPolicy,
+    trustedPrReviewDoc,
+    trustedPrReviewChecker,
+    trustedPrReviewLibrary,
+    trustedPrReviewTest
+  ];
+  for (const file of requiredFiles) {
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing trusted PR review asset: ${path.relative(root, file)}`);
+    }
+  }
+  if (!packageJson.scripts?.["test:trusted-pr-review"]) {
+    throw new Error("Missing trusted PR review regression script");
+  }
+
+  const policy = JSON.parse(fs.readFileSync(trustedPrReviewPolicy, "utf8"));
+  if (policy.schema !== "signalasi.trusted-pr-review.v1") {
+    throw new Error("Trusted PR review policy schema is invalid");
+  }
+  if (!Array.isArray(policy.trusted_bot_logins) || policy.trusted_bot_logins.length === 0) {
+    throw new Error("Trusted PR review policy must list at least one bot");
+  }
+  if (policy.trusted_bot_logins.some((login) => !String(login).endsWith("[bot]"))) {
+    throw new Error("Trusted automated reviewers must use explicit GitHub bot identities");
+  }
+  const requiredChecks = new Set(policy.required_checks || []);
+  for (const check of [
+    "repository-check",
+    "android-build",
+    "desktop-source-smoke",
+    "core-regressions",
+    "package-win"
+  ]) {
+    if (!requiredChecks.has(check)) {
+      throw new Error(`Trusted PR review policy is missing required CI check: ${check}`);
+    }
+  }
+
+  const workflow = fs.readFileSync(trustedPrReviewWorkflow, "utf8");
+  for (const text of [
+    "pull_request_review:",
+    "types: [submitted, edited]",
+    "checks: read",
+    "statuses: read",
+    "pull-requests: write",
+    "github.event.repository.default_branch",
+    "persist-credentials: false",
+    "node tools/security/check-trusted-pr-review.mjs"
+  ]) {
+    if (!workflow.includes(text)) {
+      throw new Error(`Trusted PR review workflow missing: ${text}`);
+    }
+  }
+  if (workflow.includes("pull_request_target:")) {
+    throw new Error("Trusted PR review workflow must not execute through pull_request_target");
+  }
+}
+
 function checkReleaseAudit() {
   if (!fs.existsSync(releaseAuditDoc)) {
     throw new Error("Missing docs/testing/RELEASE_AUDIT.md");
@@ -479,6 +547,10 @@ const checks = [
   {
     name: "protocol spec",
     run: checkProtocolSpec
+  },
+  {
+    name: "trusted PR review",
+    run: checkTrustedPrReviewPolicy
   },
   {
     name: "windows package workflow",

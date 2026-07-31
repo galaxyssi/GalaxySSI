@@ -47,6 +47,7 @@
     "test:benchmark:agent": "node --test tools/benchmark/agent-benchmark.test.mjs",
     "benchmark:memory-locomo": "node tools/benchmark/run-memory-locomo.mjs",
     "test:benchmark:memory-locomo": "node --test tools/benchmark/memory-locomo.test.mjs",
+    "test:trusted-pr-review": "node --test tools/security/trusted-pr-review.test.mjs",
     "test:core-regressions": "node tools/dev/run-core-regressions.mjs",
     "test:core-regressions:contract": "node --test tools/dev/core-regressions.test.mjs",
     "runtime:build-linux-base": "bash tools/runtime/build-linux-base.sh",
