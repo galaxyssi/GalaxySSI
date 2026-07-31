@@ -6,7 +6,8 @@
     "mqtt",
     "memory",
     "remote_control",
-    "agent_benchmark"
+    "agent_benchmark",
+    "version_health"
   ],
   "suites": [
     {
@@ -140,6 +141,22 @@
           "executable": "{npm}",
           "working_directory": ".",
           "arguments": ["run", "regression:agent"]
+        }
+      ]
+    },
+    {
+      "id": "version_health",
+      "description": "Evidence-driven performance, reliability, security, UX, memory, and automation health score",
+      "commands": [
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "test:version-health"]
+        },
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "score:version-health"]
         }
       ]
     }

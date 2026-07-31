@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "evidence_id": "signalasi-version-health-reference-v1",
+  "version": "reference-fixture",
+  "generated_at": "2026-07-31T00:00:00.000Z",
+  "fixture": true,
+  "metrics": [
+    {
+      "id": "agent_latency_budget_rate",
+      "dimension": "performance",
+      "score": 0.92,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:agent-benchmark",
+      "sample_size": 14
+    },
+    {
+      "id": "interaction_responsiveness_rate",
+      "dimension": "performance",
+      "score": 0.87,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:ui-latency",
+      "sample_size": 20
+    },
+    {
+      "id": "core_regression_pass_rate",
+      "dimension": "reliability",
+      "score": 0.98,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:core-regressions",
+      "sample_size": 6
+    },
+    {
+      "id": "recovery_success_rate",
+      "dimension": "reliability",
+      "score": 0.94,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:recovery",
+      "sample_size": 25
+    },
+    {
+      "id": "security_red_team_pass_rate",
+      "dimension": "security",
+      "score": 1,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:security-red-team",
+      "sample_size": 32
+    },
+    {
+      "id": "trusted_pr_gate_rate",
+      "dimension": "security",
+      "score": 1,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:trusted-pr-gate",
+      "sample_size": 10
+    },
+    {
+      "id": "response_contract_rate",
+      "dimension": "ux",
+      "score": 0.94,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:agent-response",
+      "sample_size": 14
+    },
+    {
+      "id": "ui_smoke_pass_rate",
+      "dimension": "ux",
+      "score": 0.9,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:ui-smoke",
+      "sample_size": 20
+    },
+    {
+      "id": "locomo_score",
+      "dimension": "memory_quality",
+      "score": 0.93,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:memory-locomo",
+      "sample_size": 24
+    },
+    {
+      "id": "temporal_memory_accuracy",
+      "dimension": "memory_quality",
+      "score": 0.96,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:temporal-memory",
+      "sample_size": 20
+    },
+    {
+      "id": "agent_regression_pass_rate",
+      "dimension": "automation_success_rate",
+      "score": 1,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:agent-regression",
+      "sample_size": 6
+    },
+    {
+      "id": "self_evolution_gate_rate",
+      "dimension": "automation_success_rate",
+      "score": 0.82,
+      "measured_at": "2026-07-31T00:00:00.000Z",
+      "source": "reference-fixture:self-evolution",
+      "sample_size": 10
+    }
+  ]
+}

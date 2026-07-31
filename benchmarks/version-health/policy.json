@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "policy_id": "signalasi-version-health-v1",
+  "minimum_overall_score": 0.85,
+  "max_evidence_age_hours": 168,
+  "grades": [
+    {"label": "A", "minimum_score": 0.9},
+    {"label": "B", "minimum_score": 0.8},
+    {"label": "C", "minimum_score": 0.7},
+    {"label": "D", "minimum_score": 0.6},
+    {"label": "F", "minimum_score": 0}
+  ],
+  "dimensions": [
+    {
+      "id": "performance",
+      "label": "Performance",
+      "weight": 0.15,
+      "minimum_score": 0.75,
+      "critical": false,
+      "metrics": [
+        {"id": "agent_latency_budget_rate", "weight": 0.6, "required": true},
+        {"id": "interaction_responsiveness_rate", "weight": 0.4, "required": true}
+      ]
+    },
+    {
+      "id": "reliability",
+      "label": "Reliability",
+      "weight": 0.2,
+      "minimum_score": 0.85,
+      "critical": true,
+      "metrics": [
+        {"id": "core_regression_pass_rate", "weight": 0.55, "required": true},
+        {"id": "recovery_success_rate", "weight": 0.45, "required": true}
+      ]
+    },
+    {
+      "id": "security",
+      "label": "Security",
+      "weight": 0.2,
+      "minimum_score": 0.9,
+      "critical": true,
+      "metrics": [
+        {"id": "security_red_team_pass_rate", "weight": 0.6, "required": true},
+        {"id": "trusted_pr_gate_rate", "weight": 0.4, "required": true}
+      ]
+    },
+    {
+      "id": "ux",
+      "label": "UX",
+      "weight": 0.15,
+      "minimum_score": 0.75,
+      "critical": false,
+      "metrics": [
+        {"id": "response_contract_rate", "weight": 0.55, "required": true},
+        {"id": "ui_smoke_pass_rate", "weight": 0.45, "required": true}
+      ]
+    },
+    {
+      "id": "memory_quality",
+      "label": "Memory quality",
+      "weight": 0.15,
+      "minimum_score": 0.8,
+      "critical": false,
+      "metrics": [
+        {"id": "locomo_score", "weight": 0.65, "required": true},
+        {"id": "temporal_memory_accuracy", "weight": 0.35, "required": true}
+      ]
+    },
+    {
+      "id": "automation_success_rate",
+      "label": "Automation success rate",
+      "weight": 0.15,
+      "minimum_score": 0.75,
+      "critical": false,
+      "metrics": [
+        {"id": "agent_regression_pass_rate", "weight": 0.55, "required": true},
+        {"id": "self_evolution_gate_rate", "weight": 0.45, "required": true}
+      ]
+    }
+  ]
+}
