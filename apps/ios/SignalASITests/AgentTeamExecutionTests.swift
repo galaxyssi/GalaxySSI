@@ -2,6 +2,58 @@ import XCTest
 @testable import SignalASI
 
 extension SignalASIStoreTests {
+  func testAgentTeamProgressPolicyHidesBackgroundMembersUntilExpanded() {
+    let snapshot = AgentTeamExecutionSnapshot(
+      supervisorRunId: "progress-supervisor",
+      teamId: "progress-team",
+      primaryAgentId: "primary",
+      visibilityMode: .background,
+      state: .running,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "primary", deliveryMode: .respond, status: .running),
+        AgentTeamMemberSnapshot(agentId: "observer", deliveryMode: .observe, status: .succeeded, output: "evidence")
+      ],
+      finalOutput: "draft"
+    )
+
+    let collapsed = AgentTeamProgressPolicy.project(snapshot, expanded: false)
+    let expanded = AgentTeamProgressPolicy.project(snapshot, expanded: true)
+
+    XCTAssertFalse(collapsed.memberDetailsVisible)
+    XCTAssertEqual(collapsed.members, [])
+    XCTAssertTrue(expanded.memberDetailsVisible)
+    XCTAssertEqual(expanded.members.count, 2)
+    XCTAssertEqual(expanded.primaryAgentId, "primary")
+    XCTAssertEqual(expanded.finalOutput, "draft")
+  }
+
+  func testAgentTeamProgressPolicyAlwaysShowsVisibleTeamMembersAndTerminalStates() {
+    let snapshot = AgentTeamExecutionSnapshot(
+      supervisorRunId: "visible-supervisor",
+      teamId: "visible-team",
+      primaryAgentId: "lead",
+      visibilityMode: .visible,
+      state: .completedWithFailures,
+      members: [
+        AgentTeamMemberSnapshot(agentId: "lead", deliveryMode: .respond, status: .succeeded),
+        AgentTeamMemberSnapshot(agentId: "reviewer", deliveryMode: .observe, status: .failed, errorMessage: "timeout")
+      ],
+      finalOutput: "final"
+    )
+
+    let projection = AgentTeamProgressPolicy.project(snapshot, expanded: false)
+
+    XCTAssertTrue(projection.memberDetailsVisible)
+    XCTAssertEqual(projection.members.map(\.agentId), ["lead", "reviewer"])
+    XCTAssertTrue(AgentTeamExecutionState.succeeded.isTerminal)
+    XCTAssertTrue(AgentTeamExecutionState.completedWithFailures.isTerminal)
+    XCTAssertTrue(AgentTeamExecutionState.failed.isTerminal)
+    XCTAssertTrue(AgentTeamExecutionState.cancelled.isTerminal)
+    XCTAssertTrue(AgentTeamExecutionState.interrupted.isTerminal)
+    XCTAssertFalse(AgentTeamExecutionState.queued.isTerminal)
+    XCTAssertFalse(AgentTeamExecutionState.running.isTerminal)
+  }
+
   func testAgentTeamCompletionSinkPublishesOneDurableConnectorResponse() {
     let responseStore = InMemoryAgentConnectorResponseStore()
     let deliveryLedger = AgentTeamCompletionDeliveryLedger()
