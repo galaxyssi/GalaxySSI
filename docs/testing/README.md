@@ -13,6 +13,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | --- | --- | --- |
 | Repository policy | `npm run check` | Public docs and code stay English-first outside i18n files, Desktop structure is intact, protocol naming is SignalASI-only, and required capability markers still exist. |
 | Security red team | `npm run test:security-red-team` | Malicious README, web, MCP, and model-output payloads remain untrusted, cannot forge authority, and fail integrity checks after tampering. |
+| Agent product benchmark | `npm run benchmark:agent` | Versioned Agent scenarios score response quality, planning, tool use, approval, isolation, recovery, memory, artifact integrity, timeline order, and latency instead of only source-level correctness. |
 | Android build | `npm run check:android` | The Android app compiles into a debug APK with the current Gradle wrapper and Android project layout. |
 | Android UI smoke | `npm run smoke:android:ui` | Main navigation, contacts, cloud model entry, security center, settings entry points, voice settings, backup, protocol quality, and destructive-data screens can be opened on a real device or emulator. |
 | Android friend flow | `npm run smoke:android:friends` | New-friend approval, deleted-contact blocking, re-add flow, contact detail routing, and contact deletion evidence work on Android. |
@@ -42,6 +43,10 @@ The `Windows Package` GitHub Actions workflow runs the Windows package build and
 Run `npm run test:release:local` to execute the non-device local release gates sequentially. Android device gates stay separate because they require a connected phone or emulator.
 
 Run `npm run test:release:device` to execute the Android device gates sequentially on a connected phone or emulator.
+
+Run `npm run benchmark:agent` for the deterministic Agent contract baseline. Use the live Desktop
+mode and captured Run evaluation described in [AGENT_BENCHMARK.md](AGENT_BENCHMARK.md) before a
+release candidate is promoted.
 
 Run `npm run test:android:team-process-death` after installing the debug APK and Android test APK. The two-phase device test persists a supervised team, force-stops the Android process, delivers observer and primary responses through the real background service, and verifies one recovered final response without ordinary-chat leakage or duplicate delivery. The script wakes the device and relaunches SignalASI when it finishes.
 
