@@ -148,6 +148,11 @@ enum AgentPhoneNativeToolCatalog {
       auditStore: auditStore,
       nowMillis: nowMillis
     )
+    let resolvedMediaProvider = defaultMediaProvider(
+      mediaProvider: mediaProvider,
+      onDeviceRuntimeProvider: onDeviceRuntimeProvider,
+      nowMillis: nowMillis
+    )
     let executables =
       workspaceExecutableDefinitions(store: workspaceStore) +
       actionExecutableDefinitions(
@@ -163,7 +168,7 @@ enum AgentPhoneNativeToolCatalog {
       visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider) +
       webMediaExecutableDefinitions(provider: webMediaProvider) +
       webIntelligenceExecutableDefinitions(provider: webIntelligenceProvider) +
-      mediaExecutableDefinitions(provider: mediaProvider, nowMillis: nowMillis) +
+      mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
       selfEvolutionExecutableDefinitions(provider: selfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
       mcpExecutableDefinitions(provider: mcpProvider) +
@@ -236,6 +241,21 @@ enum AgentPhoneNativeToolCatalog {
   ) -> [AgentNativeToolExecutableDefinition] {
     let executor = AgentIOSMediaNativeToolExecutor(provider: provider, nowMillis: nowMillis)
     return AgentIOSMediaNativeToolCatalog.definitions(provider: provider).map(executor.executableDefinition)
+  }
+
+  private static func defaultMediaProvider(
+    mediaProvider: AgentIOSMediaNativeToolProviding,
+    onDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding,
+    nowMillis: @escaping () -> Int64
+  ) -> AgentIOSMediaNativeToolProviding {
+    guard mediaProvider is AgentIOSUnavailableMediaNativeToolProvider else {
+      return mediaProvider
+    }
+    return AgentIOSSignedFfmpegMediaProvider(
+      runtime: AgentIOSOnDeviceFfmpegRuntimeAdapter(provider: onDeviceRuntimeProvider, nowMillis: nowMillis),
+      passthroughProvider: mediaProvider,
+      nowMillis: nowMillis
+    )
   }
 
   static func selfEvolutionExecutableDefinitions(

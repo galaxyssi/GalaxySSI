@@ -64,6 +64,25 @@ extension SignalASIStoreTests {
     }
   }
 
+  func testAgentPhoneNativeToolCatalogDefaultRegistryWiresMediaThroughOnDeviceRuntime() throws {
+    let runtimeProvider = FakeIOSOnDeviceRuntimeProvider(responses: [])
+    runtimeProvider.availabilityValue = AgentNativeToolAvailability(status: .available, reason: "Runtime ready")
+    let registry = try AgentPhoneNativeToolCatalog.createRegistry(
+      actionExecutor: TestAgentActionExecutor { action, _ in
+        AgentActionResult(actionId: action.id, success: true, message: "unused")
+      },
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
+      onDeviceRuntimeProvider: runtimeProvider
+    )
+
+    let mediaDefinition = try XCTUnwrap(registry.lookup(AgentIOSMediaNativeToolCatalog.mediaFFmpegTranscode))
+
+    XCTAssertEqual(mediaDefinition.availabilityProvider.current().status, .available)
+    XCTAssertEqual(mediaDefinition.availabilityProvider.current().reason, "Runtime ready")
+    XCTAssertEqual(mediaDefinition.provenanceMetadata["implementation"], "signalasi.ios_runtime.ffmpeg")
+  }
+
   private func iosFfmpegRuntimeRequest() -> AgentIOSFfmpegRuntimeRequest {
     AgentIOSFfmpegRuntimeRequest(
       language: "ffmpeg",
