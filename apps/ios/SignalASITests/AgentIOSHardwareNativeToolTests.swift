@@ -51,6 +51,38 @@ extension SignalASIStoreTests {
   }
 
   func testAgentIOSHardwareNativeToolCatalogAndExecutorExposeAppVisibleStatus() throws {
+    final class FakeForegroundLocationProvider: AgentIOSForegroundLocationProviding {
+      var calls = 0
+      var lastTimeoutMillis: Int64 = 0
+
+      func foregroundLocation(timeoutMillis: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        calls += 1
+        lastTimeoutMillis = timeoutMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "latitude": .double(37.78),
+            "longitude": .double(-122.42),
+            "accuracy_meters": .double(12.5),
+            "altitude_meters": .null,
+            "bearing_degrees": .null,
+            "speed_meters_per_second": .null,
+            "provider": .string("core_location"),
+            "fix_at_epoch_ms": .int(nowMillis - 500),
+            "observed_at_epoch_ms": .int(nowMillis),
+            "age_ms": .int(500),
+            "source": .string("core_location"),
+            "capture_mode": .string("single_foreground_fix"),
+            "background_capture": .bool(false)
+          ],
+          message: "Single foreground location fix read",
+          metadata: [
+            "retained_listener": .bool(false),
+            "authorization": .string("authorized_when_in_use")
+          ]
+        )
+      }
+    }
+
     struct FakeHardwareProvider: AgentIOSHardwareStatusProviding {
       func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
         [
@@ -191,19 +223,26 @@ extension SignalASIStoreTests {
 
     let ids = AgentIOSHardwareNativeToolCatalog.toolIds
     let definitions = AgentIOSHardwareNativeToolCatalog.definitions()
+    let locationProvider = FakeForegroundLocationProvider()
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.hardwareExecutableDefinitions(
-        executor: AgentIOSHardwareNativeToolExecutor(provider: FakeHardwareProvider(), nowMillis: { 4_200 })
+        executor: AgentIOSHardwareNativeToolExecutor(
+          provider: FakeHardwareProvider(),
+          locationProvider: locationProvider,
+          nowMillis: { 4_200 }
+        )
       )
     )
     let context = AgentNativeToolInvocationContext(
       grantedPermissions: [
         AgentIOSHardwareNativeToolCatalog.hardwareStatusPermission,
         AgentIOSHardwareNativeToolCatalog.appVisibilityBoundaryPermission,
+        "NSLocationWhenInUseUsageDescription",
         "NSCameraUsageDescription",
         "NSBluetoothAlwaysUsageDescription"
       ],
       grantedConsents: [
+        AgentIOSHardwareNativeToolCatalog.foregroundLocationConsent,
         AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent,
         AgentIOSHardwareNativeToolCatalog.flashlightControlConsent,
         AgentIOSHardwareNativeToolCatalog.installedAppsConsent,
@@ -228,6 +267,11 @@ extension SignalASIStoreTests {
     let power = registry.invoke(AgentIOSHardwareNativeToolCatalog.powerStatus, input: [:], context: context)
     let storage = registry.invoke(AgentIOSHardwareNativeToolCatalog.storageStatus, input: [:], context: context)
     let network = registry.invoke(AgentIOSHardwareNativeToolCatalog.networkStatus, input: [:], context: context)
+    let location = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.locationForegroundRead,
+      input: ["timeout_ms": .int(2_000)],
+      context: context
+    )
     let sensors = registry.invoke(
       AgentIOSHardwareNativeToolCatalog.sensorsList,
       input: ["limit": .int(1)],
@@ -251,7 +295,7 @@ extension SignalASIStoreTests {
       input: ["package_name": .string("com.example.app")],
       context: context
     )
-    let location = try XCTUnwrap(
+    let locationDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.locationForegroundRead }
     )
     let installedAppsDefinition = try XCTUnwrap(
@@ -279,6 +323,13 @@ extension SignalASIStoreTests {
     XCTAssertEqual(storage.output["used_bytes"], .int(700))
     XCTAssertTrue(network.isSuccess)
     XCTAssertEqual(network.output["identifiers_included"], .bool(false))
+    XCTAssertTrue(location.isSuccess)
+    XCTAssertEqual(locationProvider.calls, 1)
+    XCTAssertEqual(locationProvider.lastTimeoutMillis, 2_000)
+    XCTAssertEqual(location.output["capture_mode"], .string("single_foreground_fix"))
+    XCTAssertEqual(location.output["background_capture"], .bool(false))
+    XCTAssertEqual(location.output["age_ms"], .int(500))
+    XCTAssertEqual(location.metadata["retained_listener"], .bool(false))
     XCTAssertTrue(sensors.isSuccess)
     XCTAssertEqual(sensors.output["result_count"], .int(1))
     XCTAssertEqual(sensors.output["truncated"], .bool(true))
@@ -331,7 +382,8 @@ extension SignalASIStoreTests {
     XCTAssertEqual(bluetoothDefinition.descriptor.availability.status, .available)
     XCTAssertTrue(bluetoothDefinition.descriptor.capabilities.contains("bluetooth.no_device_identifiers"))
     XCTAssertTrue(bluetoothDefinition.descriptor.capabilities.contains("bluetooth.no_discovery"))
-    XCTAssertEqual(location.descriptor.availability.status, .unavailable)
-    XCTAssertEqual(location.descriptor.risk, .high)
+    XCTAssertEqual(locationDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(locationDefinition.descriptor.risk, .high)
+    XCTAssertTrue(locationDefinition.descriptor.capabilities.contains("location.no_background_tracking"))
   }
 }
