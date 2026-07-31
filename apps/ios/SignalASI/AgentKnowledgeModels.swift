@@ -1,0 +1,243 @@
+import Foundation
+
+enum AgentKnowledgeKind: String, Codable, CaseIterable, Identifiable {
+  case note = "NOTE"
+  case document = "DOCUMENT"
+  case screen = "SCREEN"
+  case chat = "CHAT"
+  case task = "TASK"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentKnowledgeKind {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .note
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try? container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentKnowledgeCloudAccess: String, Codable, CaseIterable, Identifiable {
+  case deny = "DENY"
+  case summaryOnly = "SUMMARY_ONLY"
+  case full = "FULL"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentKnowledgeCloudAccess {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .deny
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try? container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+enum AgentKnowledgeAgentAccess: String, Codable, CaseIterable, Identifiable {
+  case localOnly = "LOCAL_ONLY"
+  case selectedAgents = "SELECTED_AGENTS"
+  case anyPairedAgent = "ANY_PAIRED_AGENT"
+
+  var id: String { rawValue }
+
+  static func fromWireValue(_ value: String?) -> AgentKnowledgeAgentAccess {
+    let normalized = value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .replacingOccurrences(of: "-", with: "_")
+      .uppercased() ?? ""
+    return allCases.first { $0.rawValue == normalized } ?? .localOnly
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    self = Self.fromWireValue(try? container.decode(String.self))
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
+}
+
+struct AgentKnowledgeItem: Codable, Equatable, Identifiable {
+  var id: String
+  var kind: AgentKnowledgeKind
+  var title: String
+  var content: String
+  var source: String
+  var tags: [String]
+  var summary: String
+  var cloudAccess: AgentKnowledgeCloudAccess
+  var agentAccess: AgentKnowledgeAgentAccess
+  var allowedAgentIds: [String]
+  var chunkIndex: Int
+  var chunkCount: Int
+  var updatedAtMillis: Int64
+
+  init(
+    id: String = UUID().uuidString,
+    kind: AgentKnowledgeKind,
+    title: String,
+    content: String,
+    source: String = "",
+    tags: [String] = [],
+    summary: String = "",
+    cloudAccess: AgentKnowledgeCloudAccess = .deny,
+    agentAccess: AgentKnowledgeAgentAccess = .localOnly,
+    allowedAgentIds: [String] = [],
+    chunkIndex: Int = 0,
+    chunkCount: Int = 1,
+    updatedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
+  ) {
+    self.id = String(id.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters)).ifBlank(UUID().uuidString)
+    self.kind = kind
+    self.title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxTitleCharacters))
+    self.content = String(content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxContentCharacters))
+    self.source = String(source.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxSourceCharacters))
+    self.tags = tags
+      .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(Self.maxTagCharacters)) }
+      .filter { !$0.isBlank }
+      .stableDistinct()
+      .prefixArray(Self.maxTags)
+    self.summary = String(summary.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxSummaryCharacters))
+    self.cloudAccess = cloudAccess
+    self.agentAccess = agentAccess
+    self.allowedAgentIds = allowedAgentIds
+      .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(Self.maxIdCharacters)) }
+      .filter { !$0.isBlank }
+      .stableDistinct()
+      .prefixArray(Self.maxAllowedAgents)
+    self.chunkIndex = max(chunkIndex, 0)
+    self.chunkCount = max(chunkCount, 1)
+    self.updatedAtMillis = max(updatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case kind
+    case title
+    case content
+    case source
+    case tags
+    case summary
+    case cloudAccess = "cloud_access"
+    case agentAccess = "agent_access"
+    case allowedAgentIds = "allowed_agent_ids"
+    case chunkIndex = "chunk_index"
+    case chunkCount = "chunk_count"
+    case updatedAtMillis = "updated_at_millis"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      kind: try container.decodeIfPresent(AgentKnowledgeKind.self, forKey: .kind) ?? .note,
+      title: try container.decodeIfPresent(String.self, forKey: .title) ?? "",
+      content: try container.decodeIfPresent(String.self, forKey: .content) ?? "",
+      source: try container.decodeIfPresent(String.self, forKey: .source) ?? "",
+      tags: try container.decodeIfPresent([String].self, forKey: .tags) ?? [],
+      summary: try container.decodeIfPresent(String.self, forKey: .summary) ?? "",
+      cloudAccess: try container.decodeIfPresent(AgentKnowledgeCloudAccess.self, forKey: .cloudAccess) ?? .deny,
+      agentAccess: try container.decodeIfPresent(AgentKnowledgeAgentAccess.self, forKey: .agentAccess) ?? .localOnly,
+      allowedAgentIds: try container.decodeIfPresent([String].self, forKey: .allowedAgentIds) ?? [],
+      chunkIndex: try container.decodeIfPresent(Int.self, forKey: .chunkIndex) ?? 0,
+      chunkCount: try container.decodeIfPresent(Int.self, forKey: .chunkCount) ?? 1,
+      updatedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .updatedAtMillis) ?? 0
+    )
+  }
+
+  private static let maxIdCharacters = 160
+  private static let maxTitleCharacters = 500
+  private static let maxContentCharacters = 128_000
+  private static let maxSourceCharacters = 4_096
+  private static let maxSummaryCharacters = 4_000
+  private static let maxTagCharacters = 80
+  private static let maxTags = 24
+  private static let maxAllowedAgents = 32
+}
+
+struct AgentKnowledgeHit: Codable, Equatable {
+  var item: AgentKnowledgeItem
+  var score: Double
+  var excerpt: String
+  var matchedTerms: [String]
+
+  init(
+    item: AgentKnowledgeItem,
+    score: Double,
+    excerpt: String,
+    matchedTerms: [String] = []
+  ) {
+    self.item = item
+    self.score = min(max(score, 0), 1)
+    self.excerpt = String(excerpt.prefix(2_000))
+    self.matchedTerms = matchedTerms
+      .map { String($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().prefix(80)) }
+      .filter { !$0.isBlank }
+      .stableDistinct()
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case item
+    case score
+    case excerpt
+    case matchedTerms = "matched_terms"
+  }
+}
+
+struct AgentKnowledgeStats: Codable, Equatable {
+  var itemCount: Int
+  var sourceCount: Int
+  var lastUpdatedAtMillis: Int64
+
+  init(
+    itemCount: Int = 0,
+    sourceCount: Int = 0,
+    lastUpdatedAtMillis: Int64 = 0
+  ) {
+    self.itemCount = max(itemCount, 0)
+    self.sourceCount = max(sourceCount, 0)
+    self.lastUpdatedAtMillis = max(lastUpdatedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case itemCount = "item_count"
+    case sourceCount = "source_count"
+    case lastUpdatedAtMillis = "last_updated_at_millis"
+  }
+}
+
+private extension Array where Element: Hashable {
+  func stableDistinct() -> [Element] {
+    var seen = Set<Element>()
+    return filter { seen.insert($0).inserted }
+  }
+}
+
+private extension Array {
+  func prefixArray(_ limit: Int) -> [Element] {
+    Array(prefix(max(limit, 0)))
+  }
+}
