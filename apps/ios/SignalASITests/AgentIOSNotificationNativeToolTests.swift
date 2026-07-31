@@ -172,4 +172,80 @@ extension SignalASIStoreTests {
     XCTAssertFalse(stale.toJson().contains("Secret reply"))
   }
 
+  func testAgentIOSNotificationBoundaryProviderReportsIOSPlatformLimits() {
+    let provider = AgentIOSNotificationBoundaryToolProvider()
+    let availability = provider.availability()
+    let snapshot = provider.snapshot(limit: 6)
+    let reply = provider.reply(notificationKey: "third-party-key", text: "Private reply")
+
+    XCTAssertEqual(provider.implementationId, "signalasi.ios.notification_boundary")
+    XCTAssertEqual(availability.status, .available)
+    XCTAssertTrue(availability.reason.contains("third-party notification history"))
+    XCTAssertTrue(snapshot.hasAccess)
+    XCTAssertTrue(snapshot.items.isEmpty)
+    XCTAssertEqual(snapshot.totalCount, 0)
+    XCTAssertTrue(snapshot.sensitiveFlags.contains("ios_signalasi_owned_notifications_only"))
+    XCTAssertTrue(snapshot.sensitiveFlags.contains("ios_third_party_notification_history_unavailable"))
+    XCTAssertTrue(snapshot.sensitiveFlags.contains("ios_cross_app_notification_reply_unavailable"))
+    XCTAssertFalse(reply.success)
+    XCTAssertEqual(reply.code, "notification_reply_unsupported")
+    XCTAssertFalse(reply.retryable)
+  }
+
+  func testAgentPhoneNativeToolCatalogDefaultRegistryUsesNotificationBoundaryProvider() throws {
+    let registry = try AgentPhoneNativeToolCatalog.createRegistry(
+      actionExecutor: TestAgentActionExecutor { action, _ in
+        AgentActionResult(actionId: action.id, success: true, message: "unused")
+      },
+      screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
+      capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
+      nowMillis: { 44_000 }
+    )
+    let listDefinition = try XCTUnwrap(registry.lookup(AgentIOSNotificationNativeToolCatalog.notificationsList))
+
+    XCTAssertEqual(listDefinition.availabilityProvider.current().status, .available)
+    XCTAssertTrue(listDefinition.availabilityProvider.current().reason.contains("third-party notification history"))
+    XCTAssertEqual(listDefinition.provenanceMetadata["implementation"], "signalasi.ios.notification_boundary")
+
+    let listContext = AgentNativeToolInvocationContext(
+      invocationId: "notification-boundary-list",
+      grantedPermissions: [AgentIOSNotificationNativeToolCatalog.notificationAccessPermission],
+      grantedConsents: [AgentIOSNotificationNativeToolCatalog.readConsent]
+    )
+    let listed = registry.invoke(
+      AgentIOSNotificationNativeToolCatalog.notificationsList,
+      input: ["limit": .int(6)],
+      context: listContext
+    )
+    let flags = listed.output["context_sensitive_flags"]?.arrayValue?.compactMap { $0.stringValue } ?? []
+
+    XCTAssertTrue(listed.isSuccess)
+    XCTAssertEqual(listed.output["result_count"], .int(0))
+    XCTAssertEqual(listed.output["total_observed"], .int(0))
+    XCTAssertTrue(flags.contains("ios_signalasi_owned_notifications_only"))
+    XCTAssertTrue(flags.contains("ios_third_party_notification_history_unavailable"))
+    XCTAssertEqual(listed.metadata["context_sensitive_flag_count"], .int(3))
+    XCTAssertEqual(listed.metadata["platform_boundary"], .string("ios_signalasi_owned_notifications_only"))
+
+    let reply = registry.invoke(
+      AgentIOSNotificationNativeToolCatalog.notificationReply,
+      input: [
+        "notification_key": .string("third-party-key"),
+        "reply_text": .string("Do not retain this reply")
+      ],
+      context: AgentNativeToolInvocationContext(
+        invocationId: "notification-boundary-reply",
+        idempotencyKey: "notification-boundary-reply-key",
+        grantedPermissions: [AgentIOSNotificationNativeToolCatalog.notificationAccessPermission],
+        grantedConsents: [AgentIOSNotificationNativeToolCatalog.replyConsent]
+      )
+    )
+
+    XCTAssertEqual(reply.status, .failed)
+    XCTAssertEqual(reply.error?.code, "notification_reply_unsupported")
+    XCTAssertEqual(reply.error?.retryable, false)
+    XCTAssertEqual(reply.error?.details["notification_key_sha256"]?.stringValue?.count, 64)
+    XCTAssertFalse(reply.toJson().contains("Do not retain this reply"))
+  }
+
 }

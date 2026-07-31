@@ -107,6 +107,39 @@ struct AgentIOSUnavailableNotificationToolProvider: AgentIOSNotificationToolProv
   }
 }
 
+struct AgentIOSNotificationBoundaryToolProvider: AgentIOSNotificationToolProviding {
+  var implementationId: String = "signalasi.ios.notification_boundary"
+
+  func availability() -> AgentNativeToolAvailability {
+    AgentNativeToolAvailability(
+      status: .available,
+      reason: "iOS exposes only SignalASI-owned notification state; third-party notification history and cross-app replies are unavailable."
+    )
+  }
+
+  func snapshot(limit: Int) -> AgentIOSNotificationContext {
+    AgentIOSNotificationContext(
+      hasAccess: true,
+      items: [],
+      sensitiveFlags: [
+        "ios_signalasi_owned_notifications_only",
+        "ios_third_party_notification_history_unavailable",
+        "ios_cross_app_notification_reply_unavailable"
+      ],
+      totalCount: 0
+    )
+  }
+
+  func reply(notificationKey: String, text: String) -> AgentIOSNotificationReplyResult {
+    AgentIOSNotificationReplyResult(
+      success: false,
+      message: "iOS does not expose third-party notification reply actions to SignalASI.",
+      code: "notification_reply_unsupported",
+      retryable: false
+    )
+  }
+}
+
 enum AgentIOSNotificationNativeToolCatalog {
   static let notificationsList = AgentPhoneCapabilityNativeCoverage.notificationsList
   static let notificationReply = AgentPhoneCapabilityNativeCoverage.notificationReply
@@ -307,6 +340,9 @@ struct AgentIOSNotificationNativeToolExecutor {
     }
     let selected = Array(candidates.prefix(limit))
     let sensitiveCount = context.items.filter { !$0.sensitiveFlags.isEmpty }.count
+    let contextSensitiveFlags: [AgentMcpJSONValue] = context.sensitiveFlags.prefix(6).map {
+      .string(String($0.prefix(80)))
+    }
     return AgentNativeToolExecutionResult.success(
       output: [
         "notifications": .array(selected.map { .object(notificationValue($0)) }),
@@ -314,12 +350,15 @@ struct AgentIOSNotificationNativeToolExecutor {
         "total_observed": .int(Int64(max(context.totalCount, context.items.count))),
         "truncated": .bool(candidates.count > limit || context.totalCount > context.items.count),
         "sensitive_count": .int(Int64(sensitiveCount)),
+        "context_sensitive_flags": .array(contextSensitiveFlags),
         "observed_at_epoch_ms": .int(max(0, nowMillis()))
       ],
       message: "Listed \(selected.count) current notifications with sensitive content redacted",
       metadata: [
         "raw_sensitive_content_exposed": .bool(false),
-        "notification_limit": .int(Int64(AgentIOSNotificationNativeToolCatalog.maxNotifications))
+        "notification_limit": .int(Int64(AgentIOSNotificationNativeToolCatalog.maxNotifications)),
+        "context_sensitive_flag_count": .int(Int64(context.sensitiveFlags.count)),
+        "platform_boundary": .string("ios_signalasi_owned_notifications_only")
       ]
     )
   }

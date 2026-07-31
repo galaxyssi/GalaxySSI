@@ -153,6 +153,7 @@ enum AgentPhoneNativeToolCatalog {
       onDeviceRuntimeProvider: onDeviceRuntimeProvider,
       nowMillis: nowMillis
     )
+    let resolvedNotificationProvider = defaultNotificationProvider(notificationProvider)
     let executables =
       workspaceExecutableDefinitions(store: workspaceStore) +
       actionExecutableDefinitions(
@@ -164,7 +165,7 @@ enum AgentPhoneNativeToolCatalog {
       systemExecutableDefinitions() +
       hardwareExecutableDefinitions() +
       homeAssistantExecutableDefinitions(provider: homeAssistantProvider, nowMillis: nowMillis) +
-      notificationExecutableDefinitions(provider: notificationProvider, nowMillis: nowMillis) +
+      notificationExecutableDefinitions(provider: resolvedNotificationProvider, nowMillis: nowMillis) +
       visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider) +
       webMediaExecutableDefinitions(provider: webMediaProvider) +
       webIntelligenceExecutableDefinitions(provider: webIntelligenceProvider) +
@@ -256,6 +257,15 @@ enum AgentPhoneNativeToolCatalog {
       passthroughProvider: mediaProvider,
       nowMillis: nowMillis
     )
+  }
+
+  private static func defaultNotificationProvider(
+    _ provider: AgentIOSNotificationToolProviding
+  ) -> AgentIOSNotificationToolProviding {
+    guard provider is AgentIOSUnavailableNotificationToolProvider else {
+      return provider
+    }
+    return AgentIOSNotificationBoundaryToolProvider()
   }
 
   static func selfEvolutionExecutableDefinitions(
