@@ -598,6 +598,47 @@ object SignalASIMqttClient {
             .put("execution_mode", resolvedExecutionMode.wireValue)
             .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
             .put("time", System.currentTimeMillis())
+        val sourceAttachments = context
+            ?.let { AgentTurnAttachmentRegistry.get(resolvedTurnId) }
+            .orEmpty()
+        val disclosure = context?.takeIf { usesPcConnectorTunnel(contactId) }?.let {
+            AgentDataDisclosureLedger.beginDesktopRequest(
+                context = it,
+                contactId = contactId,
+                text = content,
+                attachments = sourceAttachments,
+                conversationId = resolvedConversationId,
+                taskId = resolvedTaskId,
+                turnId = resolvedTurnId
+            )
+        }
+        if (disclosure?.allowed == false) return MqttPublishResult.FAILED
+        fun disclosureFailed(reason: String): MqttPublishResult {
+            if (context != null && disclosure != null) {
+                AgentDataDisclosureLedger.update(
+                    context,
+                    disclosure,
+                    AgentDisclosureStatus.FAILED,
+                    reason
+                )
+            }
+            return MqttPublishResult.FAILED
+        }
+        fun disclosureCompleted(result: MqttPublishResult): MqttPublishResult {
+            if (context != null && disclosure != null) {
+                AgentDataDisclosureLedger.update(
+                    context,
+                    disclosure,
+                    when (result) {
+                        MqttPublishResult.PUBLISHED -> AgentDisclosureStatus.SENT
+                        MqttPublishResult.QUEUED -> AgentDisclosureStatus.QUEUED
+                        MqttPublishResult.FAILED -> AgentDisclosureStatus.FAILED
+                    },
+                    if (result == MqttPublishResult.FAILED) "SignalASI Link publish failed" else ""
+                )
+            }
+            return result
+        }
         if (context != null) {
             val policy = LanguagePolicySettings.get(context)
             payload
@@ -607,12 +648,12 @@ object SignalASIMqttClient {
         clientMessageId?.let { payload.put("client_message_id", it) }
         var outboundAttachments: List<AgentPreparedOutboundAttachment> = emptyList()
         if (context != null) {
-            val attachments = AgentTurnAttachmentRegistry.get(resolvedTurnId)
+            val attachments = sourceAttachments
             val mediaProfile = AgentMediaNetworkDetector.detect(context)
             if (attachments.isNotEmpty() && usesPcConnectorTunnel(contactId)) {
                 val desktopId = AppStore.desktopIdForContact(context, contactId)
                 val link = SignalASILinkProtocol.serverLink(context, desktopId)
-                    ?: return MqttPublishResult.FAILED
+                    ?: return disclosureFailed("No paired Desktop route is available")
                 outboundAttachments = runCatching {
                     AgentOutboundAttachmentTransferStore.prepare(
                         context = context,
@@ -630,7 +671,7 @@ object SignalASIMqttClient {
                     )
                 }.onFailure {
                     Log.e(TAG, "Agent attachment transfer preparation failed", it)
-                }.getOrNull() ?: return MqttPublishResult.FAILED
+                }.getOrNull() ?: return disclosureFailed("Attachment transfer preparation failed")
                 payload.put(
                     "attachments",
                     JSONArray(outboundAttachments.map(AgentPreparedOutboundAttachment::descriptor))
@@ -664,7 +705,7 @@ object SignalASIMqttClient {
                 queueOnly = true,
                 blockedByAttachmentTransferIds = outboundAttachments.map { it.transferId }
             )
-            if (!queuedTask.accepted) return MqttPublishResult.FAILED
+            if (!queuedTask.accepted) return disclosureFailed("Agent task could not be queued")
             for (attachment in outboundAttachments) {
                 if (!publishJsonResult(
                         attachment.manifestPayload(resume = false),
@@ -672,7 +713,7 @@ object SignalASIMqttClient {
                         contactId,
                         queueOnly = true
                     ).accepted
-                ) return MqttPublishResult.FAILED
+                ) return disclosureFailed("Attachment manifest could not be queued")
                 for (chunkIndex in 0 until attachment.chunkCount) {
                     if (!publishJsonResult(
                             attachment.chunkPayload(chunkIndex),
@@ -680,12 +721,12 @@ object SignalASIMqttClient {
                             contactId,
                             queueOnly = true
                         ).accepted
-                    ) return MqttPublishResult.FAILED
+                    ) return disclosureFailed("Attachment chunk could not be queued")
                 }
             }
-            return queuedTask
+            return disclosureCompleted(queuedTask)
         }
-        return publishJsonResult(payload, topic, contactId)
+        return disclosureCompleted(publishJsonResult(payload, topic, contactId))
     }
 
     private fun inlineTurnAttachments(

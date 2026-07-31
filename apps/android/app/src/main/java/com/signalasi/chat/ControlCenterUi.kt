@@ -45,6 +45,7 @@ enum class ControlCenterRoute(val wireValue: String) {
     SMART_SPACES("smart_spaces"),
     NODES("nodes"),
     SECURITY("security"),
+    PRIVACY("privacy"),
     PERMISSIONS_AUDIT("permissions_audit"),
     VOICE("voice"),
     DATA_BACKUP("data_backup"),
