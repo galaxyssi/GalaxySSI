@@ -1714,22 +1714,6 @@ struct GlobalProactiveInboxItem: Codable, Equatable, Identifiable {
   }
 }
 
-enum GlobalAgentText {
-  private static let legacyProductTitles: [String: String] = [
-    "Signal insight": "SignalASI insight",
-    "Signal prepared": "SignalASI prepared",
-    "Signal digest": "SignalASI digest",
-    "Signal \u{5efa}\u{8bae}": "SignalASI \u{5efa}\u{8bae}",
-    "Signal \u{5df2}\u{51c6}\u{5907}": "SignalASI \u{5df2}\u{51c6}\u{5907}",
-    "Signal \u{6458}\u{8981}": "SignalASI \u{6458}\u{8981}"
-  ]
-
-  static func productTitle(_ value: String) -> String {
-    let title = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    return legacyProductTitles[title] ?? title
-  }
-}
-
 enum GlobalProactiveInboxPolicy {
   static func project(
     messages: [GlobalProactiveMessage],

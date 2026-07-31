@@ -680,6 +680,85 @@ extension SignalASIStoreTests {
     XCTAssertEqual(AgentRunTimelineContract.kind(declared), .verify)
   }
 
+  func testAgentNativeToolLifecycleRunControlAdapterMatchesAndroidTimelinePayload() {
+    let progress = AgentNativeToolLifecycleEvent(
+      stage: .progress,
+      toolId: "signalasi.workspace.file.read.text",
+      invocationId: "invoke-1",
+      stepId: "step-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      progressStage: "reading",
+      message: "Reading file",
+      percent: 42,
+      sequence: 7,
+      timestampMillis: 12_345
+    )
+    let event = AgentNativeToolRunControlAdapter.controlEvent(
+      from: progress,
+      runId: "run-1",
+      agentId: "signalasi-mobile",
+      deviceId: "phone-1",
+      sequence: 99
+    )
+
+    XCTAssertEqual(event.type, .toolProgress)
+    XCTAssertEqual(event.conversationId, "conversation-1")
+    XCTAssertEqual(event.messageId, "turn-1")
+    XCTAssertEqual(event.taskId, "turn-1")
+    XCTAssertEqual(event.runId, "run-1")
+    XCTAssertEqual(event.stepId, "step-1")
+    XCTAssertEqual(event.toolCallId, "invoke-1")
+    XCTAssertEqual(event.sequence, 99)
+    XCTAssertEqual(event.timestampMillis, 12_345)
+    XCTAssertEqual(event.payload["timeline_contract"]?.stringValue, AgentRunTimelineContract.version)
+    XCTAssertEqual(event.payload["timeline_kind"]?.stringValue, "tool")
+    XCTAssertEqual(event.payload["tool_id"]?.stringValue, "signalasi.workspace.file.read.text")
+    XCTAssertEqual(event.payload["progress_stage"]?.stringValue, "reading")
+    XCTAssertEqual(event.payload["message"]?.stringValue, "Reading file")
+    XCTAssertEqual(event.payload["percent"]?.intValue, 42)
+    XCTAssertEqual(event.payload["progress_sequence"]?.intValue, 7)
+    XCTAssertEqual(event.payload["timestamp_millis"]?.intValue, 12_345)
+    XCTAssertEqual(AgentRunTimelineContract.kind(event), .tool)
+
+    let started = AgentNativeToolRunControlAdapter.controlEvent(
+      from: AgentNativeToolLifecycleEvent(
+        stage: .started,
+        toolId: "tool",
+        invocationId: "invoke-start",
+        stepId: "",
+        conversationId: "",
+        turnId: "",
+        timestampMillis: 1
+      ),
+      runId: "run"
+    )
+    let finished = AgentNativeToolRunControlAdapter.controlEvent(
+      from: AgentNativeToolLifecycleEvent(
+        stage: .finished,
+        toolId: "tool",
+        invocationId: "invoke-finish",
+        stepId: "step-finish",
+        conversationId: "conversation",
+        turnId: "turn",
+        status: .succeeded,
+        message: "done",
+        timestampMillis: 2
+      ),
+      runId: "run",
+      taskId: "task"
+    )
+
+    XCTAssertEqual(started.type, .toolStarted)
+    XCTAssertEqual(started.messageId, "invoke-start")
+    XCTAssertEqual(started.taskId, "run")
+    XCTAssertEqual(started.stepId, "invoke-start")
+    XCTAssertEqual(finished.type, .toolCompleted)
+    XCTAssertEqual(finished.payload["status"]?.stringValue, "succeeded")
+    XCTAssertEqual(finished.payload["message"]?.stringValue, "done")
+    XCTAssertEqual(finished.taskId, "task")
+  }
+
   func testAgentExecutionLoopTimelineModelsUseAndroidWireNames() throws {
     let decoded = try JSONDecoder().decode(
       AgentRunControlEvent.self,
