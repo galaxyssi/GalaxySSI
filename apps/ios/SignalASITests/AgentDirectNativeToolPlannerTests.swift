@@ -93,6 +93,23 @@ extension SignalASIStoreTests {
     XCTAssertEqual(blockedPlan.routeRationale, "A deterministic iOS safety block matched this protected operation.")
     XCTAssertTrue(blockedPlan.validation.valid)
 
+    let website = try XCTUnwrap(action("Open website example.com/docs"))
+    XCTAssertEqual(website.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openURL))
+    XCTAssertEqual(website.target, "https://example.com/docs")
+    XCTAssertEqual(try inputObject(website)["url"] as? String, "https://example.com/docs")
+    XCTAssertEqual(try inputParameters(website)["url"] as? String, "https://example.com/docs")
+
+    let webSearch = try XCTUnwrap(action("Search web SignalASI iOS"))
+    XCTAssertEqual(webSearch.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openURL))
+    XCTAssertEqual(webSearch.target, "Web Search")
+    XCTAssertEqual(try inputParameters(webSearch)["url"] as? String, "https://www.google.com/search?q=SignalASI%20iOS")
+
+    let map = try XCTUnwrap(action("Navigate to Shenzhen Bay"))
+    XCTAssertEqual(map.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openURL))
+    XCTAssertEqual(map.target, "Maps")
+    XCTAssertEqual(try inputParameters(map)["url"] as? String, "https://maps.apple.com/?q=Shenzhen%20Bay")
+    XCTAssertNil(action("Open website ftp://example.com"))
+
     let photos = try XCTUnwrap(action("Open photos"))
     XCTAssertEqual(photos.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))
     XCTAssertEqual(photos.target, "Photos")
@@ -212,6 +229,12 @@ extension SignalASIStoreTests {
       goal: "Open photos",
       screen: screen,
       nativeTools: requestTools.filter { $0.id != AgentNativeToolAgentActionAdapter.defaultToolId(.openApp) }
+    )))
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
+      goal: "Open website example.com",
+      screen: screen,
+      nativeTools: requestTools.filter { $0.id != AgentNativeToolAgentActionAdapter.defaultToolId(.openURL) }
     )))
   }
 
