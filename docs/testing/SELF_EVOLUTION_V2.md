@@ -36,18 +36,21 @@ Set-Location apps\android
 Use this source-only command when the ignored local QEMU/runtime bundle is absent. Release packaging
 must omit the override and prove that the complete signed runtime bundle is embedded.
 
-The destructive install/restore gate is optional and disabled by default:
+The install/launch/evidence/restore gate is mandatory for every self-evolution candidate that
+changes Android or shared core code. If no dedicated device is online, the candidate remains
+blocked and no pull request can be published. The gate can also be invoked directly:
 
 ```powershell
-$env:SIGNALASI_EVOLUTION_ANDROID_DEVICE_TEST = "1"
 python ..\desktop\core\signalasi-link\backend\evolution_v2\gate_cli.py android-device `
   --candidate app\build\outputs\apk\debug\app-debug.apk `
   --snapshot-root "$env:TEMP\signalasi-evolution-android" `
   --package com.signalasi.chat
 ```
 
-Run it only on a dedicated device. Acceptance requires candidate install, launch, crash check, and
+Run it only on a dedicated device. Acceptance requires candidate build and unit tests first, then
+candidate install, launch, PNG screenshot, logcat capture, cryptographic evidence manifest, and
 unconditional restoration of the previously installed stable APK and supported data snapshot.
+The approval hash binds the gate log and device manifest hashes.
 
 ## API and security acceptance
 

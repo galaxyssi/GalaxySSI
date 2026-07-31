@@ -11,7 +11,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Iterable
 
-from .common import now_millis, sha256_file
+from .common import atomic_write_json, now_millis, sha256_file
 
 
 @dataclass
@@ -65,6 +65,7 @@ class AndroidCandidateTester:
             "snapshot": snapshot.public(),
         }
         restore_error = ""
+        candidate_error: Exception | None = None
         try:
             self._adb(serial, "logcat", "-c", timeout=30)
             candidate_install_attempted = True
@@ -77,20 +78,45 @@ class AndroidCandidateTester:
             if launch.returncode != 0 or "Error:" in launch.stdout:
                 raise AndroidCandidateError(f"App launch failed: {launch.stdout[-2_000:]}")
             time.sleep(max(1, min(int(launch_wait_seconds), 30)))
-            logcat = self._adb(serial, "logcat", "-d", "-v", "threadtime", timeout=60).stdout
+            logcat_result = self._adb(
+                serial,
+                "logcat",
+                "-d",
+                "-v",
+                "threadtime",
+                timeout=60,
+            )
+            if logcat_result.returncode != 0:
+                raise AndroidCandidateError(
+                    f"Android log capture failed: {logcat_result.stdout[-2_000:]}"
+                )
+            logcat = logcat_result.stdout
+            logcat_path = Path(snapshot.root) / "candidate-logcat.txt"
+            logcat_path.write_text(logcat, encoding="utf-8")
             fatal_lines = _fatal_android_lines(logcat, self.package_name)
             screenshot = Path(snapshot.root) / "candidate.png"
             self._screenshot(serial, screenshot)
+            if (
+                not screenshot.is_file()
+                or not screenshot.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+            ):
+                raise AndroidCandidateError(
+                    "Android candidate screenshot was not captured."
+                )
             result.update({
                 "activity": activity,
                 "launch_output": launch.stdout[-4_000:],
                 "fatal_lines": fatal_lines,
-                "screenshot": str(screenshot) if screenshot.is_file() else "",
-                "passed": not fatal_lines,
+                "logcat": str(logcat_path),
+                "logcat_sha256": sha256_file(logcat_path),
+                "screenshot": str(screenshot),
+                "screenshot_sha256": sha256_file(screenshot),
             })
             if fatal_lines:
                 raise AndroidCandidateError("Android fatal/ANR markers detected: " + " | ".join(fatal_lines[:8]))
-            return result
+        except Exception as exc:
+            candidate_error = exc
+            result["error"] = str(exc)[:4_000]
         finally:
             try:
                 self._restore(
@@ -101,8 +127,63 @@ class AndroidCandidateTester:
             except Exception as exc:
                 restore_error = str(exc)[:2_000]
                 result["restore_error"] = restore_error
-            if restore_error:
-                raise AndroidCandidateError(f"Stable Android restore failed: {restore_error}")
+        result["stable_restored"] = not restore_error
+        result["passed"] = candidate_error is None and not restore_error
+        manifest = self._write_evidence_manifest(result, snapshot)
+        result["evidence_manifest"] = str(manifest)
+        result["evidence_sha256"] = sha256_file(manifest)
+        if restore_error:
+            raise AndroidCandidateError(f"Stable Android restore failed: {restore_error}")
+        if candidate_error is not None:
+            raise candidate_error
+        return result
+
+    def _write_evidence_manifest(
+        self,
+        result: dict[str, Any],
+        snapshot: AndroidSnapshot,
+    ) -> Path:
+        root = Path(snapshot.root).resolve()
+        artifacts: dict[str, dict[str, str]] = {}
+        candidates = {
+            "candidate_apk": result.get("candidate_apk"),
+            "candidate_screenshot": result.get("screenshot"),
+            "candidate_logcat": result.get("logcat"),
+            "stable_screenshot_before": snapshot.screenshot_before,
+            "stable_data": snapshot.data_archive,
+        }
+        for name, raw in candidates.items():
+            path = Path(str(raw or "")).resolve() if raw else None
+            if path is not None and path.is_file():
+                artifacts[name] = {
+                    "path": str(path),
+                    "sha256": sha256_file(path),
+                }
+        for index, raw in enumerate(snapshot.stable_apks):
+            path = Path(raw).resolve()
+            if path.is_file():
+                artifacts[f"stable_apk_{index}"] = {
+                    "path": str(path),
+                    "sha256": sha256_file(path),
+                }
+        manifest = root / "candidate-evidence.json"
+        atomic_write_json(
+            manifest,
+            {
+                "protocol": "signalasi.evolution.android-evidence.v1",
+                "created_at_millis": now_millis(),
+                "package_name": self.package_name,
+                "serial": result.get("serial", ""),
+                "activity": result.get("activity", ""),
+                "passed": bool(result.get("passed")),
+                "stable_restored": bool(result.get("stable_restored")),
+                "fatal_lines": list(result.get("fatal_lines") or []),
+                "error": str(result.get("error") or "")[:4_000],
+                "restore_error": str(result.get("restore_error") or "")[:2_000],
+                "artifacts": artifacts,
+            },
+        )
+        return manifest
 
     def _choose_device(self) -> str:
         result = self._adb("", "devices", timeout=30)

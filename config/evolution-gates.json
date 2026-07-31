@@ -10,7 +10,7 @@
   "android": {
     "unit_tests": true,
     "assemble_debug": true,
-    "device_install_launch_restore": false,
+    "device_install_launch_restore": true,
     "package_name": "com.signalasi.chat",
     "candidate_apk": "apps/android/app/build/outputs/apk/debug/app-debug.apk"
   },

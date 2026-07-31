@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from evolution_v2.common import atomic_write_json, sha256_file
 from evolution_manager import (
     EvolutionAttempt,
     EvolutionError,
@@ -85,6 +87,7 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual("candidate\n", (candidate / "src" / "value.txt").read_text(encoding="utf-8"))
         self.assertEqual(["src/value.txt"], result.attempts[-1].changed_files)
         self.assertEqual("passed", result.attempts[-1].gates[0].status)
+        self.assertEqual(64, len(result.attempts[-1].gates[0].evidence_sha256))
         self.assertEqual(64, len(result.approval_hash))
         self.assertNotEqual(self.base_commit, result.candidate_commit)
 
@@ -319,6 +322,103 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual("approval_hash_invalid", raised.exception.code)
         self.assertEqual("waiting_approval", manager.require(task.task_id).status)
         manager.discard(task.task_id)
+
+    def test_changed_gate_log_invalidates_candidate_publish(self):
+        def patch_candidate(_task, _attempt, worktree, _failure):
+            (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")
+            return "Candidate."
+
+        manager = self.manager(patch_candidate)
+        task = self.task(manager)
+        result = manager.run_sync(task.task_id)
+        gate = result.attempts[-1].gates[0]
+        Path(gate.log_path).write_text("tampered\n", encoding="utf-8")
+
+        with self.assertRaises(EvolutionError) as raised:
+            manager.publish(task.task_id, result.approval_hash)
+
+        self.assertEqual("gate_evidence_invalid", raised.exception.code)
+        self.assertEqual("waiting_approval", manager.require(task.task_id).status)
+        manager.discard(task.task_id)
+
+    def test_android_evidence_artifact_tampering_is_detected(self):
+        manager = self.manager(lambda *_args: "")
+        task_id = "evolve-android-evidence"
+        worktree = manager.store.worktrees_root / task_id / "attempt-1"
+        candidate = (
+            worktree
+            / "apps/android/app/build/outputs/apk/debug/app-debug.apk"
+        )
+        candidate.parent.mkdir(parents=True)
+        candidate.write_bytes(b"candidate-apk")
+        evidence_root = manager.store.root / "v2" / "snapshots" / "android-test"
+        evidence_root.mkdir(parents=True)
+        screenshot = evidence_root / "candidate.png"
+        screenshot.write_bytes(b"\x89PNG\r\n\x1a\ncandidate")
+        logcat = evidence_root / "candidate-logcat.txt"
+        logcat.write_text("clean\n", encoding="utf-8")
+        manifest = evidence_root / "candidate-evidence.json"
+        atomic_write_json(
+            manifest,
+            {
+                "protocol": "signalasi.evolution.android-evidence.v1",
+                "passed": True,
+                "stable_restored": True,
+                "fatal_lines": [],
+                "artifacts": {
+                    "candidate_apk": {
+                        "path": str(candidate.resolve()),
+                        "sha256": sha256_file(candidate),
+                    },
+                    "candidate_screenshot": {
+                        "path": str(screenshot.resolve()),
+                        "sha256": sha256_file(screenshot),
+                    },
+                    "candidate_logcat": {
+                        "path": str(logcat.resolve()),
+                        "sha256": sha256_file(logcat),
+                    },
+                },
+            },
+        )
+        gate_log = manager.store.logs_root / task_id / "attempt-1-android.log"
+        gate_log.parent.mkdir(parents=True)
+        gate_log.write_text(
+            json.dumps(
+                {
+                    "passed": True,
+                    "evidence_manifest": str(manifest.resolve()),
+                    "evidence_sha256": sha256_file(manifest),
+                }
+            ),
+            encoding="utf-8",
+        )
+        gate = EvolutionGate(
+            id="android-device-install-restore",
+            status="passed",
+            log_path=str(gate_log),
+            evidence_sha256=sha256_file(gate_log),
+        )
+        manager._capture_android_gate_evidence(
+            gate,
+            gate_log,
+            worktree=worktree,
+        )
+        attempt = EvolutionAttempt(
+            number=1,
+            status="passed",
+            branch=f"evolution/{task_id}-a1",
+            worktree=str(worktree),
+            gates=[gate],
+        )
+
+        manager._validate_gate_evidence(attempt)
+        screenshot.write_bytes(b"\x89PNG\r\n\x1a\ntampered")
+
+        with self.assertRaises(EvolutionError) as raised:
+            manager._validate_gate_evidence(attempt)
+
+        self.assertEqual("gate_evidence_invalid", raised.exception.code)
 
     def test_candidate_commit_cannot_change_after_review(self):
         def patch_candidate(_task, _attempt, worktree, _failure):

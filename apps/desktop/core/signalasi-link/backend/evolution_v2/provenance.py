@@ -36,6 +36,12 @@ class ProvenanceWriter:
                 "status": gate.status,
                 "exit_code": gate.exit_code,
                 "duration_millis": gate.duration_millis,
+                "evidence_sha256": getattr(gate, "evidence_sha256", ""),
+                "evidence_manifest_sha256": getattr(
+                    gate,
+                    "evidence_manifest_sha256",
+                    "",
+                ),
             }
             for gate in attempt.gates
         ]

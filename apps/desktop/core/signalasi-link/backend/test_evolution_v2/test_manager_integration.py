@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from evolution_v2.manager import EvolutionManager
 
@@ -24,7 +22,7 @@ class ManagerIntegrationTests(unittest.TestCase):
         manager.policy = FakePolicy(source_root / "config" / "evolution-policy.json")
         manager.gate_config = {
             "desktop": {"isolated_backend_health": True},
-            "android": {"device_install_launch_restore": False},
+            "android": {"device_install_launch_restore": True},
         }
         manager.v2_store = type("Store", (), {
             "paths": {"snapshots": source_root / "snapshots"}
@@ -56,21 +54,19 @@ class ManagerIntegrationTests(unittest.TestCase):
         android = next(command for command in commands if command.id == "android-unit-build")
         self.assertNotIn("-Psignalasi.requireEmbeddedRuntime=false", android.argv)
 
-    def test_destructive_android_device_gate_requires_explicit_environment_switch(self):
+    def test_android_device_evidence_gate_is_required_after_build(self):
         with tempfile.TemporaryDirectory() as root:
             manager = self.manager(Path(root))
             changed = ["apps/android/app/src/main/java/com/signalasi/chat/Feature.kt"]
-            with patch.dict(os.environ, {}, clear=False):
-                os.environ.pop("SIGNALASI_EVOLUTION_ANDROID_DEVICE_TEST", None)
-                disabled = manager._gate_commands(changed)
-            with patch.dict(
-                os.environ,
-                {"SIGNALASI_EVOLUTION_ANDROID_DEVICE_TEST": "1"},
-                clear=False,
-            ):
-                enabled = manager._gate_commands(changed)
-        self.assertNotIn("android-device-install-restore", [item.id for item in disabled])
-        self.assertIn("android-device-install-restore", [item.id for item in enabled])
+            commands = manager._gate_commands(changed)
+
+        gate_ids = [item.id for item in commands]
+        self.assertIn("android-unit-build", gate_ids)
+        self.assertIn("android-device-install-restore", gate_ids)
+        self.assertLess(
+            gate_ids.index("android-unit-build"),
+            gate_ids.index("android-device-install-restore"),
+        )
 
 
 if __name__ == "__main__":
