@@ -8,7 +8,8 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     let provider = try CloudModelToolLoopAgentPlanningProvider(
       fallbackProvider: fallback,
       toolRegistry: AgentNativeToolRegistry(),
-      requestIdFactory: { "turn-1" }
+      requestIdFactory: { "turn-1" },
+      memoryTelemetryCapture: { _ in XCTFail("Fallback planning should not emit tool-loop memory telemetry.") }
     ) { _, _ in
       XCTFail("No tool loop should be created without safe native tools.")
       return RecordingPlanningToolLoopRunner(.completedPlan())
@@ -30,10 +31,12 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     let fallback = RecordingPlanningProvider(raw: "fallback")
     var capturedCatalog: [AgentNativeToolDescriptor] = []
     var capturedRegistry: AgentNativeToolRegistry?
+    var telemetry: [AgentWorkspace?] = []
     let provider = CloudModelToolLoopAgentPlanningProvider(
       fallbackProvider: fallback,
       toolRegistry: registry,
-      requestIdFactory: { "turn-1" }
+      requestIdFactory: { "turn-1" },
+      memoryTelemetryCapture: { telemetry.append($0) }
     ) { catalog, registry in
       capturedCatalog = catalog
       capturedRegistry = registry
@@ -67,6 +70,15 @@ final class CloudModelToolLoopAgentPlanningProviderTests: XCTestCase {
     XCTAssertEqual(request.budget.maxTokens, 12_000)
     XCTAssertEqual(request.budget.maxDurationMillis, 45_000)
     XCTAssertEqual(request.grantedPermissions, ["signalasi.scope.test"])
+    XCTAssertEqual(telemetry.count, 2)
+    let workspace = try XCTUnwrap(telemetry[0])
+    XCTAssertNil(telemetry[1])
+    XCTAssertEqual(workspace.workspaceId, "turn-1")
+    XCTAssertEqual(workspace.sessionId, "conversation-1")
+    XCTAssertEqual(workspace.conversationId, "conversation-1")
+    XCTAssertEqual(workspace.taskId, "turn-1")
+    XCTAssertEqual(workspace.agentId, "signalasi.ios_model_planner_tool_loop")
+    XCTAssertEqual(workspace.status, .running)
   }
 
   func testToolLoopPlanningProviderRejectsRuntimeToolsUnlessRequestAllowsThem() async throws {

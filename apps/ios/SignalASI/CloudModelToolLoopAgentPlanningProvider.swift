@@ -19,6 +19,7 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
   var toolRegistry: AgentNativeToolRegistry
   var budget: AgentModelToolLoopBudget
   var requestIdFactory: () -> String
+  var memoryTelemetryCapture: (AgentWorkspace?) -> Void
 
   private var makeToolLoop: ([AgentNativeToolDescriptor], AgentNativeToolRegistry) throws -> AgentModelPlanningToolLoopRunning
 
@@ -34,7 +35,10 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     budget: AgentModelToolLoopBudget = CloudModelToolLoopAgentPlanningProvider.androidPlannerBudget,
     clock: AgentModelToolLoopClock = .system,
     loopIdFactory: AgentModelToolLoopIdFactory = .uuids,
-    requestIdFactory: @escaping () -> String = { UUID().uuidString }
+    requestIdFactory: @escaping () -> String = { UUID().uuidString },
+    memoryTelemetryCapture: @escaping (AgentWorkspace?) -> Void = {
+      AgentMemoryPssRuntime.requestCapture(workspace: $0)
+    }
   ) {
     self.init(
       fallbackProvider: CloudModelAgentPlanningProvider(
@@ -45,7 +49,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       ),
       toolRegistry: toolRegistry,
       budget: budget,
-      requestIdFactory: requestIdFactory
+      requestIdFactory: requestIdFactory,
+      memoryTelemetryCapture: memoryTelemetryCapture
     ) { catalog, registry in
       AgentModelToolLoop(
         modelAdapter: CloudModelNativeToolAdapter(
@@ -67,12 +72,16 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     toolRegistry: AgentNativeToolRegistry,
     budget: AgentModelToolLoopBudget = CloudModelToolLoopAgentPlanningProvider.androidPlannerBudget,
     requestIdFactory: @escaping () -> String = { UUID().uuidString },
+    memoryTelemetryCapture: @escaping (AgentWorkspace?) -> Void = {
+      AgentMemoryPssRuntime.requestCapture(workspace: $0)
+    },
     makeToolLoop: @escaping ([AgentNativeToolDescriptor], AgentNativeToolRegistry) throws -> AgentModelPlanningToolLoopRunning
   ) {
     self.fallbackProvider = fallbackProvider
     self.toolRegistry = toolRegistry
     self.budget = budget
     self.requestIdFactory = requestIdFactory
+    self.memoryTelemetryCapture = memoryTelemetryCapture
     self.makeToolLoop = makeToolLoop
   }
 
@@ -89,7 +98,9 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       turnId: turnId
     )
     let runner = try makeToolLoop(selection.catalog, selection.registry)
+    memoryTelemetryCapture(Self.telemetryWorkspace(request: request))
     let outcome = await runner.run(request)
+    memoryTelemetryCapture(nil)
     guard outcome.status == .completed else {
       throw AgentModelPlanningProviderError.unavailable(
         outcome.error?.message ?? "Model-native tool planning did not complete"
@@ -147,9 +158,21 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
         .user(invocation.prompt)
       ],
       budget: budget,
-      callerId: "signalasi.ios_model_planner_tool_loop",
+      callerId: toolLoopCallerId,
       grantedPermissions: grantedPermissions,
       grantedConsents: grantedConsents
+    )
+  }
+
+  static func telemetryWorkspace(request: AgentModelToolLoopRequest) -> AgentWorkspace {
+    AgentWorkspace(
+      workspaceId: request.workspaceId,
+      sessionId: request.sessionId,
+      conversationId: request.conversationId,
+      taskId: request.taskId,
+      goal: request.messages.last?.text ?? "",
+      agentId: toolLoopCallerId,
+      status: .running
     )
   }
 
@@ -176,4 +199,6 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     let prefix = selected.prefix(120)
     return "\(prefix)-\(digest.prefix(32))"
   }
+
+  static let toolLoopCallerId = "signalasi.ios_model_planner_tool_loop"
 }
