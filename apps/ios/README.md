@@ -185,6 +185,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style iOS voice transcript route policy for resolving final speech commands to native agent, cloud model, remote agent, or local conversation targets with auto-send gating
 - Android-style iOS system TTS reply playback for voice-triggered incoming replies, including spoken-text bounds, TTS runtime health, playback-start coordinator events, and session completion after speech finishes
 - Android-style voice latency tracing for content-free session events, monotonic duration metrics, once-only event dedupe, privacy-filtered attributes, terminal outcome rates, and percentile diagnostics
+- Android-style iOS voice latency wiring from Speech capture and system TTS playback into shared trace sessions for ASR and spoken-reply timing diagnostics
 - UserNotifications integration for incoming background messages
 
 ## Compatibility Note

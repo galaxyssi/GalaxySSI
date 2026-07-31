@@ -436,3 +436,35 @@ enum VoiceLatencyTraceContext {
     return operation()
   }
 }
+
+enum VoiceLatencyTelemetry {
+  private static let lock = NSLock()
+  private static var runtimeTracer: VoiceLatencyTracer?
+
+  static func tracer() -> VoiceLatencyTracer {
+    lock.lock()
+    defer { lock.unlock() }
+    if let runtimeTracer = runtimeTracer {
+      return runtimeTracer
+    }
+    let tracer = VoiceLatencyTracer(
+      elapsedSource: {
+        Int64(ProcessInfo.processInfo.systemUptime * 1_000_000_000)
+      },
+      wallClockSource: {
+        Int64(Date().timeIntervalSince1970 * 1_000)
+      },
+      enabled: {
+        VoiceLatencyFeatureFlags.isEnabled()
+      }
+    )
+    runtimeTracer = tracer
+    return tracer
+  }
+
+  static func resetForTests(_ tracer: VoiceLatencyTracer? = nil) {
+    lock.lock()
+    runtimeTracer = tracer
+    lock.unlock()
+  }
+}
