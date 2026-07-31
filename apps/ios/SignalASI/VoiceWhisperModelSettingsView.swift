@@ -50,6 +50,15 @@ struct VoiceWhisperModelSettingsView: View {
           }
           .buttonStyle(.plain)
           .disabled(!row.action.isEnabled)
+          .swipeActions(edge: .trailing) {
+            if row.removable {
+              Button(role: .destructive) {
+                remove(row.model)
+              } label: {
+                Label("Remove", systemImage: "trash")
+              }
+            }
+          }
         }
       }
       Section {
@@ -85,6 +94,16 @@ struct VoiceWhisperModelSettingsView: View {
     case .current, .waiting:
       break
     }
+  }
+
+  private func remove(_ model: VoiceWhisperModelProfile) {
+    do {
+      _ = try modelManager.delete(model, active: modelManager.isLoaded(model.id))
+      statusMessage = "\(model.displayName) removed"
+    } catch {
+      statusMessage = "Model remove failed."
+    }
+    refreshModelState()
   }
 
   private func select(_ model: VoiceWhisperModelProfile) {

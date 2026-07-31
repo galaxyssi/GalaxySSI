@@ -79,6 +79,10 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
     }
     return .download
   }
+
+  var removable: Bool {
+    available && !model.bundled && !selected
+  }
 }
 
 enum VoiceWhisperModelSettingsPresenter {
