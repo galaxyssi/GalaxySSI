@@ -14,26 +14,59 @@ struct CloudModelNativeToolAdapter: AgentModelAdapter {
   var store: SignalASIStore
   var catalog: [AgentNativeToolDescriptor]
   var sender: CloudModelNativeToolSending
+  var disclosureStore: AgentDataDisclosureStore
 
   init(
     contact: SignalASIContact,
     store: SignalASIStore,
     catalog: [AgentNativeToolDescriptor],
-    sender: CloudModelNativeToolSending = CloudModelClient()
+    sender: CloudModelNativeToolSending = CloudModelClient(),
+    disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
+      fileURL: AgentDataDisclosureStorePaths.ledgerURL()
+    )
   ) {
     self.contact = contact
     self.store = store
     self.catalog = catalog
     self.sender = sender
+    self.disclosureStore = disclosureStore
   }
 
   func complete(_ request: AgentModelRequest) async throws -> AgentModelResponse {
-    try await sender.sendNativeToolTurn(
-      contact: contact,
-      store: store,
-      request: request,
-      catalog: catalog
+    let ticket = AgentDataDisclosureLedger.beginCloudRequest(
+      store: disclosureStore,
+      destination: AgentDataDisclosureCloudDestination(contact: contact),
+      text: request.messages.map(\.text).joined(separator: "\n"),
+      historyCount: request.messages.count,
+      systemInstructions: request.messages.contains { $0.role == .system },
+      toolOutput: request.messages.contains { $0.role == .tool },
+      purpose: "Model native tool turn",
+      conversationId: request.conversationId,
+      taskId: request.taskId,
+      turnId: request.turnId
     )
+    guard ticket.allowed else {
+      throw AgentDataDisclosureBlockedError(destination: contact.displayName)
+    }
+
+    do {
+      let response = try await sender.sendNativeToolTurn(
+        contact: contact,
+        store: store,
+        request: request,
+        catalog: catalog
+      )
+      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+      return response
+    } catch {
+      AgentDataDisclosureLedger.update(
+        store: disclosureStore,
+        ticket: ticket,
+        status: .failed,
+        failureReason: error.localizedDescription
+      )
+      throw error
+    }
   }
 }
 
