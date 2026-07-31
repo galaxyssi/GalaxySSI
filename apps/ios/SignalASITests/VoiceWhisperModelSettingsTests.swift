@@ -33,6 +33,21 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     XCTAssertEqual(rows.first { $0.model.id == small.id }?.action, .waiting(progress: 42))
     XCTAssertEqual(rows.first { $0.model.id == medium.id }?.action, .retry)
     XCTAssertEqual(rows.first { $0.model.id == large.id }?.action, .waiting(progress: 0))
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.removable, true)
+    XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.removable, false)
+    XCTAssertEqual(rows.first { $0.model.id == small.id }?.removable, false)
+  }
+
+  func testPresenterDoesNotOfferRemoveForSelectedDownloadedModel() {
+    let base = VoiceWhisperModelCatalog.model("base")
+    let rows = VoiceWhisperModelSettingsPresenter.rows(
+      selectedModelId: base.id,
+      downloadState: { _ in VoiceWhisperModelDownloadState(status: .successful, progress: 100) },
+      isAvailable: { $0.id == base.id }
+    )
+
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.action, .current)
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.removable, false)
   }
 
   func testDownloadServiceCompletesModelThroughInjectedDownloader() async throws {
