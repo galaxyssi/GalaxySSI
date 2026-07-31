@@ -100,6 +100,8 @@ final class VoiceWhisperModelDownloadService {
         return "TEMPORARY_FILE_MISSING"
       case .downloadedFileTooSmall:
         return "MODEL_FILE_TOO_SMALL"
+      case .installFailed(_, let failure):
+        return failure.rawValue
       }
     }
     return "DOWNLOAD_FAILED"

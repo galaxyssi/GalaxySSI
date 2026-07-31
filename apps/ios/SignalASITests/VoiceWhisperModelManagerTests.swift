@@ -32,7 +32,7 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
     )
     XCTAssertFalse(manager.isAvailable(model))
 
-    let temp = try env.writeTemporaryFile(bytes: 12)
+    let temp = try env.writeTemporaryFile(bytes: 8)
     XCTAssertEqual(
       try manager.recordCompleted(model, temporaryFileURL: temp),
       VoiceWhisperModelDownloadState(status: .successful, progress: 100)
@@ -74,6 +74,23 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: manager.downloadedFileURL(for: model).path))
   }
 
+  func testDeleteProtectsActiveModel() throws {
+    let env = try Environment()
+    let manager = env.manager(requestId: "download-5")
+    let model = testModel(minimumBytes: 8)
+
+    _ = try manager.enqueue(model)
+    _ = try manager.recordCompleted(model, temporaryFileURL: try env.writeTemporaryFile(bytes: 8))
+
+    XCTAssertThrowsError(try manager.delete(model, active: true)) { error in
+      XCTAssertEqual(
+        error as? VoiceWhisperModelManagerError,
+        .installFailed(modelId: model.id, failure: .modelInUse)
+      )
+    }
+    XCTAssertTrue(manager.isAvailable(model))
+  }
+
   func testBundledModelDoesNotEnqueueDownload() throws {
     let env = try Environment()
     let manager = env.manager()
@@ -92,7 +109,8 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
       displayName: "Base",
       fileName: "ggml-base.bin",
       sizeLabel: "142 MB",
-      minimumUsableBytes: minimumBytes
+      minimumUsableBytes: minimumBytes,
+      expectedSizeBytes: minimumBytes
     )
   }
 

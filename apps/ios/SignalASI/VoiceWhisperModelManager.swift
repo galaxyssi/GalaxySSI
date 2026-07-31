@@ -60,6 +60,7 @@ enum VoiceWhisperModelManagerError: LocalizedError, Equatable {
   case missingDownloadURL(String)
   case temporaryFileMissing
   case downloadedFileTooSmall(modelId: String, bytes: Int64)
+  case installFailed(modelId: String, failure: VoiceWhisperModelInstallFailure)
 
   var errorDescription: String? {
     switch self {
@@ -71,6 +72,8 @@ enum VoiceWhisperModelManagerError: LocalizedError, Equatable {
       return "Completed Whisper model temporary file is missing."
     case .downloadedFileTooSmall(let modelId, let bytes):
       return "Downloaded Whisper model is too small: \(modelId), \(bytes) bytes"
+    case .installFailed(let modelId, let failure):
+      return "Whisper model install failed: \(modelId), \(failure.rawValue)"
     }
   }
 }
@@ -126,6 +129,7 @@ final class VoiceWhisperModelManager {
   private let store: VoiceWhisperModelDownloadRecordStore
   private let fileManager: FileManager
   private let modelsDirectory: URL
+  private let storage: VoiceWhisperModelStorage
   private let bundle: Bundle
   private let requestIdFactory: () -> String
   private let clockMillis: () -> Int64
@@ -134,6 +138,7 @@ final class VoiceWhisperModelManager {
     store: VoiceWhisperModelDownloadRecordStore = UserDefaultsVoiceWhisperModelDownloadRecordStore(),
     fileManager: FileManager = .default,
     modelsDirectory: URL = VoiceWhisperModelCatalog.defaultModelsDirectory(),
+    storage: VoiceWhisperModelStorage? = nil,
     bundle: Bundle = .main,
     requestIdFactory: @escaping () -> String = { UUID().uuidString },
     clockMillis: @escaping () -> Int64 = VoiceWhisperModelManager.defaultClockMillis
@@ -141,29 +146,36 @@ final class VoiceWhisperModelManager {
     self.store = store
     self.fileManager = fileManager
     self.modelsDirectory = modelsDirectory
+    self.storage = storage ?? VoiceWhisperModelStorage(
+      rootDirectory: modelsDirectory,
+      fileManager: fileManager,
+      clockMillis: clockMillis
+    )
     self.bundle = bundle
     self.requestIdFactory = requestIdFactory
     self.clockMillis = clockMillis
   }
 
   func downloadedFileURL(for model: VoiceWhisperModelProfile) -> URL {
-    VoiceWhisperModelCatalog.downloadedFileURL(for: model, modelsDirectory: modelsDirectory)
+    storage.finalFileURL(for: model)
   }
 
   func downloadState(for model: VoiceWhisperModelProfile) -> VoiceWhisperModelDownloadState {
     if model.bundled, bundledResourceExists(for: model) {
       return VoiceWhisperModelDownloadState(status: .successful, progress: 100)
     }
+    let snapshot = storage.inspect(model)
+    if snapshot.installed {
+      return VoiceWhisperModelDownloadState(status: .successful, progress: 100)
+    }
     return store.record(for: model.id)?.state ?? VoiceWhisperModelDownloadState(status: .notRequested)
   }
 
   func isAvailable(_ model: VoiceWhisperModelProfile) -> Bool {
-    VoiceWhisperModelCatalog.isAvailable(
-      model,
-      bundledResourceExists: bundledResourceExists(for: model),
-      downloadedFileBytes: downloadedFileBytes(for: model),
-      downloadState: downloadState(for: model)
-    )
+    if model.bundled, bundledResourceExists(for: model) {
+      return true
+    }
+    return storage.inspect(model).installed
   }
 
   func enqueue(
@@ -188,7 +200,7 @@ final class VoiceWhisperModelManager {
       )
     }
     try prepareDirectory()
-    try? fileManager.removeItem(at: downloadedFileURL(for: model))
+    storage.invalidate(model)
     let record = VoiceWhisperModelDownloadRecord(
       modelId: model.id,
       requestId: requestIdFactory(),
@@ -254,26 +266,39 @@ final class VoiceWhisperModelManager {
     temporaryFileURL: URL? = nil
   ) throws -> VoiceWhisperModelDownloadState {
     try prepareDirectory()
-    let destination = downloadedFileURL(for: model)
-    if let temporaryFileURL = temporaryFileURL {
-      guard fileManager.fileExists(atPath: temporaryFileURL.path) else {
-        throw VoiceWhisperModelManagerError.temporaryFileMissing
+    guard let temporaryFileURL = temporaryFileURL else {
+      if storage.inspect(model).installed {
+        return VoiceWhisperModelDownloadState(status: .successful, progress: 100)
       }
-      try? fileManager.removeItem(at: destination)
-      try fileManager.moveItem(at: temporaryFileURL, to: destination)
+      throw VoiceWhisperModelManagerError.temporaryFileMissing
     }
-    let bytes = downloadedFileBytes(for: model) ?? 0
-    guard bytes >= model.minimumUsableBytes else {
-      _ = recordFailure(model, errorCode: "MODEL_FILE_TOO_SMALL")
-      throw VoiceWhisperModelManagerError.downloadedFileTooSmall(modelId: model.id, bytes: bytes)
+    guard fileManager.fileExists(atPath: temporaryFileURL.path) else {
+      throw VoiceWhisperModelManagerError.temporaryFileMissing
+    }
+    let metadata: VoiceWhisperModelInstallMetadata
+    do {
+      metadata = try storage.install(
+        sourceFileURL: temporaryFileURL,
+        profile: model,
+        sourceLabel: "download:\(temporaryFileURL.lastPathComponent)"
+      )
+    } catch let error as VoiceWhisperModelInstallError {
+      _ = recordFailure(model, errorCode: error.failure.rawValue)
+      if error.failure == .sizeMismatch {
+        throw VoiceWhisperModelManagerError.downloadedFileTooSmall(
+          modelId: model.id,
+          bytes: downloadedFileBytes(at: temporaryFileURL) ?? 0
+        )
+      }
+      throw VoiceWhisperModelManagerError.installFailed(modelId: model.id, failure: error.failure)
     }
     let record = VoiceWhisperModelDownloadRecord(
       modelId: model.id,
       requestId: store.record(for: model.id)?.requestId ?? requestIdFactory(),
       status: .successful,
       progress: 100,
-      downloadedBytes: bytes,
-      totalBytes: bytes,
+      downloadedBytes: metadata.expectedSizeBytes,
+      totalBytes: metadata.expectedSizeBytes,
       updatedAtMillis: clockMillis()
     )
     store.save(record)
@@ -282,14 +307,20 @@ final class VoiceWhisperModelManager {
 
   @discardableResult
   func delete(_ model: VoiceWhisperModelProfile) -> Bool {
-    let destination = downloadedFileURL(for: model)
+    (try? delete(model, active: false)) ?? false
+  }
+
+  @discardableResult
+  func delete(_ model: VoiceWhisperModelProfile, active: Bool) throws -> Bool {
     let hadState = store.record(for: model.id) != nil
-    let hadFile = fileManager.fileExists(atPath: destination.path)
-    if hadFile {
-      try? fileManager.removeItem(at: destination)
+    let hadInstall = storage.inspect(model).state != .notInstalled
+    do {
+      _ = try storage.delete(model, active: active)
+    } catch let error as VoiceWhisperModelInstallError {
+      throw VoiceWhisperModelManagerError.installFailed(modelId: model.id, failure: error.failure)
     }
     store.remove(modelId: model.id)
-    return hadState || hadFile
+    return hadState || hadInstall
   }
 
   private func request(
@@ -333,7 +364,10 @@ final class VoiceWhisperModelManager {
   }
 
   private func downloadedFileBytes(for model: VoiceWhisperModelProfile) -> Int64? {
-    let url = downloadedFileURL(for: model)
+    downloadedFileBytes(at: downloadedFileURL(for: model))
+  }
+
+  private func downloadedFileBytes(at url: URL) -> Int64? {
     guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
           let size = attributes[.size] as? NSNumber else {
       return nil

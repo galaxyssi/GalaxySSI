@@ -42,9 +42,9 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     let downloader = FakeDownloader(
       result: .success(
         VoiceWhisperModelDownloadedFile(
-          temporaryFileURL: try env.writeTemporaryFile(bytes: 12),
+          temporaryFileURL: try env.writeTemporaryFile(bytes: 8),
           statusCode: 200,
-          byteCount: 12
+          byteCount: 8
         )
       )
     )
@@ -65,9 +65,9 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     let downloader = FakeDownloader(
       result: .success(
         VoiceWhisperModelDownloadedFile(
-          temporaryFileURL: try env.writeTemporaryFile(bytes: 12),
+          temporaryFileURL: try env.writeTemporaryFile(bytes: 8),
           statusCode: 503,
-          byteCount: 12
+          byteCount: 8
         )
       )
     )
@@ -129,7 +129,8 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
         displayName: "Base",
         fileName: "ggml-base.bin",
         sizeLabel: "142 MB",
-        minimumUsableBytes: minimumBytes
+        minimumUsableBytes: minimumBytes,
+        expectedSizeBytes: minimumBytes
       )
     }
 
