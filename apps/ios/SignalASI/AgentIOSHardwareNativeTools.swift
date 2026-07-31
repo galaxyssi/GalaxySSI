@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(AVFoundation) && os(iOS)
+import AVFoundation
+#endif
 #if canImport(CoreMotion) && os(iOS)
 import CoreMotion
 #endif
@@ -16,6 +19,7 @@ protocol AgentIOSHardwareStatusProviding {
   func networkStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func nfcStatus(nowMillis: Int64) -> AgentMcpJSONObject
   func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject
+  func setFlashlight(enabled: Bool, nowMillis: Int64) -> AgentNativeToolExecutionResult
 }
 
 struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
@@ -171,6 +175,111 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
     ]
   }
 
+  func setFlashlight(enabled: Bool, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+    #if canImport(AVFoundation) && os(iOS)
+    let authorization = AVCaptureDevice.authorizationStatus(for: .video)
+    guard authorization != .denied && authorization != .restricted else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "flashlight_camera_permission_required",
+        message: "Camera hardware permission is required before iOS torch control can run.",
+        retryable: true,
+        details: flashlightDetails(nowMillis: nowMillis, cameraAuthorization: cameraAuthorization(authorization))
+      )
+    }
+    guard let device = AVCaptureDevice.default(for: .video), device.hasTorch else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "flashlight_unavailable",
+        message: "This iOS device does not expose an app-visible torch.",
+        details: flashlightDetails(nowMillis: nowMillis, cameraAuthorization: cameraAuthorization(authorization))
+      )
+    }
+    do {
+      try device.lockForConfiguration()
+      defer { device.unlockForConfiguration() }
+      if enabled {
+        guard device.isTorchModeSupported(.on) else {
+          return AgentNativeToolExecutionResult.failure(
+            code: "flashlight_on_unsupported",
+            message: "The iOS torch does not support the requested on state.",
+            details: flashlightDetails(nowMillis: nowMillis, cameraAuthorization: cameraAuthorization(authorization))
+          )
+        }
+        try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+      } else if device.isTorchModeSupported(.off) {
+        device.torchMode = .off
+      }
+      let verified = enabled ? device.torchMode == .on : device.torchMode == .off
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "requested_enabled": .bool(enabled),
+          "request_accepted": .bool(true),
+          "state_verified": .bool(verified),
+          "settings_changed": .bool(false),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ],
+        message: "Flashlight request submitted",
+        metadata: [
+          "camera_capture": .bool(false),
+          "continuous_state_guarantee": .bool(false),
+          "framework": .string("avfoundation_torch"),
+          "camera_authorization": .string(cameraAuthorization(authorization))
+        ]
+      )
+    } catch {
+      return AgentNativeToolExecutionResult.failure(
+        code: "flashlight_control_failed",
+        message: "iOS torch control failed.",
+        retryable: true,
+        details: flashlightDetails(
+          nowMillis: nowMillis,
+          cameraAuthorization: cameraAuthorization(authorization),
+          errorDescription: String(error.localizedDescription.prefix(240))
+        )
+      )
+    }
+    #else
+    return AgentNativeToolExecutionResult.failure(
+      code: "flashlight_unavailable",
+      message: "AVFoundation torch control is unavailable on this platform.",
+      details: flashlightDetails(nowMillis: nowMillis, cameraAuthorization: "unavailable")
+    )
+    #endif
+  }
+
+  private func flashlightDetails(
+    nowMillis: Int64,
+    cameraAuthorization: String,
+    errorDescription: String = ""
+  ) -> AgentMcpJSONObject {
+    var details: AgentMcpJSONObject = [
+      "camera_capture": .bool(false),
+      "settings_changed": .bool(false),
+      "camera_authorization": .string(cameraAuthorization),
+      "observed_at_epoch_ms": .int(nowMillis)
+    ]
+    if !errorDescription.isEmpty {
+      details["error_description"] = .string(errorDescription)
+    }
+    return details
+  }
+
+  #if canImport(AVFoundation) && os(iOS)
+  private func cameraAuthorization(_ status: AVAuthorizationStatus) -> String {
+    switch status {
+    case .authorized:
+      return "authorized"
+    case .denied:
+      return "denied"
+    case .notDetermined:
+      return "not_determined"
+    case .restricted:
+      return "restricted"
+    @unknown default:
+      return "unknown"
+    }
+  }
+  #endif
+
   private func int64(_ value: Any?) -> Int64 {
     if let value = value as? NSNumber {
       return max(0, value.int64Value)
@@ -269,6 +378,7 @@ enum AgentIOSHardwareNativeToolCatalog {
   static let hardwareStatusPermission = "signalasi.scope.ios_app_visible_hardware_status"
   static let appVisibilityBoundaryPermission = "signalasi.scope.ios_app_visibility_boundary"
   static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
+  static let flashlightControlConsent = "signalasi.consent.flashlight.control"
   static let installedAppsConsent = "signalasi.consent.installed_apps.query_visible"
   static let packageDetailConsent = "signalasi.consent.package_detail.query_visible"
   static let maxSensorResults = 64
@@ -279,6 +389,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     storageStatus,
     networkStatus,
     sensorsList,
+    flashlightSet,
     nfcStatus,
     bluetoothPairingHandoff,
     installedAppsList,
@@ -311,6 +422,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     var consents: [AgentNativeConsentRequirement]
     var availability: AgentNativeToolAvailability
     var inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
+    var idempotency: AgentNativeToolIdempotency = .nonIdempotent
   }
 
   private static let specifications: [Specification] = [
@@ -345,14 +457,10 @@ enum AgentIOSHardwareNativeToolCatalog {
       [],
       ["signalasi.consent.sensor.foreground_once"]
     ),
-    unavailableSpec(
+    flashlightSpec(
       flashlightSet,
       "Set flashlight",
-      "Requires an AVFoundation torch executor, camera permission, and explicit user consent.",
-      .medium,
-      ["flashlight.control"],
-      ["NSCameraUsageDescription"],
-      ["signalasi.consent.flashlight.control"]
+      "Requests an explicit iOS torch state through AVFoundation after consent; no camera image is captured."
     ),
     unavailableSpec(
       bluetoothStatus,
@@ -421,7 +529,7 @@ enum AgentIOSHardwareNativeToolCatalog {
       requiredPermissions: specification.permissions,
       requiredConsents: specification.consents,
       timeoutMillis: 15_000,
-      idempotency: .nonIdempotent,
+      idempotency: specification.idempotency,
       availability: specification.availability
     )
     return AgentPhoneNativeToolDefinition(
@@ -489,6 +597,40 @@ enum AgentIOSHardwareNativeToolCatalog {
         )
       ],
       availability: .available
+    )
+  }
+
+  private static func flashlightSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .medium,
+      capabilities: ["flashlight.explicit_control", "flashlight.no_camera_capture"],
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: "NSCameraUsageDescription",
+          title: "Camera hardware access",
+          description: "iOS camera hardware scope is used only for torch control; no image is captured."
+        )
+      ],
+      consents: [
+        AgentNativeConsentRequirement(
+          id: flashlightControlConsent,
+          title: "Control flashlight",
+          description: "Requires confirmation before changing the iOS torch state."
+        )
+      ],
+      availability: .available,
+      inputSchema: inputSchema(
+        properties: ["enabled": boolSchema()],
+        required: ["enabled"]
+      ),
+      idempotency: .idempotent
     )
   }
 
@@ -583,6 +725,10 @@ enum AgentIOSHardwareNativeToolCatalog {
     ]
   }
 
+  private static func boolSchema() -> AgentMcpJSONObject {
+    ["type": .string("boolean")]
+  }
+
   private static let noExtraConsent = AgentNativeConsentRequirement(
     id: "signalasi.consent.none",
     title: "No additional consent",
@@ -631,6 +777,11 @@ struct AgentIOSHardwareNativeToolExecutor {
       return status(
         provider.sensorsList(limit: limit, nowMillis: now),
         "Device sensor metadata listed"
+      )
+    case AgentIOSHardwareNativeToolCatalog.flashlightSet:
+      return provider.setFlashlight(
+        enabled: invocation.input["enabled"]?.boolValue == true,
+        nowMillis: now
       )
     case AgentIOSHardwareNativeToolCatalog.nfcStatus:
       return status(provider.nfcStatus(nowMillis: now), "NFC capability status read")

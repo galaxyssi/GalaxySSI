@@ -152,6 +152,24 @@ extension SignalASIStoreTests {
           "observed_at_epoch_ms": .int(nowMillis)
         ]
       }
+
+      func setFlashlight(enabled: Bool, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        AgentNativeToolExecutionResult.success(
+          output: [
+            "requested_enabled": .bool(enabled),
+            "request_accepted": .bool(true),
+            "state_verified": .bool(true),
+            "settings_changed": .bool(false),
+            "observed_at_epoch_ms": .int(nowMillis)
+          ],
+          message: "Flashlight request submitted",
+          metadata: [
+            "camera_capture": .bool(false),
+            "continuous_state_guarantee": .bool(false),
+            "framework": .string("avfoundation_torch")
+          ]
+        )
+      }
     }
 
     let ids = AgentIOSHardwareNativeToolCatalog.toolIds
@@ -164,10 +182,12 @@ extension SignalASIStoreTests {
     let context = AgentNativeToolInvocationContext(
       grantedPermissions: [
         AgentIOSHardwareNativeToolCatalog.hardwareStatusPermission,
-        AgentIOSHardwareNativeToolCatalog.appVisibilityBoundaryPermission
+        AgentIOSHardwareNativeToolCatalog.appVisibilityBoundaryPermission,
+        "NSCameraUsageDescription"
       ],
       grantedConsents: [
         AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent,
+        AgentIOSHardwareNativeToolCatalog.flashlightControlConsent,
         AgentIOSHardwareNativeToolCatalog.installedAppsConsent,
         AgentIOSHardwareNativeToolCatalog.packageDetailConsent
       ]
@@ -195,6 +215,11 @@ extension SignalASIStoreTests {
       input: ["limit": .int(1)],
       context: context
     )
+    let flashlight = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.flashlightSet,
+      input: ["enabled": .bool(true)],
+      context: context
+    )
     let nfc = registry.invoke(AgentIOSHardwareNativeToolCatalog.nfcStatus, input: [:], context: context)
     let pairing = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, input: [:], context: context)
     let installedApps = registry.invoke(
@@ -219,6 +244,9 @@ extension SignalASIStoreTests {
     let sensorsDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.sensorsList }
     )
+    let flashlightDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.flashlightSet }
+    )
 
     XCTAssertTrue(battery.isSuccess)
     XCTAssertEqual(battery.output["percent"], .int(73))
@@ -234,6 +262,13 @@ extension SignalASIStoreTests {
     XCTAssertEqual(sensors.output["truncated"], .bool(true))
     XCTAssertEqual(sensors.output["sampling_started"], .bool(false))
     XCTAssertEqual(sensors.output["scope"], .string("ios_coremotion_metadata"))
+    XCTAssertTrue(flashlight.isSuccess)
+    XCTAssertEqual(flashlight.output["requested_enabled"], .bool(true))
+    XCTAssertEqual(flashlight.output["request_accepted"], .bool(true))
+    XCTAssertEqual(flashlight.output["state_verified"], .bool(true))
+    XCTAssertEqual(flashlight.output["settings_changed"], .bool(false))
+    XCTAssertEqual(flashlight.metadata["camera_capture"], .bool(false))
+    XCTAssertEqual(flashlight.metadata["continuous_state_guarantee"], .bool(false))
     XCTAssertTrue(nfc.isSuccess)
     XCTAssertEqual(nfc.output["supported"], .bool(true))
     XCTAssertEqual(nfc.output["tag_capture_started"], .bool(false))
@@ -261,6 +296,9 @@ extension SignalASIStoreTests {
     XCTAssertTrue(nfcDefinition.descriptor.capabilities.contains("nfc.no_tag_capture"))
     XCTAssertEqual(sensorsDefinition.descriptor.availability.status, .available)
     XCTAssertTrue(sensorsDefinition.descriptor.capabilities.contains("sensors.no_sampling"))
+    XCTAssertEqual(flashlightDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(flashlightDefinition.descriptor.idempotency, .idempotent)
+    XCTAssertTrue(flashlightDefinition.descriptor.capabilities.contains("flashlight.no_camera_capture"))
     XCTAssertEqual(location.descriptor.availability.status, .unavailable)
     XCTAssertEqual(location.descriptor.risk, .high)
   }
