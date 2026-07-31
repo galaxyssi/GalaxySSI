@@ -19,7 +19,7 @@ tests             Cross-platform fixtures and end-to-end tests
 ## Current Apps
 
 - Android app: `apps/android`
-- iOS app: `apps/ios` with Android-parity global Agent continuity, voice interaction, PCM/VAD voice capture, voice latency tracing, durable content-free diagnostics export, and native tool policies for iOS 15+
+- iOS app: `apps/ios` with Android-parity global Agent continuity, voice interaction, PCM/VAD voice capture, Local Whisper ASR foundation, voice latency tracing, durable content-free diagnostics export, and native tool policies for iOS 15+
 - Desktop connector: `apps/desktop`
 - SignalASI Link core: `apps/desktop/core/signalasi-link`
 

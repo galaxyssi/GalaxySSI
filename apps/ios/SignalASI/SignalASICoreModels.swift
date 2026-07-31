@@ -551,6 +551,7 @@ struct VoiceSettings: Codable, Equatable {
   var wakeWords: [String]
   var wakeThreshold: Double
   var welcomeText: String
+  var asrModelId: String
   var targetContactId: String
   var speakReplies: Bool
   var routingMode: VoiceRoutingMode
@@ -564,6 +565,7 @@ struct VoiceSettings: Codable, Equatable {
     wakeWords: [String] = VoiceSettings.defaultWakeWords,
     wakeThreshold: Double = 0.5,
     welcomeText: String = VoiceSettings.defaultWelcomeText,
+    asrModelId: String = VoiceSettings.defaultAsrModelId,
     targetContactId: String = "hermes",
     speakReplies: Bool = true,
     routingMode: VoiceRoutingMode = .nativeAgent
@@ -576,6 +578,7 @@ struct VoiceSettings: Codable, Equatable {
     self.wakeWords = Self.normalizedWakeWords(wakeWords)
     self.wakeThreshold = min(max(wakeThreshold, 0.01), 0.99)
     self.welcomeText = welcomeText.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultWelcomeText)
+    self.asrModelId = VoiceWhisperModelCatalog.normalizedModelId(asrModelId)
     self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
     self.speakReplies = speakReplies
     self.routingMode = routingMode
@@ -590,6 +593,7 @@ struct VoiceSettings: Codable, Equatable {
     wakeWords: defaultWakeWords,
     wakeThreshold: 0.5,
     welcomeText: defaultWelcomeText,
+    asrModelId: defaultAsrModelId,
     targetContactId: "hermes",
     speakReplies: true,
     routingMode: .nativeAgent
@@ -604,6 +608,7 @@ struct VoiceSettings: Codable, Equatable {
   ]
 
   static let defaultWelcomeText = "I am here. Welcome to SignalASI. Say your question or task."
+  static let defaultAsrModelId = "tiny"
 
   var wakeWordsText: String {
     wakeWords.joined(separator: ", ")
@@ -619,6 +624,7 @@ struct VoiceSettings: Codable, Equatable {
       wakeWords: wakeWords,
       wakeThreshold: wakeThreshold,
       welcomeText: welcomeText,
+      asrModelId: asrModelId,
       targetContactId: targetContactId,
       speakReplies: speakReplies,
       routingMode: routingMode
@@ -634,6 +640,7 @@ struct VoiceSettings: Codable, Equatable {
     case wakeWords = "wake_words"
     case wakeThreshold = "wake_threshold"
     case welcomeText = "welcome_text"
+    case asrModelId = "asr_model"
     case targetContactId = "target_contact_id"
     case speakReplies = "speak_replies"
     case routingMode = "routing_mode"
@@ -650,6 +657,7 @@ struct VoiceSettings: Codable, Equatable {
       wakeWords: try container.decodeIfPresent([String].self, forKey: .wakeWords) ?? Self.defaultWakeWords,
       wakeThreshold: try container.decodeIfPresent(Double.self, forKey: .wakeThreshold) ?? 0.5,
       welcomeText: try container.decodeIfPresent(String.self, forKey: .welcomeText) ?? Self.defaultWelcomeText,
+      asrModelId: try container.decodeIfPresent(String.self, forKey: .asrModelId) ?? Self.defaultAsrModelId,
       targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",
       speakReplies: try container.decodeIfPresent(Bool.self, forKey: .speakReplies) ?? true,
       routingMode: try container.decodeIfPresent(VoiceRoutingMode.self, forKey: .routingMode) ?? .nativeAgent

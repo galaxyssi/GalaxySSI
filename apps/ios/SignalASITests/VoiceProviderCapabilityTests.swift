@@ -120,7 +120,14 @@ final class VoiceProviderCapabilityTests: XCTestCase {
   }
 
   func testVoiceProviderCapabilityDetectorBuildsProbeFromIOSSettingsAndRuntimeNames() {
-    let settings = VoiceSettings.default
+    let settings = VoiceSettings(
+      wakeListeningEnabled: false,
+      speechRecognitionEnabled: true,
+      textToSpeechEnabled: true,
+      autoSendTranscripts: false,
+      preferredLocaleIdentifier: "en-US",
+      asrModelId: "base"
+    )
     let whisperRuntime = VoiceProviderCapabilityDetector.whisperRuntimeAvailable([
       "SignalASI.app",
       "libwhisper.dylib",
@@ -149,6 +156,8 @@ final class VoiceProviderCapabilityTests: XCTestCase {
     XCTAssertTrue(whisperRuntime)
     XCTAssertFalse(noRuntime)
     XCTAssertEqual(snapshot.checkedAtMillis, 3_000)
+    XCTAssertEqual(detectorProbe.whisperModelId, "base")
+    XCTAssertEqual(detectorProbe.whisperModelName, "Base")
     XCTAssertEqual(snapshot[.whisperCpp].state, .needsDownload)
     XCTAssertEqual(snapshot[.cloudASR].state, .needsNetwork)
     XCTAssertEqual(snapshot[.androidSystemTTS].state, .checking)
