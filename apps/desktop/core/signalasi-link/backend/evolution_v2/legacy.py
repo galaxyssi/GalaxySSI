@@ -52,6 +52,7 @@ PREPARATION_BLOCKER_CODES = {
     "source_root_missing",
     "source_root_invalid",
     "worktree_create_failed",
+    "worktree_cleanup_failed",
     "worktree_identity_invalid",
     "worktree_unsafe",
 }
@@ -61,6 +62,7 @@ NON_RETRYABLE_ATTEMPT_CODES = {
     "gate_dependency_failed",
     "gate_dependency_missing",
     "worktree_cleanup_refused",
+    "worktree_cleanup_failed",
     "worktree_identity_invalid",
     "worktree_unsafe",
 }
@@ -910,6 +912,15 @@ class EvolutionManager:
             timeout_seconds=120,
         )
         if completed.returncode != 0:
+            self._remove_worktree(
+                EvolutionAttempt(
+                    number=number,
+                    status="failed",
+                    branch=branch,
+                    worktree=str(worktree),
+                ),
+                delete_branch=True,
+            )
             raise EvolutionError("worktree_create_failed", completed.stdout[-2_000:])
         provisional_attempt = EvolutionAttempt(
             number=number,
@@ -1529,19 +1540,81 @@ class EvolutionManager:
 
     def _remove_worktree(self, attempt: EvolutionAttempt, *, delete_branch: bool) -> None:
         worktree = self._validated_cleanup_target(attempt)
-        self.runner.run(
+        removed = self.runner.run(
             ("git", "worktree", "remove", "--force", str(worktree)),
             self.source_root,
             timeout_seconds=120,
         )
         if worktree.exists():
-            shutil.rmtree(worktree, ignore_errors=True)
+            try:
+                shutil.rmtree(worktree)
+            except OSError as exc:
+                raise EvolutionError(
+                    "worktree_cleanup_failed",
+                    f"Evolution candidate directory could not be removed: {exc}",
+                ) from exc
+        pruned = self.runner.run(
+            ("git", "worktree", "prune", "--expire", "now"),
+            self.source_root,
+            timeout_seconds=60,
+        )
+        if pruned.returncode != 0:
+            raise EvolutionError(
+                "worktree_cleanup_failed",
+                f"Git worktree metadata cleanup failed: {pruned.stdout[-2_000:]}",
+            )
+        if worktree.exists() or worktree in self._registered_worktrees():
+            detail = removed.stdout[-2_000:] if removed.returncode != 0 else ""
+            raise EvolutionError(
+                "worktree_cleanup_failed",
+                f"Evolution candidate worktree remains registered after rollback. {detail}".strip(),
+            )
         if delete_branch and attempt.branch:
-            self.runner.run(
-                ("git", "branch", "-D", attempt.branch),
+            deleted = self.runner.run(
+                ("git", "branch", "-D", "--", attempt.branch),
                 self.source_root,
                 timeout_seconds=60,
             )
+            if deleted.returncode != 0 and self._local_branch_exists(attempt.branch):
+                raise EvolutionError(
+                    "worktree_cleanup_failed",
+                    f"Evolution candidate branch could not be removed: {deleted.stdout[-2_000:]}",
+                )
+            if self._local_branch_exists(attempt.branch):
+                raise EvolutionError(
+                    "worktree_cleanup_failed",
+                    "Evolution candidate branch remains after rollback.",
+                )
+
+    def _registered_worktrees(self) -> set[Path]:
+        completed = self.runner.run(
+            ("git", "worktree", "list", "--porcelain"),
+            self.source_root,
+            timeout_seconds=60,
+        )
+        if completed.returncode != 0:
+            raise EvolutionError(
+                "worktree_cleanup_failed",
+                f"Could not verify Git worktree rollback: {completed.stdout[-2_000:]}",
+            )
+        return {
+            Path(line[9:].strip()).resolve()
+            for line in completed.stdout.splitlines()
+            if line.startswith("worktree ") and line[9:].strip()
+        }
+
+    def _local_branch_exists(self, branch: str) -> bool:
+        completed = self.runner.run(
+            ("git", "show-ref", "--verify", "--quiet", f"refs/heads/{branch}"),
+            self.source_root,
+            timeout_seconds=30,
+        )
+        if completed.returncode not in {0, 1}:
+            raise EvolutionError(
+                "worktree_cleanup_failed",
+                f"Could not verify candidate branch rollback: {completed.stdout[-2_000:]}",
+            )
+        return completed.returncode == 0
 
     def _validate_repository(self) -> None:
         if not self.source_root.is_dir():

@@ -98,6 +98,11 @@ Successful candidates create labeled pull requests, but SignalASI never merges t
 `candidate_review_failed`
 : Treat review failure as a failed attempt. Do not bypass it or reuse the rejected worktree.
 
+`worktree_cleanup_failed`
+: Stop the task and inspect Git worktree and local branch state. SignalASI does not report rollback
+  until both the managed worktree registration and generated candidate branch are absent. Never
+  delete or reset the active checkout to resolve this condition.
+
 Android restore failure
 : Stop device testing, find the snapshot path in task metadata, manually reinstall the stable APK
   or split APK set, verify identity and data, and only then re-enable the gate.
@@ -106,7 +111,8 @@ Android restore failure
 
 Keep failed logs for 30 to 90 days, dedicated-device snapshots for 7 to 30 days after verified
 restoration, and provenance plus audit records long term. Do not delete snapshots whose restore
-status is unknown. Rollback removes the candidate worktree and branch.
+status is unknown. Rollback removes the candidate worktree and branch, prunes stale Git worktree
+metadata, then verifies that neither candidate identity remains.
 
 The integration tool may create `/.signalasi-evolution-backup/` and
 `/evolution-v2-integration-report.json`. Both are local integration evidence and are ignored by

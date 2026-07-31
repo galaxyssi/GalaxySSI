@@ -48,8 +48,9 @@ own gates or exfiltrate CI secrets.
 - The Android device gate snapshots the stable package before installing a candidate and restores
   the stable package in a final cleanup path. Stable APK and private-data archives are hashed before
   candidate installation and verified again before restoration.
-- A failed attempt removes its candidate branch and worktree; it never performs a destructive reset
-  of the active checkout.
+- A failed attempt removes its candidate branch and worktree, prunes stale Git metadata, and
+  verifies both identities are absent. Incomplete rollback blocks the task; it never performs a
+  destructive reset of the active checkout.
 - Cleanup refuses missing, external, overlapping, cross-task, or malformed paths before invoking
   Git or filesystem deletion.
 
