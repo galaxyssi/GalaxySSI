@@ -87,6 +87,29 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try inputObject(clampedMicrophone)["max_duration_seconds"] as? Int, 30)
     XCTAssertNil(action("Explain how microphones work"))
 
+    let timer = try XCTUnwrap(action("Set a fifteen second timer"))
+    XCTAssertEqual(timer.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm))
+    XCTAssertEqual(timer.target, "iOS Timer")
+    XCTAssertEqual(try inputObject(timer)["target"] as? String, "iOS Timer")
+    XCTAssertEqual(try inputParameters(timer)["timer_seconds"] as? String, "15")
+    XCTAssertEqual(try inputParameters(timer)["label"] as? String, "Set a fifteen second timer")
+    XCTAssertFalse(timer.requiresConfirmation)
+
+    let chineseTimer = try XCTUnwrap(action("\u{8bbe}\u{7f6e}3\u{5206}\u{949f}\u{5012}\u{8ba1}\u{65f6}"))
+    XCTAssertEqual(chineseTimer.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm))
+    XCTAssertEqual(try inputParameters(chineseTimer)["timer_seconds"] as? String, "180")
+    XCTAssertEqual(chineseTimer.parameters["response_language"], "zh")
+
+    let alarm = try XCTUnwrap(action("Set alarm 07:30"))
+    XCTAssertEqual(alarm.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm))
+    XCTAssertEqual(alarm.target, "iOS Alarm")
+    XCTAssertEqual(try inputParameters(alarm)["hour"] as? String, "7")
+    XCTAssertEqual(try inputParameters(alarm)["minute"] as? String, "30")
+    XCTAssertEqual(try inputParameters(alarm)["message"] as? String, "Set alarm 07:30")
+    XCTAssertFalse(alarm.requiresConfirmation)
+    XCTAssertNil(action("Explain what a timer is"))
+    XCTAssertNil(action("Open timer"))
+
     let plan = try XCTUnwrap(AgentDirectNativeToolPlanner.plan(request: AgentPlanRequest(
       goal: "Set media volume 30",
       screen: screen,
@@ -126,11 +149,21 @@ extension SignalASIStoreTests {
       screen: screen,
       nativeTools: requestTools.filter { $0.id == AgentIOSHardwareNativeToolCatalog.batteryStatus }
     )))
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
+      goal: "Set a fifteen second timer",
+      screen: screen,
+      nativeTools: requestTools.filter { $0.id != AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm) }
+    )))
   }
 
   private func inputObject(_ action: AgentAction) throws -> [String: Any] {
     let inputJson = try XCTUnwrap(action.parameters["input_json"])
     return try XCTUnwrap(JSONSerialization.jsonObject(with: Data(inputJson.utf8)) as? [String: Any])
+  }
+
+  private func inputParameters(_ action: AgentAction) throws -> [String: Any] {
+    try XCTUnwrap(inputObject(action)["parameters"] as? [String: Any])
   }
 }
 
