@@ -169,6 +169,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var transport: AgentIOSURLSessionWebTransporting
   var browserSessions: AgentIOSURLSessionBrowserSessionStore
   var downloadWriter: AgentIOSWebMediaDownloadWriting
+  var ocrProcessor: AgentIOSWebMediaOCRProcessing
   var nowMillis: () -> Int64
 
   init(
@@ -176,6 +177,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     implementationId: String = "signalasi.ios.urlsession_web_media",
     browserSessions: AgentIOSURLSessionBrowserSessionStore? = nil,
     downloadWriter: AgentIOSWebMediaDownloadWriting = AgentIOSFileWebMediaDownloadWriter(),
+    ocrProcessor: AgentIOSWebMediaOCRProcessing = AgentIOSWebMediaOCRPipeline(),
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
@@ -184,6 +186,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.implementationId = implementationId
     self.browserSessions = browserSessions ?? AgentIOSURLSessionBrowserSessionStore()
     self.downloadWriter = downloadWriter
+    self.ocrProcessor = ocrProcessor
     self.nowMillis = nowMillis
   }
 
@@ -193,10 +196,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
          .browserSessionClose, .httpRequest, .fileDownload, .webHead, .webFetch, .webDownload:
       return .available
     case .ocrRecognizeContent:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: "iOS OCR requires a Vision-backed content provider."
-      )
+      return ocrProcessor.availability
     }
   }
 
@@ -227,16 +227,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return executeWeb(operation: operation, input: input, invocation: invocation, method: .get)
     case .fileDownload, .webDownload:
       return executeDownload(operation: operation, input: input, invocation: invocation)
+    case .ocrRecognizeContent:
+      return ocrProcessor.invoke(input: input, invocation: invocation)
     case .contentExtract:
       return AgentNativeToolExecutionResult.failure(
         code: "unexpected_provider_call",
         message: "content.extract is handled by the iOS WebMedia executor."
-      )
-    case .ocrRecognizeContent:
-      return AgentNativeToolExecutionResult.failure(
-        code: "web_media_provider_unavailable",
-        message: "The iOS URLSession WebMedia provider does not implement \(operation.rawValue).",
-        retryable: false
       )
     }
   }
