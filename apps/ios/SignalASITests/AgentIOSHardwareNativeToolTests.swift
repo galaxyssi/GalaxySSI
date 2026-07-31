@@ -111,6 +111,44 @@ extension SignalASIStoreTests {
       }
     }
 
+    final class FakeBluetoothDiscoveryProvider: AgentIOSBluetoothDiscoveryProviding {
+      var calls = 0
+      var lastTimeoutMillis: Int64 = 0
+      var lastLimit = 0
+
+      func discoverBluetooth(timeoutMillis: Int64, limit: Int, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        calls += 1
+        lastTimeoutMillis = timeoutMillis
+        lastLimit = limit
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "devices": .array([
+              .object([
+                "address": .string("E2C56DB5-DFFB-48D2-B060-D0F5A71096E0"),
+                "name": .string("Signal Beacon"),
+                "bond_state": .string("unknown"),
+                "device_type": .string("low_energy"),
+                "identifier_scope": .string("ios_app_scoped_uuid")
+              ])
+            ]),
+            "result_count": .int(1),
+            "completed": .bool(true),
+            "timed_out": .bool(false),
+            "truncated": .bool(false),
+            "observed_at_epoch_ms": .int(nowMillis),
+            "capture_mode": .string("single_foreground_discovery"),
+            "background_capture": .bool(false)
+          ],
+          message: "Foreground Bluetooth discovery ended",
+          metadata: [
+            "scan_stopped_after_call": .bool(true),
+            "hardware_addresses_included": .bool(false),
+            "identifier_scope": .string("ios_app_scoped_uuid")
+          ]
+        )
+      }
+    }
+
     struct FakeHardwareProvider: AgentIOSHardwareStatusProviding {
       func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
         [
@@ -253,12 +291,14 @@ extension SignalASIStoreTests {
     let definitions = AgentIOSHardwareNativeToolCatalog.definitions()
     let locationProvider = FakeForegroundLocationProvider()
     let sensorSampleProvider = FakeSensorSampleProvider()
+    let bluetoothDiscoveryProvider = FakeBluetoothDiscoveryProvider()
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.hardwareExecutableDefinitions(
         executor: AgentIOSHardwareNativeToolExecutor(
           provider: FakeHardwareProvider(),
           locationProvider: locationProvider,
           sensorSampleProvider: sensorSampleProvider,
+          bluetoothDiscoveryProvider: bluetoothDiscoveryProvider,
           nowMillis: { 4_200 }
         )
       )
@@ -275,6 +315,7 @@ extension SignalASIStoreTests {
       grantedConsents: [
         AgentIOSHardwareNativeToolCatalog.foregroundLocationConsent,
         AgentIOSHardwareNativeToolCatalog.sensorSampleConsent,
+        AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryConsent,
         AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent,
         AgentIOSHardwareNativeToolCatalog.flashlightControlConsent,
         AgentIOSHardwareNativeToolCatalog.installedAppsConsent,
@@ -320,6 +361,11 @@ extension SignalASIStoreTests {
       context: context
     )
     let bluetooth = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothStatus, input: [:], context: context)
+    let bluetoothDiscovery = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryForeground,
+      input: ["timeout_ms": .int(3_000), "limit": .int(2)],
+      context: context
+    )
     let nfc = registry.invoke(AgentIOSHardwareNativeToolCatalog.nfcStatus, input: [:], context: context)
     let pairing = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, input: [:], context: context)
     let installedApps = registry.invoke(
@@ -352,6 +398,9 @@ extension SignalASIStoreTests {
     )
     let bluetoothDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.bluetoothStatus }
+    )
+    let bluetoothDiscoveryDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryForeground }
     )
 
     XCTAssertTrue(battery.isSuccess)
@@ -397,6 +446,17 @@ extension SignalASIStoreTests {
     XCTAssertEqual(bluetooth.output["device_identifiers_included"], .bool(false))
     XCTAssertEqual(bluetooth.output["state_observation_started"], .bool(false))
     XCTAssertEqual(bluetooth.output["scope"], .string("ios_corebluetooth_status_boundary"))
+    XCTAssertTrue(bluetoothDiscovery.isSuccess)
+    XCTAssertEqual(bluetoothDiscoveryProvider.calls, 1)
+    XCTAssertEqual(bluetoothDiscoveryProvider.lastTimeoutMillis, 3_000)
+    XCTAssertEqual(bluetoothDiscoveryProvider.lastLimit, 2)
+    XCTAssertEqual(bluetoothDiscovery.output["result_count"], .int(1))
+    XCTAssertEqual(bluetoothDiscovery.output["completed"], .bool(true))
+    XCTAssertEqual(bluetoothDiscovery.output["timed_out"], .bool(false))
+    XCTAssertEqual(bluetoothDiscovery.output["capture_mode"], .string("single_foreground_discovery"))
+    XCTAssertEqual(bluetoothDiscovery.output["background_capture"], .bool(false))
+    XCTAssertEqual(bluetoothDiscovery.metadata["hardware_addresses_included"], .bool(false))
+    XCTAssertEqual(bluetoothDiscovery.metadata["identifier_scope"], .string("ios_app_scoped_uuid"))
     XCTAssertTrue(nfc.isSuccess)
     XCTAssertEqual(nfc.output["supported"], .bool(true))
     XCTAssertEqual(nfc.output["tag_capture_started"], .bool(false))
@@ -434,6 +494,13 @@ extension SignalASIStoreTests {
     XCTAssertEqual(bluetoothDefinition.descriptor.availability.status, .available)
     XCTAssertTrue(bluetoothDefinition.descriptor.capabilities.contains("bluetooth.no_device_identifiers"))
     XCTAssertTrue(bluetoothDefinition.descriptor.capabilities.contains("bluetooth.no_discovery"))
+    XCTAssertEqual(bluetoothDiscoveryDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(bluetoothDiscoveryDefinition.descriptor.risk, .high)
+    XCTAssertTrue(bluetoothDiscoveryDefinition.descriptor.capabilities.contains("bluetooth.discovery.no_background_receiver"))
+    XCTAssertEqual(
+      bluetoothDiscoveryDefinition.descriptor.timeoutMillis,
+      AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis
+    )
     XCTAssertEqual(locationDefinition.descriptor.availability.status, .available)
     XCTAssertEqual(locationDefinition.descriptor.risk, .high)
     XCTAssertTrue(locationDefinition.descriptor.capabilities.contains("location.no_background_tracking"))
