@@ -48,6 +48,10 @@
     A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000503 /* CloudWebGroundingTests.swift */; };
     A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000504 /* GlobalProactiveDiscovery.swift */; };
     A10000000000000000000505 /* GlobalProactiveDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000505 /* GlobalProactiveDiscoveryTests.swift */; };
+    A10000000000000000000506 /* GlobalProactiveDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000506 /* GlobalProactiveDelivery.swift */; };
+    A10000000000000000000507 /* GlobalProactiveDeliveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000507 /* GlobalProactiveDeliveryTests.swift */; };
+    A10000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift */; };
+    A10000000000000000000509 /* GlobalProactiveDeliveryPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000509 /* GlobalProactiveDeliveryPolicyTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -382,6 +386,10 @@
     A20000000000000000000503 /* CloudWebGroundingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGroundingTests.swift; sourceTree = "<group>"; };
     A20000000000000000000504 /* GlobalProactiveDiscovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDiscovery.swift; sourceTree = "<group>"; };
     A20000000000000000000505 /* GlobalProactiveDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDiscoveryTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000506 /* GlobalProactiveDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDelivery.swift; sourceTree = "<group>"; };
+    A20000000000000000000507 /* GlobalProactiveDeliveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDeliveryTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDeliveryPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000509 /* GlobalProactiveDeliveryPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalProactiveDeliveryPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
@@ -767,6 +775,8 @@
         A20000000000000000000500 /* GlobalRealtimeContext.swift */,
         A20000000000000000000502 /* CloudWebGrounding.swift */,
         A20000000000000000000504 /* GlobalProactiveDiscovery.swift */,
+        A20000000000000000000506 /* GlobalProactiveDelivery.swift */,
+        A20000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift */,
         A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000411 /* AgentMemoryCausalDeletion.swift */,
         A20000000000000000000413 /* AgentMemoryPersistentStore.swift */,
@@ -989,6 +999,8 @@
         A20000000000000000000501 /* GlobalRealtimeContextTests.swift */,
         A20000000000000000000503 /* CloudWebGroundingTests.swift */,
         A20000000000000000000505 /* GlobalProactiveDiscoveryTests.swift */,
+        A20000000000000000000507 /* GlobalProactiveDeliveryTests.swift */,
+        A20000000000000000000509 /* GlobalProactiveDeliveryPolicyTests.swift */,
         A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */,
         A20000000000000000000260 /* AgentAutonomyGuardTests.swift */,
         A20000000000000000000261 /* AgentConfirmationPolicyTests.swift */,
@@ -1183,6 +1195,8 @@
         A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */,
         A10000000000000000000502 /* CloudWebGrounding.swift in Sources */,
         A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */,
+        A10000000000000000000506 /* GlobalProactiveDelivery.swift in Sources */,
+        A10000000000000000000508 /* GlobalProactiveDeliveryPolicy.swift in Sources */,
         A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000411 /* AgentMemoryCausalDeletion.swift in Sources */,
         A10000000000000000000413 /* AgentMemoryPersistentStore.swift in Sources */,
@@ -1421,6 +1435,8 @@
         A10000000000000000000501 /* GlobalRealtimeContextTests.swift in Sources */,
         A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */,
         A10000000000000000000505 /* GlobalProactiveDiscoveryTests.swift in Sources */,
+        A10000000000000000000507 /* GlobalProactiveDeliveryTests.swift in Sources */,
+        A10000000000000000000509 /* GlobalProactiveDeliveryPolicyTests.swift in Sources */,
         A10000000000000000000259 /* GlobalModelCallBudgetTests.swift in Sources */,
         A10000000000000000000260 /* AgentAutonomyGuardTests.swift in Sources */,
         A10000000000000000000261 /* AgentConfirmationPolicyTests.swift in Sources */,
