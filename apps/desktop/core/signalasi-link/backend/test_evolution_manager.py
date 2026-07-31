@@ -92,6 +92,149 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual("rolled_back", rolled_back.status)
         self.assertFalse(candidate.exists())
 
+    def test_agent_change_to_active_checkout_blocks_candidate_without_reverting_user_files(self):
+        def patch(_task, _attempt, worktree, _failure):
+            (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")
+            (self.source / "src" / "value.txt").write_text("unexpected\n", encoding="utf-8")
+            return "Attempted an out-of-worktree edit."
+
+        manager = self.manager(patch)
+        task = self.task(manager)
+        result = manager.run_sync(task.task_id)
+
+        self.assertEqual("blocked", result.status)
+        self.assertEqual("active_checkout_changed", result.last_error_code)
+        self.assertEqual(1, len(result.attempts))
+        self.assertEqual("active_checkout_changed", result.attempts[0].failure_code)
+        self.assertFalse(Path(result.attempts[0].worktree).exists())
+        self.assertEqual(
+            "unexpected\n",
+            (self.source / "src" / "value.txt").read_text(encoding="utf-8"),
+        )
+        self.assertEqual("", result.candidate_commit)
+
+    def test_cleanup_refuses_active_checkout_and_external_paths(self):
+        manager = self.manager(lambda *_args: "")
+        external = self.root / "external"
+        external.mkdir()
+        (external / "sentinel.txt").write_text("keep\n", encoding="utf-8")
+        cases = (
+            (self.source, self.source / "src" / "value.txt"),
+            (external, external / "sentinel.txt"),
+        )
+
+        for path, sentinel in cases:
+            with self.subTest(path=path):
+                attempt = EvolutionAttempt(
+                    number=1,
+                    status="failed",
+                    branch="evolution/evolve-safe-cleanup-a1",
+                    worktree=str(path),
+                )
+                with self.assertRaises(EvolutionError) as raised:
+                    manager._remove_worktree(attempt, delete_branch=True)
+                self.assertIn(
+                    raised.exception.code,
+                    {"worktree_cleanup_refused", "worktree_unsafe"},
+                )
+                self.assertTrue(sentinel.exists())
+
+    def test_cleanup_target_is_bound_to_task_and_attempt_identity(self):
+        manager = self.manager(lambda *_args: "")
+        wrong = manager.store.worktrees_root / "another-task" / "attempt-1"
+        wrong.mkdir(parents=True)
+        sentinel = wrong / "sentinel.txt"
+        sentinel.write_text("keep\n", encoding="utf-8")
+        attempt = EvolutionAttempt(
+            number=1,
+            status="failed",
+            branch="evolution/evolve-expected-task-a1",
+            worktree=str(wrong),
+        )
+
+        with self.assertRaises(EvolutionError) as raised:
+            manager._remove_worktree(attempt, delete_branch=True)
+
+        self.assertEqual("worktree_cleanup_refused", raised.exception.code)
+        self.assertTrue(sentinel.exists())
+
+    def test_candidate_from_another_repository_is_rejected(self):
+        manager = self.manager(lambda *_args: "")
+        task_id = "evolve-foreign-repository"
+        branch = f"evolution/{task_id}-a1"
+        foreign = manager.store.worktrees_root / task_id / "attempt-1"
+        foreign.mkdir(parents=True)
+        for arguments in (
+            ("init", "-b", branch),
+            ("config", "user.name", "SignalASI Test"),
+            ("config", "user.email", "test@signalasi.local"),
+        ):
+            subprocess.run(
+                ["git", *arguments],
+                cwd=foreign,
+                text=True,
+                check=True,
+                capture_output=True,
+            )
+        (foreign / "value.txt").write_text("foreign\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "add", "--all"],
+            cwd=foreign,
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "Foreign"],
+            cwd=foreign,
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+        foreign_commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=foreign,
+            text=True,
+            check=True,
+            capture_output=True,
+        ).stdout.strip()
+
+        with self.assertRaises(EvolutionError) as raised:
+            manager._validate_worktree_identity(
+                foreign,
+                branch=branch,
+                expected_commit=foreign_commit,
+            )
+
+        self.assertEqual("worktree_identity_invalid", raised.exception.code)
+
+    def test_worktree_storage_cannot_overlap_active_checkout(self):
+        with self.assertRaises(EvolutionError) as inside:
+            FocusedEvolutionManager(
+                source_root=self.source,
+                store=EvolutionStore(self.source / "evolution-state"),
+                patch_agent=lambda *_args: "",
+            )
+        self.assertEqual("state_root_unsafe", inside.exception.code)
+
+        outer_store = EvolutionStore(self.root / "outer-state")
+        nested_source = outer_store.worktrees_root / "nested-source"
+        nested_source.mkdir(parents=True)
+        subprocess.run(
+            ["git", "init", "-b", "main"],
+            cwd=nested_source,
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+        with self.assertRaises(EvolutionError) as outside:
+            FocusedEvolutionManager(
+                source_root=nested_source,
+                store=outer_store,
+                patch_agent=lambda *_args: "",
+            )
+        self.assertEqual("state_root_unsafe", outside.exception.code)
+
     def test_scope_violation_discards_every_candidate(self):
         def patch(_task, _attempt, worktree, _failure):
             (worktree / "outside.txt").write_text("escaped\n", encoding="utf-8")

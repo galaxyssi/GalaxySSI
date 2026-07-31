@@ -537,7 +537,9 @@ class EvolutionManager(legacy.EvolutionManager):
             if task.status not in {"preparing", "running", "validating"}:
                 continue
             if task.attempts:
-                self._remove_worktree(task.attempts[-1], delete_branch=True)
+                if not self._cleanup_failed_attempt(task, task.attempts[-1]):
+                    recovered.append(task.task_id)
+                    continue
             task.last_error_code = "desktop_restart"
             task.last_error = "Desktop restarted during an isolated attempt; the attempt was rolled back."
             task.status = "proposed" if len(task.attempts) < task.max_attempts else "failed"

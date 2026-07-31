@@ -52,11 +52,21 @@ PREPARATION_BLOCKER_CODES = {
     "source_root_missing",
     "source_root_invalid",
     "worktree_create_failed",
+    "worktree_identity_invalid",
+    "worktree_unsafe",
 }
 NON_RETRYABLE_ATTEMPT_CODES = {
+    "active_checkout_changed",
+    "active_checkout_check_failed",
     "gate_dependency_failed",
     "gate_dependency_missing",
+    "worktree_cleanup_refused",
+    "worktree_identity_invalid",
+    "worktree_unsafe",
 }
+EVOLUTION_BRANCH_PATTERN = re.compile(
+    r"^evolution/[A-Za-z0-9][A-Za-z0-9._-]{0,95}-a[1-5]$"
+)
 
 
 class EvolutionError(RuntimeError):
@@ -325,8 +335,12 @@ def _inside(candidate: Path, parent: Path) -> bool:
     try:
         candidate.resolve().relative_to(parent.resolve())
         return True
-    except ValueError:
+    except (OSError, RuntimeError, ValueError):
         return False
+
+
+def _overlaps(first: Path, second: Path) -> bool:
+    return _inside(first, second) or _inside(second, first)
 
 
 def _discover_android_sdk(environment: dict[str, str]) -> Path | None:
@@ -563,6 +577,8 @@ class EvolutionManager:
 
     def discard(self, task_id: str) -> EvolutionTask:
         task = self.require(task_id)
+        for attempt in task.attempts:
+            self._validated_cleanup_target(attempt)
         self.cancel(task_id)
         for attempt in task.attempts:
             self._remove_worktree(attempt, delete_branch=True)
@@ -602,12 +618,31 @@ class EvolutionManager:
         clean_base = re.sub(r"[^A-Za-z0-9._/-]", "", str(base_branch or "main"))[:120]
         if not clean_base or clean_base.startswith(("-", "/")) or ".." in clean_base:
             raise EvolutionError("base_branch_invalid", "Pull request base branch is invalid.")
-        worktree = Path(attempt.worktree).resolve()
-        if not worktree.is_dir() or not _inside(worktree, self.store.worktrees_root):
+        try:
+            worktree = self._managed_worktree_path(attempt.worktree)
+        except EvolutionError:
             self._reject_publish(
                 task,
                 "candidate_workspace_invalid",
                 "Evolution candidate workspace is missing or outside managed storage.",
+            )
+        if not worktree.is_dir():
+            self._reject_publish(
+                task,
+                "candidate_workspace_invalid",
+                "Evolution candidate workspace is missing or outside managed storage.",
+            )
+        try:
+            self._validate_worktree_identity(
+                worktree,
+                branch=attempt.branch,
+                expected_commit=None,
+            )
+        except EvolutionError as exc:
+            self._reject_publish(
+                task,
+                "candidate_workspace_invalid",
+                str(exc),
             )
         current_commit = self._git_text(("rev-parse", "HEAD"), cwd=worktree)
         if not secrets.compare_digest(current_commit.casefold(), task.candidate_commit.casefold()):
@@ -754,18 +789,26 @@ class EvolutionManager:
                         "patch_agent_unavailable",
                         "No evolution patch Agent is configured.",
                     )
+                active_checkout_before = self._active_checkout_fingerprint()
                 try:
                     attempt.agent_summary = str(
                         self.patch_agent(task, attempt, Path(attempt.worktree), failure_context)
                         or ""
                     )[:8_000]
-                except EvolutionError:
-                    raise
                 except Exception as exc:
+                    self._assert_active_checkout_unchanged(active_checkout_before)
+                    if isinstance(exc, EvolutionError):
+                        raise
                     raise EvolutionError(
                         "implementation_channel_failed",
                         f"Implementation Agent {attempt.agent_id or task.agent_id} failed: {exc}",
                     ) from exc
+                self._assert_active_checkout_unchanged(active_checkout_before)
+                self._validate_worktree_identity(
+                    Path(attempt.worktree),
+                    branch=attempt.branch,
+                    expected_commit=task.base_commit,
+                )
                 if cancellation.is_set():
                     raise EvolutionError("cancelled", "Evolution task was cancelled.")
                 attempt.changed_files = self._changed_files(Path(attempt.worktree))
@@ -805,7 +848,8 @@ class EvolutionManager:
                 failure_context = task.last_error
                 self.store.save(task)
                 self._emit(task, "attempt_failed", attempt=number)
-                self._remove_worktree(attempt, delete_branch=True)
+                if not self._cleanup_failed_attempt(task, attempt):
+                    return
                 if exc.code == "cancelled" or cancellation.is_set():
                     self._mark_cancelled(task)
                     return
@@ -824,7 +868,8 @@ class EvolutionManager:
                 failure_context = task.last_error
                 self.store.save(task)
                 self._emit(task, "attempt_failed", attempt=number)
-                self._remove_worktree(attempt, delete_branch=True)
+                if not self._cleanup_failed_attempt(task, attempt):
+                    return
         task.status = "failed"
         self.store.save(task)
         self._emit(task, "failed")
@@ -845,9 +890,9 @@ class EvolutionManager:
     def _prepare_attempt(self, task: EvolutionTask, number: int) -> EvolutionAttempt:
         task.status = "preparing"
         branch = f"evolution/{task.task_id}-a{number}"
-        worktree = (self.store.worktrees_root / task.task_id / f"attempt-{number}").resolve()
-        if _inside(worktree, self.source_root):
-            raise EvolutionError("worktree_unsafe", "Evolution worktree must be outside the active checkout.")
+        worktree = self._managed_worktree_path(
+            self.store.worktrees_root / task.task_id / f"attempt-{number}"
+        )
         if worktree.exists():
             shutil.rmtree(worktree, ignore_errors=True)
         worktree.parent.mkdir(parents=True, exist_ok=True)
@@ -858,6 +903,22 @@ class EvolutionManager:
         )
         if completed.returncode != 0:
             raise EvolutionError("worktree_create_failed", completed.stdout[-2_000:])
+        provisional_attempt = EvolutionAttempt(
+            number=number,
+            status="preparing",
+            branch=branch,
+            worktree=str(worktree),
+            started_at_millis=_now_millis(),
+        )
+        try:
+            self._validate_worktree_identity(
+                worktree,
+                branch=branch,
+                expected_commit=task.base_commit,
+            )
+        except EvolutionError:
+            self._remove_worktree(provisional_attempt, delete_branch=True)
+            raise
         attempt = EvolutionAttempt(
             number=number,
             status="preparing",
@@ -1082,8 +1143,188 @@ class EvolutionManager:
             raise EvolutionError("candidate_commit_failed", commit.stdout[-2_000:])
         return self._git_text(("rev-parse", "HEAD"), cwd=worktree)
 
+    def _managed_worktree_path(self, raw_path: str | Path) -> Path:
+        raw = str(raw_path or "").strip()
+        if not raw:
+            raise EvolutionError(
+                "worktree_unsafe",
+                "Evolution worktree path is missing.",
+            )
+        try:
+            worktree = Path(raw).expanduser().resolve()
+            managed_root = self.store.worktrees_root.resolve()
+            source_root = self.source_root.resolve()
+        except (OSError, RuntimeError) as exc:
+            raise EvolutionError(
+                "worktree_unsafe",
+                f"Evolution worktree path cannot be resolved safely: {exc}",
+            ) from exc
+        if (
+            worktree == managed_root
+            or not _inside(worktree, managed_root)
+            or _overlaps(worktree, source_root)
+        ):
+            raise EvolutionError(
+                "worktree_unsafe",
+                "Evolution worktree must be a child of managed storage and separate from the active checkout.",
+            )
+        return worktree
+
+    def _validated_cleanup_target(self, attempt: EvolutionAttempt) -> Path:
+        worktree = self._managed_worktree_path(attempt.worktree)
+        if not EVOLUTION_BRANCH_PATTERN.fullmatch(attempt.branch):
+            raise EvolutionError(
+                "worktree_cleanup_refused",
+                "Evolution cleanup refused an unexpected branch name.",
+            )
+        suffix = f"-a{attempt.number}"
+        task_id = attempt.branch[len("evolution/") : -len(suffix)]
+        expected = self._managed_worktree_path(
+            self.store.worktrees_root / task_id / f"attempt-{attempt.number}"
+        )
+        if worktree != expected:
+            raise EvolutionError(
+                "worktree_cleanup_refused",
+                "Evolution cleanup target does not match its task and attempt identity.",
+            )
+        return worktree
+
+    def _validate_worktree_identity(
+        self,
+        worktree: Path,
+        *,
+        branch: str,
+        expected_commit: str | None,
+    ) -> None:
+        managed_worktree = self._managed_worktree_path(worktree)
+        if not managed_worktree.is_dir():
+            raise EvolutionError(
+                "worktree_identity_invalid",
+                "Evolution candidate worktree is missing.",
+            )
+        top_level = Path(
+            self._git_text(("rev-parse", "--show-toplevel"), cwd=managed_worktree)
+        ).resolve()
+        if top_level != managed_worktree:
+            raise EvolutionError(
+                "worktree_identity_invalid",
+                "Evolution candidate does not resolve to its managed worktree root.",
+            )
+        source_common = self._git_common_directory(self.source_root)
+        candidate_common = self._git_common_directory(managed_worktree)
+        if source_common != candidate_common:
+            raise EvolutionError(
+                "worktree_identity_invalid",
+                "Evolution candidate belongs to a different Git repository.",
+            )
+        current_branch = self._git_text(
+            ("branch", "--show-current"),
+            cwd=managed_worktree,
+        )
+        if not branch or current_branch != branch:
+            raise EvolutionError(
+                "worktree_identity_invalid",
+                "Evolution candidate branch does not match the managed attempt.",
+            )
+        if expected_commit is not None:
+            current_commit = self._git_text(("rev-parse", "HEAD"), cwd=managed_worktree)
+            if (
+                not expected_commit
+                or not secrets.compare_digest(
+                    current_commit.casefold(),
+                    expected_commit.casefold(),
+                )
+            ):
+                raise EvolutionError(
+                    "worktree_identity_invalid",
+                    "Evolution candidate is not pinned to the expected source commit.",
+                )
+
+    def _git_common_directory(self, cwd: Path) -> Path:
+        raw = self._git_text(("rev-parse", "--git-common-dir"), cwd=cwd)
+        common = Path(raw)
+        if not common.is_absolute():
+            common = cwd / common
+        return common.resolve()
+
+    def _active_checkout_fingerprint(self) -> str:
+        digest = hashlib.sha256()
+        for arguments in (
+            ("rev-parse", "HEAD"),
+            ("branch", "--show-current"),
+            ("diff", "--binary", "--no-ext-diff", "HEAD", "--"),
+        ):
+            completed = self.runner.run(
+                ("git", *arguments),
+                self.source_root,
+                timeout_seconds=120,
+            )
+            if completed.returncode != 0:
+                raise EvolutionError(
+                    "active_checkout_check_failed",
+                    "Could not verify that the active checkout remained unchanged.",
+                )
+            digest.update("\0".join(arguments).encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(completed.stdout.encode("utf-8", errors="replace"))
+            digest.update(b"\0")
+        untracked = self.runner.run(
+            ("git", "ls-files", "--others", "--exclude-standard", "-z"),
+            self.source_root,
+            timeout_seconds=120,
+        )
+        if untracked.returncode != 0:
+            raise EvolutionError(
+                "active_checkout_check_failed",
+                "Could not inspect untracked files in the active checkout.",
+            )
+        for relative in sorted(value for value in untracked.stdout.split("\0") if value):
+            path = self.source_root / relative
+            digest.update(relative.encode("utf-8", errors="replace"))
+            digest.update(b"\0")
+            try:
+                if path.is_symlink():
+                    digest.update(os.readlink(path).encode("utf-8", errors="replace"))
+                elif path.is_file():
+                    with path.open("rb") as stream:
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                else:
+                    digest.update(b"<missing-or-unsupported>")
+            except OSError as exc:
+                raise EvolutionError(
+                    "active_checkout_check_failed",
+                    f"Could not inspect active checkout path {relative}: {exc}",
+                ) from exc
+            digest.update(b"\0")
+        return digest.hexdigest()
+
+    def _assert_active_checkout_unchanged(self, expected_fingerprint: str) -> None:
+        current_fingerprint = self._active_checkout_fingerprint()
+        if not secrets.compare_digest(expected_fingerprint, current_fingerprint):
+            raise EvolutionError(
+                "active_checkout_changed",
+                "The implementation Agent changed the active checkout. The candidate was blocked without reverting user files.",
+            )
+
+    def _cleanup_failed_attempt(
+        self,
+        task: EvolutionTask,
+        attempt: EvolutionAttempt,
+    ) -> bool:
+        try:
+            self._remove_worktree(attempt, delete_branch=True)
+            return True
+        except EvolutionError as exc:
+            task.status = "blocked"
+            task.last_error_code = exc.code
+            task.last_error = str(exc)[:4_000]
+            self.store.save(task)
+            self._emit(task, "cleanup_refused", attempt=attempt.number)
+            return False
+
     def _remove_worktree(self, attempt: EvolutionAttempt, *, delete_branch: bool) -> None:
-        worktree = Path(attempt.worktree)
+        worktree = self._validated_cleanup_target(attempt)
         self.runner.run(
             ("git", "worktree", "remove", "--force", str(worktree)),
             self.source_root,
@@ -1104,8 +1345,11 @@ class EvolutionManager:
         completed = self.runner.run(("git", "rev-parse", "--is-inside-work-tree"), self.source_root)
         if completed.returncode != 0 or completed.stdout.strip() != "true":
             raise EvolutionError("source_root_invalid", "SignalASI source root is not a Git checkout.")
-        if _inside(self.store.worktrees_root, self.source_root):
-            raise EvolutionError("state_root_unsafe", "Evolution worktrees must not be stored inside the source checkout.")
+        if _overlaps(self.store.worktrees_root, self.source_root):
+            raise EvolutionError(
+                "state_root_unsafe",
+                "Evolution worktree storage and the active checkout must not overlap.",
+            )
 
     def _git_text(self, arguments: Sequence[str], cwd: Path | None = None) -> str:
         completed = self.runner.run(("git", *arguments), cwd or self.source_root, timeout_seconds=60)
