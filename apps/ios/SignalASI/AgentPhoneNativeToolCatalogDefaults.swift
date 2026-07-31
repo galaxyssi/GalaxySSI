@@ -115,6 +115,12 @@ extension AgentPhoneNativeToolCatalog {
     let resolvedHomeAssistantProvider = homeAssistantProvider ?? AgentIOSConfiguredHomeAssistantToolProvider(
       settingsProvider: homeAssistantSettingsProvider
     )
+    let resolvedOnDeviceRuntimeProvider = defaultOnDeviceRuntimeProvider(
+      onDeviceRuntimeProvider,
+      runtimeRootURL: AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(storageRootURL: storageRootURL),
+      fileManager: fileManager,
+      nowMillis: nowMillis
+    )
     return try createRegistry(
       workspaceStore: resolvedWorkspaceStore,
       actionExecutor: actionExecutor,
@@ -132,7 +138,7 @@ extension AgentPhoneNativeToolCatalog {
       selfEvolutionProvider: selfEvolutionProvider,
       desktopRemoteProvider: desktopRemoteProvider,
       mcpProvider: mcpProvider,
-      onDeviceRuntimeProvider: onDeviceRuntimeProvider
+      onDeviceRuntimeProvider: resolvedOnDeviceRuntimeProvider
     )
   }
 
