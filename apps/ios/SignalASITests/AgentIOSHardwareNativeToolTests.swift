@@ -111,6 +111,47 @@ extension SignalASIStoreTests {
           "observed_at_epoch_ms": .int(nowMillis)
         ]
       }
+
+      func sensorsList(limit: Int, nowMillis: Int64) -> AgentMcpJSONObject {
+        let sensors: [AgentMcpJSONObject] = [
+          [
+            "type": .string("accelerometer"),
+            "android_type": .int(1),
+            "name": .string("iOS Accelerometer"),
+            "vendor": .string("Apple"),
+            "version": .int(1),
+            "maximum_range": .double(0),
+            "resolution": .double(0),
+            "power_milliamps": .double(0),
+            "reporting_mode": .string("continuous"),
+            "wake_up": .bool(false),
+            "runtime_permission": .null
+          ],
+          [
+            "type": .string("gyroscope"),
+            "android_type": .int(4),
+            "name": .string("iOS Gyroscope"),
+            "vendor": .string("Apple"),
+            "version": .int(1),
+            "maximum_range": .double(0),
+            "resolution": .double(0),
+            "power_milliamps": .double(0),
+            "reporting_mode": .string("continuous"),
+            "wake_up": .bool(false),
+            "runtime_permission": .null
+          ]
+        ]
+        let selected = Array(sensors.prefix(max(1, min(AgentIOSHardwareNativeToolCatalog.maxSensorResults, limit))))
+        return [
+          "sensors": .array(selected.map { .object($0) }),
+          "result_count": .int(Int64(selected.count)),
+          "truncated": .bool(sensors.count > selected.count),
+          "sampling_started": .bool(false),
+          "framework": .string("core_motion"),
+          "scope": .string("ios_coremotion_metadata"),
+          "observed_at_epoch_ms": .int(nowMillis)
+        ]
+      }
     }
 
     let ids = AgentIOSHardwareNativeToolCatalog.toolIds
@@ -149,6 +190,11 @@ extension SignalASIStoreTests {
     let power = registry.invoke(AgentIOSHardwareNativeToolCatalog.powerStatus, input: [:], context: context)
     let storage = registry.invoke(AgentIOSHardwareNativeToolCatalog.storageStatus, input: [:], context: context)
     let network = registry.invoke(AgentIOSHardwareNativeToolCatalog.networkStatus, input: [:], context: context)
+    let sensors = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.sensorsList,
+      input: ["limit": .int(1)],
+      context: context
+    )
     let nfc = registry.invoke(AgentIOSHardwareNativeToolCatalog.nfcStatus, input: [:], context: context)
     let pairing = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, input: [:], context: context)
     let installedApps = registry.invoke(
@@ -170,6 +216,9 @@ extension SignalASIStoreTests {
     let nfcDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.nfcStatus }
     )
+    let sensorsDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.sensorsList }
+    )
 
     XCTAssertTrue(battery.isSuccess)
     XCTAssertEqual(battery.output["percent"], .int(73))
@@ -180,6 +229,11 @@ extension SignalASIStoreTests {
     XCTAssertEqual(storage.output["used_bytes"], .int(700))
     XCTAssertTrue(network.isSuccess)
     XCTAssertEqual(network.output["identifiers_included"], .bool(false))
+    XCTAssertTrue(sensors.isSuccess)
+    XCTAssertEqual(sensors.output["result_count"], .int(1))
+    XCTAssertEqual(sensors.output["truncated"], .bool(true))
+    XCTAssertEqual(sensors.output["sampling_started"], .bool(false))
+    XCTAssertEqual(sensors.output["scope"], .string("ios_coremotion_metadata"))
     XCTAssertTrue(nfc.isSuccess)
     XCTAssertEqual(nfc.output["supported"], .bool(true))
     XCTAssertEqual(nfc.output["tag_capture_started"], .bool(false))
@@ -205,6 +259,8 @@ extension SignalASIStoreTests {
     XCTAssertTrue(installedAppsDefinition.descriptor.availability.reason.contains("full installed-app inventory"))
     XCTAssertEqual(nfcDefinition.descriptor.availability.status, .available)
     XCTAssertTrue(nfcDefinition.descriptor.capabilities.contains("nfc.no_tag_capture"))
+    XCTAssertEqual(sensorsDefinition.descriptor.availability.status, .available)
+    XCTAssertTrue(sensorsDefinition.descriptor.capabilities.contains("sensors.no_sampling"))
     XCTAssertEqual(location.descriptor.availability.status, .unavailable)
     XCTAssertEqual(location.descriptor.risk, .high)
   }
