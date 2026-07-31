@@ -362,6 +362,13 @@ if (!backendSignalClient.includes("signalasi-link-sidecar") || !main.includes("s
   throw new Error("Desktop runtime, packager, and packaged smoke must use signalasi-link-sidecar");
 }
 
+if (
+  !packager.includes("Synchronizing SignalASI Link sidecar runtime")
+  || packager.includes("if (fs.existsSync(sidecarRuntimeDir)) return;")
+) {
+  throw new Error("Windows packaging must rebuild the SignalASI Link sidecar before copying it");
+}
+
 if (!sidecarMainSource.includes("package com.signalasi.link;") || !sidecarBuildGradle.includes("com.signalasi.link.SignalSidecar") || !sidecarSettingsGradle.includes('rootProject.name = "signalasi-link-sidecar"')) {
   throw new Error("Signal sidecar source and Gradle metadata must use SignalASI Link naming");
 }
