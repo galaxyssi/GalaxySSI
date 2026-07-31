@@ -264,7 +264,7 @@ enum AgentPhoneCapabilityNativeCoverage {
     .bluetooth: [bluetoothStatus, bluetoothDiscoveryForeground, bluetoothPairingHandoff],
     .nfc: [nfcStatus],
     .battery: [batteryStatus, powerStatus],
-    .network: [networkStatus],
+    .network: [networkStatus, wifiStatus, wifiScanResults],
     .installedApps: [installedAppsList, packageDetail],
     .mediaPlayback: [mediaPlaybackHandoff],
     .mediaTranscode: [mediaFFmpegTranscode]
@@ -294,6 +294,8 @@ enum AgentPhoneCapabilityNativeCoverage {
   static let batteryStatus = "signalasi.hardware.battery.status"
   static let powerStatus = "signalasi.hardware.power.status"
   static let networkStatus = "signalasi.hardware.network.status"
+  static let wifiStatus = "signalasi.android.wifi.status"
+  static let wifiScanResults = "signalasi.android.wifi.scan_results"
   static let installedAppsList = "signalasi.hardware.apps.installed.list"
   static let packageDetail = "signalasi.hardware.apps.package.detail"
   static let mediaPlaybackHandoff = "signalasi.media.playback.handoff"

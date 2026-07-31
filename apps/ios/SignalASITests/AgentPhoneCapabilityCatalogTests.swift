@@ -90,6 +90,16 @@ extension SignalASIStoreTests {
     XCTAssertFalse(AgentPhoneCapabilityNativeCoverage.isImplemented(.root))
     XCTAssertTrue(AgentPhoneCapabilityNativeCoverage.coveredToolIds.contains("signalasi.camera.capture.visible"))
     XCTAssertTrue(AgentPhoneCapabilityNativeCoverage.coveredToolIds.contains("signalasi.media.ffmpeg.transcode"))
+    XCTAssertEqual(
+      AgentPhoneCapabilityNativeCoverage.toolIdsByCapability[.network],
+      [
+        "signalasi.hardware.network.status",
+        AgentIOSSystemNativeToolCatalog.wifiStatus,
+        AgentIOSSystemNativeToolCatalog.wifiScanResults
+      ]
+    )
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.toolIds.contains(AgentIOSSystemNativeToolCatalog.wifiStatus))
+    XCTAssertTrue(AgentPhoneNativeToolCatalog.toolIds.contains(AgentIOSSystemNativeToolCatalog.wifiScanResults))
     XCTAssertEqual(AgentPhoneCapabilityCatalog.find(.sensors).availability, .limited)
     XCTAssertEqual(AgentPhoneCapabilityCatalog.find(.bluetooth).availability, .limited)
     XCTAssertEqual(AgentPhoneCapabilityCatalog.find(.nfc).availability, .limited)
