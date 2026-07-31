@@ -133,6 +133,19 @@ extension SignalASIStoreTests {
     XCTAssertEqual(try inputParameters(messages)["package"] as? String, "com.apple.MobileSMS")
     XCTAssertNil(action("Pick image"))
 
+    let calendar = try XCTUnwrap(action("Open calendar"))
+    XCTAssertEqual(calendar.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))
+    XCTAssertEqual(calendar.target, "Calendar")
+    XCTAssertEqual(try inputParameters(calendar)["package"] as? String, "com.apple.mobilecal")
+
+    let contact = try XCTUnwrap(action("Create contact Alice Example +1 555 123 4567"))
+    XCTAssertEqual(contact.parameters["tool_id"], AgentIOSSystemNativeToolCatalog.contactsUpsert)
+    XCTAssertEqual(contact.target, "Contacts")
+    XCTAssertEqual(try inputObject(contact)["display_name"] as? String, "Alice Example")
+    XCTAssertEqual(try inputObject(contact)["phone_number"] as? String, "+15551234567")
+    XCTAssertTrue(contact.requiresConfirmation)
+    XCTAssertTrue(contact.parameters["idempotency_key"]?.hasPrefix("create-contact-") == true)
+
     let camera = try XCTUnwrap(action("Open camera and take a photo"))
     XCTAssertEqual(camera.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture)
     XCTAssertEqual(try inputObject(camera)["facing"] as? String, "back")
@@ -235,6 +248,12 @@ extension SignalASIStoreTests {
       goal: "Open website example.com",
       screen: screen,
       nativeTools: requestTools.filter { $0.id != AgentNativeToolAgentActionAdapter.defaultToolId(.openURL) }
+    )))
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
+      goal: "Create contact Alice Example +1 555 123 4567",
+      screen: screen,
+      nativeTools: requestTools.filter { $0.id != AgentIOSSystemNativeToolCatalog.contactsUpsert }
     )))
   }
 
