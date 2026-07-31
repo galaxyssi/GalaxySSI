@@ -167,6 +167,7 @@ final class VoiceWhisperModelManager {
     if model.bundled, bundledResourceExists(for: model) {
       return VoiceWhisperModelDownloadState(status: .successful, progress: 100)
     }
+    _ = migrateLegacyInstallIfNeeded(model)
     let snapshot = storage.inspect(model)
     if snapshot.installed {
       return VoiceWhisperModelDownloadState(status: .successful, progress: 100)
@@ -178,6 +179,7 @@ final class VoiceWhisperModelManager {
     if model.bundled, bundledResourceExists(for: model) {
       return true
     }
+    _ = migrateLegacyInstallIfNeeded(model)
     return storage.inspect(model).installed
   }
 
@@ -204,6 +206,7 @@ final class VoiceWhisperModelManager {
     }
     try prepareDirectory()
     storage.invalidate(model)
+    removeLegacyCandidates(for: model)
     let record = VoiceWhisperModelDownloadRecord(
       modelId: model.id,
       requestId: requestIdFactory(),
@@ -364,6 +367,31 @@ final class VoiceWhisperModelManager {
 
   private func prepareDirectory() throws {
     try fileManager.createDirectory(at: modelsDirectory, withIntermediateDirectories: true)
+  }
+
+  @discardableResult
+  private func migrateLegacyInstallIfNeeded(_ model: VoiceWhisperModelProfile) -> VoiceWhisperLegacyMigrationResult {
+    VoiceWhisperLegacyMigration.migrate(
+      profile: model,
+      candidates: legacyModelCandidates(for: model),
+      storage: storage,
+      fileManager: fileManager,
+      deleteMigratedSource: true
+    )
+  }
+
+  private func legacyModelCandidates(for model: VoiceWhisperModelProfile) -> [URL] {
+    [
+      modelsDirectory.appendingPathComponent(model.fileName, isDirectory: false),
+      VoiceWhisperModelCatalog.downloadedFileURL(for: model, modelsDirectory: modelsDirectory)
+    ]
+  }
+
+  private func removeLegacyCandidates(for model: VoiceWhisperModelProfile) {
+    let currentURL = downloadedFileURL(for: model).standardizedFileURL.path
+    for candidate in legacyModelCandidates(for: model) where candidate.standardizedFileURL.path != currentURL {
+      try? fileManager.removeItem(at: candidate)
+    }
   }
 
   private func downloadedFileBytes(for model: VoiceWhisperModelProfile) -> Int64? {

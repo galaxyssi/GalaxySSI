@@ -60,6 +60,18 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
     XCTAssertFalse(manager.isAvailable(model))
   }
 
+  func testAvailabilityMigratesVerifiedLegacyFlatFile() throws {
+    let env = try Environment()
+    let manager = env.manager(requestId: "download-legacy")
+    let model = testModel(minimumBytes: 8)
+    let legacy = try env.writeLegacyModelFile(model, bytes: 8)
+
+    XCTAssertTrue(manager.isAvailable(model))
+    XCTAssertEqual(manager.downloadState(for: model), VoiceWhisperModelDownloadState(status: .successful, progress: 100))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: manager.downloadedFileURL(for: model).path))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+  }
+
   func testDeleteRemovesDownloadedFileAndState() throws {
     let env = try Environment()
     let manager = env.manager(requestId: "download-4")
@@ -143,6 +155,13 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
 
     func writeTemporaryFile(bytes: Int) throws -> URL {
       let url = root.appendingPathComponent(UUID().uuidString)
+      try Data(repeating: 7, count: bytes).write(to: url)
+      return url
+    }
+
+    func writeLegacyModelFile(_ model: VoiceWhisperModelProfile, bytes: Int) throws -> URL {
+      try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
+      let url = models.appendingPathComponent(model.fileName, isDirectory: false)
       try Data(repeating: 7, count: bytes).write(to: url)
       return url
     }

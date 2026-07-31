@@ -186,6 +186,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style iOS Whisper model catalog with Android-matched tiny/base/small/medium/large/turbo and Q5 profile metadata for size, SHA-256, RAM, window, quantization, execution-mode, and experimental gates
 - Android-style iOS Whisper model storage verification for expected size, SHA-256, install metadata, staging cleanup, atomic replacement, active-model delete protection, and native-load revalidation
 - Android-style iOS Whisper download policy for offline/space gating, large-model metered-network confirmation, and locale-aware HuggingFace versus hf-mirror source ordering
+- Android-style iOS Whisper legacy model migration that verifies old flat-file downloads and atomically moves them into the private model storage layout
 - Android-style iOS Whisper model settings page with current/use/download/retry/waiting row actions, locale-aware foreground downloads, and automatic ASR model selection after validation
 - Android-style iOS voice provider settings for wake engine, local Whisper ASR provider, TTS provider, and Microsoft Edge voice wire values, including backup/restore persistence
 - Android-style iOS ASR provider routing policy that prefers ready Local Whisper and explicitly falls back to iOS Speech capability when Whisper is blocked by runtime/model readiness
