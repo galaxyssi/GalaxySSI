@@ -107,8 +107,15 @@ extension SignalASIStoreTests {
       )
     )
     let context = AgentNativeToolInvocationContext(
-      grantedPermissions: [AgentIOSHardwareNativeToolCatalog.hardwareStatusPermission],
-      grantedConsents: [AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent]
+      grantedPermissions: [
+        AgentIOSHardwareNativeToolCatalog.hardwareStatusPermission,
+        AgentIOSHardwareNativeToolCatalog.appVisibilityBoundaryPermission
+      ],
+      grantedConsents: [
+        AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent,
+        AgentIOSHardwareNativeToolCatalog.installedAppsConsent,
+        AgentIOSHardwareNativeToolCatalog.packageDetailConsent
+      ]
     )
 
     XCTAssertEqual(ids.count, 14)
@@ -129,8 +136,21 @@ extension SignalASIStoreTests {
     let storage = registry.invoke(AgentIOSHardwareNativeToolCatalog.storageStatus, input: [:], context: context)
     let network = registry.invoke(AgentIOSHardwareNativeToolCatalog.networkStatus, input: [:], context: context)
     let pairing = registry.invoke(AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff, input: [:], context: context)
+    let installedApps = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.installedAppsList,
+      input: ["query": .string("Signal"), "limit": .int(5)],
+      context: context
+    )
+    let packageDetail = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.packageDetail,
+      input: ["package_name": .string("com.example.app")],
+      context: context
+    )
     let location = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.locationForegroundRead }
+    )
+    let installedAppsDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.installedAppsList }
     )
 
     XCTAssertTrue(battery.isSuccess)
@@ -145,6 +165,21 @@ extension SignalASIStoreTests {
     XCTAssertTrue(pairing.isSuccess)
     XCTAssertEqual(pairing.output["settings_target"], .string("bluetooth"))
     XCTAssertEqual(pairing.output["completion_untrusted"], .bool(true))
+    XCTAssertTrue(installedApps.isSuccess)
+    XCTAssertEqual(installedApps.output["apps"], .array([]))
+    XCTAssertEqual(installedApps.output["result_count"], .int(0))
+    XCTAssertEqual(installedApps.output["query"], .string("Signal"))
+    XCTAssertEqual(installedApps.output["full_inventory_available"], .bool(false))
+    XCTAssertEqual(installedApps.metadata["package_inventory_exposed"], .bool(false))
+    XCTAssertEqual(installedApps.metadata["platform_boundary"], .string("ios_app_visibility_boundary"))
+    XCTAssertTrue(packageDetail.isSuccess)
+    XCTAssertEqual(packageDetail.output["package_name"], .string("com.example.app"))
+    XCTAssertEqual(packageDetail.output["visible"], .bool(false))
+    XCTAssertEqual(packageDetail.output["metadata_available"], .bool(false))
+    XCTAssertEqual(packageDetail.output["requested_permissions"], .array([]))
+    XCTAssertEqual(packageDetail.metadata["package_inventory_exposed"], .bool(false))
+    XCTAssertEqual(installedAppsDefinition.descriptor.availability.status, .available)
+    XCTAssertTrue(installedAppsDefinition.descriptor.availability.reason.contains("full installed-app inventory"))
     XCTAssertEqual(location.descriptor.availability.status, .unavailable)
     XCTAssertEqual(location.descriptor.risk, .high)
   }
