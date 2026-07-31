@@ -192,6 +192,25 @@ extension SignalASIStoreTests {
     XCTAssertFalse(reply.retryable)
   }
 
+  func testAgentIOSNotificationCatalogDefaultsToBoundaryAvailability() throws {
+    let definitions = AgentIOSNotificationNativeToolCatalog.definitions()
+    let phoneDefinitions = AgentPhoneNativeToolCatalog.definitions(
+      capabilityStatuses: readyPhoneCapabilityStatuses()
+    )
+    let phoneNotification = try XCTUnwrap(
+      phoneDefinitions.first { $0.id == AgentIOSNotificationNativeToolCatalog.notificationsList }
+    )
+
+    XCTAssertEqual(Set(definitions.map(\.id)), AgentIOSNotificationNativeToolCatalog.toolIds)
+    definitions.forEach { definition in
+      XCTAssertEqual(definition.descriptor.availability.status, .available)
+      XCTAssertTrue(definition.descriptor.availability.reason.contains("third-party notification history"))
+      XCTAssertEqual(definition.provenanceMetadata["implementation"], "signalasi.ios.notification_boundary")
+    }
+    XCTAssertEqual(phoneNotification.descriptor.availability.status, .available)
+    XCTAssertEqual(phoneNotification.provenanceMetadata["implementation"], "signalasi.ios.notification_boundary")
+  }
+
   func testAgentPhoneNativeToolCatalogDefaultRegistryUsesNotificationBoundaryProvider() throws {
     let registry = try AgentPhoneNativeToolCatalog.createRegistry(
       actionExecutor: TestAgentActionExecutor { action, _ in
