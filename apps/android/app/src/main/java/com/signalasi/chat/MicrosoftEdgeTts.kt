@@ -2,6 +2,9 @@ package com.signalasi.chat
 
 import android.content.Context
 import android.media.MediaPlayer
+import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
+import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
+import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -23,19 +26,41 @@ class MicrosoftEdgeTts(private val context: Context) {
         .build()
     private var player: MediaPlayer? = null
 
-    fun speak(text: String, voice: String, onDone: (Boolean, String?) -> Unit) {
+    fun speak(
+        text: String,
+        voice: String,
+        traceId: String = VoiceLatencyTraceContext.currentTraceId(),
+        onDone: (Boolean, String?) -> Unit
+    ) {
         if (text.isBlank()) {
             onDone(true, null)
             return
         }
+        trace(traceId, VoiceTraceEvents.TTS_REQUEST_STARTED, once = true)
         Thread {
             val result = runCatching {
-                val audio = synthesize(text, voice)
-                playAudio(audio)
+                val audio = synthesize(text, voice, traceId)
+                playAudio(audio, traceId)
             }
             if (result.isSuccess) {
+                trace(
+                    traceId,
+                    VoiceTraceEvents.TTS_COMPLETED,
+                    mapOf("tts_provider" to "microsoft_edge", "success" to "true"),
+                    once = true
+                )
                 onDone(true, null)
             } else {
+                trace(
+                    traceId,
+                    VoiceTraceEvents.TTS_COMPLETED,
+                    mapOf(
+                        "tts_provider" to "microsoft_edge",
+                        "success" to "false",
+                        "error_code" to result.exceptionOrNull()?.javaClass?.simpleName.orEmpty()
+                    ),
+                    once = true
+                )
                 onDone(false, result.exceptionOrNull()?.message)
             }
         }.start()
@@ -56,7 +81,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         client.dispatcher.executorService.shutdown()
     }
 
-    private fun synthesize(text: String, voice: String): ByteArray {
+    private fun synthesize(text: String, voice: String, traceId: String): ByteArray {
         val requestId = UUID.randomUUID().toString().replace("-", "")
         val audio = ByteArrayOutputStream()
         val done = CountDownLatch(1)
@@ -72,6 +97,12 @@ class MicrosoftEdgeTts(private val context: Context) {
 
         val webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                trace(
+                    traceId,
+                    VoiceTraceEvents.TTS_CONNECTED,
+                    mapOf("tts_provider" to "microsoft_edge", "http_status" to response.code.toString()),
+                    once = true
+                )
                 webSocket.send(speechConfigMessage(requestId))
                 webSocket.send(ssmlMessage(requestId, text, voice))
             }
@@ -80,7 +111,15 @@ class MicrosoftEdgeTts(private val context: Context) {
                 val raw = bytes.toByteArray()
                 val headerEnd = findHeaderEnd(raw)
                 val payload = if (headerEnd >= 0) raw.copyOfRange(headerEnd, raw.size) else raw
-                if (payload.isNotEmpty()) audio.write(payload)
+                if (payload.isNotEmpty()) {
+                    trace(
+                        traceId,
+                        VoiceTraceEvents.TTS_FIRST_AUDIO,
+                        mapOf("tts_provider" to "microsoft_edge"),
+                        once = true
+                    )
+                    audio.write(payload)
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -110,7 +149,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         return data
     }
 
-    private fun playAudio(audio: ByteArray) {
+    private fun playAudio(audio: ByteArray, traceId: String) {
         val file = File(context.cacheDir, "signalasi_tts_${System.currentTimeMillis()}.mp3")
         file.writeBytes(audio)
         val latch = CountDownLatch(1)
@@ -132,7 +171,24 @@ class MicrosoftEdgeTts(private val context: Context) {
         }
         mp.prepare()
         mp.start()
+        trace(
+            traceId,
+            VoiceTraceEvents.TTS_PLAYBACK_STARTED,
+            mapOf("tts_provider" to "microsoft_edge"),
+            once = true
+        )
         latch.await(90, TimeUnit.SECONDS)
+    }
+
+    private fun trace(
+        traceId: String,
+        event: String,
+        attributes: Map<String, String> = mapOf("tts_provider" to "microsoft_edge"),
+        once: Boolean = false
+    ) {
+        if (traceId.isNotBlank()) {
+            VoiceLatencyTelemetry.record(context, traceId, event, attributes, once)
+        }
     }
 
     private fun speechConfigMessage(requestId: String): String {

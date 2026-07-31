@@ -69,6 +69,9 @@ import com.rementia.openwakeword.lib.model.WakeWordModel
 import com.signalasi.chat.SignalASIMqttClient.Listener
 import com.signalasi.chat.ui.AppleHoldToTalkController
 import com.signalasi.chat.ui.VoiceWaveformView
+import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
+import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
+import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -436,6 +439,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var recordingFile: File? = null
     private var recordingStartedAt = 0L
     private var recordingPurpose = ""
+    private var recordingVoiceTraceId = ""
+    private var activeVoiceTraceId = ""
+    private val voiceTraceIdsByTurn = ConcurrentHashMap<String, String>()
     private var player: android.media.MediaPlayer? = null
     private var voiceMode = false
     private var secureChannelReady = false
@@ -1164,19 +1170,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun publishAgentConnectorResponse(envelope: JSONObject?, message: ChatMessage): Boolean {
-        if (envelope?.optString("type").orEmpty().ifBlank { "text" } != "text") return false
-        val sourceMessageId = envelope?.optString("source_message_id")?.toLongOrNull()
-            ?: envelope?.optLong("source_message_id", 0L)?.takeIf { it > 0L }
+        val payload = envelope ?: return false
+        if (payload.optString("type").ifBlank { "text" } != "text") return false
+        val sourceMessageId = payload.optString("source_message_id").toLongOrNull()
+            ?: payload.optLong("source_message_id", 0L).takeIf { it > 0L }
             ?: return false
+        val voiceTraceId = payload.optString("trace_id")
+        if (voiceTraceId.isNotBlank()) {
+            activeVoiceTraceId = voiceTraceId
+            VoiceLatencyTelemetry.record(
+                this,
+                voiceTraceId,
+                VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT,
+                mapOf("agent_provider" to payload.optString("agent_id", "remote_agent")),
+                once = true
+            )
+        }
         val response = AgentConnectorResponse(
             sourceMessageId = sourceMessageId,
-            contactId = envelope?.optString("contact_id").orEmpty().ifBlank { message.contact.id },
+            contactId = payload.optString("contact_id").ifBlank { message.contact.id },
             content = message.content,
-            conversationId = envelope?.optString("conversation_id").orEmpty(),
-            turnId = envelope?.optString("turn_id").orEmpty(),
-            taskId = envelope?.optString("task_id").orEmpty(),
+            conversationId = payload.optString("conversation_id"),
+            turnId = payload.optString("turn_id"),
+            taskId = payload.optString("task_id"),
             richOutputJson = CodexStyleResponsePolicy.filterAssistantRichOutput(
-                AgentRichContentCodec.fromEnvelope(envelope)
+                AgentRichContentCodec.fromEnvelope(payload)
             )
         )
         if (::globalSuperAgentRuntime.isInitialized &&
@@ -1749,6 +1767,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 val nativeAgentResponse = supersededResponse || matchingAgentRuntime != null
                 if (publishAgentConnectorResponse(envelope, msg)) return@runOnUiThread
+                val voiceTraceId = envelope?.optString("trace_id").orEmpty()
+                if (voiceTraceId.isNotBlank()) {
+                    activeVoiceTraceId = voiceTraceId
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        voiceTraceId,
+                        VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT,
+                        mapOf("agent_provider" to envelope?.optString("agent_id", "remote_agent").orEmpty()),
+                        once = true
+                    )
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        voiceTraceId,
+                        VoiceTraceEvents.AGENT_COMPLETED,
+                        mapOf("task_status" to "completed", "success" to "true"),
+                        once = true
+                    )
+                }
                 msg.deliveryTrace.add(newTraceEvent("phone_reply_received", msg.taskId))
                 msg.deliveryTrace.add(newTraceEvent("received", "MQTT inbound"))
                 msg.deliveryTrace.add(newTraceEvent("decrypted", "SignalASI Link"))
@@ -1780,7 +1816,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
                 if (!nativeAgentResponse) {
                     showVoiceAssistantReply(msg)
-                    maybeSpeakIncomingReply(msg)
+                    maybeSpeakIncomingReply(msg, voiceTraceId)
                 }
             } catch (error: Throwable) {
                 handled = false
@@ -1855,11 +1891,41 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         markDesktopDomainAvailable(contactId)
         if (sourceMessageId in supersededConnectorSourceIds) return true
         val status = AgentRemoteTaskStatusPolicy.normalize(envelope.optString("task_status"))
+        val voiceTraceId = envelope.optString("trace_id")
+        if (voiceTraceId.isNotBlank()) {
+            activeVoiceTraceId = voiceTraceId
+            val provider = envelope.optString("agent_id", "remote_agent")
+            when (status) {
+                "accepted" -> VoiceLatencyTelemetry.record(
+                    this,
+                    voiceTraceId,
+                    VoiceTraceEvents.AGENT_RUN_ACCEPTED,
+                    mapOf("agent_provider" to provider),
+                    once = true
+                )
+                "completed", "failed", "cancelled", "timed_out" -> VoiceLatencyTelemetry.record(
+                    this,
+                    voiceTraceId,
+                    VoiceTraceEvents.AGENT_COMPLETED,
+                    mapOf(
+                        "agent_provider" to provider,
+                        "task_status" to status,
+                        "success" to (status == "completed").toString()
+                    ),
+                    once = true
+                )
+            }
+        }
         val taskDisposition = envelope.optString("task_disposition")
         val isSteeredCompletion = status == "completed" && taskDisposition == "steered"
         val taskId = envelope.optString("task_id")
         val envelopeConversationId = envelope.optString("conversation_id")
         val envelopeTurnId = envelope.optString("turn_id")
+        if (status in setOf("completed", "failed", "cancelled", "timed_out") &&
+            envelopeTurnId.isNotBlank()
+        ) {
+            voiceTraceIdsByTurn.remove(envelopeTurnId)
+        }
         if (taskId in completedConnectorTaskIds &&
             AgentRemoteTaskStatusPolicy.settlesWithoutResponse(status)
         ) {
@@ -2077,6 +2143,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             val eventId = progress.optString("event_id").trim()
             val progressText = connectorProgressText(progress)
             if (eventId.isNotBlank() && progressText.isNotBlank()) {
+                VoiceLatencyTelemetry.record(
+                    this,
+                    voiceTraceId,
+                    VoiceTraceEvents.AGENT_FIRST_PROGRESS,
+                    mapOf("agent_provider" to envelope.optString("agent_id", "remote_agent")),
+                    once = true
+                )
                 val narration = progress.optString("kind") == "narration"
                 agentTranscriptStore.upsert(
                     AgentTranscriptRole.PROCESS,
@@ -4260,7 +4333,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun submitAgentGoal() {
+    private fun submitAgentGoal(voiceTraceId: String = "") {
         val goal = agentGoalInput.text?.toString()?.trim().orEmpty()
         val attachments = agentInputAttachments.toList()
         if (goal.isBlank() && attachments.isEmpty()) {
@@ -4269,6 +4342,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         val conversation = agentTranscriptStore.activeConversation()
         val turnId = UUID.randomUUID().toString()
+        if (voiceTraceId.isNotBlank()) {
+            activeVoiceTraceId = voiceTraceId
+            voiceTraceIdsByTurn[turnId] = voiceTraceId
+        }
         agentTranscriptAutoFollow = true
         val attachmentLabel = when (attachments.size) {
             0 -> ""
@@ -4425,6 +4502,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         executionModeOverride: AgentTaskExecutionMode? = null
     ) {
         val routingStartedAt = SystemClock.elapsedRealtime()
+        val voiceTraceId = voiceTraceIdsByTurn[turnId].orEmpty()
+        VoiceLatencyTelemetry.record(
+            this,
+            voiceTraceId,
+            VoiceTraceEvents.ROUTE_STARTED,
+            once = true
+        )
         val taskExecutionMode = executionModeOverride
             ?: AgentTaskExecutionModePolicy.resolve(
                 originalGoal.ifBlank { goal },
@@ -4582,6 +4666,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ?.parameters?.get("connector_id")
                 .orEmpty()
                 .ifBlank { "signalasi-mobile" }
+            VoiceLatencyTelemetry.record(
+                this,
+                voiceTraceId,
+                VoiceTraceEvents.ROUTE_SELECTED,
+                mapOf(
+                    "agent_provider" to selectedAgentId.substringAfterLast(':'),
+                    "execution_mode" to taskExecutionMode.wireValue
+                ),
+                once = true
+            )
             appendRunControlEvent(
                 run = run,
                 messageId = turnId,
@@ -4857,23 +4951,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             provisionalAgentTasks.add(runtime)
             agentRuntimeConversationIds[runtime] = conversationId
             agentRuntimeTurnIds[runtime] = turnId
+            val voiceTraceId = voiceTraceIdsByTurn[turnId].orEmpty()
             val outcome = runCatching {
-                var state = runtime.submitGoal(
-                    goal,
-                    conversationContext,
-                    turnId,
-                    executionMode
-                )
-                var approvals = 0
-                while (state.pendingAction != null &&
-                    state.phase != AgentPhase.WAITING_RESPONSE &&
-                    state.phase != AgentPhase.WAITING_CONFIRMATION &&
-                    state.pendingAction.risk != AgentRisk.BLOCKED &&
-                    approvals++ < 32
-                ) {
-                    state = runtime.approveNextAction(highRiskConfirmed = true)
+                VoiceLatencyTraceContext.withTrace(voiceTraceId) {
+                    var state = runtime.submitGoal(
+                        goal,
+                        conversationContext,
+                        turnId,
+                        executionMode
+                    )
+                    var approvals = 0
+                    while (state.pendingAction != null &&
+                        state.phase != AgentPhase.WAITING_RESPONSE &&
+                        state.phase != AgentPhase.WAITING_CONFIRMATION &&
+                        state.pendingAction.risk != AgentRisk.BLOCKED &&
+                        approvals++ < 32
+                    ) {
+                        state = runtime.approveNextAction(highRiskConfirmed = true)
+                    }
+                    state
                 }
-                state
             }
             var state = outcome.getOrElse { runtime.snapshot() }
             state = finalizeAgentExecutionLoop(runtime, turnId, state)
@@ -6760,6 +6857,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val config = VoiceAssistantSettings.get(this)
         val contact = voiceAssistantTargetContact(config)
         val mediaProfile = AgentMediaNetworkDetector.detect(this)
+        val traceId = VoiceLatencyTelemetry.startSession(
+            this,
+            mapOf("recording_source" to "voice_wakeup")
+        )
+        activeVoiceTraceId = traceId
+        recordingVoiceTraceId = traceId
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.MICROPHONE_OPEN_STARTED,
+            mapOf("recording_source" to "voice_wakeup"),
+            once = true
+        )
         val file = File(cacheDir, "voice_cmd_${System.currentTimeMillis()}.m4a")
         recordingFile = file
         recordingStartedAt = System.currentTimeMillis()
@@ -6779,6 +6889,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 prepare()
                 start()
             }
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.MICROPHONE_OPENED,
+                mapOf("recording_source" to "voice_wakeup"),
+                once = true
+            )
             monitorVoiceCommandRecording()
         }.onFailure {
             voiceAssistantRecordingCommand = false
@@ -6786,7 +6903,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             voiceCommandLastVoiceAt = 0L
             recorder = null
             recordingFile = null
+            recordingVoiceTraceId = ""
             file.delete()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.SESSION_FAILED,
+                mapOf("error_code" to it.javaClass.simpleName),
+                once = true
+            )
             Log.e("SignalASIVoice", "Voice command recording failed", it)
             updateWakeVoiceUi(getString(R.string.voice_status_recording_failed), it.message ?: getString(R.string.voice_status_check_microphone))
             scheduleVoiceRestart(1200L)
@@ -6802,6 +6927,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val hasVoice = amplitude > 1600
         if (hasVoice) {
             if (!voiceCommandSpeechDetected) {
+                VoiceLatencyTelemetry.record(
+                    this,
+                    recordingVoiceTraceId,
+                    VoiceTraceEvents.SPEECH_STARTED,
+                    once = true
+                )
                 Log.i("SignalASIVoice", "Voice command speech detected amplitude=$amplitude elapsed=${elapsed}ms")
                 updateWakeVoiceUi(getString(R.string.voice_status_recording), getString(R.string.voice_status_recording_detail))
             }
@@ -6830,15 +6961,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun stopVoiceCommandRecording(send: Boolean, reason: String = "manual") {
         val activeRecorder = recorder
+        val traceId = recordingVoiceTraceId
         recorder = null
+        recordingVoiceTraceId = ""
         voiceAssistantRecordingCommand = false
         Log.i("SignalASIVoice", "Voice command recording stopping send=$send reason=$reason speechDetected=$voiceCommandSpeechDetected")
         runCatching { activeRecorder?.stop() }
         activeRecorder?.release()
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SPEECH_ENDED,
+            mapOf("endpoint_reason" to reason),
+            once = true
+        )
         val file = recordingFile
         recordingFile = null
         if (!send || file == null || !file.exists()) {
             file?.delete()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.SESSION_CANCELLED,
+                mapOf("endpoint_reason" to reason),
+                once = true
+            )
             if (activeMainTab == PAGE_VOICE) startWakeListening()
             return
         }
@@ -6848,6 +6995,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (!voiceCommandSpeechDetected && seconds <= 3) {
             Log.i("SignalASIVoice", "Voice command discarded: no speech detected bytes=${file.length()}")
             file.delete()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.SESSION_COMPLETED,
+                mapOf("endpoint_reason" to "no_speech"),
+                once = true
+            )
             updateWakeVoiceUi(getString(R.string.voice_status_no_speech), getString(R.string.voice_status_waiting_wake))
             if (activeMainTab == PAGE_VOICE) startWakeListening()
             return
@@ -6855,14 +7009,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         selectedContact = contact
         val nativeAgentRoute = config.routingMode == VoiceAssistantSettings.ROUTING_MODE_NATIVE_AGENT
         val sent = if (nativeAgentRoute) {
-            requestVoiceAgentTranscription(file, contact)
+            requestVoiceAgentTranscription(file, contact, traceId)
         } else {
             sendVoiceRecordingThroughPipeline(
                 sourceFile = file,
                 contact = contact,
                 seconds = seconds,
                 label = getString(R.string.voice_command_label, seconds),
-                source = "voice_wakeup"
+                source = "voice_wakeup",
+                traceId = traceId
             )
         }
         Log.i("SignalASIVoice", "Voice command recording stopped duration=${seconds}s sent=$sent target=${contact.id}")
@@ -6999,13 +7154,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         scheduleVoiceRestart(1200L)
     }
 
-    private fun submitVoiceAgentGoal(text: String) {
+    private fun submitVoiceAgentGoal(text: String, traceId: String = activeVoiceTraceId) {
         val goal = text.trim()
         if (goal.isBlank()) {
             scheduleVoiceRestart(500L)
             return
         }
         val conversation = agentTranscriptStore.activeConversation()
+        activeVoiceTraceId = traceId
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.ROUTE_STARTED,
+            once = true
+        )
         val conversationContext = agentTranscriptStore.context(conversation.id)
         val clarification = AgentClarificationPolicy.decide(
             goal,
@@ -7019,12 +7181,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             updateWakeVoiceUi(getString(R.string.voice_agent_waiting), question)
             val config = VoiceAssistantSettings.get(this)
             if (config.speakReplies) {
-                speakWithConfiguredTts(question) {
+                speakWithConfiguredTts(question, traceId = traceId) {
                     if (voiceAssistantAwake && activeMainTab == PAGE_VOICE) {
                         startCommandListening()
                     }
                 }
             } else {
+                completeVoiceTrace(traceId)
                 scheduleVoiceRestart(900L)
             }
             return
@@ -7036,12 +7199,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         updateWakeVoiceUi(getString(R.string.voice_agent_planning), goal)
         runAgentOperationAsync(
-            operation = { mobileNativeAgent.submitGoal(goal) },
-            onComplete = ::presentVoiceAgentState
+            operation = {
+                VoiceLatencyTraceContext.withTrace(traceId) {
+                    mobileNativeAgent.submitGoal(goal)
+                }
+            },
+            onComplete = { state ->
+                VoiceLatencyTelemetry.record(
+                    this,
+                    traceId,
+                    VoiceTraceEvents.ROUTE_SELECTED,
+                    mapOf(
+                        "agent_provider" to state.plan?.selectedAgentOrModel.orEmpty()
+                            .substringAfterLast(':')
+                            .ifBlank { "signalasi_mobile" }
+                    ),
+                    once = true
+                )
+                presentVoiceAgentState(state, traceId)
+            }
         )
     }
 
-    private fun presentVoiceAgentState(state: AgentUiState) {
+    private fun presentVoiceAgentState(state: AgentUiState, traceId: String = activeVoiceTraceId) {
         if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE) return
         val pending = state.pendingAction
         val detail = when (state.phase) {
@@ -7080,12 +7260,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val config = VoiceAssistantSettings.get(this)
         val waitingForRemoteAgent = state.phase == AgentPhase.WAITING_RESPONSE
         if (config.speakReplies && detail.isNotBlank()) {
-            speakWithConfiguredTts(detail.take(1_200)) {
+            speakWithConfiguredTts(detail.take(1_200), traceId = traceId) {
+                if (state.phase in setOf(AgentPhase.COMPLETED, AgentPhase.BLOCKED, AgentPhase.FAILED)) {
+                    completeVoiceTrace(traceId, state.phase)
+                }
                 if (!waitingForRemoteAgent && voiceAssistantAwake && activeMainTab == PAGE_VOICE) {
                     startCommandListening()
                 }
             }
         } else if (!waitingForRemoteAgent) {
+            if (state.phase in setOf(AgentPhase.COMPLETED, AgentPhase.BLOCKED, AgentPhase.FAILED)) {
+                completeVoiceTrace(traceId, state.phase)
+            }
             scheduleVoiceRestart(900L)
         }
     }
@@ -7166,10 +7352,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun maybeSpeakIncomingReply(msg: ChatMessage) {
+        maybeSpeakIncomingReply(msg, activeVoiceTraceId)
+    }
+
+    private fun maybeSpeakIncomingReply(msg: ChatMessage, traceId: String) {
         val config = VoiceAssistantSettings.get(this)
-        if (!config.speakReplies || !voiceAssistantAwake || activeMainTab != PAGE_VOICE) return
+        if (!config.speakReplies || !voiceAssistantAwake || activeMainTab != PAGE_VOICE) {
+            completeVoiceTrace(traceId)
+            return
+        }
         if (msg.isMine || msg.contact.id == CONTACT_SYSTEM.id || msg.content.isBlank()) return
-        speakWithConfiguredTts(msg.content.take(600)) {
+        speakWithConfiguredTts(msg.content.take(600), traceId = traceId) {
+            completeVoiceTrace(traceId)
             startCommandListening()
         }
     }
@@ -7187,6 +7381,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         text: String,
         timeoutMs: Long = 20_000L,
         fallbackToAndroid: Boolean = true,
+        traceId: String = activeVoiceTraceId,
         after: () -> Unit
     ) {
         if (text.isBlank()) {
@@ -7216,7 +7411,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }, timeoutMs)
             val voice = LanguagePolicySettings.microsoftVoice(config.ttsLanguage, config.microsoftVoice)
-            microsoftTts.speak(text, voice) { success, error ->
+            microsoftTts.speak(text, voice, traceId) { success, error ->
                 runOnUiThread {
                     if (completed) return@runOnUiThread
                     if (success) {
@@ -7232,7 +7427,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             VoiceRuntimeChannel.MICROSOFT_EDGE_TTS,
                             error ?: "Microsoft Edge TTS failed"
                         )
-                        speakWithAndroidTts(text, after)
+                        speakWithAndroidTts(text, traceId, after)
                     } else {
                         completed = true
                         VoiceRuntimeHealthRegistry.failure(
@@ -7245,11 +7440,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
         } else {
-            speakWithAndroidTts(text, after)
+            speakWithAndroidTts(text, traceId, after)
         }
     }
 
-    private fun speakWithAndroidTts(text: String, after: () -> Unit) {
+    private fun speakWithAndroidTts(text: String, traceId: String, after: () -> Unit) {
+        activeVoiceTraceId = traceId
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.TTS_REQUEST_STARTED,
+            mapOf("tts_provider" to "android_system"),
+            once = true
+        )
         if (!androidTtsReady) {
             VoiceRuntimeHealthRegistry.failure(
                 VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
@@ -7276,9 +7479,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 "Android TTS rejected the utterance"
             )
             voiceAssistantSpeaking = false
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.TTS_COMPLETED,
+                mapOf(
+                    "tts_provider" to "android_system",
+                    "success" to "false",
+                    "error_code" to "TTS_REJECTED"
+                ),
+                once = true
+            )
             after()
             return
         }
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.TTS_FIRST_AUDIO,
+            mapOf("tts_provider" to "android_system"),
+            once = true
+        )
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.TTS_PLAYBACK_STARTED,
+            mapOf("tts_provider" to "android_system"),
+            once = true
+        )
         handler.postDelayed({
             if (voiceAssistantSpeaking) {
                 VoiceRuntimeHealthRegistry.failure(
@@ -7299,9 +7527,32 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun onVoiceSpeechFinished() {
         if (!voiceAssistantSpeaking) return
         voiceAssistantSpeaking = false
+        VoiceLatencyTelemetry.record(
+            this,
+            activeVoiceTraceId,
+            VoiceTraceEvents.TTS_COMPLETED,
+            mapOf("tts_provider" to "android_system", "success" to "true"),
+            once = true
+        )
         if (activeMainTab == PAGE_VOICE) {
             if (voiceAssistantAwake) startCommandListening() else startWakeListening()
         }
+    }
+
+    private fun completeVoiceTrace(traceId: String, phase: AgentPhase? = null) {
+        if (traceId.isBlank()) return
+        val failed = phase in setOf(AgentPhase.BLOCKED, AgentPhase.FAILED)
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            if (failed) VoiceTraceEvents.SESSION_FAILED else VoiceTraceEvents.SESSION_COMPLETED,
+            mapOf(
+                "success" to (!failed).toString(),
+                "task_status" to (phase?.name?.lowercase(Locale.ROOT) ?: "completed")
+            ),
+            once = true
+        )
+        if (activeVoiceTraceId == traceId) activeVoiceTraceId = ""
     }
 
     private fun scheduleVoiceRestart(delayMs: Long) {
@@ -19068,7 +19319,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         sendOutgoingText(contact, content)
     }
 
-    private fun sendOutgoingText(contact: Contact, content: String) {
+    private fun sendOutgoingText(contact: Contact, content: String, voiceTraceId: String = "") {
         selectedContact = contact
         val msg = ChatMessage(
             newMessageId(),
@@ -19081,13 +19332,29 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         addMessage(msg)
         val raw = AppStore.contactById(this, contact.id)
         if (raw?.optString("delivery_mode") == "cloud_api") {
+            VoiceLatencyTelemetry.record(
+                this,
+                voiceTraceId,
+                VoiceTraceEvents.ROUTE_STARTED,
+                once = true
+            )
+            VoiceLatencyTelemetry.record(
+                this,
+                voiceTraceId,
+                VoiceTraceEvents.ROUTE_SELECTED,
+                mapOf(
+                    "model_provider" to raw.optString("cloud_provider", raw.optString("cloud_api_style", "cloud")),
+                    "execution_mode" to "cloud_api"
+                ),
+                once = true
+            )
             updateMessageStatus(msg.id, contact.id, getString(R.string.delivery_status_requesting))
             appendDeliveryTrace(msg.id, contact.id, "cloud_request", raw.optString("cloud_provider"))
             val selectedModel = AppStore.selectedCloudModelContact(this, contact.id) ?: raw
             val contextTurns = (messages[contact.id] ?: currentMessages)
                 .filterNot { it.isSystem }
                 .map { it.copy() }
-            requestCloudModelReply(contact, selectedModel, contextTurns, msg.id)
+            requestCloudModelReply(contact, selectedModel, contextTurns, msg.id, voiceTraceId)
             return
         }
         val target = AppStore.outgoingTopicForContact(this, contact.id)
@@ -19098,7 +19365,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 contact.id,
                 topicOverride = target,
                 clientMessageId = msg.id,
-                deliveryTrace = deliveryTraceJson(msg.deliveryTrace)
+                deliveryTrace = deliveryTraceJson(msg.deliveryTrace),
+                traceId = voiceTraceId
             )
             when (publishResult) {
                 MqttPublishResult.PUBLISHED -> {
@@ -19120,27 +19388,35 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun requestCloudModelReply(contact: Contact, raw: JSONObject, contextTurns: List<ChatMessage>, outgoingId: Long) {
+    private fun requestCloudModelReply(
+        contact: Contact,
+        raw: JSONObject,
+        contextTurns: List<ChatMessage>,
+        outgoingId: Long,
+        voiceTraceId: String = ""
+    ) {
         cloudExecutor.execute {
             val result = runCatching {
-                CloudModelClient.send(this@MainActivity, raw, contextTurns) { event ->
-                    runOnUiThread {
-                        val detail = event.detail
-                            .replace(Regex("[\\r\\n]+"), " ")
-                            .take(120)
-                        val text = if (event.stage == "running") {
-                            getString(R.string.cloud_tool_running, event.tool, detail)
-                        } else {
-                            getString(R.string.cloud_tool_completed, event.tool, detail)
+                VoiceLatencyTraceContext.withTrace(voiceTraceId) {
+                    CloudModelClient.send(this@MainActivity, raw, contextTurns) { event ->
+                        runOnUiThread {
+                            val detail = event.detail
+                                .replace(Regex("[\\r\\n]+"), " ")
+                                .take(120)
+                            val text = if (event.stage == "running") {
+                                getString(R.string.cloud_tool_running, event.tool, detail)
+                            } else {
+                                getString(R.string.cloud_tool_completed, event.tool, detail)
+                            }
+                            addMessage(ChatMessage(
+                                newMessageId(),
+                                text,
+                                false,
+                                contact,
+                                isSystem = true,
+                                deliveryTrace = mutableListOf(newTraceEvent("cloud_tool_${event.stage}", event.tool))
+                            ))
                         }
-                        addMessage(ChatMessage(
-                            newMessageId(),
-                            text,
-                            false,
-                            contact,
-                            isSystem = true,
-                            deliveryTrace = mutableListOf(newTraceEvent("cloud_tool_${event.stage}", event.tool))
-                        ))
                     }
                 }
             }
@@ -19156,7 +19432,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         deliveryTrace = mutableListOf(newTraceEvent("cloud_reply_received", raw.optString("selected_cloud_model")))
                     )
                     addMessage(reply, fromIncoming = true)
-                    maybeSpeakIncomingReply(reply)
+                    maybeSpeakIncomingReply(reply, voiceTraceId)
                 } else {
                     appendDeliveryTrace(outgoingId, contact.id, "cloud_error", result.exceptionOrNull()?.message?.take(120).orEmpty())
                     updateMessageStatus(outgoingId, contact.id, getString(R.string.delivery_status_failed))
@@ -19167,6 +19443,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         contact,
                         deliveryTrace = mutableListOf(newTraceEvent("cloud_error", result.exceptionOrNull()?.message?.take(120).orEmpty()))
                     ), fromIncoming = true)
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        voiceTraceId,
+                        VoiceTraceEvents.SESSION_FAILED,
+                        mapOf("error_code" to result.exceptionOrNull()?.javaClass?.simpleName.orEmpty()),
+                        once = true
+                    )
                 }
             }
         }
@@ -20355,6 +20638,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun startRecording(purpose: String): Boolean {
         if (recorder != null) return false
         val mediaProfile = AgentMediaNetworkDetector.detect(this)
+        val traceId = VoiceLatencyTelemetry.startSession(
+            this,
+            mapOf("recording_source" to purpose)
+        )
+        activeVoiceTraceId = traceId
+        recordingVoiceTraceId = traceId
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.MICROPHONE_OPEN_STARTED,
+            mapOf("recording_source" to purpose),
+            once = true
+        )
         val file = File(cacheDir, "voice_${System.currentTimeMillis()}.m4a")
         var candidate: MediaRecorder? = null
         return runCatching {
@@ -20371,6 +20667,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             recordingFile = file
             recordingStartedAt = System.currentTimeMillis()
             recordingPurpose = purpose
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.MICROPHONE_OPENED,
+                mapOf("recording_source" to purpose),
+                once = true
+            )
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.SPEECH_STARTED,
+                mapOf("recording_source" to purpose),
+                once = true
+            )
             Log.i("SignalASIVoice", "Recording started purpose=$purpose file=${file.name}")
             true
         }.getOrElse {
@@ -20379,7 +20689,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             recorder = null
             recordingFile = null
             recordingPurpose = ""
+            recordingVoiceTraceId = ""
             file.delete()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                VoiceTraceEvents.SESSION_FAILED,
+                mapOf("error_code" to it.javaClass.simpleName),
+                once = true
+            )
             Log.e("SignalASIVoice", "Chat recording start failed", it)
             false
         }
@@ -20435,7 +20753,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         val activeRecorder = recorder ?: return
+        val traceId = recordingVoiceTraceId
         recorder = null
+        recordingVoiceTraceId = ""
         val stoppedCleanly = runCatching {
             activeRecorder.stop()
             true
@@ -20445,8 +20765,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val file = recordingFile
         recordingFile = null
         recordingPurpose = ""
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SPEECH_ENDED,
+            mapOf("endpoint_reason" to if (send) "release_send" else "cancel"),
+            once = true
+        )
         if (!send || !stoppedCleanly || file == null || !file.exists() || file.length() <= 0L) {
             file?.delete()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                if (send) VoiceTraceEvents.SESSION_FAILED else VoiceTraceEvents.SESSION_CANCELLED,
+                mapOf("error_code" to if (send) "RECORDER_STOP_FAILED" else "USER_CANCELLED"),
+                once = true
+            )
             return
         }
         val seconds = ((System.currentTimeMillis() - recordingStartedAt) / 1000).coerceAtLeast(1)
@@ -20456,14 +20790,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             contact = contact,
             seconds = seconds,
             label = "${getString(R.string.message_voice_prefix)} ${seconds}s",
-            source = "chat_hold_to_talk"
+            source = "chat_hold_to_talk",
+            traceId = traceId
         )
     }
 
     private fun stopAgentInputRecording(send: Boolean) {
         val activeRecorder = recorder ?: return
         val purpose = recordingPurpose
+        val traceId = recordingVoiceTraceId
         recorder = null
+        recordingVoiceTraceId = ""
         val stoppedCleanly = runCatching {
             activeRecorder.stop()
             true
@@ -20473,9 +20810,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val file = recordingFile
         recordingFile = null
         recordingPurpose = ""
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SPEECH_ENDED,
+            mapOf("endpoint_reason" to if (send) "release_send" else "cancel"),
+            once = true
+        )
         Log.i("SignalASIVoice", "Agent input recording stopped purpose=$purpose send=$send clean=$stoppedCleanly bytes=${file?.length() ?: 0L}")
         if (!send || !stoppedCleanly || file == null || !file.exists() || file.length() <= 0L) {
             file?.delete()
+            VoiceLatencyTelemetry.record(
+                this,
+                traceId,
+                if (send) VoiceTraceEvents.SESSION_FAILED else VoiceTraceEvents.SESSION_CANCELLED,
+                mapOf("error_code" to if (send) "RECORDER_STOP_FAILED" else "USER_CANCELLED"),
+                once = true
+            )
             return
         }
         val durationMs = (System.currentTimeMillis() - recordingStartedAt).coerceAtLeast(1L)
@@ -20486,14 +20837,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             dedupeKey = "agent-voice-pending:${file.name}"
         )
         refreshAgentTranscriptWindow()
-        requestAgentInputTranscription(file)
+        requestAgentInputTranscription(file, traceId)
     }
 
-    private fun requestAgentInputTranscription(sourceFile: File): Boolean {
-        transcribeLocally(sourceFile, onSuccess = { transcript ->
+    private fun requestAgentInputTranscription(sourceFile: File, traceId: String): Boolean {
+        transcribeLocally(sourceFile, traceId = traceId, onSuccess = { transcript ->
             agentGoalInput.setText(transcript)
             agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
-            submitAgentGoal()
+            submitAgentGoal(traceId)
         })
         return true
     }
@@ -20503,7 +20854,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         contact: Contact,
         seconds: Long,
         label: String,
-        source: String
+        source: String,
+        traceId: String = ""
     ): Boolean {
         if (!sourceFile.exists()) return false
         val msgId = newMessageId()
@@ -20515,21 +20867,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val msg = ChatMessage(msgId, label, true, CONTACT_ME)
         addMessage(msg)
         Log.i("SignalASIVoice", "Voice pipeline send source=$source target=${contact.id} seconds=$seconds bytes=${finalFile.length()} messageId=$msgId")
-        publishInlineVoiceFile(msg.id, contact, finalFile)
+        publishInlineVoiceFile(msg.id, contact, finalFile, traceId)
         return true
     }
 
-    private fun requestVoiceAgentTranscription(sourceFile: File, contact: Contact): Boolean {
+    private fun requestVoiceAgentTranscription(
+        sourceFile: File,
+        contact: Contact,
+        traceId: String
+    ): Boolean {
         if (!sourceFile.exists()) return false
-        transcribeLocally(sourceFile, onSuccess = { transcript -> submitVoiceAgentGoal(transcript) })
+        transcribeLocally(
+            sourceFile,
+            traceId = traceId,
+            onSuccess = { transcript -> submitVoiceAgentGoal(transcript, traceId) }
+        )
         return true
     }
 
-    private fun publishInlineVoiceFile(messageId: Long, contact: Contact, file: File) {
+    private fun publishInlineVoiceFile(
+        messageId: Long,
+        contact: Contact,
+        file: File,
+        traceId: String
+    ) {
         updateMessageStatus(messageId, contact.id, getString(R.string.voice_status_transcribing))
-        transcribeLocally(file, onSuccess = { transcript ->
+        transcribeLocally(file, traceId = traceId, onSuccess = { transcript ->
             updateMessageStatus(messageId, contact.id, getString(R.string.voice_status_transcribed))
-            sendOutgoingText(contact, transcript)
+            sendOutgoingText(contact, transcript, traceId)
         }, onFailure = {
             updateMessageStatus(messageId, contact.id, getString(R.string.delivery_status_failed))
         })
@@ -20537,6 +20902,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun transcribeLocally(
         sourceFile: File,
+        traceId: String = "",
         onSuccess: (String) -> Unit,
         onFailure: () -> Unit = {}
     ) {
@@ -20545,7 +20911,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             VoiceRuntimeChannel.LOCAL_WHISPER_ASR
         )
         voiceAssistantScope.launch {
-            val result = runCatching { LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language) }
+            val result = runCatching {
+                LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language, traceId)
+            }
             sourceFile.delete()
             runOnUiThread {
                 val transcript = result.getOrNull().orEmpty().trim()
@@ -20567,6 +20935,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         Toast.LENGTH_LONG
                     ).show()
                     onFailure()
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        traceId,
+                        VoiceTraceEvents.SESSION_FAILED,
+                        mapOf("error_code" to result.exceptionOrNull()?.javaClass?.simpleName.orEmpty()),
+                        once = true
+                    )
                 }
             }
         }

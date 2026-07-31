@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from agent_task_store import AgentTaskStore
+from voice_latency import VoiceLatencyTracer, VoiceTraceEvents, voice_latency_tracer
 
 
 TASKS_DB_PATH = Path.home() / ".signalasi" / "agent_tasks.sqlite3"
@@ -283,6 +284,7 @@ class AgentTaskManager:
         stall_timeout_seconds: float | None = None,
         state_path: Path | None = None,
         external_recovery_grace_seconds: float = 30.0,
+        latency_tracer: VoiceLatencyTracer | None = None,
     ) -> None:
         self._lock = threading.RLock()
         self._tasks: dict[str, AgentTask] = {}
@@ -311,6 +313,7 @@ class AgentTaskManager:
             float(external_recovery_grace_seconds),
         )
         self._store = AgentTaskStore(state_path or TASKS_DB_PATH)
+        self._latency_tracer = latency_tracer or voice_latency_tracer()
         self._load()
 
     def subscribe(self, listener: EventCallback) -> str:
@@ -391,6 +394,16 @@ class AgentTaskManager:
             )
             self._tasks[task.task_id] = task
             self._save_locked(task)
+            queue_depth = sum(
+                candidate.status in {"accepted", "queued", "starting"}
+                for candidate in self._tasks.values()
+            )
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_QUEUE_ENTERED,
+            {"queue_depth": queue_depth},
+            once=True,
+        )
         self._emit(task, on_event)
         self._set_status(task, "queued", on_event)
         threading.Thread(
@@ -451,6 +464,16 @@ class AgentTaskManager:
             self._tasks[task.task_id] = task
             self._external_task_ids.add(task.task_id)
             self._save_locked(task)
+            queue_depth = sum(
+                candidate.status in {"accepted", "queued", "starting"}
+                for candidate in self._tasks.values()
+            )
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_QUEUE_ENTERED,
+            {"queue_depth": queue_depth},
+            once=True,
+        )
         self._emit(task, on_event)
         return task
 
@@ -745,6 +768,7 @@ class AgentTaskManager:
                 and status not in {"pausing", "paused", "takeover"}
             ):
                 return task
+            previous_status = task.status
             now = int(time.time() * 1000)
             meaningful_progress = (
                 status != task.status
@@ -776,7 +800,8 @@ class AgentTaskManager:
                 task.last_progress_at = now
                 task.recovery_state = "healthy"
             task.status_seq += 1
-            if not task.started_at and status not in {"accepted", "queued"}:
+            started_now = not task.started_at and status not in {"accepted", "queued"}
+            if started_now:
                 task.started_at = now
             if thread_id is not None:
                 task.thread_id = thread_id
@@ -821,6 +846,27 @@ class AgentTaskManager:
             elif status in TERMINAL_STATES or status == "interrupted":
                 self._stop_external_runtime_locked(task.task_id, forget_task=True)
             self._save_locked(task)
+        if started_now or (previous_status in {"accepted", "queued", "starting"} and status == "running"):
+            self._record_latency(
+                task,
+                VoiceTraceEvents.AGENT_RUN_STARTED,
+                {"task_status": status},
+                once=True,
+            )
+        if meaningful_progress and any((current_step, result)):
+            self._record_latency(
+                task,
+                VoiceTraceEvents.AGENT_FIRST_PROGRESS,
+                {"task_status": status},
+                once=True,
+            )
+        if status in TERMINAL_STATES:
+            self._record_latency(
+                task,
+                VoiceTraceEvents.AGENT_COMPLETED,
+                {"task_status": status, "success": status == "completed"},
+                once=True,
+            )
         self._emit(task, on_event)
         return task
 
@@ -902,6 +948,18 @@ class AgentTaskManager:
             )
             task.status_seq += 1
             self._save_locked(task)
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_RUN_STARTED,
+            {"task_status": task.status},
+            once=True,
+        )
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_FIRST_PROGRESS,
+            {"task_status": task.status},
+            once=True,
+        )
         self._emit(task, on_event)
         return task
 
@@ -947,7 +1005,21 @@ class AgentTaskManager:
                 task.last_progress_at = max(task.last_progress_at, event_at)
                 task.status_seq += 1
             self._save_locked(task)
-            return task
+        if meaningful_progress:
+            self._record_latency(
+                task,
+                VoiceTraceEvents.AGENT_FIRST_PROGRESS,
+                {"task_status": task.status},
+                once=True,
+            )
+        if clean_stage == "agent_first_output":
+            self._record_latency(
+                task,
+                VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT,
+                {"task_status": task.status},
+                once=True,
+            )
+        return task
 
     def merge_trace(self, task_id: str, trace: list[dict]) -> AgentTask | None:
         with self._lock:
@@ -993,6 +1065,12 @@ class AgentTaskManager:
             return
         if not task.started_at:
             task.started_at = int(time.time() * 1000)
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_RUN_STARTED,
+            {"task_status": "running"},
+            once=True,
+        )
         self._set_status(task, "running", on_event)
         heartbeat_stop = threading.Event()
         heartbeat = threading.Thread(target=self._heartbeat, args=(task, on_event, heartbeat_stop), daemon=True)
@@ -1740,6 +1818,24 @@ class AgentTaskManager:
             snapshot = task.public(include_prompt=True)
         self._emit_snapshot(snapshot, None)
 
+    def _record_latency(
+        self,
+        task: AgentTask,
+        event: str,
+        attributes: dict | None = None,
+        *,
+        once: bool = False,
+    ) -> None:
+        metadata = {
+            "agent_provider": str(task.delegate_agent_id or task.agent_id or "desktop"),
+            **dict(attributes or {}),
+        }
+        try:
+            self._latency_tracer.record(task.trace_id, event, metadata, once=once)
+        except Exception:
+            # Diagnostics must never affect task execution.
+            pass
+
     def _set_status(self, task: AgentTask, status: str, on_event: EventCallback | None) -> None:
         with self._lock:
             if task.status in TERMINAL_STATES and status not in TERMINAL_STATES:
@@ -1799,6 +1895,12 @@ class AgentTaskManager:
                 timer.cancel()
             self._stop_external_runtime_locked(task.task_id, forget_task=True)
             self._save_locked(task)
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_COMPLETED,
+            {"task_status": status, "success": status == "completed"},
+            once=True,
+        )
         self._emit(task, on_event)
         return True
 
