@@ -8,7 +8,7 @@ The project combines a mobile-first command surface, Signal-style trusted pairin
 
 ```text
 apps/android      Native Android app
-apps/ios          Future iOS app
+apps/ios          Native iOS app
 apps/desktop      Electron desktop app for Windows, macOS, and Linux
 docs              Product, protocol, architecture, security, setup, and design docs
 assets            Logos, icons, screenshots, and marketing media
@@ -19,7 +19,7 @@ tests             Cross-platform fixtures and end-to-end tests
 ## Current Apps
 
 - Android app: `apps/android`
-- iOS app: `apps/ios` with Android-parity global Agent continuity queue, retry, and dead-letter recovery policies for iOS 15+
+- iOS app: `apps/ios` with Android-parity global Agent continuity, voice interaction, voice latency tracing, durable content-free diagnostics export, and native tool policies for iOS 15+
 - Desktop connector: `apps/desktop`
 - SignalASI Link core: `apps/desktop/core/signalasi-link`
 
