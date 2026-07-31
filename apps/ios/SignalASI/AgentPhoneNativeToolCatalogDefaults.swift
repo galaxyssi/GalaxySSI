@@ -30,6 +30,7 @@ extension AgentPhoneNativeToolCatalog {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     },
     guardSideEffects: Bool = true,
+    nativeToolEventSink: AgentNativeToolLifecycleEventSink = .none,
     homeAssistantSettingsProvider: @escaping () -> HomeAssistantSettings = { .default },
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding? = nil,
     notificationProvider: AgentIOSNotificationToolProviding = AgentIOSUnavailableNotificationToolProvider(),
@@ -65,7 +66,8 @@ extension AgentPhoneNativeToolCatalog {
     let nativeActionExecutor = AgentNativeToolActionExecutor(
       registry: registry,
       delegate: actionExecutor,
-      nowMillis: nowMillis
+      nowMillis: nowMillis,
+      eventSink: nativeToolEventSink
     )
     let resolvedActionExecutor: AgentActionExecutor = guardSideEffects
       ? PhoneExecutionAuthority.guarded(nativeActionExecutor)

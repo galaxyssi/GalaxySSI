@@ -5,6 +5,7 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
   var delegate: AgentActionExecutor
   var nowMillis: () -> Int64
   var workspaceIdProvider: (AgentAction, AgentScreenContext) -> String
+  var eventSink: AgentNativeToolLifecycleEventSink
 
   init(
     registry: AgentNativeToolRegistry,
@@ -14,12 +15,14 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     },
     workspaceIdProvider: @escaping (AgentAction, AgentScreenContext) -> String = { action, _ in
       AgentNativeToolActionExecutor.defaultWorkspaceId(for: action)
-    }
+    },
+    eventSink: AgentNativeToolLifecycleEventSink = .none
   ) {
     self.registry = registry
     self.delegate = delegate
     self.nowMillis = nowMillis
     self.workspaceIdProvider = workspaceIdProvider
+    self.eventSink = eventSink
   }
 
   func execute(action: AgentAction, screen: AgentScreenContext) -> AgentActionResult {
@@ -67,7 +70,12 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       toolId,
       input: scopedInput,
       context: context,
-      hooks: AgentNativeToolInvocationHooks(nowMillis: nowMillis)
+      hooks: Self.lifecycleHooks(
+        toolId: toolId,
+        context: context,
+        nowMillis: nowMillis,
+        eventSink: eventSink
+      )
     )
     return Self.actionResult(action: action, result: result)
   }
@@ -150,6 +158,78 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
       "page_title": screen.pageTitle,
       AgentNativeToolRegistry.legacyActionIdAttribute: action.id
     ]
+  }
+
+  private static func lifecycleHooks(
+    toolId: String,
+    context: AgentNativeToolInvocationContext,
+    nowMillis: @escaping () -> Int64,
+    eventSink: AgentNativeToolLifecycleEventSink
+  ) -> AgentNativeToolInvocationHooks {
+    AgentNativeToolInvocationHooks(
+      nowMillis: nowMillis,
+      onStarted: { invocation in
+        eventSink.emit(event(
+          stage: .started,
+          toolId: toolId,
+          context: context,
+          invocationId: invocation.context.invocationId,
+          timestampMillis: invocation.startedAtEpochMillis
+        ))
+      },
+      onProgress: { invocation, progress in
+        eventSink.emit(event(
+          stage: .progress,
+          toolId: toolId,
+          context: context,
+          invocationId: invocation.context.invocationId,
+          progressStage: progress.stage,
+          message: progress.message,
+          percent: progress.percent,
+          sequence: progress.sequence,
+          timestampMillis: progress.timestampEpochMillis
+        ))
+      },
+      onFinished: { result in
+        eventSink.emit(event(
+          stage: .finished,
+          toolId: toolId,
+          context: context,
+          invocationId: result.receipt.invocationId,
+          status: result.status,
+          message: result.message.nilIfEmpty ?? result.error?.message ?? "",
+          timestampMillis: result.receipt.finishedAtEpochMillis
+        ))
+      }
+    )
+  }
+
+  private static func event(
+    stage: AgentNativeToolLifecycleStage,
+    toolId: String,
+    context: AgentNativeToolInvocationContext,
+    invocationId: String,
+    status: AgentNativeToolResultStatus? = nil,
+    progressStage: String = "",
+    message: String = "",
+    percent: Int? = nil,
+    sequence: Int64 = 0,
+    timestampMillis: Int64
+  ) -> AgentNativeToolLifecycleEvent {
+    AgentNativeToolLifecycleEvent(
+      stage: stage,
+      toolId: toolId,
+      invocationId: invocationId,
+      stepId: (context.attributes["step_id"] ?? "").nilIfEmpty ?? invocationId,
+      conversationId: context.conversationId,
+      turnId: context.turnId,
+      status: status,
+      progressStage: progressStage,
+      message: message,
+      percent: percent,
+      sequence: sequence,
+      timestampMillis: timestampMillis
+    )
   }
 
   private static func actionResult(action: AgentAction, result: AgentNativeToolResult) -> AgentActionResult {

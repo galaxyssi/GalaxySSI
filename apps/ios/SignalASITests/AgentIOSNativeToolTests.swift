@@ -685,6 +685,8 @@ extension SignalASIStoreTests {
 
   func testAgentNativeToolActionExecutorInvokesRegistryWithActionContext() throws {
     var captured: AgentNativeToolInvocation?
+    var events: [AgentNativeToolLifecycleEvent] = []
+    var now: Int64 = 10_000
     let descriptor = try nativeToolDescriptor(
       "signalasi.test.write",
       requiredPermissions: [AgentNativePermissionRequirement(id: "permission.write")],
@@ -695,6 +697,14 @@ extension SignalASIStoreTests {
       definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
       executor: { invocation in
         captured = invocation
+        try invocation.reportProgress(
+          stage: "writing",
+          message: "Writing local data",
+          percent: 50,
+          sequence: 2,
+          timestampEpochMillis: 10_010
+        )
+        now = 10_020
         return .success(output: ["ok": .bool(true)], message: "done")
       }
     ))
@@ -704,7 +714,8 @@ extension SignalASIStoreTests {
     let executor = AgentNativeToolActionExecutor(
       registry: registry,
       delegate: delegate,
-      nowMillis: { 10_000 }
+      nowMillis: { now },
+      eventSink: AgentNativeToolLifecycleEventSink { events.append($0) }
     )
     let action = AgentAction(
       id: "write-1",
@@ -742,6 +753,21 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.metadata["native_tool_id"], descriptor.id)
     XCTAssertEqual(result.metadata["native_tool_status"], "succeeded")
     XCTAssertEqual(result.metadata["idempotency_key"], "write-1")
+    XCTAssertEqual(events.map(\.stage), [.started, .progress, .finished])
+    XCTAssertEqual(events.map(\.toolId), [descriptor.id, descriptor.id, descriptor.id])
+    XCTAssertEqual(events.map(\.invocationId), ["write-1", "write-1", "write-1"])
+    XCTAssertEqual(events.map(\.stepId), ["write-1", "write-1", "write-1"])
+    XCTAssertEqual(events.map(\.conversationId), ["conversation-a", "conversation-a", "conversation-a"])
+    XCTAssertEqual(events.map(\.turnId), ["turn-a", "turn-a", "turn-a"])
+    XCTAssertEqual(events[0].timestampMillis, 10_000)
+    XCTAssertEqual(events[1].progressStage, "writing")
+    XCTAssertEqual(events[1].message, "Writing local data")
+    XCTAssertEqual(events[1].percent, 50)
+    XCTAssertEqual(events[1].sequence, 2)
+    XCTAssertEqual(events[1].timestampMillis, 10_010)
+    XCTAssertEqual(events[2].status, .succeeded)
+    XCTAssertEqual(events[2].message, "done")
+    XCTAssertEqual(events[2].timestampMillis, 10_020)
   }
 
   func testAgentNativeToolActionExecutorBindsWorkspaceInputAndDelegatesOtherActions() throws {

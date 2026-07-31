@@ -105,6 +105,7 @@ extension SignalASIStoreTests {
     let root = try temporaryDirectory("native-tool-default-runtime")
     defer { try? FileManager.default.removeItem(at: root) }
     var delegatedAction: AgentAction?
+    var events: [AgentNativeToolLifecycleEvent] = []
     let delegate = TestAgentActionExecutor { action, _ in
       delegatedAction = action
       return AgentActionResult(actionId: action.id, success: true, message: "delegated")
@@ -114,7 +115,8 @@ extension SignalASIStoreTests {
       screenProvider: { _ in AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent") },
       capabilityStatusProvider: { readyPhoneCapabilityStatuses() },
       storageRootURL: root,
-      nowMillis: { 20_000 }
+      nowMillis: { 20_000 },
+      nativeToolEventSink: AgentNativeToolLifecycleEventSink { events.append($0) }
     )
     let nativeAction = AgentAction(
       id: "runtime-init",
@@ -160,5 +162,12 @@ extension SignalASIStoreTests {
     XCTAssertEqual(delegatedResult.metadata["serialized_side_effect"], "true")
     XCTAssertEqual(delegate.callCount, 1)
     XCTAssertEqual(delegatedAction?.id, "runtime-open")
+    XCTAssertEqual(events.map(\.stage), [.started, .finished])
+    XCTAssertEqual(events.map(\.toolId), [
+      AgentPhoneNativeToolCatalog.workspaceInitialize,
+      AgentPhoneNativeToolCatalog.workspaceInitialize
+    ])
+    XCTAssertEqual(events.first?.stepId, "runtime-init")
+    XCTAssertEqual(events.last?.status, .succeeded)
   }
 }
