@@ -1949,6 +1949,13 @@
     <string name="rich_output_compress_failed">Could not create the ZIP file</string>
     <string name="rich_output_install_permission">Allow SignalASI to install apps, then tap the APK again.</string>
     <string name="rich_output_show_more">Show more</string>
+    <string name="rich_output_section_plan">Plan</string>
+    <string name="rich_output_section_execution_log">Execution log</string>
+    <string name="rich_output_section_final_answer">Final answer</string>
+    <string name="rich_output_section_evidence">Evidence</string>
+    <string name="rich_output_section_items">%1$d items</string>
+    <string name="rich_output_section_expand">Expand section</string>
+    <string name="rich_output_section_collapse">Collapse section</string>
     <string name="rich_output_show_less">Show less</string>
     <string name="rich_output_more_rows">%1$d more rows</string>
     <string name="rich_output_loading">Loading preview</string>

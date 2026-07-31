@@ -160,6 +160,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val INITIAL_VISIBLE_AGENT_TRANSCRIPT_ITEMS = 24
         private const val AGENT_TRANSCRIPT_PAGE_ITEMS = 24
         private const val MAX_EXPANDED_AGENT_TRANSCRIPT_ENTRIES = 8
+        private const val MAX_AGENT_RESPONSE_SECTION_STATES = 512
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
         private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
@@ -458,6 +459,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentTranscriptExpansionInFlight = linkedSetOf<String>()
     private val expandedAgentProcessGroups = linkedSetOf<String>()
     private val collapsedActiveAgentProcessGroups = linkedSetOf<String>()
+    private val agentResponseSectionExpansion = linkedMapOf<String, Boolean>()
     private val directoryContacts = mutableListOf<Contact>()
     private var pendingExportPassword: String? = null
     private var pendingExportSkill: Pair<String, String>? = null
@@ -3704,6 +3706,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         expandedAgentTranscriptEntries.clear()
         expandedAgentTranscriptText.clear()
         agentTranscriptExpansionInFlight.clear()
+        agentResponseSectionExpansion.clear()
         agentTranscriptPageLoading = false
         agentTranscriptAllLoaded = false
         agentRenderedConversationId = conversationId
@@ -15042,7 +15045,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         activity = this,
         onTextViewReady = { textView -> attachAgentTranscriptActions(textView, actionEntry) },
         onAction = { action -> handleAgentRichAction(actionEntry, action) },
-        onFormSubmit = { block, values -> handleAgentRichForm(actionEntry, block, values) }
+        onFormSubmit = { block, values -> handleAgentRichForm(actionEntry, block, values) },
+        enableResponseSections = displayEntry.textChunkCount == 0,
+        isSectionExpanded = { entryId, kind, expandedByDefault ->
+            agentResponseSectionExpansion["$entryId:${kind.name}"] ?: expandedByDefault
+        },
+        onSectionExpansionChanged = { entryId, kind, expanded ->
+            val key = "$entryId:${kind.name}"
+            agentResponseSectionExpansion.remove(key)
+            agentResponseSectionExpansion[key] = expanded
+            while (agentResponseSectionExpansion.size > MAX_AGENT_RESPONSE_SECTION_STATES) {
+                agentResponseSectionExpansion.remove(agentResponseSectionExpansion.keys.first())
+            }
+        }
     ).create(displayEntry.copy(
         text = CodexStyleResponsePolicy.sanitizeAssistantText(
             localizedAgentAssistantText(displayEntry.text)

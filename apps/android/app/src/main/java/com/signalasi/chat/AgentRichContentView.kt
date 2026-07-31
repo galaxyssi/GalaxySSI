@@ -73,11 +73,23 @@ class AgentRichContentView(
     private val activity: Activity,
     private val onTextViewReady: (TextView) -> Unit,
     private val onAction: (AgentRichAction) -> Unit,
-    private val onFormSubmit: (AgentRichBlock, Map<String, String>) -> Unit
+    private val onFormSubmit: (AgentRichBlock, Map<String, String>) -> Unit,
+    private val enableResponseSections: Boolean = true,
+    private val isSectionExpanded: (
+        entryId: String,
+        kind: AgentResponseSectionKind,
+        expandedByDefault: Boolean
+    ) -> Boolean = { _, _, expandedByDefault -> expandedByDefault },
+    private val onSectionExpansionChanged: (
+        entryId: String,
+        kind: AgentResponseSectionKind,
+        expanded: Boolean
+    ) -> Unit = { _, _, _ -> }
 ) {
     fun create(entry: AgentTranscriptEntry): View {
         val explicit = AgentRichContentCodec.decode(entry.richOutputJson)
         val blocks = explicit.ifEmpty { AgentRichContentCodec.fromText(entry.text) }
+        val sectionLayout = AgentResponseSectionOrganizer.organize(blocks)
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
@@ -87,22 +99,131 @@ class AgentRichContentView(
             ).apply {
                 topMargin = dp(12)
             }
-            blocks.forEachIndexed { index, block ->
-                val width = if (block.type == AgentRichBlockType.APPROVAL) {
-                    (activity.resources.displayMetrics.widthPixels * MAX_ASSISTANT_WIDTH_RATIO).toInt()
-                } else {
-                    ViewGroup.LayoutParams.MATCH_PARENT
+            if (enableResponseSections && sectionLayout.collapsible) {
+                sectionLayout.sections.forEachIndexed { index, section ->
+                    addView(
+                        collapsibleSection(entry.id, section),
+                        LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            if (index > 0) topMargin = dp(5)
+                        }
+                    )
                 }
-                addView(blockView(block), LinearLayout.LayoutParams(
-                    width,
-                    if (block.type == AgentRichBlockType.DIVIDER) dp(1) else ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    gravity = Gravity.START
-                    if (index > 0) topMargin = dp(blockSpacing(block))
-                })
+            } else {
+                addBlockViews(this, blocks)
             }
         }
     }
+
+    private fun addBlockViews(container: LinearLayout, blocks: List<AgentRichBlock>) {
+        blocks.forEachIndexed { index, block ->
+            val width = if (block.type == AgentRichBlockType.APPROVAL) {
+                (activity.resources.displayMetrics.widthPixels * MAX_ASSISTANT_WIDTH_RATIO).toInt()
+            } else {
+                ViewGroup.LayoutParams.MATCH_PARENT
+            }
+            container.addView(
+                blockView(block),
+                LinearLayout.LayoutParams(
+                    width,
+                    if (block.type == AgentRichBlockType.DIVIDER) {
+                        dp(1)
+                    } else {
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    }
+                ).apply {
+                    gravity = Gravity.START
+                    if (index > 0) topMargin = dp(blockSpacing(block))
+                }
+            )
+        }
+    }
+
+    private fun collapsibleSection(
+        entryId: String,
+        section: AgentResponseSection
+    ): View {
+        var expanded = isSectionExpanded(entryId, section.kind, section.expandedByDefault)
+        val body = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (expanded) View.VISIBLE else View.GONE
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        var bodyRendered = false
+        fun renderBody() {
+            if (bodyRendered) return
+            bodyRendered = true
+            addBlockViews(body, section.blocks)
+        }
+        if (expanded) renderBody()
+
+        val arrow = ImageView(activity).apply {
+            setImageResource(R.drawable.ic_chevron_down)
+            setColorFilter(Color.parseColor("#7A7F87"))
+            rotation = if (expanded) 180f else 0f
+            contentDescription = activity.getString(
+                if (expanded) R.string.rich_output_section_collapse
+                else R.string.rich_output_section_expand
+            )
+        }
+        val header = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(42)
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(2), dp(5), dp(2), dp(5))
+            addView(TextView(activity).apply {
+                text = sectionTitle(section.kind)
+                textSize = 14f
+                setTextColor(Color.parseColor("#202124"))
+                setTypeface(typeface, Typeface.BOLD)
+                includeFontPadding = false
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(TextView(activity).apply {
+                text = activity.getString(R.string.rich_output_section_items, section.blocks.size)
+                textSize = 11f
+                setTextColor(Color.parseColor("#8A9099"))
+                includeFontPadding = false
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(6), 0, dp(4), 0)
+            })
+            addView(
+                arrow,
+                LinearLayout.LayoutParams(dp(22), dp(28))
+            )
+            setOnClickListener {
+                expanded = !expanded
+                if (expanded) renderBody()
+                body.visibility = if (expanded) View.VISIBLE else View.GONE
+                arrow.rotation = if (expanded) 180f else 0f
+                arrow.contentDescription = activity.getString(
+                    if (expanded) R.string.rich_output_section_collapse
+                    else R.string.rich_output_section_expand
+                )
+                onSectionExpansionChanged(entryId, section.kind, expanded)
+            }
+        }
+        return LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(header)
+            addView(View(activity).apply {
+                setBackgroundColor(Color.parseColor("#E7E9ED"))
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(1)))
+            addView(body)
+        }
+    }
+
+    private fun sectionTitle(kind: AgentResponseSectionKind): String = activity.getString(
+        when (kind) {
+            AgentResponseSectionKind.PLAN -> R.string.rich_output_section_plan
+            AgentResponseSectionKind.EXECUTION_LOG -> R.string.rich_output_section_execution_log
+            AgentResponseSectionKind.FINAL_ANSWER -> R.string.rich_output_section_final_answer
+            AgentResponseSectionKind.EVIDENCE -> R.string.rich_output_section_evidence
+        }
+    )
 
     private fun blockView(source: AgentRichBlock): View {
         val block = AgentDesktopArtifactStore.resolveBlock(activity, source)
