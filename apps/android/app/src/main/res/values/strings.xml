@@ -967,7 +967,7 @@
     <string name="settings_status_language">Display language and localization</string>
     <string name="settings_status_identity">Local identity · tap to copy full fingerprint</string>
     <string name="settings_developer_options">Developer Options</string>
-    <string name="settings_control_center_title">Control Center</string>
+    <string name="settings_control_center_title">My Agent</string>
     <string name="settings_my_signalasi">My SignalASI</string>
     <string name="settings_control_center_subtitle">On-device Agent Control Center</string>
     <string name="settings_agent_capabilities">Agent Capabilities</string>

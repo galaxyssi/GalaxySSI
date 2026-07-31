@@ -17,7 +17,7 @@ const artifactRoot = process.env.SIGNALASI_TEST_ARTIFACTS || path.join(
 );
 
 const pages = [
-  ["home", "Control Center", "\u63a7\u5236\u4e2d\u5fc3"],
+  ["home", "My Agent", "\u6211\u7684\u667a\u80fd\u4f53"],
   ["profile", "My SignalASI", "\u6211\u7684 SignalASI"],
   ["system_status", "System Status", "\u7cfb\u7edf\u72b6\u6001"],
   ["agent_core", "Agent Core", "Agent \u5185\u6838"],
@@ -100,7 +100,7 @@ async function capturePage(page, english, chinese) {
     adb(["shell", "input", "keyevent", "KEYCODE_BACK"]);
     await sleep(400);
     const backXml = await dumpUi(`signalasi-cc-${safeFileName(page)}-back.xml`);
-    backPassed = hasExpectedTitle(backXml, "Control Center", "\u63a7\u5236\u4e2d\u5fc3");
+    backPassed = hasExpectedTitle(backXml, "My Agent", "\u6211\u7684\u667a\u80fd\u4f53");
   }
 
   return {
