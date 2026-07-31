@@ -83,6 +83,34 @@ extension SignalASIStoreTests {
       }
     }
 
+    final class FakeSensorSampleProvider: AgentIOSSensorSampleProviding {
+      var calls = 0
+      var lastType = ""
+      var lastTimeoutMillis: Int64 = 0
+
+      func sampleSensor(type: String, timeoutMillis: Int64, nowMillis: Int64) -> AgentNativeToolExecutionResult {
+        calls += 1
+        lastType = type
+        lastTimeoutMillis = timeoutMillis
+        return AgentNativeToolExecutionResult.success(
+          output: [
+            "type": .string(type),
+            "android_type": .int(1),
+            "values": .array([.double(0.1), .double(0.2), .double(0.3)]),
+            "accuracy": .int(3),
+            "observed_at_epoch_ms": .int(nowMillis),
+            "capture_mode": .string("single_foreground_sample"),
+            "background_capture": .bool(false)
+          ],
+          message: "Single foreground sensor sample read",
+          metadata: [
+            "retained_listener": .bool(false),
+            "framework": .string("core_motion")
+          ]
+        )
+      }
+    }
+
     struct FakeHardwareProvider: AgentIOSHardwareStatusProviding {
       func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
         [
@@ -224,11 +252,13 @@ extension SignalASIStoreTests {
     let ids = AgentIOSHardwareNativeToolCatalog.toolIds
     let definitions = AgentIOSHardwareNativeToolCatalog.definitions()
     let locationProvider = FakeForegroundLocationProvider()
+    let sensorSampleProvider = FakeSensorSampleProvider()
     let registry = try AgentNativeToolRegistry().registerExecutables(
       AgentPhoneNativeToolCatalog.hardwareExecutableDefinitions(
         executor: AgentIOSHardwareNativeToolExecutor(
           provider: FakeHardwareProvider(),
           locationProvider: locationProvider,
+          sensorSampleProvider: sensorSampleProvider,
           nowMillis: { 4_200 }
         )
       )
@@ -237,12 +267,14 @@ extension SignalASIStoreTests {
       grantedPermissions: [
         AgentIOSHardwareNativeToolCatalog.hardwareStatusPermission,
         AgentIOSHardwareNativeToolCatalog.appVisibilityBoundaryPermission,
+        AgentIOSHardwareNativeToolCatalog.sensorSamplePermission,
         "NSLocationWhenInUseUsageDescription",
         "NSCameraUsageDescription",
         "NSBluetoothAlwaysUsageDescription"
       ],
       grantedConsents: [
         AgentIOSHardwareNativeToolCatalog.foregroundLocationConsent,
+        AgentIOSHardwareNativeToolCatalog.sensorSampleConsent,
         AgentIOSHardwareNativeToolCatalog.userVisibleHandoffConsent,
         AgentIOSHardwareNativeToolCatalog.flashlightControlConsent,
         AgentIOSHardwareNativeToolCatalog.installedAppsConsent,
@@ -277,6 +309,11 @@ extension SignalASIStoreTests {
       input: ["limit": .int(1)],
       context: context
     )
+    let sensorSample = registry.invoke(
+      AgentIOSHardwareNativeToolCatalog.sensorSample,
+      input: ["type": .string("accelerometer"), "timeout_ms": .int(1_000)],
+      context: context
+    )
     let flashlight = registry.invoke(
       AgentIOSHardwareNativeToolCatalog.flashlightSet,
       input: ["enabled": .bool(true)],
@@ -307,6 +344,9 @@ extension SignalASIStoreTests {
     let sensorsDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.sensorsList }
     )
+    let sensorSampleDefinition = try XCTUnwrap(
+      definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.sensorSample }
+    )
     let flashlightDefinition = try XCTUnwrap(
       definitions.first { $0.id == AgentIOSHardwareNativeToolCatalog.flashlightSet }
     )
@@ -335,6 +375,14 @@ extension SignalASIStoreTests {
     XCTAssertEqual(sensors.output["truncated"], .bool(true))
     XCTAssertEqual(sensors.output["sampling_started"], .bool(false))
     XCTAssertEqual(sensors.output["scope"], .string("ios_coremotion_metadata"))
+    XCTAssertTrue(sensorSample.isSuccess)
+    XCTAssertEqual(sensorSampleProvider.calls, 1)
+    XCTAssertEqual(sensorSampleProvider.lastType, "accelerometer")
+    XCTAssertEqual(sensorSampleProvider.lastTimeoutMillis, 1_000)
+    XCTAssertEqual(sensorSample.output["capture_mode"], .string("single_foreground_sample"))
+    XCTAssertEqual(sensorSample.output["background_capture"], .bool(false))
+    XCTAssertEqual(sensorSample.output["values"], .array([.double(0.1), .double(0.2), .double(0.3)]))
+    XCTAssertEqual(sensorSample.metadata["retained_listener"], .bool(false))
     XCTAssertTrue(flashlight.isSuccess)
     XCTAssertEqual(flashlight.output["requested_enabled"], .bool(true))
     XCTAssertEqual(flashlight.output["request_accepted"], .bool(true))
@@ -376,6 +424,10 @@ extension SignalASIStoreTests {
     XCTAssertTrue(nfcDefinition.descriptor.capabilities.contains("nfc.no_tag_capture"))
     XCTAssertEqual(sensorsDefinition.descriptor.availability.status, .available)
     XCTAssertTrue(sensorsDefinition.descriptor.capabilities.contains("sensors.no_sampling"))
+    XCTAssertEqual(sensorSampleDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(sensorSampleDefinition.descriptor.risk, .medium)
+    XCTAssertTrue(sensorSampleDefinition.descriptor.capabilities.contains("sensors.no_background_stream"))
+    XCTAssertEqual(sensorSampleDefinition.descriptor.timeoutMillis, AgentIOSHardwareNativeToolCatalog.maxSensorTimeoutMillis)
     XCTAssertEqual(flashlightDefinition.descriptor.availability.status, .available)
     XCTAssertEqual(flashlightDefinition.descriptor.idempotency, .idempotent)
     XCTAssertTrue(flashlightDefinition.descriptor.capabilities.contains("flashlight.no_camera_capture"))
