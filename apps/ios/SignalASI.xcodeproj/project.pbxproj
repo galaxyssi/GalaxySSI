@@ -150,6 +150,7 @@
     A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */; };
     A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000123 /* CustomDeviceHomeModels.swift */; };
     A10000000000000000000124 /* GlobalCapabilityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000124 /* GlobalCapabilityModels.swift */; };
+    A10000000000000000000534 /* GlobalCapabilityObservations.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000534 /* GlobalCapabilityObservations.swift */; };
     A10000000000000000000125 /* AgentMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000125 /* AgentMemoryModels.swift */; };
     A10000000000000000000126 /* GlobalMemoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000126 /* GlobalMemoryModels.swift */; };
     A10000000000000000000127 /* GlobalMemoryContextModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000127 /* GlobalMemoryContextModels.swift */; };
@@ -280,6 +281,7 @@
     A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */; };
     A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */; };
     A10000000000000000000533 /* GlobalAgentObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000533 /* GlobalAgentObservationsTests.swift */; };
+    A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
     A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000205 /* AgentTeamDelegationTests.swift */; };
@@ -512,6 +514,7 @@
     A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionsBudgetModels.swift; sourceTree = "<group>"; };
     A20000000000000000000123 /* CustomDeviceHomeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CustomDeviceHomeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000124 /* GlobalCapabilityModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000534 /* GlobalCapabilityObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityObservations.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000126 /* GlobalMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000127 /* GlobalMemoryContextModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryContextModels.swift; sourceTree = "<group>"; };
@@ -642,6 +645,7 @@
     A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpMarketplaceTests.swift; sourceTree = "<group>"; };
     A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRoutingCapabilityTests.swift; sourceTree = "<group>"; };
     A20000000000000000000533 /* GlobalAgentObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentObservationsTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalCapabilityObservationsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
@@ -819,6 +823,7 @@
         A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */,
         A20000000000000000000123 /* CustomDeviceHomeModels.swift */,
         A20000000000000000000124 /* GlobalCapabilityModels.swift */,
+        A20000000000000000000534 /* GlobalCapabilityObservations.swift */,
         A20000000000000000000496 /* GlobalEventPublisherPolicy.swift */,
         A20000000000000000000498 /* GlobalConversationContextJournal.swift */,
         A20000000000000000000528 /* GlobalConversationMergeRebinding.swift */,
@@ -987,6 +992,7 @@
         A20000000000000000000201 /* AgentMcpMarketplaceTests.swift */,
         A20000000000000000000202 /* AgentRoutingCapabilityTests.swift */,
         A20000000000000000000533 /* GlobalAgentObservationsTests.swift */,
+        A20000000000000000000535 /* GlobalCapabilityObservationsTests.swift */,
         A20000000000000000000203 /* AgentIOSNativeToolTests.swift */,
         A20000000000000000000204 /* AgentWorkspacePlanTests.swift */,
         A20000000000000000000205 /* AgentTeamDelegationTests.swift */,
@@ -1263,6 +1269,7 @@
         A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */,
         A10000000000000000000123 /* CustomDeviceHomeModels.swift in Sources */,
         A10000000000000000000124 /* GlobalCapabilityModels.swift in Sources */,
+        A10000000000000000000534 /* GlobalCapabilityObservations.swift in Sources */,
         A10000000000000000000496 /* GlobalEventPublisherPolicy.swift in Sources */,
         A10000000000000000000498 /* GlobalConversationContextJournal.swift in Sources */,
         A10000000000000000000528 /* GlobalConversationMergeRebinding.swift in Sources */,
@@ -1447,6 +1454,7 @@
         A10000000000000000000201 /* AgentMcpMarketplaceTests.swift in Sources */,
         A10000000000000000000202 /* AgentRoutingCapabilityTests.swift in Sources */,
         A10000000000000000000533 /* GlobalAgentObservationsTests.swift in Sources */,
+        A10000000000000000000535 /* GlobalCapabilityObservationsTests.swift in Sources */,
         A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */,
         A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */,
         A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */,
