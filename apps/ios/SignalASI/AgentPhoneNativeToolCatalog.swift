@@ -135,7 +135,7 @@ enum AgentPhoneNativeToolCatalog {
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSConfiguredHomeAssistantToolProvider(),
     notificationProvider: AgentIOSNotificationToolProviding = AgentIOSNotificationBoundaryToolProvider(),
     visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSUnavailableVisibleCaptureToolProvider(),
-    webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSUnavailableWebMediaToolProvider(),
+    webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
     webIntelligenceProvider: AgentIOSWebIntelligenceToolProviding = AgentIOSUnavailableWebIntelligenceToolProvider(),
     mediaProvider: AgentIOSMediaNativeToolProviding = AgentIOSUnavailableMediaNativeToolProvider(),
     selfEvolutionProvider: AgentIOSSelfEvolutionToolProviding = AgentIOSUnavailableSelfEvolutionToolProvider(),

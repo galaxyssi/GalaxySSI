@@ -296,4 +296,197 @@ extension SignalASIStoreTests {
     XCTAssertTrue(unavailableProvider.invokedOperations.isEmpty)
   }
 
+  func testAgentIOSURLSessionWebMediaProviderExecutesBoundedHTTPSTools() throws {
+    final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
+      var requests: [AgentIOSURLSessionWebRequest] = []
+      var responses: [AgentIOSURLSessionWebResponse]
+
+      init(responses: [AgentIOSURLSessionWebResponse]) {
+        self.responses = responses
+      }
+
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        requests.append(request)
+        guard !responses.isEmpty else {
+          throw AgentIOSURLSessionWebError.transportFailed("missing fake response")
+        }
+        return responses.removeFirst()
+      }
+    }
+
+    func response(
+      statusCode: Int,
+      url: String,
+      headers: [String: String],
+      body: Data = Data()
+    ) -> AgentIOSURLSessionWebResponse {
+      AgentIOSURLSessionWebResponse(
+        statusCode: statusCode,
+        finalURL: URL(string: url)!,
+        headers: headers,
+        body: body,
+        retrievedAtEpochMillis: 1_100
+      )
+    }
+
+    let textBody = Data("hello".utf8)
+    let jsonBody = Data("{\"ok\":true}".utf8)
+    let htmlBody = Data("<html><body><h1>Hello&nbsp;ASI</h1><script>secret()</script><p>Done</p></body></html>".utf8)
+    let transport = FakeURLSessionWebTransport(responses: [
+      response(
+        statusCode: 302,
+        url: "https://signalasi.example/start",
+        headers: ["location": "/final"]
+      ),
+      response(
+        statusCode: 200,
+        url: "https://signalasi.example/final",
+        headers: [
+          "content-type": "text/plain; charset=utf-8",
+          "content-length": "5",
+          "etag": "abc"
+        ],
+        body: textBody
+      ),
+      response(
+        statusCode: 200,
+        url: "https://signalasi.example/info",
+        headers: [
+          "content-type": "text/html; charset=utf-8",
+          "content-length": "12"
+        ]
+      ),
+      response(
+        statusCode: 200,
+        url: "https://signalasi.example/api",
+        headers: [
+          "content-type": "application/json; charset=utf-8",
+          "content-length": "11"
+        ],
+        body: jsonBody
+      ),
+      response(
+        statusCode: 200,
+        url: "https://signalasi.example/page",
+        headers: ["content-type": "text/html; charset=utf-8"],
+        body: htmlBody
+      )
+    ])
+    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1_000 })
+    let definitions = AgentIOSWebMediaNativeToolCatalog.definitions()
+    let defaultFetch = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebMediaNativeToolCatalog.webFetch })
+    let defaultSearch = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebMediaNativeToolCatalog.webSearch })
+    XCTAssertEqual(defaultFetch.descriptor.availability.status, .available)
+    XCTAssertEqual(defaultFetch.provenanceMetadata["network_policy"], "public_https_urlsession_revalidated_v1")
+    XCTAssertEqual(defaultFetch.provenanceMetadata["redirect_policy"], "manual_revalidate_each_hop")
+    XCTAssertEqual(defaultSearch.descriptor.availability.status, .requiresSetup)
+
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission],
+      grantedConsents: [AgentIOSWebMediaNativeToolCatalog.publicWebConsent]
+    )
+    let hooks = AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+
+    let fetched = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.webFetch,
+      input: ["url": .string("https://signalasi.example/start"), "max_bytes": .int(1_024)],
+      context: context,
+      hooks: hooks
+    )
+    let head = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.webHead,
+      input: ["url": .string("https://signalasi.example/info")],
+      context: context,
+      hooks: hooks
+    )
+    let httpGet = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.httpRequest,
+      input: [
+        "url": .string("https://signalasi.example/api"),
+        "method": .string("GET")
+      ],
+      context: context,
+      hooks: hooks
+    )
+    let opened = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.webOpen,
+      input: ["url": .string("https://signalasi.example/page")],
+      context: context,
+      hooks: hooks
+    )
+
+    XCTAssertTrue(fetched.isSuccess)
+    XCTAssertEqual(fetched.output["method"], .string("get"))
+    XCTAssertEqual(fetched.output["status_code"], .int(200))
+    XCTAssertEqual(fetched.output["content_type"], .string("text/plain"))
+    XCTAssertEqual(fetched.output["text"], .string("hello"))
+    XCTAssertEqual(fetched.output["charset"], .string("UTF-8"))
+    XCTAssertEqual(fetched.output["size_bytes"], .int(5))
+    XCTAssertEqual(fetched.output["sha256"], .string(SignalASIAttachmentPayloadBuilder.sha256(textBody)))
+    XCTAssertEqual(fetched.metadata["network_policy"], .string("public_https_urlsession_revalidated_v1"))
+    let source = try XCTUnwrap(fetched.output["source"]?.objectValue)
+    let redirects = try XCTUnwrap(source["redirect_chain"]?.arrayValue)
+    XCTAssertEqual(redirects.count, 1)
+    XCTAssertEqual(redirects.first?.objectValue?["to_url"], .string("https://signalasi.example/final"))
+    XCTAssertEqual(source["dns_resolution"], .array([]))
+
+    XCTAssertTrue(head.isSuccess)
+    XCTAssertEqual(head.output["method"], .string("head"))
+    XCTAssertNil(head.output["text"])
+
+    XCTAssertTrue(httpGet.isSuccess)
+    XCTAssertEqual(httpGet.output["text"], .string("{\"ok\":true}"))
+    XCTAssertEqual(httpGet.metadata["method"], .string("GET"))
+
+    XCTAssertTrue(opened.isSuccess)
+    let openedText = try XCTUnwrap(opened.output["text"]?.stringValue)
+    XCTAssertTrue(openedText.contains("Hello ASI"))
+    XCTAssertFalse(openedText.contains("secret"))
+    XCTAssertEqual(opened.output["render_mode"], .string("bounded_http"))
+    XCTAssertEqual(opened.metadata["javascript"], .bool(false))
+    XCTAssertEqual(
+      transport.requests.map(\.method),
+      [.get, .get, .head, .get, .get]
+    )
+    XCTAssertEqual(transport.requests[1].url.absoluteString, "https://signalasi.example/final")
+  }
+
+  func testAgentIOSURLSessionWebMediaProviderRejectsNonTextResponses() throws {
+    final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        AgentIOSURLSessionWebResponse(
+          statusCode: 200,
+          finalURL: request.url,
+          headers: ["content-type": "image/png", "content-length": "4"],
+          body: Data([0, 1, 2, 3]),
+          retrievedAtEpochMillis: 1_100
+        )
+      }
+    }
+
+    let provider = AgentIOSURLSessionWebMediaToolProvider(
+      transport: FakeURLSessionWebTransport(),
+      nowMillis: { 1_000 }
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
+    )
+    let result = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.webFetch,
+      input: ["url": .string("https://signalasi.example/image.png")],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission],
+        grantedConsents: [AgentIOSWebMediaNativeToolCatalog.publicWebConsent]
+      ),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+    )
+
+    XCTAssertEqual(result.status, .failed)
+    XCTAssertEqual(result.error?.code, "unsupported_content_type")
+    XCTAssertEqual(result.error?.details["content_type"], .string("image/png"))
+  }
+
 }
