@@ -17,13 +17,15 @@ object AgentBackupData {
         val safety = SharedPreferencesAgentSafetySettingsStore(context).load()
         val taskBudget = AgentTaskBudgetStore(context).load()
         val modelPlanner = AgentModelPlannerSettingsStore(context).load()
+        val preferenceMode = AgentPreferenceModeStore(context).load()
         val voiceAssistant = VoiceAssistantSettings.get(context)
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
         val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
         return JSONObject()
-            .put("version", 32)
+            .put("version", 33)
             .put("interface_language", AppLanguage.current(context))
+            .put("agent_preference_mode", preferenceMode.wireValue)
             .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
             .put("memory_deletion_index", memoryDeletionIndex.exportJson())
             .put("knowledge", readArray(context, KNOWLEDGE_PREFS, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS))
@@ -110,6 +112,11 @@ object AgentBackupData {
         memoryDeletionIndex.mergeBackup(payload.optJSONArray("memory_deletion_index"))
         if (payload.has("interface_language")) {
             AppLanguage.set(context, payload.optString("interface_language", AppLanguage.AUTO))
+        }
+        if (payload.has("agent_preference_mode")) {
+            AgentPreferenceModeStore(context).save(
+                AgentPreferenceMode.fromWireValue(payload.optString("agent_preference_mode"))
+            )
         }
         payload.optJSONArray("memory")?.let { input ->
             val sanitized = sanitizeArray(input, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS)

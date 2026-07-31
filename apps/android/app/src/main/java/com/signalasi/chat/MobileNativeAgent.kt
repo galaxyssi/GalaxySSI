@@ -244,6 +244,8 @@ class MobileNativeAgent(
     executionLoopEventSink: AgentExecutionLoopEventSink = AgentExecutionLoopEventSink.NONE
 ) {
     private val appContext = context.applicationContext
+    private val preferenceModeStore = AgentPreferenceModeStore(appContext)
+    private var activePreferenceMode: AgentPreferenceMode = preferenceModeStore.load()
     private var sessionId: String = UUID.randomUUID().toString()
     private var activeConversationContext: AgentConversationContext = AgentConversationContext("", "", emptyList(), false)
     private var activeConversationTurnId: String = ""
@@ -3470,6 +3472,24 @@ class MobileNativeAgent(
     }
 
     fun safetySettings(): AgentSafetySettings = safetySettingsStore.load()
+
+    fun preferenceMode(): AgentPreferenceMode = activePreferenceMode
+
+    fun updatePreferenceMode(mode: AgentPreferenceMode): AgentUiState {
+        val profile = AgentPreferenceModePolicy.profile(mode)
+        activePreferenceMode = mode
+        preferenceModeStore.save(mode)
+        safetySettingsStore.save(
+            safetySettingsStore.load().copy(
+                taskExecutionMode = profile.taskExecutionMode,
+                permissionMode = profile.permissionMode,
+                highRiskGuard = profile.highRiskGuard
+            )
+        )
+        activeTaskExecutionMode = profile.taskExecutionMode
+        recordAudit(AgentAuditEvent.SETTINGS_UPDATED, "preference_mode:${mode.wireValue}")
+        return snapshot()
+    }
 
     fun modelPlannerSettings(): AgentModelPlannerSettings = AgentModelPlannerSettingsStore(appContext).load()
 

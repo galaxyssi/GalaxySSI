@@ -306,6 +306,15 @@
 
     <string name="cc_execution_policy_title">Execution Policy</string>
     <string name="cc_section_confirmation_rules">Confirmation Rules</string>
+    <string name="agent_preference_mode_section">Interaction Style</string>
+    <string name="agent_preference_fewer_questions">Fewer Questions</string>
+    <string name="agent_preference_fewer_questions_subtitle">Act on clear intent and ask only when a missing detail blocks execution</string>
+    <string name="agent_preference_cautious">Cautious</string>
+    <string name="agent_preference_cautious_subtitle">Clarify ambiguity and ask before actions that can change data or devices</string>
+    <string name="agent_preference_automation">Automation</string>
+    <string name="agent_preference_automation_subtitle">Run low-risk actions directly while keeping high-risk confirmation and audit protection</string>
+    <string name="agent_preference_developer">Developer</string>
+    <string name="agent_preference_developer_subtitle">Keep technical plans, execution details, evidence, and tool output visible</string>
     <string name="cc_task_execution_mode_section">Task Execution</string>
     <string name="cc_task_execution_mode_title">Task execution</string>
     <string name="cc_task_execution_mode_subtitle">Choose whether tasks stop after a plan or continue through verification</string>
