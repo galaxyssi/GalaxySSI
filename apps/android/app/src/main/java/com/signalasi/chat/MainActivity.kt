@@ -2116,6 +2116,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 turnId = turnId,
                 taskId = taskId,
                 agentId = executorId.ifBlank { envelope.optString("agent_id") },
+                targetName = targetName,
                 statusLabel = statusLabel
             )
         } else if (status == "completed") {
@@ -2254,10 +2255,26 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         turnId: String,
         taskId: String,
         agentId: String,
+        targetName: String,
         statusLabel: String
     ) {
         if (taskId.isBlank() || conversationId.isBlank()) return
         val failure = envelope.optString("error").trim().ifBlank { statusLabel }
+        val executionView = envelope.optJSONObject("execution_view")
+        val noReply = agentNoReplyDisplay(
+            taskStatus = envelope.optString("task_status"),
+            error = failure,
+            currentStep = envelope.optString("current_step"),
+            agentId = agentId,
+            targetName = targetName.ifBlank { contactById(agentId).name }.ifBlank { agentId },
+            routeKind = when (
+                executionView?.optString("location_kind").orEmpty().lowercase(Locale.ROOT)
+            ) {
+                "desktop", "windows", "macos", "linux" -> AgentRouteKind.DESKTOP_AGENT
+                "cloud" -> AgentRouteKind.CLOUD_MODEL
+                else -> AgentRouteKind.UNKNOWN
+            }
+        )
         val originalGoal = agentTurnGoals[turnId].orEmpty().ifBlank {
             agentTranscriptStore.entriesForTurn(turnId)
                 .lastOrNull { it.role == AgentTranscriptRole.USER }
@@ -2315,12 +2332,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 AgentRichBlock(
                     id = "recovery-$taskId",
                     type = AgentRichBlockType.ACTIONS,
-                    title = getString(R.string.agent_recovery_title),
-                    text = getString(R.string.agent_recovery_message),
-                    fallbackText = getString(R.string.agent_recovery_title),
+                    title = noReply.title,
+                    text = noReply.message,
+                    fallbackText = noReply.message,
                     actions = actions,
                     metadata = mapOf(
                         "task_id" to taskId,
+                        "no_reply_reason" to noReply.reason.name.lowercase(Locale.ROOT),
                         "recommended_action" to recommended.wireValue
                     )
                 )
@@ -2328,7 +2346,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
         agentTranscriptStore.upsert(
             role = AgentTranscriptRole.ASSISTANT,
-            text = getString(R.string.agent_recovery_title),
+            text = noReply.message,
             dedupeKey = agentFailureRecoveryDedupeKey(taskId),
             timestampMillis = envelope.optLong("updated_at", System.currentTimeMillis()),
             conversationId = conversationId,
@@ -2340,6 +2358,108 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun agentFailureRecoveryDedupeKey(taskId: String): String =
         "agent-recovery:$taskId"
+
+    private data class AgentNoReplyDisplay(
+        val reason: AgentNoReplyReason,
+        val title: String,
+        val message: String
+    )
+
+    private fun agentNoReplyDisplay(
+        taskStatus: String,
+        error: String,
+        currentStep: String,
+        agentId: String,
+        targetName: String,
+        routeKind: AgentRouteKind,
+        routeStatus: AgentConnectorStatus? = null
+    ): AgentNoReplyDisplay {
+        val cleanAgentId = agentId.trim()
+        val registry = AppStoreAgentConnectorRegistry(this)
+        val targets = registry.availableTargets()
+        val registrations = registry.registrations()
+        fun identityMatches(candidate: String): Boolean {
+            val cleanCandidate = candidate.trim()
+            return cleanAgentId.isNotBlank() && (
+                cleanCandidate == cleanAgentId ||
+                    cleanCandidate.endsWith(":$cleanAgentId") ||
+                    cleanAgentId.endsWith(":$cleanCandidate")
+                )
+        }
+        val target = targets.firstOrNull { identityMatches(it.id) }
+            ?: targets.firstOrNull {
+                targetName.isNotBlank() && it.title.equals(targetName, ignoreCase = true)
+            }
+        val registration = registrations.firstOrNull { identityMatches(it.agentId) }
+            ?: registrations.firstOrNull {
+                targetName.isNotBlank() && it.displayName.equals(targetName, ignoreCase = true)
+            }
+        val resolvedRouteKind = routeKind.takeUnless { it == AgentRouteKind.UNKNOWN }
+            ?: when {
+                registration?.location == AgentResourceLocation.TRUSTED_DESKTOP ->
+                    AgentRouteKind.DESKTOP_AGENT
+                target?.kind == AgentConnectorKind.AGENT -> AgentRouteKind.DESKTOP_AGENT
+                target?.kind == AgentConnectorKind.MODEL &&
+                    AgentCapability.LOCAL_INFERENCE in target.capabilities ->
+                    AgentRouteKind.LOCAL_MODEL
+                target?.kind == AgentConnectorKind.MODEL -> AgentRouteKind.CLOUD_MODEL
+                target?.kind == AgentConnectorKind.DEVICE -> AgentRouteKind.DEVICE_CONNECTOR
+                target?.kind == AgentConnectorKind.KNOWLEDGE -> AgentRouteKind.KNOWLEDGE
+                else -> AgentRouteKind.UNKNOWN
+            }
+        val networkRequired = resolvedRouteKind in setOf(
+            AgentRouteKind.DESKTOP_AGENT,
+            AgentRouteKind.CLOUD_MODEL,
+            AgentRouteKind.DEVICE_CONNECTOR
+        ) || registration?.connectionKind in setOf(
+            AgentConnectionKind.SIGNALASI_LINK,
+            AgentConnectionKind.HTTP,
+            AgentConnectionKind.WEBSOCKET,
+            AgentConnectionKind.MCP
+        )
+        val endpointStatus = when {
+            registration != null && !registration.hasCapacity -> AgentEndpointStatus.BUSY
+            else -> registration?.status
+        }
+        val reason = AgentNoReplyReasonPolicy.classify(
+            AgentNoReplySignal(
+                taskStatus = taskStatus,
+                error = error,
+                currentStep = currentStep,
+                routeKind = resolvedRouteKind,
+                routeStatus = routeStatus ?: target?.status ?: AgentConnectorStatus.AVAILABLE,
+                endpointStatus = endpointStatus,
+                networkRequired = networkRequired,
+                networkAvailable = validatedInternetAvailable()
+            )
+        )
+        val targetLabel = targetName.trim()
+            .ifBlank { registration?.displayName.orEmpty() }
+            .ifBlank { target?.title.orEmpty() }
+            .ifBlank { getString(R.string.tab_agent) }
+        val title = getString(when (reason) {
+            AgentNoReplyReason.NETWORK_UNAVAILABLE -> R.string.agent_no_reply_network_title
+            AgentNoReplyReason.DESKTOP_OFFLINE -> R.string.agent_no_reply_desktop_title
+            AgentNoReplyReason.AGENT_BUSY -> R.string.agent_no_reply_busy_title
+            AgentNoReplyReason.PERMISSION_WAITING -> R.string.agent_no_reply_permission_title
+            AgentNoReplyReason.AGENT_UNAVAILABLE -> R.string.agent_no_reply_unavailable_title
+            AgentNoReplyReason.TIMED_OUT -> R.string.agent_no_reply_timeout_title
+            AgentNoReplyReason.UNKNOWN -> R.string.agent_no_reply_unknown_title
+        })
+        val message = getString(
+            when (reason) {
+                AgentNoReplyReason.NETWORK_UNAVAILABLE -> R.string.agent_no_reply_network_message
+                AgentNoReplyReason.DESKTOP_OFFLINE -> R.string.agent_no_reply_desktop_message
+                AgentNoReplyReason.AGENT_BUSY -> R.string.agent_no_reply_busy_message
+                AgentNoReplyReason.PERMISSION_WAITING -> R.string.agent_no_reply_permission_message
+                AgentNoReplyReason.AGENT_UNAVAILABLE -> R.string.agent_no_reply_unavailable_message
+                AgentNoReplyReason.TIMED_OUT -> R.string.agent_no_reply_timeout_message
+                AgentNoReplyReason.UNKNOWN -> R.string.agent_no_reply_unknown_message
+            },
+            targetLabel
+        )
+        return AgentNoReplyDisplay(reason, title, message)
+    }
 
     private fun persistRemoteAgentTaskAsync(
         envelope: JSONObject,
@@ -2947,17 +3067,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .filter { (_, runtime) ->
                         agentRuntimeTurnIds[runtime] == workspace.workspaceId
                     }
+                val timedOutRuntime = timedOutRuntimes
+                    .map { it.value }
+                    .distinct()
+                    .lastOrNull()
+                val timedOutSnapshot = timedOutRuntime?.snapshot()
+                val timedOutRoute = timedOutSnapshot?.plan?.route
+                val noReply = agentNoReplyDisplay(
+                    taskStatus = "timed_out",
+                    error = signal.reason,
+                    currentStep = timedOutSnapshot?.pendingAction?.description.orEmpty(),
+                    agentId = workspace.agentId.ifBlank {
+                        timedOutRoute?.targetId.orEmpty()
+                    },
+                    targetName = timedOutRoute?.targetTitle.orEmpty()
+                        .ifBlank { timedOutSnapshot?.plan?.selectedAgentOrModel.orEmpty() }
+                        .ifBlank { workspace.agentId },
+                    routeKind = timedOutRoute?.kind ?: AgentRouteKind.UNKNOWN,
+                    routeStatus = timedOutRoute?.status
+                )
                 timedOutRuntimes.forEach { (sourceMessageId, runtime) ->
                     cancelConnectorTimeouts(sourceMessageId)
                     activeAgentTasks.remove(sourceMessageId, runtime)
                 }
-                val timeoutState = timedOutRuntimes
-                    .map { it.value }
-                    .distinct()
-                    .lastOrNull()
+                val timeoutState = timedOutRuntime
                     ?.let { runtime ->
                         runtime.forceTaskTimeout(
-                            getString(R.string.agent_task_watchdog_timed_out)
+                            noReply.message
                         ).also {
                             provisionalAgentTasks.remove(runtime)
                             agentRuntimeConversationIds.remove(runtime)
@@ -2966,7 +3102,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                 agentTranscriptStore.append(
                     role = AgentTranscriptRole.ASSISTANT,
-                    text = getString(R.string.agent_task_watchdog_timed_out),
+                    text = noReply.message,
                     dedupeKey = "task-watchdog-timeout:${workspace.taskId}",
                     conversationId = conversationId,
                     turnId = workspace.taskId,
@@ -14048,14 +14184,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 taskId = state.sessionId
             )
         }
-        val result = CodexStyleResponsePolicy.sanitizeAssistantText(
-            state.lastActionResult?.message.orEmpty()
-        )
-        val settledConnectorResult = state.lastActionResult?.metadata?.get("awaiting_response") == "false"
         val terminal = state.phase == AgentPhase.COMPLETED ||
             state.phase == AgentPhase.FAILED ||
             state.phase == AgentPhase.CANCELLED ||
             state.phase == AgentPhase.BLOCKED
+        val rawResult = state.lastActionResult?.message.orEmpty()
+        val route = state.plan?.route
+        val terminalNoReply = if (state.phase == AgentPhase.FAILED && rawResult.isNotBlank()) {
+            agentNoReplyDisplay(
+                taskStatus = "failed",
+                error = rawResult,
+                currentStep = state.pendingAction?.description.orEmpty(),
+                agentId = route?.targetId.orEmpty()
+                    .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() },
+                targetName = route?.targetTitle.orEmpty()
+                    .ifBlank { state.plan?.selectedAgentOrModel.orEmpty() },
+                routeKind = route?.kind ?: AgentRouteKind.UNKNOWN,
+                routeStatus = route?.status
+            ).takeUnless { it.reason == AgentNoReplyReason.UNKNOWN }
+        } else {
+            null
+        }
+        val result = CodexStyleResponsePolicy.sanitizeAssistantText(
+            terminalNoReply?.message ?: rawResult
+        )
+        val settledConnectorResult = state.lastActionResult?.metadata?.get("awaiting_response") == "false"
         if (result.isNotBlank() && transcriptTurnId.isNotBlank() &&
             (settledConnectorResult || terminal) && !isTransientAgentResult(result)
         ) {
