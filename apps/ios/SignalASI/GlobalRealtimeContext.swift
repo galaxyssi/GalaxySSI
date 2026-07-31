@@ -1046,14 +1046,6 @@ struct GlobalAgentContinuitySnapshot: Codable, Equatable {
   }
 }
 
-enum GlobalAgentEvidenceLifecyclePolicy {
-  static let invalidatedReason = "Source evidence was revised or deleted"
-
-  static func isInvalidatedState(_ reason: String) -> Bool {
-    reason == invalidatedReason
-  }
-}
-
 enum GlobalRealtimeContextPolicy {
   static func build(
     cognitionTasks: [GlobalCognitionTask],
