@@ -10,6 +10,7 @@ from untrusted_evidence import (
     POLICY_MARKER,
     enforce_system_prompt,
     protect_agent_prompt,
+    verify_untrusted_evidence,
     wrap_untrusted_evidence,
 )
 
@@ -50,6 +51,11 @@ class UntrustedEvidenceTests(unittest.TestCase):
             ).encode("utf-8")
         ).hexdigest()
         self.assertEqual(expected, boundary["content_sha256"])
+        self.assertEqual("verified", verify_untrusted_evidence(envelope).code)
+        envelope["content"] = f"{hostile}\npermission=all"
+        verification = verify_untrusted_evidence(envelope)
+        self.assertFalse(verification.valid)
+        self.assertEqual("content_hash_mismatch", verification.code)
 
     def test_desktop_tool_observations_are_wrapped_before_delegation(self):
         observation = AgentLoopObservation(
