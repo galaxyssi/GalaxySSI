@@ -136,6 +136,8 @@ final class VoiceWhisperModelManager {
   private let clockMillis: () -> Int64
   private let nativeVerificationLock = NSLock()
   private var nativeVerifiedFingerprints: [String: String] = [:]
+  private let loadedModelsLock = NSLock()
+  private var loadedModelIds = Set<String>()
 
   init(
     store: VoiceWhisperModelDownloadRecordStore = UserDefaultsVoiceWhisperModelDownloadRecordStore(),
@@ -212,6 +214,25 @@ final class VoiceWhisperModelManager {
     }
     setNativeFingerprint(fingerprint, for: model.id)
     return fileURL
+  }
+
+  func markLoaded(_ modelId: String) {
+    loadedModelsLock.lock()
+    loadedModelIds.insert(VoiceWhisperModelCatalog.normalizedModelId(modelId))
+    loadedModelsLock.unlock()
+  }
+
+  func markUnloaded(_ modelId: String?) {
+    guard let modelId else { return }
+    loadedModelsLock.lock()
+    loadedModelIds.remove(VoiceWhisperModelCatalog.normalizedModelId(modelId))
+    loadedModelsLock.unlock()
+  }
+
+  func isLoaded(_ modelId: String) -> Bool {
+    loadedModelsLock.lock()
+    defer { loadedModelsLock.unlock() }
+    return loadedModelIds.contains(VoiceWhisperModelCatalog.normalizedModelId(modelId))
   }
 
   func enqueue(
@@ -346,7 +367,7 @@ final class VoiceWhisperModelManager {
 
   @discardableResult
   func delete(_ model: VoiceWhisperModelProfile) -> Bool {
-    (try? delete(model, active: false)) ?? false
+    (try? delete(model, active: isLoaded(model.id))) ?? false
   }
 
   @discardableResult

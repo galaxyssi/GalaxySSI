@@ -12,6 +12,8 @@ final class VoiceLocalWhisperASR {
   private let decoder: VoiceWhisperAudioDecoding
   private let modelAvailable: (VoiceWhisperModelProfile) -> Bool
   private let modelFileProvider: (VoiceWhisperModelProfile) throws -> URL?
+  private let markModelLoaded: (String) -> Void
+  private let markModelUnloaded: (String?) -> Void
   private let trace: VoiceLocalWhisperTraceRecorder
   private let elapsedClock: () -> Int64
   private let lock = NSLock()
@@ -23,6 +25,8 @@ final class VoiceLocalWhisperASR {
     modelManager: VoiceWhisperModelManager = VoiceWhisperModelManager(),
     modelAvailable: ((VoiceWhisperModelProfile) -> Bool)? = nil,
     modelFileProvider: ((VoiceWhisperModelProfile) throws -> URL?)? = nil,
+    markModelLoaded: ((String) -> Void)? = nil,
+    markModelUnloaded: ((String?) -> Void)? = nil,
     elapsedClock: @escaping () -> Int64 = VoiceLocalWhisperASR.defaultElapsedClock,
     trace: @escaping VoiceLocalWhisperTraceRecorder = VoiceLocalWhisperASR.defaultTraceRecorder
   ) {
@@ -36,6 +40,8 @@ final class VoiceLocalWhisperASR {
     } else {
       self.modelFileProvider = { try modelManager.ensureVerifiedFile(for: $0) }
     }
+    self.markModelLoaded = markModelLoaded ?? { modelManager.markLoaded($0) }
+    self.markModelUnloaded = markModelUnloaded ?? { modelManager.markUnloaded($0) }
     self.elapsedClock = elapsedClock
     self.trace = trace
   }
@@ -73,6 +79,10 @@ final class VoiceLocalWhisperASR {
       guard modelAvailable(model) else {
         throw VoiceLocalWhisperASRError.modelUnavailable(model.id)
       }
+      if let unloadedModelId = unloadIfModelChanged(model.id) {
+        runtime.release()
+        markModelUnloaded(unloadedModelId)
+      }
       let coldStartAttributes = audioAttributes.merging(["cold_start": "true"]) { _, incoming in incoming }
       let coldStart = claimColdStart(model.id)
       if coldStart {
@@ -93,6 +103,7 @@ final class VoiceLocalWhisperASR {
       )
       if coldStart {
         markLoaded(model.id)
+        markModelLoaded(model.id)
         record(traceId, VoiceTraceEvents.asrModelLoadCompleted, coldStartAttributes)
       }
       let inferenceDurationMs = millisecondsSince(inferenceStartedAtNs)
@@ -141,9 +152,18 @@ final class VoiceLocalWhisperASR {
 
   func release() {
     runtime.release()
+    let previousModelId = clearLoadedModel()
+    markModelUnloaded(previousModelId)
+  }
+
+  private func unloadIfModelChanged(_ modelId: String) -> String? {
     lock.lock()
+    defer { lock.unlock() }
+    guard let previousModelId = loadedModelId, previousModelId != modelId else {
+      return nil
+    }
     loadedModelId = nil
-    lock.unlock()
+    return previousModelId
   }
 
   private func claimColdStart(_ modelId: String) -> Bool {
@@ -156,6 +176,14 @@ final class VoiceLocalWhisperASR {
     lock.lock()
     loadedModelId = modelId
     lock.unlock()
+  }
+
+  private func clearLoadedModel() -> String? {
+    lock.lock()
+    defer { lock.unlock() }
+    let previousModelId = loadedModelId
+    loadedModelId = nil
+    return previousModelId
   }
 
   private func millisecondsSince(_ startedAtNs: Int64) -> Int64 {
