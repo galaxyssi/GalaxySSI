@@ -96,6 +96,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style Agent control plane action executor bridge for connector actions, stable run IDs, delivery modes, prepared dispatch receipts, and run-control events
 - Android-style workspace file policy for scoped paths, archive entry guards, exact patch replacements, and diff summaries
 - Android-style explicit tool handle registry for opaque scoped stateful tool references, TTLs, releases, and resource revocation
+- Android-style iOS Agent action notification wrapper for private running/result operation updates, stable per-task notification IDs, action title derivation, and notification-safe executor filtering
 - Android-style private data inventory for encrypted backup manifests, export eligibility, erase coverage, and identity rotation audits
 - Android-style model data disclosure ledger and Settings dashboard for cloud model and paired Desktop requests, storing metadata-only event receipts, hashed conversation/task/turn IDs, destination blocking, and protected local persistence without retaining request content
 - Android-style agent failure recovery payloads, recommended recovery actions, plan-only fallbacks, and retry instructions
