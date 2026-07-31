@@ -160,21 +160,43 @@ class GlobalMemoryLoCoMoRegressionTest {
     }
 
     @Test
-    fun `long term goal remains available across distant sessions`() {
-        val goal = item(
-            "goal", GlobalWorldItemKind.GOAL, GlobalWorldLayer.USER,
-            "SignalASI roadmap", "Build a reliable on-device personal Agent", "session-one",
+    fun `long term goals search personal and project namespaces across distant sessions`() {
+        val personalGoal = item(
+            "personal-goal", GlobalWorldItemKind.GOAL, GlobalWorldLayer.USER,
+            "SignalASI personal roadmap", "Build a reliable on-device personal Agent", "session-one",
             temporalState = GlobalMemoryTemporalState.PLANNED
+        ).copy(
+            namespace = GlobalMemoryNamespace.USER,
+            namespaceId = "profile"
+        )
+        val projectGoal = item(
+            "project-goal", GlobalWorldItemKind.GOAL, GlobalWorldLayer.TOPIC,
+            "Project Alpha roadmap", "Ship the Project Alpha offline recovery milestone", "session-two",
+            temporalState = GlobalMemoryTemporalState.PLANNED
+        ).copy(
+            namespace = GlobalMemoryNamespace.PROJECT,
+            namespaceId = "alpha"
         )
 
-        val context = compile(
-            PersonalWorldModel(items = listOf(goal)),
-            "What is the next long-term roadmap milestone?",
+        val world = PersonalWorldModel(items = listOf(personalGoal, projectGoal))
+        val personalContext = compile(
+            world,
+            "What is my next long-term SignalASI roadmap milestone?",
             "session-thirty-two"
         )
+        val projectContext = compile(
+            world,
+            "What is the next long-term roadmap milestone for Project Alpha?",
+            "session-thirty-two"
+        )
+        val plan = GlobalMemoryQueryPlanner.plan("What is my next long-term roadmap milestone?")
 
-        assertTrue(context.contains(goal.value))
-        assertTrue(context.contains("planned"))
+        assertTrue(plan.preferredNamespaces.contains(GlobalMemoryNamespace.USER))
+        assertTrue(plan.preferredNamespaces.contains(GlobalMemoryNamespace.PROJECT))
+        assertTrue(personalContext.contains(personalGoal.value))
+        assertTrue(projectContext.contains(projectGoal.value))
+        assertTrue(personalContext.contains("planned"))
+        assertTrue(projectContext.contains("planned"))
     }
 
     @Test

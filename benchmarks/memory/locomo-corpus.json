@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "signalasi-memory-locomo-v1",
+  "minimum_score": 0.95,
+  "required_categories": [
+    "cross_session",
+    "temporal",
+    "correction",
+    "project_isolation",
+    "device",
+    "privacy",
+    "conflict",
+    "goal",
+    "tool_evidence",
+    "conversation_scope",
+    "abstention"
+  ],
+  "timelines": [
+    {
+      "id": "user-profile",
+      "items": [
+        {
+          "id": "response-style-old",
+          "kind": "PREFERENCE",
+          "layer": "USER",
+          "namespace": "USER",
+          "topic": "Response style preference",
+          "value": "The user previously preferred detailed responses with long explanations",
+          "conversation_id": "profile-session-1",
+          "status": "SUPERSEDED",
+          "temporal_state": "DEPRECATED"
+        },
+        {
+          "id": "response-style-current",
+          "kind": "PREFERENCE",
+          "layer": "USER",
+          "namespace": "USER",
+          "topic": "Response style preference",
+          "value": "The user currently prefers concise engineering responses",
+          "conversation_id": "profile-session-8"
+        },
+        {
+          "id": "interface-language",
+          "kind": "PREFERENCE",
+          "layer": "USER",
+          "namespace": "USER",
+          "topic": "Interface language preference",
+          "value": "The user's preferred interface language is English",
+          "conversation_id": "profile-session-3"
+        }
+      ],
+      "queries": [
+        {
+          "id": "profile-current-style",
+          "category": "cross_session",
+          "query": "What response style do I currently prefer?",
+          "conversation_id": "profile-session-20",
+          "include": ["The user currently prefers concise engineering responses"],
+          "exclude": ["The user previously preferred detailed responses with long explanations"],
+          "markers": ["[current/user/"]
+        },
+        {
+          "id": "profile-previous-style",
+          "category": "temporal",
+          "query": "What response style did I prefer previously?",
+          "conversation_id": "profile-session-20",
+          "include": ["The user previously preferred detailed responses with long explanations"],
+          "exclude": ["The user currently prefers concise engineering responses"],
+          "markers": ["[historical/user/"]
+        },
+        {
+          "id": "profile-style-change",
+          "category": "correction",
+          "query": "What changed between my previous and current response style preference?",
+          "conversation_id": "profile-session-20",
+          "include": [
+            "The user previously preferred detailed responses with long explanations",
+            "The user currently prefers concise engineering responses"
+          ],
+          "markers": ["Temporal scope: current_and_history"]
+        },
+        {
+          "id": "profile-language",
+          "category": "cross_session",
+          "query": "What is my preferred interface language?",
+          "conversation_id": "profile-session-20",
+          "include": ["The user's preferred interface language is English"],
+          "exclude": ["response"]
+        }
+      ]
+    },
+    {
+      "id": "project-state",
+      "items": [
+        {
+          "id": "project-alpha-old",
+          "kind": "STATE",
+          "layer": "TOPIC",
+          "namespace": "PROJECT",
+          "namespace_id": "alpha",
+          "topic": "Project Alpha release status",
+          "value": "Project Alpha release was blocked by signing",
+          "conversation_id": "alpha-session-1",
+          "status": "SUPERSEDED",
+          "temporal_state": "DEPRECATED"
+        },
+        {
+          "id": "project-alpha-current",
+          "kind": "STATE",
+          "layer": "TOPIC",
+          "namespace": "PROJECT",
+          "namespace_id": "alpha",
+          "topic": "Project Alpha release status",
+          "value": "Project Alpha release is ready",
+          "conversation_id": "alpha-session-5"
+        },
+        {
+          "id": "project-alpha-plan",
+          "kind": "GOAL",
+          "layer": "TOPIC",
+          "namespace": "PROJECT",
+          "namespace_id": "alpha",
+          "topic": "Project Alpha roadmap milestone",
+          "value": "Project Alpha plans a reliability audit next",
+          "conversation_id": "alpha-session-6",
+          "temporal_state": "PLANNED"
+        },
+        {
+          "id": "project-beta-current",
+          "kind": "STATE",
+          "layer": "TOPIC",
+          "namespace": "PROJECT",
+          "namespace_id": "beta",
+          "topic": "Project Beta release status",
+          "value": "Project Beta release is blocked by tests",
+          "conversation_id": "beta-session-2"
+        }
+      ],
+      "queries": [
+        {
+          "id": "alpha-current",
+          "category": "project_isolation",
+          "query": "What is the current status of Project Alpha release?",
+          "conversation_id": "project-review",
+          "include": ["Project Alpha release is ready"],
+          "exclude": [
+            "Project Alpha release was blocked by signing",
+            "Project Beta release is blocked by tests"
+          ]
+        },
+        {
+          "id": "alpha-history",
+          "category": "temporal",
+          "query": "What was the previous status of Project Alpha release?",
+          "conversation_id": "project-review",
+          "include": ["Project Alpha release was blocked by signing"],
+          "exclude": [
+            "Project Alpha release is ready",
+            "Project Beta release is blocked by tests"
+          ]
+        },
+        {
+          "id": "alpha-change",
+          "category": "correction",
+          "query": "What changed between the previous and current Project Alpha release status?",
+          "conversation_id": "project-review",
+          "include": [
+            "Project Alpha release was blocked by signing",
+            "Project Alpha release is ready"
+          ],
+          "exclude": ["Project Beta release is blocked by tests"]
+        },
+        {
+          "id": "beta-current",
+          "category": "project_isolation",
+          "query": "What is the current status of Project Beta release?",
+          "conversation_id": "project-review",
+          "include": ["Project Beta release is blocked by tests"],
+          "exclude": ["Project Alpha release is ready"]
+        },
+        {
+          "id": "alpha-next-milestone",
+          "category": "goal",
+          "query": "What is the next planned roadmap milestone for Project Alpha?",
+          "conversation_id": "project-review",
+          "include": ["Project Alpha plans a reliability audit next"],
+          "exclude": ["Project Beta release is blocked by tests"],
+          "markers": ["[planned/project:alpha/"]
+        }
+      ]
+    },
+    {
+      "id": "device-capability",
+      "items": [
+        {
+          "id": "phone-memory",
+          "kind": "FACT",
+          "layer": "TOPIC",
+          "namespace": "DEVICE",
+          "namespace_id": "signalasi-phone",
+          "topic": "SignalASI phone memory",
+          "value": "The SignalASI phone has 12 GB of RAM",
+          "conversation_id": "device-session-1"
+        },
+        {
+          "id": "phone-chip",
+          "kind": "FACT",
+          "layer": "TOPIC",
+          "namespace": "DEVICE",
+          "namespace_id": "signalasi-phone",
+          "topic": "SignalASI phone chipset",
+          "value": "The SignalASI phone uses the Snapdragon X chipset",
+          "conversation_id": "device-session-2"
+        },
+        {
+          "id": "chip-model",
+          "kind": "FACT",
+          "layer": "TOPIC",
+          "namespace": "DEVICE",
+          "namespace_id": "signalasi-phone",
+          "topic": "Snapdragon X local model support",
+          "value": "The Snapdragon X chipset supports local Gemma inference",
+          "conversation_id": "device-session-3"
+        }
+      ],
+      "queries": [
+        {
+          "id": "device-ram",
+          "category": "device",
+          "query": "How much RAM does the SignalASI phone have?",
+          "conversation_id": "device-review",
+          "include": ["The SignalASI phone has 12 GB of RAM"],
+          "exclude": ["Gemma"]
+        },
+        {
+          "id": "device-chip",
+          "category": "device",
+          "query": "Which chipset does the SignalASI phone use?",
+          "conversation_id": "device-review",
+          "include": ["The SignalASI phone uses the Snapdragon X chipset"]
+        },
+        {
+          "id": "device-model-support",
+          "category": "device",
+          "query": "What local model inference does the Snapdragon X chipset support?",
+          "conversation_id": "device-review",
+          "include": ["The Snapdragon X chipset supports local Gemma inference"]
+        }
+      ]
+    },
+    {
+      "id": "privacy-and-abstention",
+      "items": [
+        {
+          "id": "backup-security",
+          "kind": "FACT",
+          "layer": "TOPIC",
+          "namespace": "SECURITY",
+          "topic": "Backup archive security",
+          "value": "The backup archive uses encrypted storage",
+          "conversation_id": "security-session-1"
+        },
+        {
+          "id": "backup-secret",
+          "kind": "FACT",
+          "layer": "TOPIC",
+          "namespace": "SECURITY",
+          "topic": "Backup unlock secret",
+          "value": "The backup unlock secret is violet-secret",
+          "conversation_id": "security-session-1",
+          "visibility": "LOCAL_ONLY"
+        }
+      ],
+      "queries": [
+        {
+          "id": "privacy-backup",
+          "category": "privacy",
+          "query": "What security protects the backup archive?",
+          "conversation_id": "security-session-8",
+          "include": ["The backup archive uses encrypted storage"],
+          "exclude": ["violet-secret"]
+        },
+        {
+          "id": "privacy-secret",
+          "category": "privacy",
+          "query": "What is the backup unlock secret?",
+          "conversation_id": "security-session-8",
+          "exclude": ["violet-secret"]
+        },
+        {
+          "id": "unknown-passport",
+          "category": "abstention",
+          "query": "What is the user's passport number?",
+          "conversation_id": "security-session-8",
+          "expect_empty": true
+        }
+      ]
+    },
+    {
+      "id": "gateway-conflict",
+      "items": [
+        {
+          "id": "gateway-online",
+          "kind": "STATE",
+          "layer": "TOPIC",
+          "topic": "Gateway current state",
+          "value": "The gateway is online",
+          "conversation_id": "gateway-session-1",
+          "status": "CONFLICTED",
+          "temporal_state": "CONFLICTED",
+          "conflict_group_id": "gateway-state"
+        },
+        {
+          "id": "gateway-offline",
+          "kind": "STATE",
+          "layer": "TOPIC",
+          "topic": "Gateway current state",
+          "value": "The gateway is offline",
+          "conversation_id": "gateway-session-2",
+          "status": "CONFLICTED",
+          "temporal_state": "CONFLICTED",
+          "conflict_group_id": "gateway-state"
+        }
+      ],
+      "queries": [
+        {
+          "id": "gateway-conflict-query",
+          "category": "conflict",
+          "query": "What is the current gateway state?",
+          "conversation_id": "gateway-session-3",
+          "include": ["The gateway is online", "The gateway is offline"],
+          "markers": ["Conflict notice:"]
+        }
+      ]
+    },
+    {
+      "id": "long-horizon-goals",
+      "items": [
+        {
+          "id": "roadmap-completed",
+          "kind": "GOAL",
+          "layer": "USER",
+          "namespace": "USER",
+          "topic": "SignalASI long-term roadmap",
+          "value": "The completed roadmap milestone was encrypted pairing",
+          "conversation_id": "roadmap-session-1",
+          "status": "COMPLETED",
+          "temporal_state": "HISTORICAL"
+        },
+        {
+          "id": "roadmap-next",
+          "kind": "GOAL",
+          "layer": "USER",
+          "namespace": "USER",
+          "topic": "SignalASI long-term roadmap",
+          "value": "The next roadmap milestone is verified autonomous execution",
+          "conversation_id": "roadmap-session-15",
+          "temporal_state": "PLANNED"
+        }
+      ],
+      "queries": [
+        {
+          "id": "roadmap-next-query",
+          "category": "goal",
+          "query": "What is the next long-term SignalASI roadmap milestone?",
+          "conversation_id": "roadmap-session-40",
+          "include": ["The next roadmap milestone is verified autonomous execution"],
+          "markers": ["[planned/user/"]
+        },
+        {
+          "id": "roadmap-history-query",
+          "category": "temporal",
+          "query": "Which SignalASI roadmap milestone was completed previously?",
+          "conversation_id": "roadmap-session-40",
+          "include": ["The completed roadmap milestone was encrypted pairing"],
+          "markers": ["[historical/user/"]
+        }
+      ]
+    },
+    {
+      "id": "tool-evidence",
+      "items": [
+        {
+          "id": "android-build-output",
+          "kind": "FACT",
+          "layer": "REALTIME",
+          "namespace": "PROJECT",
+          "namespace_id": "android",
+          "topic": "Project Android build command output",
+          "value": "Project Android build command completed successfully",
+          "conversation_id": "build-session-1"
+        },
+        {
+          "id": "desktop-build-output",
+          "kind": "FACT",
+          "layer": "REALTIME",
+          "namespace": "PROJECT",
+          "namespace_id": "desktop",
+          "topic": "Project Desktop build command output",
+          "value": "Project Desktop build command failed dependency validation",
+          "conversation_id": "build-session-2"
+        }
+      ],
+      "queries": [
+        {
+          "id": "android-build-result",
+          "category": "tool_evidence",
+          "query": "What output did the Project Android build command produce?",
+          "conversation_id": "build-session-8",
+          "include": ["Project Android build command completed successfully"],
+          "exclude": ["Project Desktop build command failed dependency validation"],
+          "markers": ["tool_evidence"]
+        },
+        {
+          "id": "desktop-build-result",
+          "category": "tool_evidence",
+          "query": "What output did the Project Desktop build command produce?",
+          "conversation_id": "build-session-8",
+          "include": ["Project Desktop build command failed dependency validation"],
+          "exclude": ["Project Android build command completed successfully"]
+        }
+      ]
+    },
+    {
+      "id": "conversation-scope",
+      "items": [
+        {
+          "id": "draft-note",
+          "kind": "FACT",
+          "layer": "CONVERSATION",
+          "topic": "Private draft codename",
+          "value": "The private draft codename is Aurora",
+          "conversation_id": "draft-session"
+        }
+      ],
+      "queries": [
+        {
+          "id": "conversation-same-session",
+          "category": "conversation_scope",
+          "query": "What is the private draft codename?",
+          "conversation_id": "draft-session",
+          "include": ["The private draft codename is Aurora"]
+        },
+        {
+          "id": "conversation-other-session",
+          "category": "conversation_scope",
+          "query": "What is the private draft codename?",
+          "conversation_id": "unrelated-session",
+          "exclude": ["Aurora"],
+          "expect_empty": true
+        }
+      ]
+    }
+  ]
+}

@@ -186,8 +186,11 @@ object GlobalMemoryQueryPlanner {
     }
 
     private fun namespacesFor(type: GlobalMemoryQueryType): Set<GlobalMemoryNamespace> = when (type) {
-        GlobalMemoryQueryType.PROJECT_STATE,
-        GlobalMemoryQueryType.LONG_TERM_GOAL -> setOf(GlobalMemoryNamespace.PROJECT)
+        GlobalMemoryQueryType.PROJECT_STATE -> setOf(GlobalMemoryNamespace.PROJECT)
+        GlobalMemoryQueryType.LONG_TERM_GOAL -> setOf(
+            GlobalMemoryNamespace.USER,
+            GlobalMemoryNamespace.PROJECT
+        )
         GlobalMemoryQueryType.DEVICE_CAPABILITY -> setOf(GlobalMemoryNamespace.DEVICE)
         GlobalMemoryQueryType.PERSONAL_IDENTITY,
         GlobalMemoryQueryType.PERSONAL_PREFERENCE -> setOf(GlobalMemoryNamespace.USER)
