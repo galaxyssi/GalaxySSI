@@ -223,9 +223,9 @@ enum GlobalProactiveDeliveryPolicy {
   ) -> Bool {
     let budget = GlobalAgentLearningPolicy.dailyMessageBudget(settings: settings, profile: profile)
     if budget <= 0 { return false }
-    let used = history.notificationTimestamps.count { timestamp in
+    let used = history.notificationTimestamps.filter { timestamp in
       (0...dayMillis).contains(nowMillis - timestamp)
-    }
+    }.count
     return used < budget
   }
 

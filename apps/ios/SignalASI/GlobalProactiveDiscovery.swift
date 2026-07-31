@@ -264,9 +264,9 @@ enum GlobalProactiveDiscoveryPolicy {
     nowMillis: Int64,
     maxTasks: Int = 2
   ) -> [GlobalDiscoveryCandidate] {
-    let emittedToday = state.recentEmissionTimestamps.count { timestamp in
+    let emittedToday = state.recentEmissionTimestamps.filter { timestamp in
       (0...dayMillis).contains(nowMillis - timestamp)
-    }
+    }.count
     let remainingBudget = max(settings.dailyDiscoveryTaskBudget - emittedToday, 0)
     if remainingBudget == 0 { return [] }
     let records = recordsByStableKey(state.records)
