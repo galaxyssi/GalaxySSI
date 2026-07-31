@@ -113,7 +113,9 @@ struct AgentIOSWebMediaOCRPipeline: AgentIOSWebMediaOCRProcessing {
     do {
       let request = try ocrRequest(input, invocation: invocation)
       let content = try contentReader.read(contentURI: request.contentURI, maxBytes: request.maxSourceBytes)
-      let result = try recognizer.recognize(content: content, request: request).bounded()
+      let result = try recognizer.recognize(content: content, request: request)
+        .normalizedOCRLayout(scriptHint: request.scriptHint)
+        .bounded()
       var output = result.output(
         contentURI: request.contentURI,
         sourceKind: request.sourceKind,
@@ -374,6 +376,32 @@ struct AgentIOSVisionTextOCRRecognizer: AgentIOSWebMediaOCRRecognizing {
 }
 
 private extension AgentIOSWebMediaOCRResult {
+  func normalizedOCRLayout(scriptHint: String) -> AgentIOSWebMediaOCRResult {
+    let script = AgentOcrScript.fromWireValue(scriptHint) ?? .auto
+    let merged = AgentOcrLayoutAnalyzer.merge(
+      candidates: [
+        AgentOcrCandidate(
+          script: script,
+          fallbackText: text,
+          lines: lines.map(\.ocrLine)
+        )
+      ],
+      width: width,
+      height: height
+    )
+    return AgentIOSWebMediaOCRResult(
+      text: merged.text,
+      lines: merged.lines.map(AgentIOSWebMediaOCRLine.init),
+      blocks: merged.blocks.map(AgentIOSWebMediaOCRBlock.init),
+      width: width,
+      height: height,
+      languageTags: merged.languageTags,
+      layoutMode: merged.layoutMode,
+      qualityScore: merged.qualityScore,
+      warnings: merged.warnings
+    )
+  }
+
   func bounded() throws -> AgentIOSWebMediaOCRResult {
     guard width >= 0,
           height >= 0,
@@ -437,6 +465,32 @@ private extension AgentIOSWebMediaOCRResult {
 }
 
 private extension AgentIOSWebMediaOCRLine {
+  init(_ line: AgentOcrLine) {
+    self.init(
+      text: line.text,
+      left: line.left,
+      top: line.top,
+      right: line.right,
+      bottom: line.bottom,
+      languageTag: line.languageTag,
+      blockIndex: line.blockIndex,
+      lineIndex: line.lineIndex
+    )
+  }
+
+  var ocrLine: AgentOcrLine {
+    AgentOcrLine(
+      text: text,
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+      languageTag: languageTag,
+      blockIndex: blockIndex,
+      lineIndex: lineIndex
+    )
+  }
+
   var isBounded: Bool {
     !text.isEmpty &&
       text.count <= 4_096 &&
@@ -464,6 +518,17 @@ private extension AgentIOSWebMediaOCRLine {
 }
 
 private extension AgentIOSWebMediaOCRBlock {
+  init(_ block: AgentOcrBlock) {
+    self.init(
+      text: block.text,
+      left: block.left,
+      top: block.top,
+      right: block.right,
+      bottom: block.bottom,
+      lineCount: block.lineCount
+    )
+  }
+
   var isBounded: Bool {
     !text.isEmpty &&
       text.count <= 16_384 &&
