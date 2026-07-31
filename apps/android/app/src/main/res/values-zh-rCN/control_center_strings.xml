@@ -306,6 +306,15 @@
 
     <string name="cc_execution_policy_title">执行策略</string>
     <string name="cc_section_confirmation_rules">确认规则</string>
+    <string name="agent_preference_mode_section">交互风格</string>
+    <string name="agent_preference_fewer_questions">少问</string>
+    <string name="agent_preference_fewer_questions_subtitle">理解清楚时直接行动，只在缺失信息阻断执行时追问</string>
+    <string name="agent_preference_cautious">谨慎</string>
+    <string name="agent_preference_cautious_subtitle">遇到歧义先澄清，修改数据或设备前先确认</string>
+    <string name="agent_preference_automation">自动化</string>
+    <string name="agent_preference_automation_subtitle">低风险操作直接执行，高风险确认与审计保护始终保留</string>
+    <string name="agent_preference_developer">开发者</string>
+    <string name="agent_preference_developer_subtitle">默认展开技术计划、执行细节、证据和工具输出</string>
     <string name="cc_task_execution_mode_section">任务执行</string>
     <string name="cc_task_execution_mode_title">任务执行方式</string>
     <string name="cc_task_execution_mode_subtitle">选择任务在给出方案后停止，还是继续执行并验证</string>

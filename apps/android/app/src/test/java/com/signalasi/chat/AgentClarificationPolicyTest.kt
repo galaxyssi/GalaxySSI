@@ -101,4 +101,61 @@ class AgentClarificationPolicyTest {
 
         assertEquals(AgentClarificationMode.EXECUTE, decision.mode)
     }
+
+    @Test
+    fun fewerQuestionsAndAutomationSkipNonBlockingLocalClarifications() {
+        listOf(
+            AgentPreferenceMode.FEWER_QUESTIONS,
+            AgentPreferenceMode.AUTOMATION
+        ).forEach { mode ->
+            assertEquals(
+                mode.name,
+                AgentClarificationMode.EXECUTE,
+                AgentClarificationPolicy.decide(
+                    goal = "Write a program",
+                    preferenceMode = mode
+                ).mode
+            )
+        }
+    }
+
+    @Test
+    fun cautiousAndDeveloperModesKeepEssentialClarification() {
+        listOf(
+            AgentPreferenceMode.CAUTIOUS,
+            AgentPreferenceMode.DEVELOPER
+        ).forEach { mode ->
+            assertEquals(
+                mode.name,
+                AgentClarificationMode.ASK_LOCALLY,
+                AgentClarificationPolicy.decide(
+                    goal = "Write a program",
+                    preferenceMode = mode
+                ).mode
+            )
+        }
+    }
+
+    @Test
+    fun noPreferenceInventsAGoalForEmptyOrAttachmentOnlyTurns() {
+        AgentPreferenceMode.entries.forEach { mode ->
+            assertEquals(
+                mode.name,
+                AgentClarificationMode.ASK_LOCALLY,
+                AgentClarificationPolicy.decide(
+                    goal = "",
+                    preferenceMode = mode
+                ).mode
+            )
+            assertEquals(
+                mode.name,
+                AgentClarificationMode.ASK_WITH_MODEL,
+                AgentClarificationPolicy.decide(
+                    goal = "",
+                    hasAttachments = true,
+                    preferenceMode = mode
+                ).mode
+            )
+        }
+    }
 }

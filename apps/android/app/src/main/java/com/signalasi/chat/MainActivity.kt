@@ -4444,7 +4444,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 goal = originalGoal,
                 hasAttachments = turnAttachments.isNotEmpty(),
                 hasConversationContext = localConversationContext.summary.isNotBlank() ||
-                    localConversationContext.turns.isNotEmpty()
+                    localConversationContext.turns.isNotEmpty(),
+                preferenceMode = mobileNativeAgent.preferenceMode()
             )
             if (clarification.mode == AgentClarificationMode.ASK_LOCALLY) {
                 agentTranscriptStore.append(
@@ -7009,7 +7010,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val clarification = AgentClarificationPolicy.decide(
             goal,
             hasConversationContext = conversationContext.summary.isNotBlank() ||
-                conversationContext.turns.isNotEmpty()
+                conversationContext.turns.isNotEmpty(),
+            preferenceMode = mobileNativeAgent.preferenceMode()
         )
         if (clarification.mode == AgentClarificationMode.ASK_LOCALLY) {
             val question = agentClarificationQuestion(clarification.question)
@@ -8336,6 +8338,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             "advanced.cache" -> clearRebuildableCache()
             "reset.begin" -> showResetConfirmationDialog()
             else -> when {
+                actionId.startsWith("agent.preference_mode:") -> {
+                    val mode = AgentPreferenceMode.fromWireValue(actionId.substringAfter(':'))
+                    mobileNativeAgent.updatePreferenceMode(mode)
+                    showPermissionModeSettingsPage()
+                }
                 actionId.startsWith("agent.task_execution_mode:") -> {
                     val mode = AgentTaskExecutionMode.fromWireValue(actionId.substringAfter(':'))
                     mobileNativeAgent.updateTaskExecutionMode(mode)
@@ -9714,6 +9721,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun renderControlCenterAgentCorePage() {
         val safety = mobileNativeAgent.safetySettings()
         val planner = mobileNativeAgent.modelPlannerSettings()
+        val preferenceMode = mobileNativeAgent.preferenceMode()
         showControlCenterFeature(
             getString(R.string.cc_agent_core_title),
             ControlCenterPageSpec(
@@ -9726,7 +9734,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 sections = listOf(
                     ControlCenterSectionSpec(
                         getString(R.string.cc_section_autonomy),
-                        listOf(ControlCenterRowSpec("agent.execution_policy", getString(R.string.cc_autonomy_title), getString(R.string.cc_autonomy_subtitle), R.drawable.ic_security_shield, permissionModeLabel(safety.permissionMode), ControlCenterTone.BLUE))
+                        listOf(ControlCenterRowSpec("agent.execution_policy", getString(R.string.cc_autonomy_title), getString(R.string.cc_autonomy_subtitle), R.drawable.ic_security_shield, agentPreferenceModeLabel(preferenceMode), ControlCenterTone.BLUE))
                     ),
                     ControlCenterSectionSpec(
                         getString(R.string.cc_section_core_capabilities),
@@ -11770,6 +11778,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showPermissionModeSettingsPage() {
         val settings = mobileNativeAgent.safetySettings()
+        val selectedPreferenceMode = mobileNativeAgent.preferenceMode()
         val selectedExecutionMode = settings.taskExecutionMode
         val selectedPermissionMode = settings.permissionMode
         showControlCenterFeature(
@@ -11782,6 +11791,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ControlCenterTone.BLUE
                 ),
                 sections = listOf(
+                    ControlCenterSectionSpec(
+                        getString(R.string.agent_preference_mode_section),
+                        AgentPreferenceMode.entries.map { mode ->
+                            val isSelected = mode == selectedPreferenceMode
+                            ControlCenterRowSpec(
+                                actionId = if (isSelected) "" else {
+                                    "agent.preference_mode:${mode.wireValue}"
+                                },
+                                title = agentPreferenceModeLabel(mode),
+                                subtitle = agentPreferenceModeDescription(mode),
+                                iconRes = agentPreferenceModeIcon(mode),
+                                status = if (isSelected) {
+                                    getString(R.string.settings_language_selected)
+                                } else {
+                                    ""
+                                },
+                                tone = if (isSelected) {
+                                    ControlCenterTone.GREEN
+                                } else {
+                                    ControlCenterTone.NEUTRAL
+                                },
+                                showChevron = false
+                            )
+                        }
+                    ),
                     ControlCenterSectionSpec(
                         getString(R.string.cc_task_execution_mode_section),
                         AgentTaskExecutionMode.entries.map { mode ->
@@ -11815,6 +11849,32 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 )
             )
         )
+    }
+
+    private fun agentPreferenceModeLabel(mode: AgentPreferenceMode): String = getString(
+        when (mode) {
+            AgentPreferenceMode.FEWER_QUESTIONS -> R.string.agent_preference_fewer_questions
+            AgentPreferenceMode.CAUTIOUS -> R.string.agent_preference_cautious
+            AgentPreferenceMode.AUTOMATION -> R.string.agent_preference_automation
+            AgentPreferenceMode.DEVELOPER -> R.string.agent_preference_developer
+        }
+    )
+
+    private fun agentPreferenceModeDescription(mode: AgentPreferenceMode): String = getString(
+        when (mode) {
+            AgentPreferenceMode.FEWER_QUESTIONS ->
+                R.string.agent_preference_fewer_questions_subtitle
+            AgentPreferenceMode.CAUTIOUS -> R.string.agent_preference_cautious_subtitle
+            AgentPreferenceMode.AUTOMATION -> R.string.agent_preference_automation_subtitle
+            AgentPreferenceMode.DEVELOPER -> R.string.agent_preference_developer_subtitle
+        }
+    )
+
+    private fun agentPreferenceModeIcon(mode: AgentPreferenceMode): Int = when (mode) {
+        AgentPreferenceMode.FEWER_QUESTIONS -> R.drawable.ic_agent_control
+        AgentPreferenceMode.CAUTIOUS -> R.drawable.ic_security_shield
+        AgentPreferenceMode.AUTOMATION -> R.drawable.ic_automation_line
+        AgentPreferenceMode.DEVELOPER -> R.drawable.ic_agent_skill
     }
 
     private fun taskExecutionModeDescription(mode: AgentTaskExecutionMode): String = getString(
@@ -15058,7 +15118,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         onFormSubmit = { block, values -> handleAgentRichForm(actionEntry, block, values) },
         enableResponseSections = displayEntry.textChunkCount == 0,
         isSectionExpanded = { entryId, kind, expandedByDefault ->
-            agentResponseSectionExpansion["$entryId:${kind.name}"] ?: expandedByDefault
+            agentResponseSectionExpansion["$entryId:${kind.name}"] ?: (
+                expandedByDefault ||
+                    AgentPreferenceModePolicy.profile(
+                        mobileNativeAgent.preferenceMode()
+                    ).expandStructuredDetails
+                )
         },
         onSectionExpansionChanged = { entryId, kind, expanded ->
             val key = "$entryId:${kind.name}"

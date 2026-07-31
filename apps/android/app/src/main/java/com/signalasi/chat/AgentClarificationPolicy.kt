@@ -31,7 +31,18 @@ object AgentClarificationPolicy {
     fun decide(
         goal: String,
         hasAttachments: Boolean = false,
-        hasConversationContext: Boolean = false
+        hasConversationContext: Boolean = false,
+        preferenceMode: AgentPreferenceMode = AgentPreferenceMode.CAUTIOUS
+    ): AgentClarificationDecision = AgentPreferenceModePolicy.resolveClarification(
+        mode = preferenceMode,
+        goal = goal,
+        baseline = decideBaseline(goal, hasAttachments, hasConversationContext)
+    )
+
+    private fun decideBaseline(
+        goal: String,
+        hasAttachments: Boolean,
+        hasConversationContext: Boolean
     ): AgentClarificationDecision {
         val normalized = normalize(goal)
         if (normalized.isBlank()) {
