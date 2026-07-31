@@ -7,6 +7,7 @@ struct VoiceReplyPlaybackRequest: Equatable {
   var language: String
   var providerId: String
   var runtimeChannel: VoiceRuntimeChannel
+  var voiceName: String
 }
 
 enum VoiceReplyPlaybackPolicy {
@@ -28,7 +29,6 @@ enum VoiceReplyPlaybackPolicy {
     )
     guard settings.speakReplies,
           settings.textToSpeechEnabled,
-          settings.ttsProvider == .system,
           !sessionId.isEmpty,
           !targetContactId.isEmpty,
           message.contactId == targetContactId,
@@ -43,7 +43,16 @@ enum VoiceReplyPlaybackPolicy {
       text: text,
       language: LanguagePolicySettings.resolve(languagePolicy.ttsLanguage),
       providerId: settings.ttsProvider.rawValue,
-      runtimeChannel: settings.ttsProvider.runtimeChannel
+      runtimeChannel: settings.ttsProvider.runtimeChannel,
+      voiceName: voiceName(settings: settings, languagePolicy: languagePolicy)
+    )
+  }
+
+  private static func voiceName(settings: VoiceSettings, languagePolicy: LanguagePolicySettings) -> String {
+    guard settings.ttsProvider == .microsoftEdge else { return "" }
+    return LanguagePolicySettings.microsoftVoice(
+      languageTag: languagePolicy.ttsLanguage,
+      configuredVoice: settings.microsoftVoice
     )
   }
 }

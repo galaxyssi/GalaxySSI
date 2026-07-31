@@ -480,4 +480,22 @@ struct LanguagePolicySettings: Codable, Equatable {
     let english = Locale(identifier: "en_US")
     return english.localizedString(forLanguageCode: locale.languageCode ?? "")?.capitalized ?? "English"
   }
+
+  static func microsoftVoice(languageTag: String, configuredVoice: String) -> String {
+    let resolved = resolve(languageTag)
+    let expectedPrefix = "\(resolved.lowercased())-"
+    if configuredVoice.lowercased().hasPrefix(expectedPrefix) {
+      return configuredVoice
+    }
+    if resolved.caseInsensitiveCompare(zhHK) == .orderedSame {
+      return "zh-HK-HiuMaanNeural"
+    }
+    if resolved.caseInsensitiveCompare(zhTW) == .orderedSame {
+      return "zh-TW-HsiaoChenNeural"
+    }
+    if resolved.lowercased().hasPrefix("zh") {
+      return "zh-CN-XiaoxiaoNeural"
+    }
+    return "en-US-JennyNeural"
+  }
 }

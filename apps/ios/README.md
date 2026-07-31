@@ -186,6 +186,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style iOS Whisper model settings page with current/use/download/retry/waiting row actions, hf-mirror backed foreground downloads, and automatic ASR model selection after validation
 - Android-style iOS voice provider settings for wake engine, local Whisper ASR provider, TTS provider, and Microsoft Edge voice wire values, including backup/restore persistence
 - Android-style iOS ASR provider routing policy that prefers ready Local Whisper and explicitly falls back to iOS Speech capability when Whisper is blocked by runtime/model readiness
+- Android-style iOS Microsoft Edge TTS foundation with Edge WebSocket protocol messages, MP3 audio synthesis, provider-aware reply playback routing, and latency/runtime health events
 - Android-style voice interaction coordinator for hold-to-talk sessions, canonical capture/ASR/routing/agent/TTS phases, one-shot final transcript routing commands, cancellation handoff, observer reattachment, and restart-safe session isolation
 - Android-style iOS speech-capture coordinator bridge for mapping native Speech start/partial/final/stop/error events into the shared voice interaction state machine without routing duplicate transcripts
 - Android-style iOS voice transcript route policy for resolving final speech commands to native agent, cloud model, remote agent, or local conversation targets with auto-send gating
