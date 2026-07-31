@@ -1234,6 +1234,7 @@ private enum SpeechCaptureServiceError: LocalizedError {
 final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
   @Published private(set) var transcript = ""
   @Published private(set) var isRecording = false
+  var onVoiceCommand: ((VoiceInteractionCommand) -> Void)?
 
   private let runtimeChannel = VoiceRuntimeChannel.androidSystemASR
   private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
@@ -1331,10 +1332,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
           let text = result.bestTranscription.formattedString
           self.transcript = text
           if result.isFinal {
-            self.coordinatorBridge.finishWithBestTranscript(
-              text,
-              provider: iosSpeechProviderId,
-              modelProfileId: self.currentRecognitionModelProfileId
+            self.emitCommands(
+              self.coordinatorBridge.finishWithBestTranscript(
+                text,
+                provider: iosSpeechProviderId,
+                modelProfileId: self.currentRecognitionModelProfileId
+              )
             )
           } else {
             self.coordinatorBridge.transcriptPartial(
@@ -1365,10 +1368,12 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let wasRecording = isRecording
     isRecording = false
     if wasRecording {
-      coordinatorBridge.finishStoppedCapture(
-        transcript: transcript,
-        provider: iosSpeechProviderId,
-        modelProfileId: currentRecognitionModelProfileId
+      emitCommands(
+        coordinatorBridge.finishStoppedCapture(
+          transcript: transcript,
+          provider: iosSpeechProviderId,
+          modelProfileId: currentRecognitionModelProfileId
+        )
       )
     }
     audioEngine.stop()
@@ -1381,6 +1386,10 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     if wasRecording {
       VoiceRuntimeHealthRegistry.idle(runtimeChannel)
     }
+  }
+
+  private func emitCommands(_ transition: VoiceInteractionTransition) {
+    transition.commands.forEach { onVoiceCommand?($0) }
   }
 }
 

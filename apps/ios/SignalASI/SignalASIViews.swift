@@ -769,6 +769,7 @@ struct PairingView: View {
 
 struct VoiceSettingsView: View {
   @EnvironmentObject private var store: SignalASIStore
+  @EnvironmentObject private var coordinator: MessageCoordinator
   @StateObject private var speech = SpeechCaptureService()
   @State private var permissionStatus = ""
 
@@ -867,9 +868,36 @@ struct VoiceSettingsView: View {
     permissionStatus = granted ? "" : "Microphone or speech permission is missing."
     guard granted else { return }
     do {
+      speech.onVoiceCommand = handleVoiceCommand
       try speech.start(settings: store.voiceSettings)
     } catch {
       permissionStatus = error.localizedDescription
+    }
+  }
+
+  private func handleVoiceCommand(_ command: VoiceInteractionCommand) {
+    guard let plan = VoiceTranscriptRoutePolicy.plan(
+      command: command,
+      settings: store.voiceSettings,
+      contacts: store.visibleContacts
+    ) else {
+      return
+    }
+    guard plan.shouldSend else {
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: plan.sessionId))
+      permissionStatus = "Transcript ready: \(plan.text)"
+      return
+    }
+    _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(
+      .routeSelected(sessionId: plan.sessionId, decision: plan.routeDecision)
+    )
+    permissionStatus = "Sending voice transcript to \(plan.contact.displayName)"
+    Task {
+      await coordinator.send(plan.text, to: plan.contact)
+      _ = VoiceInteractionCoordinatorRegistry.coordinator.dispatch(.completed(sessionId: plan.sessionId))
+      await MainActor.run {
+        permissionStatus = ""
+      }
     }
   }
 }
