@@ -91,6 +91,11 @@
             "test_desktop_memory_prompt_compiler",
             "test_agent_memory_telemetry"
           ]
+        },
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "benchmark:memory-locomo"]
         }
       ]
     },
@@ -130,4 +135,3 @@
     }
   ]
 }
-

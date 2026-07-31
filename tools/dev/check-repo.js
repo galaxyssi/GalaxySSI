@@ -19,6 +19,7 @@ const agentBenchmarkManifest = path.join(root, "benchmarks", "agent", "manifest.
 const agentBenchmarkRunner = path.join(root, "tools", "benchmark", "run-agent-benchmark.mjs");
 const coreRegressionManifest = path.join(root, "tools", "dev", "core-regression-manifest.json");
 const coreRegressionRunner = path.join(root, "tools", "dev", "run-core-regressions.mjs");
+const memoryLoCoMoCorpus = path.join(root, "benchmarks", "memory", "locomo-corpus.json");
 
 function listTrackedFiles() {
   const result = spawnSync("git", ["ls-files", "-z"], {
@@ -191,6 +192,48 @@ function checkCoreRegressions() {
   const missing = required.filter((identifier) => !identifiers.has(identifier));
   if (manifest.schema_version !== 1 || missing.length > 0) {
     throw new Error(`Core regression manifest is incomplete: ${missing.join(", ")}`);
+  }
+}
+
+function checkMemoryLoCoMoBenchmark() {
+  const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
+  const requiredFiles = [
+    memoryLoCoMoCorpus,
+    path.join(root, "docs", "testing", "MEMORY_LOCOMO_BENCHMARK.md"),
+    path.join(root, "tools", "benchmark", "memory-locomo-lib.mjs"),
+    path.join(root, "tools", "benchmark", "memory-locomo.test.mjs"),
+    path.join(root, "tools", "benchmark", "run-memory-locomo.mjs"),
+    path.join(
+      root,
+      "apps",
+      "android",
+      "app",
+      "src",
+      "test",
+      "java",
+      "com",
+      "signalasi",
+      "chat",
+      "GlobalMemoryLoCoMoCorpusTest.kt"
+    )
+  ];
+  for (const file of requiredFiles) {
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing memory LoCoMo benchmark asset: ${path.relative(root, file)}`);
+    }
+  }
+  for (const scriptName of ["benchmark:memory-locomo", "test:benchmark:memory-locomo"]) {
+    if (!packageJson.scripts?.[scriptName]) {
+      throw new Error(`Missing memory LoCoMo benchmark script: ${scriptName}`);
+    }
+  }
+  const corpus = JSON.parse(fs.readFileSync(memoryLoCoMoCorpus, "utf8"));
+  const queryCount = (corpus.timelines || []).reduce(
+    (total, timeline) => total + (timeline.queries || []).length,
+    0
+  );
+  if (corpus.schema_version !== 1 || queryCount < 20) {
+    throw new Error("Memory LoCoMo corpus must provide at least 20 schema v1 queries");
   }
 }
 
@@ -416,6 +459,10 @@ const checks = [
   {
     name: "core regressions",
     run: checkCoreRegressions
+  },
+  {
+    name: "memory LoCoMo benchmark",
+    run: checkMemoryLoCoMoBenchmark
   },
   {
     name: "product requirements",
