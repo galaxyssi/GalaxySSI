@@ -218,6 +218,9 @@
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
     A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */; };
+    A10000000000000000000458 /* AgentIOSForegroundVisibleCaptureProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000458 /* AgentIOSForegroundVisibleCaptureProvider.swift */; };
+    A10000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift */; };
+    A10000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift */; };
     A10000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift */; };
     A10000000000000000000290 /* AgentIOSMediaNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */; };
     A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */; };
@@ -523,6 +526,9 @@
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureNativeTools.swift; sourceTree = "<group>"; };
+    A20000000000000000000458 /* AgentIOSForegroundVisibleCaptureProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSForegroundVisibleCaptureProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureArtifactStore.swift; sourceTree = "<group>"; };
+    A20000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureUIKitSurfaces.swift; sourceTree = "<group>"; };
     A20000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebIntelligenceNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSMediaNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionNativeTools.swift; sourceTree = "<group>"; };
@@ -810,6 +816,9 @@
         A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */,
         A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */,
         A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */,
+        A20000000000000000000458 /* AgentIOSForegroundVisibleCaptureProvider.swift */,
+        A20000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift */,
+        A20000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift */,
         A20000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift */,
         A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */,
         A20000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift */,
@@ -1213,6 +1222,9 @@
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,
         A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */,
+        A10000000000000000000458 /* AgentIOSForegroundVisibleCaptureProvider.swift in Sources */,
+        A10000000000000000000459 /* AgentIOSVisibleCaptureArtifactStore.swift in Sources */,
+        A10000000000000000000460 /* AgentIOSVisibleCaptureUIKitSurfaces.swift in Sources */,
         A10000000000000000000288 /* AgentIOSWebIntelligenceNativeTools.swift in Sources */,
         A10000000000000000000290 /* AgentIOSMediaNativeTools.swift in Sources */,
         A10000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift in Sources */,

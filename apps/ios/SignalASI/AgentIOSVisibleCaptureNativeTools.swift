@@ -126,7 +126,7 @@ enum AgentIOSVisibleCaptureNativeToolCatalog {
   static let toolIds: Set<String> = [cameraCapture, microphoneRecord]
 
   static func definitions(
-    provider: AgentIOSVisibleCaptureToolProviding = AgentIOSUnavailableVisibleCaptureToolProvider()
+    provider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider()
   ) -> [AgentPhoneNativeToolDefinition] {
     [
       definition(
