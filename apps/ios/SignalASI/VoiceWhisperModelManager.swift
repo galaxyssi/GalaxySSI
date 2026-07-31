@@ -276,6 +276,27 @@ final class VoiceWhisperModelManager {
     )
   }
 
+  func downloadRequests(
+    for model: VoiceWhisperModelProfile,
+    allowsCellularAccess: Bool = true
+  ) throws -> [VoiceWhisperModelDownloadRequest] {
+    let primary = try enqueue(model, allowsCellularAccess: allowsCellularAccess)
+    var requests = [primary]
+    var seen = Set([primary.sourceURL.absoluteString])
+    for sourceURL in downloadSourceURLs(for: model) where seen.insert(sourceURL.absoluteString).inserted {
+      requests.append(
+        request(
+          for: model,
+          sourceURL: sourceURL,
+          requestId: primary.requestId,
+          allowsCellularAccess: allowsCellularAccess,
+          createdAtMillis: primary.createdAtMillis
+        )
+      )
+    }
+    return requests
+  }
+
   @discardableResult
   func recordProgress(
     _ model: VoiceWhisperModelProfile,
@@ -399,6 +420,11 @@ final class VoiceWhisperModelManager {
       allowsCellularAccess: allowsCellularAccess,
       createdAtMillis: createdAtMillis
     )
+  }
+
+  private func downloadSourceURLs(for model: VoiceWhisperModelProfile) -> [URL] {
+    VoiceWhisperModelDownloadPolicy.orderedSources(profile: model, locale: sourceLocale)
+      .compactMap(URL.init(string:))
   }
 
   private func recordWithStatus(
