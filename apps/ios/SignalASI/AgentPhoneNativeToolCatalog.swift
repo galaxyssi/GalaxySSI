@@ -91,6 +91,11 @@ enum AgentPhoneNativeToolCatalog {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
   ) -> [AgentPhoneNativeToolDefinition] {
+    let resolvedWebMediaProvider = AgentIOSURLSessionWebMediaToolProvider()
+    let resolvedWebIntelligenceProvider = defaultCatalogWebIntelligenceProvider(
+      webMediaProvider: resolvedWebMediaProvider,
+      nowMillis: nowMillis
+    )
     let resolvedMediaProvider = defaultCatalogMediaProvider(nowMillis: nowMillis)
     return workspaceDefinitions() +
       actionDefinitions(capabilityStatusProvider: capabilityStatusProvider, nowMillis: nowMillis) +
@@ -99,8 +104,8 @@ enum AgentPhoneNativeToolCatalog {
       AgentIOSHomeAssistantNativeToolCatalog.definitions() +
       AgentIOSNotificationNativeToolCatalog.definitions() +
       AgentIOSVisibleCaptureNativeToolCatalog.definitions() +
-      AgentIOSWebMediaNativeToolCatalog.definitions() +
-      AgentIOSWebIntelligenceNativeToolCatalog.definitions() +
+      AgentIOSWebMediaNativeToolCatalog.definitions(provider: resolvedWebMediaProvider) +
+      AgentIOSWebIntelligenceNativeToolCatalog.definitions(provider: resolvedWebIntelligenceProvider) +
       AgentIOSMediaNativeToolCatalog.definitions(provider: resolvedMediaProvider) +
       AgentIOSSelfEvolutionNativeToolCatalog.definitions() +
       AgentIOSDesktopRemoteNativeToolCatalog.definitions() +
@@ -154,6 +159,11 @@ enum AgentPhoneNativeToolCatalog {
       onDeviceRuntimeProvider: onDeviceRuntimeProvider,
       nowMillis: nowMillis
     )
+    let resolvedWebIntelligenceProvider = defaultWebIntelligenceProvider(
+      webIntelligenceProvider,
+      webMediaProvider: webMediaProvider,
+      nowMillis: nowMillis
+    )
     let resolvedNotificationProvider = defaultNotificationProvider(notificationProvider)
     let executables =
       workspaceExecutableDefinitions(store: workspaceStore) +
@@ -169,7 +179,7 @@ enum AgentPhoneNativeToolCatalog {
       notificationExecutableDefinitions(provider: resolvedNotificationProvider, nowMillis: nowMillis) +
       visibleCaptureExecutableDefinitions(provider: visibleCaptureProvider) +
       webMediaExecutableDefinitions(provider: webMediaProvider) +
-      webIntelligenceExecutableDefinitions(provider: webIntelligenceProvider) +
+      webIntelligenceExecutableDefinitions(provider: resolvedWebIntelligenceProvider) +
       mediaExecutableDefinitions(provider: resolvedMediaProvider, nowMillis: nowMillis) +
       selfEvolutionExecutableDefinitions(provider: selfEvolutionProvider, nowMillis: nowMillis) +
       desktopRemoteExecutableDefinitions(provider: desktopRemoteProvider) +
@@ -264,6 +274,30 @@ enum AgentPhoneNativeToolCatalog {
     nowMillis: @escaping () -> Int64
   ) -> AgentIOSMediaNativeToolProviding {
     AgentIOSAVFoundationMediaProvider(nowMillis: nowMillis)
+  }
+
+  private static func defaultWebIntelligenceProvider(
+    _ provider: AgentIOSWebIntelligenceToolProviding,
+    webMediaProvider: AgentIOSWebMediaToolProviding,
+    nowMillis: @escaping () -> Int64
+  ) -> AgentIOSWebIntelligenceToolProviding {
+    guard provider is AgentIOSUnavailableWebIntelligenceToolProvider else {
+      return provider
+    }
+    return defaultCatalogWebIntelligenceProvider(
+      webMediaProvider: webMediaProvider,
+      nowMillis: nowMillis
+    )
+  }
+
+  private static func defaultCatalogWebIntelligenceProvider(
+    webMediaProvider: AgentIOSWebMediaToolProviding,
+    nowMillis: @escaping () -> Int64
+  ) -> AgentIOSWebIntelligenceToolProviding {
+    AgentIOSURLSessionWebIntelligenceProvider(
+      webMediaProvider: webMediaProvider,
+      nowMillis: nowMillis
+    )
   }
 
   private static func defaultNotificationProvider(
