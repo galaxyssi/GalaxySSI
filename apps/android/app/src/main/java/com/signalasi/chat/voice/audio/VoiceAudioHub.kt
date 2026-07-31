@@ -140,6 +140,11 @@ class VoiceAudioHub(
 
     fun activeSession(): VoiceAudioSession? = synchronized(lock) { active?.public }
 
+    fun snapshotWindow(session: VoiceAudioSession, maxDurationMs: Long): PcmSnapshot? {
+        val current = synchronized(lock) { active?.takeIf { it.public.id == session.id } } ?: return null
+        return current.store.snapshotWindow(maxDurationMs)
+    }
+
     private fun processFrame(session: ActiveSession, frame: AudioFrame) {
         session.store.append(frame)
         val vad = session.vad.accept(frame)

@@ -7,8 +7,10 @@ import android.util.Log
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.signalasi.chat.WhisperModelManager
+import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperModelCatalog
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -18,6 +20,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.math.ceil
+import kotlin.math.sin
 
 @RunWith(AndroidJUnit4::class)
 class LocalWhisperRuntimeInstrumentedTest {
@@ -146,6 +149,82 @@ class LocalWhisperRuntimeInstrumentedTest {
                 }
             }
         } finally {
+            runtime.close()
+        }
+        assertEquals(0 to 0, runtime.activeNativeHandles())
+    }
+
+    @Test
+    fun tinyAdaptivePartialFinalMatchesAuthoritativeFullDecode() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val profile = WhisperModelCatalog.require("tiny")
+        val runtime = DefaultLocalWhisperRuntime(context)
+        val partialCompleted = CompletableDeferred<Unit>()
+        val scheduler = DefaultWhisperDecodeScheduler(
+            parentScope = this,
+            decoder = { request ->
+                runtime.createSession(
+                    LocalWhisperSessionConfig(
+                        language = "en",
+                        singleSegment = request.mode == WhisperExecutionMode.REALTIME_PARTIAL,
+                        mode = request.mode
+                    )
+                ).use { session ->
+                    session.decode(WhisperDecodeRequest(pcm16 = request.pcm16, mode = request.mode)).also {
+                        if (request.mode == WhisperExecutionMode.REALTIME_PARTIAL) partialCompleted.complete(Unit)
+                    }
+                }
+            },
+            abortActive = runtime::requestAbortAll
+        )
+        val live = LiveWhisperTranscriptionSession(
+            voiceSessionId = "instrumented-live",
+            profile = profile,
+            language = "en",
+            scheduler = scheduler,
+            scope = this,
+            elapsedRealtime = { 2_000L },
+            onUpdate = {}
+        )
+        val samples = ShortArray(32_000) { index ->
+            (sin(index * 2.0 * Math.PI * 220.0 / 16_000.0) * 2_000.0).toInt().toShort()
+        }
+        val snapshot = PcmSnapshot(
+            samples = samples,
+            sampleRateHz = 16_000,
+            speechDetected = true,
+            speechStartSample = 0L,
+            speechEndSampleExclusive = samples.size.toLong(),
+            captureStartSample = 0L,
+            captureEndSampleExclusive = samples.size.toLong()
+        )
+        try {
+            runtime.load(profile, WhisperLoadOptions(warmUp = false))
+            assertTrue(live.nextPartialWindowMs(snapshot.durationMs) != null)
+            live.offerPartial(snapshot)
+            withTimeout(30_000L) { partialCompleted.await() }
+
+            val adaptiveFinal = withTimeout(60_000L) { live.finish(snapshot) }
+            val authoritativeFinal = runtime.createSession(
+                LocalWhisperSessionConfig(
+                    language = "en",
+                    singleSegment = false,
+                    mode = WhisperExecutionMode.FINAL_ONLY
+                )
+            ).use { session ->
+                withTimeout(60_000L) {
+                    session.decode(
+                        WhisperDecodeRequest(pcm16 = samples, mode = WhisperExecutionMode.FINAL_ONLY)
+                    )
+                }
+            }
+
+            assertEquals(NativeWhisperCode.OK, adaptiveFinal.code)
+            assertEquals(authoritativeFinal.text, adaptiveFinal.text)
+            assertEquals(1 to 0, runtime.activeNativeHandles())
+        } finally {
+            live.close()
+            scheduler.close()
             runtime.close()
         }
         assertEquals(0 to 0, runtime.activeNativeHandles())

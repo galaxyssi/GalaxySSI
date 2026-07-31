@@ -4,6 +4,9 @@ import android.app.Activity
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
@@ -18,6 +21,7 @@ class AppleHoldToTalkController(
     private val idleContent: View? = null,
     private val recordingGroup: View,
     private val waveform: VoiceWaveformView,
+    private val transcript: TextView? = null,
     private val timer: TextView,
     private val hasPermission: () -> Boolean,
     private val requestPermission: () -> Unit,
@@ -78,6 +82,39 @@ class AppleHoldToTalkController(
         handler.removeCallbacks(meter)
     }
 
+    fun updateTranscript(stableText: String, unstableText: String) {
+        val target = transcript ?: return
+        val stable = stableText.trim()
+        val unstable = unstableText.trim()
+        if (stable.isBlank() && unstable.isBlank()) return
+        val separator = if (stable.isNotBlank() && unstable.isNotBlank() &&
+            stable.last().isLetterOrDigit() && unstable.first().isLetterOrDigit() &&
+            !stable.last().isCjk() && !unstable.first().isCjk()
+        ) " " else ""
+        val value = stable + separator + unstable
+        val styled = SpannableString(value)
+        if (stable.isNotBlank()) {
+            styled.setSpan(
+                ForegroundColorSpan(activity.getColor(R.color.text_primary)),
+                0,
+                stable.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        val unstableStart = stable.length + separator.length
+        if (unstableStart < styled.length) {
+            styled.setSpan(
+                ForegroundColorSpan(activity.getColor(R.color.text_secondary)),
+                unstableStart,
+                styled.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+        waveform.visibility = View.GONE
+        target.visibility = View.VISIBLE
+        target.text = styled
+    }
+
     private fun showRecordingUi() {
         pressButton.text = activity.getString(R.string.voice_release_to_send)
         idleContent?.apply {
@@ -85,6 +122,11 @@ class AppleHoldToTalkController(
             isEnabled = false
         }
         recordingGroup.visibility = View.VISIBLE
+        transcript?.apply {
+            text = ""
+            visibility = View.GONE
+        }
+        waveform.visibility = View.VISIBLE
         waveform.reset()
         timer.text = "00:00"
     }
@@ -107,6 +149,11 @@ class AppleHoldToTalkController(
         recording = false
         pressButton.parent?.requestDisallowInterceptTouchEvent(false)
         recordingGroup.visibility = View.GONE
+        transcript?.apply {
+            text = ""
+            visibility = View.GONE
+        }
+        waveform.visibility = View.VISIBLE
         idleContent?.apply {
             alpha = 1f
             isEnabled = true
@@ -122,4 +169,6 @@ class AppleHoldToTalkController(
         }
         cancelPending = false
     }
+
+    private fun Char.isCjk(): Boolean = code in 0x3400..0x9fff
 }

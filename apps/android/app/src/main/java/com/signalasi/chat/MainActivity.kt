@@ -86,17 +86,23 @@ import com.signalasi.chat.voice.audio.AdaptiveEndpointConfig
 import com.signalasi.chat.voice.audio.AndroidPcmRecorder
 import com.signalasi.chat.voice.audio.EndpointReason
 import com.signalasi.chat.voice.audio.PcmCaptureConfig
+import com.signalasi.chat.voice.audio.PcmSnapshot
 import com.signalasi.chat.voice.audio.PcmStopReason
 import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
 import com.signalasi.chat.voice.asr.local.AbortReason
+import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
+import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
+import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptUpdate
+import com.signalasi.chat.voice.asr.local.WhisperDecodeScheduler
 import com.signalasi.chat.voice.audio.VoiceAudioSession
 import com.signalasi.chat.voice.audio.VoiceAudioSessionConfig
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
+import com.signalasi.chat.voice.model.WhisperModelFamily
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -117,6 +123,7 @@ import java.util.*
 import java.util.concurrent.Executors
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -306,6 +313,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentInputContent: LinearLayout
     private lateinit var agentRecordingCenter: LinearLayout
     private lateinit var agentRecordingWaveform: VoiceWaveformView
+    private lateinit var agentRecordingTranscript: TextView
     private lateinit var agentRecordingTimer: TextView
     private lateinit var agentHoldToTalkController: AppleHoldToTalkController
     private lateinit var agentAttachButton: ImageButton
@@ -348,6 +356,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var pressToTalkButton: TextView
     private lateinit var chatRecordingCenter: LinearLayout
     private lateinit var chatRecordingWaveform: VoiceWaveformView
+    private lateinit var chatRecordingTranscript: TextView
     private lateinit var chatRecordingTimer: TextView
     private lateinit var holdToTalkController: AppleHoldToTalkController
     private lateinit var emojiButton: ImageButton
@@ -468,6 +477,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var activeVoiceTraceId = ""
     private var pcmVoiceAudioHub: VoiceAudioHub? = null
     private var pcmVoiceSession: VoiceAudioSession? = null
+    private val whisperDecodeSchedulerLock = Any()
+    private var whisperDecodeScheduler: WhisperDecodeScheduler? = null
+    private val liveWhisperSessions = ConcurrentHashMap<String, LiveWhisperTranscriptionSession>()
     private var pcmCaptureStopping = false
     @Volatile private var pcmVoiceAmplitude = 0
     private var lastPcmAudioLevelDispatchAt = 0L
@@ -735,6 +747,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentInputContent = findViewById(R.id.agentInputContent)
         agentRecordingCenter = findViewById(R.id.agentRecordingCenter)
         agentRecordingWaveform = findViewById(R.id.agentRecordingWaveform)
+        agentRecordingTranscript = findViewById(R.id.agentRecordingTranscript)
         agentRecordingTimer = findViewById(R.id.agentRecordingTimer)
         agentAttachButton = findViewById(R.id.agentAttachButton)
         agentSubmitButton = findViewById(R.id.agentSubmitButton)
@@ -763,6 +776,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         pressToTalkButton = findViewById(R.id.pressToTalkButton)
         chatRecordingCenter = findViewById(R.id.chatRecordingCenter)
         chatRecordingWaveform = findViewById(R.id.chatRecordingWaveform)
+        chatRecordingTranscript = findViewById(R.id.chatRecordingTranscript)
         chatRecordingTimer = findViewById(R.id.chatRecordingTimer)
         emojiButton = findViewById(R.id.emojiButton)
         emojiPanel = findViewById(R.id.emojiPanel)
@@ -1114,6 +1128,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         androidTts?.shutdown()
         if (::holdToTalkController.isInitialized) holdToTalkController.release()
         if (::agentHoldToTalkController.isInitialized) agentHoldToTalkController.release()
+        liveWhisperSessions.values.forEach(LiveWhisperTranscriptionSession::close)
+        liveWhisperSessions.clear()
+        whisperDecodeScheduler?.close()
+        whisperDecodeScheduler = null
         stopRecording(send = false)
         pcmVoiceSession?.let { session ->
             pcmVoiceAudioHub?.requestStop(session, PcmStopReason.USER_CANCEL)
@@ -3839,6 +3857,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             idleContent = agentInputContent,
             recordingGroup = agentRecordingCenter,
             waveform = agentRecordingWaveform,
+            transcript = agentRecordingTranscript,
             timer = agentRecordingTimer,
             hasPermission = {
                 checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -19590,6 +19609,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             pressButton = pressToTalkButton,
             recordingGroup = chatRecordingCenter,
             waveform = chatRecordingWaveform,
+            transcript = chatRecordingTranscript,
             timer = chatRecordingTimer,
             hasPermission = {
                 checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -21075,6 +21095,111 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         dispatchVoiceCoordinator(VoiceInteractionEvent.Completed(sessionId))
     }
 
+    private fun sharedWhisperDecodeScheduler(): WhisperDecodeScheduler = synchronized(whisperDecodeSchedulerLock) {
+        whisperDecodeScheduler ?: DefaultWhisperDecodeScheduler(
+            parentScope = voiceAssistantScope,
+            decoder = { request ->
+                LocalWhisperAsr.decodePcmWindow(
+                    context = this@MainActivity,
+                    pcm16 = request.pcm16,
+                    sampleRateHz = request.sampleRateHz,
+                    language = request.language,
+                    mode = request.mode,
+                    traceId = request.voiceSessionId,
+                    source = if (request.isFinal) "audio_record_final_pcm16" else "audio_record_partial_pcm16",
+                    modelProfileId = request.modelProfileId
+                ).result
+            },
+            abortActive = LocalWhisperAsr::requestAbort
+        ).also { whisperDecodeScheduler = it }
+    }
+
+    private fun startLiveWhisperSession(purpose: String, traceId: String): LiveWhisperTranscriptionSession? {
+        if (!VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(this) ||
+            !VoiceFeatureFlags.isWhisperAdaptivePartialEnabled(this)
+        ) return null
+        val profile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
+        if (profile.family !in setOf(WhisperModelFamily.TINY, WhisperModelFamily.BASE) ||
+            !WhisperModelManager.isAvailable(this, profile)
+        ) return null
+        val session = LiveWhisperTranscriptionSession(
+            voiceSessionId = traceId,
+            profile = profile,
+            language = LanguagePolicySettings.resolvedAsrLanguage(this),
+            scheduler = sharedWhisperDecodeScheduler(),
+            scope = voiceAssistantScope,
+            elapsedRealtime = SystemClock::elapsedRealtime,
+            onUpdate = { update -> handleLiveWhisperUpdate(purpose, traceId, update) }
+        )
+        liveWhisperSessions.put(traceId, session)?.close()
+        Log.i("SignalASIVoice", "Adaptive partial enabled purpose=$purpose model=${profile.id} trace=$traceId")
+        return session
+    }
+
+    private fun handleLiveWhisperUpdate(
+        purpose: String,
+        traceId: String,
+        update: LiveWhisperTranscriptUpdate
+    ) {
+        val transcript = update.transcript
+        if (transcript.final || transcript.displayText.isBlank()) return
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.ASR_FIRST_PARTIAL,
+            mapOf(
+                "model_profile_id" to update.modelProfileId,
+                "rtf" to String.format(Locale.US, "%.4f", update.realTimeFactor)
+            ),
+            once = true
+        )
+        runOnUiThread {
+            if (recordingVoiceTraceId != traceId || pcmVoiceSession == null) return@runOnUiThread
+            val coordinatorSessionId = voiceCoordinatorSession(traceId)
+            if (coordinatorSessionId.isNotBlank()) {
+                val hypothesis = TranscriptHypothesis(
+                    text = transcript.displayText,
+                    revision = transcript.revision,
+                    provider = "whisper.cpp",
+                    modelProfileId = update.modelProfileId
+                )
+                dispatchVoiceCoordinator(VoiceInteractionEvent.TranscriptPartial(coordinatorSessionId, hypothesis))
+                if (transcript.stableText.isNotBlank()) {
+                    dispatchVoiceCoordinator(
+                        VoiceInteractionEvent.TranscriptStable(
+                            coordinatorSessionId,
+                            hypothesis.copy(text = transcript.stableText)
+                        )
+                    )
+                    VoiceLatencyTelemetry.record(
+                        this,
+                        traceId,
+                        VoiceTraceEvents.ASR_FIRST_STABLE,
+                        mapOf("model_profile_id" to update.modelProfileId),
+                        once = true
+                    )
+                }
+            }
+            when (purpose) {
+                "agent_input" -> if (::agentHoldToTalkController.isInitialized) {
+                    agentHoldToTalkController.updateTranscript(transcript.stableText, transcript.unstableText)
+                }
+                "voice_wakeup" -> updateWakeVoiceUi(
+                    getString(R.string.voice_status_recording),
+                    transcript.displayText
+                )
+                else -> if (::holdToTalkController.isInitialized) {
+                    holdToTalkController.updateTranscript(transcript.stableText, transcript.unstableText)
+                }
+            }
+        }
+    }
+
+    private fun closeLiveWhisperSession(traceId: String) {
+        if (traceId.isBlank()) return
+        liveWhisperSessions.remove(traceId)?.close()
+    }
+
     // ===== Recording =====
     private fun startRecording(purpose: String): Boolean {
         if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
@@ -21167,6 +21292,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             mapOf("recording_source" to purpose)
         )
         val coordinatorSessionId = beginVoiceCoordinatorSession(purpose, traceId)
+        val liveWhisperSession = startLiveWhisperSession(purpose, traceId)
+        val partialSpeechStartedAt = AtomicLong(0L)
         activeVoiceTraceId = traceId
         recordingVoiceTraceId = traceId
         recordingStartedAt = System.currentTimeMillis()
@@ -21231,6 +21358,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
                 override fun onAudioLevel(session: VoiceAudioSession, decision: VadDecision) {
                     pcmVoiceAmplitude = decision.peak
+                    val speechStartedAt = partialSpeechStartedAt.get()
+                    if (decision.isSpeech && speechStartedAt > 0L) liveWhisperSession?.let { live ->
+                        val capturedAudioMs = (SystemClock.elapsedRealtime() - speechStartedAt).coerceAtLeast(0L)
+                        live.nextPartialWindowMs(capturedAudioMs)?.let { windowMs ->
+                            voiceAudioHub().snapshotWindow(session, windowMs)?.let(live::offerPartial)
+                        }
+                    }
                     val now = SystemClock.elapsedRealtime()
                     if (now - lastPcmAudioLevelDispatchAt >= 100L && coordinatorSessionId.isNotBlank()) {
                         lastPcmAudioLevelDispatchAt = now
@@ -21241,6 +21375,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
 
                 override fun onSpeechStarted(session: VoiceAudioSession, sequence: Long) {
+                    partialSpeechStartedAt.compareAndSet(0L, SystemClock.elapsedRealtime())
                     runOnUiThread {
                         if (pcmVoiceSession?.id != session.id) return@runOnUiThread
                         if (purpose == "voice_wakeup") {
@@ -21293,6 +21428,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
         ) ?: run {
+            closeLiveWhisperSession(traceId)
             recordingPurpose = ""
             recordingVoiceTraceId = ""
             recordingVoiceCoordinatorSessionId = ""
@@ -21328,6 +21464,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         error: Throwable
     ) {
         if (pcmVoiceSession?.id != session.id || pcmCaptureStopping) return
+        closeLiveWhisperSession(traceId)
         pcmVoiceSession = null
         pcmVoiceAmplitude = 0
         recordingPurpose = ""
@@ -21627,6 +21764,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun completeSilentPcmCommand(traceId: String, coordinatorSessionId: String) {
+        closeLiveWhisperSession(traceId)
         voiceAssistantRecordingCommand = false
         voiceCommandSpeechDetected = false
         voiceCommandLastVoiceAt = 0L
@@ -21648,6 +21786,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun cancelPcmCapture(traceId: String, coordinatorSessionId: String, reason: String) {
+        closeLiveWhisperSession(traceId)
         voiceAssistantRecordingCommand = false
         voiceCommandSpeechDetected = false
         voiceCommandLastVoiceAt = 0L
@@ -21670,6 +21809,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         errorCode: String,
         purpose: String
     ) {
+        closeLiveWhisperSession(traceId)
         if (coordinatorSessionId.isNotBlank()) failVoiceCoordinator(traceId, errorCode)
         VoiceLatencyTelemetry.record(
             this,
@@ -21921,7 +22061,43 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         )
         voiceAssistantScope.launch {
             val result = runCatching {
-                if (pcmSamples != null) {
+                val liveSession = liveWhisperSessions[traceId]
+                if (pcmSamples != null && liveSession != null) {
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        traceId,
+                        VoiceTraceEvents.ASR_FINAL_STARTED,
+                        mapOf(
+                            "asr_provider" to "whisper.cpp",
+                            "audio_source" to "audio_record_pcm16",
+                            "audio_duration_ms" to (pcmSamples.size.toLong() * 1_000L / sampleRateHz).toString()
+                        ),
+                        once = true
+                    )
+                    val native = liveSession.finish(
+                        PcmSnapshot(
+                            samples = pcmSamples,
+                            sampleRateHz = sampleRateHz,
+                            speechDetected = true,
+                            speechStartSample = 0L,
+                            speechEndSampleExclusive = pcmSamples.size.toLong(),
+                            captureStartSample = 0L,
+                            captureEndSampleExclusive = pcmSamples.size.toLong()
+                        )
+                    )
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        traceId,
+                        VoiceTraceEvents.ASR_FINAL_RECEIVED,
+                        mapOf(
+                            "asr_provider" to "whisper.cpp",
+                            "model_profile_id" to liveSession.modelProfileId,
+                            "success" to "true"
+                        ),
+                        once = true
+                    )
+                    native.text
+                } else if (pcmSamples != null) {
                     LocalWhisperAsr.transcribePcm(
                         this@MainActivity,
                         pcmSamples,
@@ -21934,6 +22110,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language, traceId)
                 }
             }
+            closeLiveWhisperSession(traceId)
             sourceFile.delete()
             runOnUiThread {
                 val transcript = result.getOrNull().orEmpty().trim()

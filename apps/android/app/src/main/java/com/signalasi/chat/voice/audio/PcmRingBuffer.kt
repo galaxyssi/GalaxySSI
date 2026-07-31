@@ -69,6 +69,7 @@ interface SpeechSegmentStore {
     fun markSpeechStart(sequence: Long)
     fun markSpeechEnd(sequence: Long)
     fun snapshot(segment: SegmentRange = SegmentRange()): PcmSnapshot
+    fun snapshotWindow(maxDurationMs: Long, segment: SegmentRange = SegmentRange()): PcmSnapshot
     fun trimBefore(sequence: Long)
     fun clear()
 }
@@ -108,6 +109,20 @@ class InMemorySpeechSegmentStore(
 
     @Synchronized
     override fun snapshot(segment: SegmentRange): PcmSnapshot {
+        val (start, end) = snapshotBounds(segment)
+        return snapshot(start, end)
+    }
+
+    @Synchronized
+    override fun snapshotWindow(maxDurationMs: Long, segment: SegmentRange): PcmSnapshot {
+        require(maxDurationMs > 0L)
+        val (segmentStart, end) = snapshotBounds(segment)
+        val windowSamples = maxDurationMs * sampleRateHz / 1_000L
+        val start = (end - windowSamples).coerceAtLeast(segmentStart)
+        return snapshot(start, end)
+    }
+
+    private fun snapshotBounds(segment: SegmentRange): Pair<Long, Long> {
         val retainedStart = ring.retainedStartSample()
         val retainedEnd = ring.endSampleExclusive()
         val start = speechStartSample?.let {
@@ -116,6 +131,10 @@ class InMemorySpeechSegmentStore(
         val end = speechEndSampleExclusive?.let {
             it + segment.postRollMs.toLong() * sampleRateHz / 1_000L
         }?.coerceAtMost(retainedEnd) ?: retainedEnd
+        return start to end
+    }
+
+    private fun snapshot(start: Long, end: Long): PcmSnapshot {
         return PcmSnapshot(
             samples = ring.snapshot(start, end),
             sampleRateHz = sampleRateHz,
