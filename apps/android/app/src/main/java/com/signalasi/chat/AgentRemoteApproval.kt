@@ -29,7 +29,7 @@ data class AgentRemoteApprovalRequest(
     val compactActionHash: String
         get() = "${actionHash.take(8)}...${actionHash.takeLast(8)}"
 
-    fun decision(approved: Boolean): AgentRemoteApprovalDecision =
+    fun decision(choice: AgentPermissionChoice): AgentRemoteApprovalDecision =
         AgentRemoteApprovalDecision(
             taskId = taskId,
             clientRouteId = clientRouteId,
@@ -39,7 +39,7 @@ data class AgentRemoteApprovalRequest(
             sourceMessageId = sourceMessageId,
             approvalId = approvalId,
             actionHash = actionHash,
-            approved = approved
+            choice = choice
         )
 
     companion object {
@@ -111,8 +111,11 @@ data class AgentRemoteApprovalDecision(
     val sourceMessageId: Long,
     val approvalId: String,
     val actionHash: String,
-    val approved: Boolean
+    val choice: AgentPermissionChoice
 ) {
+    val approved: Boolean
+        get() = choice.approved
+
     fun encode(): String = JSONObject()
         .put("task_id", taskId)
         .put("client_route_id", clientRouteId)
@@ -122,6 +125,7 @@ data class AgentRemoteApprovalDecision(
         .put("source_message_id", sourceMessageId)
         .put("approval_id", approvalId)
         .put("action_hash", actionHash)
+        .put("decision_scope", choice.wireValue)
         .put("approved", approved)
         .toString()
 
@@ -136,6 +140,9 @@ data class AgentRemoteApprovalDecision(
             val sourceMessageId = value.optLong("source_message_id", 0L)
             val approvalId = value.optString("approval_id").trim()
             val actionHash = value.optString("action_hash").trim().lowercase()
+            val choice = AgentPermissionChoice.fromWireValue(
+                value.optString("decision_scope")
+            ) ?: return null
             if (taskId.isBlank() ||
                 clientRouteId.isBlank() ||
                 conversationId.isBlank() ||
@@ -156,7 +163,7 @@ data class AgentRemoteApprovalDecision(
                 sourceMessageId = sourceMessageId,
                 approvalId = approvalId,
                 actionHash = actionHash,
-                approved = value.optBoolean("approved", false)
+                choice = choice
             )
         }
     }

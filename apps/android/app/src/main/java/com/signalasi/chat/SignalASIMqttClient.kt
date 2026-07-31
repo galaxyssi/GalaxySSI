@@ -799,6 +799,7 @@ object SignalASIMqttClient {
             .put("source_message_id", decision.sourceMessageId)
             .put("approval_id", decision.approvalId)
             .put("action_hash", decision.actionHash)
+            .put("decision_scope", decision.choice.wireValue)
             .put("approved", decision.approved)
             .put("time", System.currentTimeMillis())
         appContext?.let { context ->

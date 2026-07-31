@@ -26,6 +26,14 @@ class _ApprovalServer:
         self.calls.append(dict(values))
 
 
+class _PermissionPolicy:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    def record(self, **values):
+        self.calls.append(dict(values))
+
+
 class MqttAgentApprovalTests(unittest.TestCase):
     def setUp(self) -> None:
         self.action_hash = "a" * 64
@@ -46,8 +54,17 @@ class MqttAgentApprovalTests(unittest.TestCase):
             "approval_id": "approval-12345678",
             "action_hash": self.action_hash,
             "source_message_id": self.task.source_message_id,
+            "decision_scope": "allow_once",
             "approved": True,
         }
+        self.permission_policy = _PermissionPolicy()
+        self.policy_patch = patch.object(
+            mqtt_bridge,
+            "tool_permission_policy",
+            self.permission_policy,
+        )
+        self.policy_patch.start()
+        self.addCleanup(self.policy_patch.stop)
 
     def test_exact_paired_task_approval_resumes_codex(self) -> None:
         server = _ApprovalServer(self.action_hash)
@@ -72,6 +89,7 @@ class MqttAgentApprovalTests(unittest.TestCase):
             }],
             server.calls,
         )
+        self.assertEqual("allow_once", self.permission_policy.calls[0]["choice"])
 
     def test_task_identity_mismatch_never_reaches_codex(self) -> None:
         for field, value in (
@@ -147,6 +165,48 @@ class MqttAgentApprovalTests(unittest.TestCase):
         self.assertFalse(result["resolved"])
         self.assertIn("hash", result["error"].lower())
         self.assertEqual([], server.calls)
+
+    def test_scope_and_boolean_must_describe_the_same_decision(self) -> None:
+        server = _ApprovalServer(self.action_hash)
+        changed = dict(
+            self.payload,
+            decision_scope="deny_always",
+            approved=True,
+        )
+        with (
+            patch.object(mqtt_bridge, "agent_task_manager", _TaskManager(self.task)),
+            patch.object(mqtt_bridge, "codex_app_server", server),
+        ):
+            result = mqtt_bridge._resolve_agent_task_approval(
+                changed,
+                client_route_id=self.task.client_route_id,
+                contact_id=self.task.contact_id,
+            )
+
+        self.assertFalse(result["resolved"])
+        self.assertIn("does not match", result["error"])
+        self.assertEqual([], server.calls)
+
+    def test_permanent_denial_is_applied_and_saved(self) -> None:
+        server = _ApprovalServer(self.action_hash)
+        denied = dict(
+            self.payload,
+            decision_scope="deny_always",
+            approved=False,
+        )
+        with (
+            patch.object(mqtt_bridge, "agent_task_manager", _TaskManager(self.task)),
+            patch.object(mqtt_bridge, "codex_app_server", server),
+        ):
+            result = mqtt_bridge._resolve_agent_task_approval(
+                denied,
+                client_route_id=self.task.client_route_id,
+                contact_id=self.task.contact_id,
+            )
+
+        self.assertTrue(result["resolved"])
+        self.assertFalse(server.calls[0]["approved"])
+        self.assertEqual("deny_always", self.permission_policy.calls[0]["choice"])
 
 
 if __name__ == "__main__":

@@ -100,6 +100,12 @@ from response_self_check import (
 )
 from remote_agent_security import remote_agent_security_policy
 from stt_bridge import transcribe_audio
+from tool_permission_policy import (
+    ALLOW_ONCE,
+    DENY_ALWAYS,
+    normalize_choice,
+    tool_permission_policy,
+)
 
 log = logging.getLogger("signalasi.mqtt")
 
@@ -2231,6 +2237,13 @@ def _resolve_agent_task_approval(
     approval_id = str(payload.get("approval_id") or "").strip()
     action_hash = str(payload.get("action_hash") or "").strip().lower()
     source_message_id = str(payload.get("source_message_id") or "")
+    try:
+        decision_scope = normalize_choice(payload.get("decision_scope"))
+    except ValueError as exc:
+        decision_scope = ""
+        decision_scope_error = str(exc)
+    else:
+        decision_scope_error = ""
     existing_task = agent_task_manager.get(task_id)
     task_matches = (
         str(payload.get("client_route_id") or "").strip()
@@ -2246,9 +2259,18 @@ def _resolve_agent_task_approval(
         )
     )
     approved = payload.get("approved") is True
+    decision_matches = (
+        isinstance(payload.get("approved"), bool)
+        and approved == (decision_scope != DENY_ALWAYS)
+    )
     error = ""
     resolved = False
-    if not task_matches:
+    persisted = decision_scope == ALLOW_ONCE
+    if decision_scope_error:
+        error = decision_scope_error
+    elif not decision_matches:
+        error = "Tool permission decision scope does not match its approval value"
+    elif not task_matches:
         error = "Task approval does not match the paired task"
     elif existing_task is None or existing_task.agent_id != "codex":
         error = "This Agent does not support remote approval"
@@ -2263,6 +2285,17 @@ def _resolve_agent_task_approval(
                 approved=approved,
             )
             resolved = True
+            try:
+                tool_permission_policy.record(
+                    choice=decision_scope,
+                    client_route_id=client_route_id,
+                    contact_id=contact_id,
+                    conversation_id=str(payload.get("conversation_id") or ""),
+                    action_hash=action_hash,
+                )
+                persisted = True
+            except Exception as exc:
+                error = f"Decision applied but its permission scope was not saved: {exc}"[:500]
         except Exception as exc:
             error = str(exc)[:500]
     return {
@@ -2270,8 +2303,10 @@ def _resolve_agent_task_approval(
         "task_id": task_id,
         "approval_id": approval_id,
         "action_hash": action_hash,
+        "decision_scope": decision_scope,
         "approved": approved,
         "resolved": resolved,
+        "permission_scope_saved": persisted,
         "error": error,
         "contact_id": contact_id,
         "source_message_id": source_message_id,
@@ -3717,6 +3752,35 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         def app_event(task_id: str, event: dict) -> None:
             nonlocal result_published
             event_status = str(event.get("status") or "running")
+            approval_request = event.get("approval_request")
+            if event_status == "waiting_approval" and isinstance(approval_request, dict):
+                stored_decision = None
+                try:
+                    stored_decision = tool_permission_policy.resolve(
+                        client_route_id=task.client_route_id,
+                        contact_id=task.contact_id,
+                        conversation_id=task.client_conversation_id,
+                        action_hash=str(approval_request.get("action_hash") or ""),
+                    )
+                except Exception:
+                    log.exception("Stored tool permission lookup failed")
+                server = codex_runtime.get("server")
+                if stored_decision is not None and isinstance(server, CodexAppServer):
+                    try:
+                        server.resolve_approval(
+                            task_id=task_id,
+                            approval_id=str(approval_request.get("approval_id") or ""),
+                            action_hash=stored_decision.action_hash,
+                            approved=stored_decision.approved,
+                        )
+                    except Exception:
+                        log.exception("Stored tool permission could not resolve the pending action")
+                    else:
+                        add_task_trace(
+                            "codex_permission_policy_applied",
+                            stored_decision.choice,
+                        )
+                        return
             trace_stage = str(event.get("trace_stage") or "").strip()
             if trace_stage:
                 add_task_trace(

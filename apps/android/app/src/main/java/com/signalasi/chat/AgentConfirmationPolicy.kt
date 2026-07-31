@@ -8,11 +8,43 @@ enum class AgentConfirmationTier {
     CONFIRM_ALWAYS
 }
 
+enum class AgentPermissionChoice(val wireValue: String) {
+    ALLOW_ONCE("allow_once"),
+    ALLOW_SESSION("allow_session"),
+    ALLOW_ALWAYS("allow_always"),
+    DENY_ALWAYS("deny_always");
+
+    val approved: Boolean
+        get() = this != DENY_ALWAYS
+
+    companion object {
+        fun fromWireValue(value: String): AgentPermissionChoice? =
+            entries.firstOrNull { it.wireValue == value.trim().lowercase() }
+    }
+}
+
+data class AgentConfirmationConsentDecision(
+    val allowed: Boolean,
+    val denied: Boolean,
+    val choice: AgentPermissionChoice? = null,
+    val grantId: String = "",
+    val reason: String = ""
+)
+
 interface AgentConfirmationConsentStore {
-    fun isRemembered(consentKey: String): Boolean
+    fun decision(
+        consentKey: String,
+        sessionId: String = "",
+        consume: Boolean = false
+    ): AgentConfirmationConsentDecision
     fun rememberedKeys(): Set<String>
-    fun remember(consentKey: String)
+    fun record(
+        consentKey: String,
+        choice: AgentPermissionChoice,
+        sessionId: String = ""
+    ): AgentConfirmationConsentDecision
     fun forget(consentKey: String): Boolean
+    fun endSession(sessionId: String)
     fun clear()
 }
 
@@ -30,45 +62,101 @@ class SharedPreferencesAgentConfirmationConsentStore(context: Context) : AgentCo
         )
     }
 
-    override fun isRemembered(consentKey: String): Boolean {
+    override fun decision(
+        consentKey: String,
+        sessionId: String,
+        consume: Boolean
+    ): AgentConfirmationConsentDecision {
         val cleanKey = consentKey.trim()
-        if (cleanKey.isBlank()) return false
-        return grantStore.authorize(permissionRequest(cleanKey)).granted
+        if (cleanKey.isBlank()) return AgentConfirmationConsentDecision(
+            allowed = false,
+            denied = false,
+            reason = "invalid_consent_key"
+        )
+        val result = grantStore.authorize(
+            permissionRequest(cleanKey, sessionId),
+            consume = consume
+        )
+        val grant = result.grant
+        return AgentConfirmationConsentDecision(
+            allowed = result.granted,
+            denied = grant?.effect == AgentPermissionGrantEffect.DENY,
+            choice = grant?.toPermissionChoice(),
+            grantId = grant?.grantId.orEmpty(),
+            reason = result.reason
+        )
     }
 
     override fun rememberedKeys(): Set<String> = grantStore.list(includeInactive = false)
         .asSequence()
         .filter { it.subjectType == AgentPermissionSubjectType.CONSEQUENTIAL_ACTION }
+        .filter { it.effect == AgentPermissionGrantEffect.ALLOW }
         .map(AgentPermissionGrant::scope)
         .toSet()
 
-    override fun remember(consentKey: String) {
+    override fun record(
+        consentKey: String,
+        choice: AgentPermissionChoice,
+        sessionId: String
+    ): AgentConfirmationConsentDecision {
         val cleanKey = consentKey.trim()
-        if (cleanKey.isBlank()) return
+        if (cleanKey.isBlank()) return AgentConfirmationConsentDecision(
+            allowed = false,
+            denied = false,
+            reason = "invalid_consent_key"
+        )
+        val cleanSessionId = sessionId.trim()
+        if (choice == AgentPermissionChoice.ALLOW_SESSION) {
+            require(cleanSessionId.isNotBlank()) { "Session permission requires a session id" }
+        }
         val before = rememberedKeys()
-        if (cleanKey in before) return
-        grantStore.grant(
+        grantStore.revokeScope(cleanKey, "user_replaced_permission_decision")
+        val lifetime = when (choice) {
+            AgentPermissionChoice.ALLOW_ONCE -> AgentPermissionGrantLifetime.SINGLE_USE
+            AgentPermissionChoice.ALLOW_SESSION -> AgentPermissionGrantLifetime.SESSION
+            AgentPermissionChoice.ALLOW_ALWAYS,
+            AgentPermissionChoice.DENY_ALWAYS -> AgentPermissionGrantLifetime.PERMANENT
+        }
+        val effect = if (choice.approved) {
+            AgentPermissionGrantEffect.ALLOW
+        } else {
+            AgentPermissionGrantEffect.DENY
+        }
+        val grant = grantStore.grant(
             AgentPermissionGrant(
                 subjectType = AgentPermissionSubjectType.CONSEQUENTIAL_ACTION,
                 subjectId = HOST_SUBJECT_ID,
                 scope = cleanKey,
                 action = cleanKey,
                 issuer = AgentPermissionGrantIssuer.USER,
-                evidence = "user_confirmed_once",
-                lifetime = AgentPermissionGrantLifetime.PERMANENT
+                evidence = "user_decision:${choice.wireValue}",
+                lifetime = lifetime,
+                effect = effect,
+                sessionId = if (lifetime == AgentPermissionGrantLifetime.SESSION) cleanSessionId else ""
             )
         )
+        val current = if (choice == AgentPermissionChoice.ALLOW_ONCE) {
+            grantStore.authorize(permissionRequest(cleanKey, cleanSessionId), consume = true)
+        } else {
+            AgentPermissionDecision(choice.approved, grant, "user_decision_recorded")
+        }
         val after = rememberedKeys()
         GlobalConversationEventBus.publishCapabilityEvents(
             appContext,
             GlobalCapabilityObservationExtractor.authorizationMutations(before, after)
+        )
+        return AgentConfirmationConsentDecision(
+            allowed = current.granted,
+            denied = effect == AgentPermissionGrantEffect.DENY,
+            choice = choice,
+            grantId = grant.grantId,
+            reason = current.reason
         )
     }
 
     override fun forget(consentKey: String): Boolean {
         val cleanKey = consentKey.trim()
         val before = rememberedKeys()
-        if (cleanKey !in before) return false
         val revocation = revocationCoordinator.revokeScope(
             cleanKey,
             "user_revoked_remembered_confirmation"
@@ -82,14 +170,34 @@ class SharedPreferencesAgentConfirmationConsentStore(context: Context) : AgentCo
         return true
     }
 
+    override fun endSession(sessionId: String) {
+        val cleanSessionId = sessionId.trim()
+        if (cleanSessionId.isBlank()) return
+        val before = rememberedKeys()
+        grantStore.revokeSession(cleanSessionId, "agent_session_ended")
+        val after = rememberedKeys()
+        GlobalConversationEventBus.publishCapabilityEvents(
+            appContext,
+            GlobalCapabilityObservationExtractor.authorizationMutations(before, after)
+        )
+    }
+
     override fun clear() = grantStore.clear()
 
-    private fun permissionRequest(consentKey: String) = AgentPermissionRequest(
+    private fun permissionRequest(consentKey: String, sessionId: String) = AgentPermissionRequest(
         subjectType = AgentPermissionSubjectType.CONSEQUENTIAL_ACTION,
         subjectId = HOST_SUBJECT_ID,
         scope = consentKey,
-        action = consentKey
+        action = consentKey,
+        sessionId = sessionId
     )
+
+    private fun AgentPermissionGrant.toPermissionChoice(): AgentPermissionChoice = when {
+        effect == AgentPermissionGrantEffect.DENY -> AgentPermissionChoice.DENY_ALWAYS
+        lifetime == AgentPermissionGrantLifetime.SINGLE_USE -> AgentPermissionChoice.ALLOW_ONCE
+        lifetime == AgentPermissionGrantLifetime.SESSION -> AgentPermissionChoice.ALLOW_SESSION
+        else -> AgentPermissionChoice.ALLOW_ALWAYS
+    }
 
     private companion object {
         const val HOST_SUBJECT_ID = "signalasi-host"

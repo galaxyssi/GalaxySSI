@@ -55,6 +55,41 @@ class AgentPermissionGrantLedgerTest {
     }
 
     @Test
+    fun sessionGrantOnlyAuthorizesItsBoundSessionAndCanBeEnded() {
+        val store = InMemoryAgentPermissionGrantStore(clock = { 1_000L })
+        store.grant(grant(
+            lifetime = AgentPermissionGrantLifetime.SESSION,
+            sessionId = "session-1",
+            maxUses = 0
+        ))
+
+        assertTrue(store.authorize(request(sessionId = "session-1")).granted)
+        assertFalse(store.authorize(request(sessionId = "session-2")).granted)
+        store.revokeSession("session-1", "session_ended")
+        assertFalse(store.authorize(request(sessionId = "session-1")).granted)
+    }
+
+    @Test
+    fun permanentDenialTakesPrecedenceOverAnAllowGrant() {
+        val store = InMemoryAgentPermissionGrantStore(clock = { 1_000L })
+        store.grant(grant(
+            lifetime = AgentPermissionGrantLifetime.PERMANENT,
+            maxUses = 0
+        ))
+        store.grant(grant(
+            lifetime = AgentPermissionGrantLifetime.PERMANENT,
+            effect = AgentPermissionGrantEffect.DENY,
+            maxUses = 0
+        ))
+
+        val decision = store.authorize(request())
+
+        assertFalse(decision.granted)
+        assertEquals(AgentPermissionGrantEffect.DENY, decision.grant?.effect)
+        assertEquals("host_grant_denied", decision.reason)
+    }
+
+    @Test
     fun revocationAndSerializationSurviveStoreRecreation() {
         val first = InMemoryAgentPermissionGrantStore(clock = { 1_000L })
         val issued = first.grant(grant(lifetime = AgentPermissionGrantLifetime.PERMANENT, maxUses = 0))
@@ -129,6 +164,8 @@ class AgentPermissionGrantLedgerTest {
         lifetime: AgentPermissionGrantLifetime,
         resource: String = "",
         target: String = "",
+        sessionId: String = "",
+        effect: AgentPermissionGrantEffect = AgentPermissionGrantEffect.ALLOW,
         expiresAtMillis: Long = 0L,
         maxUses: Int = if (lifetime == AgentPermissionGrantLifetime.SINGLE_USE) 1 else 0
     ) = AgentPermissionGrant(
@@ -141,6 +178,8 @@ class AgentPermissionGrantLedgerTest {
         issuer = AgentPermissionGrantIssuer.USER,
         evidence = "approval-dialog:turn-1",
         lifetime = lifetime,
+        effect = effect,
+        sessionId = sessionId,
         maxUses = maxUses,
         expiresAtMillis = expiresAtMillis,
         createdAtMillis = 1_000L
@@ -148,14 +187,16 @@ class AgentPermissionGrantLedgerTest {
 
     private fun request(
         resource: String = "",
-        target: String = ""
+        target: String = "",
+        sessionId: String = ""
     ) = AgentPermissionRequest(
         subjectType = AgentPermissionSubjectType.TOOL,
         subjectId = "android.location",
         scope = "location.foreground",
         action = "read",
         resource = resource,
-        target = target
+        target = target,
+        sessionId = sessionId
     )
 }
 

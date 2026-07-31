@@ -174,6 +174,7 @@ const sidecarStoreSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "s
 const sidecarBuildGradle = fs.readFileSync(path.join(sidecarDir, "build.gradle.kts"), "utf8");
 const sidecarSettingsGradle = fs.readFileSync(path.join(sidecarDir, "settings.gradle.kts"), "utf8");
 const backendSecureState = fs.readFileSync(path.join(backendDir, "secure_state.py"), "utf8");
+const backendToolPermissions = fs.readFileSync(path.join(backendDir, "tool_permission_policy.py"), "utf8");
 const androidMainActivity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MainActivity.kt"), "utf8");
 const androidMessageService = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MessageService.kt"), "utf8");
 const androidChatHistoryStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryStore.kt"), "utf8");
@@ -376,6 +377,14 @@ if (
   || !sidecarStoreSource.includes('Cipher.getInstance("AES/GCM/NoPadding")')
 ) {
   throw new Error("Desktop pairing identities, routes, and authorization state must be encrypted at rest");
+}
+if (
+  !backendToolPermissions.includes("read_secure_json")
+  || !backendToolPermissions.includes("write_secure_json")
+  || !backendToolPermissions.includes("DENY_ALWAYS")
+  || !backendToolPermissions.includes("action_hash")
+) {
+  throw new Error("Scoped tool permission decisions must remain encrypted and bound to exact action fingerprints");
 }
 for (const [name, source] of [
   ["Signal store", androidSignalStore],
