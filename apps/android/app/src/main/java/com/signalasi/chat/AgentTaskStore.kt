@@ -34,6 +34,9 @@ interface AgentTaskStore {
     fun search(query: String, limit: Int = 10): List<AgentTaskRecord>
     fun rebindSession(sourceSessionId: String, targetSessionId: String): Int
     fun delete(taskIds: Set<String>)
+    fun deleteTask(taskId: String) {
+        delete(setOf(taskId))
+    }
     fun clear()
 }
 
@@ -69,6 +72,10 @@ class SQLiteAgentTaskStore(
 
     override fun delete(taskIds: Set<String>) {
         database.deleteByTaskOrSessionIds(taskIds)
+    }
+
+    override fun deleteTask(taskId: String) {
+        database.deleteByTaskIds(setOf(taskId))
     }
 
     override fun clear() {
