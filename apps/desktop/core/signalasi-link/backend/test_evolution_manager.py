@@ -10,6 +10,7 @@ from unittest.mock import patch
 from evolution_v2.common import atomic_write_json, sha256_file
 from evolution_manager import (
     EvolutionAttempt,
+    EvolutionCommandRunner,
     EvolutionError,
     EvolutionGate,
     EvolutionManager,
@@ -251,7 +252,52 @@ class EvolutionManagerTests(unittest.TestCase):
         self.assertEqual(2, len(result.attempts))
         self.assertTrue(all(item.failure_code == "scope_violation" for item in result.attempts))
         self.assertTrue(all(not Path(item.worktree).exists() for item in result.attempts))
+        registered = self._git("worktree", "list", "--porcelain").stdout
+        for item in result.attempts:
+            self.assertEqual(
+                "",
+                self._git("branch", "--list", item.branch).stdout.strip(),
+            )
+            self.assertNotIn(str(Path(item.worktree).resolve()), registered)
         self.assertEqual("protected\n", (self.source / "outside.txt").read_text(encoding="utf-8"))
+
+    def test_incomplete_candidate_rollback_blocks_task(self):
+        def patch_candidate(_task, _attempt, worktree, _failure):
+            (worktree / "src" / "value.txt").write_text("candidate\n", encoding="utf-8")
+            return "Candidate."
+
+        manager = self.manager(patch_candidate)
+        task = self.task(manager)
+        result = manager.run_sync(task.task_id)
+        attempt = result.attempts[-1]
+        delegate = manager.runner
+
+        class RefuseBranchDeletionRunner(EvolutionCommandRunner):
+            def run(self, argv, cwd, **kwargs):
+                if tuple(argv[:4]) == ("git", "branch", "-D", "--"):
+                    return subprocess.CompletedProcess(
+                        list(argv),
+                        1,
+                        "simulated branch deletion failure",
+                        "",
+                    )
+                return delegate.run(argv, cwd, **kwargs)
+
+        manager.runner = RefuseBranchDeletionRunner()
+        cleaned = manager._cleanup_failed_attempt(result, attempt)
+
+        self.assertFalse(cleaned)
+        self.assertEqual("blocked", result.status)
+        self.assertEqual("worktree_cleanup_failed", result.last_error_code)
+        self.assertFalse(Path(attempt.worktree).exists())
+        self.assertNotEqual(
+            "",
+            self._git("branch", "--list", attempt.branch).stdout.strip(),
+        )
+        self.assertEqual(self.base_commit, self._git("rev-parse", "HEAD").stdout.strip())
+
+        manager.runner = delegate
+        manager._remove_worktree(attempt, delete_branch=True)
 
     def test_failed_gate_is_replanned_in_a_fresh_worktree(self):
         class RetryManager(FocusedEvolutionManager):
