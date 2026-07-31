@@ -200,6 +200,7 @@
     A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */; };
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
     A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */; };
+    A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */; };
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
     A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */; };
@@ -490,6 +491,7 @@
     A20000000000000000000440 /* AgentIOSHardwareStatusProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareStatusProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionBrowserSessionStore.swift; sourceTree = "<group>"; };
+    A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaDownloadWriter.swift; sourceTree = "<group>"; };
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureNativeTools.swift; sourceTree = "<group>"; };
@@ -619,6 +621,7 @@
         A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */,
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
         A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */,
+        A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */,
         A20000000000000000000107 /* AgentIOSDesktopRemoteTools.swift */,
         A20000000000000000000108 /* AgentDesktopControlModels.swift */,
         A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */,
@@ -1151,6 +1154,7 @@
         A10000000000000000000440 /* AgentIOSHardwareStatusProvider.swift in Sources */,
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */,
+        A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */,
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,
         A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */,
