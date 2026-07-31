@@ -121,6 +121,13 @@ extension AgentPhoneNativeToolCatalog {
       fileManager: fileManager,
       nowMillis: nowMillis
     )
+    let resolvedSelfEvolutionProvider = defaultSelfEvolutionProvider(
+      selfEvolutionProvider,
+      storeFileURL: AgentIOSFileSelfEvolutionTaskStore.defaultFileURL(storageRootURL: storageRootURL),
+      runtimeProvider: resolvedOnDeviceRuntimeProvider,
+      fileManager: fileManager,
+      nowMillis: nowMillis
+    )
     return try createRegistry(
       workspaceStore: resolvedWorkspaceStore,
       actionExecutor: actionExecutor,
@@ -135,7 +142,7 @@ extension AgentPhoneNativeToolCatalog {
       webMediaProvider: webMediaProvider,
       webIntelligenceProvider: webIntelligenceProvider,
       mediaProvider: mediaProvider,
-      selfEvolutionProvider: selfEvolutionProvider,
+      selfEvolutionProvider: resolvedSelfEvolutionProvider,
       desktopRemoteProvider: desktopRemoteProvider,
       mcpProvider: mcpProvider,
       onDeviceRuntimeProvider: resolvedOnDeviceRuntimeProvider

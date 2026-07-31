@@ -206,6 +206,9 @@
     A10000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift */; };
     A10000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift */; };
     A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */; };
+    A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */; };
+    A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */; };
+    A10000000000000000000451 /* AgentIOSDefaultSelfEvolutionProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000451 /* AgentIOSDefaultSelfEvolutionProvider.swift */; };
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
     A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */; };
@@ -502,6 +505,9 @@
     A20000000000000000000446 /* AgentIOSAVFoundationMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSAVFoundationMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebIntelligenceProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDefaultOnDeviceRuntimeProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSelfEvolutionStore.swift; sourceTree = "<group>"; };
+    A20000000000000000000451 /* AgentIOSDefaultSelfEvolutionProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSDefaultSelfEvolutionProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureNativeTools.swift; sourceTree = "<group>"; };
@@ -636,6 +642,9 @@
         A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */,
         A20000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift */,
         A20000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift */,
+        A20000000000000000000449 /* AgentIOSSelfEvolutionModels.swift */,
+        A20000000000000000000450 /* AgentIOSSelfEvolutionStore.swift */,
+        A20000000000000000000451 /* AgentIOSDefaultSelfEvolutionProvider.swift */,
         A20000000000000000000107 /* AgentIOSDesktopRemoteTools.swift */,
         A20000000000000000000108 /* AgentDesktopControlModels.swift */,
         A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */,
@@ -1174,6 +1183,9 @@
         A10000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift in Sources */,
         A10000000000000000000447 /* AgentIOSURLSessionWebIntelligenceProvider.swift in Sources */,
         A10000000000000000000448 /* AgentIOSDefaultOnDeviceRuntimeProvider.swift in Sources */,
+        A10000000000000000000449 /* AgentIOSSelfEvolutionModels.swift in Sources */,
+        A10000000000000000000450 /* AgentIOSSelfEvolutionStore.swift in Sources */,
+        A10000000000000000000451 /* AgentIOSDefaultSelfEvolutionProvider.swift in Sources */,
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,
         A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */,

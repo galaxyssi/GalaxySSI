@@ -249,4 +249,136 @@ extension SignalASIStoreTests {
     XCTAssertTrue(unavailableProvider.invokedOperations.isEmpty)
   }
 
+  func testAgentIOSDefaultSelfEvolutionProviderPersistsLocalTasksAndRuntimeBoundary() throws {
+    final class SetupRequiredRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding {
+      var implementationId = "fake.ios.runtime.setup_required"
+
+      func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability {
+        AgentNativeToolAvailability(
+          status: .requiresSetup,
+          reason: "Install signed iOS runtime"
+        )
+      }
+
+      func invoke(
+        operation: AgentIOSOnDeviceRuntimeToolOperation,
+        input: AgentMcpJSONObject,
+        invocation: AgentNativeToolInvocation
+      ) -> AgentNativeToolExecutionResult {
+        .failure(code: "unexpected_runtime_invoke", message: "Runtime should not be invoked")
+      }
+    }
+
+    let root = try temporaryDirectory("ios-default-self-evolution")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = AgentIOSFileSelfEvolutionTaskStore(
+      fileURL: root.appendingPathComponent("tasks.json", isDirectory: false)
+    )
+    let runtimeProvider = SetupRequiredRuntimeProvider()
+    let provider = AgentIOSDefaultSelfEvolutionProvider(
+      store: store,
+      runtimeProvider: runtimeProvider,
+      nowMillis: { 70_000 },
+      idFactory: { "evolve-ios-local-1" }
+    )
+    let definitions = AgentIOSSelfEvolutionNativeToolCatalog.definitions(provider: provider)
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.selfEvolutionExecutableDefinitions(provider: provider, nowMillis: { 70_000 })
+    )
+    let readContext = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSSelfEvolutionNativeToolCatalog.storePermission]
+    )
+    let candidateContext = AgentNativeToolInvocationContext(
+      invocationId: "ios-evolution-rollback",
+      grantedPermissions: [
+        AgentIOSSelfEvolutionNativeToolCatalog.storePermission,
+        AgentIOSSelfEvolutionNativeToolCatalog.workspacePermission
+      ],
+      grantedConsents: [AgentIOSSelfEvolutionNativeToolCatalog.selfEvolutionConsent]
+    )
+
+    let statusDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSSelfEvolutionNativeToolCatalog.status })
+    let prepareDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSSelfEvolutionNativeToolCatalog.candidatePrepare })
+    let rollbackDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSSelfEvolutionNativeToolCatalog.candidateRollback })
+    let initialStatus = registry.invoke(AgentIOSSelfEvolutionNativeToolCatalog.status, input: [:], context: readContext)
+    let create = registry.invoke(
+      AgentIOSSelfEvolutionNativeToolCatalog.tasksCreate,
+      input: [
+        "problem": .string("Mirror Android self-evolution persistence on iOS"),
+        "scope": .array([.string("apps/ios"), .string("apps/ios/")]),
+        "acceptance": .array([.string("Tasks survive registry rebuilds")]),
+        "reproduction_steps": .array([.string("Open the iOS native tool catalog")]),
+        "risk_level": .string("high"),
+        "max_attempts": .int(5)
+      ],
+      context: readContext
+    )
+    let list = registry.invoke(
+      AgentIOSSelfEvolutionNativeToolCatalog.tasksList,
+      input: ["limit": .int(10)],
+      context: readContext
+    )
+    let persistedProvider = AgentIOSDefaultSelfEvolutionProvider(
+      store: AgentIOSFileSelfEvolutionTaskStore(fileURL: root.appendingPathComponent("tasks.json", isDirectory: false)),
+      runtimeProvider: runtimeProvider,
+      nowMillis: { 71_000 },
+      idFactory: { "unused" }
+    )
+    let persistedRegistry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.selfEvolutionExecutableDefinitions(provider: persistedProvider, nowMillis: { 71_000 })
+    )
+    let persistedList = persistedRegistry.invoke(
+      AgentIOSSelfEvolutionNativeToolCatalog.tasksList,
+      input: ["limit": .int(10)],
+      context: readContext
+    )
+    let prepare = registry.invoke(
+      AgentIOSSelfEvolutionNativeToolCatalog.candidatePrepare,
+      input: ["task_id": .string("evolve-ios-local-1")],
+      context: candidateContext
+    )
+    let rollback = registry.invoke(
+      AgentIOSSelfEvolutionNativeToolCatalog.candidateRollback,
+      input: ["task_id": .string("evolve-ios-local-1")],
+      context: candidateContext
+    )
+    let afterRollback = registry.invoke(
+      AgentIOSSelfEvolutionNativeToolCatalog.tasksList,
+      input: ["limit": .int(10)],
+      context: readContext
+    )
+
+    XCTAssertEqual(provider.implementationId, "signalasi.ios.default_self_evolution_store")
+    XCTAssertEqual(statusDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(prepareDefinition.descriptor.availability.status, .requiresSetup)
+    XCTAssertEqual(rollbackDefinition.descriptor.availability.status, .available)
+    XCTAssertTrue(initialStatus.isSuccess)
+    XCTAssertEqual(initialStatus.output["runtime_ready"], .bool(false))
+    XCTAssertEqual(initialStatus.output["task_count"], .int(0))
+    XCTAssertTrue(create.isSuccess)
+    XCTAssertEqual(create.output["status"], .string("proposed"))
+    let createdTask = try XCTUnwrap(create.output["task"]?.objectValue)
+    XCTAssertEqual(createdTask["task_id"], .string("evolve-ios-local-1"))
+    XCTAssertEqual(createdTask["execution_target"], .string("ios"))
+    XCTAssertEqual(createdTask["risk_level"], .string("high"))
+    XCTAssertEqual(createdTask["scope"], .array([.string("apps/ios")]))
+    XCTAssertTrue(list.isSuccess)
+    XCTAssertEqual(try XCTUnwrap(list.output["tasks"]?.arrayValue).count, 1)
+    let health = try XCTUnwrap(list.output["health"]?.objectValue)
+    XCTAssertEqual(health["total_tasks"], .int(1))
+    XCTAssertEqual(health["queued_tasks"], .int(1))
+    let statusCounts = try XCTUnwrap(health["status_counts"]?.objectValue)
+    XCTAssertEqual(statusCounts["proposed"], .int(1))
+    XCTAssertTrue(persistedList.isSuccess)
+    XCTAssertEqual(try XCTUnwrap(persistedList.output["tasks"]?.arrayValue).count, 1)
+    XCTAssertEqual(prepare.status, .unavailable)
+    XCTAssertEqual(prepare.error?.code, "tool_unavailable")
+    XCTAssertTrue(rollback.isSuccess)
+    XCTAssertEqual(rollback.output["status"], .string("rolled_back"))
+    let rollbackTask = try XCTUnwrap(rollback.output["task"]?.objectValue)
+    XCTAssertEqual(rollbackTask["status"], .string("rolled_back"))
+    let rolledBackTask = try XCTUnwrap(afterRollback.output["tasks"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(rolledBackTask["status"], .string("rolled_back"))
+  }
+
 }
