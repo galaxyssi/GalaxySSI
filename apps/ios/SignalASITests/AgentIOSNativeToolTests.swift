@@ -683,6 +683,146 @@ extension SignalASIStoreTests {
     XCTAssertEqual(failedExecution.output["metadata"]?.objectValue?["screen"], .string("Settings"))
   }
 
+  func testAgentNativeToolActionExecutorInvokesRegistryWithActionContext() throws {
+    var captured: AgentNativeToolInvocation?
+    let descriptor = try nativeToolDescriptor(
+      "signalasi.test.write",
+      requiredPermissions: [AgentNativePermissionRequirement(id: "permission.write")],
+      requiredConsents: [AgentNativeConsentRequirement(id: "consent.write")],
+      idempotency: .idempotencyKeyRequired
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutable(AgentNativeToolExecutableDefinition(
+      definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor"),
+      executor: { invocation in
+        captured = invocation
+        return .success(output: ["ok": .bool(true)], message: "done")
+      }
+    ))
+    let delegate = TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: false, message: "unexpected delegate")
+    }
+    let executor = AgentNativeToolActionExecutor(
+      registry: registry,
+      delegate: delegate,
+      nowMillis: { 10_000 }
+    )
+    let action = AgentAction(
+      id: "write-1",
+      kind: .callNativeTool,
+      target: "Local",
+      risk: .medium,
+      status: .running,
+      description: "Write through a native tool",
+      parameters: [
+        "tool_id": descriptor.id,
+        "input_json": #"{"text":"hello"}"#,
+        "tool_timeout_seconds": "5",
+        "_signalasi_session_id": "session-a",
+        "_signalasi_conversation_id": "conversation-a",
+        "_signalasi_turn_id": "turn-a"
+      ]
+    )
+
+    let result = executor.execute(action: action, screen: AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"))
+
+    XCTAssertTrue(result.success)
+    XCTAssertEqual(delegate.callCount, 0)
+    XCTAssertEqual(captured?.descriptor.id, descriptor.id)
+    XCTAssertEqual(captured?.input["text"], .string("hello"))
+    XCTAssertEqual(captured?.context.invocationId, "write-1")
+    XCTAssertEqual(captured?.context.idempotencyKey, "write-1")
+    XCTAssertEqual(captured?.context.sessionId, "session-a")
+    XCTAssertEqual(captured?.context.conversationId, "conversation-a")
+    XCTAssertEqual(captured?.context.turnId, "turn-a")
+    XCTAssertEqual(captured?.context.deadlineEpochMillis, 15_000)
+    XCTAssertEqual(captured?.context.grantedPermissions, Set(["permission.write"]))
+    XCTAssertEqual(captured?.context.grantedConsents, Set(["consent.write"]))
+    XCTAssertEqual(captured?.context.attributes["step_id"], "write-1")
+    XCTAssertEqual(captured?.context.attributes[AgentNativeToolRegistry.legacyActionIdAttribute], "write-1")
+    XCTAssertEqual(result.metadata["native_tool_id"], descriptor.id)
+    XCTAssertEqual(result.metadata["native_tool_status"], "succeeded")
+    XCTAssertEqual(result.metadata["idempotency_key"], "write-1")
+  }
+
+  func testAgentNativeToolActionExecutorBindsWorkspaceInputAndDelegatesOtherActions() throws {
+    var captured: AgentNativeToolInvocation?
+    var delegated: AgentAction?
+    let descriptor = try nativeToolDescriptor(AgentPhoneNativeToolCatalog.workspaceReadText)
+    let registry = try AgentNativeToolRegistry().registerExecutable(AgentNativeToolExecutableDefinition(
+      definition: AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "workspace.executor"),
+      executor: { invocation in
+        captured = invocation
+        return .success(output: ["text": .string("hello")], message: "read")
+      }
+    ))
+    let delegate = TestAgentActionExecutor { action, _ in
+      delegated = action
+      return AgentActionResult(actionId: action.id, success: true, message: "delegated")
+    }
+    let executor = AgentNativeToolActionExecutor(registry: registry, delegate: delegate)
+    let workspaceAction = AgentAction(
+      id: "read-current",
+      kind: .callNativeTool,
+      target: "Workspace",
+      risk: .low,
+      status: .running,
+      description: "Read workspace",
+      parameters: [
+        "tool_id": descriptor.id,
+        "input_json": #"{"workspace_id":"foreign","path":"notes.txt"}"#,
+        "_signalasi_conversation_id": "conversation-workspace"
+      ],
+      requiresConfirmation: false
+    )
+    let openURL = AgentAction(
+      id: "open-url",
+      kind: .openURL,
+      target: "https://signalasi.com",
+      risk: .low,
+      status: .running,
+      description: "Open URL"
+    )
+
+    let workspaceResult = executor.execute(action: workspaceAction, screen: AgentScreenContext(foregroundApp: "SignalASI"))
+    let delegatedResult = executor.execute(action: openURL, screen: AgentScreenContext(foregroundApp: "SignalASI"))
+
+    XCTAssertTrue(workspaceResult.success)
+    XCTAssertEqual(
+      captured?.input["workspace_id"],
+      .string(AgentWorkspaceScope.id(conversationId: "conversation-workspace"))
+    )
+    XCTAssertEqual(captured?.input["path"], .string("notes.txt"))
+    XCTAssertTrue(delegatedResult.success)
+    XCTAssertEqual(delegate.callCount, 1)
+    XCTAssertEqual(delegated?.id, "open-url")
+  }
+
+  func testAgentNativeToolActionExecutorRejectsInvalidNativeActionInput() throws {
+    let descriptor = try nativeToolDescriptor("signalasi.test.read")
+    let registry = try AgentNativeToolRegistry(definitions: [
+      AgentPhoneNativeToolDefinition(descriptor: descriptor, executorId: "test.executor")
+    ])
+    let delegate = TestAgentActionExecutor { action, _ in
+      AgentActionResult(actionId: action.id, success: false, message: "unexpected delegate")
+    }
+    let executor = AgentNativeToolActionExecutor(registry: registry, delegate: delegate)
+    let action = AgentAction(
+      id: "bad-json",
+      kind: .callNativeTool,
+      target: "Local",
+      risk: .low,
+      status: .running,
+      description: "Bad input",
+      parameters: ["tool_id": descriptor.id, "input_json": "[1,2,3]"]
+    )
+
+    let result = executor.execute(action: action, screen: AgentScreenContext(foregroundApp: "SignalASI"))
+
+    XCTAssertFalse(result.success)
+    XCTAssertEqual(result.metadata["error_code"], "invalid_input_json")
+    XCTAssertEqual(delegate.callCount, 0)
+  }
+
   func testAgentNativeToolResultModelsUseAndroidWireNames() throws {
     let descriptor = try nativeToolDescriptor(
       "signalasi.test.result",
