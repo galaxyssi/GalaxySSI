@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 import unittest
@@ -17,10 +18,18 @@ def completed(*args: str, returncode: int = 0, stdout: str = ""):
 
 
 class FakeAndroidTester(AndroidCandidateTester):
-    def __init__(self, root: Path, snapshot: AndroidSnapshot, *, fatal: bool = False):
+    def __init__(
+        self,
+        root: Path,
+        snapshot: AndroidSnapshot,
+        *,
+        fatal: bool = False,
+        capture_screenshot: bool = True,
+    ):
         super().__init__(root)
         self.snapshot = snapshot
         self.fatal = fatal
+        self.capture_screenshot = capture_screenshot
         self.restore_calls = 0
 
     def _choose_device(self) -> str:
@@ -33,7 +42,8 @@ class FakeAndroidTester(AndroidCandidateTester):
         return "com.signalasi.chat/.MainActivity"
 
     def _screenshot(self, _serial: str, target: Path) -> None:
-        target.write_bytes(b"\x89PNG\r\n\x1a\n")
+        if self.capture_screenshot:
+            target.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     def _adb(self, _serial: str, *args: str, timeout: int = 120):
         del timeout
@@ -80,6 +90,28 @@ class AndroidRestoreTests(unittest.TestCase):
             tester = FakeAndroidTester(root / "snapshots", self.snapshot(root))
             result = tester.run(candidate, launch_wait_seconds=1)
             self.assertTrue(result["passed"])
+            self.assertTrue(result["stable_restored"])
+            self.assertEqual(64, len(result["candidate_sha256"]))
+            self.assertEqual(64, len(result["screenshot_sha256"]))
+            self.assertEqual(64, len(result["logcat_sha256"]))
+            self.assertEqual(64, len(result["evidence_sha256"]))
+            self.assertTrue(Path(result["evidence_manifest"]).is_file())
+            evidence = json.loads(
+                Path(result["evidence_manifest"]).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                "signalasi.evolution.android-evidence.v1",
+                evidence["protocol"],
+            )
+            self.assertEqual(
+                {
+                    "candidate_apk",
+                    "candidate_logcat",
+                    "candidate_screenshot",
+                    "stable_apk_0",
+                },
+                set(evidence["artifacts"]),
+            )
             self.assertEqual(1, tester.restore_calls)
 
     def test_crashing_candidate_still_restores_stable_app(self):
@@ -95,6 +127,36 @@ class AndroidRestoreTests(unittest.TestCase):
             with self.assertRaises(AndroidCandidateError):
                 tester.run(candidate, launch_wait_seconds=1)
             self.assertEqual(1, tester.restore_calls)
+            evidence = json.loads(
+                (root / "candidate-evidence.json").read_text(encoding="utf-8")
+            )
+            self.assertFalse(evidence["passed"])
+            self.assertTrue(evidence["stable_restored"])
+            self.assertTrue(evidence["fatal_lines"])
+
+    def test_missing_candidate_screenshot_fails_and_restores_stable_app(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = root / "candidate.apk"
+            candidate.write_bytes(b"candidate")
+            tester = FakeAndroidTester(
+                root / "snapshots",
+                self.snapshot(root),
+                capture_screenshot=False,
+            )
+
+            with self.assertRaisesRegex(
+                AndroidCandidateError,
+                "screenshot was not captured",
+            ):
+                tester.run(candidate, launch_wait_seconds=1)
+
+            self.assertEqual(1, tester.restore_calls)
+            evidence = json.loads(
+                (root / "candidate-evidence.json").read_text(encoding="utf-8")
+            )
+            self.assertFalse(evidence["passed"])
+            self.assertTrue(evidence["stable_restored"])
 
     def test_snapshot_hash_mismatch_blocks_restore(self):
         with tempfile.TemporaryDirectory() as temporary:

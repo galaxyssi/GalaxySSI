@@ -239,10 +239,7 @@ class EvolutionManager(legacy.EvolutionManager):
                 cwd="apps/desktop",
                 timeout_seconds=120,
             ))
-        if (
-            android_changed
-            and os.environ.get("SIGNALASI_EVOLUTION_ANDROID_DEVICE_TEST") == "1"
-        ):
+        if android_changed:
             commands.append(legacy.GateCommand(
                 "android-device-install-restore",
                 (

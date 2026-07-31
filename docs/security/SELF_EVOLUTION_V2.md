@@ -81,7 +81,10 @@ should anchor the latest hash in a separate trusted system.
 
 ## Android restore gate
 
-The device install/restore gate is disabled by default. Enable it only on a dedicated test device.
+The device install/restore gate is mandatory for Android and shared-core self-evolution candidates
+and must use a dedicated test device. It captures a PNG screenshot and logcat evidence, hashes the
+APK and every evidence artifact, restores the stable App unconditionally, and binds the evidence
+manifest to candidate approval. Missing, changed, or unmanaged evidence blocks publication.
 Production-signed applications may not permit private-data backup through `run-as`; split APKs,
 signature changes, downgrade restrictions, and OEM installers can also block restoration. Any
 restore failure is a hard failure and requires manual recovery. Never use a primary phone as the

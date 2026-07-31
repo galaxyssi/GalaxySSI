@@ -4,7 +4,7 @@ This matrix maps the current product scope to the checks that prove each area is
 
 Product scope is defined in `docs/product/PRODUCT_REQUIREMENTS.md`.
 
-Self-Evolution V2 has a dedicated source, Desktop package, Android build, API security, and optional
+Self-Evolution V2 has a dedicated source, Desktop package, Android build, API security, and required
 dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 
 ## Required Gates

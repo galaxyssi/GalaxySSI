@@ -83,6 +83,9 @@ class EvolutionGate:
     exit_code: int = 0
     summary: str = ""
     log_path: str = ""
+    evidence_sha256: str = ""
+    evidence_manifest_path: str = ""
+    evidence_manifest_sha256: str = ""
 
 
 @dataclass
@@ -139,6 +142,7 @@ class EvolutionTask:
                 attempt["worktree"] = ""
                 for gate in attempt["gates"]:
                     gate["log_path"] = ""
+                    gate["evidence_manifest_path"] = ""
         return value
 
 
@@ -615,6 +619,10 @@ class EvolutionManager:
         attempt = task.attempts[-1]
         if any(gate.status != "passed" for gate in attempt.gates):
             raise EvolutionError("quality_gate_incomplete", "All quality gates must pass before publishing.")
+        try:
+            self._validate_gate_evidence(attempt)
+        except EvolutionError as exc:
+            self._reject_publish(task, exc.code, str(exc))
         clean_base = re.sub(r"[^A-Za-z0-9._/-]", "", str(base_branch or "main"))[:120]
         if not clean_base or clean_base.startswith(("-", "/")) or ".." in clean_base:
             raise EvolutionError("base_branch_invalid", "Pull request base branch is invalid.")
@@ -968,13 +976,209 @@ class EvolutionManager:
                 gate.status = "failed"
                 gate.exit_code = -1
                 gate.summary = str(exc)[:4_000]
-            gate.duration_millis = int((time.monotonic() - started) * 1_000)
+            if not log_path.is_file():
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                log_path.write_text(gate.summary, encoding="utf-8")
             gate.log_path = str(log_path)
+            gate.evidence_sha256 = self._sha256_path(log_path)
+            if gate.status == "passed" and gate.id == "android-device-install-restore":
+                try:
+                    self._capture_android_gate_evidence(
+                        gate,
+                        log_path,
+                        worktree=worktree,
+                    )
+                except EvolutionError as exc:
+                    gate.status = "failed"
+                    gate.exit_code = -1
+                    gate.summary = str(exc)[:4_000]
+            gate.duration_millis = int((time.monotonic() - started) * 1_000)
             self.store.save(task)
             self._emit(task, "gate_finished", attempt=attempt.number, gate=gate.id)
             if gate.status != "passed":
                 break
         return gates
+
+    @staticmethod
+    def _sha256_path(path: Path) -> str:
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _capture_android_gate_evidence(
+        self,
+        gate: EvolutionGate,
+        log_path: Path,
+        *,
+        worktree: Path,
+    ) -> None:
+        try:
+            payload = json.loads(log_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device gate did not return valid JSON evidence.",
+            ) from exc
+        if not isinstance(payload, dict):
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device gate evidence must be an object.",
+            )
+        manifest_raw = str(payload.get("evidence_manifest") or "").strip()
+        manifest_sha256 = str(payload.get("evidence_sha256") or "").strip().casefold()
+        if not manifest_raw or not re.fullmatch(r"[0-9a-f]{64}", manifest_sha256):
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device gate did not provide a signed evidence manifest.",
+            )
+        manifest = Path(manifest_raw).resolve()
+        self._validate_android_evidence_manifest(
+            manifest,
+            manifest_sha256,
+            worktree=worktree,
+        )
+        gate.evidence_manifest_path = str(manifest)
+        gate.evidence_manifest_sha256 = manifest_sha256
+
+    def _validate_gate_evidence(self, attempt: EvolutionAttempt) -> None:
+        if not attempt.gates:
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Evolution candidate has no quality-gate evidence.",
+            )
+        for gate in attempt.gates:
+            log_path = Path(gate.log_path).resolve() if gate.log_path else None
+            if (
+                log_path is None
+                or not log_path.is_file()
+                or not _inside(log_path, self.store.logs_root)
+                or not re.fullmatch(r"[0-9a-f]{64}", gate.evidence_sha256)
+                or not secrets.compare_digest(
+                    self._sha256_path(log_path),
+                    gate.evidence_sha256,
+                )
+            ):
+                raise EvolutionError(
+                    "gate_evidence_invalid",
+                    f"Quality-gate evidence is missing or changed: {gate.id}",
+                )
+            if gate.id == "android-device-install-restore":
+                manifest = (
+                    Path(gate.evidence_manifest_path).resolve()
+                    if gate.evidence_manifest_path
+                    else None
+                )
+                if manifest is None:
+                    raise EvolutionError(
+                        "gate_evidence_invalid",
+                        "Android device evidence manifest is missing.",
+                    )
+                self._validate_android_evidence_manifest(
+                    manifest,
+                    gate.evidence_manifest_sha256,
+                    worktree=Path(attempt.worktree),
+                )
+
+    def _validate_android_evidence_manifest(
+        self,
+        manifest: Path,
+        expected_sha256: str,
+        *,
+        worktree: Path,
+    ) -> None:
+        manifest = Path(manifest).resolve()
+        if (
+            not manifest.is_file()
+            or not _inside(manifest, self.store.root)
+            or not re.fullmatch(r"[0-9a-f]{64}", str(expected_sha256 or "").casefold())
+            or not secrets.compare_digest(
+                self._sha256_path(manifest),
+                str(expected_sha256).casefold(),
+            )
+        ):
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device evidence manifest is missing, unmanaged, or changed.",
+            )
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device evidence manifest is not valid JSON.",
+            ) from exc
+        if (
+            not isinstance(payload, dict)
+            or payload.get("protocol") != "signalasi.evolution.android-evidence.v1"
+            or payload.get("passed") is not True
+            or payload.get("stable_restored") is not True
+            or payload.get("fatal_lines")
+        ):
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device evidence does not prove a clean candidate run and stable restore.",
+            )
+        artifacts = payload.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device evidence artifacts are missing.",
+            )
+        required = {
+            "candidate_apk",
+            "candidate_screenshot",
+            "candidate_logcat",
+        }
+        if not required.issubset(artifacts):
+            raise EvolutionError(
+                "gate_evidence_invalid",
+                "Android device evidence is missing the APK, screenshot, or logcat artifact.",
+            )
+        expected_apk = (
+            Path(worktree)
+            / "apps/android/app/build/outputs/apk/debug/app-debug.apk"
+        ).resolve()
+        for name, value in artifacts.items():
+            if not isinstance(value, dict):
+                raise EvolutionError(
+                    "gate_evidence_invalid",
+                    f"Android evidence artifact is invalid: {name}",
+                )
+            raw_path = str(value.get("path") or "").strip()
+            expected = str(value.get("sha256") or "").strip().casefold()
+            path = Path(raw_path).resolve() if raw_path else None
+            if (
+                path is None
+                or not path.is_file()
+                or not re.fullmatch(r"[0-9a-f]{64}", expected)
+                or not secrets.compare_digest(self._sha256_path(path), expected)
+            ):
+                raise EvolutionError(
+                    "gate_evidence_invalid",
+                    f"Android evidence artifact is missing or changed: {name}",
+                )
+            if name == "candidate_apk" and path != expected_apk:
+                raise EvolutionError(
+                    "gate_evidence_invalid",
+                    "Android evidence refers to an unexpected candidate APK.",
+                )
+            if name in {"candidate_screenshot", "candidate_logcat"} and not _inside(
+                path,
+                self.store.root,
+            ):
+                raise EvolutionError(
+                    "gate_evidence_invalid",
+                    f"Android evidence artifact is outside managed storage: {name}",
+                )
+            if name == "candidate_screenshot" and not path.read_bytes().startswith(
+                b"\x89PNG\r\n\x1a\n"
+            ):
+                raise EvolutionError(
+                    "gate_evidence_invalid",
+                    "Android candidate screenshot is not a PNG image.",
+                )
 
     def _gate_commands(self, changed_files: Iterable[str]) -> list[GateCommand]:
         changed = list(changed_files)
@@ -1367,7 +1571,13 @@ class EvolutionManager:
     @staticmethod
     def _approval_hash(task: EvolutionTask, attempt: EvolutionAttempt) -> str:
         gate_digest = [
-            {"id": gate.id, "status": gate.status, "exit_code": gate.exit_code}
+            {
+                "id": gate.id,
+                "status": gate.status,
+                "exit_code": gate.exit_code,
+                "evidence_sha256": gate.evidence_sha256,
+                "evidence_manifest_sha256": gate.evidence_manifest_sha256,
+            }
             for gate in attempt.gates
         ]
         payload = json.dumps(
@@ -1395,7 +1605,10 @@ class EvolutionManager:
     def _pull_request_body(task: EvolutionTask, attempt: EvolutionAttempt) -> str:
         acceptance = "\n".join(f"- {value}" for value in task.acceptance)
         gates = "\n".join(
-            f"- `{gate.id}`: {gate.status} ({gate.duration_millis} ms)"
+            (
+                f"- `{gate.id}`: {gate.status} ({gate.duration_millis} ms), "
+                f"evidence `{(gate.evidence_manifest_sha256 or gate.evidence_sha256)[:16]}...`"
+            )
             for gate in attempt.gates
         )
         return (
