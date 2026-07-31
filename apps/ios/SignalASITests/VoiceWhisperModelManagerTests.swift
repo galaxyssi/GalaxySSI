@@ -139,6 +139,25 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
     XCTAssertTrue(manager.isAvailable(model))
   }
 
+  func testDeleteProtectsManagerMarkedLoadedModel() throws {
+    let env = try Environment()
+    let manager = env.manager(requestId: "download-loaded")
+    let model = testModel(minimumBytes: 8)
+
+    _ = try manager.enqueue(model)
+    _ = try manager.recordCompleted(model, temporaryFileURL: try env.writeTemporaryFile(bytes: 8))
+
+    manager.markLoaded(model.id)
+    XCTAssertTrue(manager.isLoaded(model.id))
+    XCTAssertFalse(manager.delete(model))
+    XCTAssertTrue(manager.isAvailable(model))
+
+    manager.markUnloaded(model.id)
+    XCTAssertFalse(manager.isLoaded(model.id))
+    XCTAssertTrue(manager.delete(model))
+    XCTAssertFalse(manager.isAvailable(model))
+  }
+
   func testBundledModelDoesNotEnqueueDownload() throws {
     let env = try Environment()
     let manager = env.manager()

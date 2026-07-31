@@ -5,12 +5,16 @@ final class VoiceLocalWhisperASRTests: XCTestCase {
   func testLocalWhisperASRDecodesTracesAndInvokesRuntime() async throws {
     var elapsedNs: Int64 = 1_000_000_000
     var traces: [String] = []
+    var loadedModelIds: [String] = []
+    var unloadedModelIds: [String?] = []
     let runtime = FakeWhisperRuntime(response: "  hello from whisper  ")
     let modelFileURL = FileManager.default.temporaryDirectory.appendingPathComponent("ggml-base.bin")
     let service = VoiceLocalWhisperASR(
       runtime: runtime,
       modelAvailable: { $0.id == "base" },
       modelFileProvider: { _ in modelFileURL },
+      markModelLoaded: { loadedModelIds.append($0) },
+      markModelUnloaded: { unloadedModelIds.append($0) },
       elapsedClock: {
         elapsedNs += 100_000_000
         return elapsedNs
@@ -32,6 +36,9 @@ final class VoiceLocalWhisperASRTests: XCTestCase {
     XCTAssertEqual(runtime.requests.single?.modelFileURL, modelFileURL)
     XCTAssertEqual(runtime.requests.single?.language, "en")
     XCTAssertTrue(runtime.requests.single?.samples.isEmpty == false)
+    XCTAssertEqual(loadedModelIds, ["base"])
+    service.release()
+    XCTAssertEqual(unloadedModelIds, [Optional("base")])
     XCTAssertEqual(traces, [
       VoiceTraceEvents.asrFinalStarted,
       VoiceTraceEvents.asrDecodeStarted,
