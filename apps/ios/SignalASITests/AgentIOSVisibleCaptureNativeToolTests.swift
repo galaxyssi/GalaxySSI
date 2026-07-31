@@ -145,4 +145,38 @@ extension SignalASIStoreTests {
     XCTAssertEqual(unavailableProvider.photoCalls, 0)
   }
 
+  func testAgentIOSVisibleCaptureDefaultsUseForegroundNativeProvider() throws {
+    let definitions = AgentIOSVisibleCaptureNativeToolCatalog.definitions()
+
+    XCTAssertEqual(Set(definitions.map(\.id)), AgentIOSVisibleCaptureNativeToolCatalog.toolIds)
+    XCTAssertEqual(
+      Set(definitions.compactMap { $0.provenanceMetadata["implementation"] }),
+      ["signalasi.ios.visible_capture.uikit_avfoundation"]
+    )
+    XCTAssertTrue(definitions.allSatisfy {
+      $0.provenanceMetadata["capture_surface"] == "foreground_user_visible_ios"
+    })
+  }
+
+  func testAgentIOSVisibleCaptureArtifactStoreWritesInsideBoundedRoot() throws {
+    let rootURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SignalASITest-\(UUID().uuidString)", isDirectory: true)
+    defer {
+      try? FileManager.default.removeItem(at: rootURL)
+    }
+    let store = AgentIOSVisibleCaptureArtifactStore(rootURL: rootURL)
+    let artifactURL = try store.makeArtifactURL(
+      kind: .photo,
+      fileExtension: "jpg",
+      requestId: "../capture request"
+    )
+
+    XCTAssertTrue(artifactURL.standardizedFileURL.path.hasPrefix(rootURL.standardizedFileURL.path))
+    XCTAssertTrue(artifactURL.lastPathComponent.hasSuffix(".jpg"))
+    XCTAssertFalse(artifactURL.lastPathComponent.contains(".."))
+
+    try Data([1, 2, 3, 4]).write(to: artifactURL)
+    XCTAssertEqual(try store.fileSize(artifactURL), 4)
+  }
+
 }

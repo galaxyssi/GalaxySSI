@@ -153,7 +153,7 @@ enum AgentPhoneNativeToolCatalog {
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) },
     homeAssistantProvider: AgentIOSHomeAssistantToolProviding = AgentIOSConfiguredHomeAssistantToolProvider(),
     notificationProvider: AgentIOSNotificationToolProviding = AgentIOSNotificationBoundaryToolProvider(),
-    visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSUnavailableVisibleCaptureToolProvider(),
+    visibleCaptureProvider: AgentIOSVisibleCaptureToolProviding = AgentIOSForegroundVisibleCaptureProvider(),
     webMediaProvider: AgentIOSWebMediaToolProviding = AgentIOSURLSessionWebMediaToolProvider(),
     webIntelligenceProvider: AgentIOSWebIntelligenceToolProviding = AgentIOSUnavailableWebIntelligenceToolProvider(),
     mediaProvider: AgentIOSMediaNativeToolProviding = AgentIOSUnavailableMediaNativeToolProvider(),
