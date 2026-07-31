@@ -30,6 +30,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         text: String,
         voice: String,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
+        onPlaybackStarted: () -> Unit = {},
         onDone: (Boolean, String?) -> Unit
     ) {
         if (text.isBlank()) {
@@ -40,7 +41,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         Thread {
             val result = runCatching {
                 val audio = synthesize(text, voice, traceId)
-                playAudio(audio, traceId)
+                playAudio(audio, traceId, onPlaybackStarted)
             }
             if (result.isSuccess) {
                 trace(
@@ -149,7 +150,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         return data
     }
 
-    private fun playAudio(audio: ByteArray, traceId: String) {
+    private fun playAudio(audio: ByteArray, traceId: String, onPlaybackStarted: () -> Unit) {
         val file = File(context.cacheDir, "signalasi_tts_${System.currentTimeMillis()}.mp3")
         file.writeBytes(audio)
         val latch = CountDownLatch(1)
@@ -171,6 +172,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         }
         mp.prepare()
         mp.start()
+        runCatching(onPlaybackStarted)
         trace(
             traceId,
             VoiceTraceEvents.TTS_PLAYBACK_STARTED,
