@@ -495,6 +495,7 @@ final class MessageCoordinator: ObservableObject {
   private let deliveryStore: SignalASILinkDeliveryStore
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
   private let cloudClient: CloudModelClient
+  private let disclosureStore: AgentDataDisclosureStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   let mqttClient: SignalASIMqttClient
   private var outboxRetryTask: Task<Void, Never>?
@@ -505,6 +506,9 @@ final class MessageCoordinator: ObservableObject {
     deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
     diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger(),
     cloudClient: CloudModelClient = CloudModelClient(),
+    disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
+      fileURL: AgentDataDisclosureStorePaths.ledgerURL()
+    ),
     mediaNetworkProfileProvider: @escaping () -> AgentMediaDeliveryProfile = {
       AgentMediaNetworkDetector.shared.currentProfile
     },
@@ -514,6 +518,7 @@ final class MessageCoordinator: ObservableObject {
     self.deliveryStore = deliveryStore
     self.diagnosticLedger = diagnosticLedger
     self.cloudClient = cloudClient
+    self.disclosureStore = disclosureStore
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
     self.mqttClient.onMessage = { [weak self] topic, payload in
@@ -546,6 +551,7 @@ final class MessageCoordinator: ObservableObject {
     guard !trimmed.isEmpty || !attachments.isEmpty else { return }
     let displayText = trimmed.ifBlank(SignalASIAttachmentPayloadBuilder.messageLabel(for: attachments))
     let outgoing = store.appendOutgoing(displayText, to: contact.id)
+    var disclosureTicket: AgentDisclosureTicket?
     do {
       switch contact.deliveryMode {
       case .cloudAPI:
@@ -556,6 +562,21 @@ final class MessageCoordinator: ObservableObject {
         }
         let modelDetail = contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(contact.id)
         let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
+        disclosureTicket = AgentDataDisclosureLedger.beginCloudRequest(
+          store: disclosureStore,
+          destination: AgentDataDisclosureCloudDestination(contact: contact),
+          text: cloudText,
+          historyCount: cloudTurns.count,
+          systemInstructions: true,
+          toolOutput: false,
+          purpose: "Chat request",
+          conversationId: outgoing.conversationId,
+          taskId: outgoing.id.uuidString,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        guard disclosureTicket?.allowed == true else {
+          throw AgentDataDisclosureBlockedError(destination: contact.displayName)
+        }
         store.appendDeliveryTrace(
           outgoing.id,
           contactId: contact.id,
@@ -564,6 +585,9 @@ final class MessageCoordinator: ObservableObject {
           status: .sent
         )
         let reply = try await cloudClient.send(contact: contact, store: store, turns: cloudTurns)
+        if let ticket = disclosureTicket {
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+        }
         store.appendDeliveryTrace(
           outgoing.id,
           contactId: contact.id,
@@ -580,7 +604,30 @@ final class MessageCoordinator: ObservableObject {
           status: .delivered
         )
       case .link:
-        try await publishLinkMessage(displayText, contact: contact, outgoing: outgoing, attachments: attachments)
+        disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
+          store: disclosureStore,
+          contactId: contact.id,
+          desktopId: contact.desktopId,
+          providerId: contact.signalASIId,
+          title: contact.displayName,
+          text: displayText,
+          attachments: attachments.map { AgentDataDisclosureAttachment($0) },
+          conversationId: outgoing.conversationId,
+          taskId: outgoing.id.uuidString,
+          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
+        )
+        guard disclosureTicket?.allowed == true else {
+          throw AgentDataDisclosureBlockedError(destination: contact.displayName)
+        }
+        let disclosureStatus = try await publishLinkMessage(
+          displayText,
+          contact: contact,
+          outgoing: outgoing,
+          attachments: attachments
+        )
+        if let ticket = disclosureTicket {
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: disclosureStatus)
+        }
       case .local:
         store.appendDeliveryTrace(
           outgoing.id,
@@ -591,6 +638,14 @@ final class MessageCoordinator: ObservableObject {
         )
       }
     } catch {
+      if let ticket = disclosureTicket, ticket.allowed {
+        AgentDataDisclosureLedger.update(
+          store: disclosureStore,
+          ticket: ticket,
+          status: .failed,
+          failureReason: error.localizedDescription
+        )
+      }
       lastError = error.localizedDescription
       let stage: String
       switch contact.deliveryMode {
@@ -651,7 +706,7 @@ final class MessageCoordinator: ObservableObject {
     contact: SignalASIContact,
     outgoing: ChatMessage,
     attachments: [SignalASIDraftAttachment]
-  ) async throws {
+  ) async throws -> AgentDisclosureStatus {
     guard let link = store.serverLinks.first(where: { $0.paired }) ?? store.serverLinks.first else {
       throw SignalASIError.notPaired
     }
@@ -710,7 +765,7 @@ final class MessageCoordinator: ObservableObject {
         status: .queued
       )
       scheduleOutboxFlushFromStore()
-      return
+      return .queued
     }
     deliveryStore.markAttempt(messageId: outgoing.id.uuidString)
     let result = await mqttClient.publish(topic: link.routes.upTopic, payload: wire)
@@ -725,6 +780,7 @@ final class MessageCoordinator: ObservableObject {
         status: .sent
       )
       scheduleOutboxFlushFromStore()
+      return .sent
     case .queued:
       store.appendDeliveryTrace(
         outgoing.id,
@@ -734,6 +790,7 @@ final class MessageCoordinator: ObservableObject {
         status: .queued
       )
       scheduleOutboxFlushFromStore()
+      return .queued
     case .failed:
       throw SignalASIError.transportUnavailable
     }

@@ -16,7 +16,13 @@ final class CloudModelAgentPlanningProviderTests: XCTestCase {
       apiStyle: .openAICompatible
     )
     let sender = RecordingStructuredSender(raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#)
-    let provider = CloudModelAgentPlanningProvider(contact: contact, store: store, sender: sender)
+    let disclosureStore = InMemoryAgentDataDisclosureStore()
+    let provider = CloudModelAgentPlanningProvider(
+      contact: contact,
+      store: store,
+      sender: sender,
+      disclosureStore: disclosureStore
+    )
 
     let raw = try await provider.rawPlan(invocation: invocation(systemPrompt: "system", prompt: "planner prompt"))
 
@@ -26,6 +32,49 @@ final class CloudModelAgentPlanningProviderTests: XCTestCase {
     XCTAssertTrue(call.store === store)
     XCTAssertEqual(call.systemPrompt, "system")
     XCTAssertEqual(call.prompt, "planner prompt")
+    let record = try XCTUnwrap(disclosureStore.list().first)
+    XCTAssertEqual(record.destinationId, contact.id)
+    XCTAssertEqual(record.status, .sent)
+    XCTAssertEqual(record.purpose, "Agent planning request")
+    XCTAssertTrue(record.dataKinds.contains(.messageText))
+    XCTAssertTrue(record.dataKinds.contains(.systemInstructions))
+    XCTAssertEqual(record.location, .cloud)
+  }
+
+  func testCloudModelAgentPlanningProviderBlocksDisallowedDestinationBeforeSending() async throws {
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+    let contact = try store.addCloudModelContact(
+      displayName: "Planner",
+      provider: "OpenAI",
+      modelId: "planner-model",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-live-key",
+      apiStyle: .openAICompatible
+    )
+    let sender = RecordingStructuredSender(raw: "{}")
+    let disclosureStore = InMemoryAgentDataDisclosureStore()
+    disclosureStore.setDestinationBlocked(destinationId: contact.id, blocked: true)
+    let provider = CloudModelAgentPlanningProvider(
+      contact: contact,
+      store: store,
+      sender: sender,
+      disclosureStore: disclosureStore
+    )
+
+    do {
+      _ = try await provider.rawPlan(invocation: invocation(systemPrompt: "system", prompt: "planner prompt"))
+      XCTFail("Expected blocked destinations to stop the model request.")
+    } catch is AgentDataDisclosureBlockedError {
+      XCTAssertTrue(true)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+
+    XCTAssertTrue(sender.calls.isEmpty)
+    let record = try XCTUnwrap(disclosureStore.list().first)
+    XCTAssertEqual(record.status, .blocked)
+    XCTAssertEqual(record.destinationId, contact.id)
   }
 
   func testCloudModelNativeToolAdapterForwardsNativeToolTurns() async throws {
