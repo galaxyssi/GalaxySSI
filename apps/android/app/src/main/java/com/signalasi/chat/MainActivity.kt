@@ -7485,6 +7485,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val planner = mobileNativeAgent.modelPlannerSettings()
         val privacyProtected = !planner.shareScreenText && !planner.shareAgentOutputsWithPlanner
         val secure = SignalASIMqttClient.isConnected() && SignalASIMqttClient.isSecureReady()
+        val disclosureRecords = EncryptedAgentDataDisclosureStore(this).list(100)
+        val disclosureSummary = AgentDataDisclosureLedger.summary(disclosureRecords)
         val homeAssistant = HomeAssistantSettingsStore.load(this)
         val homeAssistantReady = homeAssistant.configured
         val onDeviceRuntime = AgentOnDeviceRuntimeManager(this).status()
@@ -7621,6 +7623,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             ccRouteRow(ControlCenterRoute.SYSTEM_STATUS, R.string.cc_system_status_title, if (secure) R.string.cc_all_services_normal_subtitle else R.string.cc_services_need_attention_subtitle, R.drawable.ic_info_outline, getString(if (secure) R.string.cc_status_normal else R.string.cc_status_degraded), if (secure) ControlCenterTone.GREEN else ControlCenterTone.AMBER),
                             ccRouteRow(ControlCenterRoute.NODES, R.string.cc_nodes_title, R.string.cc_nodes_subtitle, R.drawable.ic_protocol_link, availableResources.toString(), if (availableResources > 0) ControlCenterTone.GREEN else ControlCenterTone.AMBER),
                             ccRouteRow(ControlCenterRoute.SECURITY, R.string.cc_security_title, R.string.cc_security_subtitle, R.drawable.ic_security_shield, getString(if (secure) R.string.cc_status_secure else R.string.cc_status_normal), ControlCenterTone.GREEN),
+                            ccRouteRow(
+                                ControlCenterRoute.PRIVACY,
+                                R.string.cc_privacy_dashboard_title,
+                                R.string.cc_privacy_dashboard_subtitle,
+                                R.drawable.ic_security_shield,
+                                getString(R.string.cc_privacy_destination_count, disclosureSummary.destinations),
+                                if (disclosureSummary.blocked > 0) ControlCenterTone.AMBER else ControlCenterTone.BLUE
+                            ),
                             ccRouteRow(ControlCenterRoute.PERMISSIONS_AUDIT, R.string.cc_audit_title, R.string.cc_audit_subtitle, R.drawable.ic_settings_fingerprint, "", ControlCenterTone.VIOLET)
                         )
                     ),
@@ -7709,6 +7719,49 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ).show()
             controlCenterHomeRefreshPolicy.invalidate()
             renderCurrentControlCenterDestination()
+            return
+        }
+        if (actionId.startsWith("privacy.event:")) {
+            openControlCenterDestination(
+                ControlCenterDestination(
+                    ControlCenterRoute.PRIVACY,
+                    "event:${actionId.substringAfter("privacy.event:")}"
+                )
+            )
+            return
+        }
+        if (actionId.startsWith("privacy.destination:")) {
+            openControlCenterDestination(
+                ControlCenterDestination(
+                    ControlCenterRoute.PRIVACY,
+                    "destination:${actionId.substringAfter("privacy.destination:")}"
+                )
+            )
+            return
+        }
+        if (actionId.startsWith("privacy.toggle_destination:")) {
+            val destinationId = actionId.substringAfter("privacy.toggle_destination:").trim()
+            val store = EncryptedAgentDataDisclosureStore(this)
+            val blocked = destinationId in store.blockedDestinationIds()
+            store.setDestinationBlocked(destinationId, !blocked)
+            controlCenterHomeRefreshPolicy.invalidate()
+            renderCurrentControlCenterDestination()
+            return
+        }
+        if (actionId == "privacy.clear_history") {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.cc_privacy_clear_title)
+                .setMessage(R.string.cc_privacy_clear_message)
+                .setNegativeButton(R.string.common_cancel, null)
+                .setPositiveButton(R.string.common_confirm) { _, _ ->
+                    EncryptedAgentDataDisclosureStore(this).clearHistory()
+                    controlCenterHomeRefreshPolicy.invalidate()
+                    openControlCenterDestination(
+                        ControlCenterDestination(ControlCenterRoute.PRIVACY),
+                        pushCurrent = false
+                    )
+                }
+                .show()
             return
         }
         controlCenterHomeRefreshPolicy.invalidate()
@@ -8115,6 +8168,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ControlCenterRoute.SMART_SPACES -> renderControlCenterSmartSpacesPage()
                 ControlCenterRoute.NODES -> renderControlCenterNodesPage()
                 ControlCenterRoute.SECURITY -> renderControlCenterSecurityPage()
+                ControlCenterRoute.PRIVACY -> renderControlCenterPrivacyPage(destination.payload)
                 ControlCenterRoute.PERMISSIONS_AUDIT -> renderControlCenterPermissionsPage()
                 ControlCenterRoute.VOICE -> renderControlCenterVoicePage()
                 ControlCenterRoute.DATA_BACKUP -> renderControlCenterDataPage()
@@ -12331,6 +12385,461 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         )
     }
+
+    private fun renderControlCenterPrivacyPage(payload: String = "") {
+        when {
+            payload.startsWith("event:") -> {
+                renderControlCenterPrivacyEvent(payload.substringAfter("event:"))
+                return
+            }
+            payload.startsWith("destination:") -> {
+                renderControlCenterPrivacyDestination(payload.substringAfter("destination:"))
+                return
+            }
+        }
+        val store = EncryptedAgentDataDisclosureStore(this)
+        val records = store.list(80)
+        val summary = AgentDataDisclosureLedger.summary(records)
+        val blocked = store.blockedDestinationIds()
+        val registrations = AppStoreAgentConnectorRegistry(this).registrations()
+            .filter {
+                it.location != AgentResourceLocation.PHONE &&
+                    it.kind in setOf(AgentConnectorKind.AGENT, AgentConnectorKind.MODEL)
+            }
+        val destinationIds = linkedSetOf<String>().apply {
+            addAll(registrations.map(AgentRegistration::agentId))
+            addAll(records.map(AgentDataDisclosureRecord::destinationId))
+            addAll(blocked)
+        }
+        val destinations = destinationIds.map { destinationId ->
+            val registration = registrations.firstOrNull { it.agentId == destinationId }
+            val recent = records.firstOrNull { it.destinationId == destinationId }
+            val title = recent?.destinationTitle
+                ?: registration?.displayName
+                ?: destinationId
+            val model = recent?.modelId
+                ?: registration?.providerProfile?.modelId
+                ?: ""
+            val location = recent?.location
+                ?: registration?.location
+                ?: AgentResourceLocation.CLOUD
+            ControlCenterRowSpec(
+                actionId = "privacy.destination:$destinationId",
+                title = title,
+                subtitle = getString(
+                    R.string.cc_privacy_destination_subtitle,
+                    privacyLocationLabel(location),
+                    model.ifBlank {
+                        recent?.providerId
+                            ?: registration?.providerId
+                            ?: getString(R.string.cc_privacy_destination_unspecified)
+                    }
+                ),
+                iconRes = if (location == AgentResourceLocation.TRUSTED_DESKTOP) {
+                    R.drawable.ic_device_node
+                } else {
+                    R.drawable.ic_settings_model
+                },
+                status = getString(
+                    if (destinationId in blocked) {
+                        R.string.cc_privacy_blocked
+                    } else {
+                        R.string.cc_privacy_allowed
+                    }
+                ),
+                tone = if (destinationId in blocked) ControlCenterTone.AMBER else ControlCenterTone.GREEN
+            )
+        }
+        val recentRows = records.take(30).map { record ->
+            ControlCenterRowSpec(
+                actionId = "privacy.event:${record.eventId}",
+                title = record.destinationTitle,
+                subtitle = getString(
+                    R.string.cc_privacy_event_subtitle,
+                    privacyDataKindsLabel(record.dataKinds),
+                    privacyTimeLabel(record.updatedAtMillis)
+                ),
+                iconRes = privacyDestinationIcon(record.location),
+                status = privacyDisclosureStatusLabel(record.status),
+                tone = privacyDisclosureStatusTone(record.status)
+            )
+        }
+        showControlCenterFeature(
+            getString(R.string.cc_privacy_dashboard_title),
+            ControlCenterPageSpec(
+                hero = ControlCenterHeroSpec(
+                    title = getString(R.string.cc_privacy_dashboard_title),
+                    subtitle = getString(R.string.cc_privacy_dashboard_hero_subtitle),
+                    iconRes = R.drawable.ic_security_shield,
+                    badges = listOf(
+                        ControlCenterBadgeSpec(
+                            getString(R.string.cc_privacy_metadata_only),
+                            ControlCenterTone.GREEN
+                        ),
+                        ControlCenterBadgeSpec(
+                            getString(R.string.cc_privacy_blocked_count, summary.blocked),
+                            if (summary.blocked > 0) ControlCenterTone.AMBER else ControlCenterTone.NEUTRAL
+                        )
+                    ),
+                    metrics = listOf(
+                        ControlCenterMetricSpec(summary.total.toString(), getString(R.string.cc_privacy_metric_events)),
+                        ControlCenterMetricSpec(summary.destinations.toString(), getString(R.string.cc_privacy_metric_destinations)),
+                        ControlCenterMetricSpec(summary.cloud.toString(), getString(R.string.cc_privacy_metric_cloud))
+                    )
+                ),
+                banner = ControlCenterBannerSpec(
+                    title = getString(R.string.cc_privacy_local_title),
+                    subtitle = getString(R.string.cc_privacy_local_subtitle),
+                    iconRes = R.drawable.ic_device_node,
+                    tone = ControlCenterTone.GREEN
+                ),
+                sections = buildList {
+                    add(
+                        ControlCenterSectionSpec(
+                            getString(R.string.cc_section_privacy_boundary),
+                            listOf(
+                                ControlCenterRowSpec(
+                                    actionId = "agent.planner",
+                                    title = getString(R.string.cc_privacy_planner_title),
+                                    subtitle = getString(R.string.cc_privacy_planner_subtitle),
+                                    iconRes = R.drawable.ic_settings_model,
+                                    status = getString(R.string.cc_privacy_review),
+                                    tone = ControlCenterTone.BLUE
+                                ),
+                                ControlCenterRowSpec(
+                                    actionId = routeAction(ControlCenterRoute.PERMISSIONS_AUDIT),
+                                    title = getString(R.string.cc_permissions_title),
+                                    subtitle = getString(R.string.cc_privacy_permissions_subtitle),
+                                    iconRes = R.drawable.ic_settings_fingerprint,
+                                    tone = ControlCenterTone.VIOLET
+                                )
+                            )
+                        )
+                    )
+                    add(
+                        ControlCenterSectionSpec(
+                            getString(R.string.cc_privacy_destinations_title),
+                            destinations.ifEmpty {
+                                listOf(
+                                    ControlCenterRowSpec(
+                                        actionId = "",
+                                        title = getString(R.string.cc_privacy_no_destinations),
+                                        subtitle = getString(R.string.cc_privacy_no_destinations_subtitle),
+                                        iconRes = R.drawable.ic_settings_model,
+                                        showChevron = false
+                                    )
+                                )
+                            }
+                        )
+                    )
+                    add(
+                        ControlCenterSectionSpec(
+                            getString(R.string.cc_privacy_recent_title),
+                            recentRows.ifEmpty {
+                                listOf(
+                                    ControlCenterRowSpec(
+                                        actionId = "",
+                                        title = getString(R.string.cc_privacy_no_events),
+                                        subtitle = getString(R.string.cc_privacy_no_events_subtitle),
+                                        iconRes = R.drawable.ic_security_shield,
+                                        showChevron = false
+                                    )
+                                )
+                            }
+                        )
+                    )
+                    if (records.isNotEmpty()) {
+                        add(
+                            ControlCenterSectionSpec(
+                                getString(R.string.cc_privacy_history_title),
+                                listOf(
+                                    ControlCenterRowSpec(
+                                        actionId = "privacy.clear_history",
+                                        title = getString(R.string.cc_privacy_clear_title),
+                                        subtitle = getString(R.string.cc_privacy_clear_subtitle),
+                                        iconRes = R.drawable.ic_delete,
+                                        tone = ControlCenterTone.NEUTRAL
+                                    )
+                                )
+                            )
+                        )
+                    }
+                },
+                footer = getString(R.string.cc_privacy_footer)
+            )
+        )
+    }
+
+    private fun renderControlCenterPrivacyDestination(destinationId: String) {
+        val store = EncryptedAgentDataDisclosureStore(this)
+        val records = store.list(250).filter { it.destinationId == destinationId }
+        val recent = records.firstOrNull()
+        val registration = AppStoreAgentConnectorRegistry(this).registrations()
+            .firstOrNull { it.agentId == destinationId }
+        val title = recent?.destinationTitle ?: registration?.displayName ?: destinationId
+        val location = recent?.location ?: registration?.location ?: AgentResourceLocation.CLOUD
+        val trust = recent?.trust ?: registration?.trust ?: AgentResourceTrust.UNKNOWN
+        val provider = recent?.providerId
+            ?: registration?.providerId
+            ?: ""
+        val model = recent?.modelId
+            ?: registration?.providerProfile?.modelId
+            ?: ""
+        val blocked = destinationId in store.blockedDestinationIds()
+        val observedKinds = records.flatMapTo(linkedSetOf()) { it.dataKinds }
+        showControlCenterFeature(
+            title,
+            ControlCenterPageSpec(
+                hero = ControlCenterHeroSpec(
+                    title = title,
+                    subtitle = getString(
+                        R.string.cc_privacy_destination_subtitle,
+                        privacyLocationLabel(location),
+                        model.ifBlank { provider.ifBlank { getString(R.string.cc_privacy_destination_unspecified) } }
+                    ),
+                    iconRes = privacyDestinationIcon(location),
+                    badges = listOf(
+                        ControlCenterBadgeSpec(
+                            getString(if (blocked) R.string.cc_privacy_blocked else R.string.cc_privacy_allowed),
+                            if (blocked) ControlCenterTone.AMBER else ControlCenterTone.GREEN
+                        )
+                    ),
+                    metrics = listOf(
+                        ControlCenterMetricSpec(records.size.toString(), getString(R.string.cc_privacy_metric_events)),
+                        ControlCenterMetricSpec(observedKinds.size.toString(), getString(R.string.cc_privacy_metric_data_types)),
+                        ControlCenterMetricSpec(privacyProtectionShortLabel(recent?.protection, location), getString(R.string.cc_privacy_metric_protection))
+                    )
+                ),
+                sections = listOf(
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_privacy_destination_details),
+                        listOf(
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_provider), provider.ifBlank { getString(R.string.cc_privacy_destination_unspecified) }, R.drawable.ic_settings_model, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_model), model.ifBlank { getString(R.string.cc_privacy_destination_unspecified) }, R.drawable.ic_agent_node, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_location), privacyLocationLabel(location), R.drawable.ic_device_node, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_trust), privacyTrustLabel(trust), R.drawable.ic_security_shield, showChevron = false)
+                        )
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_privacy_observed_data_title),
+                        if (observedKinds.isEmpty()) {
+                            listOf(
+                                ControlCenterRowSpec("", getString(R.string.cc_privacy_no_events), getString(R.string.cc_privacy_no_events_subtitle), R.drawable.ic_info_outline, showChevron = false)
+                            )
+                        } else {
+                            observedKinds.sortedBy(AgentDisclosedDataKind::wireValue).map { kind ->
+                                ControlCenterRowSpec("", privacyDataKindLabel(kind), getString(R.string.cc_privacy_metadata_not_content), privacyDataKindIcon(kind), showChevron = false)
+                            }
+                        }
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_privacy_control_title),
+                        listOf(
+                            ControlCenterRowSpec(
+                                actionId = "privacy.toggle_destination:$destinationId",
+                                title = getString(R.string.cc_privacy_allow_destination),
+                                subtitle = getString(R.string.cc_privacy_allow_destination_subtitle),
+                                iconRes = R.drawable.ic_security_shield,
+                                switchValue = !blocked,
+                                showChevron = false,
+                                tone = if (blocked) ControlCenterTone.AMBER else ControlCenterTone.GREEN
+                            )
+                        )
+                    )
+                ),
+                footer = getString(R.string.cc_privacy_block_scope_footer)
+            )
+        )
+    }
+
+    private fun renderControlCenterPrivacyEvent(eventId: String) {
+        val store = EncryptedAgentDataDisclosureStore(this)
+        val record = store.find(eventId) ?: run {
+            renderControlCenterPrivacyPage()
+            return
+        }
+        val blocked = record.destinationId in store.blockedDestinationIds()
+        showControlCenterFeature(
+            getString(R.string.cc_privacy_event_title),
+            ControlCenterPageSpec(
+                hero = ControlCenterHeroSpec(
+                    title = record.destinationTitle,
+                    subtitle = getString(
+                        R.string.cc_privacy_event_subtitle,
+                        privacyDataKindsLabel(record.dataKinds),
+                        privacyTimeLabel(record.updatedAtMillis)
+                    ),
+                    iconRes = privacyDestinationIcon(record.location),
+                    badges = listOf(
+                        ControlCenterBadgeSpec(
+                            privacyDisclosureStatusLabel(record.status),
+                            privacyDisclosureStatusTone(record.status)
+                        ),
+                        ControlCenterBadgeSpec(
+                            privacyProtectionShortLabel(record.protection, record.location),
+                            ControlCenterTone.BLUE
+                        )
+                    )
+                ),
+                sections = listOf(
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_privacy_shared_data_title),
+                        record.dataKinds.sortedBy(AgentDisclosedDataKind::wireValue).map { kind ->
+                            ControlCenterRowSpec(
+                                actionId = "",
+                                title = privacyDataKindLabel(kind),
+                                subtitle = getString(R.string.cc_privacy_metadata_not_content),
+                                iconRes = privacyDataKindIcon(kind),
+                                showChevron = false
+                            )
+                        }.ifEmpty {
+                            listOf(
+                                ControlCenterRowSpec("", getString(R.string.cc_privacy_no_data), getString(R.string.cc_privacy_no_data_subtitle), R.drawable.ic_info_outline, showChevron = false)
+                            )
+                        }
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_privacy_event_details),
+                        listOf(
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_purpose), record.purpose, R.drawable.ic_agent_history, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_text_size), getString(R.string.cc_privacy_character_count, record.textCharacters), R.drawable.ic_info_outline, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_attachments), getString(R.string.cc_privacy_attachment_summary, record.attachmentCount, AgentInputAttachment.humanSize(record.attachmentBytes)), R.drawable.ic_more_horizontal, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_protection), privacyProtectionLabel(record.protection), R.drawable.ic_security_shield, showChevron = false),
+                            ControlCenterRowSpec("", getString(R.string.cc_privacy_time), privacyExactTimeLabel(record.updatedAtMillis), R.drawable.ic_agent_history, showChevron = false)
+                        )
+                    ),
+                    ControlCenterSectionSpec(
+                        getString(R.string.cc_privacy_control_title),
+                        listOf(
+                            ControlCenterRowSpec(
+                                actionId = "privacy.toggle_destination:${record.destinationId}",
+                                title = getString(R.string.cc_privacy_allow_destination),
+                                subtitle = getString(R.string.cc_privacy_allow_destination_subtitle),
+                                iconRes = R.drawable.ic_security_shield,
+                                switchValue = !blocked,
+                                showChevron = false,
+                                tone = if (blocked) ControlCenterTone.AMBER else ControlCenterTone.GREEN
+                            )
+                        )
+                    )
+                ),
+                footer = getString(R.string.cc_privacy_event_footer)
+            )
+        )
+    }
+
+    private fun privacyDataKindsLabel(kinds: Set<AgentDisclosedDataKind>): String =
+        kinds.sortedBy(AgentDisclosedDataKind::wireValue)
+            .take(3)
+            .joinToString(getString(R.string.cc_privacy_kind_separator)) { privacyDataKindLabel(it) }
+            .ifBlank { getString(R.string.cc_privacy_no_data) }
+
+    private fun privacyDataKindLabel(kind: AgentDisclosedDataKind): String = getString(
+        when (kind) {
+            AgentDisclosedDataKind.MESSAGE_TEXT -> R.string.cc_privacy_kind_message
+            AgentDisclosedDataKind.CONVERSATION_HISTORY -> R.string.cc_privacy_kind_history
+            AgentDisclosedDataKind.SYSTEM_INSTRUCTIONS -> R.string.cc_privacy_kind_system
+            AgentDisclosedDataKind.TOOL_OUTPUT -> R.string.cc_privacy_kind_tool
+            AgentDisclosedDataKind.SCREEN_CONTEXT -> R.string.cc_privacy_kind_screen
+            AgentDisclosedDataKind.MEMORY_CONTEXT -> R.string.cc_privacy_kind_memory
+            AgentDisclosedDataKind.KNOWLEDGE_CONTEXT -> R.string.cc_privacy_kind_knowledge
+            AgentDisclosedDataKind.DEVICE_CONTEXT -> R.string.cc_privacy_kind_device
+            AgentDisclosedDataKind.IMAGE -> R.string.cc_privacy_kind_image
+            AgentDisclosedDataKind.AUDIO -> R.string.cc_privacy_kind_audio
+            AgentDisclosedDataKind.VIDEO -> R.string.cc_privacy_kind_video
+            AgentDisclosedDataKind.DOCUMENT -> R.string.cc_privacy_kind_document
+            AgentDisclosedDataKind.OTHER_FILE -> R.string.cc_privacy_kind_file
+        }
+    )
+
+    private fun privacyDataKindIcon(kind: AgentDisclosedDataKind): Int = when (kind) {
+        AgentDisclosedDataKind.MEMORY_CONTEXT -> R.drawable.ic_agent_memory
+        AgentDisclosedDataKind.KNOWLEDGE_CONTEXT -> R.drawable.ic_agent_knowledge
+        AgentDisclosedDataKind.AUDIO -> R.drawable.ic_input_voice
+        AgentDisclosedDataKind.IMAGE, AgentDisclosedDataKind.SCREEN_CONTEXT -> R.drawable.ic_scan
+        AgentDisclosedDataKind.DEVICE_CONTEXT -> R.drawable.ic_device_node
+        AgentDisclosedDataKind.TOOL_OUTPUT -> R.drawable.ic_agent_control
+        else -> R.drawable.ic_info_outline
+    }
+
+    private fun privacyDestinationIcon(location: AgentResourceLocation): Int =
+        if (location == AgentResourceLocation.TRUSTED_DESKTOP) {
+            R.drawable.ic_device_node
+        } else {
+            R.drawable.ic_settings_model
+        }
+
+    private fun privacyLocationLabel(location: AgentResourceLocation): String = getString(
+        when (location) {
+            AgentResourceLocation.PHONE -> R.string.cc_privacy_location_phone
+            AgentResourceLocation.TRUSTED_DESKTOP -> R.string.cc_privacy_location_desktop
+            AgentResourceLocation.PRIVATE_NETWORK -> R.string.cc_privacy_location_private
+            AgentResourceLocation.CLOUD -> R.string.cc_privacy_location_cloud
+        }
+    )
+
+    private fun privacyTrustLabel(trust: AgentResourceTrust): String = getString(
+        when (trust) {
+            AgentResourceTrust.PHONE_SYSTEM -> R.string.cc_privacy_trust_phone
+            AgentResourceTrust.VERIFIED_PAIRED -> R.string.cc_privacy_trust_verified
+            AgentResourceTrust.PRIVATE_CONFIGURED -> R.string.cc_privacy_trust_private
+            AgentResourceTrust.CLOUD_CONFIGURED -> R.string.cc_privacy_trust_cloud
+            AgentResourceTrust.UNKNOWN -> R.string.cc_privacy_trust_unknown
+        }
+    )
+
+    private fun privacyProtectionLabel(protection: AgentDisclosureProtection): String = getString(
+        when (protection) {
+            AgentDisclosureProtection.ON_DEVICE -> R.string.cc_privacy_protection_on_device
+            AgentDisclosureProtection.SIGNAL_E2EE -> R.string.cc_privacy_protection_signal
+            AgentDisclosureProtection.TLS -> R.string.cc_privacy_protection_tls
+        }
+    )
+
+    private fun privacyProtectionShortLabel(
+        protection: AgentDisclosureProtection?,
+        location: AgentResourceLocation
+    ): String = privacyProtectionLabel(
+        protection ?: if (location == AgentResourceLocation.TRUSTED_DESKTOP) {
+            AgentDisclosureProtection.SIGNAL_E2EE
+        } else {
+            AgentDisclosureProtection.TLS
+        }
+    )
+
+    private fun privacyDisclosureStatusLabel(status: AgentDisclosureStatus): String = getString(
+        when (status) {
+            AgentDisclosureStatus.PREPARING -> R.string.cc_privacy_status_preparing
+            AgentDisclosureStatus.QUEUED -> R.string.cc_privacy_status_queued
+            AgentDisclosureStatus.SENT -> R.string.cc_privacy_status_sent
+            AgentDisclosureStatus.BLOCKED -> R.string.cc_privacy_status_blocked
+            AgentDisclosureStatus.FAILED -> R.string.cc_privacy_status_failed
+        }
+    )
+
+    private fun privacyDisclosureStatusTone(status: AgentDisclosureStatus): ControlCenterTone = when (status) {
+        AgentDisclosureStatus.SENT -> ControlCenterTone.GREEN
+        AgentDisclosureStatus.PREPARING, AgentDisclosureStatus.QUEUED -> ControlCenterTone.BLUE
+        AgentDisclosureStatus.BLOCKED, AgentDisclosureStatus.FAILED -> ControlCenterTone.AMBER
+    }
+
+    private fun privacyTimeLabel(timestamp: Long): String {
+        if (timestamp <= 0L) return getString(R.string.cc_privacy_time_unknown)
+        val elapsed = (System.currentTimeMillis() - timestamp).coerceAtLeast(0L)
+        return when {
+            elapsed < 60_000L -> getString(R.string.cc_privacy_time_now)
+            elapsed < 3_600_000L -> getString(R.string.cc_privacy_time_minutes, elapsed / 60_000L)
+            elapsed < 86_400_000L -> getString(R.string.cc_privacy_time_hours, elapsed / 3_600_000L)
+            else -> privacyExactTimeLabel(timestamp)
+        }
+    }
+
+    private fun privacyExactTimeLabel(timestamp: Long): String =
+        if (timestamp <= 0L) {
+            getString(R.string.cc_privacy_time_unknown)
+        } else {
+            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
+        }
 
     private fun renderControlCenterPermissionsPage() {
         val accessibility = SignalASIAccessibilityService.isActive()

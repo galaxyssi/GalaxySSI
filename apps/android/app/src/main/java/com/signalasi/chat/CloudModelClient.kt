@@ -43,10 +43,19 @@ object CloudModelClient {
         val turn = ChatMessage(0L, prompt, true, Contact("me", context.getString(R.string.chat_me), ""))
         val style = contact.optString("cloud_api_style", "openai")
         val systemPrompt = defaultSystemPrompt(context)
-        return when (style) {
-            "anthropic" -> sendAnthropicWithUsage(context, contact, listOf(turn), systemPrompt)
-            "gemini" -> sendGeminiWithUsage(context, contact, listOf(turn), systemPrompt)
-            else -> sendOpenAiCompatibleWithUsage(context, contact, listOf(turn), systemPrompt, null)
+        return trackedCloudRequest(
+            context = context,
+            contact = contact,
+            text = prompt,
+            historyCount = 1,
+            systemInstructions = true,
+            purpose = "Direct model response"
+        ) {
+            when (style) {
+                "anthropic" -> sendAnthropicWithUsage(context, contact, listOf(turn), systemPrompt)
+                "gemini" -> sendGeminiWithUsage(context, contact, listOf(turn), systemPrompt)
+                else -> sendOpenAiCompatibleWithUsage(context, contact, listOf(turn), systemPrompt, null)
+            }
         }
     }
 
@@ -72,26 +81,35 @@ object CloudModelClient {
         validateContact(context, contact)
         val turn = ChatMessage(0L, prompt, true, Contact("me", context.getString(R.string.chat_me), ""))
         val boundedSystemPrompt = secureSystemPrompt(systemPrompt)
-        return when (contact.optString("cloud_api_style", "openai")) {
-            "anthropic" -> sendAnthropicWithUsage(
-                context,
-                contact,
-                listOf(turn),
-                boundedSystemPrompt
-            )
-            "gemini" -> sendGeminiWithUsage(
-                context,
-                contact,
-                listOf(turn),
-                boundedSystemPrompt
-            )
-            else -> sendOpenAiCompatibleWithUsage(
-                context,
-                contact,
-                listOf(turn),
-                boundedSystemPrompt,
-                null
-            )
+        return trackedCloudRequest(
+            context = context,
+            contact = contact,
+            text = prompt,
+            historyCount = 1,
+            systemInstructions = true,
+            purpose = "Structured model task"
+        ) {
+            when (contact.optString("cloud_api_style", "openai")) {
+                "anthropic" -> sendAnthropicWithUsage(
+                    context,
+                    contact,
+                    listOf(turn),
+                    boundedSystemPrompt
+                )
+                "gemini" -> sendGeminiWithUsage(
+                    context,
+                    contact,
+                    listOf(turn),
+                    boundedSystemPrompt
+                )
+                else -> sendOpenAiCompatibleWithUsage(
+                    context,
+                    contact,
+                    listOf(turn),
+                    boundedSystemPrompt,
+                    null
+                )
+            }
         }
     }
 
@@ -111,77 +129,113 @@ object CloudModelClient {
             if (request.cancellationToken.isCancellationRequested) {
                 throw CancellationException("Model tool request cancelled")
             }
+            val disclosureText = request.messages.joinToString("\n") { message ->
+                message.text.ifBlank { message.toolResult?.message.orEmpty() }
+            }
+            val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
+                context = context,
+                contact = contact,
+                text = disclosureText,
+                historyCount = request.messages.count {
+                    it.role == AgentModelMessageRole.USER || it.role == AgentModelMessageRole.ASSISTANT
+                },
+                systemInstructions = request.messages.any { it.role == AgentModelMessageRole.SYSTEM },
+                toolOutput = request.messages.any { it.role == AgentModelMessageRole.TOOL },
+                purpose = "Model tool loop"
+            )
+            if (!disclosure.allowed) {
+                throw AgentDataDisclosureBlockedException(contact.optString("name").ifBlank {
+                    contact.optString("cloud_model")
+                })
+            }
             withContext(Dispatchers.IO) {
-                withContextOverflowRetry(contact) { contextWindow, _ ->
-                    val outputReserve = contact.optInt(
-                        "cloud_max_output_tokens",
-                        DEFAULT_OUTPUT_RESERVE_TOKENS
-                    ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
-                    val compacted = AgentModelContextCompactor.compact(
-                        AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
-                        ConversationContextBudget(
-                            contextWindowTokens = contextWindow,
-                            reservedOutputTokens = outputReserve
+                try {
+                    withContextOverflowRetry(contact) { contextWindow, _ ->
+                        val outputReserve = contact.optInt(
+                            "cloud_max_output_tokens",
+                            DEFAULT_OUTPUT_RESERVE_TOKENS
+                        ).coerceIn(512, (contextWindow / 2).coerceAtLeast(512))
+                        val compacted = AgentModelContextCompactor.compact(
+                            AgentUntrustedEvidenceBoundary.secureMessages(request.messages),
+                            ConversationContextBudget(
+                                contextWindowTokens = contextWindow,
+                                reservedOutputTokens = outputReserve
+                            )
                         )
+                        if (compacted.compacted) {
+                            Log.i(
+                                TAG,
+                                "tool_context_compacted model=${contact.optString("cloud_model")} " +
+                                    "before_tokens=${compacted.originalEstimatedTokens} " +
+                                    "after_tokens=${compacted.compactedEstimatedTokens}"
+                            )
+                        }
+                        val conversation = protocol.encodeConversation(compacted.messages)
+                        val body = JSONObject().put("model", contact.getString("cloud_model"))
+                        copyJsonFields(conversation, body)
+                        when (provider) {
+                            AgentModelToolProvider.OPENAI_COMPATIBLE -> {
+                                body.put("tools", protocol.encodeToolCatalog(catalog))
+                                    .put("tool_choice", "auto")
+                                    .put("stream", false)
+                            }
+                            AgentModelToolProvider.ANTHROPIC -> {
+                                body.put("tools", protocol.encodeToolCatalog(catalog))
+                                    .put("max_tokens", request.remainingTokens.coerceIn(256L, 4_000L))
+                            }
+                            AgentModelToolProvider.GEMINI -> {
+                                body.put("tools", protocol.encodeToolCatalog(catalog))
+                                    .put(
+                                        "generationConfig",
+                                        JSONObject()
+                                            .put("temperature", 0.1)
+                                            .put("maxOutputTokens", request.remainingTokens.coerceIn(256L, 4_000L))
+                                    )
+                            }
+                        }
+                        val endpoint = contact.getString("cloud_endpoint")
+                        val response = when (provider) {
+                            AgentModelToolProvider.OPENAI_COMPATIBLE -> postJson(
+                                endpoint,
+                                openAiHeaders(contact),
+                                body
+                            )
+                            AgentModelToolProvider.ANTHROPIC -> postJson(
+                                endpoint,
+                                mapOf(
+                                    "x-api-key" to contact.getString("cloud_api_key"),
+                                    "anthropic-version" to "2023-06-01",
+                                    "anthropic-dangerous-direct-browser-access" to "true"
+                                ),
+                                body
+                            )
+                            AgentModelToolProvider.GEMINI -> {
+                                val separator = if (endpoint.contains("?")) "&" else "?"
+                                val url = endpoint + separator + "key=" +
+                                    URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
+                                postJson(url, emptyMap(), body)
+                            }
+                        }
+                        if (request.cancellationToken.isCancellationRequested) {
+                            throw CancellationException("Model tool request cancelled")
+                        }
+                        protocol.decodeResponse(response, catalog)
+                    }
+                        .also {
+                            AgentDataDisclosureLedger.update(
+                                context,
+                                disclosure,
+                                AgentDisclosureStatus.SENT
+                            )
+                        }
+                } catch (error: Throwable) {
+                    AgentDataDisclosureLedger.update(
+                        context,
+                        disclosure,
+                        AgentDisclosureStatus.FAILED,
+                        error.message.orEmpty()
                     )
-                    if (compacted.compacted) {
-                        Log.i(
-                            TAG,
-                            "tool_context_compacted model=${contact.optString("cloud_model")} " +
-                                "before_tokens=${compacted.originalEstimatedTokens} " +
-                                "after_tokens=${compacted.compactedEstimatedTokens}"
-                        )
-                    }
-                    val conversation = protocol.encodeConversation(compacted.messages)
-                    val body = JSONObject().put("model", contact.getString("cloud_model"))
-                    copyJsonFields(conversation, body)
-                    when (provider) {
-                        AgentModelToolProvider.OPENAI_COMPATIBLE -> {
-                            body.put("tools", protocol.encodeToolCatalog(catalog))
-                                .put("tool_choice", "auto")
-                                .put("stream", false)
-                        }
-                        AgentModelToolProvider.ANTHROPIC -> {
-                            body.put("tools", protocol.encodeToolCatalog(catalog))
-                                .put("max_tokens", request.remainingTokens.coerceIn(256L, 4_000L))
-                        }
-                        AgentModelToolProvider.GEMINI -> {
-                            body.put("tools", protocol.encodeToolCatalog(catalog))
-                                .put(
-                                    "generationConfig",
-                                    JSONObject()
-                                        .put("temperature", 0.1)
-                                        .put("maxOutputTokens", request.remainingTokens.coerceIn(256L, 4_000L))
-                                )
-                        }
-                    }
-                    val endpoint = contact.getString("cloud_endpoint")
-                    val response = when (provider) {
-                        AgentModelToolProvider.OPENAI_COMPATIBLE -> postJson(
-                            endpoint,
-                            openAiHeaders(contact),
-                            body
-                        )
-                        AgentModelToolProvider.ANTHROPIC -> postJson(
-                            endpoint,
-                            mapOf(
-                                "x-api-key" to contact.getString("cloud_api_key"),
-                                "anthropic-version" to "2023-06-01",
-                                "anthropic-dangerous-direct-browser-access" to "true"
-                            ),
-                            body
-                        )
-                        AgentModelToolProvider.GEMINI -> {
-                            val separator = if (endpoint.contains("?")) "&" else "?"
-                            val url = endpoint + separator + "key=" +
-                                URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-                            postJson(url, emptyMap(), body)
-                        }
-                    }
-                    if (request.cancellationToken.isCancellationRequested) {
-                        throw CancellationException("Model tool request cancelled")
-                    }
-                    protocol.decodeResponse(response, catalog)
+                    throw error
                 }
             }
         }
@@ -200,10 +254,58 @@ object CloudModelClient {
     ): String {
         validateContact(context, contact)
         val style = contact.optString("cloud_api_style", "openai")
-        return when (style) {
-            "anthropic" -> sendAnthropicWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
-            "gemini" -> sendGeminiWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
-            else -> sendOpenAiCompatibleWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
+        return trackedCloudRequest(
+            context = context,
+            contact = contact,
+            text = turns.joinToString("\n") { it.content },
+            historyCount = turns.size,
+            systemInstructions = true,
+            purpose = "Conversation response"
+        ) {
+            when (style) {
+                "anthropic" -> sendAnthropicWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
+                "gemini" -> sendGeminiWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
+                else -> sendOpenAiCompatibleWithUsage(context, contact, turns, systemPrompt, onToolEvent).text
+            }
+        }
+    }
+
+    private inline fun <T> trackedCloudRequest(
+        context: Context,
+        contact: JSONObject,
+        text: String,
+        historyCount: Int,
+        systemInstructions: Boolean,
+        toolOutput: Boolean = false,
+        purpose: String,
+        operation: () -> T
+    ): T {
+        val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
+            context = context,
+            contact = contact,
+            text = text,
+            historyCount = historyCount,
+            systemInstructions = systemInstructions,
+            toolOutput = toolOutput,
+            purpose = purpose
+        )
+        if (!disclosure.allowed) {
+            throw AgentDataDisclosureBlockedException(contact.optString("name").ifBlank {
+                contact.optString("cloud_model")
+            })
+        }
+        return try {
+            operation().also {
+                AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+            }
+        } catch (error: Throwable) {
+            AgentDataDisclosureLedger.update(
+                context,
+                disclosure,
+                AgentDisclosureStatus.FAILED,
+                error.message.orEmpty()
+            )
+            throw error
         }
     }
 

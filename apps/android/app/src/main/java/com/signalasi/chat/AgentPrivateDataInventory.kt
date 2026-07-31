@@ -154,6 +154,7 @@ object AgentPrivateDataInventory {
         localOnly("agent_memory_telemetry", "Agent process memory samples", "database:signalasi_agent_memory_pss", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("run_workspaces", "Active Run workspaces and checkpoints", "database:signalasi_agent_workspaces", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("run_events", "Run event ledger", "database:signalasi_agent_runs", AgentPrivateDataSensitivity.EPHEMERAL),
+        localOnly("data_disclosure_ledger", "Model and Agent data-flow metadata and destination blocks", "database:signalasi_data_disclosure_ledger_v1", AgentPrivateDataSensitivity.SECRET),
         localOnly("connector_responses", "Pending connector responses", "encrypted_prefs:signalasi_agent_connector_responses", AgentPrivateDataSensitivity.EPHEMERAL),
         localOnly("mcp_credentials", "MCP connections and credentials", "encrypted_prefs:signalasi_mcp_connections", AgentPrivateDataSensitivity.SECRET),
         localOnly("mcp_tool_audit", "Redacted MCP permission decisions and tool receipts", "encrypted_prefs:signalasi_mcp_tool_audit", AgentPrivateDataSensitivity.EPHEMERAL),
