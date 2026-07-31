@@ -181,6 +181,7 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, voice routing preferences, and Android-style voice provider capability readiness for local Whisper, iOS Speech, offline ASR, cloud ASR, system TTS, and Edge TTS
 - Android-style realtime voice health snapshots for wake word, ASR, and TTS components, including runtime activity, recent success/failure freshness, dependency blocking, and iOS speech capture health reporting
 - Android-style voice interaction coordinator for hold-to-talk sessions, canonical capture/ASR/routing/agent/TTS phases, one-shot final transcript routing commands, cancellation handoff, observer reattachment, and restart-safe session isolation
+- Android-style iOS speech-capture coordinator bridge for mapping native Speech start/partial/final/stop/error events into the shared voice interaction state machine without routing duplicate transcripts
 - UserNotifications integration for incoming background messages
 
 ## Compatibility Note

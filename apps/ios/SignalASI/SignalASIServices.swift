@@ -1217,15 +1217,36 @@ enum NotificationService {
   }
 }
 
+private enum SpeechCaptureServiceError: LocalizedError {
+  case recognizerUnavailable
+  case requestUnavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .recognizerUnavailable:
+      return "Speech recognition is unavailable for this locale."
+    case .requestUnavailable:
+      return "Speech recognition could not start a capture request."
+    }
+  }
+}
+
 final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
   @Published private(set) var transcript = ""
   @Published private(set) var isRecording = false
 
   private let runtimeChannel = VoiceRuntimeChannel.androidSystemASR
+  private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
   private let audioEngine = AVAudioEngine()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
   private var recognizer: SFSpeechRecognizer?
+  private var currentRecognitionModelProfileId = ""
+
+  init(coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge()) {
+    self.coordinatorBridge = coordinatorBridge
+    super.init()
+  }
 
   func requestAuthorization(localeIdentifier: String) async -> Bool {
     recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
@@ -1240,10 +1261,44 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   @MainActor
   func start(localeIdentifier: String) throws {
+    try start(localeIdentifier: localeIdentifier, coordinatorConfig: nil)
+  }
+
+  @MainActor
+  func start(settings: VoiceSettings, source: String = "ios_hold_to_talk") throws {
+    let normalized = settings.normalized
+    try start(
+      localeIdentifier: normalized.preferredLocaleIdentifier,
+      coordinatorConfig: VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
+    )
+  }
+
+  @MainActor
+  private func start(
+    localeIdentifier: String,
+    coordinatorConfig: VoiceSessionConfig?
+  ) throws {
+    if let coordinatorConfig = coordinatorConfig {
+      coordinatorBridge.begin(config: coordinatorConfig)
+    }
     recognizer = SFSpeechRecognizer(locale: Locale(identifier: localeIdentifier))
+    guard let recognizer = recognizer else {
+      let error = SpeechCaptureServiceError.recognizerUnavailable
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_speech_recognizer_unavailable", detail: error.localizedDescription)
+      }
+      throw error
+    }
     transcript = ""
+    currentRecognitionModelProfileId = localeIdentifier
     request = SFSpeechAudioBufferRecognitionRequest()
-    guard let request else { return }
+    guard let request = request else {
+      let error = SpeechCaptureServiceError.requestUnavailable
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_speech_request_unavailable", detail: error.localizedDescription)
+      }
+      throw error
+    }
     request.shouldReportPartialResults = true
     let input = audioEngine.inputNode
     let format = input.outputFormat(forBus: 0)
@@ -1259,17 +1314,42 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       try audioEngine.start()
     } catch {
       VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+      if coordinatorConfig != nil {
+        coordinatorBridge.failCurrent(code: "ios_speech_capture_failed", detail: error.localizedDescription)
+      }
       throw error
     }
     isRecording = true
-    task = recognizer?.recognitionTask(with: request) { [weak self] result, error in
+    if coordinatorConfig != nil {
+      coordinatorBridge.capturePrepared()
+      coordinatorBridge.speechStarted()
+    }
+    task = recognizer.recognitionTask(with: request) { [weak self] result, error in
       DispatchQueue.main.async {
-        guard let self else { return }
-        if let result {
-          self.transcript = result.bestTranscription.formattedString
+        guard let self = self else { return }
+        if let result = result {
+          let text = result.bestTranscription.formattedString
+          self.transcript = text
+          if result.isFinal {
+            self.coordinatorBridge.finishWithBestTranscript(
+              text,
+              provider: iosSpeechProviderId,
+              modelProfileId: self.currentRecognitionModelProfileId
+            )
+          } else {
+            self.coordinatorBridge.transcriptPartial(
+              text,
+              provider: iosSpeechProviderId,
+              modelProfileId: self.currentRecognitionModelProfileId
+            )
+          }
         }
-        if let error, self.isRecording {
+        if let error = error, self.isRecording {
           VoiceRuntimeHealthRegistry.failure(self.runtimeChannel, reason: error.localizedDescription)
+          self.coordinatorBridge.failCurrent(
+            code: "ios_speech_capture_failed",
+            detail: error.localizedDescription
+          )
         } else if result?.isFinal == true {
           VoiceRuntimeHealthRegistry.success(self.runtimeChannel)
         }
@@ -1284,12 +1364,20 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   func stop() {
     let wasRecording = isRecording
     isRecording = false
+    if wasRecording {
+      coordinatorBridge.finishStoppedCapture(
+        transcript: transcript,
+        provider: iosSpeechProviderId,
+        modelProfileId: currentRecognitionModelProfileId
+      )
+    }
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
     request?.endAudio()
     task?.cancel()
     task = nil
     request = nil
+    currentRecognitionModelProfileId = ""
     if wasRecording {
       VoiceRuntimeHealthRegistry.idle(runtimeChannel)
     }
