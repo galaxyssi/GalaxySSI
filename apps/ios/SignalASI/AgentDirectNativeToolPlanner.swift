@@ -51,6 +51,22 @@ enum AgentDirectNativeToolPlanner {
       return blocked
     }
 
+    if let handoff = urlHandoff(goal: goal, lower: lower),
+       let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.openURL), in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: handoff.idPrefix,
+        target: handoff.target,
+        description: handoff.description,
+        input: actionAdapterInput(
+          target: handoff.target,
+          parameters: ["url": handoff.url],
+          topLevel: ["url": .string(handoff.url)]
+        ),
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
     if let handoff = systemAppHandoff(for: lower),
        let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.openApp), in: request) {
       return nativeAction(
@@ -485,6 +501,82 @@ enum AgentDirectNativeToolPlanner {
     )
   }
 
+  private static func urlHandoff(goal: String, lower: String) -> URLHandoff? {
+    if lower.hasPrefix("open url ") || lower.hasPrefix("open website ") {
+      let raw = lower.hasPrefix("open url ")
+        ? goal.dropFirst("open url ".count)
+        : goal.dropFirst("open website ".count)
+      guard let url = normalizedHTTPURL(String(raw)) else { return nil }
+      return URLHandoff(
+        idPrefix: "open-url",
+        target: url,
+        url: url,
+        description: "Open URL"
+      )
+    }
+    if lower.hasPrefix("search web ") || lower.hasPrefix("google ") {
+      let raw = lower.hasPrefix("search web ")
+        ? goal.dropFirst("search web ".count)
+        : goal.dropFirst("google ".count)
+      guard let query = encodedURLQuery(String(raw)) else { return nil }
+      return URLHandoff(
+        idPrefix: "search-web",
+        target: "Web Search",
+        url: "https://www.google.com/search?q=\(query)",
+        description: "Search the web"
+      )
+    }
+    if lower.hasPrefix("open map ") || lower.hasPrefix("map ") || lower.hasPrefix("navigate to ") {
+      let raw: Substring
+      if lower.hasPrefix("open map ") {
+        raw = goal.dropFirst("open map ".count)
+      } else if lower.hasPrefix("map ") {
+        raw = goal.dropFirst("map ".count)
+      } else {
+        raw = goal.dropFirst("navigate to ".count)
+      }
+      guard let query = encodedURLQuery(String(raw)) else { return nil }
+      return URLHandoff(
+        idPrefix: "open-map",
+        target: "Maps",
+        url: "https://maps.apple.com/?q=\(query)",
+        description: "Open map location"
+      )
+    }
+    return nil
+  }
+
+  private static func normalizedHTTPURL(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    let lower = trimmed.lowercased()
+    if lower.contains("://") && !lower.hasPrefix("http://") && !lower.hasPrefix("https://") {
+      return nil
+    }
+    let candidate = lower.hasPrefix("http://") || lower.hasPrefix("https://") ? trimmed : "https://\(trimmed)"
+    guard let components = URLComponents(string: candidate),
+          ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+          !(components.host ?? "").isEmpty else {
+      return nil
+    }
+    return candidate.prefixString(2_048)
+  }
+
+  private static func encodedURLQuery(_ raw: String) -> String? {
+    let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    var allowed = CharacterSet.urlQueryAllowed
+    allowed.remove(charactersIn: "&=?+")
+    return trimmed.addingPercentEncoding(withAllowedCharacters: allowed)?.prefixString(2_048)
+  }
+
+  private struct URLHandoff {
+    var idPrefix: String
+    var target: String
+    var url: String
+    var description: String
+  }
+
   private static func systemAppHandoff(for lower: String) -> SystemAppHandoff? {
     if containsAny(
       lower,
@@ -683,13 +775,17 @@ enum AgentDirectNativeToolPlanner {
     return (hour, minute)
   }
 
-  private static func actionAdapterInput(target: String, parameters: [String: String]) -> AgentMcpJSONObject {
-    [
-      "target": .string(target),
-      "parameters": .object(parameters.reduce(into: AgentMcpJSONObject()) { result, entry in
-        result[entry.key] = .string(entry.value)
-      })
-    ]
+  private static func actionAdapterInput(
+    target: String,
+    parameters: [String: String],
+    topLevel: AgentMcpJSONObject = [:]
+  ) -> AgentMcpJSONObject {
+    var input = topLevel
+    input["target"] = .string(target)
+    input["parameters"] = .object(parameters.reduce(into: AgentMcpJSONObject()) { result, entry in
+      result[entry.key] = .string(entry.value)
+    })
+    return input
   }
 
   private static let maximumTimerDurationSeconds = 24 * 60 * 60
