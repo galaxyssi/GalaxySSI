@@ -268,7 +268,7 @@ enum VoiceRealtimeHealthDetector {
     capabilities: VoiceProviderCapabilitySnapshot,
     checkedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> VoiceRealtimeHealthSnapshot {
-    let asr = preferredASRCapability(settings: settings, capabilities: capabilities)
+    let asr = VoiceASRProviderRoutingPolicy.route(settings: settings, capabilities: capabilities)
     let tts = preferredTTSCapability(settings: settings, capabilities: capabilities)
     return VoiceRealtimeHealthPolicy.evaluate(
       probes: [
@@ -333,24 +333,6 @@ enum VoiceRealtimeHealthDetector {
     case .systemRecognizerMissing, .offlineRecognizerMissing, .ttsEngineMissing:
       return .providerUnavailable
     }
-  }
-
-  private static func whisperProvider(_ capability: VoiceProviderCapability) -> String {
-    let model = (capability.metadata["model_name"] ?? "").ifBlank("Local Whisper")
-    return "Local Whisper / \(model)"
-  }
-
-  private static func preferredASRCapability(
-    settings: VoiceSettings,
-    capabilities: VoiceProviderCapabilitySnapshot
-  ) -> (capability: VoiceProviderCapability, channel: VoiceRuntimeChannel, provider: String) {
-    let whisper = capabilities[.whisperCpp]
-    if whisper.ready {
-      return (whisper, .localWhisperASR, whisperProvider(whisper))
-    }
-    let system = capabilities[.androidSystemASR]
-    let locale = settings.preferredLocaleIdentifier.ifBlank(Locale.current.identifier)
-    return (system, .androidSystemASR, "iOS Speech / \(locale)")
   }
 
   private static func preferredTTSCapability(

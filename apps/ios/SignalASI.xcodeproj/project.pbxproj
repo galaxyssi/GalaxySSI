@@ -115,6 +115,7 @@
     A10000000000000000000645 /* VoiceWhisperModelSettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */; };
     A10000000000000000000646 /* VoiceWhisperModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */; };
     A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000648 /* VoiceProviderSettings.swift */; };
+    A10000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */; };
     A10000000000000000000629 /* VoicePcmRingBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000629 /* VoicePcmRingBufferTests.swift */; };
     A10000000000000000000630 /* VoiceAdaptiveDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000630 /* VoiceAdaptiveDetectionTests.swift */; };
     A10000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift */; };
@@ -125,6 +126,7 @@
     A10000000000000000000641 /* VoiceLocalWhisperASRTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000641 /* VoiceLocalWhisperASRTests.swift */; };
     A10000000000000000000643 /* VoiceWhisperModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */; };
     A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */; };
+    A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -623,6 +625,7 @@
     A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsModels.swift; sourceTree = "<group>"; };
     A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000000648 /* VoiceProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProviderSettings.swift; sourceTree = "<group>"; };
+    A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
@@ -781,6 +784,7 @@
     A20000000000000000000641 /* VoiceLocalWhisperASRTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperASRTests.swift; sourceTree = "<group>"; };
     A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelManagerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
@@ -1032,6 +1036,7 @@
         A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */,
         A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */,
         A20000000000000000000648 /* VoiceProviderSettings.swift */,
+        A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */,
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
         A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */,
@@ -1228,6 +1233,7 @@
         A20000000000000000000641 /* VoiceLocalWhisperASRTests.swift */,
         A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */,
         A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */,
+        A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */,
         A20000000000000000000222 /* AgentDeviceProfileTests.swift */,
         A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */,
         A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
@@ -1546,6 +1552,7 @@
         A10000000000000000000645 /* VoiceWhisperModelSettingsModels.swift in Sources */,
         A10000000000000000000646 /* VoiceWhisperModelSettingsView.swift in Sources */,
         A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */,
+        A10000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift in Sources */,
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
         A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */,
@@ -1749,6 +1756,7 @@
         A10000000000000000000641 /* VoiceLocalWhisperASRTests.swift in Sources */,
         A10000000000000000000643 /* VoiceWhisperModelManagerTests.swift in Sources */,
         A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */,
+        A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */,
         A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */,
         A10000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift in Sources */,
         A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,
