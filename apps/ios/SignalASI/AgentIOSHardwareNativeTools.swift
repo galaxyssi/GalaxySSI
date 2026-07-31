@@ -424,10 +424,12 @@ enum AgentIOSHardwareNativeToolCatalog {
   static let executorId = "signalasi.ios.hardware_native"
   static let hardwareStatusPermission = "signalasi.scope.ios_app_visible_hardware_status"
   static let appVisibilityBoundaryPermission = "signalasi.scope.ios_app_visibility_boundary"
+  static let foregroundLocationConsent = "signalasi.consent.location.foreground_once"
   static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
   static let flashlightControlConsent = "signalasi.consent.flashlight.control"
   static let installedAppsConsent = "signalasi.consent.installed_apps.query_visible"
   static let packageDetailConsent = "signalasi.consent.package_detail.query_visible"
+  static let maxLocationTimeoutMillis: Int64 = 30_000
   static let maxSensorResults = 64
 
   static let executableToolIds: Set<String> = [
@@ -435,6 +437,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     powerStatus,
     storageStatus,
     networkStatus,
+    locationForegroundRead,
     sensorsList,
     flashlightSet,
     bluetoothStatus,
@@ -478,14 +481,10 @@ enum AgentIOSHardwareNativeToolCatalog {
     statusSpec(powerStatus, "Read power status", "Reads app-visible iOS power and thermal status without changing settings.", ["power.status"]),
     statusSpec(storageStatus, "Read storage status", "Reads bounded app-volume storage capacity signals.", ["storage.status"]),
     statusSpec(networkStatus, "Read network status", "Returns identifier-free app-visible network state from the iOS status provider.", ["network.status"]),
-    unavailableSpec(
+    foregroundLocationSpec(
       locationForegroundRead,
       "Read foreground location",
-      "Requires a CoreLocation foreground executor and runtime permission prompt before iOS can return a bounded fix.",
-      .high,
-      ["location.foreground_once"],
-      ["NSLocationWhenInUseUsageDescription"],
-      ["signalasi.consent.location.foreground_once"]
+      "Reads one bounded iOS CoreLocation foreground fix after permission and per-invocation consent."
     ),
     statusSpec(
       sensorsList,
@@ -612,6 +611,38 @@ enum AgentIOSHardwareNativeToolCatalog {
       consents: [noExtraConsent],
       availability: .available,
       inputSchema: inputSchema
+    )
+  }
+
+  private static func foregroundLocationSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .high,
+      capabilities: ["location.foreground.single_fix", "location.no_background_tracking"],
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: "NSLocationWhenInUseUsageDescription",
+          title: "Foreground location",
+          description: "iOS When In Use location permission for one foreground fix."
+        )
+      ],
+      consents: [
+        AgentNativeConsentRequirement(
+          id: foregroundLocationConsent,
+          title: "Read foreground location once",
+          description: "Requires confirmation before reading one bounded foreground location fix."
+        )
+      ],
+      availability: .available,
+      inputSchema: inputSchema(properties: [
+        "timeout_ms": integerSchema(minimum: 1_000, maximum: maxLocationTimeoutMillis)
+      ])
     )
   }
 
@@ -809,13 +840,16 @@ enum AgentIOSHardwareNativeToolCatalog {
 
 struct AgentIOSHardwareNativeToolExecutor {
   var provider: AgentIOSHardwareStatusProviding
+  var locationProvider: AgentIOSForegroundLocationProviding
   var nowMillis: () -> Int64
 
   init(
     provider: AgentIOSHardwareStatusProviding = AgentIOSDefaultHardwareStatusProvider(),
+    locationProvider: AgentIOSForegroundLocationProviding = AgentIOSDefaultForegroundLocationProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.provider = provider
+    self.locationProvider = locationProvider
     self.nowMillis = nowMillis
   }
 
@@ -842,6 +876,12 @@ struct AgentIOSHardwareNativeToolExecutor {
       return status(provider.storageStatus(nowMillis: now), "Storage status read")
     case AgentIOSHardwareNativeToolCatalog.networkStatus:
       return status(provider.networkStatus(nowMillis: now), "Network status read")
+    case AgentIOSHardwareNativeToolCatalog.locationForegroundRead:
+      let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxLocationTimeoutMillis
+      return locationProvider.foregroundLocation(
+        timeoutMillis: max(1_000, min(AgentIOSHardwareNativeToolCatalog.maxLocationTimeoutMillis, timeout)),
+        nowMillis: now
+      )
     case AgentIOSHardwareNativeToolCatalog.sensorsList:
       let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxSensorResults))
       return status(
