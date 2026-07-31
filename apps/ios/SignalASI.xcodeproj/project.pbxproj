@@ -58,6 +58,8 @@
     A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */; };
     A10000000000000000000433 /* AgentIOSFfmpegMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000433 /* AgentIOSFfmpegMediaProvider.swift */; };
     A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */; };
+    A10000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift */; };
+    A10000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
@@ -340,6 +342,8 @@
     A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegTranscodePlannerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000433 /* AgentIOSFfmpegMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegMediaProviderTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegRuntimeAdapter.swift; sourceTree = "<group>"; };
+    A20000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegRuntimeAdapterTests.swift; sourceTree = "<group>"; };
     A20000000000000000000103 /* AgentTeamDelegationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000104 /* AgentNativeToolCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolCore.swift; sourceTree = "<group>"; };
     A20000000000000000000105 /* AgentPhoneNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeTools.swift; sourceTree = "<group>"; };
@@ -748,6 +752,7 @@
         A20000000000000000000290 /* AgentIOSMediaNativeTools.swift */,
         A20000000000000000000431 /* AgentIOSFfmpegTranscodePlanner.swift */,
         A20000000000000000000433 /* AgentIOSFfmpegMediaProvider.swift */,
+        A20000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift */,
         A20000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift */,
         A20000000000000000000016 /* SignalASIContactExchange.swift */,
         A20000000000000000000012 /* SignalASIAttachments.swift */,
@@ -862,6 +867,7 @@
         A20000000000000000000291 /* AgentIOSMediaNativeToolTests.swift */,
         A20000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift */,
         A20000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift */,
+        A20000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift */,
         A20000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift */,
         A20000000000000000000294 /* AgentDesktopControlTests.swift */,
         A20000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift */,
@@ -1128,6 +1134,7 @@
         A10000000000000000000290 /* AgentIOSMediaNativeTools.swift in Sources */,
         A10000000000000000000431 /* AgentIOSFfmpegTranscodePlanner.swift in Sources */,
         A10000000000000000000433 /* AgentIOSFfmpegMediaProvider.swift in Sources */,
+        A10000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift in Sources */,
         A10000000000000000000292 /* AgentIOSSelfEvolutionNativeTools.swift in Sources */,
         A10000000000000000000014 /* SignalASIContactExchange.swift in Sources */,
         A10000000000000000000010 /* SignalASIAttachments.swift in Sources */,
@@ -1242,6 +1249,7 @@
         A10000000000000000000291 /* AgentIOSMediaNativeToolTests.swift in Sources */,
         A10000000000000000000432 /* AgentIOSFfmpegTranscodePlannerTests.swift in Sources */,
         A10000000000000000000434 /* AgentIOSFfmpegMediaProviderTests.swift in Sources */,
+        A10000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift in Sources */,
         A10000000000000000000293 /* AgentIOSSelfEvolutionNativeToolTests.swift in Sources */,
         A10000000000000000000294 /* AgentDesktopControlTests.swift in Sources */,
         A10000000000000000000295 /* AgentIOSWebMediaNativeToolTests.swift in Sources */,
