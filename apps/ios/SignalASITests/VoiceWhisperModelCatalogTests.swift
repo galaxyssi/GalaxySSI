@@ -7,6 +7,8 @@ final class VoiceWhisperModelCatalogTests: XCTestCase {
     XCTAssertEqual(VoiceWhisperModelCatalog.model("BASE").fileName, "ggml-base.bin")
     XCTAssertEqual(VoiceWhisperModelCatalog.model("unknown").id, "tiny")
     XCTAssertEqual(VoiceWhisperModelCatalog.normalizedModelId(" medium "), "medium")
+    XCTAssertEqual(VoiceWhisperModelCatalog.model("large").family, .largeV3)
+    XCTAssertEqual(VoiceWhisperModelCatalog.model("base").sourceURLs.count, 2)
     XCTAssertEqual(VoiceWhisperModelCatalog.downloadURL(for: VoiceWhisperModelCatalog.model("large"))?.absoluteString,
                    "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin")
   }

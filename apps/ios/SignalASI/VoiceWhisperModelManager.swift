@@ -131,6 +131,7 @@ final class VoiceWhisperModelManager {
   private let modelsDirectory: URL
   private let storage: VoiceWhisperModelStorage
   private let bundle: Bundle
+  private let sourceLocale: Locale
   private let requestIdFactory: () -> String
   private let clockMillis: () -> Int64
 
@@ -140,6 +141,7 @@ final class VoiceWhisperModelManager {
     modelsDirectory: URL = VoiceWhisperModelCatalog.defaultModelsDirectory(),
     storage: VoiceWhisperModelStorage? = nil,
     bundle: Bundle = .main,
+    sourceLocale: Locale = .current,
     requestIdFactory: @escaping () -> String = { UUID().uuidString },
     clockMillis: @escaping () -> Int64 = VoiceWhisperModelManager.defaultClockMillis
   ) {
@@ -152,6 +154,7 @@ final class VoiceWhisperModelManager {
       clockMillis: clockMillis
     )
     self.bundle = bundle
+    self.sourceLocale = sourceLocale
     self.requestIdFactory = requestIdFactory
     self.clockMillis = clockMillis
   }
@@ -185,7 +188,7 @@ final class VoiceWhisperModelManager {
     guard !model.bundled else {
       throw VoiceWhisperModelManagerError.bundledModelDoesNotNeedDownload(model.id)
     }
-    guard let sourceURL = VoiceWhisperModelCatalog.downloadURL(for: model) else {
+    guard let sourceURL = VoiceWhisperModelCatalog.downloadURL(for: model, locale: sourceLocale) else {
       throw VoiceWhisperModelManagerError.missingDownloadURL(model.id)
     }
     if let current = store.record(for: model.id),

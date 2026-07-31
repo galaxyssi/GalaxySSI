@@ -135,6 +135,7 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
       VoiceWhisperModelManager(
         store: store,
         modelsDirectory: models,
+        sourceLocale: Locale(identifier: "zh_CN"),
         requestIdFactory: { requestId },
         clockMillis: { now }
       )
