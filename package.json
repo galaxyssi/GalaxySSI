@@ -45,6 +45,8 @@
     "test:security-red-team": "python -m unittest discover -s apps/desktop/core/signalasi-link/backend -p \"test_security_red_team.py\" -v",
     "benchmark:agent": "node tools/benchmark/run-agent-benchmark.mjs",
     "test:benchmark:agent": "node --test tools/benchmark/agent-benchmark.test.mjs",
+    "test:core-regressions": "node tools/dev/run-core-regressions.mjs",
+    "test:core-regressions:contract": "node --test tools/dev/core-regressions.test.mjs",
     "runtime:build-linux-base": "bash tools/runtime/build-linux-base.sh",
     "runtime:build-android-qemu": "bash tools/runtime/build-android-qemu.sh",
     "runtime:normalize-android-qemu": "node tools/runtime/normalize-android-elf-bundle.mjs",

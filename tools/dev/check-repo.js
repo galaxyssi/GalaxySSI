@@ -17,6 +17,8 @@ const releaseAuditScript = path.join(root, "tools", "dev", "release-audit.js");
 const agentBenchmarkDoc = path.join(root, "docs", "testing", "AGENT_BENCHMARK.md");
 const agentBenchmarkManifest = path.join(root, "benchmarks", "agent", "manifest.json");
 const agentBenchmarkRunner = path.join(root, "tools", "benchmark", "run-agent-benchmark.mjs");
+const coreRegressionManifest = path.join(root, "tools", "dev", "core-regression-manifest.json");
+const coreRegressionRunner = path.join(root, "tools", "dev", "run-core-regressions.mjs");
 
 function listTrackedFiles() {
   const result = spawnSync("git", ["ls-files", "-z"], {
@@ -164,6 +166,31 @@ function checkAgentBenchmark() {
   const manifest = JSON.parse(fs.readFileSync(agentBenchmarkManifest, "utf8"));
   if (manifest.schema_version !== 1 || !Array.isArray(manifest.scenarios) || manifest.scenarios.length < 10) {
     throw new Error("Agent benchmark manifest must provide at least 10 schema v1 scenarios");
+  }
+}
+
+function checkCoreRegressions() {
+  const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
+  for (const file of [
+    coreRegressionManifest,
+    coreRegressionRunner,
+    path.join(root, "tools", "dev", "core-regressions.test.mjs")
+  ]) {
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing core regression asset: ${path.relative(root, file)}`);
+    }
+  }
+  for (const scriptName of ["test:core-regressions", "test:core-regressions:contract"]) {
+    if (!packageJson.scripts?.[scriptName]) {
+      throw new Error(`Missing core regression script: ${scriptName}`);
+    }
+  }
+  const manifest = JSON.parse(fs.readFileSync(coreRegressionManifest, "utf8"));
+  const identifiers = new Set((manifest.suites || []).map((suite) => suite.id));
+  const required = ["android", "desktop", "mqtt", "memory", "remote_control", "agent_benchmark"];
+  const missing = required.filter((identifier) => !identifiers.has(identifier));
+  if (manifest.schema_version !== 1 || missing.length > 0) {
+    throw new Error(`Core regression manifest is incomplete: ${missing.join(", ")}`);
   }
 }
 
@@ -385,6 +412,10 @@ const checks = [
   {
     name: "Agent benchmark",
     run: checkAgentBenchmark
+  },
+  {
+    name: "core regressions",
+    run: checkCoreRegressions
   },
   {
     name: "product requirements",
