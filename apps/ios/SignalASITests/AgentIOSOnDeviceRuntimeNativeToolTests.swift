@@ -228,4 +228,119 @@ extension SignalASIStoreTests {
     XCTAssertTrue(unavailableProvider.invokedOperations.isEmpty)
   }
 
+  func testAgentIOSDefaultOnDeviceRuntimeProviderReportsPacksWorkspaceAndSetupBoundary() throws {
+    let root = try temporaryDirectory("ios-default-runtime-provider")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let runtimeRoot = root.appendingPathComponent("runtime", isDirectory: true)
+    let projectsRoot = root.appendingPathComponent("projects", isDirectory: true)
+    let workspaceManager = AgentRuntimeProjectWorkspaceManager(
+      runtimeRoot: runtimeRoot.appendingPathComponent("runs", isDirectory: true),
+      projectRoot: projectsRoot,
+      nowMillis: { 44_000 }
+    )
+    try installRuntimePackManifest("linux-base", under: runtimeRoot)
+    let project = projectsRoot.appendingPathComponent("runtime-workspace-2", isDirectory: true)
+    try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    try Data("stable".utf8).write(to: project.appendingPathComponent("README.md"))
+    _ = try workspaceManager.checkpoint(
+      workspaceId: "runtime-workspace-2",
+      checkpointId: "stable-snapshot",
+      byteLimit: 8 * 1_024 * 1_024
+    )
+    try Data("changed".utf8).write(to: project.appendingPathComponent("README.md"))
+
+    let provider = AgentIOSDefaultOnDeviceRuntimeProvider(
+      runtimeRootURL: runtimeRoot,
+      workspaceManager: workspaceManager,
+      nowMillis: { 55_000 }
+    )
+    let definitions = AgentIOSOnDeviceRuntimeNativeToolCatalog.definitions(provider: provider)
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.onDeviceRuntimeExecutableDefinitions(provider: provider)
+    )
+    let runtimeContext = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission]
+    )
+    let workspaceContext = AgentNativeToolInvocationContext(
+      invocationId: "ios-runtime-workspace",
+      grantedPermissions: [
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.runtimePermission,
+        AgentIOSOnDeviceRuntimeNativeToolCatalog.workspacePermission
+      ],
+      attributes: ["workspace_id": "runtime-workspace-2"]
+    )
+
+    let statusDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.status })
+    let executeDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSOnDeviceRuntimeNativeToolCatalog.execute })
+    let status = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.status, input: [:], context: runtimeContext)
+    let packs = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.listPacks, input: [:], context: runtimeContext)
+    let workspace = registry.invoke(AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceStatus, input: [:], context: workspaceContext)
+    let execute = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.execute,
+      input: [
+        "language": .string("shell"),
+        "source": .string("echo ready")
+      ],
+      context: workspaceContext
+    )
+    let rollback = registry.invoke(
+      AgentIOSOnDeviceRuntimeNativeToolCatalog.workspaceRollback,
+      input: ["checkpoint_id": .string("stable-snapshot")],
+      context: workspaceContext
+    )
+
+    XCTAssertEqual(provider.implementationId, "signalasi.ios.default_runtime_status")
+    XCTAssertEqual(statusDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(executeDefinition.descriptor.availability.status, .requiresSetup)
+    XCTAssertTrue(status.isSuccess)
+    XCTAssertEqual(status.output["backend"], .string("none"))
+    XCTAssertEqual(status.output["backend_ready"], .bool(false))
+    XCTAssertEqual(status.output["observed_at_epoch_ms"], .int(55_000))
+    XCTAssertEqual(status.metadata["implementation"], .string("signalasi.ios.default_runtime_status"))
+    let statusPacks = try XCTUnwrap(status.output["packs"]?.arrayValue?.compactMap(\.objectValue))
+    let linuxBase = try XCTUnwrap(statusPacks.first { $0["id"] == .string("linux-base") })
+    let python = try XCTUnwrap(statusPacks.first { $0["id"] == .string("python-uv") })
+    XCTAssertEqual(linuxBase["state"], .string("ready"))
+    XCTAssertEqual(python["state"], .string("not_installed"))
+    let shellLanguage = try XCTUnwrap(
+      status.output["languages"]?.arrayValue?
+        .compactMap(\.objectValue)
+        .first { $0["id"] == .string("shell") }
+    )
+    XCTAssertEqual(shellLanguage["pack_ready"], .bool(true))
+    XCTAssertEqual(shellLanguage["ready"], .bool(false))
+    XCTAssertTrue(packs.isSuccess)
+    XCTAssertEqual(try XCTUnwrap(packs.output["packs"]?.arrayValue).count, AgentRuntimePackCatalogPolicy.requiredPacks.count)
+    XCTAssertTrue(workspace.isSuccess)
+    XCTAssertEqual(workspace.output["workspace_id"], .string("runtime-workspace-2"))
+    XCTAssertEqual(try XCTUnwrap(workspace.output["checkpoints"]?.arrayValue).count, 1)
+    XCTAssertEqual(execute.status, .unavailable)
+    XCTAssertEqual(execute.error?.code, "tool_unavailable")
+    XCTAssertTrue(rollback.isSuccess)
+    XCTAssertEqual(rollback.output["workspace_disposition"], .string("rolled_back"))
+    XCTAssertEqual(try String(contentsOf: project.appendingPathComponent("README.md")), "stable")
+  }
+
+  private func installRuntimePackManifest(_ packId: String, under runtimeRoot: URL) throws {
+    let manifest = AgentRuntimePackManifest(
+      id: packId,
+      version: "1.0.0",
+      architecture: AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.first ?? "arm64",
+      imageFile: "\(packId).img",
+      imageSha256: String(repeating: "a", count: 64),
+      capabilities: Array(AgentRuntimePackCatalogPolicy.requiredPackCapabilities[packId] ?? []).sorted(),
+      dependencies: [],
+      installedSizeBytes: 4_096,
+      license: "Apache-2.0",
+      signatureKeyId: String(repeating: "b", count: 64),
+      signature: "test-signature"
+    )
+    let packRoot = runtimeRoot
+      .appendingPathComponent("packs", isDirectory: true)
+      .appendingPathComponent(packId, isDirectory: true)
+    try FileManager.default.createDirectory(at: packRoot, withIntermediateDirectories: true)
+    try JSONEncoder().encode(manifest)
+      .write(to: packRoot.appendingPathComponent("manifest.json"), options: [.atomic])
+  }
+
 }

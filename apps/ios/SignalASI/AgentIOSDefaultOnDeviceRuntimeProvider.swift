@@ -1,0 +1,340 @@
+import Foundation
+
+struct AgentIOSDefaultOnDeviceRuntimeProvider: AgentIOSOnDeviceRuntimeToolProviding {
+  var implementationId: String = "signalasi.ios.default_runtime_status"
+
+  private let runtimeRootURL: URL
+  private let workspaceManager: AgentRuntimeProjectWorkspaceManager
+  private let fileManager: FileManager
+  private let nowMillis: () -> Int64
+
+  init(
+    runtimeRootURL: URL = AgentIOSDefaultOnDeviceRuntimeProvider.defaultRuntimeRootURL(),
+    workspaceManager: AgentRuntimeProjectWorkspaceManager? = nil,
+    fileManager: FileManager = .default,
+    nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
+  ) {
+    self.runtimeRootURL = runtimeRootURL
+    self.fileManager = fileManager
+    self.nowMillis = nowMillis
+    self.workspaceManager = workspaceManager ?? AgentRuntimeProjectWorkspaceManager(
+      runtimeRoot: runtimeRootURL.appendingPathComponent("runs", isDirectory: true),
+      projectRoot: runtimeRootURL.appendingPathComponent("projects", isDirectory: true),
+      nowMillis: nowMillis
+    )
+  }
+
+  static func defaultRuntimeRootURL(
+    storageRootURL: URL = AgentNativeToolDefaultStorePaths.applicationSupportRootURL()
+  ) -> URL {
+    storageRootURL.appendingPathComponent("on-device-runtime", isDirectory: true)
+  }
+
+  func availability(operation: AgentIOSOnDeviceRuntimeToolOperation) -> AgentNativeToolAvailability {
+    switch operation {
+    case .status, .workspaceStatus, .workspaceRollback, .listPacks:
+      return .available
+    case .installPack:
+      return AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: "Signed iOS runtime pack installer is not connected"
+      )
+    case .execute:
+      return AgentNativeToolAvailability(
+        status: .requiresSetup,
+        reason: runtimeSetupReason(packStatuses())
+      )
+    }
+  }
+
+  func invoke(
+    operation: AgentIOSOnDeviceRuntimeToolOperation,
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    switch operation {
+    case .status:
+      return AgentNativeToolExecutionResult.success(
+        output: statusOutput(),
+        message: "iOS on-device runtime inspected",
+        metadata: baseMetadata()
+      )
+    case .workspaceStatus:
+      return workspaceStatus(invocation)
+    case .workspaceRollback:
+      return rollback(input: input, invocation: invocation)
+    case .listPacks:
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "packs": .array(packStatuses().map { .object(packOutput($0)) }),
+          "observed_at_epoch_ms": .int(max(0, nowMillis()))
+        ],
+        message: "iOS on-device runtime packs listed",
+        metadata: baseMetadata()
+      )
+    case .installPack:
+      return requiresSetup(
+        code: "runtime_pack_install_requires_setup",
+        message: "Signed iOS runtime pack installer is not connected"
+      )
+    case .execute:
+      return requiresSetup(
+        code: "runtime_execute_requires_setup",
+        message: runtimeSetupReason(packStatuses())
+      )
+    }
+  }
+
+  private func statusOutput() -> AgentMcpJSONObject {
+    let packs = packStatuses()
+    let reason = runtimeSetupReason(packs)
+    let backendReady = false
+    return [
+      "backend": .string("none"),
+      "backend_ready": .bool(backendReady),
+      "reason": .string(reason),
+      "architecture": .string(hostArchitecture()),
+      "avf_advertised": .bool(false),
+      "lifecycle": .object([
+        "phase": .string("requires_setup"),
+        "reason": .string(reason),
+        "consecutive_failures": .int(0),
+        "next_attempt_at_millis": .int(0)
+      ]),
+      "packs": .array(packs.map { .object(packOutput($0)) }),
+      "languages": .array(AgentRuntimeLanguage.allCases.map {
+        .object(languageOutput($0, packs: packs, backendReady: backendReady))
+      }),
+      "observed_at_epoch_ms": .int(max(0, nowMillis())),
+      "runtime_store": .string("app_private_application_support"),
+      "execution_target": .string("ios")
+    ]
+  }
+
+  private func workspaceStatus(_ invocation: AgentNativeToolInvocation) -> AgentNativeToolExecutionResult {
+    do {
+      let status = try workspaceManager.workspaceStatus(workspaceId(invocation.context))
+      return AgentNativeToolExecutionResult.success(
+        output: status.publicValue().merging([
+          "observed_at_epoch_ms": .int(max(0, nowMillis()))
+        ]) { current, _ in current },
+        message: "iOS on-device project workspace inspected",
+        metadata: baseMetadata()
+      )
+    } catch {
+      return workspaceFailure(
+        code: "runtime_workspace_status_failed",
+        message: error.localizedDescription.ifBlank("iOS runtime workspace status failed"),
+        error: error
+      )
+    }
+  }
+
+  private func rollback(
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let checkpointId = (input["checkpoint_id"]?.stringValue ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !checkpointId.isEmpty else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_runtime_checkpoint",
+        message: "Runtime checkpoint id is required"
+      )
+    }
+    do {
+      let restored = try workspaceManager.rollback(
+        workspaceId: workspaceId(invocation.context),
+        checkpointId: checkpointId,
+        byteLimit: maxRollbackBytes
+      )
+      return AgentNativeToolExecutionResult.success(
+        output: [
+          "checkpoint_id": .string(checkpointId),
+          "workspace_id": .string(restored.workspaceId),
+          "workspace_file_count": .int(Int64(restored.fileCount)),
+          "workspace_bytes": .int(restored.totalBytes),
+          "workspace_disposition": .string(AgentRuntimeProjectWorkspaceDisposition.rolledBack.rawValue),
+          "observed_at_epoch_ms": .int(max(0, nowMillis()))
+        ],
+        message: "iOS on-device project checkpoint restored",
+        metadata: baseMetadata([
+          "operation": .string("atomic_checkpoint_restore")
+        ])
+      )
+    } catch {
+      return workspaceFailure(
+        code: "runtime_workspace_rollback_failed",
+        message: error.localizedDescription.ifBlank("iOS runtime workspace rollback failed"),
+        error: error
+      )
+    }
+  }
+
+  private func packStatuses() -> [AgentRuntimePackStatus] {
+    AgentRuntimePackCatalogPolicy.requiredPacks.map(packStatus)
+  }
+
+  private func packStatus(_ packId: String) -> AgentRuntimePackStatus {
+    let manifestURL = packRootURL(packId)
+      .appendingPathComponent("manifest.json", isDirectory: false)
+    guard fileManager.fileExists(atPath: manifestURL.path) else {
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .notInstalled,
+        reason: "Runtime pack is not installed"
+      )
+    }
+    do {
+      let manifest = try JSONDecoder().decode(
+        AgentRuntimePackManifest.self,
+        from: try Data(contentsOf: manifestURL)
+      )
+      guard manifest.id == packId else {
+        return AgentRuntimePackStatus(
+          id: packId,
+          state: .invalid,
+          reason: "Runtime pack manifest id does not match",
+          manifest: manifest
+        )
+      }
+      guard AgentRuntimePackCatalogPolicy.defaultSupportedArchitectures.contains(manifest.architecture) else {
+        return AgentRuntimePackStatus(
+          id: packId,
+          state: .incompatible,
+          reason: "Runtime pack architecture is not supported on this iOS device",
+          manifest: manifest
+        )
+      }
+      let missing = (AgentRuntimePackCatalogPolicy.requiredPackCapabilities[packId] ?? [])
+        .subtracting(Set(manifest.capabilities))
+      guard missing.isEmpty else {
+        return AgentRuntimePackStatus(
+          id: packId,
+          state: .invalid,
+          reason: "Runtime pack is missing capabilities: \(missing.sorted().joined(separator: ","))",
+          manifest: manifest
+        )
+      }
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .ready,
+        reason: "",
+        manifest: manifest
+      )
+    } catch {
+      return AgentRuntimePackStatus(
+        id: packId,
+        state: .invalid,
+        reason: error.localizedDescription.ifBlank("Runtime pack manifest could not be read")
+      )
+    }
+  }
+
+  private func packOutput(_ pack: AgentRuntimePackStatus) -> AgentMcpJSONObject {
+    [
+      "id": .string(pack.id),
+      "state": .string(pack.state.rawValue),
+      "reason": .string(pack.reason),
+      "version": .string(pack.manifest?.version ?? ""),
+      "architecture": .string(pack.manifest?.architecture ?? ""),
+      "capabilities": .array((pack.manifest?.capabilities ?? []).sorted().map(AgentMcpJSONValue.string)),
+      "installed_size_bytes": .int(pack.manifest?.installedSizeBytes ?? 0),
+      "license": .string(pack.manifest?.license ?? "")
+    ]
+  }
+
+  private func languageOutput(
+    _ language: AgentRuntimeLanguage,
+    packs: [AgentRuntimePackStatus],
+    backendReady: Bool
+  ) -> AgentMcpJSONObject {
+    let pack = packs.first { $0.id == language.requiredPack }
+    let packReady = pack?.state == .ready &&
+      (pack?.manifest?.capabilities.contains(language.requiredCapability) == true)
+    return [
+      "id": .string(language.rawValue),
+      "required_pack": .string(language.requiredPack),
+      "required_capability": .string(language.requiredCapability),
+      "ready": .bool(backendReady && packReady),
+      "pack_ready": .bool(packReady)
+    ]
+  }
+
+  private func runtimeSetupReason(_ packs: [AgentRuntimePackStatus]) -> String {
+    let linuxBaseReady = packs.first { $0.id == "linux-base" }?.state == .ready
+    if linuxBaseReady {
+      return "Signed iOS runtime broker is not connected"
+    }
+    return "Install the linux-base runtime pack and connect a signed iOS runtime broker"
+  }
+
+  private func workspaceId(_ context: AgentNativeToolInvocationContext) -> String {
+    [
+      context.attributes["workspace_id"],
+      context.turnId,
+      context.conversationId,
+      context.invocationId
+    ]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty } ?? "default"
+  }
+
+  private func requiresSetup(
+    code: String,
+    message: String
+  ) -> AgentNativeToolExecutionResult {
+    AgentNativeToolExecutionResult.failure(
+      code: code,
+      message: message,
+      retryable: true,
+      details: baseMetadata([
+        "requires_setup": .bool(true)
+      ])
+    )
+  }
+
+  private func workspaceFailure(
+    code: String,
+    message: String,
+    error: Error
+  ) -> AgentNativeToolExecutionResult {
+    var metadata = baseMetadata()
+    if let workspaceError = error as? AgentRuntimeProjectWorkspaceError {
+      metadata["workspace_error_code"] = .string(workspaceError.code.rawValue)
+    }
+    return AgentNativeToolExecutionResult.failure(
+      code: code,
+      message: message,
+      retryable: false,
+      details: metadata
+    )
+  }
+
+  private func baseMetadata(_ extra: AgentMcpJSONObject = [:]) -> AgentMcpJSONObject {
+    [
+      "implementation": .string(implementationId),
+      "platform": .string("ios"),
+      "sandbox": .string("ios_app_private_runtime_store"),
+      "network_default": .string("disabled")
+    ].merging(extra) { _, new in new }
+  }
+
+  private func packRootURL(_ packId: String) -> URL {
+    runtimeRootURL
+      .appendingPathComponent("packs", isDirectory: true)
+      .appendingPathComponent(packId, isDirectory: true)
+  }
+
+  private func hostArchitecture() -> String {
+    #if arch(arm64)
+      return "arm64"
+    #elseif arch(x86_64)
+      return "x86_64"
+    #else
+      return "unknown"
+    #endif
+  }
+
+  private let maxRollbackBytes: Int64 = 512 * 1_024 * 1_024
+}
