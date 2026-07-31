@@ -1856,6 +1856,13 @@
     <string name="rich_output_compress_failed">ZIP 创建失败</string>
     <string name="rich_output_install_permission">请允许 SignalASI 安装应用，然后再次点击 APK。</string>
     <string name="rich_output_show_more">展开</string>
+    <string name="rich_output_section_plan">计划</string>
+    <string name="rich_output_section_execution_log">执行日志</string>
+    <string name="rich_output_section_final_answer">最终答案</string>
+    <string name="rich_output_section_evidence">证据</string>
+    <string name="rich_output_section_items">%1$d 项</string>
+    <string name="rich_output_section_expand">展开分区</string>
+    <string name="rich_output_section_collapse">折叠分区</string>
     <string name="rich_output_show_less">收起</string>
     <string name="rich_output_more_rows">还有 %1$d 行</string>
     <string name="rich_output_loading">正在加载预览</string>
