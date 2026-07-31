@@ -566,6 +566,9 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
   var attemptCount: Int
   var leaseExpiresAtMillis: Int64
   var result: String
+  var verificationContract: GlobalActionVerificationContract
+  var evidence: [GlobalActionEvidence]
+  var verificationStatus: GlobalActionVerificationStatus
   var lastError: String
   var startedAtMillis: Int64
   var completedAtMillis: Int64
@@ -593,6 +596,9 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
     attemptCount: Int = 0,
     leaseExpiresAtMillis: Int64 = 0,
     result: String = "",
+    verificationContract: GlobalActionVerificationContract = GlobalActionVerificationContract(),
+    evidence: [GlobalActionEvidence] = [],
+    verificationStatus: GlobalActionVerificationStatus = .pending,
     lastError: String = "",
     startedAtMillis: Int64 = 0,
     completedAtMillis: Int64 = 0
@@ -619,9 +625,112 @@ struct GlobalAutonomousAction: Codable, Equatable, Identifiable {
     self.attemptCount = max(attemptCount, 0)
     self.leaseExpiresAtMillis = max(leaseExpiresAtMillis, 0)
     self.result = result
+    self.verificationContract = verificationContract
+    self.evidence = Array(evidence.prefix(24))
+    self.verificationStatus = verificationStatus
     self.lastError = lastError
     self.startedAtMillis = max(startedAtMillis, 0)
     self.completedAtMillis = max(completedAtMillis, 0)
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case planKey
+    case dependencyKeys
+    case dependsOnActionIds
+    case kind
+    case goal
+    case rationale
+    case expectedResult
+    case targetTopic
+    case toolId
+    case toolInputJson
+    case priority
+    case externalEffect
+    case reversible
+    case confirmationGranted
+    case status
+    case resourceId
+    case attemptedResourceIds
+    case sourceMessageId
+    case attemptCount
+    case leaseExpiresAtMillis
+    case result
+    case verificationContract
+    case evidence
+    case verificationStatus
+    case lastError
+    case startedAtMillis
+    case completedAtMillis
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let decodedKind = try container.decodeIfPresent(GlobalAutonomousActionKind.self, forKey: .kind) ?? .analyze
+    let decodedGoal = try container.decodeIfPresent(String.self, forKey: .goal) ?? ""
+    self.init(
+      id: try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString,
+      planKey: try container.decodeIfPresent(String.self, forKey: .planKey) ?? "",
+      dependencyKeys: try container.decodeIfPresent(Set<String>.self, forKey: .dependencyKeys) ?? [],
+      dependsOnActionIds: try container.decodeIfPresent(Set<String>.self, forKey: .dependsOnActionIds) ?? [],
+      kind: decodedKind,
+      goal: decodedGoal,
+      rationale: try container.decodeIfPresent(String.self, forKey: .rationale) ?? "",
+      expectedResult: try container.decodeIfPresent(String.self, forKey: .expectedResult) ?? "",
+      targetTopic: try container.decodeIfPresent(String.self, forKey: .targetTopic) ?? "",
+      toolId: try container.decodeIfPresent(String.self, forKey: .toolId) ?? "",
+      toolInputJson: try container.decodeIfPresent(String.self, forKey: .toolInputJson) ?? "",
+      priority: try container.decodeIfPresent(Double.self, forKey: .priority) ?? 0.5,
+      externalEffect: try container.decodeIfPresent(Bool.self, forKey: .externalEffect) ?? false,
+      reversible: try container.decodeIfPresent(Bool.self, forKey: .reversible) ?? true,
+      confirmationGranted: try container.decodeIfPresent(Bool.self, forKey: .confirmationGranted) ?? false,
+      status: try container.decodeIfPresent(GlobalAutonomousActionStatus.self, forKey: .status) ?? .pending,
+      resourceId: try container.decodeIfPresent(String.self, forKey: .resourceId) ?? "",
+      attemptedResourceIds: try container.decodeIfPresent([String].self, forKey: .attemptedResourceIds) ?? [],
+      sourceMessageId: try container.decodeIfPresent(Int64.self, forKey: .sourceMessageId) ?? 0,
+      attemptCount: try container.decodeIfPresent(Int.self, forKey: .attemptCount) ?? 0,
+      leaseExpiresAtMillis: try container.decodeIfPresent(Int64.self, forKey: .leaseExpiresAtMillis) ?? 0,
+      result: try container.decodeIfPresent(String.self, forKey: .result) ?? "",
+      verificationContract: try container.decodeIfPresent(GlobalActionVerificationContract.self, forKey: .verificationContract) ??
+        GlobalActionVerificationPolicy.defaultContract(action: GlobalAutonomousAction(kind: decodedKind, goal: decodedGoal)),
+      evidence: try container.decodeIfPresent([GlobalActionEvidence].self, forKey: .evidence) ?? [],
+      verificationStatus: try container.decodeIfPresent(GlobalActionVerificationStatus.self, forKey: .verificationStatus) ?? .pending,
+      lastError: try container.decodeIfPresent(String.self, forKey: .lastError) ?? "",
+      startedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .startedAtMillis) ?? 0,
+      completedAtMillis: try container.decodeIfPresent(Int64.self, forKey: .completedAtMillis) ?? 0
+    )
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(planKey, forKey: .planKey)
+    try container.encode(dependencyKeys.sorted(), forKey: .dependencyKeys)
+    try container.encode(dependsOnActionIds.sorted(), forKey: .dependsOnActionIds)
+    try container.encode(kind, forKey: .kind)
+    try container.encode(goal, forKey: .goal)
+    try container.encode(rationale, forKey: .rationale)
+    try container.encode(expectedResult, forKey: .expectedResult)
+    try container.encode(targetTopic, forKey: .targetTopic)
+    try container.encode(toolId, forKey: .toolId)
+    try container.encode(toolInputJson, forKey: .toolInputJson)
+    try container.encode(priority, forKey: .priority)
+    try container.encode(externalEffect, forKey: .externalEffect)
+    try container.encode(reversible, forKey: .reversible)
+    try container.encode(confirmationGranted, forKey: .confirmationGranted)
+    try container.encode(status, forKey: .status)
+    try container.encode(resourceId, forKey: .resourceId)
+    try container.encode(attemptedResourceIds, forKey: .attemptedResourceIds)
+    try container.encode(sourceMessageId, forKey: .sourceMessageId)
+    try container.encode(attemptCount, forKey: .attemptCount)
+    try container.encode(leaseExpiresAtMillis, forKey: .leaseExpiresAtMillis)
+    try container.encode(result, forKey: .result)
+    try container.encode(verificationContract, forKey: .verificationContract)
+    try container.encode(evidence, forKey: .evidence)
+    try container.encode(verificationStatus, forKey: .verificationStatus)
+    try container.encode(lastError, forKey: .lastError)
+    try container.encode(startedAtMillis, forKey: .startedAtMillis)
+    try container.encode(completedAtMillis, forKey: .completedAtMillis)
   }
 }
 

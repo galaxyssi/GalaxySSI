@@ -61,6 +61,11 @@
     A10000000000000000000516 /* GlobalResearchExecutorPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000516 /* GlobalResearchExecutorPolicy.swift */; };
     A10000000000000000000517 /* GlobalResearchExecutorPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000517 /* GlobalResearchExecutorPolicyTests.swift */; };
     A10000000000000000000518 /* GlobalResearchPromptBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000518 /* GlobalResearchPromptBuilderTests.swift */; };
+    A10000000000000000000519 /* GlobalActionEvidenceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000519 /* GlobalActionEvidenceModels.swift */; };
+    A10000000000000000000520 /* GlobalAutonomousTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000520 /* GlobalAutonomousTools.swift */; };
+    A10000000000000000000521 /* GlobalAutonomousSkillHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000521 /* GlobalAutonomousSkillHost.swift */; };
+    A10000000000000000000522 /* GlobalAutonomousToolCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000522 /* GlobalAutonomousToolCatalogTests.swift */; };
+    A10000000000000000000523 /* GlobalAutonomousSkillHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000523 /* GlobalAutonomousSkillHostTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -408,6 +413,11 @@
     A20000000000000000000516 /* GlobalResearchExecutorPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalResearchExecutorPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000517 /* GlobalResearchExecutorPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalResearchExecutorPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000518 /* GlobalResearchPromptBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalResearchPromptBuilderTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000519 /* GlobalActionEvidenceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalActionEvidenceModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000520 /* GlobalAutonomousTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousTools.swift; sourceTree = "<group>"; };
+    A20000000000000000000521 /* GlobalAutonomousSkillHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousSkillHost.swift; sourceTree = "<group>"; };
+    A20000000000000000000522 /* GlobalAutonomousToolCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousToolCatalogTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000523 /* GlobalAutonomousSkillHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousSkillHostTests.swift; sourceTree = "<group>"; };
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
@@ -800,6 +810,9 @@
         A20000000000000000000514 /* GlobalResearchExecutorModels.swift */,
         A20000000000000000000515 /* GlobalResearchPromptBuilder.swift */,
         A20000000000000000000516 /* GlobalResearchExecutorPolicy.swift */,
+        A20000000000000000000519 /* GlobalActionEvidenceModels.swift */,
+        A20000000000000000000520 /* GlobalAutonomousTools.swift */,
+        A20000000000000000000521 /* GlobalAutonomousSkillHost.swift */,
         A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000411 /* AgentMemoryCausalDeletion.swift */,
         A20000000000000000000413 /* AgentMemoryPersistentStore.swift */,
@@ -1028,6 +1041,8 @@
         A20000000000000000000513 /* GlobalEvidenceEvaluatorTests.swift */,
         A20000000000000000000517 /* GlobalResearchExecutorPolicyTests.swift */,
         A20000000000000000000518 /* GlobalResearchPromptBuilderTests.swift */,
+        A20000000000000000000522 /* GlobalAutonomousToolCatalogTests.swift */,
+        A20000000000000000000523 /* GlobalAutonomousSkillHostTests.swift */,
         A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */,
         A20000000000000000000260 /* AgentAutonomyGuardTests.swift */,
         A20000000000000000000261 /* AgentConfirmationPolicyTests.swift */,
@@ -1229,6 +1244,9 @@
         A10000000000000000000514 /* GlobalResearchExecutorModels.swift in Sources */,
         A10000000000000000000515 /* GlobalResearchPromptBuilder.swift in Sources */,
         A10000000000000000000516 /* GlobalResearchExecutorPolicy.swift in Sources */,
+        A10000000000000000000519 /* GlobalActionEvidenceModels.swift in Sources */,
+        A10000000000000000000520 /* GlobalAutonomousTools.swift in Sources */,
+        A10000000000000000000521 /* GlobalAutonomousSkillHost.swift in Sources */,
         A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000411 /* AgentMemoryCausalDeletion.swift in Sources */,
         A10000000000000000000413 /* AgentMemoryPersistentStore.swift in Sources */,
@@ -1473,6 +1491,8 @@
         A10000000000000000000513 /* GlobalEvidenceEvaluatorTests.swift in Sources */,
         A10000000000000000000517 /* GlobalResearchExecutorPolicyTests.swift in Sources */,
         A10000000000000000000518 /* GlobalResearchPromptBuilderTests.swift in Sources */,
+        A10000000000000000000522 /* GlobalAutonomousToolCatalogTests.swift in Sources */,
+        A10000000000000000000523 /* GlobalAutonomousSkillHostTests.swift in Sources */,
         A10000000000000000000259 /* GlobalModelCallBudgetTests.swift in Sources */,
         A10000000000000000000260 /* AgentAutonomyGuardTests.swift in Sources */,
         A10000000000000000000261 /* AgentConfirmationPolicyTests.swift in Sources */,
