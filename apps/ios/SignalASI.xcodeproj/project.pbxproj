@@ -82,6 +82,7 @@
     A10000000000000000000568 /* GlobalLongHorizonGoalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000568 /* GlobalLongHorizonGoalStore.swift */; };
     A10000000000000000000569 /* GlobalLongHorizonCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000569 /* GlobalLongHorizonCoordinator.swift */; };
     A10000000000000000000572 /* GlobalAutonomousReplanPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000572 /* GlobalAutonomousReplanPolicy.swift */; };
+    A10000000000000000000574 /* GlobalAgentDeliberationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000574 /* GlobalAgentDeliberationStore.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -300,6 +301,7 @@
     A10000000000000000000570 /* GlobalLongHorizonGoalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000570 /* GlobalLongHorizonGoalStoreTests.swift */; };
     A10000000000000000000571 /* GlobalLongHorizonCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000571 /* GlobalLongHorizonCoordinatorTests.swift */; };
     A10000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift */; };
+    A10000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
     A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000205 /* AgentTeamDelegationTests.swift */; };
@@ -542,6 +544,7 @@
     A20000000000000000000568 /* GlobalLongHorizonGoalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalLongHorizonGoalStore.swift; sourceTree = "<group>"; };
     A20000000000000000000569 /* GlobalLongHorizonCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalLongHorizonCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000572 /* GlobalAutonomousReplanPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousReplanPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000574 /* GlobalAgentDeliberationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDeliberationStore.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
@@ -683,6 +686,7 @@
     A20000000000000000000570 /* GlobalLongHorizonGoalStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalLongHorizonGoalStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000571 /* GlobalLongHorizonCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalLongHorizonCoordinatorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousReplanPolicyTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDeliberationStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
@@ -874,6 +878,7 @@
         A20000000000000000000568 /* GlobalLongHorizonGoalStore.swift */,
         A20000000000000000000569 /* GlobalLongHorizonCoordinator.swift */,
         A20000000000000000000572 /* GlobalAutonomousReplanPolicy.swift */,
+        A20000000000000000000574 /* GlobalAgentDeliberationStore.swift */,
         A20000000000000000000502 /* CloudWebGrounding.swift */,
         A20000000000000000000504 /* GlobalProactiveDiscovery.swift */,
         A20000000000000000000506 /* GlobalProactiveDelivery.swift */,
@@ -1049,6 +1054,7 @@
         A20000000000000000000570 /* GlobalLongHorizonGoalStoreTests.swift */,
         A20000000000000000000571 /* GlobalLongHorizonCoordinatorTests.swift */,
         A20000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift */,
+        A20000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift */,
         A20000000000000000000203 /* AgentIOSNativeToolTests.swift */,
         A20000000000000000000204 /* AgentWorkspacePlanTests.swift */,
         A20000000000000000000205 /* AgentTeamDelegationTests.swift */,
@@ -1339,6 +1345,7 @@
         A10000000000000000000568 /* GlobalLongHorizonGoalStore.swift in Sources */,
         A10000000000000000000569 /* GlobalLongHorizonCoordinator.swift in Sources */,
         A10000000000000000000572 /* GlobalAutonomousReplanPolicy.swift in Sources */,
+        A10000000000000000000574 /* GlobalAgentDeliberationStore.swift in Sources */,
         A10000000000000000000502 /* CloudWebGrounding.swift in Sources */,
         A10000000000000000000504 /* GlobalProactiveDiscovery.swift in Sources */,
         A10000000000000000000506 /* GlobalProactiveDelivery.swift in Sources */,
@@ -1604,6 +1611,7 @@
         A10000000000000000000570 /* GlobalLongHorizonGoalStoreTests.swift in Sources */,
         A10000000000000000000571 /* GlobalLongHorizonCoordinatorTests.swift in Sources */,
         A10000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift in Sources */,
+        A10000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift in Sources */,
         A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */,
         A10000000000000000000505 /* GlobalProactiveDiscoveryTests.swift in Sources */,
         A10000000000000000000507 /* GlobalProactiveDeliveryTests.swift in Sources */,
