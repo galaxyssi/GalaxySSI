@@ -165,8 +165,7 @@ function runGradle(args, options = {}) {
 }
 
 function ensureSignalSidecarRuntime() {
-  if (fs.existsSync(sidecarRuntimeDir)) return;
-  console.log("Building SignalASI Link sidecar runtime...");
+  console.log("Synchronizing SignalASI Link sidecar runtime...");
   runGradle(["-p", sidecarDir, "installDist", "--no-daemon"], { cwd: workspaceRoot });
 }
 

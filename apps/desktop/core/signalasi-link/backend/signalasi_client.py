@@ -34,6 +34,7 @@ SIGNAL_STORE_PATH = Path(
 )
 
 _process: subprocess.Popen | None = None
+_startup_lock = threading.RLock()
 _peer_locks: dict[tuple[str, int], threading.RLock] = {}
 _peer_locks_guard = threading.Lock()
 
@@ -47,51 +48,74 @@ def _peer_lock(remote_name: str, remote_device_id: int) -> threading.RLock:
 def start_signal_sidecar() -> None:
     """Start the local JVM sidecar if it is not already responding."""
     global _process, SIDECAR_PORT, SIDECAR_BASE
-    if _is_healthy():
-        return
-    if not SIDECAR_SCRIPT.exists():
-        raise FileNotFoundError(f"Signal sidecar is not built: {SIDECAR_SCRIPT}")
-
-    if _port_is_in_use(SIDECAR_PORT):
-        SIDECAR_PORT = _available_local_port()
-        SIDECAR_BASE = f"http://127.0.0.1:{SIDECAR_PORT}"
-
-    with open(SIDECAR_DIR / "sidecar.out.log", "ab", buffering=0) as out, \
-            open(SIDECAR_DIR / "sidecar.err.log", "ab", buffering=0) as err:
-        storage_key = base64.urlsafe_b64encode(
-            derived_storage_key(
-                SIGNAL_STORE_PATH,
-                "signal-protocol-store",
-            )
-        ).decode("ascii").rstrip("=")
-        popen_kwargs = {
-            "cwd": str(SIDECAR_DIR),
-            "stdout": out,
-            "stderr": err,
-            "env": {
-                **os.environ,
-                "SIGNALASI_LINK_PORT": str(SIDECAR_PORT),
-                "SIGNALASI_LINK_STORE_PATH": str(SIGNAL_STORE_PATH),
-                "SIGNALASI_LINK_STORAGE_KEY": storage_key,
-            },
-        }
-        if os.name == "nt":
-            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        _process = subprocess.Popen([str(SIDECAR_SCRIPT)], **popen_kwargs)
-    deadline = time.time() + 15
-    while time.time() < deadline:
+    with _startup_lock:
         if _is_healthy():
             return
-        time.sleep(0.25)
-    raise RuntimeError("Signal sidecar did not become healthy")
+
+        stale_process = _process
+        _process = None
+        if stale_process is not None and stale_process.poll() is None:
+            _terminate_process(stale_process)
+
+        if not SIDECAR_SCRIPT.exists():
+            raise FileNotFoundError(f"Signal sidecar is not built: {SIDECAR_SCRIPT}")
+
+        if _port_is_in_use(SIDECAR_PORT):
+            SIDECAR_PORT = _available_local_port()
+            SIDECAR_BASE = f"http://127.0.0.1:{SIDECAR_PORT}"
+
+        with open(SIDECAR_DIR / "sidecar.out.log", "ab", buffering=0) as out, \
+                open(SIDECAR_DIR / "sidecar.err.log", "ab", buffering=0) as err:
+            storage_key = base64.urlsafe_b64encode(
+                derived_storage_key(
+                    SIGNAL_STORE_PATH,
+                    "signal-protocol-store",
+                )
+            ).decode("ascii").rstrip("=")
+            popen_kwargs = {
+                "cwd": str(SIDECAR_DIR),
+                "stdout": out,
+                "stderr": err,
+                "env": {
+                    **os.environ,
+                    "SIGNALASI_LINK_PORT": str(SIDECAR_PORT),
+                    "SIGNALASI_LINK_STORE_PATH": str(SIGNAL_STORE_PATH),
+                    "SIGNALASI_LINK_STORAGE_KEY": storage_key,
+                },
+            }
+            if os.name == "nt":
+                popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            process = subprocess.Popen([str(SIDECAR_SCRIPT)], **popen_kwargs)
+            _process = process
+
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            if process.poll() is not None:
+                break
+            if _is_healthy():
+                return
+            time.sleep(0.25)
+
+        if _process is process:
+            _process = None
+        _terminate_process(process)
+        raise RuntimeError("Signal sidecar did not become healthy")
 
 
 def stop_signal_sidecar() -> None:
     """Stop only the sidecar process started by this backend instance."""
     global _process
-    process = _process
-    _process = None
-    if process is None or process.poll() is not None:
+    with _startup_lock:
+        process = _process
+        _process = None
+        if process is None or process.poll() is not None:
+            return
+        _terminate_process(process)
+
+
+def _terminate_process(process: subprocess.Popen) -> None:
+    """Terminate a sidecar process and its launcher without leaving an orphan JVM."""
+    if process.poll() is not None:
         return
     if os.name == "nt":
         subprocess.run(
