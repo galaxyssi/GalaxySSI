@@ -47,6 +47,8 @@
     "test:benchmark:agent": "node --test tools/benchmark/agent-benchmark.test.mjs",
     "regression:agent": "node tools/benchmark/run-agent-regression.mjs",
     "test:regression:agent": "node --test tools/benchmark/agent-regression-dsl.test.mjs",
+    "score:version-health": "node tools/quality/run-version-health-score.mjs",
+    "test:version-health": "node --test tools/quality/version-health-score.test.mjs",
     "benchmark:memory-locomo": "node tools/benchmark/run-memory-locomo.mjs",
     "test:benchmark:memory-locomo": "node --test tools/benchmark/memory-locomo.test.mjs",
     "test:trusted-pr-review": "node --test tools/security/trusted-pr-review.test.mjs",

@@ -21,6 +21,17 @@ const agentRegressionSuite = path.join(root, "benchmarks", "agent", "regression-
 const agentRegressionRunner = path.join(root, "tools", "benchmark", "run-agent-regression.mjs");
 const agentRegressionLibrary = path.join(root, "tools", "benchmark", "agent-regression-dsl.mjs");
 const agentRegressionTest = path.join(root, "tools", "benchmark", "agent-regression-dsl.test.mjs");
+const versionHealthDoc = path.join(root, "docs", "testing", "VERSION_HEALTH_SCORE.md");
+const versionHealthPolicy = path.join(root, "benchmarks", "version-health", "policy.json");
+const versionHealthEvidence = path.join(
+  root,
+  "benchmarks",
+  "version-health",
+  "reference-evidence.json"
+);
+const versionHealthRunner = path.join(root, "tools", "quality", "run-version-health-score.mjs");
+const versionHealthLibrary = path.join(root, "tools", "quality", "version-health-score.mjs");
+const versionHealthTest = path.join(root, "tools", "quality", "version-health-score.test.mjs");
 const coreRegressionManifest = path.join(root, "tools", "dev", "core-regression-manifest.json");
 const coreRegressionRunner = path.join(root, "tools", "dev", "run-core-regressions.mjs");
 const memoryLoCoMoCorpus = path.join(root, "benchmarks", "memory", "locomo-corpus.json");
@@ -139,7 +150,8 @@ function checkDocumentedRootScripts() {
     trustModel,
     releaseAuditDoc,
     releaseAuditScript,
-    agentBenchmarkDoc
+    agentBenchmarkDoc,
+    versionHealthDoc
   ];
   const missing = [];
   for (const file of docs) {
@@ -217,10 +229,70 @@ function checkCoreRegressions() {
   }
   const manifest = JSON.parse(fs.readFileSync(coreRegressionManifest, "utf8"));
   const identifiers = new Set((manifest.suites || []).map((suite) => suite.id));
-  const required = ["android", "desktop", "mqtt", "memory", "remote_control", "agent_benchmark"];
+  const required = [
+    "android",
+    "desktop",
+    "mqtt",
+    "memory",
+    "remote_control",
+    "agent_benchmark",
+    "version_health"
+  ];
   const missing = required.filter((identifier) => !identifiers.has(identifier));
   if (manifest.schema_version !== 1 || missing.length > 0) {
     throw new Error(`Core regression manifest is incomplete: ${missing.join(", ")}`);
+  }
+}
+
+function checkVersionHealthScore() {
+  const packageJson = JSON.parse(fs.readFileSync(rootPackageJson, "utf8"));
+  for (const file of [
+    versionHealthDoc,
+    versionHealthPolicy,
+    versionHealthEvidence,
+    versionHealthRunner,
+    versionHealthLibrary,
+    versionHealthTest
+  ]) {
+    if (!fs.existsSync(file)) {
+      throw new Error(`Missing version health asset: ${path.relative(root, file)}`);
+    }
+  }
+  for (const scriptName of ["score:version-health", "test:version-health"]) {
+    if (!packageJson.scripts?.[scriptName]) {
+      throw new Error(`Missing version health script: ${scriptName}`);
+    }
+  }
+  const policy = JSON.parse(fs.readFileSync(versionHealthPolicy, "utf8"));
+  const requiredDimensions = [
+    "performance",
+    "reliability",
+    "security",
+    "ux",
+    "memory_quality",
+    "automation_success_rate"
+  ];
+  const dimensions = Array.isArray(policy.dimensions) ? policy.dimensions : [];
+  const identifiers = new Set(dimensions.map((dimension) => dimension.id));
+  const weight = dimensions.reduce(
+    (total, dimension) => total + Number(dimension.weight || 0),
+    0
+  );
+  if (
+    policy.schema_version !== 1 ||
+    requiredDimensions.some((identifier) => !identifiers.has(identifier)) ||
+    Math.abs(weight - 1) > 0.000001
+  ) {
+    throw new Error("Version health policy must define all six normalized dimensions");
+  }
+  const evidence = JSON.parse(fs.readFileSync(versionHealthEvidence, "utf8"));
+  if (
+    evidence.schema_version !== 1 ||
+    evidence.fixture !== true ||
+    !Array.isArray(evidence.metrics) ||
+    evidence.metrics.length < 12
+  ) {
+    throw new Error("Version health reference evidence must be an explicit deterministic fixture");
   }
 }
 
@@ -550,6 +622,10 @@ const checks = [
   {
     name: "core regressions",
     run: checkCoreRegressions
+  },
+  {
+    name: "version health score",
+    run: checkVersionHealthScore
   },
   {
     name: "memory LoCoMo benchmark",
