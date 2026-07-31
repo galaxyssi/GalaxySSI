@@ -1,9 +1,20 @@
 import Foundation
 
+enum VoiceWhisperModelFamily: String, Codable, Equatable {
+  case tiny = "TINY"
+  case base = "BASE"
+  case small = "SMALL"
+  case medium = "MEDIUM"
+  case largeV3 = "LARGE_V3"
+  case largeV3Turbo = "LARGE_V3_TURBO"
+}
+
 struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
   var id: String
+  var family: VoiceWhisperModelFamily
   var displayName: String
   var fileName: String
+  var sourceURLs: [String]
   var sizeLabel: String
   var bundled: Bool
   var minimumUsableBytes: Int64
@@ -13,8 +24,10 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
 
   init(
     id: String,
+    family: VoiceWhisperModelFamily = .tiny,
     displayName: String,
     fileName: String,
+    sourceURLs: [String] = [],
     sizeLabel: String,
     bundled: Bool = false,
     minimumUsableBytes: Int64 = 0,
@@ -23,8 +36,13 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     minFreeStorageBytes: Int64 = 0
   ) {
     self.id = id.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("tiny")
+    self.family = family
     self.displayName = displayName.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(self.id)
     self.fileName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedSources = sourceURLs.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter {
+      $0.lowercased().hasPrefix("https://")
+    }
+    self.sourceURLs = normalizedSources.isEmpty ? Self.defaultSourceURLs(fileName: self.fileName) : normalizedSources
     self.sizeLabel = sizeLabel.trimmingCharacters(in: .whitespacesAndNewlines)
     self.bundled = bundled
     self.expectedSizeBytes = max(0, expectedSizeBytes)
@@ -38,8 +56,10 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
 
   enum CodingKeys: String, CodingKey {
     case id
+    case family
     case displayName = "display_name"
     case fileName = "file_name"
+    case sourceURLs = "source_urls"
     case sizeLabel = "size_label"
     case bundled
     case minimumUsableBytes = "minimum_usable_bytes"
@@ -52,8 +72,10 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.init(
       id: try container.decodeIfPresent(String.self, forKey: .id) ?? "tiny",
+      family: try container.decodeIfPresent(VoiceWhisperModelFamily.self, forKey: .family) ?? .tiny,
       displayName: try container.decodeIfPresent(String.self, forKey: .displayName) ?? "Tiny",
       fileName: try container.decodeIfPresent(String.self, forKey: .fileName) ?? "ggml-tiny.bin",
+      sourceURLs: try container.decodeIfPresent([String].self, forKey: .sourceURLs) ?? [],
       sizeLabel: try container.decodeIfPresent(String.self, forKey: .sizeLabel) ?? "",
       bundled: try container.decodeIfPresent(Bool.self, forKey: .bundled) ?? false,
       minimumUsableBytes: try container.decodeIfPresent(Int64.self, forKey: .minimumUsableBytes) ?? 0,
@@ -61,6 +83,15 @@ struct VoiceWhisperModelProfile: Codable, Equatable, Identifiable {
       sha256: try container.decodeIfPresent(String.self, forKey: .sha256) ?? "",
       minFreeStorageBytes: try container.decodeIfPresent(Int64.self, forKey: .minFreeStorageBytes) ?? 0
     )
+  }
+
+  private static func defaultSourceURLs(fileName: String) -> [String] {
+    let fileName = fileName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !fileName.isEmpty else { return [] }
+    return [
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(fileName)",
+      "https://hf-mirror.com/ggerganov/whisper.cpp/resolve/main/\(fileName)"
+    ]
   }
 }
 
@@ -90,6 +121,7 @@ enum VoiceWhisperModelCatalog {
   static let models: [VoiceWhisperModelProfile] = [
     VoiceWhisperModelProfile(
       id: "tiny",
+      family: .tiny,
       displayName: "Tiny",
       fileName: "ggml-tiny.bin",
       sizeLabel: "74.1 MiB",
@@ -100,6 +132,7 @@ enum VoiceWhisperModelCatalog {
     ),
     VoiceWhisperModelProfile(
       id: "base",
+      family: .base,
       displayName: "Base",
       fileName: "ggml-base.bin",
       sizeLabel: "141.1 MiB",
@@ -109,6 +142,7 @@ enum VoiceWhisperModelCatalog {
     ),
     VoiceWhisperModelProfile(
       id: "small",
+      family: .small,
       displayName: "Small",
       fileName: "ggml-small.bin",
       sizeLabel: "465.0 MiB",
@@ -118,6 +152,7 @@ enum VoiceWhisperModelCatalog {
     ),
     VoiceWhisperModelProfile(
       id: "medium",
+      family: .medium,
       displayName: "Medium",
       fileName: "ggml-medium.bin",
       sizeLabel: "1.4 GiB",
@@ -127,6 +162,7 @@ enum VoiceWhisperModelCatalog {
     ),
     VoiceWhisperModelProfile(
       id: "large",
+      family: .largeV3,
       displayName: "Large v3",
       fileName: "ggml-large-v3.bin",
       sizeLabel: "2.9 GiB",
@@ -148,6 +184,13 @@ enum VoiceWhisperModelCatalog {
 
   static func downloadURL(for model: VoiceWhisperModelProfile) -> URL? {
     URL(string: "\(mirrorRoot)/\(model.fileName)")
+  }
+
+  static func downloadURL(
+    for model: VoiceWhisperModelProfile,
+    locale: Locale
+  ) -> URL? {
+    VoiceWhisperModelDownloadPolicy.orderedSources(profile: model, locale: locale).compactMap(URL.init(string:)).first
   }
 
   static func defaultModelsDirectory(
