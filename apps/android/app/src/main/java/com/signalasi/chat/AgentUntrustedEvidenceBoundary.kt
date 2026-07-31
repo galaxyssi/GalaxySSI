@@ -1,5 +1,10 @@
 package com.signalasi.chat
 
+data class AgentUntrustedEvidenceVerification(
+    val valid: Boolean,
+    val code: String
+)
+
 /**
  * Keeps externally supplied evidence separate from instructions that may
  * authorize model or tool behavior.
@@ -69,6 +74,31 @@ object AgentUntrustedEvidenceBoundary {
 
     fun compactMarker(): String = "$CONTRACT_VERSION;untrusted;instruction-authority=none"
 
+    fun verifyMarkedJson(envelope: AgentNativeJsonObject): AgentUntrustedEvidenceVerification =
+        verifyMetadata(envelope[METADATA_KEY], envelope["content"])
+
+    fun verifyMetadata(
+        metadataValue: Any?,
+        content: Any?
+    ): AgentUntrustedEvidenceVerification {
+        val metadata = metadataValue as? Map<*, *>
+            ?: return invalid("missing_boundary")
+        if (metadata["contract"] != CONTRACT_VERSION) return invalid("contract_mismatch")
+        if (metadata["trust"] != "untrusted") return invalid("invalid_trust")
+        if (metadata["instruction_authority"] != "none") return invalid("invalid_authority")
+        if ((metadata["source_type"] as? String).isNullOrBlank()) return invalid("missing_source_type")
+        if ((metadata["source_id"] as? String).isNullOrBlank()) return invalid("missing_source_id")
+        val expectedHash = metadata["content_sha256"] as? String
+            ?: return invalid("missing_content_hash")
+        if (!expectedHash.matches(SHA256_PATTERN)) return invalid("invalid_content_hash")
+        if (expectedHash != AgentNativeJsonCodec.sha256(content)) return invalid("content_hash_mismatch")
+        return AgentUntrustedEvidenceVerification(valid = true, code = "verified")
+    }
+
     private fun boundedLabel(value: String): String =
         value.trim().replace(Regex("\\s+"), " ").take(160).ifBlank { "unknown" }
+
+    private fun invalid(code: String) = AgentUntrustedEvidenceVerification(valid = false, code = code)
+
+    private val SHA256_PATTERN = Regex("[0-9a-f]{64}")
 }

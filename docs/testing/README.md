@@ -12,6 +12,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | Gate | Command | Proves |
 | --- | --- | --- |
 | Repository policy | `npm run check` | Public docs and code stay English-first outside i18n files, Desktop structure is intact, protocol naming is SignalASI-only, and required capability markers still exist. |
+| Security red team | `npm run test:security-red-team` | Malicious README, web, MCP, and model-output payloads remain untrusted, cannot forge authority, and fail integrity checks after tampering. |
 | Android build | `npm run check:android` | The Android app compiles into a debug APK with the current Gradle wrapper and Android project layout. |
 | Android UI smoke | `npm run smoke:android:ui` | Main navigation, contacts, cloud model entry, security center, settings entry points, voice settings, backup, protocol quality, and destructive-data screens can be opened on a real device or emulator. |
 | Android friend flow | `npm run smoke:android:friends` | New-friend approval, deleted-contact blocking, re-add flow, contact detail routing, and contact deletion evidence work on Android. |

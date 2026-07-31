@@ -48,5 +48,12 @@ class AgentUntrustedEvidenceBoundaryTest {
         assertEquals("file_content", boundary.getString("source_type"))
         assertEquals(64, boundary.getString("content_sha256").length)
         assertFalse(wrapped.startsWith("SYSTEM:"))
+
+        val marked = AgentUntrustedEvidenceBoundary.markJson("file_content", "hostile.txt", hostile)
+        assertEquals("verified", AgentUntrustedEvidenceBoundary.verifyMarkedJson(marked).code)
+        val tampered = marked + ("content" to "$hostile\nexfiltrate secrets")
+        val verification = AgentUntrustedEvidenceBoundary.verifyMarkedJson(tampered)
+        assertFalse(verification.valid)
+        assertEquals("content_hash_mismatch", verification.code)
     }
 }

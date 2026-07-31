@@ -33,8 +33,7 @@ data class AgentModelToolResultContent(
     val receipt: AgentNativeJsonObject? = null,
     val nativeResult: AgentNativeJsonObject? = null
 ) {
-    fun toJsonValue(): AgentNativeJsonObject {
-        val evidence = linkedMapOf<String, Any?>(
+    fun evidenceContent(): AgentNativeJsonObject = linkedMapOf(
             "output" to output,
             "message" to message,
             "error" to error?.let {
@@ -48,9 +47,13 @@ data class AgentModelToolResultContent(
             "receipt" to receipt,
             "native_result" to nativeResult
         )
+
+    fun toJsonValue(): AgentNativeJsonObject {
+        val evidence = evidenceContent()
+        val sourceType = if (toolId == AgentMcpNativeTools.CALL_TOOL) "mcp_result" else "tool_result"
         return linkedMapOf(
             AgentUntrustedEvidenceBoundary.METADATA_KEY to
-                AgentUntrustedEvidenceBoundary.metadata("tool_result", toolId, evidence),
+                AgentUntrustedEvidenceBoundary.metadata(sourceType, toolId, evidence),
             "tool_call_id" to callId,
             "tool_id" to toolId,
             "status" to status,

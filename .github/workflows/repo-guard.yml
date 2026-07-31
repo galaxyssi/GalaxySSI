@@ -18,6 +18,7 @@ jobs:
       - run: npm run check
       - run: npm run test:runtime-tools
       - run: npm run test:guest-runtime
+      - run: npm run test:security-red-team
       - run: cc -fsyntax-only -Wall -Wextra -Werror apps/android/runtime/buildroot-external/package/signalasi-runtime-launcher/src/signalasi-runtime-launcher.c
       - run: |
           bash -n tools/runtime/build-linux-base.sh
