@@ -259,15 +259,15 @@ enum AgentIOSWebMediaNativeToolCatalog {
     case .contentExtract:
       return ["content.extract", "html.no_script_execution", "result.bounded"]
     case .browserSessionCreate, .browserSessionNavigate:
-      return ["network.public_https", "network.dns_pinned", "network.redirect_bounded", "browser.explicit_handle", "cookies.none"]
+      return ["network.public_https", "network.local_hosts_blocked", "network.redirect_bounded", "browser.explicit_handle", "cookies.none"]
     case .browserSessionClose:
       return ["browser.explicit_handle", "tool_handle.scoped"]
     case .fileDownload, .webDownload:
-      return ["network.public_https", "network.dns_pinned", "network.redirect_bounded", "content_uri.user_authorized", "auto_execute.disabled"]
+      return ["network.public_https", "network.local_hosts_blocked", "network.redirect_bounded", "content_uri.user_authorized", "auto_execute.disabled"]
     case .ocrRecognizeContent:
       return ["ocr.content_uri", "ocr.bounded", "content_uri.user_authorized"]
     case .webSearch, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
-      return ["network.public_https", "network.dns_pinned", "network.redirect_bounded", "cookies.none"]
+      return ["network.public_https", "network.local_hosts_blocked", "network.redirect_bounded", "cookies.none"]
     }
   }
 
