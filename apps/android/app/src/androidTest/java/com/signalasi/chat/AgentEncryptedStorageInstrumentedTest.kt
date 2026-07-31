@@ -50,7 +50,9 @@ class AgentEncryptedStorageInstrumentedTest {
     fun currentEncryptedStoresRoundTripValues() {
         val preferencesName = newStorageName()
         val preferences = AgentEncryptedPreferences(context, preferencesName)
+        assertFalse(preferences.contains("value"))
         preferences.writeString("value", "current preference value")
+        assertTrue(preferences.contains("value"))
         assertEquals("current preference value", preferences.readString("value", "default"))
 
         val databaseName = newStorageName()

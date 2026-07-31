@@ -175,7 +175,7 @@ object SignalASILinkProtocol {
         allServerLinks(context).firstOrNull { it.desktopId == desktopId }
 
     fun allServerLinks(context: Context): List<ServerLink> {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SERVERS, "[]") ?: "[]"
+        val raw = storage(context).readString(KEY_SERVERS, "[]")
         val array = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
         return buildList {
             for (index in 0 until array.length()) {
@@ -210,7 +210,7 @@ object SignalASILinkProtocol {
 
     @Synchronized
     fun clear(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        storage(context).clear()
     }
 
     fun makeEnvelope(payload: JSONObject, sourceId: String, targetId: String): JSONObject {
@@ -301,8 +301,11 @@ object SignalASILinkProtocol {
     private fun write(context: Context, links: List<ServerLink>) {
         val array = JSONArray()
         links.forEach { array.put(it.toJson()) }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_SERVERS, array.toString()).commit()
+        storage(context).writeString(KEY_SERVERS, array.toString())
     }
+
+    private fun storage(context: Context): AgentEncryptedPreferences =
+        AgentEncryptedPreferences(context.applicationContext, PREFS)
 
     private fun JSONArray?.toStringSet(): Set<String> = buildSet {
         val source = this@toStringSet ?: return@buildSet

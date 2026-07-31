@@ -21,7 +21,6 @@ object AppStore {
     @Volatile private var contactsCacheById: Map<String, String> = emptyMap()
     private const val PREFS = "signalasi_app_store"
     private const val TRUST_PREFS = "signalasi_signal_trust"
-    private const val SIGNAL_STORE_PREFS = "signalasi_signal_store"
     private const val KEY_CONTACTS = "contacts"
     private const val KEY_FRIEND_REQUESTS = "friend_requests"
     private const val KEY_PROFILE = "profile"
@@ -44,15 +43,15 @@ object AppStore {
 
     private fun initializeOnce(appContext: Context) {
         SignalASICrypto.initialize(appContext)
-        val prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val prefs = storage(appContext)
         if (!prefs.contains(KEY_PROFILE)) {
-            prefs.edit().putString(KEY_PROFILE, defaultProfile(appContext).toString()).apply()
+            prefs.writeString(KEY_PROFILE, defaultProfile(appContext).toString())
         }
         if (!prefs.contains(KEY_CONTACTS)) {
-            prefs.edit().putString(KEY_CONTACTS, JSONArray().toString()).apply()
+            prefs.writeString(KEY_CONTACTS, JSONArray().toString())
         }
         if (!prefs.contains(KEY_FRIEND_REQUESTS)) {
-            prefs.edit().putString(KEY_FRIEND_REQUESTS, JSONArray().toString()).apply()
+            prefs.writeString(KEY_FRIEND_REQUESTS, JSONArray().toString())
         }
         normalizeSignalasiIds(appContext)
         removeLegacyDesktopConnectorContacts(appContext)
@@ -100,6 +99,39 @@ object AppStore {
     fun friendRequests(context: Context): JSONArray {
         ensureInitialized(context)
         return readArray(context, KEY_FRIEND_REQUESTS)
+    }
+
+    internal fun replaceDebugState(context: Context, state: JSONObject) {
+        check(context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            "Debug state replacement is unavailable in release builds"
+        }
+        ensureInitialized(context)
+        state.optJSONObject("profile")?.let { writeObject(context, KEY_PROFILE, JSONObject(it.toString())) }
+        state.optJSONArray("contacts")?.let {
+            require(it.length() <= 500) { "Debug contact fixture is too large" }
+            writeArray(context, KEY_CONTACTS, JSONArray(it.toString()))
+        }
+        state.optJSONArray("friend_requests")?.let {
+            require(it.length() <= 500) { "Debug friend request fixture is too large" }
+            writeArray(context, KEY_FRIEND_REQUESTS, JSONArray(it.toString()))
+        }
+    }
+
+    internal fun patchDebugContact(context: Context, contactId: String, patch: JSONObject): Boolean {
+        check(context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            "Debug contact patching is unavailable in release builds"
+        }
+        require(contactId.isNotBlank()) { "Debug contact id is required" }
+        ensureInitialized(context)
+        val current = contacts(context)
+        for (index in 0 until current.length()) {
+            val contact = current.optJSONObject(index) ?: continue
+            if (contact.optString("id") != contactId && signalasiIdOf(contact) != contactId) continue
+            patch.keys().forEach { key -> contact.put(key, patch.opt(key)) }
+            writeArray(context, KEY_CONTACTS, current)
+            return true
+        }
+        return false
     }
 
     fun addFriendRequest(context: Context, request: JSONObject) {
@@ -260,8 +292,7 @@ object AppStore {
 
     fun contactById(context: Context, hermesId: String): JSONObject? {
         ensureInitialized(context)
-        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val raw = prefs.getString(KEY_CONTACTS, "[]") ?: "[]"
+        val raw = storage(context).readString(KEY_CONTACTS, "[]")
         if (raw != contactsCacheRaw) {
             synchronized(contactsCacheLock) {
                 if (raw != contactsCacheRaw) {
@@ -931,11 +962,11 @@ object AppStore {
         contactsCacheRaw = ""
         contactsCacheById = emptyMap()
         AgentWorkflowScheduler.cancelAll(context)
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        storage(context).clear()
         ChatHistoryStore.clear(context)
         ChatHistoryStore.close()
-        context.getSharedPreferences(TRUST_PREFS, Context.MODE_PRIVATE).edit().clear().commit()
-        context.getSharedPreferences(SIGNAL_STORE_PREFS, Context.MODE_PRIVATE).edit().clear().commit()
+        AgentEncryptedPreferences(context, TRUST_PREFS).clear()
+        AndroidPersistentSignalStore.clear(context)
         context.getSharedPreferences("signalasi_agent_runtime", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("signalasi_agent_memory", Context.MODE_PRIVATE).edit().clear().commit()
         context.getSharedPreferences("signalasi_agent_knowledge", Context.MODE_PRIVATE).edit().clear().commit()
@@ -999,21 +1030,19 @@ object AppStore {
     }
 
     private fun resetToFreshInstall(context: Context) {
-        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        prefs.edit()
-            .putString(KEY_PROFILE, defaultProfile(context).toString())
-            .putString(KEY_CONTACTS, JSONArray().toString())
-            .putString(KEY_FRIEND_REQUESTS, JSONArray().toString())
-            .commit()
+        val prefs = storage(context)
+        prefs.writeString(KEY_PROFILE, defaultProfile(context).toString())
+        prefs.writeString(KEY_CONTACTS, JSONArray().toString())
+        prefs.writeString(KEY_FRIEND_REQUESTS, JSONArray().toString())
     }
 
     private fun createInitialPrivateBackup(context: Context) {
         val marker = context.filesDir.resolve("backups/.initial_backup_created")
         if (marker.exists()) return
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (prefs.getBoolean("initial_backup_in_progress", false)) return
+        val prefs = storage(context)
+        if (prefs.readString("initial_backup_in_progress", "false").toBoolean()) return
         runCatching {
-            prefs.edit().putBoolean("initial_backup_in_progress", true).apply()
+            prefs.writeString("initial_backup_in_progress", "true")
             exportBackup(
                 context,
                 password = initialBackupPassword(context),
@@ -1023,17 +1052,17 @@ object AppStore {
             marker.parentFile?.mkdirs()
             marker.writeText(System.currentTimeMillis().toString(), Charsets.UTF_8)
         }.also {
-            prefs.edit().putBoolean("initial_backup_in_progress", false).apply()
+            prefs.writeString("initial_backup_in_progress", "false")
         }
     }
 
     private fun initialBackupPassword(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val existing = prefs.getString("initial_backup_secret", null)
-        if (existing != null) return existing
+        val prefs = storage(context)
+        val existing = prefs.readString("initial_backup_secret", "")
+        if (existing.isNotBlank()) return existing
         val secret = ByteArray(24).also { SecureRandom().nextBytes(it) }
             .joinToString("") { "%02x".format(it) }
-        prefs.edit().putString("initial_backup_secret", secret).apply()
+        prefs.writeString("initial_backup_secret", secret)
         return secret
     }
 
@@ -1427,7 +1456,7 @@ object AppStore {
     }
 
     private fun readArray(context: Context, key: String): JSONArray {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "[]") ?: "[]"
+        val raw = storage(context).readString(key, "[]")
         return runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
     }
 
@@ -1478,7 +1507,7 @@ object AppStore {
     }
 
     private fun readObject(context: Context, key: String): JSONObject {
-        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(key, "{}") ?: "{}"
+        val raw = storage(context).readString(key, "{}")
         return runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
     }
 
@@ -1488,12 +1517,15 @@ object AppStore {
             contactsCacheRaw = ""
             contactsCacheById = emptyMap()
         }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, raw).apply()
+        storage(context).writeString(key, raw)
     }
 
     private fun writeObject(context: Context, key: String, value: JSONObject) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value.toString()).apply()
+        storage(context).writeString(key, value.toString())
     }
+
+    private fun storage(context: Context): AgentEncryptedPreferences =
+        AgentEncryptedPreferences(context.applicationContext, PREFS)
 
     private fun removeChatHistory(context: Context, contactId: String) {
         val contactName = contactById(context, contactId)

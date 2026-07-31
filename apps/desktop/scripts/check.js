@@ -41,6 +41,7 @@ const required = [
   "core/signalasi-link/backend/run_timeline.py",
   "scripts/package-win.js",
   "scripts/android-adb.js",
+  "scripts/android-secure-state-probe.js",
   "scripts/smoke.js",
   "scripts/smoke-pairing.js",
   "scripts/smoke-ui.js",
@@ -169,14 +170,18 @@ const backendStt = fs.readFileSync(path.join(backendDir, "stt_bridge.py"), "utf8
 const sidecarDir = path.join(backendDir, "signal_sidecar");
 const sidecarSourceDir = path.join(sidecarDir, "src", "main", "java");
 const sidecarMainSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "signalasi", "link", "SignalSidecar.java"), "utf8");
+const sidecarStoreSource = fs.readFileSync(path.join(sidecarSourceDir, "com", "signalasi", "link", "PersistentSignalProtocolStore.java"), "utf8");
 const sidecarBuildGradle = fs.readFileSync(path.join(sidecarDir, "build.gradle.kts"), "utf8");
 const sidecarSettingsGradle = fs.readFileSync(path.join(sidecarDir, "settings.gradle.kts"), "utf8");
+const backendSecureState = fs.readFileSync(path.join(backendDir, "secure_state.py"), "utf8");
 const androidMainActivity = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MainActivity.kt"), "utf8");
 const androidMessageService = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "MessageService.kt"), "utf8");
 const androidChatHistoryStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryStore.kt"), "utf8");
 const androidChatHistoryDatabase = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "ChatHistoryDatabase.kt"), "utf8");
 const androidDebugChatHistoryProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "DebugChatHistoryProbe.kt"), "utf8");
 const androidChatHistoryProbeScript = fs.readFileSync(path.join(__dirname, "android-chat-history-probe.js"), "utf8");
+const androidDebugSecureStateProbe = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "DebugSecureStateProbe.kt"), "utf8");
+const androidSecureStateProbeScript = fs.readFileSync(path.join(__dirname, "android-secure-state-probe.js"), "utf8");
 const androidSignalStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AndroidPersistentSignalStore.kt"), "utf8");
 const androidForegroundTracker = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AppForegroundTracker.kt"), "utf8");
 const androidAppStore = fs.readFileSync(path.join(workspaceRoot, "android", "app", "src", "main", "java", "com", "signalasi", "chat", "AppStore.kt"), "utf8");
@@ -259,6 +264,36 @@ for (const [name, source] of [
     throw new Error(`Android ${name} smoke must use only the current SignalASI app store`);
   }
 }
+if (
+  !androidMainActivity.includes("signalasi_debug_secure_state_probe_b64")
+  || !androidDebugSecureStateProbe.includes("android-keystore-aes-gcm")
+  || !androidDebugSecureStateProbe.includes("ApplicationInfo.FLAG_DEBUGGABLE")
+  || !androidSecureStateProbeScript.includes("snapshotSecureState")
+  || !smokeAndroidUi.includes("snapshotSecureState")
+  || !smokeAndroidFriends.includes("snapshotSecureState")
+  || !smokeAndroidContactRename.includes("snapshotSecureState")
+  || !smokeAndroidContactTags.includes("replaceSecureAppStore")
+  || !smokeAndroidCloudModels.includes("patchSecureContact")
+  || !smokeAndroidAgentReplies.includes("snapshotSecureState")
+  || !smokeAndroidVoiceReply.includes("snapshotSecureState")
+  || !smokeAndroidReset.includes("snapshotSecureState")
+) {
+  throw new Error("Android smoke tests must use the debuggable encrypted-state probe instead of parsing plaintext security preferences");
+}
+for (const [name, source] of [
+  ["Contacts", smokeAndroidContactTags],
+  ["Cloud models", smokeAndroidCloudModels],
+  ["Friends", smokeAndroidFriends],
+  ["UI", smokeAndroidUi],
+  ["Agent replies", smokeAndroidAgentReplies],
+  ["Voice replies", smokeAndroidVoiceReply],
+  ["Reset", smokeAndroidReset],
+  ["Contact rename", smokeAndroidContactRename]
+]) {
+  if (source.includes("function appStoreXml(") || source.includes('prefString(xml, "contacts"')) {
+    throw new Error(`${name} Android smoke must not synthesize or parse plaintext encrypted preference XML`);
+  }
+}
 
 if (!main.includes("/signalasi/verify")) {
   throw new Error("Electron desktop must use /signalasi/verify");
@@ -328,6 +363,30 @@ if (!backendSignalClient.includes("signalasi-link-sidecar") || !main.includes("s
 
 if (!sidecarMainSource.includes("package com.signalasi.link;") || !sidecarBuildGradle.includes("com.signalasi.link.SignalSidecar") || !sidecarSettingsGradle.includes('rootProject.name = "signalasi-link-sidecar"')) {
   throw new Error("Signal sidecar source and Gradle metadata must use SignalASI Link naming");
+}
+if (
+  !backendSecureState.includes("CryptProtectData")
+  || !backendSecureState.includes("AESGCM")
+  || !backendSecureState.includes("AESSIV")
+  || !backendPairing.includes("write_secure_json")
+  || !backendDesktopControl.includes("CONTROL_STATE_PURPOSE")
+  || !backendLinkDelivery.includes("seal_identifier")
+  || !backendSignalClient.includes("SIGNALASI_LINK_STORAGE_KEY")
+  || !sidecarMainSource.includes('"encryptedStorage", true')
+  || !sidecarStoreSource.includes('Cipher.getInstance("AES/GCM/NoPadding")')
+) {
+  throw new Error("Desktop pairing identities, routes, and authorization state must be encrypted at rest");
+}
+for (const [name, source] of [
+  ["Signal store", androidSignalStore],
+  ["Link routes", androidLinkProtocol],
+  ["Link delivery", androidLinkDelivery],
+  ["contacts and provider credentials", androidAppStore],
+  ["identity trust", androidCrypto]
+]) {
+  if (!source.includes("AgentEncryptedPreferences")) {
+    throw new Error(`Android ${name} must use Android Keystore-backed encrypted persistence`);
+  }
 }
 if (
   !sidecarMainSource.includes('server.createContext("/sign"')

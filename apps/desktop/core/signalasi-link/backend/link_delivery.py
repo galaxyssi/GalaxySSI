@@ -8,12 +8,20 @@ import time
 from pathlib import Path
 
 from pairing_state import DATA_DIR
+from secure_state import (
+    decrypt_text,
+    encrypt_text,
+    seal_identifier,
+    unseal_identifier,
+)
 
 DB_PATH = Path(DATA_DIR) / "signalasi_link_delivery.db"
 _lock = threading.RLock()
 OUTBOUND_RETENTION_SECONDS = 7 * 24 * 60 * 60
 OUTBOUND_RETRY_BASE_SECONDS = 5.0
 OUTBOUND_RETRY_MAX_SECONDS = 300.0
+SECURE_STORAGE_VERSION = "1"
+ROUTE_PURPOSE = "link-delivery-route"
 
 
 def _connect() -> sqlite3.Connection:
@@ -68,7 +76,47 @@ def _connect() -> sqlite3.Connection:
             updated_at REAL NOT NULL
         )"""
     )
+    secure_version = db.execute(
+        "SELECT value FROM delivery_metadata WHERE key='secure_storage_version'"
+    ).fetchone()
+    if secure_version is None or str(secure_version[0]) != SECURE_STORAGE_VERSION:
+        # Delivery records are transient. Development plaintext stores are
+        # discarded instead of being imported into the encrypted schema.
+        db.execute("DELETE FROM inbound_messages")
+        db.execute("DELETE FROM inbound_ciphertexts")
+        db.execute("DELETE FROM outbound_messages")
+        db.execute("DELETE FROM task_result_outbox")
+        db.execute("DELETE FROM delivery_metadata")
+        db.execute(
+            "INSERT INTO delivery_metadata(key,value) VALUES('secure_storage_version',?)",
+            (SECURE_STORAGE_VERSION,),
+        )
+        db.commit()
     return db
+
+
+def _route(value: str) -> str:
+    return seal_identifier(DB_PATH, str(value or ""), purpose=ROUTE_PURPOSE)
+
+
+def _unroute(value: str) -> str:
+    return unseal_identifier(DB_PATH, value, purpose=ROUTE_PURPOSE)
+
+
+def _protect(value: str, field: str) -> str:
+    return encrypt_text(
+        DB_PATH,
+        str(value or ""),
+        purpose=f"link-delivery-{field}",
+    )
+
+
+def _reveal(value: str, field: str) -> str:
+    return decrypt_text(
+        DB_PATH,
+        value,
+        purpose=f"link-delivery-{field}",
+    )
 
 
 def ensure_transport_epoch(epoch: str) -> bool:
@@ -104,7 +152,7 @@ def claim_message(client_route_id: str, message_id: str) -> bool:
         try:
             cursor = db.execute(
                 "INSERT OR IGNORE INTO inbound_messages(client_route_id,message_id,received_at,status) VALUES(?,?,?,?)",
-                (client_route_id, message_id, time.time(), "received"),
+                (_route(client_route_id), message_id, time.time(), "received"),
             )
             db.commit()
             return cursor.rowcount == 1
@@ -121,12 +169,12 @@ def bind_ciphertext(client_route_id: str, ciphertext_digest: str, message_id: st
                 """INSERT OR IGNORE INTO inbound_ciphertexts
                    (client_route_id,ciphertext_digest,message_id,received_at)
                    VALUES(?,?,?,?)""",
-                (client_route_id, ciphertext_digest, message_id, time.time()),
+                (_route(client_route_id), ciphertext_digest, message_id, time.time()),
             )
             row = db.execute(
                 """SELECT message_id FROM inbound_ciphertexts
                    WHERE client_route_id=? AND ciphertext_digest=?""",
-                (client_route_id, ciphertext_digest),
+                (_route(client_route_id), ciphertext_digest),
             ).fetchone()
             if row is None or str(row[0]) != message_id:
                 raise ValueError("Signal ciphertext digest is already bound to another message")
@@ -143,7 +191,7 @@ def message_for_ciphertext(client_route_id: str, ciphertext_digest: str) -> str 
             row = db.execute(
                 """SELECT message_id FROM inbound_ciphertexts
                    WHERE client_route_id=? AND ciphertext_digest=?""",
-                (client_route_id, ciphertext_digest),
+                (_route(client_route_id), ciphertext_digest),
             ).fetchone()
         finally:
             db.close()
@@ -156,7 +204,15 @@ def complete_message(client_route_id: str, message_id: str, status: str, acknowl
         try:
             db.execute(
                 "UPDATE inbound_messages SET status=?, acknowledgement=? WHERE client_route_id=? AND message_id=?",
-                (status, json.dumps(acknowledgement or {}, ensure_ascii=False), client_route_id, message_id),
+                (
+                    status,
+                    _protect(
+                        json.dumps(acknowledgement or {}, ensure_ascii=False),
+                        "acknowledgement",
+                    ),
+                    _route(client_route_id),
+                    message_id,
+                ),
             )
             db.commit()
         finally:
@@ -169,15 +225,15 @@ def previous_acknowledgement(client_route_id: str, message_id: str) -> dict:
         try:
             row = db.execute(
                 "SELECT acknowledgement,status FROM inbound_messages WHERE client_route_id=? AND message_id=?",
-                (client_route_id, message_id),
+                (_route(client_route_id), message_id),
             ).fetchone()
         finally:
             db.close()
     if not row:
         return {}
     try:
-        value = json.loads(row[0] or "{}")
-    except json.JSONDecodeError:
+        value = json.loads(_reveal(row[0], "acknowledgement") or "{}")
+    except (json.JSONDecodeError, RuntimeError):
         value = {}
     value.setdefault("status", row[1])
     return value
@@ -192,7 +248,14 @@ def queue_outbound(client_route_id: str, message_id: str, topic: str, wire_paylo
                 """INSERT OR IGNORE INTO outbound_messages
                    (client_route_id,message_id,topic,wire_payload,created_at,updated_at,attempts,status)
                    VALUES(?,?,?,?,?,?,0,'queued')""",
-                (client_route_id, message_id, topic, wire_payload, now, now),
+                (
+                    _route(client_route_id),
+                    message_id,
+                    _protect(topic, "topic"),
+                    _protect(wire_payload, "wire-payload"),
+                    now,
+                    now,
+                ),
             )
             db.commit()
         finally:
@@ -215,7 +278,7 @@ def mark_outbound_sending(client_route_id: str, message_id: str) -> None:
                 """UPDATE outbound_messages
                    SET status='sending', attempts=attempts+1, updated_at=?
                    WHERE client_route_id=? AND message_id=?""",
-                (time.time(), client_route_id, message_id),
+                (time.time(), _route(client_route_id), message_id),
             )
             db.commit()
         finally:
@@ -229,7 +292,7 @@ def mark_outbound_published(client_route_id: str, message_id: str) -> None:
             db.execute(
                 """UPDATE outbound_messages SET status='published', updated_at=?
                    WHERE client_route_id=? AND message_id=?""",
-                (time.time(), client_route_id, message_id),
+                (time.time(), _route(client_route_id), message_id),
             )
             db.commit()
         finally:
@@ -243,7 +306,7 @@ def mark_outbound_retryable(client_route_id: str, message_id: str) -> None:
             db.execute(
                 """UPDATE outbound_messages SET status='queued', updated_at=?
                    WHERE client_route_id=? AND message_id=?""",
-                (time.time(), client_route_id, message_id),
+                (time.time(), _route(client_route_id), message_id),
             )
             db.commit()
         finally:
@@ -256,7 +319,7 @@ def acknowledge_outbound(client_route_id: str, message_id: str) -> bool:
         try:
             cursor = db.execute(
                 "DELETE FROM outbound_messages WHERE client_route_id=? AND message_id=?",
-                (client_route_id, message_id),
+                (_route(client_route_id), message_id),
             )
             db.commit()
             return cursor.rowcount > 0
@@ -271,7 +334,7 @@ def outbound_status(client_route_id: str, message_id: str) -> str | None:
         try:
             row = db.execute(
                 "SELECT status FROM outbound_messages WHERE client_route_id=? AND message_id=?",
-                (client_route_id, message_id),
+                (_route(client_route_id), message_id),
             ).fetchone()
         finally:
             db.close()
@@ -307,9 +370,9 @@ def queue_task_result(
                        updated_at=excluded.updated_at""",
                 (
                     normalized_task_id,
-                    normalized_route_id,
-                    encoded_wire_payload,
-                    encoded_payload,
+                    _route(normalized_route_id),
+                    _protect(encoded_wire_payload, "task-wire-payload"),
+                    _protect(encoded_payload, "task-payload"),
                     now,
                     now,
                 ),
@@ -338,9 +401,9 @@ def pending_task_results() -> list[dict]:
     return [
         {
             "task_id": row[0],
-            "client_route_id": row[1],
-            "wire_payload": json.loads(row[2]),
-            "payload": json.loads(row[3]),
+            "client_route_id": _unroute(row[1]),
+            "wire_payload": json.loads(_reveal(row[2], "task-wire-payload")),
+            "payload": json.loads(_reveal(row[3], "task-payload")),
             "created_at": row[4],
         }
         for row in rows
@@ -412,10 +475,10 @@ def pending_outbound(
             db.close()
     pending = [
         {
-            "client_route_id": row[0],
+            "client_route_id": _unroute(row[0]),
             "message_id": row[1],
-            "topic": row[2],
-            "wire_payload": row[3],
+            "topic": _reveal(row[2], "topic"),
+            "wire_payload": _reveal(row[3], "wire-payload"),
             "attempts": row[4],
             "created_at": row[5],
             "updated_at": row[6],

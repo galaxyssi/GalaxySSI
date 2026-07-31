@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createAdb } = require("./android-adb");
 const { probeChatHistory, requireProbeMatch } = require("./android-chat-history-probe");
+const { snapshotSecureState } = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -162,8 +163,10 @@ async function main() {
     ]);
     await sleep(3000);
 
-    const appStore = readAppFile(appStorePrefs);
-    if (!appStore.includes("Hermes Agent") || !appStore.includes("Codex Agent")) {
+    const state = await snapshotSecureState({ adb, packageName, activityName });
+    const contactNames = (Array.isArray(state.contacts) ? state.contacts : [])
+      .map((contact) => String(contact.name || contact.display_name || ""));
+    if (!contactNames.includes("Hermes Agent") || !contactNames.includes("Codex Agent")) {
       fail("Debug connector status did not create Hermes and Codex contacts before reply verification");
     }
 

@@ -3,6 +3,11 @@ const http = require("node:http");
 const path = require("node:path");
 const { createAdb } = require("./android-adb");
 const { probeChatHistory, waitForChatHistory, requireProbeMatch } = require("./android-chat-history-probe");
+const {
+  patchSecureContact,
+  replaceSecureAppStore,
+  snapshotSecureState
+} = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -14,7 +19,7 @@ const appStorePrefs = "shared_prefs/signalasi_app_store.xml";
 const debugPrefs = "shared_prefs/signalasi_debug.xml";
 const outDir = path.join(root, "ui-smoke");
 const debugDump = path.join(outDir, "android-cloud-models-debug.xml");
-const storeDump = path.join(outDir, "android-cloud-models-app-store.xml");
+const storeDump = path.join(outDir, "android-cloud-models-app-store.json");
 const chatDump = path.join(outDir, "android-cloud-models-chat.xml");
 const directCallDump = path.join(outDir, "android-cloud-models-direct-call.xml");
 const directHistoryDump = path.join(outDir, "android-cloud-models-direct-history.json");
@@ -50,26 +55,6 @@ function restoreAppFile(file, snapshot) {
   adb(["shell", "run-as", packageName, "tee", file], { input: snapshot, stdio: ["pipe", "ignore", "pipe"] });
 }
 
-function escapeXml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function appStoreXml(contacts) {
-  return [
-    "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>",
-    "<map>",
-    `    <string name="contacts">${escapeXml(JSON.stringify(contacts))}</string>`,
-    "    <string name=\"friend_requests\">[]</string>",
-    "</map>",
-    ""
-  ].join("\n");
-}
-
 function decodeXml(value) {
   return value
     .replace(/&quot;/g, '"')
@@ -97,11 +82,11 @@ async function waitForRoundtrip(token) {
   return { xml: readAppFile(debugPrefs), result: null };
 }
 
-function readStore() {
-  const xml = readAppFile(appStorePrefs);
+async function readStore() {
+  const state = await snapshotSecureState({ adb, packageName, activityName });
   return {
-    xml,
-    contacts: JSON.parse(prefString(xml, "contacts", "[]"))
+    state,
+    contacts: Array.isArray(state.contacts) ? state.contacts : []
   };
 }
 
@@ -201,7 +186,10 @@ async function main() {
 
   try {
     log("resetting app store snapshot for isolated cloud model flow");
-    restoreAppFile(appStorePrefs, "");
+    await replaceSecureAppStore(
+      { adb, packageName, activityName },
+      { contacts: [], friend_requests: [] }
+    );
     restoreAppFile(debugPrefs, "");
     adb(["shell", "am", "force-stop", packageName]);
 
@@ -225,8 +213,8 @@ async function main() {
       fail(`Cloud providers were not stored as direct mobile provider contacts: ${JSON.stringify(result)}`);
     }
 
-    const store = readStore();
-    fs.writeFileSync(storeDump, store.xml || "");
+    const store = await readStore();
+    fs.writeFileSync(storeDump, `${JSON.stringify(store.state, null, 2)}\n`);
     const deepseek = cloudContact(store, "DeepSeek");
     const openai = cloudContact(store, "OpenAI");
     if (!deepseek || !openai) {
@@ -241,7 +229,11 @@ async function main() {
     if ((deepseek.cloud_models || []).length < 2 || (openai.cloud_models || []).length < 2) {
       fail(`Cloud contacts did not keep multiple model configs. Store dump: ${storeDump}`);
     }
-    if (store.xml.includes("&quot;agent_id&quot;:&quot;cloud-model&quot;") || store.xml.includes(":cloud-model")) {
+    if (store.contacts.some((contact) =>
+      contact.agent_id === "cloud-model" ||
+      contact.agent_kind === "cloud-model" ||
+      String(contact.id || "").endsWith(":cloud-model")
+    )) {
       fail(`Desktop cloud-model connector leaked into mobile cloud contacts. Store dump: ${storeDump}`);
     }
 
@@ -254,17 +246,24 @@ async function main() {
     fakeServer = await startFakeOpenAiServer(replyToken, promptToken);
     adb(["reverse", `tcp:${fakeServer.port}`, `tcp:${fakeServer.port}`]);
     const fakeEndpoint = `http://127.0.0.1:${fakeServer.port}/v1/chat/completions`;
-    deepseek.cloud_endpoint = fakeEndpoint;
-    deepseek.cloud_api_key = fakeApiKey;
-    deepseek.cloud_api_style = "openai";
-    deepseek.cloud_model = "deepseek-v4-flash";
-    deepseek.selected_cloud_model = "deepseek-v4-flash";
-    for (const model of deepseek.cloud_models || []) {
-      model.endpoint = fakeEndpoint;
-      model.api_key = fakeApiKey;
-      model.api_style = "openai";
-    }
-    restoreAppFile(appStorePrefs, appStoreXml(store.contacts));
+    const cloudModels = (deepseek.cloud_models || []).map((model) => ({
+      ...model,
+      endpoint: fakeEndpoint,
+      api_key: fakeApiKey,
+      api_style: "openai"
+    }));
+    await patchSecureContact(
+      { adb, packageName, activityName },
+      deepseek.id || "cloud:deepseek",
+      {
+        cloud_endpoint: fakeEndpoint,
+        cloud_api_key: fakeApiKey,
+        cloud_api_style: "openai",
+        cloud_model: "deepseek-v4-flash",
+        selected_cloud_model: "deepseek-v4-flash",
+        cloud_models: cloudModels
+      }
+    );
     adb(["shell", "am", "force-stop", packageName]);
     adb(["shell", "am", "start", "-n", activityName, "--es", "signalasi_debug_open_contact", "cloud:deepseek"]);
     await sleep(2500);

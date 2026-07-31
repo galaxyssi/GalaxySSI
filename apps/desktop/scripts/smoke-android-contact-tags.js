@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { createAdb } = require("./android-adb");
+const { replaceSecureAppStore } = require("./android-secure-state-probe");
 
 const root = path.resolve(__dirname, "..");
 const workspaceRoot = path.resolve(root, "..");
@@ -41,26 +42,6 @@ function restoreAppFile(file, snapshot) {
   }
   adb(["shell", "run-as", packageName, "mkdir", "-p", "shared_prefs"]);
   adb(["shell", "run-as", packageName, "tee", file], { input: snapshot, stdio: ["pipe", "ignore", "pipe"] });
-}
-
-function escapeXml(value) {
-  return String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;");
-}
-
-function appStoreXml(contacts) {
-  return [
-    "<?xml version='1.0' encoding='utf-8' standalone='yes' ?>",
-    "<map>",
-    `    <string name="contacts">${escapeXml(JSON.stringify(contacts))}</string>`,
-    "    <string name=\"friend_requests\">[]</string>",
-    "</map>",
-    ""
-  ].join("\n");
 }
 
 function dumpWindowTo(fileName, remoteName) {
@@ -142,7 +123,10 @@ async function main() {
 
   try {
     log("seeding isolated Agent, Model, and Device contacts");
-    restoreAppFile(appStorePrefs, appStoreXml(contacts));
+    await replaceSecureAppStore(
+      { adb, packageName, activityName },
+      { contacts, friend_requests: [] }
+    );
     adb(["shell", "am", "force-stop", packageName]);
 
     log("opening Contacts page and verifying type tags");

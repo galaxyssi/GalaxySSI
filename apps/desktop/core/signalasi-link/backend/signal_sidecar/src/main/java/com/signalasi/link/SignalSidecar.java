@@ -50,7 +50,7 @@ public final class SignalSidecar {
 
     private SignalSidecar() throws Exception {
         Path storePath = storePath();
-        this.store = new PersistentSignalProtocolStore(storePath);
+        this.store = new PersistentSignalProtocolStore(storePath, storageKey());
         IdentityKeyPair identity = store.getIdentityKeyPair();
 
         if (!store.containsPreKey(PRE_KEY_ID)) {
@@ -90,9 +90,26 @@ public final class SignalSidecar {
     }
 
     private static Path storePath() throws IOException {
-        Path storePath = Path.of(System.getProperty("user.home"), ".signalasi", "signal_pc_store.json");
+        String configured = System.getenv().getOrDefault("SIGNALASI_LINK_STORE_PATH", "").trim();
+        Path storePath = configured.isEmpty()
+                ? Path.of(System.getProperty("user.home"), ".signalasi", "signal_protocol_store.json")
+                : Path.of(configured);
         Files.createDirectories(storePath.getParent());
         return storePath;
+    }
+
+    private static byte[] storageKey() {
+        String encoded = System.getenv().getOrDefault("SIGNALASI_LINK_STORAGE_KEY", "").trim();
+        if (encoded.isEmpty()) {
+            throw new IllegalStateException("SIGNALASI_LINK_STORAGE_KEY is required");
+        }
+        byte[] decoded = Base64.getUrlDecoder().decode(
+                encoded + "=".repeat((4 - encoded.length() % 4) % 4)
+        );
+        if (decoded.length != 32) {
+            throw new IllegalStateException("SIGNALASI_LINK_STORAGE_KEY must contain 32 bytes");
+        }
+        return decoded;
     }
 
     private void health(HttpExchange exchange) throws IOException {
@@ -103,7 +120,8 @@ public final class SignalSidecar {
                 .put("device", DEVICE_NAME)
                 .put("port", PORT)
                 .put("removePeer", true)
-                .put("identitySigning", true));
+                .put("identitySigning", true)
+                .put("encryptedStorage", true));
     }
 
     private void bundle(HttpExchange exchange) throws IOException {

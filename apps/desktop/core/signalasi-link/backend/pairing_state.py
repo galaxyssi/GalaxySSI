@@ -1,11 +1,9 @@
 """Pairing tokens and persisted SignalASI Link v1 client registry."""
 from __future__ import annotations
 
-import json
 import logging
 import os
 import secrets
-import tempfile
 import threading
 import time
 from copy import deepcopy
@@ -13,6 +11,7 @@ from pathlib import Path
 
 from link_protocol import LinkTopics, new_route_id, valid_route_id
 from pairing_access import grant_for_executor, normalize_grant
+from secure_state import read_secure_json, write_secure_json
 
 TTL_SECONDS = 10 * 60
 DEFAULT_DATA_DIR = (
@@ -22,6 +21,7 @@ DEFAULT_DATA_DIR = (
 )
 DATA_DIR = Path(os.environ.get("SIGNALASI_DATA_DIR", DEFAULT_DATA_DIR))
 STATE_PATH = DATA_DIR / "signalasi_link_registry.json"
+STATE_PURPOSE = "pairing-registry"
 
 _tokens: dict[str, dict] = {}
 _registry_lock = threading.RLock()
@@ -65,7 +65,15 @@ def _validated_state(data: object) -> dict:
 
 
 def _load_state(path: Path) -> dict:
-    return _validated_state(json.loads(path.read_text(encoding="utf-8")))
+    document = read_secure_json(
+        path,
+        purpose=STATE_PURPOSE,
+        allow_legacy_plaintext=True,
+    )
+    state = _validated_state(document.value)
+    if document.legacy_plaintext:
+        write_secure_json(path, state, purpose=STATE_PURPOSE)
+    return state
 
 
 def _remember_state(data: dict) -> dict:
@@ -82,33 +90,13 @@ def _cached_state() -> dict | None:
     return deepcopy(_last_good_state)
 
 
-def _atomic_write(path: Path, payload: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temp_name = tempfile.mkstemp(
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        text=True,
-    )
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    finally:
-        temp_path.unlink(missing_ok=True)
-
-
 def _write_state(data: dict) -> None:
     with _registry_lock:
         clean = _validated_state(data)
-        payload = f"{json.dumps(clean, ensure_ascii=False, indent=2)}\n"
         # Write the recovery copy first. A crash between the two replacements
         # still leaves at least one complete registry with the newest state.
-        _atomic_write(_backup_path(), payload)
-        _atomic_write(STATE_PATH, payload)
+        write_secure_json(_backup_path(), clean, purpose=STATE_PURPOSE)
+        write_secure_json(STATE_PATH, clean, purpose=STATE_PURPOSE)
         _remember_state(clean)
 
 

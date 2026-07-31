@@ -1,7 +1,6 @@
 package com.signalasi.chat
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.util.Base64
 import org.json.JSONObject
 import org.signal.libsignal.protocol.IdentityKey
@@ -25,23 +24,22 @@ import java.util.UUID
 
 class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     private val appContext: Context = context.applicationContext
-    private val prefs: SharedPreferences =
-        openPrefs(appContext)
+    private val prefs = AgentEncryptedPreferences(appContext, PREFS)
     private val identityKeyPair: IdentityKeyPair
     private val registrationId: Int
 
     init {
-        val identityRaw = prefs.getString(KEY_IDENTITY, null)
-        if (identityRaw == null) {
+        val identityRaw = prefs.readString(KEY_IDENTITY, "")
+        if (identityRaw.isBlank()) {
             identityKeyPair = IdentityKeyPair.generate()
             registrationId = KeyHelper.generateRegistrationId(false)
-            prefs.edit()
-                .putString(KEY_IDENTITY, b64e(identityKeyPair.serialize()))
-                .putInt(KEY_REGISTRATION_ID, registrationId)
-                .commit()
+            prefs.writeString(KEY_IDENTITY, b64e(identityKeyPair.serialize()))
+            prefs.writeString(KEY_REGISTRATION_ID, registrationId.toString())
         } else {
             identityKeyPair = IdentityKeyPair(b64d(identityRaw))
-            registrationId = prefs.getInt(KEY_REGISTRATION_ID, KeyHelper.generateRegistrationId(false))
+            registrationId = prefs.readString(KEY_REGISTRATION_ID, "")
+                .toIntOrNull()
+                ?: error("Encrypted Signal registration ID is missing")
         }
         ensurePreKeyMaterial()
     }
@@ -263,10 +261,18 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
     }
 
     private fun readJson(prefKey: String): JSONObject =
-        runCatching { JSONObject(prefs.getString(prefKey, "{}") ?: "{}") }.getOrDefault(JSONObject())
+        runCatching { JSONObject(prefs.readString(prefKey, "{}")) }.getOrDefault(JSONObject())
 
     private fun writeJson(prefKey: String, json: JSONObject) {
-        prefs.edit().putString(prefKey, json.toString()).apply()
+        prefs.writeString(prefKey, json.toString())
+    }
+
+    fun exportJson(): JSONObject {
+        val root = JSONObject()
+        STORED_KEYS.forEach { key ->
+            prefs.readString(key, "").takeIf(String::isNotBlank)?.let { root.put(key, it) }
+        }
+        return root
     }
 
     companion object {
@@ -282,9 +288,29 @@ class AndroidPersistentSignalStore(context: Context) : SignalProtocolStore {
         private const val DEFAULT_PRE_KEY_ID = 1
         private const val DEFAULT_SIGNED_PRE_KEY_ID = 1
         private const val DEFAULT_KYBER_PRE_KEY_ID = 1
+        private val STORED_KEYS = listOf(
+            KEY_IDENTITY,
+            KEY_REGISTRATION_ID,
+            KEY_IDENTITIES,
+            KEY_PRE_KEYS,
+            KEY_SIGNED_PRE_KEYS,
+            KEY_KYBER_PRE_KEYS,
+            KEY_SESSIONS,
+            KEY_SENDER_KEYS
+        )
 
-        private fun openPrefs(context: Context): SharedPreferences {
-            return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        fun clear(context: Context) {
+            AgentEncryptedPreferences(context.applicationContext, PREFS).clear()
+        }
+
+        fun importJson(context: Context, value: JSONObject) {
+            val preferences = AgentEncryptedPreferences(context.applicationContext, PREFS)
+            preferences.clear()
+            STORED_KEYS.forEach { key ->
+                value.optString(key).takeIf(String::isNotBlank)?.let {
+                    preferences.writeString(key, it)
+                }
+            }
         }
 
         private fun addressKey(address: SignalProtocolAddress): String =

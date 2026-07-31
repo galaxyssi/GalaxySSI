@@ -37,6 +37,12 @@ class AgentEncryptedPreferences(context: Context, private val preferencesName: S
     }
 
     @Synchronized
+    fun contains(key: String): Boolean {
+        val raw = preferences.getString(key, null) ?: return false
+        return AgentStorageCipher.decrypt(raw, associatedData(key)) != null
+    }
+
+    @Synchronized
     fun keys(): Set<String> = preferences.all.keys.toSet()
 
     @Synchronized
