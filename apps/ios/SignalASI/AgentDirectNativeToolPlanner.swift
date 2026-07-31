@@ -69,6 +69,47 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if isTimerGoal(lower),
+       let seconds = timerDurationSeconds(for: lower),
+       let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm), in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "set-timer",
+        target: "iOS Timer",
+        description: "Set timer for \(seconds) seconds",
+        input: actionAdapterInput(
+          target: "iOS Timer",
+          parameters: [
+            "label": goal.prefixString(200),
+            "timer_seconds": String(seconds)
+          ]
+        ),
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
+    if isAlarmGoal(lower),
+       let time = alarmClockTime(in: lower),
+       let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm), in: request) {
+      let hour = String(format: "%02d", time.hour)
+      let minute = String(format: "%02d", time.minute)
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "set-alarm",
+        target: "iOS Alarm",
+        description: "Set alarm for \(hour):\(minute)",
+        input: actionAdapterInput(
+          target: "iOS Alarm",
+          parameters: [
+            "hour": String(time.hour),
+            "minute": String(time.minute),
+            "message": goal.prefixString(200)
+          ]
+        ),
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
     if isVolumeSetGoal(lower),
        let percent = firstPercent(in: lower),
        let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.audioVolumeSet, in: request) {
@@ -352,6 +393,13 @@ enum AgentDirectNativeToolPlanner {
       AgentIOSVisibleCaptureNativeToolCatalog.defaultAudioDurationSeconds)
   }
 
+  private static func timerDurationSeconds(for lower: String) -> Int? {
+    guard let seconds = durationSecondsFromDigitUnit(in: lower) ?? durationSecondsFromSpokenUnit(in: lower) else {
+      return nil
+    }
+    return max(1, min(seconds, maximumTimerDurationSeconds))
+  }
+
   private static func durationSecondsFromDigitUnit(in value: String) -> Int? {
     let pattern = "([0-9]+)\\s*" +
       "(seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h|\u{79d2}\u{949f}?|\u{5206}\u{949f}?|\u{5c0f}\u{65f6})"
@@ -415,6 +463,49 @@ enum AgentDirectNativeToolPlanner {
       ["explain", "what is", "what are", "how does", "how do", "\u{89e3}\u{91ca}", "\u{4ecb}\u{7ecd}", "\u{8bf4}\u{660e}"]
     )
   }
+
+  private static func isTimerGoal(_ lower: String) -> Bool {
+    guard timerDurationSeconds(for: lower) != nil else { return false }
+    let hasTimerTerm = containsAny(lower, ["timer", "countdown", "\u{8ba1}\u{65f6}\u{5668}", "\u{5012}\u{8ba1}\u{65f6}"])
+    let hasStartAction = containsAny(
+      lower,
+      ["set", "start", "create", "begin", "run", "\u{8bbe}\u{7f6e}", "\u{5f00}\u{59cb}"]
+    )
+    return hasTimerTerm && hasStartAction
+  }
+
+  private static func isAlarmGoal(_ lower: String) -> Bool {
+    alarmClockTime(in: lower) != nil &&
+      containsAny(lower, ["set alarm", "alarm at", "alarm for", "\u{95f9}\u{949f}"])
+  }
+
+  private static func alarmClockTime(in value: String) -> (hour: Int, minute: Int)? {
+    guard let regex = try? NSRegularExpression(pattern: "\\b([0-9]{1,2}):([0-9]{2})\\b") else {
+      return nil
+    }
+    let nsValue = value as NSString
+    let range = NSRange(location: 0, length: nsValue.length)
+    guard let match = regex.firstMatch(in: value, range: range),
+          match.numberOfRanges >= 3,
+          let hour = Int(nsValue.substring(with: match.range(at: 1))),
+          let minute = Int(nsValue.substring(with: match.range(at: 2))),
+          (0...23).contains(hour),
+          (0...59).contains(minute) else {
+      return nil
+    }
+    return (hour, minute)
+  }
+
+  private static func actionAdapterInput(target: String, parameters: [String: String]) -> AgentMcpJSONObject {
+    [
+      "target": .string(target),
+      "parameters": .object(parameters.reduce(into: AgentMcpJSONObject()) { result, entry in
+        result[entry.key] = .string(entry.value)
+      })
+    ]
+  }
+
+  private static let maximumTimerDurationSeconds = 24 * 60 * 60
 
   private static func isFlashlightGoal(_ lower: String) -> Bool {
     containsAny(lower, ["flashlight", "torch", "\u{624b}\u{7535}\u{7b52}"])
