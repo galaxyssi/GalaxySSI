@@ -195,6 +195,7 @@
     A10000000000000000000310 /* AgentIOSSystemNativeSMSProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000310 /* AgentIOSSystemNativeSMSProvider.swift */; };
     A10000000000000000000280 /* AgentIOSHardwareNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */; };
     A10000000000000000000437 /* AgentIOSHardwareLocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000437 /* AgentIOSHardwareLocationProvider.swift */; };
+    A10000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift */; };
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
     A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */; };
@@ -480,6 +481,7 @@
     A20000000000000000000310 /* AgentIOSSystemNativeSMSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSSystemNativeSMSProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000437 /* AgentIOSHardwareLocationProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareLocationProvider.swift; sourceTree = "<group>"; };
+    A20000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHardwareSensorSampleProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureNativeTools.swift; sourceTree = "<group>"; };
@@ -748,6 +750,7 @@
         A20000000000000000000310 /* AgentIOSSystemNativeSMSProvider.swift */,
         A20000000000000000000280 /* AgentIOSHardwareNativeTools.swift */,
         A20000000000000000000437 /* AgentIOSHardwareLocationProvider.swift */,
+        A20000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift */,
         A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */,
         A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */,
         A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */,
@@ -1131,6 +1134,7 @@
         A10000000000000000000310 /* AgentIOSSystemNativeSMSProvider.swift in Sources */,
         A10000000000000000000280 /* AgentIOSHardwareNativeTools.swift in Sources */,
         A10000000000000000000437 /* AgentIOSHardwareLocationProvider.swift in Sources */,
+        A10000000000000000000438 /* AgentIOSHardwareSensorSampleProvider.swift in Sources */,
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,
         A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */,

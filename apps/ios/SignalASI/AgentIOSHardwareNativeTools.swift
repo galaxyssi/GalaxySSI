@@ -165,10 +165,28 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
         name: "iOS Accelerometer"
       ),
       sensorDescriptor(
+        available: manager.isDeviceMotionAvailable,
+        type: "game_rotation_vector",
+        androidType: 15,
+        name: "iOS Game Rotation Vector"
+      ),
+      sensorDescriptor(
+        available: manager.isDeviceMotionAvailable,
+        type: "gravity",
+        androidType: 9,
+        name: "iOS Gravity Estimate"
+      ),
+      sensorDescriptor(
         available: manager.isGyroAvailable,
         type: "gyroscope",
         androidType: 4,
         name: "iOS Gyroscope"
+      ),
+      sensorDescriptor(
+        available: manager.isDeviceMotionAvailable,
+        type: "linear_acceleration",
+        androidType: 10,
+        name: "iOS User Acceleration"
       ),
       sensorDescriptor(
         available: manager.isMagnetometerAvailable,
@@ -424,13 +442,27 @@ enum AgentIOSHardwareNativeToolCatalog {
   static let executorId = "signalasi.ios.hardware_native"
   static let hardwareStatusPermission = "signalasi.scope.ios_app_visible_hardware_status"
   static let appVisibilityBoundaryPermission = "signalasi.scope.ios_app_visibility_boundary"
+  static let sensorSamplePermission = "signalasi.scope.ios_coremotion_foreground_sample"
   static let foregroundLocationConsent = "signalasi.consent.location.foreground_once"
+  static let sensorSampleConsent = "signalasi.consent.sensor.foreground_once"
   static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
   static let flashlightControlConsent = "signalasi.consent.flashlight.control"
   static let installedAppsConsent = "signalasi.consent.installed_apps.query_visible"
   static let packageDetailConsent = "signalasi.consent.package_detail.query_visible"
   static let maxLocationTimeoutMillis: Int64 = 30_000
+  static let minSensorTimeoutMillis: Int64 = 250
+  static let maxSensorTimeoutMillis: Int64 = 5_000
   static let maxSensorResults = 64
+  static let maxSensorValues = 16
+  static let sensorSampleTypes = [
+    "accelerometer",
+    "game_rotation_vector",
+    "gravity",
+    "gyroscope",
+    "linear_acceleration",
+    "magnetic_field",
+    "rotation_vector"
+  ]
 
   static let executableToolIds: Set<String> = [
     batteryStatus,
@@ -439,6 +471,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     networkStatus,
     locationForegroundRead,
     sensorsList,
+    sensorSample,
     flashlightSet,
     bluetoothStatus,
     nfcStatus,
@@ -473,6 +506,8 @@ enum AgentIOSHardwareNativeToolCatalog {
     var consents: [AgentNativeConsentRequirement]
     var availability: AgentNativeToolAvailability
     var inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
+    var outputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
+    var timeoutMillis: Int64 = 15_000
     var idempotency: AgentNativeToolIdempotency = .nonIdempotent
   }
 
@@ -495,14 +530,10 @@ enum AgentIOSHardwareNativeToolCatalog {
         "limit": integerSchema(minimum: 1, maximum: Int64(maxSensorResults))
       ])
     ),
-    unavailableSpec(
+    sensorSampleSpec(
       sensorSample,
-      "Sample iOS sensor once",
-      "Requires a foreground CoreMotion sample executor and per-invocation consent.",
-      .medium,
-      ["sensors.non_health_allowlist"],
-      [],
-      ["signalasi.consent.sensor.foreground_once"]
+      "Read one foreground sensor sample",
+      "Reads one sample from an iOS CoreMotion non-health sensor allowlist and stops updates immediately."
     ),
     flashlightSpec(
       flashlightSet,
@@ -566,12 +597,12 @@ enum AgentIOSHardwareNativeToolCatalog {
       description: specification.description,
       location: .application,
       inputSchema: specification.inputSchema,
-      outputSchema: AgentNativeToolDescriptor.objectSchema(),
+      outputSchema: specification.outputSchema,
       risk: specification.risk,
       capabilities: specification.capabilities,
       requiredPermissions: specification.permissions,
       requiredConsents: specification.consents,
-      timeoutMillis: 15_000,
+      timeoutMillis: specification.timeoutMillis,
       idempotency: specification.idempotency,
       availability: specification.availability
     )
@@ -642,7 +673,76 @@ enum AgentIOSHardwareNativeToolCatalog {
       availability: .available,
       inputSchema: inputSchema(properties: [
         "timeout_ms": integerSchema(minimum: 1_000, maximum: maxLocationTimeoutMillis)
-      ])
+      ]),
+      timeoutMillis: maxLocationTimeoutMillis
+    )
+  }
+
+  private static func sensorSampleSpec(
+    _ id: String,
+    _ title: String,
+    _ description: String
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .medium,
+      capabilities: [
+        "sensors.foreground.single_sample",
+        "sensors.non_health_allowlist",
+        "sensors.no_background_stream"
+      ],
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: sensorSamplePermission,
+          title: "Foreground CoreMotion sample",
+          description: "Limits execution to one foreground iOS CoreMotion sensor sample; health sensors are outside the allowlist."
+        )
+      ],
+      consents: [
+        AgentNativeConsentRequirement(
+          id: sensorSampleConsent,
+          title: "Read one sensor sample while foreground",
+          description: "Requires confirmation before reading one bounded foreground CoreMotion sample."
+        )
+      ],
+      availability: AgentNativeToolAvailability(
+        status: .available,
+        reason: "iOS CoreMotion provides foreground-only samples for a bounded non-health sensor allowlist."
+      ),
+      inputSchema: inputSchema(
+        properties: [
+          "type": stringSchema(enumValues: sensorSampleTypes),
+          "timeout_ms": integerSchema(minimum: minSensorTimeoutMillis, maximum: maxSensorTimeoutMillis)
+        ],
+        required: ["type"]
+      ),
+      outputSchema: inputSchema(
+        properties: [
+          "type": stringSchema(enumValues: sensorSampleTypes),
+          "android_type": integerSchema(minimum: 1),
+          "values": arraySchema(
+            itemSchema: numberSchema(),
+            minItems: 1,
+            maxItems: Int64(maxSensorValues)
+          ),
+          "accuracy": integerSchema(),
+          "observed_at_epoch_ms": integerSchema(minimum: 0),
+          "capture_mode": stringSchema(enumValues: ["single_foreground_sample"]),
+          "background_capture": boolSchema()
+        ],
+        required: [
+          "type",
+          "android_type",
+          "values",
+          "accuracy",
+          "observed_at_epoch_ms",
+          "capture_mode",
+          "background_capture"
+        ]
+      ),
+      timeoutMillis: maxSensorTimeoutMillis
     )
   }
 
@@ -811,19 +911,54 @@ enum AgentIOSHardwareNativeToolCatalog {
     ]
   }
 
-  private static func stringSchema(maxLength: Int64) -> AgentMcpJSONObject {
+  private static func stringSchema(maxLength: Int64? = nil, enumValues: [String] = []) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = [
+      "type": .string("string")
+    ]
+    if let maxLength = maxLength {
+      schema["maxLength"] = .int(maxLength)
+    }
+    if !enumValues.isEmpty {
+      schema["enum"] = .array(enumValues.map(AgentMcpJSONValue.string))
+    }
+    return schema
+  }
+
+  private static func numberSchema() -> AgentMcpJSONObject {
     [
-      "type": .string("string"),
-      "maxLength": .int(maxLength)
+      "type": .string("number")
     ]
   }
 
-  private static func integerSchema(minimum: Int64, maximum: Int64) -> AgentMcpJSONObject {
-    [
-      "type": .string("integer"),
-      "minimum": .int(minimum),
-      "maximum": .int(maximum)
+  private static func integerSchema(minimum: Int64? = nil, maximum: Int64? = nil) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = [
+      "type": .string("integer")
     ]
+    if let minimum = minimum {
+      schema["minimum"] = .int(minimum)
+    }
+    if let maximum = maximum {
+      schema["maximum"] = .int(maximum)
+    }
+    return schema
+  }
+
+  private static func arraySchema(
+    itemSchema: AgentMcpJSONObject,
+    minItems: Int64? = nil,
+    maxItems: Int64? = nil
+  ) -> AgentMcpJSONObject {
+    var schema: AgentMcpJSONObject = [
+      "type": .string("array"),
+      "items": .object(itemSchema)
+    ]
+    if let minItems = minItems {
+      schema["minItems"] = .int(minItems)
+    }
+    if let maxItems = maxItems {
+      schema["maxItems"] = .int(maxItems)
+    }
+    return schema
   }
 
   private static func boolSchema() -> AgentMcpJSONObject {
@@ -841,15 +976,18 @@ enum AgentIOSHardwareNativeToolCatalog {
 struct AgentIOSHardwareNativeToolExecutor {
   var provider: AgentIOSHardwareStatusProviding
   var locationProvider: AgentIOSForegroundLocationProviding
+  var sensorSampleProvider: AgentIOSSensorSampleProviding
   var nowMillis: () -> Int64
 
   init(
     provider: AgentIOSHardwareStatusProviding = AgentIOSDefaultHardwareStatusProvider(),
     locationProvider: AgentIOSForegroundLocationProviding = AgentIOSDefaultForegroundLocationProvider(),
+    sensorSampleProvider: AgentIOSSensorSampleProviding = AgentIOSCoreMotionSensorSampleProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.provider = provider
     self.locationProvider = locationProvider
+    self.sensorSampleProvider = sensorSampleProvider
     self.nowMillis = nowMillis
   }
 
@@ -887,6 +1025,17 @@ struct AgentIOSHardwareNativeToolExecutor {
       return status(
         provider.sensorsList(limit: limit, nowMillis: now),
         "Device sensor metadata listed"
+      )
+    case AgentIOSHardwareNativeToolCatalog.sensorSample:
+      let type = boundedString(invocation.input["type"]?.stringValue, limit: 64)
+      let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxSensorTimeoutMillis
+      return sensorSampleProvider.sampleSensor(
+        type: type,
+        timeoutMillis: max(
+          AgentIOSHardwareNativeToolCatalog.minSensorTimeoutMillis,
+          min(AgentIOSHardwareNativeToolCatalog.maxSensorTimeoutMillis, timeout)
+        ),
+        nowMillis: now
       )
     case AgentIOSHardwareNativeToolCatalog.flashlightSet:
       return provider.setFlashlight(
