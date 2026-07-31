@@ -544,9 +544,9 @@ if (
 if (
   !/\.workspace-title h1\s*\{[^}]*font-size:\s*1\.12rem;[^}]*font-weight:\s*400;/s.test(styles)
   || !/\.empty-state h2\s*\{[^}]*font-size:\s*1\.12rem;[^}]*font-weight:\s*400;/s.test(styles)
-  || !/\.pairing-qr-surface img\s*\{[^}]*width:\s*min\(160px,\s*100%\);/s.test(styles)
+  || !/\.pairing-qr-surface img\s*\{[^}]*width:\s*min\(320px,\s*100%\);/s.test(styles)
 ) {
-  throw new Error("Desktop task headings must use the reduced regular weight and the Gateway QR must stay compact");
+  throw new Error("Desktop task headings must use the reduced regular weight and the Gateway QR must stay scannable");
 }
 
 if (
