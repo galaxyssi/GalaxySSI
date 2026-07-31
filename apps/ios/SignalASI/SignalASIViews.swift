@@ -867,7 +867,7 @@ struct VoiceSettingsView: View {
     permissionStatus = granted ? "" : "Microphone or speech permission is missing."
     guard granted else { return }
     do {
-      try speech.start(localeIdentifier: store.voiceSettings.preferredLocaleIdentifier)
+      try speech.start(settings: store.voiceSettings)
     } catch {
       permissionStatus = error.localizedDescription
     }

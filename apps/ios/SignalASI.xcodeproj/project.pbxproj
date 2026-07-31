@@ -88,6 +88,7 @@
     A10000000000000000000578 /* VoiceInteractionCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000578 /* VoiceInteractionCommand.swift */; };
     A10000000000000000000579 /* VoiceFeatureFlags.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000579 /* VoiceFeatureFlags.swift */; };
     A10000000000000000000580 /* VoiceInteractionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000580 /* VoiceInteractionCoordinator.swift */; };
+    A10000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -308,6 +309,7 @@
     A10000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift */; };
     A10000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift */; };
     A10000000000000000000581 /* VoiceInteractionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000581 /* VoiceInteractionCoordinatorTests.swift */; };
+    A10000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */; };
     A10000000000000000000203 /* AgentIOSNativeToolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000203 /* AgentIOSNativeToolTests.swift */; };
     A10000000000000000000204 /* AgentWorkspacePlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000204 /* AgentWorkspacePlanTests.swift */; };
     A10000000000000000000205 /* AgentTeamDelegationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000205 /* AgentTeamDelegationTests.swift */; };
@@ -556,6 +558,7 @@
     A20000000000000000000578 /* VoiceInteractionCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionCommand.swift; sourceTree = "<group>"; };
     A20000000000000000000579 /* VoiceFeatureFlags.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceFeatureFlags.swift; sourceTree = "<group>"; };
     A20000000000000000000580 /* VoiceInteractionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionCoordinator.swift; sourceTree = "<group>"; };
+    A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSpeechCaptureCoordinatorBridge.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
@@ -699,6 +702,7 @@
     A20000000000000000000573 /* GlobalAutonomousReplanPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAutonomousReplanPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000575 /* GlobalAgentDeliberationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAgentDeliberationStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000581 /* VoiceInteractionCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceInteractionCoordinatorTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSpeechCaptureCoordinatorBridgeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
@@ -924,6 +928,7 @@
         A20000000000000000000578 /* VoiceInteractionCommand.swift */,
         A20000000000000000000579 /* VoiceFeatureFlags.swift */,
         A20000000000000000000580 /* VoiceInteractionCoordinator.swift */,
+        A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */,
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
         A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */,
@@ -1105,6 +1110,7 @@
         A20000000000000000000220 /* AgentMediaNetworkPolicyTests.swift */,
         A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */,
         A20000000000000000000581 /* VoiceInteractionCoordinatorTests.swift */,
+        A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */,
         A20000000000000000000222 /* AgentDeviceProfileTests.swift */,
         A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */,
         A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
@@ -1397,6 +1403,7 @@
         A10000000000000000000578 /* VoiceInteractionCommand.swift in Sources */,
         A10000000000000000000579 /* VoiceFeatureFlags.swift in Sources */,
         A10000000000000000000580 /* VoiceInteractionCoordinator.swift in Sources */,
+        A10000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift in Sources */,
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
         A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */,
@@ -1585,6 +1592,7 @@
         A10000000000000000000220 /* AgentMediaNetworkPolicyTests.swift in Sources */,
         A10000000000000000000221 /* VoiceRealtimeHealthTests.swift in Sources */,
         A10000000000000000000581 /* VoiceInteractionCoordinatorTests.swift in Sources */,
+        A10000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift in Sources */,
         A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */,
         A10000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift in Sources */,
         A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,
