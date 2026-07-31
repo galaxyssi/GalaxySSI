@@ -51,6 +51,21 @@ enum AgentDirectNativeToolPlanner {
       return blocked
     }
 
+    if let handoff = systemAppHandoff(for: lower),
+       let descriptor = descriptor(AgentNativeToolAgentActionAdapter.defaultToolId(.openApp), in: request) {
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: handoff.idPrefix,
+        target: handoff.target,
+        description: "Open app \(handoff.target)",
+        input: actionAdapterInput(
+          target: handoff.target,
+          parameters: ["package": handoff.bundleId]
+        ),
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
     if isCameraCaptureGoal(lower),
        let descriptor = descriptor(AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture, in: request) {
       return nativeAction(
@@ -468,6 +483,73 @@ enum AgentDirectNativeToolPlanner {
       lower,
       ["explain", "what is", "what are", "how does", "how do", "\u{89e3}\u{91ca}", "\u{4ecb}\u{7ecd}", "\u{8bf4}\u{660e}"]
     )
+  }
+
+  private static func systemAppHandoff(for lower: String) -> SystemAppHandoff? {
+    if containsAny(
+      lower,
+      [
+        "open gallery", "open photos", "open photo library",
+        "\u{6253}\u{5f00}\u{76f8}\u{518c}", "\u{6253}\u{5f00}\u{7167}\u{7247}"
+      ]
+    ) {
+      return SystemAppHandoff(
+        idPrefix: "open-photos",
+        target: "Photos",
+        bundleId: "com.apple.mobileslideshow"
+      )
+    }
+    if containsAny(lower, ["open browser", "open safari", "launch safari"]) {
+      return SystemAppHandoff(
+        idPrefix: "open-safari",
+        target: "Safari",
+        bundleId: "com.apple.mobilesafari"
+      )
+    }
+    if containsAny(
+      lower,
+      [
+        "open contacts", "open address book",
+        "\u{6253}\u{5f00}\u{901a}\u{8baf}\u{5f55}", "\u{6253}\u{5f00}\u{8054}\u{7cfb}\u{4eba}"
+      ]
+    ) {
+      return SystemAppHandoff(
+        idPrefix: "open-contacts",
+        target: "Contacts",
+        bundleId: "com.apple.MobileAddressBook"
+      )
+    }
+    if containsAny(
+      lower,
+      ["open files", "open file manager", "open documents", "\u{6253}\u{5f00}\u{6587}\u{4ef6}"]
+    ) {
+      return SystemAppHandoff(
+        idPrefix: "open-files",
+        target: "Files",
+        bundleId: "com.apple.DocumentsApp"
+      )
+    }
+    if containsAny(lower, ["open messages", "open sms"]) {
+      return SystemAppHandoff(
+        idPrefix: "open-messages",
+        target: "Messages",
+        bundleId: "com.apple.MobileSMS"
+      )
+    }
+    if containsAny(lower, ["open phone", "open dialer"]) {
+      return SystemAppHandoff(
+        idPrefix: "open-phone",
+        target: "Phone",
+        bundleId: "com.apple.mobilephone"
+      )
+    }
+    return nil
+  }
+
+  private struct SystemAppHandoff {
+    var idPrefix: String
+    var target: String
+    var bundleId: String
   }
 
   private static func blockedSensitiveAction(goal: String, lower: String) -> AgentAction? {

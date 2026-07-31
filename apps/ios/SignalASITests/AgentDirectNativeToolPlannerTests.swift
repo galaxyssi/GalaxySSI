@@ -93,6 +93,29 @@ extension SignalASIStoreTests {
     XCTAssertEqual(blockedPlan.routeRationale, "A deterministic iOS safety block matched this protected operation.")
     XCTAssertTrue(blockedPlan.validation.valid)
 
+    let photos = try XCTUnwrap(action("Open photos"))
+    XCTAssertEqual(photos.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))
+    XCTAssertEqual(photos.target, "Photos")
+    XCTAssertEqual(try inputObject(photos)["target"] as? String, "Photos")
+    XCTAssertEqual(try inputParameters(photos)["package"] as? String, "com.apple.mobileslideshow")
+    XCTAssertFalse(photos.requiresConfirmation)
+
+    let safari = try XCTUnwrap(action("Open browser"))
+    XCTAssertEqual(safari.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))
+    XCTAssertEqual(safari.target, "Safari")
+    XCTAssertEqual(try inputParameters(safari)["package"] as? String, "com.apple.mobilesafari")
+
+    let files = try XCTUnwrap(action("Open files"))
+    XCTAssertEqual(files.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))
+    XCTAssertEqual(files.target, "Files")
+    XCTAssertEqual(try inputParameters(files)["package"] as? String, "com.apple.DocumentsApp")
+
+    let messages = try XCTUnwrap(action("Open messages"))
+    XCTAssertEqual(messages.parameters["tool_id"], AgentNativeToolAgentActionAdapter.defaultToolId(.openApp))
+    XCTAssertEqual(messages.target, "Messages")
+    XCTAssertEqual(try inputParameters(messages)["package"] as? String, "com.apple.MobileSMS")
+    XCTAssertNil(action("Pick image"))
+
     let camera = try XCTUnwrap(action("Open camera and take a photo"))
     XCTAssertEqual(camera.parameters["tool_id"], AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture)
     XCTAssertEqual(try inputObject(camera)["facing"] as? String, "back")
@@ -183,6 +206,12 @@ extension SignalASIStoreTests {
       goal: "Set a fifteen second timer",
       screen: screen,
       nativeTools: requestTools.filter { $0.id != AgentNativeToolAgentActionAdapter.defaultToolId(.setAlarm) }
+    )))
+
+    XCTAssertNil(AgentDirectNativeToolPlanner.action(for: AgentPlanRequest(
+      goal: "Open photos",
+      screen: screen,
+      nativeTools: requestTools.filter { $0.id != AgentNativeToolAgentActionAdapter.defaultToolId(.openApp) }
     )))
   }
 
