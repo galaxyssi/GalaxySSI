@@ -52,6 +52,11 @@ enum AgentIOSURLSessionWebError: Error {
   case responseTooLarge(Int64, Int64)
 }
 
+private enum AgentIOSURLSessionWebContentPolicy {
+  case fetchText
+  case download
+}
+
 private final class AgentIOSURLSessionNoRedirectDelegate: NSObject, URLSessionTaskDelegate {
   func urlSession(
     _ session: URLSession,
@@ -163,12 +168,14 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
   var implementationId: String
   var transport: AgentIOSURLSessionWebTransporting
   var browserSessions: AgentIOSURLSessionBrowserSessionStore
+  var downloadWriter: AgentIOSWebMediaDownloadWriting
   var nowMillis: () -> Int64
 
   init(
     transport: AgentIOSURLSessionWebTransporting = AgentIOSDefaultURLSessionWebTransport(),
     implementationId: String = "signalasi.ios.urlsession_web_media",
     browserSessions: AgentIOSURLSessionBrowserSessionStore? = nil,
+    downloadWriter: AgentIOSWebMediaDownloadWriting = AgentIOSFileWebMediaDownloadWriter(),
     nowMillis: @escaping () -> Int64 = {
       Int64((Date().timeIntervalSince1970 * 1_000).rounded())
     }
@@ -176,19 +183,15 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     self.transport = transport
     self.implementationId = implementationId
     self.browserSessions = browserSessions ?? AgentIOSURLSessionBrowserSessionStore()
+    self.downloadWriter = downloadWriter
     self.nowMillis = nowMillis
   }
 
   func availability(operation: AgentIOSWebMediaOperation) -> AgentNativeToolAvailability {
     switch operation {
     case .contentExtract, .webSearch, .webOpen, .browserRender, .browserSessionCreate, .browserSessionNavigate,
-         .browserSessionClose, .httpRequest, .webHead, .webFetch:
+         .browserSessionClose, .httpRequest, .fileDownload, .webHead, .webFetch, .webDownload:
       return .available
-    case .fileDownload, .webDownload:
-      return AgentNativeToolAvailability(
-        status: .requiresSetup,
-        reason: "iOS Web downloads require a user-authorized content destination provider."
-      )
     case .ocrRecognizeContent:
       return AgentNativeToolAvailability(
         status: .requiresSetup,
@@ -222,12 +225,14 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       return executeWeb(operation: operation, input: input, invocation: invocation, method: method)
     case .webOpen, .browserRender:
       return executeWeb(operation: operation, input: input, invocation: invocation, method: .get)
+    case .fileDownload, .webDownload:
+      return executeDownload(operation: operation, input: input, invocation: invocation)
     case .contentExtract:
       return AgentNativeToolExecutionResult.failure(
         code: "unexpected_provider_call",
         message: "content.extract is handled by the iOS WebMedia executor."
       )
-    case .fileDownload, .webDownload, .ocrRecognizeContent:
+    case .ocrRecognizeContent:
       return AgentNativeToolExecutionResult.failure(
         code: "web_media_provider_unavailable",
         message: "The iOS URLSession WebMedia provider does not implement \(operation.rawValue).",
@@ -430,6 +435,49 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     }
   }
 
+  private func executeDownload(
+    operation: AgentIOSWebMediaOperation,
+    input: AgentMcpJSONObject,
+    invocation: AgentNativeToolInvocation
+  ) -> AgentNativeToolExecutionResult {
+    let destination = string(input, "destination_content_uri", limit: 4_096)
+    do {
+      try downloadWriter.validate(destinationContentURI: destination)
+      let resource = try requestResource(
+        requestedURL: try validatedPublicHTTPSURL(urlString(input)),
+        method: .get,
+        maxBodyBytes: try boundedMaxBytes(input, maximum: AgentIOSWebMediaNativeToolCatalog.maxDownloadBytes),
+        timeoutMillis: try boundedTimeout(input, invocation: invocation),
+        invocation: invocation,
+        contentPolicy: .download
+      )
+      let written = try downloadWriter.write(
+        destinationContentURI: destination,
+        contentType: resource.contentType,
+        data: resource.body
+      )
+      var output = commonOutput(resource)
+      output["destination_content_uri"] = .string(written.contentURI)
+      output["size_bytes"] = .int(written.bytesWritten)
+      output["sha256"] = .string(sha256(resource.body))
+      var resultMetadata = metadata(operation: operation, method: .get)
+      resultMetadata["writer_implementation"] = .string(downloadWriter.implementationId)
+      resultMetadata["auto_execute"] = .bool(false)
+      resultMetadata["destination_scope"] = .string("file_url_user_authorized")
+      return AgentNativeToolExecutionResult.success(
+        output: output,
+        message: "Public HTTPS resource downloaded to selected iOS file URL",
+        metadata: resultMetadata
+      )
+    } catch let error as AgentIOSWebMediaDownloadWriteError {
+      return downloadFailure(error)
+    } catch let error as AgentIOSURLSessionWebError {
+      return failure(error)
+    } catch {
+      return failure(.transportFailed(error.localizedDescription))
+    }
+  }
+
   private func executeWeb(
     operation: AgentIOSWebMediaOperation,
     input: AgentMcpJSONObject,
@@ -612,7 +660,8 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     method: AgentIOSURLSessionWebRequest.Method,
     maxBodyBytes: Int64,
     timeoutMillis: Int64,
-    invocation: AgentNativeToolInvocation
+    invocation: AgentNativeToolInvocation,
+    contentPolicy: AgentIOSURLSessionWebContentPolicy = .fetchText
   ) throws -> AgentIOSURLSessionWebResource {
     let requestedAt = invocation.startedAtEpochMillis
     let deadline = min(requestedAt + timeoutMillis, invocation.deadlineEpochMillis)
@@ -654,7 +703,7 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       }
       let contentType = mediaType(rawContentType)
       if method == .get {
-        guard !contentType.isEmpty, isFetchContentType(contentType) else {
+        guard !contentType.isEmpty, isAllowedContentType(contentType, policy: contentPolicy) else {
           throw AgentIOSURLSessionWebError.unsupportedContentType(contentType.isEmpty ? "missing" : contentType)
         }
       }
@@ -743,9 +792,12 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     return max(1, min(requested, remaining))
   }
 
-  private func boundedMaxBytes(_ input: AgentMcpJSONObject) throws -> Int64 {
-    let requested = input["max_bytes"]?.intValue ?? AgentIOSWebMediaNativeToolCatalog.maxFetchBytes
-    guard requested >= 1, requested <= AgentIOSWebMediaNativeToolCatalog.maxFetchBytes else {
+  private func boundedMaxBytes(
+    _ input: AgentMcpJSONObject,
+    maximum: Int64 = AgentIOSWebMediaNativeToolCatalog.maxFetchBytes
+  ) throws -> Int64 {
+    let requested = input["max_bytes"]?.intValue ?? maximum
+    guard requested >= 1, requested <= maximum else {
       throw AgentIOSURLSessionWebError.invalidLimit
     }
     return requested
@@ -1007,6 +1059,23 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
     }
   }
 
+  private func downloadFailure(_ error: AgentIOSWebMediaDownloadWriteError) -> AgentNativeToolExecutionResult {
+    switch error {
+    case .destinationRequired:
+      return failure("invalid_destination_content_uri", "Downloads require a selected file:// destination")
+    case .unsupportedDestinationScheme:
+      return failure("unsupported_destination_content_uri", "iOS WebMedia downloads currently require a file:// destination URI")
+    case .invalidDestination:
+      return failure("invalid_destination_content_uri", "Download destination is invalid")
+    case .writeFailed(let message):
+      return failure(
+        "content_uri_unavailable",
+        message.isEmpty ? "Selected destination cannot be opened for writing" : message,
+        retryable: true
+      )
+    }
+  }
+
   private func failure(
     _ code: String,
     _ message: String,
@@ -1071,6 +1140,34 @@ struct AgentIOSURLSessionWebMediaToolProvider: AgentIOSWebMediaToolProviding {
       "application/ecmascript",
       "application/rss+xml",
       "application/atom+xml"
+    ].contains(contentType)
+  }
+
+  private func isAllowedContentType(_ contentType: String, policy: AgentIOSURLSessionWebContentPolicy) -> Bool {
+    switch policy {
+    case .fetchText:
+      return isFetchContentType(contentType)
+    case .download:
+      return isDownloadContentType(contentType)
+    }
+  }
+
+  private func isDownloadContentType(_ contentType: String) -> Bool {
+    if ["text/", "image/", "audio/", "video/"].contains(where: contentType.hasPrefix) {
+      return true
+    }
+    if isFetchContentType(contentType) {
+      return true
+    }
+    return [
+      "application/pdf",
+      "application/zip",
+      "application/gzip",
+      "application/octet-stream",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation"
     ].contains(contentType)
   }
 

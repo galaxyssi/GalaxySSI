@@ -472,8 +472,16 @@ enum AgentIOSWebMediaNativeToolCatalog {
       metadata["network"] = "not_required"
     case .fileDownload, .webDownload:
       metadata["android_executor_compat"] = androidContentExecutorId
-      metadata["network_policy"] = "public_https_pinned_dns_v1"
-      metadata["destination_scope"] = "user_authorized_content_uri"
+      if let urlSessionProvider = provider as? AgentIOSURLSessionWebMediaToolProvider {
+        metadata["network_policy"] = "public_https_urlsession_revalidated_v1"
+        metadata["redirect_policy"] = "manual_revalidate_each_hop"
+        metadata["dns_resolution"] = "urlsession_managed"
+        metadata["destination_scope"] = "file_url_user_authorized"
+        metadata["writer_implementation"] = urlSessionProvider.downloadWriter.implementationId
+      } else {
+        metadata["network_policy"] = "public_https_pinned_dns_v1"
+        metadata["destination_scope"] = "user_authorized_content_uri"
+      }
       metadata["auto_execute"] = "false"
     case .ocrRecognizeContent:
       metadata["android_executor_compat"] = androidContentExecutorId

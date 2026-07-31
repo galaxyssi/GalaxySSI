@@ -517,6 +517,101 @@ extension SignalASIStoreTests {
     XCTAssertEqual(result.error?.details["content_type"], .string("image/png"))
   }
 
+  func testAgentIOSURLSessionWebMediaProviderDownloadsToFileURLDestination() throws {
+    final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
+      var requests: [AgentIOSURLSessionWebRequest] = []
+      let body: Data
+
+      init(body: Data) {
+        self.body = body
+      }
+
+      func execute(_ request: AgentIOSURLSessionWebRequest) throws -> AgentIOSURLSessionWebResponse {
+        requests.append(request)
+        return AgentIOSURLSessionWebResponse(
+          statusCode: 200,
+          finalURL: request.url,
+          headers: [
+            "content-type": "application/pdf",
+            "content-length": String(body.count)
+          ],
+          body: body,
+          retrievedAtEpochMillis: 1_100
+        )
+      }
+    }
+
+    let body = Data("%PDF-1.7 SignalASI".utf8)
+    let transport = FakeURLSessionWebTransport(body: body)
+    let provider = AgentIOSURLSessionWebMediaToolProvider(transport: transport, nowMillis: { 1_000 })
+    let definitions = AgentIOSWebMediaNativeToolCatalog.definitions(provider: provider)
+    let downloadDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebMediaNativeToolCatalog.webDownload })
+    XCTAssertEqual(downloadDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(downloadDefinition.provenanceMetadata["destination_scope"], "file_url_user_authorized")
+    XCTAssertEqual(downloadDefinition.provenanceMetadata["writer_implementation"], "signalasi.ios.file_url_download_writer")
+
+    let directory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+    let destination = directory.appendingPathComponent("signalasi-web-download-\(UUID().uuidString).pdf")
+    defer { try? FileManager.default.removeItem(at: destination) }
+    let context = AgentNativeToolInvocationContext(
+      idempotencyKey: "download-1",
+      grantedPermissions: [
+        AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission,
+        AgentIOSWebMediaNativeToolCatalog.contentUriPermission
+      ],
+      grantedConsents: [
+        AgentIOSWebMediaNativeToolCatalog.publicWebConsent,
+        AgentIOSWebMediaNativeToolCatalog.webDownloadConsent,
+        AgentIOSWebMediaNativeToolCatalog.contentUriWriteConsent
+      ]
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
+    )
+
+    let result = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.webDownload,
+      input: [
+        "url": .string("https://signalasi.example/file.pdf"),
+        "destination_content_uri": .string(destination.absoluteString)
+      ],
+      context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+    )
+    let unsupported = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.fileDownload,
+      input: [
+        "url": .string("https://signalasi.example/file.pdf"),
+        "destination_content_uri": .string("content://downloads/file.pdf")
+      ],
+      context: AgentNativeToolInvocationContext(
+        idempotencyKey: "download-2",
+        grantedPermissions: [
+          AgentIOSWebMediaNativeToolCatalog.publicHttpsNetworkPermission,
+          AgentIOSWebMediaNativeToolCatalog.contentUriPermission
+        ],
+        grantedConsents: [
+          AgentIOSWebMediaNativeToolCatalog.publicWebConsent,
+          AgentIOSWebMediaNativeToolCatalog.webDownloadConsent,
+          AgentIOSWebMediaNativeToolCatalog.contentUriWriteConsent
+        ]
+      ),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["destination_content_uri"], .string(destination.absoluteString))
+    XCTAssertEqual(result.output["size_bytes"], .int(Int64(body.count)))
+    XCTAssertEqual(result.output["sha256"], .string(SignalASIAttachmentPayloadBuilder.sha256(body)))
+    XCTAssertEqual(result.metadata["writer_implementation"], .string("signalasi.ios.file_url_download_writer"))
+    XCTAssertEqual(result.metadata["auto_execute"], .bool(false))
+    let writtenBody = try XCTUnwrap(FileManager.default.contents(atPath: destination.path))
+    XCTAssertEqual(writtenBody, body)
+    XCTAssertEqual(unsupported.status, .failed)
+    XCTAssertEqual(unsupported.error?.code, "unsupported_destination_content_uri")
+    XCTAssertEqual(transport.requests.count, 1)
+  }
+
   func testAgentIOSURLSessionWebMediaProviderManagesBrowserSessions() throws {
     final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
       var requests: [AgentIOSURLSessionWebRequest] = []
