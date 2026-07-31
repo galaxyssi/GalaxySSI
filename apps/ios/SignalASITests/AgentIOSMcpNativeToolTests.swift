@@ -150,4 +150,164 @@ extension SignalASIStoreTests {
     XCTAssertTrue(unavailableProvider.invokedOperations.isEmpty)
   }
 
+  func testAgentIOSMcpClientNativeProviderListsConnectionsAndGatesReadyTools() throws {
+    let root = try temporaryDirectory("ios-mcp-native-provider")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now: () -> Int64 = { 20_000 }
+    let mcpRegistry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: now)
+    let connection = try mcpRegistry.addRemote(
+      displayName: "Relay MCP",
+      endpoint: "https://mcp.example/rpc",
+      authProfile: try AgentMcpAuthProfile(.none),
+      catalogId: "signalasi.mcp.relay",
+      id: "relay-remote"
+    )
+    _ = try mcpRegistry.markConnected(connection.id, toolIds: ["relay.status", "relay.switch"])
+    let provider = AgentIOSMcpClientNativeProvider(
+      registry: mcpRegistry,
+      packageRootURL: root.appendingPathComponent("mcp", isDirectory: true),
+      nowMillis: now
+    )
+    let definitions = AgentMcpNativeTools.definitions(provider: provider)
+    let listTools = try XCTUnwrap(definitions.first { $0.id == AgentMcpNativeTools.listTools })
+    let nativeRegistry = try AgentNativeToolRegistry(nowMillis: now).registerExecutables(
+      AgentPhoneNativeToolCatalog.mcpExecutableDefinitions(provider: provider)
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentMcpNativeTools.mcpHostPermission]
+    )
+
+    let connections = nativeRegistry.invoke(
+      AgentMcpNativeTools.listConnections,
+      input: [:],
+      context: context
+    )
+
+    XCTAssertEqual(listTools.availabilityProvider.current().status, .available)
+    XCTAssertTrue(connections.isSuccess)
+    XCTAssertEqual(connections.output["count"], .int(1))
+    XCTAssertEqual(connections.output["ready_connection_count"], .int(1))
+    let listed = try XCTUnwrap(connections.output["connections"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(listed["id"], .string("relay-remote"))
+    XCTAssertEqual(listed["catalog_id"], .string("signalasi.mcp.relay"))
+    XCTAssertEqual(listed["auth_state"], .string("not_required"))
+    XCTAssertEqual(listed["state"], .string("connected"))
+    XCTAssertEqual(listed["callable"], .bool(true))
+    XCTAssertEqual(listed["endpoint"]?.objectValue?["host"], .string("mcp.example"))
+    XCTAssertNil(listed["endpoint"]?.objectValue?["path"])
+    XCTAssertEqual(listed["tools"]?.arrayValue, [.string("relay.status"), .string("relay.switch")])
+
+    let emptyProvider = AgentIOSMcpClientNativeProvider(nowMillis: now)
+    let emptyDefinitions = AgentMcpNativeTools.definitions(provider: emptyProvider)
+    let emptyConnections = try XCTUnwrap(emptyDefinitions.first { $0.id == AgentMcpNativeTools.listConnections })
+    let emptyListTools = try XCTUnwrap(emptyDefinitions.first { $0.id == AgentMcpNativeTools.listTools })
+    let emptyRegistry = try AgentNativeToolRegistry(nowMillis: now).registerExecutables(
+      AgentPhoneNativeToolCatalog.mcpExecutableDefinitions(provider: emptyProvider)
+    )
+    let emptyListResult = emptyRegistry.invoke(
+      AgentMcpNativeTools.listConnections,
+      input: [:],
+      context: context
+    )
+    let gatedTools = emptyRegistry.invoke(
+      AgentMcpNativeTools.listTools,
+      input: ["connection_id": .string("missing")],
+      context: context
+    )
+
+    XCTAssertEqual(emptyConnections.availabilityProvider.current().status, .available)
+    XCTAssertEqual(emptyListTools.availabilityProvider.current().status, .requiresSetup)
+    XCTAssertTrue(emptyListResult.isSuccess)
+    XCTAssertEqual(emptyListResult.output["connections"]?.arrayValue, [])
+    XCTAssertEqual(gatedTools.status, .unavailable)
+    XCTAssertEqual(gatedTools.error?.code, "tool_unavailable")
+    XCTAssertEqual(gatedTools.error?.retryable, true)
+  }
+
+  func testAgentIOSMcpClientNativeProviderInvokesClientManagerToolsAndCalls() throws {
+    let root = try temporaryDirectory("ios-mcp-native-provider-call")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let now: () -> Int64 = { 30_000 }
+    let repository = AgentMcpPackageRepository(rootDirectory: root)
+    let mcpRegistry = AgentMcpRegistry(InMemoryAgentMcpStore(), nowMillis: now)
+    let connection = try mcpRegistry.addRemote(
+      displayName: "Relay MCP",
+      endpoint: "https://mcp.example/rpc",
+      authProfile: try AgentMcpAuthProfile(.none),
+      id: "relay-remote-call"
+    )
+    let networking = FakeMcpStreamableHTTPNetworking([
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-06-18","serverInfo":{"name":"relay-mcp","version":"1.0.0"},"capabilities":{"tools":{}}}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(statusCode: 200, headers: [:], body: ""),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"relay.status","title":"Relay status","inputSchema":{"type":"object"},"annotations":{"readOnlyHint":true}}]}}"#
+      ),
+      AgentMcpStreamableHTTPResponse(
+        statusCode: 200,
+        headers: ["Content-Type": "application/json"],
+        body: #"{"jsonrpc":"2.0","id":3,"result":{"content":[{"type":"text","text":"online"}],"structuredContent":{"online":true}}}"#
+      )
+    ])
+    let manager = AgentMcpClientManager(
+      registry: mcpRegistry,
+      packageRepository: repository,
+      remoteSessionFactory: { sessionConnection, headers in
+        XCTAssertEqual(sessionConnection.id, connection.id)
+        XCTAssertTrue(headers.isEmpty)
+        let transport = try AgentMcpStreamableHTTPTransport(
+          endpoint: sessionConnection.endpoint,
+          requestHeaders: headers,
+          networking: networking
+        )
+        return AgentMcpRemoteSession(transport: transport)
+      },
+      nowMillis: now
+    )
+    let provider = AgentIOSMcpClientNativeProvider(
+      registry: mcpRegistry,
+      clientManager: manager,
+      packageRepository: repository,
+      nowMillis: now
+    )
+    let nativeRegistry = try AgentNativeToolRegistry(nowMillis: now).registerExecutables(
+      AgentPhoneNativeToolCatalog.mcpExecutableDefinitions(provider: provider)
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentMcpNativeTools.mcpHostPermission]
+    )
+
+    let tools = nativeRegistry.invoke(
+      AgentMcpNativeTools.listTools,
+      input: ["connection_id": .string(connection.id)],
+      context: context
+    )
+    let call = nativeRegistry.invoke(
+      AgentMcpNativeTools.callTool,
+      input: [
+        "connection_id": .string(connection.id),
+        "tool_name": .string("relay.status"),
+        "arguments": .object([:])
+      ],
+      context: context
+    )
+
+    XCTAssertTrue(tools.isSuccess)
+    XCTAssertEqual(tools.output["tool_count"], .int(1))
+    XCTAssertEqual(tools.output["tools"]?.arrayValue?.first?.objectValue?["name"], .string("relay.status"))
+    XCTAssertTrue(call.isSuccess)
+    XCTAssertEqual(call.output["connection_id"], .string(connection.id))
+    XCTAssertEqual(call.output["tool_name"], .string("relay.status"))
+    XCTAssertEqual(call.output["structured_content"]?.objectValue?["online"], .bool(true))
+    XCTAssertEqual(call.metadata["protocol"], .string("mcp"))
+    XCTAssertEqual(call.metadata["implementation"], .string("signalasi.ios.mcp_client_manager"))
+    XCTAssertEqual(call.metadata["mcp_permission_decision"], .string("allowed_low_risk"))
+    XCTAssertEqual(networking.requests.count, 4)
+  }
+
 }
