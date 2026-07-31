@@ -72,6 +72,42 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
   }
 
+  func testEnsureVerifiedFileReturnsInstalledModelForNativeLoad() throws {
+    let env = try Environment()
+    let manager = env.manager(requestId: "download-native")
+    let source = try env.writeTemporaryFile(contents: "trusted-model")
+    let model = try env.testModel(for: source)
+
+    _ = try manager.enqueue(model)
+    _ = try manager.recordCompleted(model, temporaryFileURL: source)
+
+    XCTAssertEqual(try manager.ensureVerifiedFile(for: model), manager.downloadedFileURL(for: model))
+  }
+
+  func testEnsureVerifiedFileInvalidatesTamperedModelBeforeNativeLoad() throws {
+    let env = try Environment()
+    let manager = env.manager(requestId: "download-tampered")
+    let source = try env.writeTemporaryFile(contents: "trusted-model")
+    let model = try env.testModel(for: source)
+
+    _ = try manager.enqueue(model)
+    _ = try manager.recordCompleted(model, temporaryFileURL: source)
+    let installed = manager.downloadedFileURL(for: model)
+    let priorModified = try FileManager.default.attributesOfItem(atPath: installed.path)[.modificationDate] as? Date
+    try Data("corrupt-model".utf8).write(to: installed)
+    if let priorModified {
+      try FileManager.default.setAttributes([.modificationDate: priorModified], ofItemAtPath: installed.path)
+    }
+
+    XCTAssertThrowsError(try manager.ensureVerifiedFile(for: model)) { error in
+      XCTAssertEqual(
+        error as? VoiceWhisperModelManagerError,
+        .installFailed(modelId: model.id, failure: .sha256Mismatch)
+      )
+    }
+    XCTAssertFalse(FileManager.default.fileExists(atPath: installed.path))
+  }
+
   func testDeleteRemovesDownloadedFileAndState() throws {
     let env = try Environment()
     let manager = env.manager(requestId: "download-4")
@@ -159,11 +195,28 @@ final class VoiceWhisperModelManagerTests: XCTestCase {
       return url
     }
 
+    func writeTemporaryFile(contents: String) throws -> URL {
+      let url = root.appendingPathComponent(UUID().uuidString)
+      try Data(contents.utf8).write(to: url)
+      return url
+    }
+
     func writeLegacyModelFile(_ model: VoiceWhisperModelProfile, bytes: Int) throws -> URL {
       try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
       let url = models.appendingPathComponent(model.fileName, isDirectory: false)
       try Data(repeating: 7, count: bytes).write(to: url)
       return url
+    }
+
+    func testModel(for fileURL: URL) throws -> VoiceWhisperModelProfile {
+      VoiceWhisperModelProfile(
+        id: "base",
+        displayName: "Base",
+        fileName: "ggml-base.bin",
+        sizeLabel: "142 MB",
+        expectedSizeBytes: Int64(try Data(contentsOf: fileURL).count),
+        sha256: try VoiceWhisperModelVerifier.sha256(fileURL: fileURL)
+      )
     }
   }
 }

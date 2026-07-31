@@ -2,6 +2,7 @@ import Foundation
 
 struct VoiceLocalWhisperRuntimeRequest: Equatable {
   var model: VoiceWhisperModelProfile
+  var modelFileURL: URL?
   var language: String
   var samples: [Float]
   var sampleRateHz: Int

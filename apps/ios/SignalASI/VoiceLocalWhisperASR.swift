@@ -11,6 +11,7 @@ final class VoiceLocalWhisperASR {
   private let runtime: VoiceLocalWhisperRuntime
   private let decoder: VoiceWhisperAudioDecoding
   private let modelAvailable: (VoiceWhisperModelProfile) -> Bool
+  private let modelFileProvider: (VoiceWhisperModelProfile) throws -> URL?
   private let trace: VoiceLocalWhisperTraceRecorder
   private let elapsedClock: () -> Int64
   private let lock = NSLock()
@@ -19,13 +20,22 @@ final class VoiceLocalWhisperASR {
   init(
     runtime: VoiceLocalWhisperRuntime = UnavailableVoiceLocalWhisperRuntime(),
     decoder: VoiceWhisperAudioDecoding = VoiceWhisperAudioDecoder(),
-    modelAvailable: @escaping (VoiceWhisperModelProfile) -> Bool = { VoiceWhisperModelCatalog.isAvailable($0) },
+    modelManager: VoiceWhisperModelManager = VoiceWhisperModelManager(),
+    modelAvailable: ((VoiceWhisperModelProfile) -> Bool)? = nil,
+    modelFileProvider: ((VoiceWhisperModelProfile) throws -> URL?)? = nil,
     elapsedClock: @escaping () -> Int64 = VoiceLocalWhisperASR.defaultElapsedClock,
     trace: @escaping VoiceLocalWhisperTraceRecorder = VoiceLocalWhisperASR.defaultTraceRecorder
   ) {
     self.runtime = runtime
     self.decoder = decoder
-    self.modelAvailable = modelAvailable
+    self.modelAvailable = modelAvailable ?? { modelManager.isAvailable($0) }
+    if let modelFileProvider {
+      self.modelFileProvider = modelFileProvider
+    } else if modelAvailable != nil {
+      self.modelFileProvider = { _ in nil }
+    } else {
+      self.modelFileProvider = { try modelManager.ensureVerifiedFile(for: $0) }
+    }
     self.elapsedClock = elapsedClock
     self.trace = trace
   }
@@ -68,11 +78,13 @@ final class VoiceLocalWhisperASR {
       if coldStart {
         record(traceId, VoiceTraceEvents.asrModelLoadStarted, coldStartAttributes)
       }
+      let modelFileURL = try modelFileProvider(model)
       let inferenceStartedAtNs = elapsedClock()
       record(traceId, VoiceTraceEvents.whisperFullStarted, audioAttributes)
       let rawText = try await runtime.transcribe(
         VoiceLocalWhisperRuntimeRequest(
           model: model,
+          modelFileURL: modelFileURL,
           language: runtimeLanguage,
           samples: audio.samples,
           sampleRateHz: audio.sampleRateHz,
