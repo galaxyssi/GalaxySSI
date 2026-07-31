@@ -169,14 +169,19 @@ enum AgentIOSHardwareNativeToolCatalog {
 
   static let executorId = "signalasi.ios.hardware_native"
   static let hardwareStatusPermission = "signalasi.scope.ios_app_visible_hardware_status"
+  static let appVisibilityBoundaryPermission = "signalasi.scope.ios_app_visibility_boundary"
   static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
+  static let installedAppsConsent = "signalasi.consent.installed_apps.query_visible"
+  static let packageDetailConsent = "signalasi.consent.package_detail.query_visible"
 
   static let executableToolIds: Set<String> = [
     batteryStatus,
     powerStatus,
     storageStatus,
     networkStatus,
-    bluetoothPairingHandoff
+    bluetoothPairingHandoff,
+    installedAppsList,
+    packageDetail
   ]
 
   static var orderedToolIds: [String] {
@@ -204,6 +209,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     var permissions: [AgentNativePermissionRequirement]
     var consents: [AgentNativeConsentRequirement]
     var availability: AgentNativeToolAvailability
+    var inputSchema: AgentMcpJSONObject = AgentNativeToolDescriptor.objectSchema()
   }
 
   private static let specifications: [Specification] = [
@@ -279,23 +285,27 @@ enum AgentIOSHardwareNativeToolCatalog {
       ["NFCReaderUsageDescription"],
       []
     ),
-    unavailableSpec(
+    appVisibilityBoundarySpec(
       installedAppsList,
       "List visible apps",
-      "iOS cannot enumerate all installed apps; only declared URL-scheme or document handoff visibility can be modeled.",
-      .medium,
+      "Returns a structured iOS app visibility boundary result; iOS cannot enumerate all installed apps for normal apps.",
       ["apps.query_visible"],
-      [],
-      ["signalasi.consent.installed_apps.query_visible"]
+      [installedAppsConsent],
+      inputSchema: inputSchema(properties: [
+        "query": stringSchema(maxLength: 160),
+        "limit": integerSchema(minimum: 1, maximum: 100)
+      ])
     ),
-    unavailableSpec(
+    appVisibilityBoundarySpec(
       packageDetail,
       "Read visible app detail",
-      "iOS cannot inspect arbitrary package metadata; only declared integrations can be modeled.",
-      .medium,
+      "Returns a structured iOS package visibility boundary result; iOS cannot inspect arbitrary package metadata.",
       ["apps.package_detail"],
-      [],
-      ["signalasi.consent.package_detail.query_visible"]
+      [packageDetailConsent],
+      inputSchema: inputSchema(
+        properties: ["package_name": stringSchema(maxLength: 255)],
+        required: ["package_name"]
+      )
     )
   ]
 
@@ -306,7 +316,7 @@ enum AgentIOSHardwareNativeToolCatalog {
       title: specification.title,
       description: specification.description,
       location: .application,
-      inputSchema: AgentNativeToolDescriptor.objectSchema(),
+      inputSchema: specification.inputSchema,
       outputSchema: AgentNativeToolDescriptor.objectSchema(),
       risk: specification.risk,
       capabilities: specification.capabilities,
@@ -382,6 +392,38 @@ enum AgentIOSHardwareNativeToolCatalog {
     )
   }
 
+  private static func appVisibilityBoundarySpec(
+    _ id: String,
+    _ title: String,
+    _ description: String,
+    _ capabilities: Set<String>,
+    _ consents: [String],
+    inputSchema: AgentMcpJSONObject
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .medium,
+      capabilities: capabilities,
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: appVisibilityBoundaryPermission,
+          title: "iOS app visibility boundary",
+          description: "Limits execution to declared app visibility metadata; full installed-app inventory is not exposed."
+        )
+      ],
+      consents: consents.map {
+        AgentNativeConsentRequirement(id: $0, title: $0.replacingOccurrences(of: "signalasi.consent.", with: ""))
+      },
+      availability: AgentNativeToolAvailability(
+        status: .available,
+        reason: "iOS exposes only declared app visibility; full installed-app inventory and arbitrary package metadata are unavailable."
+      ),
+      inputSchema: inputSchema
+    )
+  }
+
   private static func unavailableSpec(
     _ id: String,
     _ title: String,
@@ -412,6 +454,33 @@ enum AgentIOSHardwareNativeToolCatalog {
         reason: "This Android hardware native tool needs a dedicated iOS 15+ framework executor before it can run."
       )
     )
+  }
+
+  private static func inputSchema(
+    properties: [String: AgentMcpJSONObject],
+    required: [String] = []
+  ) -> AgentMcpJSONObject {
+    [
+      "type": .string("object"),
+      "properties": .object(properties.mapValues { .object($0) }),
+      "required": .array(required.map(AgentMcpJSONValue.string)),
+      "additionalProperties": .bool(false)
+    ]
+  }
+
+  private static func stringSchema(maxLength: Int64) -> AgentMcpJSONObject {
+    [
+      "type": .string("string"),
+      "maxLength": .int(maxLength)
+    ]
+  }
+
+  private static func integerSchema(minimum: Int64, maximum: Int64) -> AgentMcpJSONObject {
+    [
+      "type": .string("integer"),
+      "minimum": .int(minimum),
+      "maximum": .int(maximum)
+    ]
   }
 
   private static let noExtraConsent = AgentNativeConsentRequirement(
@@ -471,6 +540,10 @@ struct AgentIOSHardwareNativeToolExecutor {
         message: "Bluetooth settings handoff prepared; iOS requires user-controlled pairing.",
         metadata: ["handoff_required": .bool(true), "background_capture": .bool(false)]
       )
+    case AgentIOSHardwareNativeToolCatalog.installedAppsList:
+      return installedAppsBoundary(invocation, nowMillis: now)
+    case AgentIOSHardwareNativeToolCatalog.packageDetail:
+      return packageDetailBoundary(invocation, nowMillis: now)
     default:
       return AgentNativeToolExecutionResult.failure(
         code: "ios_hardware_tool_unavailable",
@@ -485,5 +558,74 @@ struct AgentIOSHardwareNativeToolExecutor {
       message: message,
       metadata: ["background_capture": .bool(false), "identifiers_included": .bool(false)]
     )
+  }
+
+  private func installedAppsBoundary(
+    _ invocation: AgentNativeToolInvocation,
+    nowMillis: Int64
+  ) -> AgentNativeToolExecutionResult {
+    let query = boundedString(invocation.input["query"]?.stringValue, limit: 160)
+    let limit = max(1, min(100, Int(invocation.input["limit"]?.intValue ?? 20)))
+    return AgentNativeToolExecutionResult.success(
+      output: [
+        "apps": .array([]),
+        "result_count": .int(0),
+        "total_observed": .int(0),
+        "query": .string(query),
+        "limit": .int(Int64(limit)),
+        "scope": .string("ios_declared_app_visibility_only"),
+        "full_inventory_available": .bool(false),
+        "declared_scheme_probe_required": .bool(true),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ],
+      message: "iOS app visibility boundary returned no full installed-app inventory.",
+      metadata: appVisibilityMetadata(invocation)
+    )
+  }
+
+  private func packageDetailBoundary(
+    _ invocation: AgentNativeToolInvocation,
+    nowMillis: Int64
+  ) -> AgentNativeToolExecutionResult {
+    let packageName = boundedString(invocation.input["package_name"]?.stringValue, limit: 255)
+    guard !packageName.isEmpty else {
+      return AgentNativeToolExecutionResult.failure(
+        code: "invalid_package_name",
+        message: "Package name is required for iOS app visibility boundary lookup."
+      )
+    }
+    return AgentNativeToolExecutionResult.success(
+      output: [
+        "package_name": .string(packageName),
+        "visible": .bool(false),
+        "label": .null,
+        "version_name": .null,
+        "version_code": .null,
+        "enabled": .null,
+        "system_app": .null,
+        "launchable": .null,
+        "requested_permissions": .array([]),
+        "scope": .string("ios_declared_app_visibility_only"),
+        "metadata_available": .bool(false),
+        "full_package_metadata_available": .bool(false),
+        "observed_at_epoch_ms": .int(nowMillis)
+      ],
+      message: "iOS app visibility boundary cannot inspect arbitrary package metadata.",
+      metadata: appVisibilityMetadata(invocation)
+    )
+  }
+
+  private func appVisibilityMetadata(_ invocation: AgentNativeToolInvocation) -> AgentMcpJSONObject {
+    [
+      "background_capture": .bool(false),
+      "identifiers_included": .bool(false),
+      "package_inventory_exposed": .bool(false),
+      "platform_boundary": .string("ios_app_visibility_boundary"),
+      "tool_id": .string(invocation.descriptor.id)
+    ]
+  }
+
+  private func boundedString(_ value: String?, limit: Int) -> String {
+    String((value ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(limit))
   }
 }
