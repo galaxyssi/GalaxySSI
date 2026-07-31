@@ -82,6 +82,22 @@ enum AgentDirectNativeToolPlanner {
       )
     }
 
+    if let contact = contactUpsertDraft(goal: goal, lower: lower),
+       let descriptor = descriptor(AgentIOSSystemNativeToolCatalog.contactsUpsert, in: request) {
+      var input: AgentMcpJSONObject = ["display_name": .string(contact.displayName)]
+      if !contact.phoneNumber.isEmpty {
+        input["phone_number"] = .string(contact.phoneNumber)
+      }
+      return nativeAction(
+        descriptor: descriptor,
+        idPrefix: "create-contact",
+        target: "Contacts",
+        description: "Create contact",
+        input: input,
+        responseLanguage: responseLanguage(for: goal)
+      )
+    }
+
     if isCameraCaptureGoal(lower),
        let descriptor = descriptor(AgentIOSVisibleCaptureNativeToolCatalog.cameraCapture, in: request) {
       return nativeAction(
@@ -501,6 +517,59 @@ enum AgentDirectNativeToolPlanner {
     )
   }
 
+  private static func contactUpsertDraft(goal: String, lower: String) -> ContactUpsertDraft? {
+    let raw: Substring
+    if lower.hasPrefix("add contact ") {
+      raw = goal.dropFirst("add contact ".count)
+    } else if lower.hasPrefix("create contact ") {
+      raw = goal.dropFirst("create contact ".count)
+    } else {
+      return nil
+    }
+    var nameSource = String(raw)
+    let parsed = contactPhone(in: nameSource)
+    if let rawPhone = parsed.rawPhone {
+      nameSource = nameSource.replacingOccurrences(of: rawPhone, with: " ")
+    }
+    let displayName = cleanContactName(nameSource)
+    guard !displayName.isEmpty else { return nil }
+    return ContactUpsertDraft(
+      displayName: displayName.prefixString(160),
+      phoneNumber: (parsed.number ?? "").prefixString(64)
+    )
+  }
+
+  private static func contactPhone(in value: String) -> (number: String?, rawPhone: String?) {
+    guard let range = value.range(
+      of: #"\+?[0-9][0-9\s().-]{2,}[0-9]"#,
+      options: .regularExpression
+    ) else {
+      return (nil, nil)
+    }
+    let rawPhone = String(value[range])
+    var normalized = rawPhone.trimmingCharacters(in: .whitespacesAndNewlines)
+    for removable in [" ", "-", "(", ")", "."] {
+      normalized = normalized.replacingOccurrences(of: removable, with: "")
+    }
+    return (normalized.isEmpty ? nil : normalized, rawPhone)
+  }
+
+  private static func cleanContactName(_ value: String) -> String {
+    var clean = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    for removable in [" with number ", " phone ", " number ", " tel ", ":", ","] {
+      clean = clean.replacingOccurrences(of: removable, with: " ", options: .caseInsensitive)
+    }
+    return clean
+      .components(separatedBy: .whitespacesAndNewlines)
+      .filter { !$0.isEmpty }
+      .joined(separator: " ")
+  }
+
+  private struct ContactUpsertDraft {
+    var displayName: String
+    var phoneNumber: String
+  }
+
   private static func urlHandoff(goal: String, lower: String) -> URLHandoff? {
     if lower.hasPrefix("open url ") || lower.hasPrefix("open website ") {
       let raw = lower.hasPrefix("open url ")
@@ -609,6 +678,13 @@ enum AgentDirectNativeToolPlanner {
         idPrefix: "open-contacts",
         target: "Contacts",
         bundleId: "com.apple.MobileAddressBook"
+      )
+    }
+    if containsAny(lower, ["open calendar", "\u{6253}\u{5f00}\u{65e5}\u{5386}"]) {
+      return SystemAppHandoff(
+        idPrefix: "open-calendar",
+        target: "Calendar",
+        bundleId: "com.apple.mobilecal"
       )
     }
     if containsAny(
