@@ -209,6 +209,7 @@
     A10000000000000000000677 /* AgentPermissionRevocationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */; };
     A10000000000000000000679 /* AgentTaskSupervisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000679 /* AgentTaskSupervisor.swift */; };
     A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000681 /* AgentActionNotificationModels.swift */; };
+    A10000000000000000000683 /* AgentPlanEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000683 /* AgentPlanEditor.swift */; };
     A10000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift */; };
     A10000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift */; };
     A10000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift */; };
@@ -387,6 +388,7 @@
     A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */; };
     A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000680 /* AgentTaskSupervisorTests.swift */; };
     A10000000000000000000682 /* AgentActionNotificationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000682 /* AgentActionNotificationTests.swift */; };
+    A10000000000000000000684 /* AgentPlanEditorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000684 /* AgentPlanEditorTests.swift */; };
     A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000207 /* AgentConversationRuntimeTests.swift */; };
     A10000000000000000000208 /* AgentMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000208 /* AgentMemoryTests.swift */; };
     A10000000000000000000209 /* GlobalMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000209 /* GlobalMemoryTests.swift */; };
@@ -606,6 +608,7 @@
     A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionRevocationCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000679 /* AgentTaskSupervisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskSupervisor.swift; sourceTree = "<group>"; };
     A20000000000000000000681 /* AgentActionNotificationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionNotificationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000683 /* AgentPlanEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanEditor.swift; sourceTree = "<group>"; };
     A20000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceNativeToolExecutor.swift; sourceTree = "<group>"; };
     A20000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceNativeToolStateStore.swift; sourceTree = "<group>"; };
     A20000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityStatusSnapshotProvider.swift; sourceTree = "<group>"; };
@@ -853,6 +856,7 @@
     A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionRevocationCoordinatorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000680 /* AgentTaskSupervisorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskSupervisorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000682 /* AgentActionNotificationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentActionNotificationTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000684 /* AgentPlanEditorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPlanEditorTests.swift; sourceTree = "<group>"; };
     A20000000000000000000207 /* AgentConversationRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000208 /* AgentMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000209 /* GlobalMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalMemoryTests.swift; sourceTree = "<group>"; };
@@ -1006,6 +1010,7 @@
         A20000000000000000000677 /* AgentPermissionRevocationCoordinator.swift */,
         A20000000000000000000679 /* AgentTaskSupervisor.swift */,
         A20000000000000000000681 /* AgentActionNotificationModels.swift */,
+        A20000000000000000000683 /* AgentPlanEditor.swift */,
         A20000000000000000000425 /* AgentExecutionLoopTimeline.swift */,
         A20000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift */,
         A20000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift */,
@@ -1278,6 +1283,7 @@
         A20000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift */,
         A20000000000000000000680 /* AgentTaskSupervisorTests.swift */,
         A20000000000000000000682 /* AgentActionNotificationTests.swift */,
+        A20000000000000000000684 /* AgentPlanEditorTests.swift */,
         A20000000000000000000483 /* AgentNoReplyReasonTests.swift */,
         A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */,
         A20000000000000000000207 /* AgentConversationRuntimeTests.swift */,
@@ -1554,6 +1560,7 @@
         A10000000000000000000677 /* AgentPermissionRevocationCoordinator.swift in Sources */,
         A10000000000000000000679 /* AgentTaskSupervisor.swift in Sources */,
         A10000000000000000000681 /* AgentActionNotificationModels.swift in Sources */,
+        A10000000000000000000683 /* AgentPlanEditor.swift in Sources */,
         A10000000000000000000425 /* AgentExecutionLoopTimeline.swift in Sources */,
         A10000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift in Sources */,
         A10000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift in Sources */,
@@ -1833,6 +1840,7 @@
         A10000000000000000000678 /* AgentPermissionRevocationCoordinatorTests.swift in Sources */,
         A10000000000000000000680 /* AgentTaskSupervisorTests.swift in Sources */,
         A10000000000000000000682 /* AgentActionNotificationTests.swift in Sources */,
+        A10000000000000000000684 /* AgentPlanEditorTests.swift in Sources */,
         A10000000000000000000483 /* AgentNoReplyReasonTests.swift in Sources */,
         A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */,
         A10000000000000000000207 /* AgentConversationRuntimeTests.swift in Sources */,
