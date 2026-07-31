@@ -1341,6 +1341,7 @@ extension SignalASIStoreTests {
     XCTAssertTrue(manifest.identityRotatedOnReset)
     XCTAssertTrue(included.contains("identity"))
     XCTAssertTrue(included.contains("memory"))
+    XCTAssertTrue(included.contains("memory_deletion_index"))
     XCTAssertTrue(included.contains("personal_asi"))
     XCTAssertTrue(excluded.contains("contacts"))
     XCTAssertTrue(excluded.contains("chat_history"))
@@ -1366,6 +1367,7 @@ extension SignalASIStoreTests {
     XCTAssertTrue(included.contains("transcript"))
     XCTAssertTrue(included.contains("home_assistant"))
     XCTAssertTrue(Set(manifest.secretStoreIds).contains("identity"))
+    XCTAssertTrue(Set(manifest.secretStoreIds).contains("memory_deletion_index"))
     XCTAssertTrue(Set(manifest.secretStoreIds).contains("home_assistant"))
     XCTAssertTrue(excluded.contains("permission_grants"))
     XCTAssertTrue(excluded.contains("run_start_receipts"))
@@ -1391,6 +1393,7 @@ extension SignalASIStoreTests {
         "root.friend_requests",
         "root.messages",
         "agent.memory",
+        "agent.memory_deletion_index",
         "agent.knowledge",
         "agent.tasks",
         "agent.transcript",

@@ -109,6 +109,7 @@ final class SignalASIStore: ObservableObject {
   @Published var agentTaskBudget: AgentTaskBudget {
     didSet { save() }
   }
+  @Published private(set) var agentMemoryItems: [AgentMemoryItem]
   @Published private(set) var customDeviceConnectors: [CustomDeviceConnector] {
     didSet { save() }
   }
@@ -188,13 +189,16 @@ final class SignalASIStore: ObservableObject {
 
   private let defaults: UserDefaults
   private let secrets: SignalASISecretStore
+  private let memoryDeletionIndex: UserDefaultsAgentMemoryDeletionIndex
   private let storageKey = "signalasi-ios-state-v1"
   private let identityPrivateKeyAccount = "identity.p256.private"
   private let homeAssistantAccessTokenAccount = "home_assistant.access_token"
+  private static let agentMemoryStorageKey = "signalasi_agent_memory_v2"
 
   init(defaults: UserDefaults = .standard, secrets: SignalASISecretStore = KeychainSecretStore.shared) {
     self.defaults = defaults
     self.secrets = secrets
+    self.memoryDeletionIndex = UserDefaultsAgentMemoryDeletionIndex(defaults: defaults)
     if let data = defaults.data(forKey: storageKey),
        let state = try? JSONDecoder.signalASI.decode(PersistedState.self, from: data) {
       profile = state.profile
@@ -208,6 +212,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = state.displaySettings
       agentSafetySettings = state.agentSafetySettings
       agentTaskBudget = state.agentTaskBudget
+      agentMemoryItems = SignalASIStore.loadAgentMemoryItems(defaults: defaults, key: Self.agentMemoryStorageKey)
       customDeviceConnectors = state.customDeviceConnectors.map { connector in
         CustomDeviceConnector(
           id: connector.id,
@@ -242,6 +247,7 @@ final class SignalASIStore: ObservableObject {
       displaySettings = .default
       agentSafetySettings = .default
       agentTaskBudget = .default
+      agentMemoryItems = []
       customDeviceConnectors = []
       homeAssistantSettings = .default
       modelPlannerSettings = .default
@@ -426,9 +432,49 @@ final class SignalASIStore: ObservableObject {
     secrets.delete(account: identityPrivateKeyAccount)
     secrets.delete(account: homeAssistantAccessTokenAccount)
     defaults.removeObject(forKey: storageKey)
+    defaults.removeObject(forKey: Self.agentMemoryStorageKey)
+    memoryDeletionIndex.clear()
     FileAgentDataDisclosureStore.destroyPersistentStore()
     resetToFreshState()
     save()
+  }
+
+  func exportAgentMemoryItems() -> [AgentMemoryItem] {
+    AgentMemoryCausalDeletionPolicy.filterBackupItems(
+      agentMemoryItems,
+      tombstones: memoryDeletionIndex.snapshot()
+    )
+  }
+
+  func agentMemoryDeletionTombstones() -> [AgentMemoryDeletionTombstone] {
+    memoryDeletionIndex.snapshot()
+  }
+
+  @discardableResult
+  func replaceAgentMemoryItems(_ items: [AgentMemoryItem]) -> Int {
+    agentMemoryItems = SignalASIStore.normalizedAgentMemoryItems(
+      memoryDeletionIndex.filterBackupItems(items)
+    )
+    saveAgentMemoryItems()
+    return agentMemoryItems.count
+  }
+
+  @discardableResult
+  func deleteAgentMemory(id itemId: String, deletedAtMillis: Int64 = AgentMemoryClock.nowMillis()) -> Bool {
+    let cleanId = itemId.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let target = agentMemoryItems.first(where: { $0.id == cleanId }) else { return false }
+    let relatedIds = AgentMemoryCausalDeletionPolicy.lineageIds(in: agentMemoryItems, target: target)
+    let kept = agentMemoryItems.filter { item in
+      !relatedIds.contains(item.id) &&
+        (target.key.isEmpty || item.kind != target.kind || item.key != target.key)
+    }
+    let keptIds = Set(kept.map(\.id))
+    let deleted = agentMemoryItems.filter { !keptIds.contains($0.id) }
+    guard !deleted.isEmpty else { return false }
+    memoryDeletionIndex.record(deletedItems: deleted, deletedAtMillis: deletedAtMillis)
+    agentMemoryItems = SignalASIStore.normalizedAgentMemoryItems(kept)
+    saveAgentMemoryItems()
+    return true
   }
 
   func updateVoiceSettings(_ mutate: (inout VoiceSettings) -> Void) {
@@ -806,6 +852,8 @@ final class SignalASIStore: ObservableObject {
       ),
       agentData: SignalASIBackupAgentData(
         serverLinks: serverLinks,
+        memory: exportAgentMemoryItems(),
+        memoryDeletionIndex: memoryDeletionIndex.exportTombstones(),
         voiceSettings: voiceSettings,
         languagePolicy: languagePolicy,
         displaySettings: displaySettings,
@@ -849,6 +897,18 @@ final class SignalASIStore: ObservableObject {
       try applyCustomDeviceConnectors(payload.agentData.customDeviceConnectors)
       try applyHomeAssistantSettings(payload.agentData.homeAssistantSettings)
       modelPlannerSettings = payload.agentData.modelPlannerSettings
+      let mergedDeletionIndex = memoryDeletionIndex.mergeBackup(payload.agentData.memoryDeletionIndex)
+      if let memory = payload.agentData.memory {
+        agentMemoryItems = SignalASIStore.normalizedAgentMemoryItems(
+          AgentMemoryCausalDeletionPolicy.filterRestoredItems(memory, tombstones: mergedDeletionIndex)
+        )
+        saveAgentMemoryItems()
+      } else if payload.agentData.memoryDeletionIndex != nil {
+        agentMemoryItems = SignalASIStore.normalizedAgentMemoryItems(
+          AgentMemoryCausalDeletionPolicy.filterRestoredItems(agentMemoryItems, tombstones: mergedDeletionIndex)
+        )
+        saveAgentMemoryItems()
+      }
     }
     save()
   }
@@ -964,6 +1024,7 @@ final class SignalASIStore: ObservableObject {
     displaySettings = .default
     agentSafetySettings = .default
     agentTaskBudget = .default
+    agentMemoryItems = []
     customDeviceConnectors = []
     homeAssistantSettings = .default
     modelPlannerSettings = .default
@@ -1076,6 +1137,34 @@ final class SignalASIStore: ObservableObject {
     if let data = try? JSONEncoder.signalASI.encode(state) {
       defaults.set(data, forKey: storageKey)
     }
+  }
+
+  private func saveAgentMemoryItems() {
+    guard let data = try? AgentMemoryJSONCodec.encodeItems(
+      SignalASIStore.normalizedAgentMemoryItems(agentMemoryItems)
+    ) else {
+      return
+    }
+    defaults.set(data, forKey: Self.agentMemoryStorageKey)
+  }
+
+  private static func loadAgentMemoryItems(defaults: UserDefaults, key: String) -> [AgentMemoryItem] {
+    guard let data = defaults.data(forKey: key),
+          let decoded = try? AgentMemoryJSONCodec.decodeItems(data) else {
+      return []
+    }
+    return normalizedAgentMemoryItems(decoded)
+  }
+
+  private static func normalizedAgentMemoryItems(_ items: [AgentMemoryItem]) -> [AgentMemoryItem] {
+    var byId: [String: AgentMemoryItem] = [:]
+    for item in items where !item.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      byId[item.id] = item
+    }
+    return Array(byId.values)
+      .sorted { $0.timestampMillis < $1.timestampMillis }
+      .suffix(AgentMemoryPolicy.maxItems)
+      .map { $0 }
   }
 
   private static func makeProfile(secrets: SignalASISecretStore, account: String) -> SignalASIProfile {
