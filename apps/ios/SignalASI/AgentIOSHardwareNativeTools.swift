@@ -447,13 +447,18 @@ enum AgentIOSHardwareNativeToolCatalog {
   static let sensorSampleConsent = "signalasi.consent.sensor.foreground_once"
   static let userVisibleHandoffConsent = "signalasi.consent.ios_settings_handoff"
   static let flashlightControlConsent = "signalasi.consent.flashlight.control"
+  static let bluetoothDiscoveryConsent = "signalasi.consent.bluetooth.discovery.foreground_once"
   static let installedAppsConsent = "signalasi.consent.installed_apps.query_visible"
   static let packageDetailConsent = "signalasi.consent.package_detail.query_visible"
   static let maxLocationTimeoutMillis: Int64 = 30_000
   static let minSensorTimeoutMillis: Int64 = 250
   static let maxSensorTimeoutMillis: Int64 = 5_000
+  static let minBluetoothDiscoveryMillis: Int64 = 1_000
+  static let maxBluetoothDiscoveryMillis: Int64 = 15_000
   static let maxSensorResults = 64
   static let maxSensorValues = 16
+  static let maxBluetoothResults = 32
+  static let maxBluetoothNameChars: Int64 = 160
   static let sensorSampleTypes = [
     "accelerometer",
     "game_rotation_vector",
@@ -474,6 +479,7 @@ enum AgentIOSHardwareNativeToolCatalog {
     sensorSample,
     flashlightSet,
     bluetoothStatus,
+    bluetoothDiscoveryForeground,
     nfcStatus,
     bluetoothPairingHandoff,
     installedAppsList,
@@ -545,14 +551,10 @@ enum AgentIOSHardwareNativeToolCatalog {
       "Read Bluetooth status",
       "Reads iOS CoreBluetooth permission/framework boundary without device identifiers or discovery."
     ),
-    unavailableSpec(
+    bluetoothDiscoverySpec(
       bluetoothDiscoveryForeground,
       "Discover Bluetooth devices once",
-      "Requires a foreground CoreBluetooth scan executor and per-invocation consent.",
-      .high,
-      ["bluetooth.discovery.foreground"],
-      ["NSBluetoothAlwaysUsageDescription"],
-      ["signalasi.consent.bluetooth.discovery.foreground_once"]
+      "Runs one bounded foreground CoreBluetooth LE scan, returns app-scoped observations, then stops scanning."
     ),
     handoffSpec(
       bluetoothPairingHandoff,
@@ -835,6 +837,72 @@ enum AgentIOSHardwareNativeToolCatalog {
     )
   }
 
+  private static func bluetoothDiscoverySpec(
+    _ id: String,
+    _ title: String,
+    _ description: String
+  ) -> Specification {
+    Specification(
+      id: id,
+      title: title,
+      description: description,
+      risk: .high,
+      capabilities: [
+        "bluetooth.discovery.foreground_bounded",
+        "bluetooth.discovery.no_background_receiver",
+        "bluetooth.discovery.ios_app_scoped_identifiers"
+      ],
+      permissions: [
+        AgentNativePermissionRequirement(
+          id: "NSBluetoothAlwaysUsageDescription",
+          title: "Discover nearby Bluetooth devices",
+          description: "iOS CoreBluetooth permission for one bounded foreground LE scan; hardware MAC addresses and bonded inventory are not exposed."
+        )
+      ],
+      consents: [
+        AgentNativeConsentRequirement(
+          id: bluetoothDiscoveryConsent,
+          title: "Discover nearby Bluetooth devices once",
+          description: "Requires confirmation before running one bounded foreground Bluetooth scan."
+        )
+      ],
+      availability: AgentNativeToolAvailability(
+        status: .available,
+        reason: "iOS CoreBluetooth supports foreground LE scans with app-scoped peripheral identifiers and no bonded-device inventory."
+      ),
+      inputSchema: inputSchema(properties: [
+        "timeout_ms": integerSchema(minimum: minBluetoothDiscoveryMillis, maximum: maxBluetoothDiscoveryMillis),
+        "limit": integerSchema(minimum: 1, maximum: Int64(maxBluetoothResults))
+      ]),
+      outputSchema: inputSchema(
+        properties: [
+          "devices": arraySchema(
+            itemSchema: bluetoothDeviceSchema(),
+            maxItems: Int64(maxBluetoothResults)
+          ),
+          "result_count": integerSchema(minimum: 0, maximum: Int64(maxBluetoothResults)),
+          "completed": boolSchema(),
+          "timed_out": boolSchema(),
+          "truncated": boolSchema(),
+          "observed_at_epoch_ms": integerSchema(minimum: 0),
+          "capture_mode": stringSchema(enumValues: ["single_foreground_discovery"]),
+          "background_capture": boolSchema()
+        ],
+        required: [
+          "devices",
+          "result_count",
+          "completed",
+          "timed_out",
+          "truncated",
+          "observed_at_epoch_ms",
+          "capture_mode",
+          "background_capture"
+        ]
+      ),
+      timeoutMillis: maxBluetoothDiscoveryMillis
+    )
+  }
+
   private static func appVisibilityBoundarySpec(
     _ id: String,
     _ title: String,
@@ -911,6 +979,32 @@ enum AgentIOSHardwareNativeToolCatalog {
     ]
   }
 
+  private static func bluetoothDeviceSchema() -> AgentMcpJSONObject {
+    inputSchema(
+      properties: [
+        "address": stringSchema(maxLength: 64),
+        "name": nullable(stringSchema(maxLength: maxBluetoothNameChars)),
+        "bond_state": stringSchema(enumValues: ["none", "bonding", "bonded", "unknown"]),
+        "device_type": stringSchema(enumValues: ["classic", "low_energy", "dual", "unknown"]),
+        "identifier_scope": stringSchema(enumValues: ["ios_app_scoped_uuid"])
+      ],
+      required: ["address", "name", "bond_state", "device_type", "identifier_scope"]
+    )
+  }
+
+  private static func nullable(_ schema: AgentMcpJSONObject) -> AgentMcpJSONObject {
+    var nullableSchema = schema
+    if case .string(let type)? = nullableSchema["type"] {
+      nullableSchema["type"] = .array([.string(type), .string("null")])
+    } else if case .array(let types)? = nullableSchema["type"] {
+      let existing = types.compactMap(\.strictStringValue)
+      nullableSchema["type"] = .array((existing + ["null"]).map(AgentMcpJSONValue.string))
+    } else {
+      nullableSchema["type"] = .array([.string("null")])
+    }
+    return nullableSchema
+  }
+
   private static func stringSchema(maxLength: Int64? = nil, enumValues: [String] = []) -> AgentMcpJSONObject {
     var schema: AgentMcpJSONObject = [
       "type": .string("string")
@@ -977,17 +1071,20 @@ struct AgentIOSHardwareNativeToolExecutor {
   var provider: AgentIOSHardwareStatusProviding
   var locationProvider: AgentIOSForegroundLocationProviding
   var sensorSampleProvider: AgentIOSSensorSampleProviding
+  var bluetoothDiscoveryProvider: AgentIOSBluetoothDiscoveryProviding
   var nowMillis: () -> Int64
 
   init(
     provider: AgentIOSHardwareStatusProviding = AgentIOSDefaultHardwareStatusProvider(),
     locationProvider: AgentIOSForegroundLocationProviding = AgentIOSDefaultForegroundLocationProvider(),
     sensorSampleProvider: AgentIOSSensorSampleProviding = AgentIOSCoreMotionSensorSampleProvider(),
+    bluetoothDiscoveryProvider: AgentIOSBluetoothDiscoveryProviding = AgentIOSCoreBluetoothDiscoveryProvider(),
     nowMillis: @escaping () -> Int64 = { Int64((Date().timeIntervalSince1970 * 1_000).rounded()) }
   ) {
     self.provider = provider
     self.locationProvider = locationProvider
     self.sensorSampleProvider = sensorSampleProvider
+    self.bluetoothDiscoveryProvider = bluetoothDiscoveryProvider
     self.nowMillis = nowMillis
   }
 
@@ -1044,6 +1141,17 @@ struct AgentIOSHardwareNativeToolExecutor {
       )
     case AgentIOSHardwareNativeToolCatalog.bluetoothStatus:
       return status(provider.bluetoothStatus(nowMillis: now), "Bluetooth adapter status boundary read")
+    case AgentIOSHardwareNativeToolCatalog.bluetoothDiscoveryForeground:
+      let limit = Int(invocation.input["limit"]?.intValue ?? Int64(AgentIOSHardwareNativeToolCatalog.maxBluetoothResults))
+      let timeout = invocation.input["timeout_ms"]?.intValue ?? AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis
+      return bluetoothDiscoveryProvider.discoverBluetooth(
+        timeoutMillis: max(
+          AgentIOSHardwareNativeToolCatalog.minBluetoothDiscoveryMillis,
+          min(AgentIOSHardwareNativeToolCatalog.maxBluetoothDiscoveryMillis, timeout)
+        ),
+        limit: max(1, min(AgentIOSHardwareNativeToolCatalog.maxBluetoothResults, limit)),
+        nowMillis: now
+      )
     case AgentIOSHardwareNativeToolCatalog.nfcStatus:
       return status(provider.nfcStatus(nowMillis: now), "NFC capability status read")
     case AgentIOSHardwareNativeToolCatalog.bluetoothPairingHandoff:
