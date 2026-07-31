@@ -612,6 +612,166 @@ extension SignalASIStoreTests {
     XCTAssertEqual(transport.requests.count, 1)
   }
 
+  func testAgentIOSURLSessionWebMediaProviderRecognizesOCRContent() throws {
+    final class FakeContentReader: AgentIOSWebMediaContentReading {
+      var implementationId = "fake.file_reader"
+      var capturedContentURI = ""
+      var capturedMaxBytes: Int64 = 0
+
+      func read(contentURI: String, maxBytes: Int64) throws -> AgentIOSWebMediaContent {
+        capturedContentURI = contentURI
+        capturedMaxBytes = maxBytes
+        return AgentIOSWebMediaContent(
+          contentURI: contentURI,
+          contentType: "image/png",
+          displayName: "capture.png",
+          data: Data("fake-image".utf8)
+        )
+      }
+    }
+
+    final class FakeOCRRecognizer: AgentIOSWebMediaOCRRecognizing {
+      var implementationId = "fake.vision_ocr"
+      var availability: AgentNativeToolAvailability = .available
+      var capturedRequest: AgentIOSWebMediaOCRRequest?
+      var capturedContentType = ""
+
+      func recognize(
+        content: AgentIOSWebMediaContent,
+        request: AgentIOSWebMediaOCRRequest
+      ) throws -> AgentIOSWebMediaOCRResult {
+        capturedContentType = content.contentType
+        capturedRequest = request
+        return AgentIOSWebMediaOCRResult(
+          text: "Invoice Total",
+          lines: [
+            AgentIOSWebMediaOCRLine(
+              text: "Invoice Total",
+              left: 10,
+              top: 20,
+              right: 210,
+              bottom: 58,
+              languageTag: "en",
+              blockIndex: 0,
+              lineIndex: 0
+            )
+          ],
+          blocks: [
+            AgentIOSWebMediaOCRBlock(
+              text: "Invoice Total",
+              left: 10,
+              top: 20,
+              right: 210,
+              bottom: 58,
+              lineCount: 1
+            )
+          ],
+          width: 640,
+          height: 480,
+          languageTags: ["en"],
+          layoutMode: "vision_text_observations",
+          qualityScore: 0.92,
+          warnings: []
+        )
+      }
+    }
+
+    let reader = FakeContentReader()
+    let recognizer = FakeOCRRecognizer()
+    let provider = AgentIOSURLSessionWebMediaToolProvider(
+      ocrProcessor: AgentIOSWebMediaOCRPipeline(
+        contentReader: reader,
+        recognizer: recognizer,
+        nowMillis: { 1_200 }
+      ),
+      nowMillis: { 1_000 }
+    )
+    let definitions = AgentIOSWebMediaNativeToolCatalog.definitions(provider: provider)
+    let ocrDefinition = try XCTUnwrap(definitions.first { $0.id == AgentIOSWebMediaNativeToolCatalog.ocrRecognizeContent })
+    XCTAssertEqual(ocrDefinition.descriptor.availability.status, .available)
+    XCTAssertEqual(ocrDefinition.provenanceMetadata["implementation"], "fake.vision_ocr")
+    XCTAssertEqual(ocrDefinition.provenanceMetadata["content_reader_implementation"], "fake.file_reader")
+    XCTAssertEqual(ocrDefinition.provenanceMetadata["recognition"], "vision_bounded_ocr")
+
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
+    )
+    let context = AgentNativeToolInvocationContext(
+      grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.contentUriPermission],
+      grantedConsents: [AgentIOSWebMediaNativeToolCatalog.contentUriReadConsent]
+    )
+    let result = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.ocrRecognizeContent,
+      input: [
+        "content_uri": .string("file:///selected/capture.png"),
+        "source_kind": .string("screenshot")
+      ],
+      context: context,
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+    )
+
+    XCTAssertTrue(result.isSuccess)
+    XCTAssertEqual(result.output["text"], .string("Invoice Total"))
+    XCTAssertEqual(result.output["content_uri"], .string("file:///selected/capture.png"))
+    XCTAssertEqual(result.output["source_kind"], .string("screenshot"))
+    XCTAssertEqual(result.output["script_hint"], .string("auto"))
+    XCTAssertEqual(result.output["observed_at_epoch_ms"], .int(1_200))
+    XCTAssertEqual(result.output["width"], .int(640))
+    XCTAssertEqual(result.output["height"], .int(480))
+    XCTAssertEqual(result.output["quality_score"], .double(0.92))
+    let lines = try XCTUnwrap(result.output["lines"]?.arrayValue)
+    XCTAssertEqual(lines.first?.objectValue?["text"], .string("Invoice Total"))
+    let blocks = try XCTUnwrap(result.output["blocks"]?.arrayValue)
+    XCTAssertEqual(blocks.first?.objectValue?["line_count"], .int(1))
+    XCTAssertEqual(result.metadata["ocr_implementation"], .string("fake.vision_ocr"))
+    XCTAssertEqual(result.metadata["content_reader_implementation"], .string("fake.file_reader"))
+    XCTAssertEqual(reader.capturedContentURI, "file:///selected/capture.png")
+    XCTAssertEqual(reader.capturedMaxBytes, AgentIOSWebMediaNativeToolCatalog.maxOcrSourceBytes)
+    XCTAssertEqual(recognizer.capturedContentType, "image/png")
+    XCTAssertEqual(recognizer.capturedRequest?.scriptHint, "auto")
+  }
+
+  func testAgentIOSURLSessionWebMediaProviderRejectsUnsupportedOCRContentURI() throws {
+    final class FakeOCRRecognizer: AgentIOSWebMediaOCRRecognizing {
+      var implementationId = "fake.vision_ocr"
+      var availability: AgentNativeToolAvailability = .available
+
+      func recognize(
+        content: AgentIOSWebMediaContent,
+        request: AgentIOSWebMediaOCRRequest
+      ) throws -> AgentIOSWebMediaOCRResult {
+        throw AgentIOSWebMediaOCRError.ocrEmptyResult
+      }
+    }
+
+    let provider = AgentIOSURLSessionWebMediaToolProvider(
+      ocrProcessor: AgentIOSWebMediaOCRPipeline(
+        contentReader: AgentIOSFileWebMediaContentReader(),
+        recognizer: FakeOCRRecognizer(),
+        nowMillis: { 1_200 }
+      ),
+      nowMillis: { 1_000 }
+    )
+    let registry = try AgentNativeToolRegistry().registerExecutables(
+      AgentPhoneNativeToolCatalog.webMediaExecutableDefinitions(provider: provider)
+    )
+    let result = registry.invoke(
+      AgentIOSWebMediaNativeToolCatalog.ocrRecognizeContent,
+      input: [
+        "content_uri": .string("content://captures/1"),
+        "source_kind": .string("image")
+      ],
+      context: AgentNativeToolInvocationContext(
+        grantedPermissions: [AgentIOSWebMediaNativeToolCatalog.contentUriPermission],
+        grantedConsents: [AgentIOSWebMediaNativeToolCatalog.contentUriReadConsent]
+      ),
+      hooks: AgentNativeToolInvocationHooks(nowMillis: { 1_000 })
+    )
+
+    XCTAssertEqual(result.status, .failed)
+    XCTAssertEqual(result.error?.code, "unsupported_content_uri")
+  }
+
   func testAgentIOSURLSessionWebMediaProviderManagesBrowserSessions() throws {
     final class FakeURLSessionWebTransport: AgentIOSURLSessionWebTransporting {
       var requests: [AgentIOSURLSessionWebRequest] = []

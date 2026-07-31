@@ -485,8 +485,15 @@ enum AgentIOSWebMediaNativeToolCatalog {
       metadata["auto_execute"] = "false"
     case .ocrRecognizeContent:
       metadata["android_executor_compat"] = androidContentExecutorId
-      metadata["content_scope"] = "user_authorized_content_uri"
-      metadata["recognition"] = "provider_bounded_ocr"
+      if let urlSessionProvider = provider as? AgentIOSURLSessionWebMediaToolProvider {
+        metadata["implementation"] = urlSessionProvider.ocrProcessor.implementationId
+        metadata["content_scope"] = "selected_or_captured_file_url"
+        metadata["content_reader_implementation"] = urlSessionProvider.ocrProcessor.contentReaderImplementationId
+        metadata["recognition"] = "vision_bounded_ocr"
+      } else {
+        metadata["content_scope"] = "user_authorized_content_uri"
+        metadata["recognition"] = "provider_bounded_ocr"
+      }
     case .webSearch, .webOpen, .browserRender, .httpRequest, .webHead, .webFetch:
       metadata["android_executor_compat"] = androidWebExecutorId
       if provider is AgentIOSURLSessionWebMediaToolProvider {

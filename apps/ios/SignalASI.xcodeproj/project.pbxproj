@@ -201,6 +201,8 @@
     A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */; };
     A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */; };
     A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */; };
+    A10000000000000000000444 /* AgentIOSWebMediaContentReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */; };
+    A10000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */; };
     A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */; };
     A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */; };
     A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */; };
@@ -492,6 +494,8 @@
     A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionWebMediaProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSURLSessionBrowserSessionStore.swift; sourceTree = "<group>"; };
     A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaDownloadWriter.swift; sourceTree = "<group>"; };
+    A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaContentReader.swift; sourceTree = "<group>"; };
+    A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaOCRProvider.swift; sourceTree = "<group>"; };
     A20000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSHomeAssistantNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000284 /* AgentIOSNotificationNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNotificationNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSVisibleCaptureNativeTools.swift; sourceTree = "<group>"; };
@@ -622,6 +626,8 @@
         A20000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift */,
         A20000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift */,
         A20000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift */,
+        A20000000000000000000444 /* AgentIOSWebMediaContentReader.swift */,
+        A20000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift */,
         A20000000000000000000107 /* AgentIOSDesktopRemoteTools.swift */,
         A20000000000000000000108 /* AgentDesktopControlModels.swift */,
         A20000000000000000000109 /* AgentIOSRuntimeNativeTools.swift */,
@@ -1155,6 +1161,8 @@
         A10000000000000000000441 /* AgentIOSURLSessionWebMediaProvider.swift in Sources */,
         A10000000000000000000442 /* AgentIOSURLSessionBrowserSessionStore.swift in Sources */,
         A10000000000000000000443 /* AgentIOSWebMediaDownloadWriter.swift in Sources */,
+        A10000000000000000000444 /* AgentIOSWebMediaContentReader.swift in Sources */,
+        A10000000000000000000445 /* AgentIOSWebMediaOCRProvider.swift in Sources */,
         A10000000000000000000282 /* AgentIOSHomeAssistantNativeTools.swift in Sources */,
         A10000000000000000000284 /* AgentIOSNotificationNativeTools.swift in Sources */,
         A10000000000000000000286 /* AgentIOSVisibleCaptureNativeTools.swift in Sources */,
