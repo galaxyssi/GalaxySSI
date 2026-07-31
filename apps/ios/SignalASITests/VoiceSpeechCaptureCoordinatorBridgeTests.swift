@@ -5,7 +5,8 @@ final class VoiceSpeechCaptureCoordinatorBridgeTests: XCTestCase {
   private var elapsedNs: Int64 = 1_000
 
   private func makeBridge(
-    enabled: Bool = true
+    enabled: Bool = true,
+    latencyTracer: VoiceLatencyTracer? = nil
   ) -> (VoiceInteractionCoordinator, VoiceSpeechCaptureCoordinatorBridge) {
     let coordinator = VoiceInteractionCoordinator(
       elapsedClock: { [unowned self] in
@@ -20,7 +21,8 @@ final class VoiceSpeechCaptureCoordinatorBridgeTests: XCTestCase {
       elapsedClock: { [unowned self] in
         elapsedNs += 1
         return elapsedNs
-      }
+      },
+      latencyTracer: latencyTracer
     )
     return (coordinator, bridge)
   }
@@ -121,6 +123,38 @@ final class VoiceSpeechCaptureCoordinatorBridgeTests: XCTestCase {
     XCTAssertFalse(prepared.accepted)
     XCTAssertEqual(coordinator.snapshot().phase, .idle)
     XCTAssertEqual(bridge.sessionId(), "")
+  }
+
+  func testCaptureBridgeRecordsVoiceLatencyEvents() {
+    var traceElapsedNs: Int64 = 0
+    let tracer = VoiceLatencyTracer(
+      elapsedSource: {
+        traceElapsedNs += 100_000_000
+        return traceElapsedNs
+      },
+      wallClockSource: { traceElapsedNs / 1_000_000 }
+    )
+    let (_, bridge) = makeBridge(latencyTracer: tracer)
+
+    bridge.begin(config: VoiceSessionConfig(source: "ios_hold_to_talk", language: "en-US"))
+    bridge.capturePrepared()
+    bridge.speechStarted()
+    bridge.transcriptPartial("hello", modelProfileId: "en-US")
+    bridge.finishStoppedCapture(transcript: "hello", modelProfileId: "en-US")
+
+    let events = tracer.snapshot().map(\.event)
+
+    XCTAssertTrue(events.contains(VoiceTraceEvents.sessionCreated))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.microphoneOpenStarted))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.microphoneOpened))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.speechStarted))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.speechEnded))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.asrFirstPartial))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.asrFinalStarted))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.asrFinalReceived))
+    XCTAssertTrue(events.contains(VoiceTraceEvents.routeStarted))
+    XCTAssertEqual(tracer.diagnosticSummary().metrics["asr_total_ms"]?.count, 1)
+    XCTAssertTrue(tracer.snapshot().contains { $0.attributes["model_profile_id"] == "en-US" })
   }
 }
 

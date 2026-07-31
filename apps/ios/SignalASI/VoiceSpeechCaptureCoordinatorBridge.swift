@@ -4,18 +4,22 @@ final class VoiceSpeechCaptureCoordinatorBridge {
   private let coordinator: VoiceInteractionCoordinator
   private let isCoordinatorEnabled: () -> Bool
   private let elapsedClock: VoiceElapsedClock
+  private let latencyTracer: VoiceLatencyTracer?
   private let lock = NSLock()
   private var currentSessionId = ""
+  private var currentTraceId = ""
   private var transcriptRevision = 0
 
   init(
     coordinator: VoiceInteractionCoordinator = VoiceInteractionCoordinatorRegistry.coordinator,
     isCoordinatorEnabled: @escaping () -> Bool = { VoiceFeatureFlags.isCoordinatorEnabled() },
-    elapsedClock: @escaping VoiceElapsedClock = VoiceSpeechCaptureCoordinatorBridge.defaultElapsedClock
+    elapsedClock: @escaping VoiceElapsedClock = VoiceSpeechCaptureCoordinatorBridge.defaultElapsedClock,
+    latencyTracer: VoiceLatencyTracer? = VoiceLatencyTelemetry.tracer()
   ) {
     self.coordinator = coordinator
     self.isCoordinatorEnabled = isCoordinatorEnabled
     self.elapsedClock = elapsedClock
+    self.latencyTracer = latencyTracer
   }
 
   static func config(
@@ -46,34 +50,61 @@ final class VoiceSpeechCaptureCoordinatorBridge {
     if transition.accepted {
       locked {
         currentSessionId = transition.current.sessionId
+        currentTraceId = transition.current.sessionId
         transcriptRevision = 0
       }
+      recordLatency(
+        VoiceTraceEvents.sessionCreated,
+        attributes: [
+          "recording_source": config.source,
+          "asr_provider": iosSpeechProviderId,
+          "model_profile_id": config.language,
+        ],
+        once: true
+      )
+      recordLatency(VoiceTraceEvents.microphoneOpenStarted, once: true)
     }
     return transition
   }
 
   @discardableResult
   func capturePrepared() -> VoiceInteractionTransition {
-    dispatchCurrent { .capturePrepared(sessionId: $0) }
+    let transition = dispatchCurrent { .capturePrepared(sessionId: $0) }
+    if transition.accepted {
+      recordLatency(VoiceTraceEvents.microphoneOpened, once: true)
+    }
+    return transition
   }
 
   @discardableResult
   func speechStarted(atElapsedNs: Int64? = nil) -> VoiceInteractionTransition {
-    dispatchCurrent {
+    let transition = dispatchCurrent {
       .speechStarted(sessionId: $0, atElapsedNs: atElapsedNs ?? max(0, elapsedClock()))
     }
+    if transition.accepted {
+      recordLatency(VoiceTraceEvents.speechStarted, once: true)
+    }
+    return transition
   }
 
   @discardableResult
   func speechEnded(atElapsedNs: Int64? = nil) -> VoiceInteractionTransition {
-    dispatchCurrent {
+    let transition = dispatchCurrent {
       .speechEnded(sessionId: $0, atElapsedNs: atElapsedNs ?? max(0, elapsedClock()))
     }
+    if transition.accepted {
+      recordLatency(VoiceTraceEvents.speechEnded, once: true)
+    }
+    return transition
   }
 
   @discardableResult
   func finalizationStarted() -> VoiceInteractionTransition {
-    dispatchCurrent { .finalizationStarted(sessionId: $0) }
+    let transition = dispatchCurrent { .finalizationStarted(sessionId: $0) }
+    if transition.accepted {
+      recordLatency(VoiceTraceEvents.asrFinalStarted, once: true)
+    }
+    return transition
   }
 
   @discardableResult
@@ -82,9 +113,17 @@ final class VoiceSpeechCaptureCoordinatorBridge {
     provider: String = iosSpeechProviderId,
     modelProfileId: String = ""
   ) -> VoiceInteractionTransition {
-    transcriptUpdate(text, provider: provider, modelProfileId: modelProfileId) {
+    let transition = transcriptUpdate(text, provider: provider, modelProfileId: modelProfileId) {
       .transcriptPartial(sessionId: $0, value: $1)
     }
+    if transition.accepted {
+      recordLatency(
+        VoiceTraceEvents.asrFirstPartial,
+        attributes: asrAttributes(provider: provider, modelProfileId: modelProfileId),
+        once: true
+      )
+    }
+    return transition
   }
 
   @discardableResult
@@ -93,9 +132,17 @@ final class VoiceSpeechCaptureCoordinatorBridge {
     provider: String = iosSpeechProviderId,
     modelProfileId: String = ""
   ) -> VoiceInteractionTransition {
-    transcriptUpdate(text, provider: provider, modelProfileId: modelProfileId) {
+    let transition = transcriptUpdate(text, provider: provider, modelProfileId: modelProfileId) {
       .transcriptStable(sessionId: $0, value: $1)
     }
+    if transition.accepted {
+      recordLatency(
+        VoiceTraceEvents.asrFirstStable,
+        attributes: asrAttributes(provider: provider, modelProfileId: modelProfileId),
+        once: true
+      )
+    }
+    return transition
   }
 
   @discardableResult
@@ -133,6 +180,14 @@ final class VoiceSpeechCaptureCoordinatorBridge {
         )
       )
     )
+    if transition.accepted {
+      recordLatency(
+        VoiceTraceEvents.asrFinalReceived,
+        attributes: asrAttributes(provider: provider, modelProfileId: modelProfileId),
+        once: true
+      )
+      recordLatency(VoiceTraceEvents.routeStarted, once: true)
+    }
     clearCurrentSessionIfTerminal(transition)
     return transition
   }
@@ -161,6 +216,9 @@ final class VoiceSpeechCaptureCoordinatorBridge {
       return rejectedTransition()
     }
     let transition = coordinator.dispatch(.cancelled(sessionId: sessionId, reasonCode: reasonCode))
+    if transition.accepted {
+      recordLatency(VoiceTraceEvents.sessionCancelled, attributes: ["error_code": reasonCode], once: true)
+    }
     clearCurrentSessionIfTerminal(transition)
     return transition
   }
@@ -188,6 +246,9 @@ final class VoiceSpeechCaptureCoordinatorBridge {
         )
       )
     )
+    if transition.accepted {
+      recordLatency(VoiceTraceEvents.sessionFailed, attributes: ["error_code": code], once: true)
+    }
     clearCurrentSessionIfTerminal(transition)
     return transition
   }
@@ -226,8 +287,32 @@ final class VoiceSpeechCaptureCoordinatorBridge {
     locked {
       if currentSessionId == transition.current.sessionId {
         currentSessionId = ""
+        currentTraceId = ""
       }
     }
+  }
+
+  private func recordLatency(
+    _ event: String,
+    attributes: [String: String] = [:],
+    once: Bool = false
+  ) {
+    let ids = locked { (traceId: currentTraceId, sessionId: currentSessionId) }
+    guard !ids.traceId.isEmpty else { return }
+    latencyTracer?.record(
+      traceId: ids.traceId,
+      sessionId: ids.sessionId,
+      event: event,
+      attributes: attributes,
+      once: once
+    )
+  }
+
+  private func asrAttributes(provider: String, modelProfileId: String) -> [String: String] {
+    [
+      "asr_provider": provider,
+      "model_profile_id": modelProfileId,
+    ]
   }
 
   private func nextTranscriptRevision() -> Int {
