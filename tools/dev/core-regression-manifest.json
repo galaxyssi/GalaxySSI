@@ -130,6 +130,16 @@
           "executable": "{npm}",
           "working_directory": ".",
           "arguments": ["run", "benchmark:agent"]
+        },
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "test:regression:agent"]
+        },
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "regression:agent"]
         }
       ]
     }
