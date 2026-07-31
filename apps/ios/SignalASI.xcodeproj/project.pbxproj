@@ -33,6 +33,7 @@
     A10000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */; };
     A10000000000000000000408 /* AgentDataDisclosureLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000408 /* AgentDataDisclosureLedger.swift */; };
     A10000000000000000000409 /* AgentDataDisclosureLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */; };
+    A10000000000000000000410 /* AgentDataDisclosureDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000410 /* AgentDataDisclosureDashboardView.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
@@ -290,6 +291,7 @@
     A20000000000000000000407 /* AgentDirectNativeToolPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDirectNativeToolPlannerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000408 /* AgentDataDisclosureLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDataDisclosureLedger.swift; sourceTree = "<group>"; };
     A20000000000000000000409 /* AgentDataDisclosureLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDataDisclosureLedgerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000410 /* AgentDataDisclosureDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentDataDisclosureDashboardView.swift; sourceTree = "<group>"; };
     A20000000000000000000103 /* AgentTeamDelegationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000104 /* AgentNativeToolCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolCore.swift; sourceTree = "<group>"; };
     A20000000000000000000105 /* AgentPhoneNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeTools.swift; sourceTree = "<group>"; };
@@ -546,6 +548,7 @@
         A20000000000000000000405 /* AgentNetworkSearchIndex.swift */,
         A20000000000000000000406 /* AgentDirectNativeToolPlanner.swift */,
         A20000000000000000000408 /* AgentDataDisclosureLedger.swift */,
+        A20000000000000000000410 /* AgentDataDisclosureDashboardView.swift */,
         A20000000000000000000103 /* AgentTeamDelegationModels.swift */,
         A20000000000000000000104 /* AgentNativeToolCore.swift */,
         A20000000000000000000105 /* AgentPhoneNativeTools.swift */,
@@ -901,6 +904,7 @@
         A10000000000000000000405 /* AgentNetworkSearchIndex.swift in Sources */,
         A10000000000000000000406 /* AgentDirectNativeToolPlanner.swift in Sources */,
         A10000000000000000000408 /* AgentDataDisclosureLedger.swift in Sources */,
+        A10000000000000000000410 /* AgentDataDisclosureDashboardView.swift in Sources */,
         A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */,
         A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */,
         A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */,

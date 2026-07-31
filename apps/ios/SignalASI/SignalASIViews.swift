@@ -1045,6 +1045,14 @@ struct SettingsView: View {
           }
         }
         Section("Privacy") {
+          NavigationLink(destination: AgentDataDisclosureDashboardView()) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Model Data Sharing")
+              Text("Review metadata-only disclosure events and destination blocks")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+          }
           Button(role: .destructive) {
             showingResetPrivateData = true
           } label: {
