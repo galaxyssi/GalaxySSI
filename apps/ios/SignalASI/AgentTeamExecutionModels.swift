@@ -12,6 +12,7 @@ enum AgentSubagentStatus: String, Codable, CaseIterable, Identifiable {
 }
 
 enum AgentTeamExecutionState: String, Codable, CaseIterable, Identifiable {
+  case queued = "QUEUED"
   case created = "CREATED"
   case running = "RUNNING"
   case waitingResponse = "WAITING_RESPONSE"
@@ -23,8 +24,33 @@ enum AgentTeamExecutionState: String, Codable, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
+  var isTerminal: Bool {
+    [.succeeded, .completedWithFailures, .failed, .cancelled, .interrupted].contains(self)
+  }
+
   var deliverable: Bool {
     [.succeeded, .completedWithFailures, .failed, .cancelled].contains(self)
+  }
+}
+
+struct AgentTeamProgressProjection: Codable, Equatable {
+  var state: AgentTeamExecutionState
+  var primaryAgentId: String
+  var finalOutput: String
+  var members: [AgentTeamMemberSnapshot]
+  var memberDetailsVisible: Bool
+}
+
+enum AgentTeamProgressPolicy {
+  static func project(_ snapshot: AgentTeamExecutionSnapshot, expanded: Bool) -> AgentTeamProgressProjection {
+    let showMembers = expanded || snapshot.visibilityMode == .visible
+    return AgentTeamProgressProjection(
+      state: snapshot.state,
+      primaryAgentId: snapshot.primaryAgentId,
+      finalOutput: snapshot.finalOutput,
+      members: showMembers ? snapshot.members : [],
+      memberDetailsVisible: showMembers
+    )
   }
 }
 
