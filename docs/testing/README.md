@@ -14,6 +14,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | Repository policy | `npm run check` | Public docs and code stay English-first outside i18n files, Desktop structure is intact, protocol naming is SignalASI-only, and required capability markers still exist. |
 | Security red team | `npm run test:security-red-team` | Malicious README, web, MCP, and model-output payloads remain untrusted, cannot forge authority, and fail integrity checks after tampering. |
 | Agent product benchmark | `npm run benchmark:agent` | Versioned Agent scenarios score response quality, planning, tool use, approval, isolation, recovery, memory, artifact integrity, timeline order, and latency instead of only source-level correctness. |
+| Pull request core regressions | `npm run test:core-regressions` | Android, Desktop Agent Runtime, MQTT, memory, remote control, and Agent benchmark contracts pass together without packaging an APK or Desktop installer. |
 | Android build | `npm run check:android` | The Android app compiles into a debug APK with the current Gradle wrapper and Android project layout. |
 | Android UI smoke | `npm run smoke:android:ui` | Main navigation, contacts, cloud model entry, security center, settings entry points, voice settings, backup, protocol quality, and destructive-data screens can be opened on a real device or emulator. |
 | Android friend flow | `npm run smoke:android:friends` | New-friend approval, deleted-contact blocking, re-add flow, contact detail routing, and contact deletion evidence work on Android. |
@@ -47,6 +48,11 @@ Run `npm run test:release:device` to execute the Android device gates sequential
 Run `npm run benchmark:agent` for the deterministic Agent contract baseline. Use the live Desktop
 mode and captured Run evaluation described in [AGENT_BENCHMARK.md](AGENT_BENCHMARK.md) before a
 release candidate is promoted.
+
+Every pull request runs `npm run test:core-regressions` in the Repository Guard workflow. The
+runner continues across independent suites, emits per-suite duration and failure evidence, and
+uploads `build/reports/core-regressions/report.json`. Run a subset locally with
+`npm run test:core-regressions -- --suite mqtt,memory`.
 
 Run `npm run test:android:team-process-death` after installing the debug APK and Android test APK. The two-phase device test persists a supervised team, force-stops the Android process, delivers observer and primary responses through the real background service, and verifies one recovered final response without ordinary-chat leakage or duplicate delivery. The script wakes the device and relaunches SignalASI when it finishes.
 

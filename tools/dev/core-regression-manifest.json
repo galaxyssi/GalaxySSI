@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "required_suites": [
+    "android",
+    "desktop",
+    "mqtt",
+    "memory",
+    "remote_control",
+    "agent_benchmark"
+  ],
+  "suites": [
+    {
+      "id": "android",
+      "description": "Android Agent loop, recovery, identity, transport, memory, and remote control contracts",
+      "commands": [
+        {
+          "executable": "{gradle}",
+          "working_directory": "apps/android",
+          "arguments": [
+            ":app:testDebugUnitTest",
+            "--tests",
+            "com.signalasi.chat.AgentExecutionLoopTest",
+            "--tests",
+            "com.signalasi.chat.AgentRunRecoveryCoordinatorTest",
+            "--tests",
+            "com.signalasi.chat.AgentTaskIdentityPolicyTest",
+            "--tests",
+            "com.signalasi.chat.SignalASIMqttWireChunkingTest",
+            "--tests",
+            "com.signalasi.chat.GlobalMemoryLoCoMoRegressionTest",
+            "--tests",
+            "com.signalasi.chat.DesktopRemoteControlAuthorizationTest",
+            "--tests",
+            "com.signalasi.chat.DesktopRemoteControlReceiptTest",
+            "--no-daemon"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desktop",
+      "description": "Desktop Agent Runtime scheduling, isolation, execution, recovery, and cancellation",
+      "commands": [
+        {
+          "executable": "{python}",
+          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "arguments": [
+            "-m",
+            "unittest",
+            "-v",
+            "test_desktop_agent_runtime_server",
+            "test_agent_execution_harness",
+            "test_agent_runtime_status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mqtt",
+      "description": "Encrypted link routing, task identity, chunking, replay diagnostics, and phone tool transport",
+      "commands": [
+        {
+          "executable": "{python}",
+          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "arguments": [
+            "-m",
+            "unittest",
+            "-v",
+            "test_mqtt_route_dispatch",
+            "test_mqtt_task_turn_routing",
+            "test_mqtt_wire_chunking",
+            "tests.test_mqtt_link_diagnostics",
+            "tests.test_mqtt_phone_tool_routing"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "memory",
+      "description": "Memory candidate lifecycle, query planning, prompt compilation, critic, and telemetry",
+      "commands": [
+        {
+          "executable": "{python}",
+          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "arguments": [
+            "-m",
+            "unittest",
+            "-v",
+            "test_desktop_memory_critic",
+            "test_desktop_memory_query_planner",
+            "test_desktop_memory_prompt_compiler",
+            "test_agent_memory_telemetry"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remote_control",
+      "description": "Desktop authorization, signed action receipts, MQTT routing, and security boundaries",
+      "commands": [
+        {
+          "executable": "{python}",
+          "working_directory": "apps/desktop/core/signalasi-link/backend",
+          "arguments": [
+            "-m",
+            "unittest",
+            "-v",
+            "test_desktop_control",
+            "test_remote_agent_security",
+            "tests.test_mqtt_desktop_control_routing"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "agent_benchmark",
+      "description": "Product-level Agent behavior and scoring contracts",
+      "commands": [
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "test:benchmark:agent"]
+        },
+        {
+          "executable": "{npm}",
+          "working_directory": ".",
+          "arguments": ["run", "benchmark:agent"]
+        }
+      ]
+    }
+  ]
+}
+
