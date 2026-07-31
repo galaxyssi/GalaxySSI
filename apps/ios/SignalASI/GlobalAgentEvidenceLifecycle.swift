@@ -143,8 +143,8 @@ enum GlobalAgentEvidenceLifecyclePolicy {
       return copy
     }
     let retainedIds = Set(updated.map(\.id))
-    return reconcileLongHorizonGoals(
-      updated.map { goal in
+    return GlobalLongHorizonGoalGraphPolicy.reconcile(
+      goals: updated.map { goal in
         var copy = goal
         copy.dependencyGoalIds = goal.dependencyGoalIds.intersection(retainedIds)
         return copy
@@ -197,46 +197,6 @@ enum GlobalAgentEvidenceLifecyclePolicy {
     return copy
   }
 
-  private static func reconcileLongHorizonGoals(
-    _ goals: [GlobalLongHorizonGoal],
-    nowMillis: Int64
-  ) -> [GlobalLongHorizonGoal] {
-    var byId: [String: GlobalLongHorizonGoal] = [:]
-    for goal in goals {
-      byId[goal.id] = goal
-    }
-    return goals.map { goal in
-      if [
-        .completed,
-        .paused,
-        .inProgress,
-        .waitingConfirmation
-      ].contains(goal.status) {
-        return goal
-      }
-      let incomplete = goal.dependencyGoalIds
-        .compactMap { byId[$0] }
-        .filter { $0.status != .completed }
-      if !incomplete.isEmpty && goal.status != .waitingDependency {
-        var copy = goal
-        copy.status = .waitingDependency
-        copy.blocker = "Waiting for \(incomplete.count) prerequisite goal(s)"
-        copy.nextCheckAtMillis = 0
-        copy.updatedAtMillis = max(nowMillis, 0)
-        return copy
-      }
-      if incomplete.isEmpty && goal.status == .waitingDependency {
-        var copy = goal
-        copy.status = .active
-        copy.blocker = ""
-        copy.nextCheckAtMillis = max(nowMillis, 0)
-        copy.updatedAtMillis = max(nowMillis, 0)
-        return copy
-      }
-      return goal
-    }
-  }
-
   private static func metadataConversationIds(_ event: GlobalConversationEvent) -> Set<String> {
     Set((event.metadata["source_conversation_ids"] ?? "")
       .split(separator: ",")
@@ -258,6 +218,6 @@ enum GlobalAgentEvidenceLifecyclePolicy {
   }
 
   private static func normalized<S: StringProtocol>(_ value: S) -> String {
-    value.trimmingCharacters(in: .whitespacesAndNewlines)
+    String(value).trimmingCharacters(in: .whitespacesAndNewlines)
   }
 }
