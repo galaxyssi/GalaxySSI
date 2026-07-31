@@ -134,6 +134,8 @@ final class VoiceWhisperModelManager {
   private let sourceLocale: Locale
   private let requestIdFactory: () -> String
   private let clockMillis: () -> Int64
+  private let nativeVerificationLock = NSLock()
+  private var nativeVerifiedFingerprints: [String: String] = [:]
 
   init(
     store: VoiceWhisperModelDownloadRecordStore = UserDefaultsVoiceWhisperModelDownloadRecordStore(),
@@ -183,6 +185,35 @@ final class VoiceWhisperModelManager {
     return storage.inspect(model).installed
   }
 
+  func ensureVerifiedFile(for model: VoiceWhisperModelProfile) throws -> URL {
+    if model.bundled, let bundleURL = bundledResourceURL(for: model) {
+      return try ensureVerifiedBundleFile(bundleURL, for: model)
+    }
+
+    _ = migrateLegacyInstallIfNeeded(model)
+    let snapshot = storage.inspect(model)
+    guard let fileURL = snapshot.fileURL else {
+      throw VoiceWhisperModelManagerError.installFailed(modelId: model.id, failure: .sourceMissing)
+    }
+
+    let fingerprint = nativeFingerprint(fileURL: fileURL, model: model)
+    if snapshot.installed, nativeFingerprint(for: model.id) == fingerprint {
+      return fileURL
+    }
+
+    let verification = storage.verifyForNativeLoad(model)
+    guard verification.valid else {
+      clearNativeFingerprint(for: model.id)
+      storage.invalidate(model)
+      throw VoiceWhisperModelManagerError.installFailed(
+        modelId: model.id,
+        failure: installFailure(for: verification.failure)
+      )
+    }
+    setNativeFingerprint(fingerprint, for: model.id)
+    return fileURL
+  }
+
   func enqueue(
     _ model: VoiceWhisperModelProfile,
     allowsCellularAccess: Bool = true
@@ -206,6 +237,7 @@ final class VoiceWhisperModelManager {
     }
     try prepareDirectory()
     storage.invalidate(model)
+    clearNativeFingerprint(for: model.id)
     removeLegacyCandidates(for: model)
     let record = VoiceWhisperModelDownloadRecord(
       modelId: model.id,
@@ -241,6 +273,7 @@ final class VoiceWhisperModelManager {
       updatedAtMillis: clockMillis()
     )
     store.save(record)
+    clearNativeFingerprint(for: model.id)
     return record.state
   }
 
@@ -326,6 +359,7 @@ final class VoiceWhisperModelManager {
       throw VoiceWhisperModelManagerError.installFailed(modelId: model.id, failure: error.failure)
     }
     store.remove(modelId: model.id)
+    clearNativeFingerprint(for: model.id)
     return hadState || hadInstall
   }
 
@@ -407,10 +441,82 @@ final class VoiceWhisperModelManager {
   }
 
   private func bundledResourceExists(for model: VoiceWhisperModelProfile) -> Bool {
+    bundledResourceURL(for: model) != nil
+  }
+
+  private func bundledResourceURL(for model: VoiceWhisperModelProfile) -> URL? {
     bundle.url(
       forResource: model.fileName.deletingPathExtensionForWhisperManager,
       withExtension: model.fileName.nonBlankPathExtensionForWhisperManager
-    ) != nil
+    )
+  }
+
+  private func ensureVerifiedBundleFile(
+    _ fileURL: URL,
+    for model: VoiceWhisperModelProfile
+  ) throws -> URL {
+    let fingerprint = nativeFingerprint(fileURL: fileURL, model: model)
+    if nativeFingerprint(for: model.id) == fingerprint {
+      return fileURL
+    }
+    let verification = VoiceWhisperModelVerifier.verify(fileURL: fileURL, profile: model, fileManager: fileManager)
+    guard verification.valid else {
+      clearNativeFingerprint(for: model.id)
+      throw VoiceWhisperModelManagerError.installFailed(
+        modelId: model.id,
+        failure: installFailure(for: verification.failure)
+      )
+    }
+    setNativeFingerprint(fingerprint, for: model.id)
+    return fileURL
+  }
+
+  private func nativeFingerprint(fileURL: URL, model: VoiceWhisperModelProfile) -> String {
+    [
+      fileURL.resolvingSymlinksInPath().standardizedFileURL.path,
+      String(downloadedFileBytes(at: fileURL) ?? 0),
+      String(fileLastModifiedMillis(fileURL)),
+      model.sha256,
+    ].joined(separator: ":")
+  }
+
+  private func nativeFingerprint(for modelId: String) -> String? {
+    nativeVerificationLock.lock()
+    defer { nativeVerificationLock.unlock() }
+    return nativeVerifiedFingerprints[VoiceWhisperModelCatalog.normalizedModelId(modelId)]
+  }
+
+  private func setNativeFingerprint(_ fingerprint: String, for modelId: String) {
+    nativeVerificationLock.lock()
+    nativeVerifiedFingerprints[VoiceWhisperModelCatalog.normalizedModelId(modelId)] = fingerprint
+    nativeVerificationLock.unlock()
+  }
+
+  private func clearNativeFingerprint(for modelId: String) {
+    nativeVerificationLock.lock()
+    nativeVerifiedFingerprints.removeValue(forKey: VoiceWhisperModelCatalog.normalizedModelId(modelId))
+    nativeVerificationLock.unlock()
+  }
+
+  private func fileLastModifiedMillis(_ fileURL: URL) -> Int64 {
+    guard let attributes = try? fileManager.attributesOfItem(atPath: fileURL.path),
+          let date = attributes[.modificationDate] as? Date else {
+      return 0
+    }
+    return Int64(date.timeIntervalSince1970 * 1_000)
+  }
+
+  private func installFailure(
+    for verificationFailure: VoiceWhisperVerificationFailure?
+  ) -> VoiceWhisperModelInstallFailure {
+    switch verificationFailure {
+    case .sizeMismatch:
+      return .sizeMismatch
+    case .sha256Mismatch:
+      return .sha256Mismatch
+    case .missing, .notAFile, .ioError, nil:
+      return .sourceMissing
+    }
   }
 
   private static func defaultClockMillis() -> Int64 {
