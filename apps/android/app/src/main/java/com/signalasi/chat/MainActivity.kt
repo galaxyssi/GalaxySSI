@@ -4439,23 +4439,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 conversationId = conversationId,
                 excludeTurnId = turnId
             )
-            var turnAttachments = AgentTurnAttachmentRegistry.get(turnId)
-            if (turnAttachments.isEmpty()) {
-                turnAttachments = AgentConversationAttachmentContinuity.resolve(
-                    applicationContext,
-                    conversationId,
-                    turnId,
-                    originalGoal.ifBlank { goal }
-                )
-                if (turnAttachments.isNotEmpty()) {
-                    AgentTurnAttachmentRegistry.put(turnId, turnAttachments)
-                    Log.i(
-                        "SignalASIAgent",
-                        "conversation_attachments_reused turn=${turnId.take(8)} " +
-                            "count=${turnAttachments.size}"
-                    )
-                }
-            }
+            val turnAttachments = AgentTurnAttachmentRegistry.get(turnId)
             val clarification = AgentClarificationPolicy.decide(
                 goal = originalGoal,
                 hasAttachments = turnAttachments.isNotEmpty(),

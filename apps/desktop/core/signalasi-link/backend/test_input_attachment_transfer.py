@@ -93,6 +93,21 @@ class InputAttachmentTransferTests(unittest.TestCase):
         self.assertEqual("stored", stored.status)
         self.assertEqual("stored", repeated.status)
 
+    def test_recovery_receipt_preserves_attachment_request_identity(self):
+        content = b"restored"
+        manifest = self._manifest(content)
+        manifest["attachment_request_id"] = "c" * 32
+        ingest_manifest(manifest, client_route_id=self.route_id)
+
+        stored = ingest_chunk(
+            self._chunk(manifest, content, 0),
+            client_route_id=self.route_id,
+        )
+
+        self.assertEqual("c" * 32, stored.attachment_request_id)
+        self.assertEqual("attachment-one", stored.attachment_id)
+        self.assertEqual("c" * 32, stored.payload()["attachment_request_id"])
+
     def test_tampered_chunk_is_rejected_and_requested_again(self):
         content = b"trusted"
         manifest = self._manifest(content)

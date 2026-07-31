@@ -21,6 +21,11 @@ from typing import Any, Callable, Mapping
 import paho.mqtt.client as mqtt
 
 from api_response import api_error, api_ok
+from attachment_request_broker import (
+    REQUEST_TYPE as INPUT_ATTACHMENT_REQUEST_TYPE,
+    RESULT_TYPE as INPUT_ATTACHMENT_REQUEST_RESULT_TYPE,
+    attachment_request_broker,
+)
 from agent_gateway import ask_agent_sync, connector_diagnostics, deliver_agent_sync
 from agent_task_manager import (
     EXECUTION_LOCATION_CONTRACT,
@@ -1231,7 +1236,10 @@ def _dispatch_codex_event(task_id: str, event: dict) -> None:
         callback = codex_task_callbacks.get(task_id)
     if callback:
         callback(task_id, event)
-    if str(event.get("status") or "") in {"completed", "failed", "cancelled", "timed_out"}:
+    if (
+        str(event.get("status") or "") in {"completed", "failed", "cancelled", "timed_out"}
+        and event.get("_signalasi_keep_callback") is not True
+    ):
         with codex_task_callbacks_lock:
             codex_task_callbacks.pop(task_id, None)
 
@@ -1912,6 +1920,7 @@ def _publish_phone_payload(
         "agent_task_approval_result",
         ARTIFACT_RECEIPT_TYPE,
         INPUT_ATTACHMENT_RECEIPT_TYPE,
+        INPUT_ATTACHMENT_REQUEST_TYPE,
         DESKTOP_TOOL_CALL_RESULT_TYPE, DESKTOP_TOOL_CANCEL_ACK_TYPE,
         DESKTOP_EXECUTOR_EVENT_TYPE, DESKTOP_ACTION_RECEIPT_TYPE,
         DESKTOP_CONTROL_AUTHORIZATIONS_TYPE, DESKTOP_CONTROL_AUTHORIZATION_CHANGED_TYPE,
@@ -2927,6 +2936,14 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     elif payload.get("_recovered_task") is True:
         raise RuntimeError("Recovered Agent task is no longer available")
     from conversation_context import current_request, embedded_mobile_context
+    from model_recovery import (
+        ModelRecoveryAction,
+        ModelRecoveryDecision,
+        failure_review_prompt,
+        parse_model_recovery,
+        recovery_contract,
+        recovery_follow_up,
+    )
     from conversation_turn_policy import (
         ActiveTurnDisposition,
         classify_active_turn,
@@ -2940,7 +2957,12 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
     )
     task_trace_lock = threading.Lock()
     managed_task_id = {"value": ""}
-    attachments = payload.get("attachments") or []
+    attachments = [
+        dict(item)
+        for item in (payload.get("attachments") or [])
+        if isinstance(item, dict)
+    ]
+    payload["attachments"] = attachments
     has_image_attachment = any(
         isinstance(item, dict) and (
             str(item.get("mime_type") or item.get("type") or "").lower().startswith("image/")
@@ -3021,6 +3043,9 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
         "workspace": None,
         "image_paths": [],
     }
+    recovery_lock = threading.RLock()
+    recovery_attempts = 0
+    max_recovery_attempts = min(3, max(1, execution_policy.max_replans))
 
     def add_task_trace(
         stage: str,
@@ -3090,7 +3115,6 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
 
     def content_with_attachments(task_id: str, base_content: str | None = None) -> str:
         task_content = effective_content if base_content is None else base_content
-        attachments = payload.get("attachments") or []
         from input_attachment_transfer import resolved_attachment_path
         from task_workspace import task_workspace
         attachment_root = task_workspace(task_id, agent_id) / "downloads" / "input"
@@ -3142,9 +3166,91 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             details.extend(f"- {name} (content indexed on the phone; binary was not transferred)" for name in metadata_only)
             details.append("Inspect the available files when they are relevant to the user's request.")
             combined += "\n".join(details)
+        if mobile_context.attachments:
+            combined += f"\n\n{recovery_contract(mobile_context.attachments)}"
         if full_desktop_executor:
             return combined
         return apply_restricted_agent_boundary(combined, task_workspace(task_id, agent_id))
+
+    def restore_requested_attachments(
+        task_id: str,
+        decision: ModelRecoveryDecision,
+    ) -> list[str]:
+        nonlocal image_artifact_required
+        if decision.action != ModelRecoveryAction.REQUEST_ATTACHMENT:
+            return []
+        agent_task_manager.add_event(
+            task_id,
+            "observe",
+            "Required prior input is not present in the task workspace",
+            event_id=f"recovery-observe:{task_id}:{decision.attachment_ids}",
+            status="completed",
+            metadata={"attachment_count": len(decision.attachment_ids)},
+            on_event=publish_event,
+        )
+        agent_task_manager.add_event(
+            task_id,
+            "replan",
+            "Restoring required context from the paired phone",
+            event_id=f"recovery-request:{task_id}:{decision.attachment_ids}",
+            status="running",
+            metadata={"attachment_count": len(decision.attachment_ids)},
+            on_event=publish_event,
+        )
+        descriptors = attachment_request_broker.request(
+            client_route_id=client_route_id,
+            conversation_id=client_conversation_id,
+            task_id=task_id,
+            turn_id=client_turn_id,
+            contact_id=contact_id,
+            source_message_id=source_message_id,
+            attachment_ids=decision.attachment_ids,
+            reason=decision.reason,
+            publish=lambda request_payload: _publish_phone_payload(
+                mqttc,
+                wire_payload,
+                request_payload,
+            ),
+        )
+        with recovery_lock:
+            known_transfers = {
+                str(item.get("transfer_id") or "")
+                for item in attachments
+                if isinstance(item, dict)
+            }
+            for descriptor in descriptors:
+                transfer_id = str(descriptor.get("transfer_id") or "")
+                if transfer_id and transfer_id not in known_transfers:
+                    attachments.append(dict(descriptor))
+                    known_transfers.add(transfer_id)
+        from input_attachment_transfer import resolved_attachment_path
+
+        paths = [
+            str(path.resolve())
+            for descriptor in descriptors
+            for path in [resolved_attachment_path(
+                descriptor,
+                client_route_id=client_route_id,
+                conversation_id=client_conversation_id,
+                task_id=task_id,
+                turn_id=client_turn_id,
+            )]
+            if path is not None
+        ]
+        if len(paths) != len(descriptors):
+            raise RuntimeError("Restored phone attachment did not pass task-scope verification")
+        if any(Path(path).suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES for path in paths):
+            image_artifact_required = _current_request_needs_returned_image(content)
+        agent_task_manager.add_event(
+            task_id,
+            "replan",
+            "Required context restored; continuing the same goal",
+            event_id=f"recovery-request:{task_id}:{decision.attachment_ids}",
+            status="completed",
+            metadata={"attachment_count": len(paths)},
+            on_event=publish_event,
+        )
+        return paths
 
     progress_event_gate = _TaskProgressEventGate()
 
@@ -3155,7 +3261,68 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             return
         _enqueue_task_event(mqttc, wire_payload, task, task_trace_snapshot())
 
+    def model_failure_decision(
+        task_id: str,
+        failed_agent_id: str,
+        failure: str,
+        attempt: int,
+    ) -> ModelRecoveryDecision | None:
+        from agent_gateway import all_agent_specs, list_agents
+
+        statuses = {
+            str(item.get("id") or ""): str(item.get("status") or "")
+            for item in list_agents(quick=True)
+        }
+        candidates = [
+            candidate
+            for candidate in ("codex", "hermes", "claude", "openclaw", "local-llm", "cloud-model")
+            if candidate != failed_agent_id
+            and candidate in all_agent_specs()
+            and statuses.get(candidate) in {"ready", "busy", "degraded"}
+        ][:2]
+        if not candidates:
+            return None
+        review_prompt = failure_review_prompt(
+            goal=current_user_request,
+            failure=failure,
+            attachments=mobile_context.attachments,
+            available_agents=candidates,
+        )
+        for reviewer_id in candidates:
+            try:
+                review = deliver_agent_sync(
+                    reviewer_id,
+                    review_prompt,
+                    task_id=task_id,
+                    conversation_id=f"{backend_conversation_id}:recovery",
+                    source_message_id=source_message_id,
+                    response_language=preferred_response_language,
+                    execution_prompt=current_user_request,
+                    execution_policy={"execution_mode": "plan_only"},
+                    client_route_id=client_route_id,
+                    turn_id=client_turn_id,
+                    run_id=f"{task_id}:recovery-review:{attempt}:{reviewer_id}",
+                    invocation_mode="tool",
+                    caller_agent_id=failed_agent_id,
+                    parent_run_id=task_id,
+                )
+                parsed = parse_model_recovery(
+                    str(review.get("reply") or ""),
+                    mobile_context.attachments,
+                )
+                if parsed.decision is not None:
+                    return parsed.decision
+            except Exception as exc:
+                log.info(
+                    "Recovery reviewer unavailable task=%s reviewer=%s reason=%s",
+                    task_id,
+                    reviewer_id,
+                    str(exc)[:160],
+                )
+        return None
+
     def run_task(task) -> str:
+        nonlocal recovery_attempts
         log.info(f"Agent task running task_id={task.task_id} contact_id={contact_id} agent_id={agent_id}")
         from agent_gateway import all_agent_specs
 
@@ -3176,69 +3343,146 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 },
                 on_event=publish_event,
             )
-        selected_spec = all_agent_specs().get(agent_id)
-        provider_name = selected_spec.name if selected_spec is not None else agent_id
-        provider_event_id = f"provider:{task.task_id}"
-        provider_kind = "model" if agent_id in {"local-llm", "cloud-model"} else "agent"
-        agent_task_manager.add_event(
-            task.task_id,
-            provider_kind,
-            f"Calling {provider_name}",
-            event_id=provider_event_id,
-            status="running",
-            metadata={"provider": agent_id},
-            on_event=publish_event,
-        )
-        try:
-            delivery = deliver_agent_sync(
-                agent_id,
-                content_with_attachments(task.task_id),
-                task_id=task.task_id,
-                conversation_id=backend_conversation_id,
-                source_message_id=source_message_id,
-                return_path=_wire_down_topic(wire_payload),
-                desktop_access_profile=(
-                    DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
-                ),
-                response_language=preferred_response_language,
-                execution_prompt=current_user_request,
-                execution_policy=execution_policy.public(),
-                client_route_id=client_route_id,
-                turn_id=client_turn_id,
-            )
-        except Exception:
+        current_agent_id = agent_id
+        next_prompt = content_with_attachments(task.task_id)
+        last_visible_reply = ""
+        while True:
+            selected_spec = all_agent_specs().get(current_agent_id)
+            provider_name = selected_spec.name if selected_spec is not None else current_agent_id
+            provider_event_id = f"provider:{task.task_id}:{recovery_attempts}"
+            provider_kind = "model" if current_agent_id in {"local-llm", "cloud-model"} else "agent"
             agent_task_manager.add_event(
                 task.task_id,
                 provider_kind,
                 f"Calling {provider_name}",
                 event_id=provider_event_id,
-                status="failed",
-                metadata={"provider": agent_id},
+                status="running",
+                metadata={"provider": current_agent_id, "attempt": recovery_attempts + 1},
                 on_event=publish_event,
             )
-            raise
-        add_task_trace(
-            "agent_first_output",
-            agent_id,
-            once=True,
-            meaningful_progress=True,
-        )
-        agent_task_manager.add_event(
-            task.task_id,
-            provider_kind,
-            f"Calling {provider_name}",
-            event_id=provider_event_id,
-            status="completed",
-            metadata={"provider": agent_id},
-            on_event=publish_event,
-        )
-        reply = str(delivery.get("reply") or "")
-        if msg_type in {"audio", "voice"}:
-            marker = "Voice message received."
-            if marker in reply:
-                reply = reply[reply.index(marker):].strip()
-            reply = clean_audio_reply(reply)
-        return reply
+            delivery = None
+            execution_error = None
+            try:
+                delivery = deliver_agent_sync(
+                    current_agent_id,
+                    next_prompt,
+                    task_id=task.task_id,
+                    conversation_id=backend_conversation_id,
+                    source_message_id=source_message_id,
+                    return_path=_wire_down_topic(wire_payload),
+                    desktop_access_profile=(
+                        DESKTOP_EXECUTOR if full_desktop_executor else RESTRICTED
+                    ),
+                    response_language=preferred_response_language,
+                    execution_prompt=current_user_request,
+                    execution_policy=execution_policy.public(),
+                    client_route_id=client_route_id,
+                    turn_id=client_turn_id,
+                    run_id=(
+                        ""
+                        if recovery_attempts == 0
+                        else f"{task.task_id}:recovery:{recovery_attempts}:{current_agent_id}"
+                    ),
+                    invocation_mode="direct" if recovery_attempts == 0 else "handoff",
+                    caller_agent_id=agent_id if recovery_attempts else "",
+                    parent_run_id=task.task_id if recovery_attempts else "",
+                )
+            except Exception as exc:
+                execution_error = exc
+            if execution_error is not None:
+                agent_task_manager.add_event(
+                    task.task_id,
+                    provider_kind,
+                    f"Calling {provider_name}",
+                    event_id=provider_event_id,
+                    status="failed",
+                    metadata={"provider": current_agent_id, "attempt": recovery_attempts + 1},
+                    on_event=publish_event,
+                )
+                if recovery_attempts >= max_recovery_attempts:
+                    raise execution_error
+                decision = model_failure_decision(
+                    task.task_id,
+                    current_agent_id,
+                    str(execution_error),
+                    recovery_attempts + 1,
+                )
+                if decision is None:
+                    raise execution_error
+                parsed_reply = ""
+            else:
+                add_task_trace(
+                    "agent_first_output",
+                    current_agent_id,
+                    once=True,
+                    meaningful_progress=True,
+                )
+                agent_task_manager.add_event(
+                    task.task_id,
+                    provider_kind,
+                    f"Calling {provider_name}",
+                    event_id=provider_event_id,
+                    status="completed",
+                    metadata={"provider": current_agent_id, "attempt": recovery_attempts + 1},
+                    on_event=publish_event,
+                )
+                reply = str((delivery or {}).get("reply") or "")
+                parsed = parse_model_recovery(reply, mobile_context.attachments)
+                parsed_reply = parsed.visible_reply
+                decision = parsed.decision
+                if decision is None:
+                    if msg_type in {"audio", "voice"}:
+                        marker = "Voice message received."
+                        if marker in parsed_reply:
+                            parsed_reply = parsed_reply[parsed_reply.index(marker):].strip()
+                        parsed_reply = clean_audio_reply(parsed_reply)
+                    return parsed_reply
+                last_visible_reply = parsed_reply
+            if recovery_attempts >= max_recovery_attempts:
+                return (
+                    last_visible_reply
+                    or decision.user_message
+                    or ("\u4efb\u52a1\u4ecd\u7136\u53d7\u963b\uff0c\u5df2\u505c\u6b62\u91cd\u590d\u5c1d\u8bd5\u3002" if any("\u4e00" <= c <= "\u9fff" for c in content)
+                        else "The task remains blocked, so repeated attempts were stopped.")
+                )
+            recovery_attempts += 1
+            agent_task_manager.add_event(
+                task.task_id,
+                "reasoning_summary",
+                decision.reason or "The previous observation requires a different execution path",
+                event_id=f"recovery-decision:{task.task_id}:{recovery_attempts}",
+                status="completed",
+                metadata={"action": decision.action.value, "attempt": recovery_attempts},
+                on_event=publish_event,
+            )
+            if decision.action == ModelRecoveryAction.REQUEST_ATTACHMENT:
+                paths = restore_requested_attachments(task.task_id, decision)
+                next_prompt = content_with_attachments(
+                    task.task_id,
+                    recovery_follow_up(decision, paths),
+                )
+                continue
+            if decision.action == ModelRecoveryAction.RETRY:
+                next_prompt = content_with_attachments(
+                    task.task_id,
+                    recovery_follow_up(decision),
+                )
+                continue
+            if decision.action == ModelRecoveryAction.SWITCH_AGENT:
+                if decision.target_agent_id not in all_agent_specs():
+                    return last_visible_reply or decision.user_message or "The selected recovery Agent is unavailable."
+                current_agent_id = decision.target_agent_id
+                next_prompt = content_with_attachments(
+                    task.task_id,
+                    "Continue the original user goal as the recovery Agent. Review the prior failure, "
+                    "use a different approach, verify the result, and return the final answer.",
+                )
+                continue
+            return last_visible_reply or decision.user_message or (
+                "\u8fd8\u7f3a\u5c11\u4e00\u9879\u65e0\u6cd5\u81ea\u52a8\u6062\u590d\u7684\u4fe1\u606f\uff0c\u8bf7\u8865\u5145\u540e\u6211\u4f1a\u7ee7\u7eed\u3002"
+                if any("\u4e00" <= c <= "\u9fff" for c in content)
+                else "One required detail could not be recovered automatically. Provide it to continue."
+            )
 
     def publish_result(task: dict) -> None:
         from agent_execution_harness import ArtifactFinalization, finalize_task_artifacts
@@ -3750,7 +3994,7 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
             return True
 
         def app_event(task_id: str, event: dict) -> None:
-            nonlocal result_published
+            nonlocal result_published, recovery_attempts
             event_status = str(event.get("status") or "running")
             approval_request = event.get("approval_request")
             if event_status == "waiting_approval" and isinstance(approval_request, dict):
@@ -3823,6 +4067,170 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 thread_id = str(event.get("thread_id") or "")
                 if thread_id:
                     sessions.put("codex", codex_conversation_id, thread_id)
+            if event_status == "completed" and str(event_result or "").strip():
+                parsed_recovery = parse_model_recovery(
+                    str(event_result),
+                    mobile_context.attachments,
+                )
+                event_result = parsed_recovery.visible_reply
+                decision = parsed_recovery.decision
+                if (
+                    decision is not None
+                    and decision.action in {
+                        ModelRecoveryAction.REQUEST_ATTACHMENT,
+                        ModelRecoveryAction.RETRY,
+                        ModelRecoveryAction.SWITCH_AGENT,
+                    }
+                    and recovery_attempts < max_recovery_attempts
+                ):
+                    recovery_attempts += 1
+                    event["_signalasi_keep_callback"] = True
+                    agent_task_manager.update(
+                        task_id,
+                        "running",
+                        on_event=publish_event,
+                        current_step="Recovering from the latest observation",
+                        result="",
+                        error="",
+                    )
+                    agent_task_manager.add_event(
+                        task_id,
+                        "reasoning_summary",
+                        decision.reason or "The latest observation requires a different execution path",
+                        event_id=f"recovery-decision:{task_id}:{recovery_attempts}",
+                        status="completed",
+                        metadata={"action": decision.action.value, "attempt": recovery_attempts},
+                        on_event=publish_event,
+                    )
+
+                    def continue_after_recovery() -> None:
+                        nonlocal result_published
+                        try:
+                            paths: list[str] = []
+                            if decision.action == ModelRecoveryAction.REQUEST_ATTACHMENT:
+                                paths = restore_requested_attachments(task_id, decision)
+                            if decision.action == ModelRecoveryAction.SWITCH_AGENT:
+                                from agent_gateway import all_agent_specs
+
+                                if decision.target_agent_id not in all_agent_specs():
+                                    raise RuntimeError("The selected recovery Agent is unavailable")
+                                handoff = deliver_agent_sync(
+                                    decision.target_agent_id,
+                                    content_with_attachments(
+                                        task_id,
+                                        "Continue the original user goal from the latest observation. "
+                                        "Use a different approach, verify the result, and return the final answer.",
+                                    ),
+                                    task_id=task_id,
+                                    conversation_id=backend_conversation_id,
+                                    source_message_id=source_message_id,
+                                    response_language=preferred_response_language,
+                                    execution_prompt=current_user_request,
+                                    execution_policy=execution_policy.public(),
+                                    client_route_id=client_route_id,
+                                    turn_id=client_turn_id,
+                                    run_id=f"{task_id}:recovery:{recovery_attempts}:{decision.target_agent_id}",
+                                    invocation_mode="handoff",
+                                    caller_agent_id="codex",
+                                    parent_run_id=task_id,
+                                )
+                                reply = parse_model_recovery(
+                                    str(handoff.get("reply") or ""),
+                                    mobile_context.attachments,
+                                ).visible_reply
+                                completed = agent_task_manager.update(
+                                    task_id,
+                                    "completed",
+                                    on_event=publish_event,
+                                    current_step="",
+                                    result=reply,
+                                    error="",
+                                )
+                                if completed is not None and reply and not result_published:
+                                    result_published = True
+                                    publish_result(completed.public())
+                                with codex_task_callbacks_lock:
+                                    codex_task_callbacks.pop(task_id, None)
+                                return
+                            server = codex_runtime.get("server")
+                            workspace = codex_runtime.get("workspace")
+                            if not isinstance(server, CodexAppServer) or not isinstance(workspace, Path):
+                                raise RuntimeError("Codex recovery runtime is unavailable")
+                            follow_up = content_with_attachments(
+                                task_id,
+                                recovery_follow_up(decision, paths),
+                            )
+                            input_paths = sorted((workspace / "downloads" / "input").glob("*"))
+                            image_paths = [
+                                str(path.resolve())
+                                for path in input_paths
+                                if path.is_file() and path.suffix.lower() in IMAGE_ATTACHMENT_SUFFIXES
+                            ]
+                            codex_runtime["image_paths"] = list(image_paths)
+                            with codex_task_callbacks_lock:
+                                codex_task_callbacks[task_id] = app_event
+                            server.start_task(
+                                task_id,
+                                follow_up,
+                                str(workspace),
+                                conversation_id=codex_run_conversation_id,
+                                image_paths=image_paths,
+                                approval_policy=codex_approval_policy,
+                                sandbox=codex_sandbox,
+                                execution_policy=execution_policy,
+                            )
+                            bind_codex_stall_recovery(server)
+                            add_task_trace(
+                                "model_recovery_turn_started",
+                                f"attempt={recovery_attempts} action={decision.action.value}",
+                                meaningful_progress=True,
+                            )
+                        except Exception as exc:
+                            log.warning(
+                                "Model-driven recovery failed task=%s action=%s reason=%s",
+                                task_id,
+                                decision.action.value,
+                                str(exc)[:300],
+                            )
+                            result = (
+                                parsed_recovery.visible_reply
+                                or decision.user_message
+                                or (
+                                    "\u6062\u590d\u6240\u9700\u7684\u4e0a\u4e0b\u6587\u4ecd\u4e0d\u53ef\u7528\uff0c\u672c\u6b21\u4efb\u52a1\u5df2\u5b89\u5168\u505c\u6b62\u3002"
+                                    if any("\u4e00" <= character <= "\u9fff" for character in content)
+                                    else "The context required for recovery is still unavailable, so the task stopped safely."
+                                )
+                            )
+                            failed = agent_task_manager.update(
+                                task_id,
+                                "failed",
+                                on_event=publish_event,
+                                current_step="",
+                                result=result,
+                                error=str(exc)[:500],
+                            )
+                            if failed is not None and result and not result_published:
+                                result_published = True
+                                publish_result(failed.public())
+                            with codex_task_callbacks_lock:
+                                codex_task_callbacks.pop(task_id, None)
+
+                    threading.Thread(
+                        target=continue_after_recovery,
+                        daemon=True,
+                        name=f"model-recovery-{task_id[:8]}-{recovery_attempts}",
+                    ).start()
+                    return
+                if decision is not None:
+                    event_result = (
+                        parsed_recovery.visible_reply
+                        or decision.user_message
+                        or (
+                            "\u8fd8\u7f3a\u5c11\u4e00\u9879\u65e0\u6cd5\u81ea\u52a8\u6062\u590d\u7684\u4fe1\u606f\uff0c\u8bf7\u8865\u5145\u540e\u6211\u4f1a\u7ee7\u7eed\u3002"
+                            if any("\u4e00" <= character <= "\u9fff" for character in content)
+                            else "One required detail could not be recovered automatically. Provide it to continue."
+                        )
+                    )
             if event_status == "completed" and str(event_result or "").strip():
                 from task_workspace import import_referenced_task_artifacts
 
@@ -4652,6 +5060,19 @@ def _process_message(mqttc, userdata, msg):
                 )
             return
 
+        if payload.get("type") == INPUT_ATTACHMENT_REQUEST_RESULT_TYPE:
+            accepted = attachment_request_broker.accept_result(
+                payload,
+                client_route_id=client_route_id,
+            )
+            if not accepted:
+                log.warning(
+                    "Rejected attachment recovery result request=%s client=%s",
+                    str(payload.get("request_id") or "")[:12],
+                    client_route_id[-8:],
+                )
+            return
+
         if payload.get("type") in {
             INPUT_ATTACHMENT_MANIFEST_TYPE,
             INPUT_ATTACHMENT_CHUNK_TYPE,
@@ -4679,6 +5100,7 @@ def _process_message(mqttc, userdata, msg):
                     client_route_id=client_route_id,
                 )
             if receipt is not None:
+                attachment_request_broker.accept_receipt(receipt)
                 _publish_phone_payload(mqttc, wire_payload, receipt.payload())
             return
 

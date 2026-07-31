@@ -1532,7 +1532,8 @@ object SignalASIMqttClient {
                 "agent_task_event",
                 "agent_task_approval_result",
                 "text",
-                "artifact_chunk"
+                "artifact_chunk",
+                AgentAttachmentRecoveryRequest.REQUEST_TYPE
             )
         ) {
             val identity = AgentTaskIdentity(
@@ -1657,6 +1658,13 @@ object SignalASIMqttClient {
         if (payload.optString("type") == "input_attachment_receipt") {
             attachmentTransferExecutor.execute {
                 handleInputAttachmentReceipt(context, payload, sourceDesktopId)
+            }
+            SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
+            return
+        }
+        if (payload.optString("type") == AgentAttachmentRecoveryRequest.REQUEST_TYPE) {
+            attachmentTransferExecutor.execute {
+                handleInputAttachmentRequest(context, payload, sourceDesktopId)
             }
             SignalASILinkDeliveryStore.completeIncoming(context, payload.optString("message_id"))
             return
@@ -1859,6 +1867,110 @@ object SignalASIMqttClient {
                 link.routes.up,
                 transfer.scope.contactId
             )
+        }
+    }
+
+    private fun handleInputAttachmentRequest(
+        context: Context,
+        payload: JSONObject,
+        sourceDesktopId: String
+    ) {
+        val request = AgentAttachmentRecoveryRequest.decode(payload) ?: return
+        if (!AgentTaskIdentityStore.matchesRegistered(context, payload)) {
+            Log.w(TAG, "Rejected attachment recovery outside a registered task")
+            return
+        }
+        val link = SignalASILinkProtocol.serverLink(context, sourceDesktopId) ?: return
+        if (
+            !link.paired ||
+            link.routes.clientRouteId != request.clientRouteId ||
+            AppStore.desktopIdForContact(context, request.contactId) != sourceDesktopId
+        ) return
+        val restored = runCatching {
+            AgentAttachmentWorkspaceStager.restoreByIds(
+                context,
+                request.conversationId,
+                request.attachmentIds
+            )
+        }.onFailure {
+            Log.w(TAG, "Requested attachment recovery lookup failed", it)
+        }.getOrElse {
+            publishJsonResult(
+                request.result(
+                    status = "failed",
+                    error = "Requested attachment could not be restored"
+                ),
+                link.routes.up,
+                request.contactId
+            )
+            return
+        }
+        val availableIds = restored.map(AgentInputAttachment::id)
+        val missingIds = request.attachmentIds.filterNot(availableIds::contains)
+        if (restored.isEmpty()) {
+            publishJsonResult(
+                request.result(
+                    status = "missing",
+                    missingAttachmentIds = missingIds
+                ),
+                link.routes.up,
+                request.contactId
+            )
+            return
+        }
+        val prepared = runCatching {
+            AgentOutboundAttachmentTransferStore.prepare(
+                context = context,
+                scope = AgentAttachmentTransferScope(
+                    contactId = request.contactId,
+                    desktopId = sourceDesktopId,
+                    clientRouteId = request.clientRouteId,
+                    conversationId = request.conversationId,
+                    taskId = request.taskId,
+                    turnId = request.turnId,
+                    clientMessageId = request.sourceMessageId,
+                    attachmentRequestId = request.requestId
+                ),
+                attachments = restored,
+                mediaProfile = AgentMediaNetworkDetector.detect(context)
+            )
+        }.onFailure {
+            Log.w(TAG, "Requested attachment recovery preparation failed", it)
+        }.getOrElse {
+            publishJsonResult(
+                request.result(
+                    status = "failed",
+                    availableAttachmentIds = availableIds,
+                    missingAttachmentIds = missingIds,
+                    error = "Requested attachment could not be prepared"
+                ),
+                link.routes.up,
+                request.contactId
+            )
+            return
+        }
+        publishJsonResult(
+            request.result(
+                status = "transferring",
+                availableAttachmentIds = availableIds,
+                missingAttachmentIds = missingIds
+            ),
+            link.routes.up,
+            request.contactId
+        )
+        prepared.forEach { attachment ->
+            publishJsonResult(
+                attachment.manifestPayload(resume = false),
+                link.routes.up,
+                request.contactId
+            )
+            for (chunkIndex in 0 until attachment.chunkCount) {
+                publishJsonResult(
+                    attachment.chunkPayload(chunkIndex),
+                    link.routes.up,
+                    request.contactId
+                )
+            }
         }
     }
 

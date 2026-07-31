@@ -94,13 +94,25 @@ internal object AgentTaskIdentityStore {
     }
 
     fun matches(context: Context, payload: JSONObject): Boolean {
+        return matchesStored(context, payload, requireRegistered = false)
+    }
+
+    fun matchesRegistered(context: Context, payload: JSONObject): Boolean {
+        return matchesStored(context, payload, requireRegistered = true)
+    }
+
+    private fun matchesStored(
+        context: Context,
+        payload: JSONObject,
+        requireRegistered: Boolean
+    ): Boolean {
         val contactId = payload.optString("contact_id")
         val sourceMessageId = payload.optString("source_message_id").toLongOrNull()
             ?: payload.optLong("source_message_id", 0L)
         if (contactId.isBlank() || sourceMessageId <= 0L) return false
         val encoded = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(key(contactId, sourceMessageId), null)
-            ?: return true
+            ?: return !requireRegistered
         val expected = runCatching { JSONObject(encoded) }.getOrNull() ?: return false
         return payload.optString("client_route_id") == expected.optString("client_route_id") &&
             payload.optString("conversation_id") == expected.optString("conversation_id") &&

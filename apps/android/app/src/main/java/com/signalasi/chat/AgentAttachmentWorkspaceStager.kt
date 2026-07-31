@@ -131,6 +131,67 @@ object AgentAttachmentWorkspaceStager {
         }
     }
 
+    fun restoreByIds(
+        context: Context,
+        conversationId: String,
+        attachmentIds: Collection<String>
+    ): List<AgentInputAttachment> {
+        val requested = attachmentIds.asSequence()
+            .map(String::trim)
+            .filter { it.isNotBlank() && it.length <= 120 }
+            .distinct()
+            .take(MAX_RESTORED_ATTACHMENTS)
+            .toList()
+        if (requested.isEmpty()) return emptyList()
+        val workspaceId = AgentWorkspaceScope.id(conversationId)
+        return AgentWorkspaceScope.withLock(workspaceId) {
+            val projectRoot = File(context.applicationContext.filesDir, "agent-native-workspaces")
+            val workspace = File(projectRoot, workspaceId).canonicalFile
+            val inputsRoot = File(workspace, "inputs").canonicalFile
+            if (
+                !inputsRoot.path.startsWith(workspace.path + File.separator) ||
+                !inputsRoot.isDirectory
+            ) return@withLock emptyList()
+            val records = inputsRoot.listFiles()
+                .orEmpty()
+                .filter(File::isDirectory)
+                .sortedByDescending(File::lastModified)
+                .flatMap { directory ->
+                    readManifest(directory).map { record -> directory to record }
+                }
+            requested.mapNotNull { attachmentId ->
+                val (directory, record) = records.firstOrNull { (_, candidate) ->
+                    candidate.attachmentId == attachmentId
+                } ?: return@mapNotNull null
+                restoreRecord(workspace, directory, record, attachmentId)
+            }
+        }
+    }
+
+    private fun restoreRecord(
+        workspace: File,
+        inputDirectory: File,
+        record: AgentStagedAttachment,
+        attachmentId: String
+    ): AgentInputAttachment? {
+        val relative = record.relativePath.replace('\\', '/').trim('/')
+        if (!relative.startsWith("inputs/${inputDirectory.name}/")) return null
+        val source = File(workspace, relative).canonicalFile
+        if (
+            !source.path.startsWith(inputDirectory.canonicalPath + File.separator) ||
+            !source.isFile ||
+            source.length() != record.sizeBytes ||
+            sha256(source) != record.sha256
+        ) return null
+        return AgentInputAttachment(
+            id = attachmentId,
+            uri = Uri.fromFile(source),
+            displayName = record.name,
+            mimeType = record.mimeType.ifBlank { "application/octet-stream" },
+            sizeBytes = record.sizeBytes
+        )
+    }
+
     private fun writeManifest(directory: File, attachments: List<AgentStagedAttachment>) {
         val target = File(directory, MANIFEST_FILE)
         val temporary = File(directory, "$MANIFEST_FILE.tmp")
