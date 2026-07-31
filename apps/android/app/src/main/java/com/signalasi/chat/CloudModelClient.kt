@@ -2,6 +2,9 @@ package com.signalasi.chat
 
 import android.content.Context
 import android.util.Log
+import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
+import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
+import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
@@ -196,11 +199,13 @@ object CloudModelClient {
                         val endpoint = contact.getString("cloud_endpoint")
                         val response = when (provider) {
                             AgentModelToolProvider.OPENAI_COMPATIBLE -> postJson(
+                                context,
                                 endpoint,
                                 openAiHeaders(contact),
                                 body
                             )
                             AgentModelToolProvider.ANTHROPIC -> postJson(
+                                context,
                                 endpoint,
                                 mapOf(
                                     "x-api-key" to contact.getString("cloud_api_key"),
@@ -213,7 +218,7 @@ object CloudModelClient {
                                 val separator = if (endpoint.contains("?")) "&" else "?"
                                 val url = endpoint + separator + "key=" +
                                     URLEncoder.encode(contact.getString("cloud_api_key"), "UTF-8")
-                                postJson(url, emptyMap(), body)
+                                postJson(context, url, emptyMap(), body)
                             }
                         }
                         if (request.cancellationToken.isCancellationRequested) {
@@ -280,6 +285,21 @@ object CloudModelClient {
         purpose: String,
         operation: () -> T
     ): T {
+        val traceId = VoiceLatencyTraceContext.currentTraceId()
+        val traceAttributes = mapOf(
+            "model_provider" to contact.optString("cloud_provider", contact.optString("cloud_api_style", "cloud")),
+            "model_profile_id" to contact.optString("cloud_model", "unknown"),
+            "execution_mode" to "non_streaming"
+        )
+        if (traceId.isNotBlank()) {
+            VoiceLatencyTelemetry.record(
+                context,
+                traceId,
+                VoiceTraceEvents.MODEL_REQUEST_STARTED,
+                traceAttributes,
+                once = true
+            )
+        }
         val disclosure = AgentDataDisclosureLedger.beginCloudRequest(
             context = context,
             contact = contact,
@@ -297,6 +317,15 @@ object CloudModelClient {
         return try {
             operation().also {
                 AgentDataDisclosureLedger.update(context, disclosure, AgentDisclosureStatus.SENT)
+                if (traceId.isNotBlank()) {
+                    VoiceLatencyTelemetry.record(
+                        context,
+                        traceId,
+                        VoiceTraceEvents.MODEL_REQUEST_COMPLETED,
+                        traceAttributes + ("success" to "true"),
+                        once = true
+                    )
+                }
             }
         } catch (error: Throwable) {
             AgentDataDisclosureLedger.update(
@@ -305,6 +334,18 @@ object CloudModelClient {
                 AgentDisclosureStatus.FAILED,
                 error.message.orEmpty()
             )
+            if (traceId.isNotBlank()) {
+                VoiceLatencyTelemetry.record(
+                    context,
+                    traceId,
+                    VoiceTraceEvents.MODEL_REQUEST_COMPLETED,
+                    traceAttributes + mapOf(
+                        "success" to "false",
+                        "error_code" to error.javaClass.simpleName
+                    ),
+                    once = true
+                )
+            }
             throw error
         }
     }
@@ -371,6 +412,7 @@ object CloudModelClient {
                 )
             }
             text = postJson(
+                context,
                 contact.getString("cloud_endpoint"),
                 openAiHeaders(contact),
                 body.put("messages", messages)
@@ -481,6 +523,7 @@ object CloudModelClient {
             body.remove("tools")
             body.remove("tool_choice")
             text = postJson(
+                context,
                 contact.getString("cloud_endpoint"),
                 openAiHeaders(contact),
                 body.put("messages", messages)
@@ -542,6 +585,7 @@ object CloudModelClient {
                 )
             }
             val responseText = postJson(
+                context,
                 contact.getString("cloud_endpoint"),
                 mapOf(
                     "x-api-key" to contact.getString("cloud_api_key"),
@@ -639,6 +683,7 @@ object CloudModelClient {
             )
             body.remove("tools")
             val responseText = postJson(
+                context,
                 contact.getString("cloud_endpoint"),
                 mapOf(
                     "x-api-key" to contact.getString("cloud_api_key"),
@@ -719,7 +764,7 @@ object CloudModelClient {
                     )
                 )
             }
-            val responseText = postJson(url, emptyMap(), body.put("contents", contents))
+            val responseText = postJson(context, url, emptyMap(), body.put("contents", contents))
             val json = JSONObject(responseText)
             val usage = json.optJSONObject("usageMetadata")
             totalUsage += CloudModelUsage(
@@ -849,7 +894,7 @@ object CloudModelClient {
                 )
             )
             body.remove("tools")
-            val responseText = postJson(url, emptyMap(), body.put("contents", contents))
+            val responseText = postJson(context, url, emptyMap(), body.put("contents", contents))
             val json = JSONObject(responseText)
             val usage = json.optJSONObject("usageMetadata")
             totalUsage += CloudModelUsage(
@@ -1115,6 +1160,7 @@ object CloudModelClient {
         ) {
             locallyCompiled.copy(
                 summary = refineConversationSummary(
+                    context = context,
                     contact = contact,
                     provisionalSummary = locallyCompiled.summary,
                     compactedMessages = locallyCompiled.compactedMessages,
@@ -1143,6 +1189,7 @@ object CloudModelClient {
     }
 
     private fun refineConversationSummary(
+        context: Context,
         contact: JSONObject,
         provisionalSummary: String,
         compactedMessages: List<ConversationContextItem>,
@@ -1191,6 +1238,7 @@ object CloudModelClient {
                         )
                     val response = JSONObject(
                         postJson(
+                            context,
                             contact.getString("cloud_endpoint"),
                             mapOf(
                                 "x-api-key" to contact.getString("cloud_api_key"),
@@ -1232,7 +1280,7 @@ object CloudModelClient {
                                 .put("temperature", 0.0)
                                 .put("maxOutputTokens", maxOutputTokens)
                         )
-                    val response = JSONObject(postJson(url, emptyMap(), body))
+                    val response = JSONObject(postJson(context, url, emptyMap(), body))
                     textBlocks(
                         response.optJSONArray("candidates")
                             ?.optJSONObject(0)
@@ -1262,6 +1310,7 @@ object CloudModelClient {
                         .put("stream", false)
                     val response = JSONObject(
                         postJson(
+                            context,
                             contact.getString("cloud_endpoint"),
                             openAiHeaders(contact),
                             body
@@ -1359,7 +1408,12 @@ object CloudModelClient {
         throw lastOverflow ?: IllegalStateException("Context retry ended without a result")
     }
 
-    private fun postJson(url: String, headers: Map<String, String>, body: JSONObject): String {
+    private fun postJson(
+        context: Context,
+        url: String,
+        headers: Map<String, String>,
+        body: JSONObject
+    ): String {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 20_000
@@ -1372,10 +1426,43 @@ object CloudModelClient {
             OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
                 writer.write(body.toString())
             }
-            val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-            val response = stream?.let { BufferedReader(it.reader(Charsets.UTF_8)).use { reader -> reader.readText() } }.orEmpty()
-            if (connection.responseCode !in 200..299) {
-                throw CloudHttpException(connection.responseCode, response)
+            val responseCode = connection.responseCode
+            val traceId = VoiceLatencyTraceContext.currentTraceId()
+            if (traceId.isNotBlank()) {
+                VoiceLatencyTelemetry.record(
+                    context,
+                    traceId,
+                    VoiceTraceEvents.MODEL_CONNECTED,
+                    mapOf("http_status" to responseCode.toString()),
+                    once = true
+                )
+            }
+            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            var firstChunk = true
+            val response = stream?.let {
+                BufferedReader(it.reader(Charsets.UTF_8)).use { reader ->
+                    val buffer = CharArray(8_192)
+                    buildString {
+                        while (true) {
+                            val count = reader.read(buffer)
+                            if (count < 0) break
+                            if (count == 0) continue
+                            if (firstChunk && traceId.isNotBlank()) {
+                                firstChunk = false
+                                VoiceLatencyTelemetry.record(
+                                    context,
+                                    traceId,
+                                    VoiceTraceEvents.MODEL_FIRST_DELTA,
+                                    once = true
+                                )
+                            }
+                            append(buffer, 0, count)
+                        }
+                    }
+                }
+            }.orEmpty()
+            if (responseCode !in 200..299) {
+                throw CloudHttpException(responseCode, response)
             }
             return response
         } finally {

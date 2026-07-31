@@ -1,5 +1,9 @@
 package com.signalasi.chat
 
+import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
+import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
+import com.signalasi.chat.voice.metrics.VoiceTraceEvents
+
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
@@ -537,7 +541,8 @@ object SignalASIMqttClient {
         conversationId: String = "",
         turnId: String = "",
         taskId: String = "",
-        executionMode: AgentTaskExecutionMode? = null
+        executionMode: AgentTaskExecutionMode? = null,
+        traceId: String = VoiceLatencyTraceContext.currentTraceId()
     ): Boolean = publishUserMessageResult(
         content = content,
         contactId = contactId,
@@ -547,7 +552,8 @@ object SignalASIMqttClient {
         conversationId = conversationId,
         turnId = turnId,
         taskId = taskId,
-        executionMode = executionMode
+        executionMode = executionMode,
+        traceId = traceId
     ).accepted
 
     internal fun publishUserMessageResult(
@@ -559,7 +565,8 @@ object SignalASIMqttClient {
         conversationId: String = "",
         turnId: String = "",
         taskId: String = "",
-        executionMode: AgentTaskExecutionMode? = null
+        executionMode: AgentTaskExecutionMode? = null,
+        traceId: String = VoiceLatencyTraceContext.currentTraceId()
     ): MqttPublishResult {
         val context = appContext
         val resolvedConversationId = AgentTaskIdentityPolicy.conversationId(
@@ -598,6 +605,25 @@ object SignalASIMqttClient {
             .put("execution_mode", resolvedExecutionMode.wireValue)
             .put("task_budget", AgentTaskBudgetJsonCodec.encode(taskBudget))
             .put("time", System.currentTimeMillis())
+        val resolvedTraceId = traceId.trim().takeIf { it.matches(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) }
+            .orEmpty()
+        if (resolvedTraceId.isNotBlank()) {
+            payload
+                .put("trace_id", resolvedTraceId)
+                .put("voice_session_id", resolvedTraceId)
+            context?.let {
+                VoiceLatencyTelemetry.record(
+                    it,
+                    resolvedTraceId,
+                    VoiceTraceEvents.AGENT_RUN_CREATE_STARTED,
+                    mapOf(
+                        "agent_provider" to contactId.substringAfterLast(':').ifBlank { "remote_agent" },
+                        "transport" to "signalasi_link"
+                    ),
+                    once = true
+                )
+            }
+        }
         val sourceAttachments = context
             ?.let { AgentTurnAttachmentRegistry.get(resolvedTurnId) }
             .orEmpty()
