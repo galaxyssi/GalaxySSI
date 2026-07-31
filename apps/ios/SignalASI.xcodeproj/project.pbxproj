@@ -116,6 +116,8 @@
     A10000000000000000000646 /* VoiceWhisperModelSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */; };
     A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000648 /* VoiceProviderSettings.swift */; };
     A10000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */; };
+    A10000000000000000000656 /* VoiceWhisperModelVerifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000656 /* VoiceWhisperModelVerifier.swift */; };
+    A10000000000000000000657 /* VoiceWhisperModelStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000657 /* VoiceWhisperModelStorage.swift */; };
     A10000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift */; };
     A10000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift */; };
     A10000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift */; };
@@ -132,6 +134,7 @@
     A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */; };
     A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */; };
     A10000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift */; };
+    A10000000000000000000658 /* VoiceWhisperModelStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000658 /* VoiceWhisperModelStorageTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -631,6 +634,8 @@
     A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsView.swift; sourceTree = "<group>"; };
     A20000000000000000000648 /* VoiceProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceProviderSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000656 /* VoiceWhisperModelVerifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelVerifier.swift; sourceTree = "<group>"; };
+    A20000000000000000000657 /* VoiceWhisperModelStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelStorage.swift; sourceTree = "<group>"; };
     A20000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSTypes.swift; sourceTree = "<group>"; };
     A20000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSWire.swift; sourceTree = "<group>"; };
     A20000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift; sourceTree = "<group>"; };
@@ -795,6 +800,7 @@
     A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMicrosoftEdgeTTSTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000658 /* VoiceWhisperModelStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelStorageTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
@@ -1047,6 +1053,8 @@
         A20000000000000000000646 /* VoiceWhisperModelSettingsView.swift */,
         A20000000000000000000648 /* VoiceProviderSettings.swift */,
         A20000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift */,
+        A20000000000000000000656 /* VoiceWhisperModelVerifier.swift */,
+        A20000000000000000000657 /* VoiceWhisperModelStorage.swift */,
         A20000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift */,
         A20000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift */,
         A20000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift */,
@@ -1249,6 +1257,7 @@
         A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */,
         A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */,
         A20000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift */,
+        A20000000000000000000658 /* VoiceWhisperModelStorageTests.swift */,
         A20000000000000000000222 /* AgentDeviceProfileTests.swift */,
         A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */,
         A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
@@ -1568,6 +1577,8 @@
         A10000000000000000000646 /* VoiceWhisperModelSettingsView.swift in Sources */,
         A10000000000000000000648 /* VoiceProviderSettings.swift in Sources */,
         A10000000000000000000649 /* VoiceASRProviderRoutingPolicy.swift in Sources */,
+        A10000000000000000000656 /* VoiceWhisperModelVerifier.swift in Sources */,
+        A10000000000000000000657 /* VoiceWhisperModelStorage.swift in Sources */,
         A10000000000000000000651 /* VoiceMicrosoftEdgeTTSTypes.swift in Sources */,
         A10000000000000000000652 /* VoiceMicrosoftEdgeTTSWire.swift in Sources */,
         A10000000000000000000653 /* URLSessionVoiceMicrosoftEdgeTTSSynthesizer.swift in Sources */,
@@ -1777,6 +1788,7 @@
         A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */,
         A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */,
         A10000000000000000000655 /* VoiceMicrosoftEdgeTTSTests.swift in Sources */,
+        A10000000000000000000658 /* VoiceWhisperModelStorageTests.swift in Sources */,
         A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */,
         A10000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift in Sources */,
         A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,
