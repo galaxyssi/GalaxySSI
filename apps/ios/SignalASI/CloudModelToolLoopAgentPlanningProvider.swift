@@ -28,6 +28,9 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
     toolRegistry: AgentNativeToolRegistry,
     structuredSender: CloudModelStructuredSending = CloudModelClient(),
     nativeToolSender: CloudModelNativeToolSending = CloudModelClient(),
+    disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
+      fileURL: AgentDataDisclosureStorePaths.ledgerURL()
+    ),
     budget: AgentModelToolLoopBudget = CloudModelToolLoopAgentPlanningProvider.androidPlannerBudget,
     clock: AgentModelToolLoopClock = .system,
     loopIdFactory: AgentModelToolLoopIdFactory = .uuids,
@@ -37,7 +40,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
       fallbackProvider: CloudModelAgentPlanningProvider(
         contact: contact,
         store: store,
-        sender: structuredSender
+        sender: structuredSender,
+        disclosureStore: disclosureStore
       ),
       toolRegistry: toolRegistry,
       budget: budget,
@@ -48,7 +52,8 @@ struct CloudModelToolLoopAgentPlanningProvider: AgentModelPlanningProviding {
           contact: contact,
           store: store,
           catalog: catalog,
-          sender: nativeToolSender
+          sender: nativeToolSender,
+          disclosureStore: disclosureStore
         ),
         toolRegistry: registry,
         clock: clock,

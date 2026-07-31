@@ -90,11 +90,13 @@ final class CloudModelAgentPlanningProviderTests: XCTestCase {
     )
     let catalog = [try nativeToolDescriptor(id: "phone.test.echo")]
     let sender = RecordingNativeToolSender(response: AgentModelResponse(assistantText: "Done"))
+    let disclosureStore = InMemoryAgentDataDisclosureStore()
     let adapter = CloudModelNativeToolAdapter(
       contact: contact,
       store: store,
       catalog: catalog,
-      sender: sender
+      sender: sender,
+      disclosureStore: disclosureStore
     )
     let request = AgentModelRequest(
       sessionId: "session-1",
@@ -121,6 +123,65 @@ final class CloudModelAgentPlanningProviderTests: XCTestCase {
     XCTAssertTrue(call.store === store)
     XCTAssertEqual(call.request.turnId, "turn-1")
     XCTAssertEqual(call.catalog.map(\.id), ["phone.test.echo"])
+    let record = try XCTUnwrap(disclosureStore.list().first)
+    XCTAssertEqual(record.destinationId, contact.id)
+    XCTAssertEqual(record.status, .sent)
+    XCTAssertEqual(record.purpose, "Model native tool turn")
+    XCTAssertEqual(record.conversationIdHash.count, 64)
+    XCTAssertTrue(record.dataKinds.contains(.messageText))
+  }
+
+  func testCloudModelNativeToolAdapterBlocksDisallowedDestinationBeforeSending() async throws {
+    let secrets = InMemorySecretStore()
+    let store = makeStore(secrets: secrets)
+    let contact = try store.addCloudModelContact(
+      displayName: "Planner",
+      provider: "OpenAI",
+      modelId: "planner-model",
+      endpoint: "https://api.openai.com/v1/chat/completions",
+      apiKey: "sk-live-key",
+      apiStyle: .openAICompatible
+    )
+    let sender = RecordingNativeToolSender(response: AgentModelResponse(assistantText: "Done"))
+    let disclosureStore = InMemoryAgentDataDisclosureStore()
+    disclosureStore.setDestinationBlocked(destinationId: contact.id, blocked: true)
+    let adapter = CloudModelNativeToolAdapter(
+      contact: contact,
+      store: store,
+      catalog: [try nativeToolDescriptor(id: "phone.test.echo")],
+      sender: sender,
+      disclosureStore: disclosureStore
+    )
+    let request = AgentModelRequest(
+      sessionId: "session-1",
+      conversationId: "conversation-1",
+      turnId: "turn-1",
+      taskId: "task-1",
+      workspaceId: "workspace-1",
+      round: 1,
+      messages: [.user("Use the phone tool.")],
+      toolManifestJson: "{}",
+      toolManifestSha256: "hash",
+      remainingToolCalls: 4,
+      remainingTokens: 1_000,
+      remainingTimeMillis: 10_000,
+      maxDepth: 2,
+      cancellationToken: .none
+    )
+
+    do {
+      _ = try await adapter.complete(request)
+      XCTFail("Expected blocked destinations to stop native tool model turns.")
+    } catch is AgentDataDisclosureBlockedError {
+      XCTAssertTrue(true)
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+
+    XCTAssertTrue(sender.calls.isEmpty)
+    let record = try XCTUnwrap(disclosureStore.list().first)
+    XCTAssertEqual(record.status, .blocked)
+    XCTAssertEqual(record.destinationId, contact.id)
   }
 
   func testCloudModelClientStructuredRejectsPlaceholderCredentialBeforeNetwork() async throws {
