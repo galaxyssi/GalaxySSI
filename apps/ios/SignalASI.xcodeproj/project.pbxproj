@@ -110,6 +110,9 @@
     A10000000000000000000636 /* VoiceWhisperAudioDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */; };
     A10000000000000000000637 /* VoiceLocalWhisperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */; };
     A10000000000000000000638 /* VoiceLocalWhisperASR.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000638 /* VoiceLocalWhisperASR.swift */; };
+    A10000000000000000000663 /* VoiceLocalWhisperRuntimeModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000663 /* VoiceLocalWhisperRuntimeModels.swift */; };
+    A10000000000000000000664 /* VoiceLocalWhisperNativeBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000664 /* VoiceLocalWhisperNativeBridge.swift */; };
+    A10000000000000000000665 /* DefaultVoiceLocalWhisperRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000665 /* DefaultVoiceLocalWhisperRuntime.swift */; };
     A10000000000000000000642 /* VoiceWhisperModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000642 /* VoiceWhisperModelManager.swift */; };
     A10000000000000000000644 /* VoiceWhisperModelDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000644 /* VoiceWhisperModelDownloadService.swift */; };
     A10000000000000000000645 /* VoiceWhisperModelSettingsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */; };
@@ -132,6 +135,7 @@
     A10000000000000000000639 /* VoiceWhisperModelCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000639 /* VoiceWhisperModelCatalogTests.swift */; };
     A10000000000000000000640 /* VoiceWhisperAudioDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000640 /* VoiceWhisperAudioDecoderTests.swift */; };
     A10000000000000000000641 /* VoiceLocalWhisperASRTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000641 /* VoiceLocalWhisperASRTests.swift */; };
+    A10000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift */; };
     A10000000000000000000643 /* VoiceWhisperModelManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */; };
     A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */; };
     A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */; };
@@ -632,6 +636,9 @@
     A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperAudioDecoder.swift; sourceTree = "<group>"; };
     A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000638 /* VoiceLocalWhisperASR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperASR.swift; sourceTree = "<group>"; };
+    A20000000000000000000663 /* VoiceLocalWhisperRuntimeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperRuntimeModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000664 /* VoiceLocalWhisperNativeBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperNativeBridge.swift; sourceTree = "<group>"; };
+    A20000000000000000000665 /* DefaultVoiceLocalWhisperRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoiceLocalWhisperRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000642 /* VoiceWhisperModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelManager.swift; sourceTree = "<group>"; };
     A20000000000000000000644 /* VoiceWhisperModelDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelDownloadService.swift; sourceTree = "<group>"; };
     A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsModels.swift; sourceTree = "<group>"; };
@@ -802,6 +809,7 @@
     A20000000000000000000639 /* VoiceWhisperModelCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelCatalogTests.swift; sourceTree = "<group>"; };
     A20000000000000000000640 /* VoiceWhisperAudioDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperAudioDecoderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000641 /* VoiceLocalWhisperASRTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLocalWhisperASRTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultVoiceLocalWhisperRuntimeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelManagerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperModelSettingsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceASRProviderRoutingPolicyTests.swift; sourceTree = "<group>"; };
@@ -1055,6 +1063,9 @@
         A20000000000000000000636 /* VoiceWhisperAudioDecoder.swift */,
         A20000000000000000000637 /* VoiceLocalWhisperRuntime.swift */,
         A20000000000000000000638 /* VoiceLocalWhisperASR.swift */,
+        A20000000000000000000663 /* VoiceLocalWhisperRuntimeModels.swift */,
+        A20000000000000000000664 /* VoiceLocalWhisperNativeBridge.swift */,
+        A20000000000000000000665 /* DefaultVoiceLocalWhisperRuntime.swift */,
         A20000000000000000000642 /* VoiceWhisperModelManager.swift */,
         A20000000000000000000644 /* VoiceWhisperModelDownloadService.swift */,
         A20000000000000000000645 /* VoiceWhisperModelSettingsModels.swift */,
@@ -1263,6 +1274,7 @@
         A20000000000000000000639 /* VoiceWhisperModelCatalogTests.swift */,
         A20000000000000000000640 /* VoiceWhisperAudioDecoderTests.swift */,
         A20000000000000000000641 /* VoiceLocalWhisperASRTests.swift */,
+        A20000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift */,
         A20000000000000000000643 /* VoiceWhisperModelManagerTests.swift */,
         A20000000000000000000647 /* VoiceWhisperModelSettingsTests.swift */,
         A20000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift */,
@@ -1583,6 +1595,9 @@
         A10000000000000000000636 /* VoiceWhisperAudioDecoder.swift in Sources */,
         A10000000000000000000637 /* VoiceLocalWhisperRuntime.swift in Sources */,
         A10000000000000000000638 /* VoiceLocalWhisperASR.swift in Sources */,
+        A10000000000000000000663 /* VoiceLocalWhisperRuntimeModels.swift in Sources */,
+        A10000000000000000000664 /* VoiceLocalWhisperNativeBridge.swift in Sources */,
+        A10000000000000000000665 /* DefaultVoiceLocalWhisperRuntime.swift in Sources */,
         A10000000000000000000642 /* VoiceWhisperModelManager.swift in Sources */,
         A10000000000000000000644 /* VoiceWhisperModelDownloadService.swift in Sources */,
         A10000000000000000000645 /* VoiceWhisperModelSettingsModels.swift in Sources */,
@@ -1798,6 +1813,7 @@
         A10000000000000000000639 /* VoiceWhisperModelCatalogTests.swift in Sources */,
         A10000000000000000000640 /* VoiceWhisperAudioDecoderTests.swift in Sources */,
         A10000000000000000000641 /* VoiceLocalWhisperASRTests.swift in Sources */,
+        A10000000000000000000666 /* DefaultVoiceLocalWhisperRuntimeTests.swift in Sources */,
         A10000000000000000000643 /* VoiceWhisperModelManagerTests.swift in Sources */,
         A10000000000000000000647 /* VoiceWhisperModelSettingsTests.swift in Sources */,
         A10000000000000000000650 /* VoiceASRProviderRoutingPolicyTests.swift in Sources */,
