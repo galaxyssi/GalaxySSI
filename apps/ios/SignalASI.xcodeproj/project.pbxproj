@@ -98,6 +98,19 @@
     A10000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift */; };
     A10000000000000000000620 /* VoiceLatencyTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000620 /* VoiceLatencyTelemetry.swift */; };
     A10000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */; };
+    A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000622 /* VoicePcmCaptureModels.swift */; };
+    A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000623 /* VoicePcmRingBuffer.swift */; };
+    A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000624 /* VoiceActivityDetector.swift */; };
+    A10000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */; };
+    A10000000000000000000626 /* VoicePcmWaveFileAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */; };
+    A10000000000000000000627 /* VoiceAudioHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000627 /* VoiceAudioHub.swift */; };
+    A10000000000000000000628 /* VoicePcmTapPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000628 /* VoicePcmTapPipeline.swift */; };
+    A10000000000000000000634 /* IOSPcmRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000634 /* IOSPcmRecorder.swift */; };
+    A10000000000000000000629 /* VoicePcmRingBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000629 /* VoicePcmRingBufferTests.swift */; };
+    A10000000000000000000630 /* VoiceAdaptiveDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000630 /* VoiceAdaptiveDetectionTests.swift */; };
+    A10000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift */; };
+    A10000000000000000000632 /* VoiceAudioHubTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000632 /* VoiceAudioHubTests.swift */; };
+    A10000000000000000000633 /* VoicePcmTapPipelineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000633 /* VoicePcmTapPipelineTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -579,6 +592,14 @@
     A20000000000000000000618 /* VoiceLatencyPrivacy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyPrivacy.swift; sourceTree = "<group>"; };
     A20000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyDiagnosticsStore.swift; sourceTree = "<group>"; };
     A20000000000000000000620 /* VoiceLatencyTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTelemetry.swift; sourceTree = "<group>"; };
+    A20000000000000000000622 /* VoicePcmCaptureModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmCaptureModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000623 /* VoicePcmRingBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBuffer.swift; sourceTree = "<group>"; };
+    A20000000000000000000624 /* VoiceActivityDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivityDetector.swift; sourceTree = "<group>"; };
+    A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAdaptiveEndpointDetector.swift; sourceTree = "<group>"; };
+    A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmWaveFileAdapter.swift; sourceTree = "<group>"; };
+    A20000000000000000000627 /* VoiceAudioHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAudioHub.swift; sourceTree = "<group>"; };
+    A20000000000000000000628 /* VoicePcmTapPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmTapPipeline.swift; sourceTree = "<group>"; };
+    A20000000000000000000634 /* IOSPcmRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPcmRecorder.swift; sourceTree = "<group>"; };
     A20000000000000000000125 /* AgentMemoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMemoryModels.swift; sourceTree = "<group>"; };
     A20000000000000000000536 /* AgentKnowledgeModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKnowledgeModels.swift; sourceTree = "<group>"; };
     A20000000000000000000537 /* GlobalPersistentContextObservations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalPersistentContextObservations.swift; sourceTree = "<group>"; };
@@ -727,6 +748,11 @@
     A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceReplyPlaybackPolicyTests.swift; sourceTree = "<group>"; };
     A20000000000000000000590 /* VoiceLatencyTracerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyTracerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLatencyDiagnosticsStoreTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000629 /* VoicePcmRingBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmRingBufferTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000630 /* VoiceAdaptiveDetectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAdaptiveDetectionTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmWaveFileAdapterTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000632 /* VoiceAudioHubTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAudioHubTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000633 /* VoicePcmTapPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePcmTapPipelineTests.swift; sourceTree = "<group>"; };
     A20000000000000000000203 /* AgentIOSNativeToolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSNativeToolTests.swift; sourceTree = "<group>"; };
     A20000000000000000000204 /* AgentWorkspacePlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspacePlanTests.swift; sourceTree = "<group>"; };
     A20000000000000000000205 /* AgentTeamDelegationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationTests.swift; sourceTree = "<group>"; };
@@ -961,6 +987,14 @@
         A20000000000000000000618 /* VoiceLatencyPrivacy.swift */,
         A20000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift */,
         A20000000000000000000620 /* VoiceLatencyTelemetry.swift */,
+        A20000000000000000000622 /* VoicePcmCaptureModels.swift */,
+        A20000000000000000000623 /* VoicePcmRingBuffer.swift */,
+        A20000000000000000000624 /* VoiceActivityDetector.swift */,
+        A20000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift */,
+        A20000000000000000000626 /* VoicePcmWaveFileAdapter.swift */,
+        A20000000000000000000627 /* VoiceAudioHub.swift */,
+        A20000000000000000000628 /* VoicePcmTapPipeline.swift */,
+        A20000000000000000000634 /* IOSPcmRecorder.swift */,
         A20000000000000000000134 /* AgentControlPlaneModels.swift */,
         A20000000000000000000135 /* AgentControlPlaneAdapterModels.swift */,
         A20000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift */,
@@ -1147,6 +1181,11 @@
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
         A20000000000000000000590 /* VoiceLatencyTracerTests.swift */,
         A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */,
+        A20000000000000000000629 /* VoicePcmRingBufferTests.swift */,
+        A20000000000000000000630 /* VoiceAdaptiveDetectionTests.swift */,
+        A20000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift */,
+        A20000000000000000000632 /* VoiceAudioHubTests.swift */,
+        A20000000000000000000633 /* VoicePcmTapPipelineTests.swift */,
         A20000000000000000000222 /* AgentDeviceProfileTests.swift */,
         A20000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift */,
         A20000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift */,
@@ -1448,6 +1487,14 @@
         A10000000000000000000618 /* VoiceLatencyPrivacy.swift in Sources */,
         A10000000000000000000619 /* VoiceLatencyDiagnosticsStore.swift in Sources */,
         A10000000000000000000620 /* VoiceLatencyTelemetry.swift in Sources */,
+        A10000000000000000000622 /* VoicePcmCaptureModels.swift in Sources */,
+        A10000000000000000000623 /* VoicePcmRingBuffer.swift in Sources */,
+        A10000000000000000000624 /* VoiceActivityDetector.swift in Sources */,
+        A10000000000000000000625 /* VoiceAdaptiveEndpointDetector.swift in Sources */,
+        A10000000000000000000626 /* VoicePcmWaveFileAdapter.swift in Sources */,
+        A10000000000000000000627 /* VoiceAudioHub.swift in Sources */,
+        A10000000000000000000628 /* VoicePcmTapPipeline.swift in Sources */,
+        A10000000000000000000634 /* IOSPcmRecorder.swift in Sources */,
         A10000000000000000000134 /* AgentControlPlaneModels.swift in Sources */,
         A10000000000000000000135 /* AgentControlPlaneAdapterModels.swift in Sources */,
         A10000000000000000000136 /* AgentControlPlaneActionExecutorModels.swift in Sources */,
@@ -1641,6 +1688,11 @@
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
         A10000000000000000000590 /* VoiceLatencyTracerTests.swift in Sources */,
         A10000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift in Sources */,
+        A10000000000000000000629 /* VoicePcmRingBufferTests.swift in Sources */,
+        A10000000000000000000630 /* VoiceAdaptiveDetectionTests.swift in Sources */,
+        A10000000000000000000631 /* VoicePcmWaveFileAdapterTests.swift in Sources */,
+        A10000000000000000000632 /* VoiceAudioHubTests.swift in Sources */,
+        A10000000000000000000633 /* VoicePcmTapPipelineTests.swift in Sources */,
         A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */,
         A10000000000000000000223 /* AgentRuntimeProjectWorkspaceTests.swift in Sources */,
         A10000000000000000000224 /* AgentDesktopArtifactHandoffTests.swift in Sources */,

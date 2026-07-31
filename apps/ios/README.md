@@ -178,8 +178,9 @@ SignalASI iOS is a native SwiftUI client for iOS 15 and later. It mirrors the An
 - Android-style Global Memory evolution persistence codec and store for inbox, audit report, evolution records, append dedupe, Android-keyed export, restore, and bounded retention
 - Android-compatible encrypted `.hcbak` backup envelope with iOS local state, Link peers, voice settings, messages, and cloud API secrets restore
 - QR scanning with AVFoundation
-- Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, voice routing preferences, and Android-style voice provider capability readiness for local Whisper, iOS Speech, offline ASR, cloud ASR, system TTS, and Edge TTS
+- Speech recognition and microphone capture settings with iOS permission prompts, Android-style wake words, wake threshold, welcome text, speak replies, voice routing preferences, Android-style PCM/VAD endpointing, and Android-style voice provider capability readiness for local Whisper, iOS Speech, offline ASR, cloud ASR, system TTS, and Edge TTS
 - Android-style realtime voice health snapshots for wake word, ASR, and TTS components, including runtime activity, recent success/failure freshness, dependency blocking, and iOS speech capture health reporting
+- Android-style iOS PCM voice capture foundation with sample-frame models, ring-buffered speech segments, adaptive VAD endpointing, WAV export, feature flag parity, and AVAudioEngine tap integration for iOS 15+
 - Android-style voice interaction coordinator for hold-to-talk sessions, canonical capture/ASR/routing/agent/TTS phases, one-shot final transcript routing commands, cancellation handoff, observer reattachment, and restart-safe session isolation
 - Android-style iOS speech-capture coordinator bridge for mapping native Speech start/partial/final/stop/error events into the shared voice interaction state machine without routing duplicate transcripts
 - Android-style iOS voice transcript route policy for resolving final speech commands to native agent, cloud model, remote agent, or local conversation targets with auto-send gating

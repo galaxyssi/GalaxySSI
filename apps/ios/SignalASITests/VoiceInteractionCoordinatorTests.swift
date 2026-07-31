@@ -287,6 +287,18 @@ final class VoiceInteractionCoordinatorTests: XCTestCase {
     XCTAssertTrue(VoiceFeatureFlags.isCoordinatorEnabled(userDefaults: userDefaults, defaultEnabled: false))
   }
 
+  func testVoiceFeatureFlagPersistsPcmCaptureSetting() {
+    let suiteName = "signalasi-voice-pcm-flags-\(UUID().uuidString)"
+    let userDefaults = UserDefaults(suiteName: suiteName)!
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    XCTAssertTrue(VoiceFeatureFlags.isPcmCaptureEnabled(userDefaults: userDefaults, defaultEnabled: true))
+    VoiceFeatureFlags.setPcmCaptureEnabled(false, userDefaults: userDefaults)
+    XCTAssertFalse(VoiceFeatureFlags.isPcmCaptureEnabled(userDefaults: userDefaults, defaultEnabled: true))
+    VoiceFeatureFlags.setPcmCaptureEnabled(true, userDefaults: userDefaults)
+    XCTAssertTrue(VoiceFeatureFlags.isPcmCaptureEnabled(userDefaults: userDefaults, defaultEnabled: false))
+  }
+
 }
 
 private enum ObserverFailure: Error {
