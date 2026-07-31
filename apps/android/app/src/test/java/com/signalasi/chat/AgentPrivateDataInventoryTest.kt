@@ -79,6 +79,7 @@ class AgentPrivateDataInventoryTest {
             "root.friend_requests",
             "root.messages",
             "agent.memory",
+            "agent.memory_deletion_index",
             "agent.knowledge",
             "agent.tasks",
             "agent.transcript",
