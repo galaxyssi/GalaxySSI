@@ -55,6 +55,13 @@ unconditional restoration of the previously installed stable APK and supported d
 - Technology radar tests prove trusted filtering and that discovery never clones or executes code.
 - Protected paths are denied and high/critical paths escalate risk.
 - A retry uses a fresh worktree.
+- Worktree storage overlap is rejected in both directions.
+- Candidate identity is verified against its managed path, branch, source commit, and Git common
+  directory before execution.
+- Tampered cleanup metadata cannot delete the active checkout, an external directory, or another
+  task's worktree.
+- An implementation Agent change to the active checkout blocks the candidate without resetting
+  user files.
 - Candidate changes after review invalidate approval.
 - Audit tampering is detected and credential-shaped values are redacted.
 - Auto-publish and auto-merge remain disabled.

@@ -39,12 +39,19 @@ own gates or exfiltrate CI secrets.
 ### Production isolation
 
 - Source edits happen in a disposable Git worktree outside the active checkout.
+- Worktree storage and the active checkout may not overlap in either direction.
+- Every candidate path is bound to its task ID, attempt number, generated branch, source commit, and
+  repository common directory before an Agent or quality gate can use it.
+- The active checkout is fingerprinted before and after implementation. A detected change blocks
+  the task and leaves user files untouched for inspection instead of attempting an unsafe reset.
 - Desktop candidate smoke tests use a temporary state directory and random loopback port.
 - The Android device gate snapshots the stable package before installing a candidate and restores
   the stable package in a final cleanup path. Stable APK and private-data archives are hashed before
   candidate installation and verified again before restoration.
 - A failed attempt removes its candidate branch and worktree; it never performs a destructive reset
   of the active checkout.
+- Cleanup refuses missing, external, overlapping, cross-task, or malformed paths before invoking
+  Git or filesystem deletion.
 
 ### Approval binding
 
