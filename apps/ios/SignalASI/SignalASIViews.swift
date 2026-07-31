@@ -791,6 +791,14 @@ struct VoiceSettingsView: View {
             get: { store.voiceSettings.preferredLocaleIdentifier },
             set: { value in store.updateVoiceSettings { $0.preferredLocaleIdentifier = value } }
           ))
+          NavigationLink(destination: VoiceWhisperModelSettingsView()) {
+            HStack {
+              Text("ASR Model")
+              Spacer()
+              Text(VoiceWhisperModelCatalog.model(store.voiceSettings.asrModelId).displayName)
+                .foregroundColor(.secondary)
+            }
+          }
         }
         Section("Wake") {
           TextField("Wake Words", text: Binding(
