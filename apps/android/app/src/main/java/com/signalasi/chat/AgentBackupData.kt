@@ -20,10 +20,12 @@ object AgentBackupData {
         val voiceAssistant = VoiceAssistantSettings.get(context)
         val homeAssistant = HomeAssistantSettingsStore.load(context)
         val customDevices = CustomDeviceConnectorStore(context).exportJson()
+        val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
         return JSONObject()
-            .put("version", 31)
+            .put("version", 32)
             .put("interface_language", AppLanguage.current(context))
             .put("memory", readDatabaseArray(context, MEMORY_DATABASE, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS))
+            .put("memory_deletion_index", memoryDeletionIndex.exportJson())
             .put("knowledge", readArray(context, KNOWLEDGE_PREFS, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS))
             .put("tasks", if (includeSessionHistory) SQLiteAgentTaskStore(context).exportJson() else JSONArray())
             .put("transcript", if (includeSessionHistory) readAgentTranscriptArray(context) else JSONArray())
@@ -104,13 +106,15 @@ object AgentBackupData {
     }
 
     fun restore(context: Context, payload: JSONObject) {
+        val memoryDeletionIndex = EncryptedAgentMemoryDeletionIndex(context)
+        memoryDeletionIndex.mergeBackup(payload.optJSONArray("memory_deletion_index"))
         if (payload.has("interface_language")) {
             AppLanguage.set(context, payload.optString("interface_language", AppLanguage.AUTO))
         }
         payload.optJSONArray("memory")?.let { input ->
             val sanitized = sanitizeArray(input, MAX_MEMORY_ITEMS, MAX_MEMORY_ITEM_CHARACTERS)
             AgentEncryptedDatabase(context, MEMORY_DATABASE)
-                .writeString(ITEMS_KEY, sanitized.toString())
+                .writeString(ITEMS_KEY, memoryDeletionIndex.filterBackupItems(sanitized).toString())
         }
         payload.optJSONArray("knowledge")?.let { input ->
             val sanitized = sanitizeArray(input, MAX_KNOWLEDGE_ITEMS, MAX_KNOWLEDGE_ITEM_CHARACTERS)
@@ -232,6 +236,7 @@ object AgentBackupData {
             VoiceAssistantSettings.setSpeakReplies(context, json.optBoolean("speak_replies", true))
             VoiceAssistantSettings.setRoutingMode(context, json.optString("routing_mode"))
         }
+        memoryDeletionIndex.publishRetractions()
         GlobalConversationEventBus.requestProcessing(context)
     }
 

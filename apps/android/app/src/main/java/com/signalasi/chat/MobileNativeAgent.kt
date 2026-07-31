@@ -10127,6 +10127,7 @@ class InMemoryAgentMemoryStore : AgentMemoryStore {
 class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
     private val appContext = context.applicationContext
     private val database = AgentEncryptedDatabase(context, DATABASE)
+    private val deletionIndex = EncryptedAgentMemoryDeletionIndex(context)
     private var suppressObservations = false
 
     @Synchronized
@@ -10276,8 +10277,14 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         val items = loadItems()
         val kept = items.filter { item -> score(item, cleanQuery) <= 0 }
         if (kept.size != items.size) {
+            val deleted = items.filterNot { candidate -> kept.any { it.id == candidate.id } }
             saveItems(kept)
+            val tombstone = runCatching { deletionIndex.record(deleted) }.getOrElse {
+                saveItems(items)
+                throw it
+            }
             publishMutation(items, kept)
+            tombstone?.let(deletionIndex::publishRetraction)
         }
         return items.size - kept.size
     }
@@ -10369,7 +10376,13 @@ class EncryptedAgentMemoryStore(context: Context) : AgentMemoryStore {
         }
         val stored = trimHistory(items)
         saveItems(stored)
+        val deleted = previous.filterNot { candidate -> stored.any { it.id == candidate.id } }
+        val tombstone = runCatching { deletionIndex.record(deleted) }.getOrElse {
+            saveItems(previous)
+            throw it
+        }
         publishMutation(previous, stored)
+        tombstone?.let(deletionIndex::publishRetraction)
         return true
     }
 

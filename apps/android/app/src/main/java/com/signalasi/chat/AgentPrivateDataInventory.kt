@@ -85,6 +85,13 @@ object AgentPrivateDataInventory {
             exportPolicy = AgentPrivateDataExportPolicy.OPTIONAL_SESSION_HISTORY
         ),
         item("memory", "Long-term memory", "database:signalasi_agent_memory_v2", backupPath = "agent.memory"),
+        item(
+            "memory_deletion_index",
+            "Causal memory deletion tombstones",
+            "database:signalasi_agent_memory_deletions_v1",
+            backupPath = "agent.memory_deletion_index",
+            sensitivity = AgentPrivateDataSensitivity.SECRET
+        ),
         item("knowledge", "Personal knowledge index", "encrypted_prefs:signalasi_agent_knowledge", backupPath = "agent.knowledge"),
         item(
             "tasks",
