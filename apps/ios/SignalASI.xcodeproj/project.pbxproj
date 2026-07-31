@@ -44,6 +44,8 @@
     A10000000000000000000499 /* GlobalConversationContextJournalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000499 /* GlobalConversationContextJournalTests.swift */; };
     A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000500 /* GlobalRealtimeContext.swift */; };
     A10000000000000000000501 /* GlobalRealtimeContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000501 /* GlobalRealtimeContextTests.swift */; };
+    A10000000000000000000502 /* CloudWebGrounding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000502 /* CloudWebGrounding.swift */; };
+    A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000503 /* CloudWebGroundingTests.swift */; };
     A10000000000000000000101 /* SignalASICoreModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000101 /* SignalASICoreModels.swift */; };
     A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000102 /* AgentNetworkRoutingModels.swift */; };
     A10000000000000000000401 /* AgentConnectorModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000401 /* AgentConnectorModels.swift */; };
@@ -374,6 +376,8 @@
     A20000000000000000000499 /* GlobalConversationContextJournalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalConversationContextJournalTests.swift; sourceTree = "<group>"; };
     A20000000000000000000500 /* GlobalRealtimeContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContext.swift; sourceTree = "<group>"; };
     A20000000000000000000501 /* GlobalRealtimeContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalRealtimeContextTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000502 /* CloudWebGrounding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGrounding.swift; sourceTree = "<group>"; };
+    A20000000000000000000503 /* CloudWebGroundingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudWebGroundingTests.swift; sourceTree = "<group>"; };
     A20000000000000000000101 /* SignalASICoreModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalASICoreModels.swift; sourceTree = "<group>"; };
     A20000000000000000000102 /* AgentNetworkRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNetworkRoutingModels.swift; sourceTree = "<group>"; };
     A20000000000000000000401 /* AgentConnectorModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConnectorModels.swift; sourceTree = "<group>"; };
@@ -757,6 +761,7 @@
         A20000000000000000000496 /* GlobalEventPublisherPolicy.swift */,
         A20000000000000000000498 /* GlobalConversationContextJournal.swift */,
         A20000000000000000000500 /* GlobalRealtimeContext.swift */,
+        A20000000000000000000502 /* CloudWebGrounding.swift */,
         A20000000000000000000125 /* AgentMemoryModels.swift */,
         A20000000000000000000411 /* AgentMemoryCausalDeletion.swift */,
         A20000000000000000000413 /* AgentMemoryPersistentStore.swift */,
@@ -977,6 +982,7 @@
         A20000000000000000000497 /* GlobalConversationEventPolicyTests.swift */,
         A20000000000000000000499 /* GlobalConversationContextJournalTests.swift */,
         A20000000000000000000501 /* GlobalRealtimeContextTests.swift */,
+        A20000000000000000000503 /* CloudWebGroundingTests.swift */,
         A20000000000000000000259 /* GlobalModelCallBudgetTests.swift */,
         A20000000000000000000260 /* AgentAutonomyGuardTests.swift */,
         A20000000000000000000261 /* AgentConfirmationPolicyTests.swift */,
@@ -1169,6 +1175,7 @@
         A10000000000000000000496 /* GlobalEventPublisherPolicy.swift in Sources */,
         A10000000000000000000498 /* GlobalConversationContextJournal.swift in Sources */,
         A10000000000000000000500 /* GlobalRealtimeContext.swift in Sources */,
+        A10000000000000000000502 /* CloudWebGrounding.swift in Sources */,
         A10000000000000000000125 /* AgentMemoryModels.swift in Sources */,
         A10000000000000000000411 /* AgentMemoryCausalDeletion.swift in Sources */,
         A10000000000000000000413 /* AgentMemoryPersistentStore.swift in Sources */,
@@ -1405,6 +1412,7 @@
         A10000000000000000000497 /* GlobalConversationEventPolicyTests.swift in Sources */,
         A10000000000000000000499 /* GlobalConversationContextJournalTests.swift in Sources */,
         A10000000000000000000501 /* GlobalRealtimeContextTests.swift in Sources */,
+        A10000000000000000000503 /* CloudWebGroundingTests.swift in Sources */,
         A10000000000000000000259 /* GlobalModelCallBudgetTests.swift in Sources */,
         A10000000000000000000260 /* AgentAutonomyGuardTests.swift in Sources */,
         A10000000000000000000261 /* AgentConfirmationPolicyTests.swift in Sources */,
