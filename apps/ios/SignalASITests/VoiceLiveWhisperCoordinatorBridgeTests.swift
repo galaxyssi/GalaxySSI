@@ -15,7 +15,7 @@ final class VoiceLiveWhisperCoordinatorBridgeTests: XCTestCase {
 
     XCTAssertEqual(transitions.count, 2)
     XCTAssertEqual(coordinator.snapshot().stableText, "hello")
-    XCTAssertEqual(coordinator.snapshot().partialText, "wor")
+    XCTAssertEqual(coordinator.snapshot().partialText, "hello wor")
     XCTAssertEqual(coordinator.snapshot().asrProvider, voiceLocalWhisperProviderId)
     XCTAssertEqual(coordinator.snapshot().modelProfileId, "tiny")
   }
