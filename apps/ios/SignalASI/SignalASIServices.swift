@@ -359,11 +359,30 @@ struct CloudModelClient {
     turns: [ChatMessage],
     systemPrompt: String
   ) async throws -> String {
+    try await withContextOverflowRetry(model: model, apiKey: apiKey) { contextWindow, _ in
+      try await sendOpenAICompatibleAttempt(
+        model: model,
+        apiKey: apiKey,
+        turns: turns,
+        systemPrompt: systemPrompt,
+        contextWindowTokens: contextWindow
+      )
+    }
+  }
+
+  private func sendOpenAICompatibleAttempt(
+    model: CloudModelConfig,
+    apiKey: String,
+    turns: [ChatMessage],
+    systemPrompt: String,
+    contextWindowTokens: Int
+  ) async throws -> String {
     let context = CloudModelConversationContext.prepare(
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt
+      systemPrompt: systemPrompt,
+      contextWindowTokens: contextWindowTokens
     )
     var request = try jsonRequest(url: model.endpoint, apiKey: apiKey)
     var messages: [[String: Any]] = [
@@ -377,7 +396,7 @@ struct CloudModelClient {
       "messages": messages,
       "stream": false
     ])
-    let object = try await responseObject(for: request)
+    let object = try await responseObject(for: request, throwHTTPFailure: true)
     if let choices = object["choices"] as? [[String: Any]],
        let message = choices.first?["message"] as? [String: Any],
        let content = message["content"] as? String {
@@ -395,11 +414,30 @@ struct CloudModelClient {
     turns: [ChatMessage],
     systemPrompt: String
   ) async throws -> String {
+    try await withContextOverflowRetry(model: model, apiKey: apiKey) { contextWindow, _ in
+      try await sendAnthropicAttempt(
+        model: model,
+        apiKey: apiKey,
+        turns: turns,
+        systemPrompt: systemPrompt,
+        contextWindowTokens: contextWindow
+      )
+    }
+  }
+
+  private func sendAnthropicAttempt(
+    model: CloudModelConfig,
+    apiKey: String,
+    turns: [ChatMessage],
+    systemPrompt: String,
+    contextWindowTokens: Int
+  ) async throws -> String {
     let context = CloudModelConversationContext.prepare(
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt
+      systemPrompt: systemPrompt,
+      contextWindowTokens: contextWindowTokens
     )
     guard let url = URL(string: model.endpoint) else {
       throw SignalASIError.invalidPayload("Cloud endpoint is not a URL.")
@@ -418,7 +456,7 @@ struct CloudModelClient {
       "max_tokens": 1200,
       "messages": messages
     ])
-    let object = try await responseObject(for: request)
+    let object = try await responseObject(for: request, throwHTTPFailure: true)
     if let blocks = object["content"] as? [[String: Any]] {
       let text = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
       if !text.isEmpty { return text }
@@ -432,11 +470,30 @@ struct CloudModelClient {
     turns: [ChatMessage],
     systemPrompt: String
   ) async throws -> String {
+    try await withContextOverflowRetry(model: model, apiKey: apiKey) { contextWindow, _ in
+      try await sendGeminiAttempt(
+        model: model,
+        apiKey: apiKey,
+        turns: turns,
+        systemPrompt: systemPrompt,
+        contextWindowTokens: contextWindow
+      )
+    }
+  }
+
+  private func sendGeminiAttempt(
+    model: CloudModelConfig,
+    apiKey: String,
+    turns: [ChatMessage],
+    systemPrompt: String,
+    contextWindowTokens: Int
+  ) async throws -> String {
     let context = CloudModelConversationContext.prepare(
       model: model,
       apiKey: apiKey,
       turns: turns,
-      systemPrompt: systemPrompt
+      systemPrompt: systemPrompt,
+      contextWindowTokens: contextWindowTokens
     )
     var components = URLComponents(string: model.endpoint)
     var items = components?.queryItems ?? []
@@ -459,7 +516,7 @@ struct CloudModelClient {
       "contents": contents,
       "generationConfig": ["temperature": 0.1, "maxOutputTokens": 1200]
     ])
-    let object = try await responseObject(for: request)
+    let object = try await responseObject(for: request, throwHTTPFailure: true)
     if let candidates = object["candidates"] as? [[String: Any]],
        let content = candidates.first?["content"] as? [String: Any],
        let parts = content["parts"] as? [[String: Any]] {
@@ -484,10 +541,13 @@ struct CloudModelClient {
     return request
   }
 
-  func responseObject(for request: URLRequest) async throws -> [String: Any] {
+  func responseObject(for request: URLRequest, throwHTTPFailure: Bool = false) async throws -> [String: Any] {
     let (data, response) = try await URLSession.shared.data(for: request)
     if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
       let body = String(data: data, encoding: .utf8) ?? ""
+      if throwHTTPFailure {
+        throw CloudHTTPFailure(statusCode: http.statusCode, responseBody: body)
+      }
       if CloudContextOverflowPolicy.isContextOverflow(statusCode: http.statusCode, responseBody: body) {
         throw SignalASIError.invalidPayload("Cloud request exceeded the model context window. Try a shorter chat history or smaller attachment.")
       }

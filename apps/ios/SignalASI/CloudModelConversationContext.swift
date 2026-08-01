@@ -17,13 +17,7 @@ enum CloudModelConversationContext {
     systemPrompt: String,
     contextWindowTokens overrideContextWindowTokens: Int? = nil
   ) -> PreparedCloudModelConversationContext {
-    let profile = AgentProviderProfileCatalog.fromCloudModel(
-      resourceId: "",
-      provider: model.provider,
-      displayName: model.displayName,
-      model: model,
-      apiKey: apiKey
-    )
+    let profile = profile(model: model, apiKey: apiKey)
     let contextWindow = max(4_096, overrideContextWindowTokens ?? profile.contextWindowTokens)
     let outputReserve = min(
       max(512, profile.maxOutputTokens),
@@ -51,6 +45,20 @@ enum CloudModelConversationContext {
       originalEstimatedTokens: compacted.originalEstimatedTokens,
       compactedEstimatedTokens: compacted.compactedEstimatedTokens,
       compacted: compacted.compacted
+    )
+  }
+
+  static func contextWindowTokens(model: CloudModelConfig, apiKey: String?) -> Int {
+    max(4_096, profile(model: model, apiKey: apiKey).contextWindowTokens)
+  }
+
+  private static func profile(model: CloudModelConfig, apiKey: String?) -> ProviderProfile {
+    AgentProviderProfileCatalog.fromCloudModel(
+      resourceId: "",
+      provider: model.provider,
+      displayName: model.displayName,
+      model: model,
+      apiKey: apiKey
     )
   }
 
