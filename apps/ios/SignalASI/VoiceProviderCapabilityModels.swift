@@ -294,7 +294,7 @@ enum VoiceProviderCapabilityDetector {
     checkedAtMillis: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) -> VoiceProviderCapabilitySnapshot {
     let whisperModel = VoiceWhisperModelCatalog.model(settings.asrModelId)
-    VoiceProviderCapabilityPolicy.evaluate(
+    return VoiceProviderCapabilityPolicy.evaluate(
       probe(
         settings: settings,
         validatedNetworkAvailable: validatedNetworkAvailable,
