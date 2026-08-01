@@ -89,6 +89,32 @@ final class VoiceLiveWhisperCaptureControllerTests: XCTestCase {
     XCTAssertEqual(displayTexts, ["local whisper"])
   }
 
+  func testTransitionHandlerCanBeReplacedForFinalCommands() {
+    let (_, captureBridge) = makeBridge()
+    beginListening(captureBridge)
+    let session = FakeCaptureLiveWhisperSession(modelProfileId: "tiny")
+    let controller = VoiceLiveWhisperCaptureController(
+      sessionBuilder: { _, _, _, _, onUpdate in
+        session.onUpdate = onUpdate
+        return session
+      },
+      coordinatorBridge: VoiceLiveWhisperCoordinatorBridge(coordinatorBridge: captureBridge)
+    )
+    var transitions: [VoiceInteractionTransition] = []
+    controller.setTransitionHandler { transitions.append($0) }
+
+    XCTAssertTrue(
+      controller.start(
+        voiceSessionId: "voice-1",
+        settings: settings(),
+        scheduler: NoopCaptureScheduler()
+      )
+    )
+    session.emit(stable: "final command", unstable: "", revision: 1, final: true)
+
+    XCTAssertEqual(routeFinalTranscriptCount(transitions.last?.commands ?? []), 1)
+  }
+
   func testFinishReturnsNativeResultAndCloseClosesSession() async throws {
     let session = FakeCaptureLiveWhisperSession(modelProfileId: "tiny")
     session.finalResult = Self.nativeResult("done")
