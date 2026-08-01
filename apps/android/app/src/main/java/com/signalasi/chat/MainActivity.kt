@@ -106,6 +106,10 @@ import com.signalasi.chat.voice.asr.online.OnlineRealtimeAsrTurn
 import com.signalasi.chat.voice.asr.online.RealtimeAsrPreconnector
 import com.signalasi.chat.voice.asr.online.RealtimeAsrProvider
 import com.signalasi.chat.voice.asr.online.RealtimeAsrTurnAction
+import com.signalasi.chat.voice.asr.remote.RemoteWhisperNodeClient
+import com.signalasi.chat.voice.asr.remote.RemoteWhisperNodeRegistry
+import com.signalasi.chat.voice.asr.remote.RemoteWhisperRoutingPolicy
+import com.signalasi.chat.voice.asr.remote.SignalASILinkRemoteWhisperTransport
 import com.signalasi.chat.voice.asr.local.AbortReason
 import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
@@ -634,6 +638,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var voiceExecutionLedger: VoiceExecutionLedger
     private lateinit var voiceCorrectionJournal: VoiceCorrectionJournal
     private val voiceSecondPassCoordinator = VoiceSecondPassCoordinator()
+    private val remoteWhisperNodeClient = RemoteWhisperNodeClient(SignalASILinkRemoteWhisperTransport)
     private var voiceRiskConfirmationDialog: AlertDialog? = null
     private var voiceRiskConfirmationCancellation: (() -> Unit)? = null
     private var voiceCoordinatorObserverId = ""
@@ -1349,6 +1354,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceRiskConfirmationDialog?.dismiss()
         voiceRiskConfirmationDialog = null
         voiceSecondPassCoordinator.cancelForInteractiveVoice()
+        remoteWhisperNodeClient.cancelAll()
         activeCloudStreams.values.forEach { stream ->
             stream.flushRunnable?.let(handler::removeCallbacks)
             stream.sentenceCommitRunnable?.let(handler::removeCallbacks)
@@ -2017,6 +2023,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             try {
                 val envelope = runCatching { JSONObject(payload) }.getOrNull()
                 envelope?.optString("desktop_id")?.takeIf(String::isNotBlank)?.let(::markDesktopDomainAvailableById)
+                if (envelope != null && remoteWhisperNodeClient.handleIncoming(
+                        envelope,
+                        envelope.optString("desktop_id")
+                    )
+                ) return@runOnUiThread
                 if (envelope?.optString("type") == "delivery_ack") {
                     val acknowledgedId = SignalASILinkDeliveryAckPolicy.clientSourceMessageId(envelope)
                         .toLongOrNull()
@@ -23715,17 +23726,40 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         onFailure: () -> Unit,
         waitForConfirmation: Boolean
     ): Boolean {
-        if (!runSecondPass || accurateProfileId.isNullOrBlank() || pcmSnapshot.isEmpty()) return false
-        val profile = runCatching { WhisperModelManager.model(accurateProfileId) }.getOrNull() ?: return false
-        if (!WhisperModelManager.isAvailable(this, profile)) return false
+        val settings = VoiceAssistantSettings.get(this)
+        val remoteExplicitlySelected = settings.recognitionPreference == VoiceRecognitionPreference.REMOTE_NODE
+        if ((!runSecondPass && !remoteExplicitlySelected) || pcmSnapshot.isEmpty()) return false
+        val localProfile = accurateProfileId
+            ?.takeIf(String::isNotBlank)
+            ?.let { runCatching { WhisperModelManager.model(it) }.getOrNull() }
+        val localAvailable = localProfile?.let { WhisperModelManager.isAvailable(this, it) } == true
+        val remoteFeatureEnabled = VoiceFeatureFlags.isRemoteWhisperNodeEnabled(this)
+        val remoteNode = if (remoteFeatureEnabled && settings.remoteWhisperAllowed) {
+            RemoteWhisperNodeRegistry.best(this)
+        } else {
+            null
+        }
+        val useRemote = RemoteWhisperRoutingPolicy.shouldUseRemote(
+            preference = settings.recognitionPreference,
+            localAlwaysPreferred = settings.onlineAsrPrivacy.localAlwaysPreferred,
+            explicitConsent = settings.remoteWhisperAllowed,
+            featureEnabled = remoteFeatureEnabled,
+            nodeAvailable = remoteNode != null,
+            localAccurateAvailable = localAvailable,
+            secondPassRequested = runSecondPass
+        )
+        if (remoteExplicitlySelected && remoteNode == null) return false
+        if (!useRemote && (!runSecondPass || localProfile == null || !localAvailable)) return false
+        val selectedProfileId = if (useRemote) remoteNode!!.activeProfile.id else localProfile!!.id
+        val selectedProfileSha = if (useRemote) remoteNode!!.activeProfile.sha256 else localProfile!!.sha256
         val request = VoiceSecondPassRequest(
             sessionId = sessionId,
             pcm16 = pcmSnapshot,
             sampleRateHz = sampleRateHz,
             language = language,
             fast = fast,
-            accurateProfileId = profile.id,
-            accurateModelSha256 = profile.sha256,
+            accurateProfileId = selectedProfileId,
+            accurateModelSha256 = selectedProfileSha,
             mode = WhisperExecutionMode.SECOND_PASS
         )
         VoiceLatencyTelemetry.record(
@@ -23733,9 +23767,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             traceId,
             VoiceTraceEvents.SECOND_PASS_STARTED,
             mapOf(
-                "model_profile_id" to profile.id,
-                "model_sha256" to profile.sha256,
-                "execution_mode" to WhisperExecutionMode.SECOND_PASS.name.lowercase(Locale.ROOT)
+                "model_profile_id" to selectedProfileId,
+                "model_sha256" to selectedProfileSha,
+                "execution_mode" to WhisperExecutionMode.SECOND_PASS.name.lowercase(Locale.ROOT),
+                "execution_device" to if (useRemote) "desktop" else "phone"
             )
         )
         return voiceSecondPassCoordinator.schedule(
@@ -23743,23 +23778,36 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             request = request,
             executionLedger = voiceExecutionLedger,
             decoder = { frozen ->
-                val outcome = LocalWhisperAsr.decodePcmWindow(
-                    context = this@MainActivity,
-                    pcm16 = frozen.pcm16,
-                    sampleRateHz = frozen.sampleRateHz,
-                    language = frozen.language,
-                    mode = frozen.mode,
-                    traceId = frozen.sessionId,
-                    source = "audio_record_second_pass_pcm16",
-                    modelProfileId = frozen.accurateProfileId
-                )
-                TranscriptHypothesis(
-                    text = outcome.result.text,
-                    revision = fast.revision + 1,
-                    provider = "whisper.cpp",
-                    modelProfileId = outcome.profileId,
-                    confidence = whisperConfidence(outcome.result.segments.map { it.averageLogProb })
-                )
+                if (useRemote) {
+                    remoteWhisperNodeClient.transcribe(
+                        node = remoteNode!!,
+                        clientId = SignalASICrypto.localSignalasiId(),
+                        voiceSessionId = frozen.sessionId,
+                        transcriptId = frozen.fast.transcriptId.ifBlank { frozen.sessionId },
+                        pcm16 = frozen.pcm16,
+                        sampleRateHz = frozen.sampleRateHz,
+                        language = frozen.language,
+                        fastRevision = fast.revision
+                    )
+                } else {
+                    val outcome = LocalWhisperAsr.decodePcmWindow(
+                        context = this@MainActivity,
+                        pcm16 = frozen.pcm16,
+                        sampleRateHz = frozen.sampleRateHz,
+                        language = frozen.language,
+                        mode = frozen.mode,
+                        traceId = frozen.sessionId,
+                        source = "audio_record_second_pass_pcm16",
+                        modelProfileId = frozen.accurateProfileId
+                    )
+                    TranscriptHypothesis(
+                        text = outcome.result.text,
+                        revision = fast.revision + 1,
+                        provider = "whisper.cpp",
+                        modelProfileId = outcome.profileId,
+                        confidence = whisperConfidence(outcome.result.segments.map { it.averageLogProb })
+                    )
+                }
             },
             onResult = { result ->
                 VoiceLatencyTelemetry.record(
@@ -23791,7 +23839,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     traceId,
                     VoiceTraceEvents.SECOND_PASS_COMPLETED,
                     mapOf(
-                        "model_profile_id" to profile.id,
+                        "model_profile_id" to selectedProfileId,
                         "success" to "false",
                         "error_code" to error.javaClass.simpleName
                     )
@@ -28732,7 +28780,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (whisperCapability.ready) "#14C66A" else "#D48B18",
             voiceCapabilityStatus(whisperCapability)
         ))
-        if (VoiceFeatureFlags.isOnlineRealtimeAsrEnabled(this)) {
+        val onlineRealtimeEnabled = VoiceFeatureFlags.isOnlineRealtimeAsrEnabled(this)
+        val remoteWhisperEnabled = VoiceFeatureFlags.isRemoteWhisperNodeEnabled(this)
+        if (onlineRealtimeEnabled || remoteWhisperEnabled) {
             addSectionTitle(getString(R.string.voice_asr_recognition_mode_section))
             featureContent.addView(featureRow(
                 getString(R.string.voice_asr_recognition_mode_title),
@@ -28742,6 +28792,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ).apply {
                 setOnClickListener { showVoiceRecognitionPreferenceDialog(config.recognitionPreference) }
             })
+        }
+        if (onlineRealtimeEnabled) {
             addSectionTitle(getString(R.string.voice_asr_online_privacy_section))
             featureContent.addView(featureSwitchRow(
                 getString(R.string.voice_asr_online_allowed_title),
@@ -28780,6 +28832,53 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     )
                     showAsrProviderPage()
                 }
+            })
+        }
+        if (remoteWhisperEnabled) {
+            val remoteNode = RemoteWhisperNodeRegistry.best(this)
+            addSectionTitle(getString(R.string.voice_asr_remote_section))
+            featureContent.addView(featureSwitchRow(
+                getString(R.string.voice_asr_remote_allowed_title),
+                getString(R.string.voice_asr_remote_allowed_subtitle),
+                R.drawable.ic_agent_node,
+                config.remoteWhisperAllowed
+            ).apply {
+                setOnClickListener {
+                    if (config.remoteWhisperAllowed) {
+                        VoiceAssistantSettings.setRemoteWhisperAllowed(this@MainActivity, false)
+                        if (config.recognitionPreference == VoiceRecognitionPreference.REMOTE_NODE) {
+                            VoiceAssistantSettings.setRecognitionPreference(
+                                this@MainActivity,
+                                VoiceRecognitionPreference.AUTO
+                            )
+                            VoiceAssistantSettings.setAsrProvider(
+                                this@MainActivity,
+                                VoiceAssistantSettings.ASR_PROVIDER_AUTO
+                            )
+                        }
+                        showAsrProviderPage()
+                    } else {
+                        android.app.AlertDialog.Builder(this@MainActivity)
+                            .setTitle(getString(R.string.voice_asr_remote_consent_title))
+                            .setMessage(getString(R.string.voice_asr_remote_consent_message))
+                            .setNegativeButton(getString(R.string.common_cancel), null)
+                            .setPositiveButton(getString(R.string.common_enable)) { _, _ ->
+                                VoiceAssistantSettings.setRemoteWhisperAllowed(this@MainActivity, true)
+                                showAsrProviderPage()
+                            }
+                            .show()
+                    }
+                }
+            })
+            featureContent.addView(featureRow(
+                getString(R.string.voice_asr_remote_node_title),
+                remoteNode?.activeProfile?.modelName
+                    ?: getString(R.string.voice_asr_remote_node_unavailable),
+                R.drawable.ic_device_node,
+                remoteNode?.desktopName.orEmpty()
+            ).apply {
+                isClickable = false
+                isFocusable = false
             })
         }
         addSectionTitle(getString(R.string.voice_provider_device_capabilities))
@@ -28969,12 +29068,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun showVoiceRecognitionPreferenceDialog(current: VoiceRecognitionPreference) {
-        val values = listOf(
+        val values = buildList {
+            addAll(listOf(
             VoiceRecognitionPreference.AUTO,
             VoiceRecognitionPreference.ONLINE_FAST,
             VoiceRecognitionPreference.LOCAL_PRIVATE,
             VoiceRecognitionPreference.LOCAL_HIGH_ACCURACY
-        )
+            ))
+            val config = VoiceAssistantSettings.get(this@MainActivity)
+            if (VoiceFeatureFlags.isRemoteWhisperNodeEnabled(this@MainActivity) &&
+                config.remoteWhisperAllowed &&
+                RemoteWhisperNodeRegistry.best(this@MainActivity) != null
+            ) add(VoiceRecognitionPreference.REMOTE_NODE)
+        }
         val labels = values.map(::voiceRecognitionPreferenceLabel).toTypedArray()
         android.app.AlertDialog.Builder(this)
             .setTitle(getString(R.string.voice_asr_recognition_mode_title))
@@ -28988,6 +29094,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         VoiceRecognitionPreference.LOCAL_PRIVATE,
                         VoiceRecognitionPreference.LOCAL_HIGH_ACCURACY ->
                             VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER
+                        VoiceRecognitionPreference.REMOTE_NODE ->
+                            VoiceAssistantSettings.ASR_PROVIDER_REMOTE_WHISPER
                         else -> VoiceAssistantSettings.ASR_PROVIDER_AUTO
                     }
                 )

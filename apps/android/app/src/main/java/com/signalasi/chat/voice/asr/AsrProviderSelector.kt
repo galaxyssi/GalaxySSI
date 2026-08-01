@@ -18,7 +18,8 @@ object AsrProviderSelector {
     fun select(
         config: AsrSessionConfig,
         onlineCandidates: List<AsrProviderCandidate>,
-        localCandidates: List<AsrProviderCandidate>
+        localCandidates: List<AsrProviderCandidate>,
+        remoteCandidates: List<AsrProviderCandidate> = emptyList()
     ): AsrProviderSelection {
         val onlineAllowed = onlineAllowed(config)
         val online = onlineCandidates
@@ -33,11 +34,16 @@ object AsrProviderSelector {
             .asSequence()
             .filter { !it.online && it.available }
             .minWithOrNull(compareBy<AsrProviderCandidate> { it.accuracyRank }.thenBy { it.providerId })
+        val remoteAccurate = remoteCandidates
+            .asSequence()
+            .filter { it.available }
+            .minWithOrNull(compareBy<AsrProviderCandidate> { it.accuracyRank }.thenBy { it.providerId })
 
         return when (config.preference) {
             VoiceRecognitionPreference.LOCAL_PRIVATE -> localFast.selectedOrUnavailable("local_private")
             VoiceRecognitionPreference.LOCAL_HIGH_ACCURACY -> localAccurate.selectedOrUnavailable("local_high_accuracy")
-            VoiceRecognitionPreference.REMOTE_NODE -> AsrProviderSelection.Unavailable("remote_node_not_available")
+            VoiceRecognitionPreference.REMOTE_NODE ->
+                remoteAccurate.selectedOrUnavailable("remote_high_accuracy", "remote_node_not_available")
             VoiceRecognitionPreference.ONLINE_FAST -> when {
                 onlineAllowed && online != null -> AsrProviderSelection.Selected(online, "online_fast")
                 localFast != null -> AsrProviderSelection.Selected(localFast, "online_fallback_local")
@@ -77,4 +83,10 @@ object AsrProviderSelector {
     private fun AsrProviderCandidate?.selectedOrUnavailable(reasonCode: String): AsrProviderSelection =
         this?.let { AsrProviderSelection.Selected(it, reasonCode) }
             ?: AsrProviderSelection.Unavailable("local_asr_unavailable")
+
+    private fun AsrProviderCandidate?.selectedOrUnavailable(
+        reasonCode: String,
+        unavailableReason: String
+    ): AsrProviderSelection = this?.let { AsrProviderSelection.Selected(it, reasonCode) }
+        ?: AsrProviderSelection.Unavailable(unavailableReason)
 }

@@ -3,6 +3,7 @@ package com.signalasi.chat
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
+import com.signalasi.chat.voice.asr.remote.RemoteWhisperNodeRegistry
 
 import android.content.Context
 import android.os.Handler
@@ -260,6 +261,9 @@ object SignalASIMqttClient {
 
     fun publishDesktopToolCall(desktopId: String, payload: JSONObject): Boolean =
         publishDesktopControlPayload(desktopId, payload)
+
+    fun publishRemoteWhisperPacket(desktopId: String, payload: JSONObject): Boolean =
+        publishDesktopControlPayload(desktopId, payload, durable = true)
 
     fun publishDesktopExecutorRequest(
         desktopId: String,
@@ -1666,6 +1670,7 @@ object SignalASIMqttClient {
                 sourceDesktopId,
                 payload.optJSONObject("pairing_access")
             )
+            RemoteWhisperNodeRegistry.ingest(context, payload, sourceDesktopId)
             AgentDesktopRemoteNativeTools.updateManifest(context, payload)
         }
         if (payload.optString("type") == "artifact_chunk") {

@@ -1055,6 +1055,13 @@
     <string name="voice_asr_mode_local_private">本地隐私</string>
     <string name="voice_asr_mode_local_accurate">本地高精度</string>
     <string name="voice_asr_mode_remote_node">远程节点</string>
+    <string name="voice_asr_remote_section">我的桌面高精度节点</string>
+    <string name="voice_asr_remote_allowed_title">允许远程高精度复核</string>
+    <string name="voice_asr_remote_allowed_subtitle">仅向已验证的配对电脑发送加密 PCM，并在转写后删除临时音频</string>
+    <string name="voice_asr_remote_consent_title">允许这台配对电脑复核语音？</string>
+    <string name="voice_asr_remote_consent_message">仅在选择远程高精度复核时发送加密音频。配对电脑会校验每个分片，并在转写完成后删除临时音频。</string>
+    <string name="voice_asr_remote_node_title">执行设备</string>
+    <string name="voice_asr_remote_node_unavailable">没有在线且已验证的 Whisper 节点</string>
     <string name="voice_asr_provider_local_whisper">本机 whisper.cpp · %1$s</string>
     <string name="voice_asr_local_title">本机 whisper.cpp</string>
     <string name="voice_asr_local_subtitle">语音始终留在本机，可选择已安装模型或从可信来源下载。</string>

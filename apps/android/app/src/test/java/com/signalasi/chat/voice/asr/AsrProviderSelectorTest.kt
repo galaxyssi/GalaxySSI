@@ -52,6 +52,30 @@ class AsrProviderSelectorTest {
         assertEquals("online_fallback_local", (selected as AsrProviderSelection.Selected).reasonCode)
     }
 
+    @Test
+    fun remotePreferenceRequiresAnAvailableExplicitRemoteCandidate() {
+        val remote = AsrProviderCandidate(
+            "desktop-whisper",
+            online = true,
+            available = true,
+            accuracyRank = 1
+        )
+        val selected = AsrProviderSelector.select(
+            config(preference = VoiceRecognitionPreference.REMOTE_NODE),
+            listOf(online),
+            listOf(local),
+            listOf(remote)
+        )
+        val unavailable = AsrProviderSelector.select(
+            config(preference = VoiceRecognitionPreference.REMOTE_NODE),
+            listOf(online),
+            listOf(local)
+        )
+
+        assertEquals(remote, (selected as AsrProviderSelection.Selected).candidate)
+        assertEquals("remote_node_not_available", (unavailable as AsrProviderSelection.Unavailable).reasonCode)
+    }
+
     private fun config(
         preference: VoiceRecognitionPreference = VoiceRecognitionPreference.AUTO,
         networkType: AsrNetworkType = AsrNetworkType.WIFI,
