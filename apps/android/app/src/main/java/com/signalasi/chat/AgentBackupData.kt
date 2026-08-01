@@ -87,6 +87,7 @@ object AgentBackupData {
                     .put("wake_threshold", voiceAssistant.wakeThreshold.toDouble())
                     .put("asr_provider", voiceAssistant.asrProvider)
                     .put("asr_model", voiceAssistant.asrModel)
+                    .put("asr_runtime_mode", voiceAssistant.asrRuntimeMode.name)
                     .put("asr_language", voiceAssistant.asrLanguage)
                     .put("tts_provider", voiceAssistant.ttsProvider)
                     .put("tts_language", voiceAssistant.ttsLanguage)
@@ -233,6 +234,17 @@ object AgentBackupData {
             VoiceAssistantSettings.setWakeThreshold(context, json.optDouble("wake_threshold", 0.5).toFloat())
             VoiceAssistantSettings.setAsrProvider(context, json.optString("asr_provider"))
             VoiceAssistantSettings.setAsrModel(context, json.optString("asr_model", "tiny"))
+            VoiceAssistantSettings.setAsrRuntimeMode(
+                context,
+                runCatching {
+                    enumValueOf<com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode>(
+                        json.optString(
+                            "asr_runtime_mode",
+                            com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode.AUTOMATIC.name
+                        )
+                    )
+                }.getOrDefault(com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode.AUTOMATIC)
+            )
             VoiceAssistantSettings.setAsrLanguage(context, json.optString("asr_language"))
             VoiceAssistantSettings.setTtsProvider(context, json.optString("tts_provider"))
             VoiceAssistantSettings.setTtsLanguage(context, json.optString("tts_language"))

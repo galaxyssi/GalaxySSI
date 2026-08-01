@@ -69,6 +69,7 @@ object WhisperModelManager {
     private val inFlight = ConcurrentHashMap.newKeySet<String>()
     private val nativeVerified = ConcurrentHashMap<String, String>()
     private val loadedModels = ConcurrentHashMap.newKeySet<String>()
+    private val benchmarkingModels = ConcurrentHashMap.newKeySet<String>()
     private val modelLocks = ConcurrentHashMap<String, Any>()
     private val cancelledInstalls = ConcurrentHashMap.newKeySet<String>()
 
@@ -168,7 +169,9 @@ object WhisperModelManager {
             return WhisperModelDownloadState(
                 status = DownloadManager.STATUS_SUCCESSFUL,
                 progress = 100,
-                storageState = installed.state,
+                storageState = if (benchmarkingModels.contains(model.id)) {
+                    WhisperModelStorageState.BENCHMARKING
+                } else installed.state,
                 bytesDownloaded = model.expectedSizeBytes,
                 totalBytes = model.expectedSizeBytes,
                 certification = installed.metadata?.certification
@@ -255,6 +258,26 @@ object WhisperModelManager {
 
     fun markUnloaded(modelId: String?) {
         modelId?.let { loadedModels -= WhisperModelCatalog.canonicalId(it) }
+    }
+
+    fun markBenchmarking(modelId: String, running: Boolean) {
+        val canonical = WhisperModelCatalog.canonicalId(modelId)
+        if (running) benchmarkingModels += canonical else benchmarkingModels -= canonical
+    }
+
+    fun updateCertification(
+        context: Context,
+        model: WhisperModelProfile,
+        certification: WhisperCertificationLevel
+    ) {
+        storage(context.applicationContext).updateCertification(model, certification)
+    }
+
+    fun resetCertification(context: Context, model: WhisperModelProfile) {
+        val snapshot = storage(context.applicationContext).inspect(model)
+        if (snapshot.installed && snapshot.metadata?.certification != WhisperCertificationLevel.UNTESTED) {
+            storage(context.applicationContext).updateCertification(model, WhisperCertificationLevel.UNTESTED)
+        }
     }
 
     private fun initialize(context: Context) {

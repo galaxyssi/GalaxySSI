@@ -20,24 +20,32 @@ data class AdaptivePartialSnapshot(
     val recentRealTimeFactor: Double?
 )
 
-class AdaptiveWhisperPartialPolicy(private val profile: WhisperModelProfile) {
+class AdaptiveWhisperPartialPolicy(
+    private val profile: WhisperModelProfile,
+    certifiedPartialIntervalMs: Long? = null,
+    realtimeCertified: Boolean = profile.recommendedMode == WhisperExecutionMode.REALTIME_PARTIAL
+) {
     private val baseIntervalMs = when (profile.family) {
         WhisperModelFamily.TINY -> profile.defaultPartialIntervalMs.coerceIn(500L, 1_000L)
         WhisperModelFamily.BASE -> profile.defaultPartialIntervalMs.coerceIn(800L, 1_500L)
-        else -> Long.MAX_VALUE
+        else -> profile.defaultPartialIntervalMs.coerceIn(1_500L, MAX_PARTIAL_INTERVAL_MS)
     }
     private val baseWindowMs = when (profile.family) {
         WhisperModelFamily.TINY -> profile.maxWindowMs.coerceIn(4_000L, 8_000L)
         WhisperModelFamily.BASE -> profile.maxWindowMs.coerceIn(5_000L, 10_000L)
-        else -> profile.maxWindowMs
+        else -> profile.maxWindowMs.coerceIn(6_000L, 20_000L)
     }
-    private var intervalMs = baseIntervalMs
+    private val certifiedBaseIntervalMs = certifiedPartialIntervalMs
+        ?.takeIf { it > 0L }
+        ?.coerceIn(MIN_PARTIAL_INTERVAL_MS, MAX_PARTIAL_INTERVAL_MS)
+        ?: baseIntervalMs
+    private var intervalMs = certifiedBaseIntervalMs
     private var windowMs = baseWindowMs
     private var lastSubmittedAtMs = Long.MIN_VALUE
     private var backlogStreak = 0
     private var healthyStreak = 0
     private var recentRtf: Double? = null
-    private var enabled = profile.family == WhisperModelFamily.TINY || profile.family == WhisperModelFamily.BASE
+    private var enabled = realtimeCertified
 
     @Synchronized
     fun shouldSubmit(nowMs: Long, capturedAudioMs: Long, queue: DecodeQueueSnapshot): Boolean {
@@ -67,10 +75,10 @@ class AdaptiveWhisperPartialPolicy(private val profile: WhisperModelProfile) {
         }
         when {
             realTimeFactor > 1.50 -> enabled = false
-            realTimeFactor > 1.20 -> intervalMs = (baseIntervalMs * 3).coerceAtMost(MAX_PARTIAL_INTERVAL_MS)
-            realTimeFactor > 0.80 -> intervalMs = (baseIntervalMs * 3 / 2).coerceAtMost(MAX_PARTIAL_INTERVAL_MS)
-            realTimeFactor > 0.50 -> intervalMs = baseIntervalMs
-            else -> intervalMs = (baseIntervalMs * 4 / 5).coerceAtLeast(MIN_PARTIAL_INTERVAL_MS)
+            realTimeFactor > 1.20 -> intervalMs = (certifiedBaseIntervalMs * 3).coerceAtMost(MAX_PARTIAL_INTERVAL_MS)
+            realTimeFactor > 0.80 -> intervalMs = (certifiedBaseIntervalMs * 3 / 2).coerceAtMost(MAX_PARTIAL_INTERVAL_MS)
+            realTimeFactor > 0.50 -> intervalMs = certifiedBaseIntervalMs
+            else -> intervalMs = (certifiedBaseIntervalMs * 4 / 5).coerceAtLeast(MIN_PARTIAL_INTERVAL_MS)
         }
         if (realTimeFactor > 0.80) windowMs = (baseWindowMs * 3 / 4).coerceAtLeast(MIN_PARTIAL_WINDOW_MS)
         else if (healthyStreak >= 2) windowMs = baseWindowMs
@@ -107,9 +115,15 @@ class LiveWhisperTranscriptionSession(
     private val scheduler: WhisperDecodeScheduler,
     private val scope: CoroutineScope,
     private val elapsedRealtime: () -> Long,
+    certifiedPartialIntervalMs: Long? = null,
+    realtimeCertified: Boolean = profile.recommendedMode == WhisperExecutionMode.REALTIME_PARTIAL,
     private val onUpdate: (LiveWhisperTranscriptUpdate) -> Unit
 ) : AutoCloseable {
-    private val policy = AdaptiveWhisperPartialPolicy(profile)
+    private val policy = AdaptiveWhisperPartialPolicy(
+        profile,
+        certifiedPartialIntervalMs = certifiedPartialIntervalMs,
+        realtimeCertified = realtimeCertified
+    )
     private val segmentDecoder = WhisperSegmentDecoder()
     private val stabilizer = WhisperTextStabilizer()
     private val finalized = AtomicBoolean(false)

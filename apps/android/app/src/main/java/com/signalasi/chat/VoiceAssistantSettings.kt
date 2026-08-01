@@ -1,6 +1,7 @@
 package com.signalasi.chat
 
 import android.content.Context
+import com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode
 
 data class VoiceAssistantConfig(
     val enabled: Boolean,
@@ -10,6 +11,7 @@ data class VoiceAssistantConfig(
     val wakeThreshold: Float,
     val asrProvider: String,
     val asrModel: String,
+    val asrRuntimeMode: WhisperUserVoiceMode,
     val asrLanguage: String,
     val ttsProvider: String,
     val ttsLanguage: String,
@@ -30,6 +32,7 @@ object VoiceAssistantSettings {
     private const val KEY_WAKE_THRESHOLD = "wake_threshold"
     private const val KEY_ASR_PROVIDER = "asr_provider"
     private const val KEY_ASR_MODEL = "asr_model"
+    private const val KEY_ASR_RUNTIME_MODE = "asr_runtime_mode"
     private const val KEY_TTS_PROVIDER = "tts_provider"
     private const val KEY_MICROSOFT_VOICE = "microsoft_voice"
     private const val KEY_WELCOME_TEXT = "welcome_text"
@@ -72,6 +75,11 @@ object VoiceAssistantSettings {
             wakeThreshold = prefs.getFloat(KEY_WAKE_THRESHOLD, 0.5f).coerceIn(0.01f, 0.99f),
             asrProvider = ASR_PROVIDER_LOCAL_WHISPER,
             asrModel = canonicalAsrModel,
+            asrRuntimeMode = runCatching {
+                enumValueOf<WhisperUserVoiceMode>(
+                    prefs.getString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.AUTOMATIC.name).orEmpty()
+                )
+            }.getOrDefault(WhisperUserVoiceMode.AUTOMATIC),
             asrLanguage = languagePolicy.asrLanguage,
             ttsProvider = prefs.getString(KEY_TTS_PROVIDER, PROVIDER_MICROSOFT_EDGE).orEmpty()
                 .takeIf { it == PROVIDER_ANDROID || it == PROVIDER_MICROSOFT_EDGE }
@@ -131,7 +139,16 @@ object VoiceAssistantSettings {
 
     fun setAsrModel(context: Context, value: String) {
         val model = WhisperModelManager.model(value).id
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_ASR_MODEL, model).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ASR_MODEL, model)
+            .putString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.MANUAL.name)
+            .apply()
+    }
+
+    fun setAsrRuntimeMode(context: Context, value: WhisperUserVoiceMode) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ASR_RUNTIME_MODE, value.name)
+            .apply()
     }
 
     fun setTtsProvider(context: Context, value: String) {

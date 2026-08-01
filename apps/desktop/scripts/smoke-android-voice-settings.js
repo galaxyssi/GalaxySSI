@@ -143,6 +143,9 @@ async function main() {
     if (result.wake_provider !== "android_asr" || result.asr_provider !== "local_whisper_cpp" || result.tts_provider !== "android") {
       fail(`Voice providers were not persisted: ${JSON.stringify(result)}`);
     }
+    if (result.asr_runtime_mode !== "ACCURATE") {
+      fail(`Whisper runtime policy mode was not persisted: ${JSON.stringify(result)}`);
+    }
     if (result.asr_language !== "en-US" || result.tts_language !== "zh-TW"
         || result.response_language !== "zh-HK" || result.speak_replies !== false) {
       fail(`Voice language or speak-replies settings were not persisted: ${JSON.stringify(result)}`);
@@ -153,7 +156,7 @@ async function main() {
 
     const prefsXml = readAppFile(voicePrefs);
     fs.writeFileSync(voicePrefsDump, prefsXml || "");
-    for (const text of ["android_asr", "local_whisper_cpp", "android", "zh-CN-XiaoxiaoNeural", token]) {
+    for (const text of ["android_asr", "local_whisper_cpp", "ACCURATE", "android", "zh-CN-XiaoxiaoNeural", token]) {
       requireText(prefsXml, text, voicePrefsDump);
     }
     const languagePolicyXml = readAppFile(languagePolicyPrefs);
