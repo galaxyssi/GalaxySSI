@@ -152,7 +152,7 @@ final class VoiceWhisperBenchmarkManager {
   static let storeName = "benchmark-certifications.json"
 
   private let storage: VoiceWhisperModelStorage
-  private let store: VoiceWhisperBenchmarkStore
+  let recordStore: VoiceWhisperBenchmarkStore
   private let thermalController: VoiceWhisperThermalController
   private let modelsProvider: () -> [VoiceWhisperModelProfile]
   private let deviceIdentityProvider: () -> VoiceWhisperBenchmarkDeviceIdentity
@@ -177,7 +177,7 @@ final class VoiceWhisperBenchmarkManager {
   ) {
     let normalizedDirectory = modelsDirectory.standardizedFileURL
     self.storage = storage ?? VoiceWhisperModelStorage(rootDirectory: normalizedDirectory)
-    self.store = store ?? VoiceWhisperBenchmarkStore(
+    self.recordStore = store ?? VoiceWhisperBenchmarkStore(
       fileURL: normalizedDirectory.appendingPathComponent(Self.storeName, isDirectory: false)
     )
     self.thermalController = thermalController
@@ -188,7 +188,7 @@ final class VoiceWhisperBenchmarkManager {
   }
 
   func current(profile: VoiceWhisperModelProfile) -> VoiceWhisperBenchmarkRecord? {
-    let record = store.find(key(profile: profile))
+    let record = recordStore.find(key(profile: profile))
     if record == nil {
       resetCertificationIfInstalled(profile)
     }
@@ -196,7 +196,7 @@ final class VoiceWhisperBenchmarkManager {
   }
 
   func latest(profile: VoiceWhisperModelProfile) -> VoiceWhisperBenchmarkRecord? {
-    store.latestForProfile(profile.id)
+    recordStore.latestForProfile(profile.id)
   }
 
   @discardableResult
@@ -204,7 +204,7 @@ final class VoiceWhisperBenchmarkManager {
     _ record: VoiceWhisperBenchmarkRecord,
     profile explicitProfile: VoiceWhisperModelProfile? = nil
   ) throws -> VoiceWhisperBenchmarkRecord {
-    try store.save(record)
+    try recordStore.save(record)
     let profile = explicitProfile ?? modelsProvider().first {
       $0.id == record.certification.key.modelProfileId
     }
@@ -217,7 +217,7 @@ final class VoiceWhisperBenchmarkManager {
   }
 
   func remove(profile: VoiceWhisperModelProfile) throws {
-    try store.removeForProfile(profile.id)
+    try recordStore.removeForProfile(profile.id)
   }
 
   func decide(
@@ -240,6 +240,13 @@ final class VoiceWhisperBenchmarkManager {
   }
 
   func key(profile: VoiceWhisperModelProfile) -> VoiceWhisperBenchmarkKey {
+    key(profile: profile, benchmarkAudioVersion: Self.benchmarkAudioIdentity)
+  }
+
+  func key(
+    profile: VoiceWhisperModelProfile,
+    benchmarkAudioVersion: String
+  ) -> VoiceWhisperBenchmarkKey {
     let identity = deviceIdentityProvider()
     let build = buildInfoProvider()
     return VoiceWhisperBenchmarkKey(
@@ -252,7 +259,7 @@ final class VoiceWhisperBenchmarkManager {
       nativeBuildFingerprint: build.nativeBuildFingerprint,
       modelProfileId: profile.id,
       modelSha256: profile.sha256,
-      benchmarkAudioVersion: Self.benchmarkAudioIdentity
+      benchmarkAudioVersion: benchmarkAudioVersion
     )
   }
 
