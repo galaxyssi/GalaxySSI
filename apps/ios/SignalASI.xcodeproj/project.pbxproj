@@ -231,6 +231,8 @@
     A10000000000000000000671 /* AgentTaskCenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000671 /* AgentTaskCenter.swift */; };
     A10000000000000000000118 /* AgentAutomationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000118 /* AgentAutomationModels.swift */; };
     A10000000000000000000119 /* AgentConversationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000119 /* AgentConversationModels.swift */; };
+    A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000695 /* AgentTaskIdentity.swift */; };
+    A10000000000000000000696 /* AgentTaskIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000696 /* AgentTaskIntent.swift */; };
     A10000000000000000000120 /* AgentRuntimePackModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000120 /* AgentRuntimePackModels.swift */; };
     A10000000000000000000121 /* AgentFailureResponsePolicyModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */; };
     A10000000000000000000122 /* AgentPermissionsBudgetModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */; };
@@ -640,6 +642,8 @@
     A20000000000000000000671 /* AgentTaskCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskCenter.swift; sourceTree = "<group>"; };
     A20000000000000000000118 /* AgentAutomationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentAutomationModels.swift; sourceTree = "<group>"; };
     A20000000000000000000119 /* AgentConversationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000695 /* AgentTaskIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIdentity.swift; sourceTree = "<group>"; };
+    A20000000000000000000696 /* AgentTaskIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskIntent.swift; sourceTree = "<group>"; };
     A20000000000000000000120 /* AgentRuntimePackModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRuntimePackModels.swift; sourceTree = "<group>"; };
     A20000000000000000000121 /* AgentFailureResponsePolicyModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentFailureResponsePolicyModels.swift; sourceTree = "<group>"; };
     A20000000000000000000122 /* AgentPermissionsBudgetModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPermissionsBudgetModels.swift; sourceTree = "<group>"; };
@@ -1054,6 +1058,8 @@
         A20000000000000000000427 /* AgentExecutionContinuity.swift */,
         A20000000000000000000118 /* AgentAutomationModels.swift */,
         A20000000000000000000119 /* AgentConversationModels.swift */,
+        A20000000000000000000695 /* AgentTaskIdentity.swift */,
+        A20000000000000000000696 /* AgentTaskIntent.swift */,
         A20000000000000000000429 /* AgentInlineMarkdown.swift */,
         A20000000000000000000415 /* AgentLargeOutputPolicy.swift */,
         A20000000000000000000417 /* AgentSessionMemoryBudget.swift */,
@@ -1614,6 +1620,8 @@
         A10000000000000000000427 /* AgentExecutionContinuity.swift in Sources */,
         A10000000000000000000118 /* AgentAutomationModels.swift in Sources */,
         A10000000000000000000119 /* AgentConversationModels.swift in Sources */,
+        A10000000000000000000695 /* AgentTaskIdentity.swift in Sources */,
+        A10000000000000000000696 /* AgentTaskIntent.swift in Sources */,
         A10000000000000000000429 /* AgentInlineMarkdown.swift in Sources */,
         A10000000000000000000415 /* AgentLargeOutputPolicy.swift in Sources */,
         A10000000000000000000417 /* AgentSessionMemoryBudget.swift in Sources */,
