@@ -655,7 +655,12 @@ final class AgentMcpRegistry {
 
   func installPackage(_ manifest: AgentMcpPackageManifest, packageSha256: String) throws -> AgentMcpConnection {
     let now = nowMillis()
-    let profile = manifest.authProfiles.first ?? (try AgentMcpAuthProfile(.none))
+    let profile: AgentMcpAuthProfile
+    if let firstProfile = manifest.authProfiles.first {
+      profile = firstProfile
+    } else {
+      profile = try AgentMcpAuthProfile(.none)
+    }
     let endpoint: String
     if manifest.transport == .localStdio {
       endpoint = manifest.endpoint
@@ -1127,9 +1132,9 @@ enum AgentDefaultCapabilityCatalog {
 
   private static func nativeItem(_ tool: AgentNativeToolDescriptor) -> AgentMarketplaceItem? {
     let permissions = tool.requiredPermissions.map {
-      AgentMarketplacePermission($0.id, title: $0.title, description: $0.description, scope: "ios_permission", risk: tool.risk.rawValue)
+      AgentMarketplacePermission(id: $0.id, title: $0.title, description: $0.description, scope: "ios_permission", risk: tool.risk.rawValue)
     } + tool.requiredConsents.map {
-      AgentMarketplacePermission($0.id, title: $0.title, description: $0.description, scope: "user_consent", risk: tool.risk.rawValue)
+      AgentMarketplacePermission(id: $0.id, title: $0.title, description: $0.description, scope: "user_consent", risk: tool.risk.rawValue)
     }
     let state: AgentMarketplaceInstallState
     if tool.risk == .blocked {
@@ -1190,14 +1195,14 @@ enum AgentDefaultCapabilityCatalog {
 
   private static func mcpMarketplacePermissions(_ entry: AgentMcpCatalogEntry) -> [AgentMarketplacePermission] {
     [AgentMarketplacePermission(
-      "network.\(entry.id)",
+      id: "network.\(entry.id)",
       title: "Connect to \(entry.name)",
       description: "Exchange requests with the configured MCP server.",
       scope: "network",
       risk: "low"
     )] + entry.toolHints.map { capability in
       AgentMarketplacePermission(
-        capability,
+        id: capability,
         title: capability,
         description: "Allow the MCP server to expose this capability.",
         scope: "mcp_tool",
@@ -1209,7 +1214,7 @@ enum AgentDefaultCapabilityCatalog {
   private static func skillMarketplacePermissions(_ manifest: AgentSkillManifest) -> [AgentMarketplacePermission] {
     Array(manifest.permissions.union(manifest.nativeTools)).sorted().map { permissionId in
       AgentMarketplacePermission(
-        permissionId,
+        id: permissionId,
         title: permissionId,
         description: "Required by this automation workflow.",
         scope: manifest.nativeTools.contains(permissionId) ? "native_tool" : "skill",
