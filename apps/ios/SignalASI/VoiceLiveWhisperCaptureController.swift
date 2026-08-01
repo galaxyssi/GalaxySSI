@@ -21,6 +21,7 @@ typealias VoiceLiveWhisperCaptureSessionBuilder = (
 final class VoiceLiveWhisperCaptureController {
   private let sessionBuilder: VoiceLiveWhisperCaptureSessionBuilder
   private let coordinatorBridge: VoiceLiveWhisperCoordinatorBridge
+  private var updateHandler: (VoiceLiveWhisperTranscriptUpdate) -> Void
   private let transitionHandler: (VoiceInteractionTransition) -> Void
   private let lock = NSLock()
   private var session: VoiceLiveWhisperSessionHandling?
@@ -29,6 +30,7 @@ final class VoiceLiveWhisperCaptureController {
   init(
     factory: VoiceLiveWhisperSessionFactory = VoiceLiveWhisperSessionFactory(),
     coordinatorBridge: VoiceLiveWhisperCoordinatorBridge,
+    updateHandler: @escaping (VoiceLiveWhisperTranscriptUpdate) -> Void = { _ in },
     transitionHandler: @escaping (VoiceInteractionTransition) -> Void = { _ in }
   ) {
     self.sessionBuilder = { voiceSessionId, settings, scheduler, queue, onUpdate in
@@ -41,21 +43,30 @@ final class VoiceLiveWhisperCaptureController {
       )
     }
     self.coordinatorBridge = coordinatorBridge
+    self.updateHandler = updateHandler
     self.transitionHandler = transitionHandler
   }
 
   init(
     sessionBuilder: @escaping VoiceLiveWhisperCaptureSessionBuilder,
     coordinatorBridge: VoiceLiveWhisperCoordinatorBridge,
+    updateHandler: @escaping (VoiceLiveWhisperTranscriptUpdate) -> Void = { _ in },
     transitionHandler: @escaping (VoiceInteractionTransition) -> Void = { _ in }
   ) {
     self.sessionBuilder = sessionBuilder
     self.coordinatorBridge = coordinatorBridge
+    self.updateHandler = updateHandler
     self.transitionHandler = transitionHandler
   }
 
   var activeModelProfileId: String? {
     locked { session?.modelProfileId }
+  }
+
+  func setUpdateHandler(_ updateHandler: @escaping (VoiceLiveWhisperTranscriptUpdate) -> Void) {
+    locked {
+      self.updateHandler = updateHandler
+    }
   }
 
   @discardableResult
@@ -123,6 +134,7 @@ final class VoiceLiveWhisperCaptureController {
   }
 
   private func apply(_ update: VoiceLiveWhisperTranscriptUpdate) {
+    locked { updateHandler }(update)
     coordinatorBridge.apply(update).forEach(transitionHandler)
   }
 

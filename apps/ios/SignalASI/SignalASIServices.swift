@@ -1241,6 +1241,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   private let runtimeChannel = VoiceRuntimeChannel.androidSystemASR
   private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
+  private let liveWhisperScheduler: VoiceWhisperDecodeScheduling
+  private let liveWhisperController: VoiceLiveWhisperCaptureController
   private let audioEngine = AVAudioEngine()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
@@ -1250,10 +1252,30 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var pcmTapSpeechStarted = false
   private var pcmTapSpeechEnded = false
   private var pcmTapEndpointRequested = false
+  private var liveWhisperActive = false
 
-  init(coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge()) {
+  init(
+    coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge = VoiceSpeechCaptureCoordinatorBridge(),
+    liveWhisperScheduler: VoiceWhisperDecodeScheduling? = nil,
+    liveWhisperController: VoiceLiveWhisperCaptureController? = nil
+  ) {
     self.coordinatorBridge = coordinatorBridge
+    self.liveWhisperScheduler = liveWhisperScheduler ??
+      VoiceWhisperRuntimeDecodeSchedulerAdapter(runtime: DefaultVoiceLocalWhisperRuntime()).makeScheduler()
+    self.liveWhisperController = liveWhisperController ??
+      VoiceLiveWhisperCaptureController(
+        coordinatorBridge: VoiceLiveWhisperCoordinatorBridge(coordinatorBridge: coordinatorBridge)
+      )
     super.init()
+    self.liveWhisperController.setUpdateHandler { [weak self] update in
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self, self.liveWhisperActive else { return }
+        let displayText = update.transcript.displayText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !displayText.isEmpty {
+          self.transcript = displayText
+        }
+      }
+    }
   }
 
   func requestAuthorization(localeIdentifier: String) async -> Bool {
@@ -1269,7 +1291,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
 
   @MainActor
   func start(localeIdentifier: String) throws {
-    try start(localeIdentifier: localeIdentifier, coordinatorConfig: nil)
+    try start(localeIdentifier: localeIdentifier, settings: nil, coordinatorConfig: nil)
   }
 
   @MainActor
@@ -1277,6 +1299,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     let normalized = settings.normalized
     try start(
       localeIdentifier: normalized.preferredLocaleIdentifier,
+      settings: normalized,
       coordinatorConfig: VoiceSpeechCaptureCoordinatorBridge.config(settings: normalized, source: source)
     )
   }
@@ -1284,6 +1307,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   @MainActor
   private func start(
     localeIdentifier: String,
+    settings: VoiceSettings?,
     coordinatorConfig: VoiceSessionConfig?
   ) throws {
     if let coordinatorConfig = coordinatorConfig {
@@ -1325,6 +1349,19 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
     pcmTapEndpointRequested = false
+    liveWhisperActive = false
+    let voiceSessionId = coordinatorBridge.sessionId()
+    if let settings = settings,
+       pcmCaptureEnabled,
+       settings.asrProvider == .localWhisperCpp,
+       !voiceSessionId.isEmpty {
+      liveWhisperActive = liveWhisperController.start(
+        voiceSessionId: voiceSessionId,
+        settings: settings,
+        scheduler: liveWhisperScheduler,
+        queue: liveWhisperScheduler.queueSnapshot()
+      )
+    }
     input.removeTap(onBus: 0)
     input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
       request.append(buffer)
@@ -1408,6 +1445,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     task = nil
     request = nil
     currentRecognitionModelProfileId = ""
+    liveWhisperController.close()
+    liveWhisperActive = false
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
@@ -1423,6 +1462,17 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     if update.endpoint.speechStarted, !pcmTapSpeechStarted {
       pcmTapSpeechStarted = true
       coordinatorBridge.speechStarted(atElapsedNs: update.frame.captureTimeNanos)
+      if liveWhisperActive {
+        liveWhisperController.handleSpeechStarted(nowMillis: update.frame.captureTimeNanos / 1_000_000)
+      }
+    }
+    if liveWhisperActive {
+      liveWhisperController.handleAudioLevel(
+        isSpeech: update.decision.isSpeech,
+        nowMillis: update.frame.captureTimeNanos / 1_000_000
+      ) { [weak self] windowMillis in
+        self?.pcmTapPipeline?.snapshotWindow(maxDurationMs: windowMillis)
+      }
     }
     if update.endpoint.speechEndedCandidate, !pcmTapSpeechEnded {
       pcmTapSpeechEnded = true
