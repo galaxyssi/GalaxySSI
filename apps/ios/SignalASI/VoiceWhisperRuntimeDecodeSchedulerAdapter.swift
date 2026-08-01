@@ -23,14 +23,11 @@ final class VoiceWhisperRuntimeDecodeSchedulerAdapter {
   func makeScheduler(maxQueueSize: Int = 8) -> VoiceWhisperDecodeScheduler {
     VoiceWhisperDecodeScheduler(
       maxQueueSize: maxQueueSize,
-      decoder: { [weak self] request in
-        guard let self = self else {
-          throw VoiceWhisperRuntimeFailure.closed
-        }
+      decoder: { request in
         return try await self.decode(request)
       },
-      abortActive: { [weak self] reason in
-        self?.requestAbort(reason)
+      abortActive: { reason in
+        self.requestAbort(reason)
       }
     )
   }
