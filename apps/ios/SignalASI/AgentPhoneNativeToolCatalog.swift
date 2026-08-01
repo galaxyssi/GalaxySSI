@@ -569,7 +569,7 @@ enum AgentPhoneNativeToolCatalog {
       nowMillis: nowMillis
     )
     let initialStatuses = snapshotProvider.current()
-    supportedActionKinds.map { kind in
+    return supportedActionKinds.map { kind in
       let capabilityIds = capabilities(for: kind)
       let boundaries = capabilityIds.map { AgentPhoneCapabilityCatalog.find($0) }
       let descriptor = try! AgentNativeToolDescriptor(
