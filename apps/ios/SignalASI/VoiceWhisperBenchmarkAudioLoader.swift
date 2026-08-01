@@ -43,6 +43,9 @@ enum VoiceWhisperBenchmarkAudioLoader {
       forResource: resourceName,
       withExtension: fileExtension,
       subdirectory: subdirectory
+    ) ?? bundle.url(
+      forResource: resourceName,
+      withExtension: fileExtension
     ) else {
       let resourcePath = [subdirectory, "\(resourceName).\(fileExtension)"]
         .compactMap { $0 }
