@@ -1,16 +1,21 @@
 package com.signalasi.chat
 
+import java.util.Collections
+import java.util.WeakHashMap
+
 object AppForegroundTracker {
-    @Volatile
-    private var resumedActivities = 0
+    private val foregroundActivities = Collections.newSetFromMap(WeakHashMap<Any, Boolean>())
 
-    fun onActivityResumed() {
-        resumedActivities += 1
+    @Synchronized
+    fun onActivityForeground(activity: Any) {
+        foregroundActivities.add(activity)
     }
 
-    fun onActivityPaused() {
-        resumedActivities = (resumedActivities - 1).coerceAtLeast(0)
+    @Synchronized
+    fun onActivityBackground(activity: Any) {
+        foregroundActivities.remove(activity)
     }
 
-    fun isForeground(): Boolean = resumedActivities > 0
+    @Synchronized
+    fun isForeground(): Boolean = foregroundActivities.isNotEmpty()
 }
