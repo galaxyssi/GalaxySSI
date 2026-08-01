@@ -785,19 +785,40 @@ enum AgentPlanFactory {
     for action in actions {
       idMap[action.id] = firstNonBlank(canonicalIds[action.id] ?? "", action.id)
     }
-    return retained.map { $0.remappingToolGraphIds(idMap: idMap) }
+    return retained.map { remappingToolGraphIds($0, idMap: idMap) }
   }
 
   private static func selectedAgentOrModel(_ actions: [AgentAction]) -> String {
     let connectorTargets = actions
       .filter { $0.kind == .callConnector || $0.kind == .controlDevice }
       .map { selectedAgentOrModel($0) }
-      .stableDistinct()
-    if connectorTargets.count == 1 {
-      return connectorTargets[0]
+    let distinctConnectorTargets = stableDistinctStrings(connectorTargets)
+    if distinctConnectorTargets.count == 1 {
+      return distinctConnectorTargets[0]
     }
-    let targets = actions.map { selectedAgentOrModel($0) }.stableDistinct()
+    let targets = stableDistinctStrings(actions.map { selectedAgentOrModel($0) })
     return targets.count == 1 ? targets[0] : "Multiple Executors"
+  }
+
+  private static func remappingToolGraphIds(_ action: AgentAction, idMap: [String: String]) -> AgentAction {
+    var copy = action
+    copy.parameters["depends_on"] = stableDistinctStrings(listParameter("depends_on", action: action).map { idMap[$0] ?? $0 })
+      .joined(separator: ",")
+    copy.parameters["use_outputs_from"] = stableDistinctStrings(listParameter("use_outputs_from", action: action).map { idMap[$0] ?? $0 })
+      .joined(separator: ",")
+    return copy
+  }
+
+  private static func listParameter(_ key: String, action: AgentAction) -> [String] {
+    (action.parameters[key] ?? "")
+      .split(separator: ",")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+  }
+
+  private static func stableDistinctStrings(_ values: [String]) -> [String] {
+    var seen = Set<String>()
+    return values.filter { seen.insert($0).inserted }
   }
 
   private static func selectedAgentOrModel(_ action: AgentAction) -> String {
@@ -1027,7 +1048,21 @@ enum AgentPlanFactory {
   }
 
   private static func stableSuffix(_ value: String) -> String {
-    String(agentNameBasedUUID(value).prefix(8))
+    String(Self.agentNameBasedUUID(value).prefix(8))
+  }
+
+  private static func agentNameBasedUUID(_ name: String) -> String {
+    var bytes = Array(Insecure.MD5.hash(data: Data(name.utf8)))
+    bytes[6] = (bytes[6] & 0x0f) | 0x30
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    let uuid = UUID(uuid: (
+      bytes[0], bytes[1], bytes[2], bytes[3],
+      bytes[4], bytes[5],
+      bytes[6], bytes[7],
+      bytes[8], bytes[9],
+      bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
+    return uuid.uuidString.lowercased()
   }
 
   private static func firstNonBlank(_ values: String...) -> String {

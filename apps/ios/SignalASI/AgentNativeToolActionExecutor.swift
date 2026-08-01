@@ -31,17 +31,17 @@ struct AgentNativeToolActionExecutor: AgentActionExecutor {
     }
     let toolId = Self.clean(action.parameters["tool_id"] ?? "")
     guard !toolId.isEmpty else {
-      return failure(action, "Native tool id is missing.", code: "missing_tool_id")
+      return Self.failure(action, "Native tool id is missing.", code: "missing_tool_id")
     }
     guard let definition = registry.lookup(toolId) else {
-      return failure(action, "Native tool is not registered: \(toolId)", code: "unknown_tool")
+      return Self.failure(action, "Native tool is not registered: \(toolId)", code: "unknown_tool")
     }
     let input: AgentMcpJSONObject
     switch Self.parseInput(action.parameters["input_json"] ?? "") {
     case .success(let parsed):
       input = parsed
     case .failure(let message):
-      return failure(action, message, code: "invalid_input_json", toolId: toolId)
+      return Self.failure(action, message, code: "invalid_input_json", toolId: toolId)
     }
 
     let workspaceId = Self.clean(workspaceIdProvider(action, screen))
