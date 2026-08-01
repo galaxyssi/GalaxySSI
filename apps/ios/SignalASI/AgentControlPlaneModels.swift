@@ -704,6 +704,6 @@ private extension Array where Element == String {
   }
 
   func prefixArray(_ count: Int) -> [String] {
-    Array(prefix(max(count, 0)))
+    Array(prefix(Swift.max(count, 0)))
   }
 }
