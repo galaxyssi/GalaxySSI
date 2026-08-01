@@ -97,13 +97,22 @@ import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptUpdate
 import com.signalasi.chat.voice.asr.local.WhisperDecodeScheduler
+import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
+import com.signalasi.chat.voice.benchmark.WhisperBenchmarkDeferredException
+import com.signalasi.chat.voice.benchmark.WhisperBenchmarkProgress
+import com.signalasi.chat.voice.benchmark.WhisperBenchmarkRecord
+import com.signalasi.chat.voice.benchmark.WhisperBenchmarkStage
+import com.signalasi.chat.voice.benchmark.WhisperProviderChoice
+import com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode
 import com.signalasi.chat.voice.audio.VoiceAudioSession
 import com.signalasi.chat.voice.audio.VoiceAudioSessionConfig
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
-import com.signalasi.chat.voice.model.WhisperModelFamily
+import com.signalasi.chat.voice.model.WhisperExecutionMode
+import com.signalasi.chat.voice.model.WhisperCertificationLevel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -564,6 +573,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var lastDebugSendKey: String? = null
     @Volatile private var lastHistoryLoadedAt = 0L
     private var pendingAsrModelSelection: String? = null
+    private val whisperBenchmarkProgress = ConcurrentHashMap<String, WhisperBenchmarkProgress>()
+    private val whisperBenchmarkRefreshScheduled = AtomicBoolean(false)
     private val asrModelDownloadPoll = object : Runnable {
         override fun run() {
             val pendingId = pendingAsrModelSelection ?: return
@@ -575,6 +586,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     pendingAsrModelSelection = null
                     Toast.makeText(this@MainActivity, getString(R.string.voice_asr_model_ready, model.displayName), Toast.LENGTH_SHORT).show()
                     if (featurePage.visibility == View.VISIBLE) showAsrProviderPage()
+                    if (VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this@MainActivity)) {
+                        startWhisperBenchmark(model, force = false)
+                    }
                 }
                 DownloadManager.STATUS_FAILED -> {
                     pendingAsrModelSelection = null
@@ -6720,6 +6734,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         stopVoiceAssistant()
+        WhisperBenchmarkManager.cancelForInteractiveVoice()
         ensureSpeechRecognizer()
         val config = VoiceAssistantSettings.get(this)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -7070,6 +7085,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun startVoiceCommandRecording() {
         if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE) return
         if (!ensureRecordPermission() || isVoiceCaptureActive()) return
+        WhisperBenchmarkManager.cancelForInteractiveVoice()
         if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
             startPcmVoiceCommandRecording()
             return
@@ -20471,6 +20487,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             VoiceAssistantSettings.setWakeModel(this, VoiceAssistantSettings.DEFAULT_WAKE_MODEL)
             VoiceAssistantSettings.setWakeThreshold(this, 0.73f)
             VoiceAssistantSettings.setAsrProvider(this, VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER)
+            VoiceAssistantSettings.setAsrRuntimeMode(this, WhisperUserVoiceMode.ACCURATE)
             VoiceAssistantSettings.setAsrLanguage(this, "en-US")
             VoiceAssistantSettings.setTtsProvider(this, VoiceAssistantSettings.PROVIDER_ANDROID)
             VoiceAssistantSettings.setTtsLanguage(this, "zh-TW")
@@ -20488,6 +20505,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 config.wakeModel == VoiceAssistantSettings.DEFAULT_WAKE_MODEL &&
                 kotlin.math.abs(config.wakeThreshold - 0.73f) < 0.001f &&
                 config.asrProvider == VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER &&
+                config.asrRuntimeMode == WhisperUserVoiceMode.ACCURATE &&
                 config.asrLanguage == "en-US" &&
                 config.ttsProvider == VoiceAssistantSettings.PROVIDER_ANDROID &&
                 config.ttsLanguage == "zh-TW" &&
@@ -20508,6 +20526,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .put("wake_model", config.wakeModel)
                     .put("wake_threshold", config.wakeThreshold.toDouble())
                     .put("asr_provider", config.asrProvider)
+                    .put("asr_runtime_mode", config.asrRuntimeMode.name)
                     .put("asr_language", config.asrLanguage)
                     .put("tts_provider", config.ttsProvider)
                     .put("tts_language", config.ttsLanguage)
@@ -21118,10 +21137,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (!VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(this) ||
             !VoiceFeatureFlags.isWhisperAdaptivePartialEnabled(this)
         ) return null
-        val profile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
-        if (profile.family !in setOf(WhisperModelFamily.TINY, WhisperModelFamily.BASE) ||
-            !WhisperModelManager.isAvailable(this, profile)
+        val config = VoiceAssistantSettings.get(this)
+        val selected = WhisperModelManager.model(config.asrModel)
+        val decision = if (VoiceFeatureFlags.isWhisperPolicyEngineEnabled(this)) {
+            WhisperBenchmarkManager.decide(
+                context = this,
+                userMode = config.asrRuntimeMode,
+                selectedProfileId = selected.id,
+                foreground = true,
+                decodeQueueDepth = sharedWhisperDecodeScheduler().queueSnapshot().queuedPartials
+            )
+        } else null
+        if (decision != null &&
+            (decision.provider != WhisperProviderChoice.LOCAL ||
+                decision.fastMode != WhisperExecutionMode.REALTIME_PARTIAL ||
+                decision.fastProfileId == null)
         ) return null
+        val profile = decision?.fastProfileId?.let(WhisperModelManager::model) ?: selected
+        if (!WhisperModelManager.isAvailable(this, profile)) return null
+        val certification = if (decision != null) {
+            WhisperBenchmarkManager.current(this, profile)?.certification
+        } else null
         val session = LiveWhisperTranscriptionSession(
             voiceSessionId = traceId,
             profile = profile,
@@ -21129,6 +21165,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             scheduler = sharedWhisperDecodeScheduler(),
             scope = voiceAssistantScope,
             elapsedRealtime = SystemClock::elapsedRealtime,
+            certifiedPartialIntervalMs = decision?.partialIntervalMs ?: certification?.recommendedPartialIntervalMs,
+            realtimeCertified = decision == null || certification?.realtimeCertified == true,
             onUpdate = { update -> handleLiveWhisperUpdate(purpose, traceId, update) }
         )
         liveWhisperSessions.put(traceId, session)?.close()
@@ -21202,10 +21240,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     // ===== Recording =====
     private fun startRecording(purpose: String): Boolean {
+        if (isVoiceCaptureActive()) return false
+        WhisperBenchmarkManager.cancelForInteractiveVoice()
         if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
             return startPcmRecording(purpose, autoEndpoint = false)
         }
-        if (isVoiceCaptureActive()) return false
         val mediaProfile = AgentMediaNetworkDetector.detect(this)
         val traceId = VoiceLatencyTelemetry.startSession(
             this,
@@ -26650,12 +26689,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             })
         }
+        if (VoiceFeatureFlags.isWhisperPolicyEngineEnabled(this)) {
+            addSectionTitle(getString(R.string.voice_asr_runtime_mode_section))
+            featureContent.addView(featureRow(
+                getString(R.string.voice_asr_runtime_mode_title),
+                getString(R.string.voice_asr_runtime_mode_subtitle),
+                R.drawable.ic_settings_model,
+                whisperRuntimeModeLabel(config.asrRuntimeMode)
+            ).apply {
+                setOnClickListener { showWhisperRuntimeModeDialog(config.asrRuntimeMode) }
+            })
+        }
         addSectionTitle(getString(R.string.voice_asr_model_section))
         var hasActiveDownload = false
         WhisperModelManager.models.forEach { model ->
             val state = WhisperModelManager.downloadState(this, model)
             val available = WhisperModelManager.isAvailable(this, model)
             val isSelected = selected.id == model.id
+            val benchmarkRecord = if (available && VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this)) {
+                WhisperBenchmarkManager.current(this, model)
+            } else null
+            val latestBenchmark = if (available && benchmarkRecord == null &&
+                VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this)
+            ) {
+                WhisperBenchmarkManager.latest(this, model)
+            } else null
+            val benchmarkProgress = whisperBenchmarkProgress[model.id]
+            val isBenchmarking = benchmarkProgress != null || WhisperBenchmarkManager.isRunning(model.id)
             val isDownloading = state.status == DownloadManager.STATUS_PENDING ||
                 state.status == DownloadManager.STATUS_RUNNING ||
                 state.status == DownloadManager.STATUS_PAUSED
@@ -26672,6 +26732,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 getString(R.string.voice_asr_model_download_size)
             }
             val lifecycleDetail = when {
+                isBenchmarking -> getString(
+                    R.string.voice_asr_model_benchmark_progress,
+                    benchmarkProgress?.let(::whisperBenchmarkStageLabel)
+                        ?: getString(R.string.voice_asr_model_benchmarking),
+                    benchmarkProgress?.let { progress ->
+                        if (progress.totalSteps <= 0) 0
+                        else (progress.completedSteps * 100 / progress.totalSteps).coerceIn(0, 100)
+                    } ?: 0
+                )
+                benchmarkRecord != null -> whisperCertificationLabel(benchmarkRecord.certification.level)
+                available && latestBenchmark != null -> getString(R.string.voice_asr_model_benchmark_stale)
                 available -> getString(R.string.voice_asr_model_installed_uncertified)
                 state.storageState == com.signalasi.chat.voice.model.WhisperModelStorageState.VERIFYING_SIZE ||
                     state.storageState == com.signalasi.chat.voice.model.WhisperModelStorageState.VERIFYING_SHA256 ->
@@ -26690,6 +26761,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             val subtitle = "$profileDetail\n$lifecycleDetail"
             val action = when {
+                isBenchmarking -> getString(R.string.voice_asr_model_waiting)
+                available && benchmarkRecord == null -> getString(R.string.voice_asr_model_use_and_test)
                 isSelected && available -> getString(R.string.section_current)
                 available -> getString(R.string.settings_language_use)
                 isDownloading && !model.bundled -> getString(R.string.voice_asr_model_cancel)
@@ -26698,7 +26771,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 else -> getString(R.string.voice_asr_model_download)
             }
             featureContent.addView(featureRow(model.displayName, subtitle, R.drawable.ic_local_model, action).apply {
-                val canInteract = (!isSelected || !available) && !(isDownloading && model.bundled)
+                val canInteract = !isBenchmarking && !(isDownloading && model.bundled)
                 isClickable = canInteract
                 isFocusable = isClickable
                 setOnClickListener(if (canInteract) View.OnClickListener {
@@ -26714,8 +26787,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             }
                             .show()
                     } else if (available) {
-                        VoiceAssistantSettings.setAsrModel(this@MainActivity, model.id)
-                        showAsrProviderPage()
+                        if (!isSelected) {
+                            VoiceAssistantSettings.setAsrModel(this@MainActivity, model.id)
+                        }
+                        if (VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this@MainActivity)) {
+                            if (benchmarkRecord == null) {
+                                startWhisperBenchmark(model, force = false)
+                            } else if (isSelected) {
+                                showWhisperBenchmarkDetails(model, benchmarkRecord)
+                            } else {
+                                showAsrProviderPage()
+                            }
+                        } else {
+                            showAsrProviderPage()
+                        }
                     } else {
                         runCatching { WhisperModelManager.enqueue(this@MainActivity, model) }
                             .onSuccess {
@@ -26736,7 +26821,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                             .setNegativeButton(getString(R.string.common_cancel), null)
                             .setPositiveButton(getString(R.string.voice_asr_model_remove)) { _, _ ->
                                 runCatching { WhisperModelManager.delete(this@MainActivity, model) }
-                                    .onSuccess { showAsrProviderPage() }
+                                    .onSuccess {
+                                        WhisperBenchmarkManager.remove(this@MainActivity, model)
+                                        showAsrProviderPage()
+                                    }
                                     .onFailure {
                                         Toast.makeText(
                                             this@MainActivity,
@@ -26759,6 +26847,189 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
         if (hasActiveDownload) handler.postDelayed(asrModelDownloadPoll, 1_000L)
     }
+
+    private fun showWhisperRuntimeModeDialog(current: WhisperUserVoiceMode) {
+        val modes = listOf(
+            WhisperUserVoiceMode.AUTOMATIC,
+            WhisperUserVoiceMode.FAST,
+            WhisperUserVoiceMode.ACCURATE,
+            WhisperUserVoiceMode.PRIVACY,
+            WhisperUserVoiceMode.MANUAL
+        )
+        val labels = modes.map(::whisperRuntimeModeLabel).toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.voice_asr_runtime_mode_title))
+            .setSingleChoiceItems(labels, modes.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+                VoiceAssistantSettings.setAsrRuntimeMode(this, modes[which])
+                dialog.dismiss()
+                showAsrProviderPage()
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
+    }
+
+    private fun confirmWhisperBenchmark(model: WhisperModel) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.voice_asr_model_benchmark_title, model.displayName))
+            .setMessage(getString(R.string.voice_asr_model_benchmark_message))
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.voice_asr_model_benchmark_start)) { _, _ ->
+                startWhisperBenchmark(model, force = true)
+            }
+            .show()
+    }
+
+    private fun startWhisperBenchmark(model: WhisperModel, force: Boolean) {
+        if (WhisperBenchmarkManager.isRunning(model.id)) return
+        whisperBenchmarkProgress[model.id] = WhisperBenchmarkProgress(
+            WhisperBenchmarkStage.VERIFYING,
+            completedSteps = 0,
+            totalSteps = 1
+        )
+        if (featurePage.visibility == View.VISIBLE) showAsrProviderPage()
+        voiceAssistantScope.launch {
+            val outcome = runCatching {
+                WhisperBenchmarkManager.benchmark(this@MainActivity, model, force) { progress ->
+                    whisperBenchmarkProgress[model.id] = progress
+                    scheduleWhisperBenchmarkRefresh()
+                }
+            }
+            whisperBenchmarkProgress.remove(model.id)
+            handler.post {
+                if (isFinishing || isDestroyed) return@post
+                outcome.onSuccess { record ->
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.voice_asr_model_benchmark_complete, model.displayName),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    if (featurePage.visibility == View.VISIBLE) showAsrProviderPage()
+                    showWhisperBenchmarkDetails(model, record)
+                }.onFailure { error ->
+                    if (error is CancellationException) {
+                        if (featurePage.visibility == View.VISIBLE) showAsrProviderPage()
+                        return@onFailure
+                    }
+                    val message = if (error is WhisperBenchmarkDeferredException) {
+                        error.message.orEmpty()
+                    } else {
+                        error.message.orEmpty().ifBlank { error.javaClass.simpleName }
+                    }
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.voice_asr_model_benchmark_failed, message),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    if (featurePage.visibility == View.VISIBLE) showAsrProviderPage()
+                }
+            }
+        }
+    }
+
+    private fun scheduleWhisperBenchmarkRefresh() {
+        if (!whisperBenchmarkRefreshScheduled.compareAndSet(false, true)) return
+        handler.postDelayed({
+            whisperBenchmarkRefreshScheduled.set(false)
+            if (!isFinishing && !isDestroyed && featurePage.visibility == View.VISIBLE &&
+                featureTitle.text == getString(R.string.voice_asr_provider)
+            ) {
+                showAsrProviderPage()
+            }
+        }, 350L)
+    }
+
+    private fun showWhisperBenchmarkDetails(model: WhisperModel, record: WhisperBenchmarkRecord) {
+        val certification = record.certification
+        val recommendation = whisperCertificationLabel(certification.level)
+        val coldLoadP95 = percentileWhisperLong(
+            record.measurements.filter { it.loadKind == com.signalasi.chat.voice.benchmark.WhisperBenchmarkLoadKind.COLD }
+                .map { it.loadDurationMs }
+        )
+        val hotLoadP95 = percentileWhisperLong(
+            record.measurements.filter { it.loadKind == com.signalasi.chat.voice.benchmark.WhisperBenchmarkLoadKind.HOT }
+                .map { it.loadDurationMs }
+        )
+        val firstPartialP95 = percentileWhisperLong(
+            record.measurements.map { it.firstPartialLatencyMs }.filter { it > 0L }
+        )
+        val finalTailP95 = percentileWhisperLong(
+            record.measurements.map { it.finalTailLatencyMs }.filter { it > 0L }
+        )
+        val peakRss = record.measurements.maxOfOrNull { it.peakRssBytes } ?: 0L
+        val peakNative = record.measurements.maxOfOrNull { it.peakNativeAllocatedBytes } ?: 0L
+        val body = buildString {
+            append(getString(
+                R.string.voice_asr_model_benchmark_metrics,
+                certification.warmRtfP50,
+                certification.warmRtfP95,
+                formatWhisperBytes(certification.peakPssBytes),
+                certification.recommendedThreadCount,
+                certification.maxThermalStatus,
+                certification.abortLatencyMsP95
+            ))
+            append("\n")
+            append(getString(
+                R.string.voice_asr_model_benchmark_latency_metrics,
+                coldLoadP95,
+                hotLoadP95,
+                firstPartialP95,
+                finalTailP95
+            ))
+            append("\n")
+            append(getString(
+                R.string.voice_asr_model_benchmark_memory_metrics,
+                formatWhisperBytes(peakRss),
+                formatWhisperBytes(peakNative)
+            ))
+            append("\n\n")
+            append(getString(R.string.voice_asr_model_benchmark_recommendation, recommendation))
+            certification.failureReason?.takeIf(String::isNotBlank)?.let { reason ->
+                append("\n")
+                append(getString(R.string.voice_asr_model_benchmark_failure_reason, reason))
+            }
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.voice_asr_model_benchmark_details_title, model.displayName))
+            .setMessage(body)
+            .setNegativeButton(android.R.string.ok, null)
+            .setPositiveButton(getString(R.string.voice_asr_model_retest)) { _, _ ->
+                confirmWhisperBenchmark(model)
+            }
+            .show()
+    }
+
+    private fun percentileWhisperLong(values: List<Long>): Long {
+        if (values.isEmpty()) return 0L
+        val sorted = values.sorted()
+        return sorted[((sorted.lastIndex * 0.95) + 0.5).toInt().coerceIn(0, sorted.lastIndex)]
+    }
+
+    private fun whisperRuntimeModeLabel(mode: WhisperUserVoiceMode): String = getString(when (mode) {
+        WhisperUserVoiceMode.AUTOMATIC -> R.string.voice_asr_runtime_mode_automatic
+        WhisperUserVoiceMode.MANUAL -> R.string.voice_asr_runtime_mode_manual
+        WhisperUserVoiceMode.FAST -> R.string.voice_asr_runtime_mode_fast
+        WhisperUserVoiceMode.ACCURATE -> R.string.voice_asr_runtime_mode_accurate
+        WhisperUserVoiceMode.PRIVACY -> R.string.voice_asr_runtime_mode_privacy
+    })
+
+    private fun whisperCertificationLabel(level: WhisperCertificationLevel): String = getString(when (level) {
+        WhisperCertificationLevel.UNTESTED -> R.string.voice_asr_model_installed_uncertified
+        WhisperCertificationLevel.REALTIME -> R.string.voice_asr_model_certified_realtime
+        WhisperCertificationLevel.FINAL -> R.string.voice_asr_model_certified_final
+        WhisperCertificationLevel.SECOND_PASS -> R.string.voice_asr_model_certified_second_pass
+        WhisperCertificationLevel.REMOTE_RECOMMENDED -> R.string.voice_asr_model_remote_recommended
+        WhisperCertificationLevel.UNSUPPORTED -> R.string.voice_asr_model_unsupported
+    })
+
+    private fun whisperBenchmarkStageLabel(progress: WhisperBenchmarkProgress): String = getString(when (progress.stage) {
+        WhisperBenchmarkStage.VERIFYING -> R.string.voice_asr_benchmark_stage_verifying
+        WhisperBenchmarkStage.CHECKING_DEVICE -> R.string.voice_asr_benchmark_stage_device
+        WhisperBenchmarkStage.SEARCHING_THREADS -> R.string.voice_asr_benchmark_stage_threads
+        WhisperBenchmarkStage.STABILITY -> R.string.voice_asr_benchmark_stage_stability
+        WhisperBenchmarkStage.CANCELLATION -> R.string.voice_asr_benchmark_stage_cancellation
+        WhisperBenchmarkStage.CERTIFYING -> R.string.voice_asr_benchmark_stage_certifying
+        WhisperBenchmarkStage.COMPLETE -> R.string.voice_asr_benchmark_stage_complete
+    })
 
     private fun showWhisperDownloadFailure(model: WhisperModel, error: Throwable) {
         when (error) {

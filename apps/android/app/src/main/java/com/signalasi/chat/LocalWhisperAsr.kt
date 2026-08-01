@@ -17,6 +17,8 @@ import com.signalasi.chat.voice.asr.local.NativeWhisperResult
 import com.signalasi.chat.voice.asr.local.WhisperDecodeRequest
 import com.signalasi.chat.voice.asr.local.WhisperLoadOptions
 import com.signalasi.chat.voice.asr.local.WhisperRuntimeState
+import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
+import com.signalasi.chat.voice.benchmark.WhisperProviderChoice
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
@@ -85,9 +87,46 @@ object LocalWhisperAsr {
         require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
         require(pcm16.isNotEmpty()) { "PCM16 audio is empty" }
         val startedAtNs = SystemClock.elapsedRealtimeNanos()
-        val selected = WhisperModelManager.model(VoiceAssistantSettings.get(context).asrModel)
-        val threadCount = minOf(4, Runtime.getRuntime().availableProcessors()).coerceAtLeast(1)
+        val config = VoiceAssistantSettings.get(context)
+        val requested = WhisperModelManager.model(config.asrModel)
         val audioDurationMs = durationMs(pcm16)
+        val policyDecision = if (VoiceFeatureFlags.isWhisperPolicyEngineEnabled(context)) {
+            WhisperBenchmarkManager.decide(
+                context = context,
+                userMode = config.asrRuntimeMode,
+                selectedProfileId = requested.id,
+                foreground = true,
+                utteranceDurationMs = audioDurationMs
+            )
+        } else null
+        val requestedCertification = if (policyDecision != null) {
+            WhisperBenchmarkManager.current(context, requested)?.certification
+        } else null
+        if (requestedCertification?.remoteRecommended == true &&
+            policyDecision?.provider != WhisperProviderChoice.LOCAL
+        ) {
+            throw LocalWhisperException(
+                NativeWhisperCode.UNSUPPORTED_MODEL,
+                requestedCertification.failureReason ?: "This model is certified for remote use only"
+            )
+        }
+        if (policyDecision != null && policyDecision.provider != WhisperProviderChoice.LOCAL) {
+            throw LocalWhisperException(
+                NativeWhisperCode.UNSUPPORTED_MODEL,
+                policyDecision.reasons.joinToString(". ").ifBlank {
+                    "No locally certified Whisper model is available"
+                }
+            )
+        }
+        val selected = policyDecision
+            ?.fastProfileId
+            ?.let(WhisperModelManager::model)
+            ?: requested
+        val selectedCertification = if (policyDecision != null) {
+            WhisperBenchmarkManager.current(context, selected)?.certification
+        } else null
+        val threadCount = (policyDecision?.threadCount ?: selectedCertification?.recommendedThreadCount ?: 2)
+            .coerceIn(1, minOf(16, Runtime.getRuntime().availableProcessors().coerceAtLeast(1)))
         val baseAttributes = mapOf(
             "asr_provider" to "whisper.cpp",
             "model_profile_id" to selected.id,
@@ -195,7 +234,11 @@ object LocalWhisperAsr {
         require(WhisperModelManager.isAvailable(context, profile)) {
             "ASR model ${profile.displayName} is not downloaded"
         }
-        val threadCount = minOf(4, Runtime.getRuntime().availableProcessors()).coerceAtLeast(1)
+        val certifiedThreads = if (VoiceFeatureFlags.isWhisperPolicyEngineEnabled(context)) {
+            WhisperBenchmarkManager.current(context, profile)?.certification?.recommendedThreadCount
+        } else null
+        val threadCount = (certifiedThreads ?: 2)
+            .coerceIn(1, minOf(16, Runtime.getRuntime().availableProcessors().coerceAtLeast(1)))
         val normalizedLanguage = language.substringBefore('-').lowercase()
             .takeIf { it in setOf("zh", "en") } ?: "auto"
         val attributes = mapOf(

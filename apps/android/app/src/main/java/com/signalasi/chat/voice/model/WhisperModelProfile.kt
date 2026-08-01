@@ -35,6 +35,7 @@ enum class WhisperCertificationLevel {
     REALTIME,
     FINAL,
     SECOND_PASS,
+    REMOTE_RECOMMENDED,
     UNSUPPORTED
 }
 

@@ -39,4 +39,20 @@ class AdaptiveWhisperPartialPolicyTest {
         assertFalse(policy.shouldSubmit(10_000L, 10_000L, DecodeQueueSnapshot()))
         assertFalse(policy.snapshot().enabled)
     }
+
+    @Test
+    fun certificationCanEnableOrDisablePartialIndependentOfModelName() {
+        val measuredFastMedium = AdaptiveWhisperPartialPolicy(
+            WhisperModelCatalog.require("medium_q5_0"),
+            certifiedPartialIntervalMs = 2_500L,
+            realtimeCertified = true
+        )
+        val untestedTiny = AdaptiveWhisperPartialPolicy(
+            WhisperModelCatalog.require("tiny"),
+            realtimeCertified = false
+        )
+
+        assertTrue(measuredFastMedium.shouldSubmit(3_000L, 3_000L, DecodeQueueSnapshot()))
+        assertFalse(untestedTiny.shouldSubmit(3_000L, 3_000L, DecodeQueueSnapshot()))
+    }
 }

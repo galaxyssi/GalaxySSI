@@ -94,7 +94,8 @@ data class WhisperModelStorageSnapshot(
         get() = state in setOf(
             WhisperModelStorageState.INSTALLED_UNCERTIFIED,
             WhisperModelStorageState.CERTIFIED,
-            WhisperModelStorageState.SECOND_PASS_ONLY
+            WhisperModelStorageState.SECOND_PASS_ONLY,
+            WhisperModelStorageState.UNSUPPORTED
         )
 }
 
@@ -146,6 +147,7 @@ class WhisperModelStorage(
             WhisperCertificationLevel.UNTESTED -> WhisperModelStorageState.INSTALLED_UNCERTIFIED
             WhisperCertificationLevel.REALTIME, WhisperCertificationLevel.FINAL -> WhisperModelStorageState.CERTIFIED
             WhisperCertificationLevel.SECOND_PASS -> WhisperModelStorageState.SECOND_PASS_ONLY
+            WhisperCertificationLevel.REMOTE_RECOMMENDED,
             WhisperCertificationLevel.UNSUPPORTED -> WhisperModelStorageState.UNSUPPORTED
         }
         return WhisperModelStorageSnapshot(state, file, metadata)

@@ -14,6 +14,28 @@ val bundledWhisperAsset = file("src/main/assets/ggml-tiny.bin")
 val bundledWhisperAssets = fileTree("src/main/assets") {
     include("ggml-*.bin")
 }
+val whisperNativeSourceRoot = file("src/main/cpp")
+val whisperNativeBuildFingerprint = MessageDigest.getInstance("SHA-256").let { digest ->
+    listOf(
+        "CMakeLists.txt",
+        "WHISPER_CPP_VERSION.md",
+        "whisper_jni_v2.cpp",
+        "whispercpp/src/whisper.cpp",
+        "whispercpp/ggml/src/ggml.c"
+    ).map(whisperNativeSourceRoot::resolve).forEach { source ->
+        check(source.isFile) { "Whisper native fingerprint source is missing: $source" }
+        digest.update(source.relativeTo(whisperNativeSourceRoot).invariantSeparatorsPath.toByteArray(Charsets.UTF_8))
+        source.inputStream().use { input ->
+            val buffer = ByteArray(1024 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                if (read > 0) digest.update(buffer, 0, read)
+            }
+        }
+    }
+    digest.digest().joinToString("") { byte: Byte -> "%02x".format(byte) }
+}
 val bundledWhisperVerification = tasks.register("verifyBundledWhisperModel") {
     inputs.files(bundledWhisperAssets)
     val receipt = layout.buildDirectory.file("verification/whisper-tiny.sha256")
@@ -60,9 +82,11 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 308
-        versionName = "0.3.8"
+        versionCode = 309
+        versionName = "0.3.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
+        buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -101,6 +125,10 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     packaging {

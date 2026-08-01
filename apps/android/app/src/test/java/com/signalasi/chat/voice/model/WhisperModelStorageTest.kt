@@ -125,6 +125,38 @@ class WhisperModelStorageTest {
         assertTrue(storage.verifyForNativeLoad(profile).valid)
     }
 
+    @Test
+    fun unsupportedCertificationKeepsVerifiedModelInstalledWithoutMakingItRealtime() {
+        val source = temporaryFolder.newFile("unsupported.bin").apply { writeBytes("verified-model".toByteArray()) }
+        val profile = profileFor(source)
+        val storage = storage()
+        storage.install(source, profile, "test", Long.MAX_VALUE)
+
+        storage.updateCertification(profile, WhisperCertificationLevel.UNSUPPORTED)
+        val snapshot = storage.inspect(profile)
+
+        assertTrue(snapshot.installed)
+        assertEquals(WhisperModelStorageState.UNSUPPORTED, snapshot.state)
+        assertEquals(WhisperCertificationLevel.UNSUPPORTED, snapshot.metadata?.certification)
+        assertTrue(storage.verifyForNativeLoad(profile).valid)
+    }
+
+    @Test
+    fun remoteRecommendationKeepsVerifiedModelInstalledWithoutMakingItRealtime() {
+        val source = temporaryFolder.newFile("remote.bin").apply { writeBytes("verified-model".toByteArray()) }
+        val profile = profileFor(source)
+        val storage = storage()
+        storage.install(source, profile, "test", Long.MAX_VALUE)
+
+        storage.updateCertification(profile, WhisperCertificationLevel.REMOTE_RECOMMENDED)
+        val snapshot = storage.inspect(profile)
+
+        assertTrue(snapshot.installed)
+        assertEquals(WhisperModelStorageState.UNSUPPORTED, snapshot.state)
+        assertEquals(WhisperCertificationLevel.REMOTE_RECOMMENDED, snapshot.metadata?.certification)
+        assertTrue(storage.verifyForNativeLoad(profile).valid)
+    }
+
     private fun storage(): WhisperModelStorage =
         WhisperModelStorage(temporaryFolder.newFolder("storage-${System.nanoTime()}"), "test")
 
