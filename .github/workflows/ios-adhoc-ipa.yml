@@ -1,0 +1,158 @@
+name: iOS Ad Hoc IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: Xcode build configuration
+        required: true
+        type: choice
+        default: Release
+        options:
+          - Release
+          - Debug
+      publish_release:
+        description: Also publish the IPA to a GitHub Release
+        required: true
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/ios-adhoc-ipa.yml
+      - apps/ios/**
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-adhoc-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IOS_CONFIGURATION: ${{ inputs.configuration || 'Release' }}
+  PUBLISH_RELEASE: ${{ inputs.publish_release || false }}
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Build SignalASI for iPhoneOS
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="$PWD/build/ios/DerivedData"
+          rm -rf "$DERIVED_DATA"
+          xcodebuild \
+            -project apps/ios/SignalASI.xcodeproj \
+            -scheme SignalASI \
+            -configuration "$IOS_CONFIGURATION" \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      - name: Package ad-hoc IPA
+        id: package
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::7}"
+          DERIVED_DATA="$PWD/build/ios/DerivedData"
+          PRODUCT_DIR="$DERIVED_DATA/Build/Products/${IOS_CONFIGURATION}-iphoneos"
+          APP_PATH="$PRODUCT_DIR/SignalASI.app"
+          PACKAGE_ROOT="$PWD/build/ios/package"
+          PAYLOAD_DIR="$PACKAGE_ROOT/Payload"
+          DIST_DIR="$PWD/build/ios/dist"
+          IPA_NAME="SignalASI-iOS-${IOS_CONFIGURATION}-${SHORT_SHA}-adhoc.ipa"
+          APP_ZIP_NAME="SignalASI-iOS-${IOS_CONFIGURATION}-${SHORT_SHA}.app.zip"
+          NOTES_NAME="SignalASI-iOS-${IOS_CONFIGURATION}-${SHORT_SHA}-install-notes.txt"
+
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "SignalASI.app was not found under $PRODUCT_DIR." >&2
+            find "$DERIVED_DATA/Build/Products" -maxdepth 4 -type d -name '*.app' -print >&2 || true
+            exit 1
+          fi
+
+          rm -rf "$PACKAGE_ROOT" "$DIST_DIR"
+          mkdir -p "$PAYLOAD_DIR" "$DIST_DIR"
+          /usr/bin/ditto "$APP_PATH" "$PAYLOAD_DIR/SignalASI.app"
+
+          /usr/bin/codesign --force --deep --sign - --timestamp=none "$PAYLOAD_DIR/SignalASI.app"
+          /usr/bin/codesign --display --verbose=2 "$PAYLOAD_DIR/SignalASI.app" || true
+
+          (
+            cd "$PACKAGE_ROOT"
+            /usr/bin/zip -qry "$DIST_DIR/$IPA_NAME" Payload
+          )
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$PAYLOAD_DIR/SignalASI.app" "$DIST_DIR/$APP_ZIP_NAME"
+
+          cat > "$DIST_DIR/$NOTES_NAME" <<EOF
+          SignalASI iOS ad-hoc build
+
+          File:
+          - $IPA_NAME
+
+          Bundle:
+          - com.signalasi.chat.ios
+
+          Minimum iOS:
+          - iOS 15.0
+
+          Signing:
+          - Ad-hoc signed by GitHub Actions.
+          - No Apple provisioning profile is embedded.
+          - Intended for jailbroken, TrollStore-style, or other controlled test devices.
+          - It will not install on a normal locked iPhone without a valid Apple signing profile.
+          EOF
+
+          DSYM_PATH="$PRODUCT_DIR/SignalASI.app.dSYM"
+          if [[ -d "$DSYM_PATH" ]]; then
+            /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$DSYM_PATH" "$DIST_DIR/SignalASI-iOS-${IOS_CONFIGURATION}-${SHORT_SHA}.dSYM.zip"
+          fi
+
+          echo "ipa=$DIST_DIR/$IPA_NAME" >> "$GITHUB_OUTPUT"
+          echo "app_zip=$DIST_DIR/$APP_ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "notes=$DIST_DIR/$NOTES_NAME" >> "$GITHUB_OUTPUT"
+          echo "dist=$DIST_DIR" >> "$GITHUB_OUTPUT"
+          ls -lah "$DIST_DIR"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SignalASI-iOS-${{ env.IOS_CONFIGURATION }}-${{ github.sha }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            ${{ steps.package.outputs.dist }}/*
+
+      - name: Publish GitHub Release
+        if: env.PUBLISH_RELEASE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAG="ios-adhoc-${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          TITLE="SignalASI iOS ad-hoc build ${SHORT_SHA}"
+          NOTES="${{ steps.package.outputs.notes }}"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/ios/dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" build/ios/dist/* \
+              --title "$TITLE" \
+              --notes-file "$NOTES" \
+              --repo "$GITHUB_REPOSITORY"
+          fi
