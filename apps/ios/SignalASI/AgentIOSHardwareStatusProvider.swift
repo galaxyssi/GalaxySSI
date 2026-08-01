@@ -37,7 +37,7 @@ struct AgentIOSDefaultHardwareStatusProvider: AgentIOSHardwareStatusProviding {
 
   func batteryStatus(nowMillis: Int64) -> AgentMcpJSONObject {
     let battery = currentBatterySnapshot()
-    [
+    return [
       "percent": battery.percent.map(AgentMcpJSONValue.int) ?? .null,
       "charging": .bool(battery.charging),
       "plugged": .string(battery.plugged),
