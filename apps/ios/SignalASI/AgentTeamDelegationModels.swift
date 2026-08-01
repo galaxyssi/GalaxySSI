@@ -644,7 +644,7 @@ final class AgentCrossTeamDelegationCoordinator {
       nextState = .cancelled
     case .failed, .interrupted:
       nextState = .failed
-    case .created, .running, .waitingResponse:
+    case .created, .queued, .running, .waitingResponse:
       return current
     }
     let errors = snapshot.members

@@ -783,7 +783,7 @@ final class AgentNativeToolRegistry {
 
     let descriptor = executable.descriptor
     let startedAt = hooks.nowMillis()
-    let deadline = min(context.deadlineEpochMillis ?? Int64.max, safeAdd(startedAt, descriptor.timeoutMillis))
+    let deadline = min(context.deadlineEpochMillis ?? Int64.max, Self.safeAdd(startedAt, descriptor.timeoutMillis))
     let invocation = AgentNativeToolInvocation(
       descriptor: descriptor,
       input: input,
@@ -906,7 +906,7 @@ final class AgentNativeToolRegistry {
       let verification = try executable.verifier?(invocation, execution)
       try invocation.checkpoint()
       if verification?.status == .failed {
-        let verificationMessage = verification?.message.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let verificationMessage = verification?.message.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
         return finish(
           status: .verificationFailed,
           output: execution.output,
@@ -962,6 +962,11 @@ final class AgentNativeToolRegistry {
         )
       )
     }
+  }
+
+  private static func safeAdd(_ left: Int64, _ right: Int64) -> Int64 {
+    guard right > 0 else { return left }
+    return left > Int64.max - right ? Int64.max : left + right
   }
 
   func replayDecision(

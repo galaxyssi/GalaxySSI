@@ -119,7 +119,7 @@ enum ProviderProfileCatalog {
     return fromCloudModel(
       resourceId: contact.id,
       provider: contact.cloudProvider,
-      displayName: contact.cloudProvider.isEmpty ? contact.displayTitle : contact.cloudProvider,
+      displayName: contact.cloudProvider.isEmpty ? contact.name : contact.cloudProvider,
       model: model,
       apiKey: apiKey,
       status: status,
