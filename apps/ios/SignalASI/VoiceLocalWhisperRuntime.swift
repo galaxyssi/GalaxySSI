@@ -11,10 +11,43 @@ struct VoiceLocalWhisperRuntimeRequest: Equatable {
 
 struct VoiceLocalWhisperTranscriptionResult: Equatable {
   var text: String
+  var selectedModel: VoiceWhisperModelProfile
   var model: VoiceWhisperModelProfile
   var language: String
   var audioDurationMs: Int64
   var sampleRateHz: Int
+  var threadCount: Int
+  var runtimeDecision: VoiceWhisperRuntimeDecision?
+
+  init(
+    text: String,
+    selectedModel: VoiceWhisperModelProfile,
+    model: VoiceWhisperModelProfile,
+    language: String,
+    audioDurationMs: Int64,
+    sampleRateHz: Int,
+    threadCount: Int,
+    runtimeDecision: VoiceWhisperRuntimeDecision? = nil
+  ) {
+    self.text = text
+    self.selectedModel = selectedModel
+    self.model = model
+    self.language = language
+    self.audioDurationMs = audioDurationMs
+    self.sampleRateHz = sampleRateHz
+    self.threadCount = max(threadCount, 1)
+    self.runtimeDecision = runtimeDecision
+  }
+
+  var secondPassProfileId: String? {
+    guard runtimeDecision?.runSecondPass == true else { return nil }
+    return runtimeDecision?.accurateProfileId
+  }
+
+  var secondPassMode: VoiceWhisperExecutionMode? {
+    guard runtimeDecision?.runSecondPass == true else { return nil }
+    return runtimeDecision?.accurateMode ?? .secondPass
+  }
 }
 
 enum VoiceLocalWhisperASRError: LocalizedError, Equatable {

@@ -92,14 +92,20 @@ final class VoiceLocalWhisperASR {
       guard !audio.samples.isEmpty else {
         throw VoiceLocalWhisperASRError.emptyAudio
       }
-      if let decision = runtimeDecisionProvider(settings, selectedModel, audio.durationMs),
-         decision.provider == .local,
-         let decidedModelId = decision.fastProfileId {
-        model = VoiceWhisperModelCatalog.model(decidedModelId)
-        threadCount = decision.threadCount ?? threadCount
-        baseAttributes["model_profile_id"] = model.id
-        baseAttributes["thread_count"] = String(threadCount)
+      let runtimeDecision = runtimeDecisionProvider(settings, selectedModel, audio.durationMs)
+      if let decision = runtimeDecision {
         baseAttributes["runtime_decision"] = decision.provider.rawValue
+        if let accurateProfileId = decision.accurateProfileId {
+          baseAttributes["accurate_profile_id"] = accurateProfileId
+        }
+        baseAttributes["run_second_pass"] = String(decision.runSecondPass)
+        if decision.provider == .local,
+           let decidedModelId = decision.fastProfileId {
+          model = VoiceWhisperModelCatalog.model(decidedModelId)
+          threadCount = decision.threadCount ?? threadCount
+          baseAttributes["model_profile_id"] = model.id
+          baseAttributes["thread_count"] = String(threadCount)
+        }
       }
       let audioAttributes = baseAttributes.merging([
         "audio_duration_ms": String(audio.durationMs),
@@ -160,10 +166,13 @@ final class VoiceLocalWhisperASR {
       )
       return VoiceLocalWhisperTranscriptionResult(
         text: text,
+        selectedModel: selectedModel,
         model: model,
         language: runtimeLanguage,
         audioDurationMs: audio.durationMs,
-        sampleRateHz: audio.sampleRateHz
+        sampleRateHz: audio.sampleRateHz,
+        threadCount: threadCount,
+        runtimeDecision: runtimeDecision
       )
     } catch {
       record(
