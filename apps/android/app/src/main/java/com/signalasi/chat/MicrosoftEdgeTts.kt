@@ -15,8 +15,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 class MicrosoftEdgeTts(private val context: Context) {
     private val client = OkHttpClient.Builder()
@@ -24,57 +26,83 @@ class MicrosoftEdgeTts(private val context: Context) {
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
+    private val requestGeneration = AtomicLong(0L)
+    private val playbackLock = Any()
     private var player: MediaPlayer? = null
+    private var activeWebSocket: WebSocket? = null
+    private var activePlaybackLatch: CountDownLatch? = null
 
     fun speak(
         text: String,
         voice: String,
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         onPlaybackStarted: () -> Unit = {},
+        recordCompletion: Boolean = true,
         onDone: (Boolean, String?) -> Unit
     ) {
         if (text.isBlank()) {
             onDone(true, null)
             return
         }
+        val generation = beginRequest()
         trace(traceId, VoiceTraceEvents.TTS_REQUEST_STARTED, once = true)
         Thread {
             val result = runCatching {
-                val audio = synthesize(text, voice, traceId)
-                playAudio(audio, traceId, onPlaybackStarted)
+                val audio = synthesize(text, voice, traceId, generation)
+                ensureCurrent(generation)
+                playAudio(audio, traceId, generation, onPlaybackStarted)
+                ensureCurrent(generation)
             }
-            if (result.isSuccess) {
-                trace(
-                    traceId,
-                    VoiceTraceEvents.TTS_COMPLETED,
-                    mapOf("tts_provider" to "microsoft_edge", "success" to "true"),
-                    once = true
-                )
+            val cancelled = result.exceptionOrNull() is CancellationException || requestGeneration.get() != generation
+            if (result.isSuccess && !cancelled) {
+                if (recordCompletion) {
+                    trace(
+                        traceId,
+                        VoiceTraceEvents.TTS_COMPLETED,
+                        mapOf("tts_provider" to "microsoft_edge", "success" to "true"),
+                        once = true
+                    )
+                }
                 onDone(true, null)
             } else {
-                trace(
-                    traceId,
-                    VoiceTraceEvents.TTS_COMPLETED,
-                    mapOf(
-                        "tts_provider" to "microsoft_edge",
-                        "success" to "false",
-                        "error_code" to result.exceptionOrNull()?.javaClass?.simpleName.orEmpty()
-                    ),
-                    once = true
-                )
-                onDone(false, result.exceptionOrNull()?.message)
+                if (recordCompletion && !cancelled) {
+                    trace(
+                        traceId,
+                        VoiceTraceEvents.TTS_COMPLETED,
+                        mapOf(
+                            "tts_provider" to "microsoft_edge",
+                            "success" to "false",
+                            "error_code" to result.exceptionOrNull()?.javaClass?.simpleName.orEmpty()
+                        ),
+                        once = true
+                    )
+                }
+                onDone(false, if (cancelled) "cancelled" else result.exceptionOrNull()?.message)
             }
         }.start()
     }
 
     fun stop() {
+        val socket: WebSocket?
+        val mediaPlayer: MediaPlayer?
+        val latch: CountDownLatch?
+        synchronized(playbackLock) {
+            requestGeneration.incrementAndGet()
+            socket = activeWebSocket
+            mediaPlayer = player
+            latch = activePlaybackLatch
+            activeWebSocket = null
+            player = null
+            activePlaybackLatch = null
+        }
+        socket?.cancel()
         runCatching {
-            player?.let {
+            mediaPlayer?.let {
                 if (it.isPlaying) it.stop()
                 it.release()
             }
         }
-        player = null
+        latch?.countDown()
     }
 
     fun shutdown() {
@@ -82,7 +110,7 @@ class MicrosoftEdgeTts(private val context: Context) {
         client.dispatcher.executorService.shutdown()
     }
 
-    private fun synthesize(text: String, voice: String, traceId: String): ByteArray {
+    private fun synthesize(text: String, voice: String, traceId: String, generation: Long): ByteArray {
         val requestId = UUID.randomUUID().toString().replace("-", "")
         val audio = ByteArrayOutputStream()
         val done = CountDownLatch(1)
@@ -98,6 +126,11 @@ class MicrosoftEdgeTts(private val context: Context) {
 
         val webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (requestGeneration.get() != generation) {
+                    webSocket.cancel()
+                    done.countDown()
+                    return
+                }
                 trace(
                     traceId,
                     VoiceTraceEvents.TTS_CONNECTED,
@@ -109,6 +142,7 @@ class MicrosoftEdgeTts(private val context: Context) {
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
+                if (requestGeneration.get() != generation) return
                 val raw = bytes.toByteArray()
                 val headerEnd = findHeaderEnd(raw)
                 val payload = if (headerEnd >= 0) raw.copyOfRange(headerEnd, raw.size) else raw
@@ -124,6 +158,7 @@ class MicrosoftEdgeTts(private val context: Context) {
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (requestGeneration.get() != generation) return
                 if (text.contains("Path:turn.end", ignoreCase = true)) {
                     done.countDown()
                     webSocket.close(1000, "done")
@@ -139,38 +174,62 @@ class MicrosoftEdgeTts(private val context: Context) {
                 done.countDown()
             }
         })
+        synchronized(playbackLock) {
+            if (requestGeneration.get() == generation) activeWebSocket = webSocket else webSocket.cancel()
+        }
 
         if (!done.await(30, TimeUnit.SECONDS)) {
             webSocket.cancel()
             error("Microsoft TTS timeout")
         }
+        synchronized(playbackLock) {
+            if (activeWebSocket === webSocket) activeWebSocket = null
+        }
+        ensureCurrent(generation)
         failure?.let { throw it }
         val data = audio.toByteArray()
         if (data.isEmpty()) error("Microsoft TTS returned empty audio")
         return data
     }
 
-    private fun playAudio(audio: ByteArray, traceId: String, onPlaybackStarted: () -> Unit) {
+    private fun playAudio(
+        audio: ByteArray,
+        traceId: String,
+        generation: Long,
+        onPlaybackStarted: () -> Unit
+    ) {
+        ensureCurrent(generation)
         val file = File(context.cacheDir, "signalasi_tts_${System.currentTimeMillis()}.mp3")
         file.writeBytes(audio)
         val latch = CountDownLatch(1)
         val mp = MediaPlayer()
-        player = mp
+        synchronized(playbackLock) {
+            ensureCurrent(generation)
+            player = mp
+            activePlaybackLatch = latch
+        }
         mp.setDataSource(file.absolutePath)
         mp.setOnCompletionListener {
             it.release()
-            if (player === it) player = null
+            synchronized(playbackLock) {
+                if (player === it) player = null
+                if (activePlaybackLatch === latch) activePlaybackLatch = null
+            }
             file.delete()
             latch.countDown()
         }
         mp.setOnErrorListener { mediaPlayer, _, _ ->
             mediaPlayer.release()
-            if (player === mediaPlayer) player = null
+            synchronized(playbackLock) {
+                if (player === mediaPlayer) player = null
+                if (activePlaybackLatch === latch) activePlaybackLatch = null
+            }
             file.delete()
             latch.countDown()
             true
         }
         mp.prepare()
+        ensureCurrent(generation)
         mp.start()
         runCatching(onPlaybackStarted)
         trace(
@@ -180,6 +239,17 @@ class MicrosoftEdgeTts(private val context: Context) {
             once = true
         )
         latch.await(90, TimeUnit.SECONDS)
+        file.delete()
+        ensureCurrent(generation)
+    }
+
+    private fun beginRequest(): Long {
+        stop()
+        return requestGeneration.get()
+    }
+
+    private fun ensureCurrent(generation: Long) {
+        if (requestGeneration.get() != generation) throw CancellationException("Microsoft TTS request cancelled")
     }
 
     private fun trace(

@@ -54,7 +54,10 @@ object VoiceTraceEvents {
     const val TTS_CONNECTED = "tts_connected"
     const val TTS_FIRST_AUDIO = "tts_first_audio"
     const val TTS_PLAYBACK_STARTED = "tts_playback_started"
+    const val TTS_QUEUE_UNDERRUN = "tts_queue_underrun"
     const val TTS_COMPLETED = "tts_completed"
+    const val TTS_BARGE_IN_STARTED = "tts_barge_in_started"
+    const val TTS_BARGE_IN_COMPLETED = "tts_barge_in_completed"
     const val AGENT_RUN_CREATE_STARTED = "agent_run_create_started"
     const val AGENT_RUN_ACCEPTED = "agent_run_accepted"
     const val AGENT_FIRST_PROGRESS = "agent_first_progress"
@@ -197,9 +200,11 @@ class VoiceLatencyTracer(
             "asr_total_ms" to (VoiceTraceEvents.ASR_FINAL_STARTED to VoiceTraceEvents.ASR_FINAL_RECEIVED),
             "model_connect_ms" to (VoiceTraceEvents.MODEL_REQUEST_STARTED to VoiceTraceEvents.MODEL_CONNECTED),
             "model_first_delta_ms" to (VoiceTraceEvents.MODEL_REQUEST_STARTED to VoiceTraceEvents.MODEL_FIRST_DELTA),
+            "model_first_sentence_ms" to (VoiceTraceEvents.MODEL_REQUEST_STARTED to VoiceTraceEvents.MODEL_FIRST_SENTENCE_COMMITTED),
             "model_total_ms" to (VoiceTraceEvents.MODEL_REQUEST_STARTED to VoiceTraceEvents.MODEL_REQUEST_COMPLETED),
             "tts_first_audio_ms" to (VoiceTraceEvents.TTS_REQUEST_STARTED to VoiceTraceEvents.TTS_FIRST_AUDIO),
             "tts_playback_ms" to (VoiceTraceEvents.TTS_REQUEST_STARTED to VoiceTraceEvents.TTS_PLAYBACK_STARTED),
+            "tts_barge_in_ms" to (VoiceTraceEvents.TTS_BARGE_IN_STARTED to VoiceTraceEvents.TTS_BARGE_IN_COMPLETED),
             "agent_accept_ms" to (VoiceTraceEvents.AGENT_RUN_CREATE_STARTED to VoiceTraceEvents.AGENT_RUN_ACCEPTED),
             "agent_first_progress_ms" to (VoiceTraceEvents.AGENT_RUN_CREATE_STARTED to VoiceTraceEvents.AGENT_FIRST_PROGRESS),
             "agent_first_output_ms" to (VoiceTraceEvents.AGENT_RUN_CREATE_STARTED to VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT),
