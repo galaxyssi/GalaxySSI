@@ -29,10 +29,12 @@ final class VoiceLocalWhisperASRTests: XCTestCase {
     )
 
     XCTAssertEqual(result.text, "hello from whisper")
+    XCTAssertEqual(result.selectedModel.id, "base")
     XCTAssertEqual(result.model.id, "base")
     XCTAssertEqual(result.language, "en")
     XCTAssertEqual(result.sampleRateHz, 16_000)
     XCTAssertEqual(runtime.requests.single?.model.id, "base")
+    XCTAssertEqual(Optional(result.threadCount), runtime.requests.single?.threadCount)
     XCTAssertEqual(runtime.requests.single?.modelFileURL, modelFileURL)
     XCTAssertEqual(runtime.requests.single?.language, "en")
     XCTAssertTrue(runtime.requests.single?.samples.isEmpty == false)
@@ -107,9 +109,47 @@ final class VoiceLocalWhisperASRTests: XCTestCase {
     )
 
     XCTAssertEqual(result.model.id, "base")
+    XCTAssertEqual(result.selectedModel.id, "tiny")
     XCTAssertEqual(runtime.requests.single?.model.id, "base")
     XCTAssertEqual(runtime.requests.single?.modelFileURL, baseURL)
     XCTAssertEqual(runtime.requests.single?.threadCount, 6)
+    XCTAssertEqual(result.threadCount, 6)
+    XCTAssertEqual(result.runtimeDecision?.provider, .some(.local))
+    XCTAssertNil(result.secondPassProfileId)
+  }
+
+  func testRuntimeDecisionReportsSecondPassRecommendation() async throws {
+    let runtime = FakeWhisperRuntime(response: "accurate later")
+    let service = VoiceLocalWhisperASR(
+      runtime: runtime,
+      modelAvailable: { $0.id == "tiny" },
+      runtimeDecisionProvider: { _, selected, _ in
+        VoiceWhisperRuntimeDecision(
+          provider: .local,
+          fastProfileId: selected.id,
+          fastMode: .finalOnly,
+          accurateProfileId: "base",
+          accurateMode: .secondPass,
+          partialIntervalMillis: nil,
+          threadCount: 2,
+          runSecondPass: true,
+          reasons: ["accuracy pass"]
+        )
+      }
+    )
+
+    let result = try await service.transcribe(
+      audioFile: try waveFile(),
+      settings: settings(asrModelId: "tiny", runtimeMode: .automatic),
+      language: "en-US",
+      traceId: "trace-second-pass"
+    )
+
+    XCTAssertEqual(result.model.id, "tiny")
+    XCTAssertEqual(result.threadCount, 2)
+    XCTAssertEqual(result.runtimeDecision?.accurateProfileId, .some("base"))
+    XCTAssertEqual(result.secondPassProfileId, .some("base"))
+    XCTAssertEqual(result.secondPassMode, .some(.secondPass))
   }
 
   func testLanguageAndTranscriptPolicyMatchesAndroidLocalWhisperRules() {
