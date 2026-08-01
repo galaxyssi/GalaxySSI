@@ -21,6 +21,9 @@ import android.graphics.ImageDecoder
 import android.graphics.Paint
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.GradientDrawable
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaRecorder
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -125,10 +128,24 @@ import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperCertificationLevel
 import com.signalasi.chat.voice.modelstream.ModelStreamCancelReason
+import com.signalasi.chat.voice.modelstream.CommittedSpeechChunk
+import com.signalasi.chat.voice.modelstream.DefaultSentenceCommitter
 import com.signalasi.chat.voice.modelstream.ModelStreamEvent
 import com.signalasi.chat.voice.modelstream.ModelStreamUiMerger
 import com.signalasi.chat.voice.modelstream.ModelStreamUiUpdate
 import com.signalasi.chat.voice.modelstream.ModelUsage
+import com.signalasi.chat.voice.modelstream.SentenceCommitter
+import com.signalasi.chat.voice.tts.BargeInActions
+import com.signalasi.chat.voice.tts.BargeInController
+import com.signalasi.chat.voice.tts.BargeInTaskKind
+import com.signalasi.chat.voice.tts.ProgressiveTtsUtteranceRegistry
+import com.signalasi.chat.voice.tts.ProgressiveTtsUtteranceRequest
+import com.signalasi.chat.voice.tts.TtsCancelReason
+import com.signalasi.chat.voice.tts.TtsChunkPlayback
+import com.signalasi.chat.voice.tts.TtsChunkPlaybackCallbacks
+import com.signalasi.chat.voice.tts.TtsChunkPlayer
+import com.signalasi.chat.voice.tts.TtsChunkScheduler
+import com.signalasi.chat.voice.tts.TtsChunkSchedulerCallbacks
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -438,9 +455,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val voiceTraceId: String,
         val selectedModel: String,
         val merger: ModelStreamUiMerger = ModelStreamUiMerger(),
+        val sentenceCommitter: SentenceCommitter? = null,
+        val progressiveSpeechEnabled: Boolean = false,
         var finalized: Boolean = false,
         var usage: ModelUsage? = null,
-        var flushRunnable: Runnable? = null
+        var flushRunnable: Runnable? = null,
+        var sentenceCommitRunnable: Runnable? = null
     )
     private val activeCloudStreams = ConcurrentHashMap<String, ActiveCloudStream>()
     private val activeCloudStreamJobs = ConcurrentHashMap<String, Job>()
@@ -601,7 +621,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private var androidTtsInitialized = false
     private var androidTtsReady = false
     private val androidTtsRequests = VoiceTtsRequestRegistry()
+    private val progressiveAndroidTtsRequests = ProgressiveTtsUtteranceRegistry()
     private lateinit var microsoftTts: MicrosoftEdgeTts
+    private val bargeInController = BargeInController()
+    private val progressiveTtsScheduler by lazy(LazyThreadSafetyMode.NONE) {
+        TtsChunkScheduler(
+            player = TtsChunkPlayer { chunk, callbacks -> playProgressiveTtsChunk(chunk, callbacks) }
+        )
+    }
+    private val ttsAudioManager by lazy(LazyThreadSafetyMode.NONE) {
+        getSystemService(AudioManager::class.java)
+    }
+    private var ttsAudioFocusRequest: AudioFocusRequest? = null
+    private var activeProgressiveSpeechSessionId = ""
+    private var activeProgressiveSpeechTraceId = ""
+    private var activeProgressiveSpeechProvider = ""
     private data class VoiceHealthRowBinding(
         val subtitle: TextView,
         val status: TextView
@@ -751,17 +785,42 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         VoiceRuntimeHealthRegistry.begin(
                             VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
                         )
+                        runOnUiThread {
+                            progressiveAndroidTtsRequests.started(utteranceId)?.onStarted?.invoke()
+                        }
                     }
                     override fun onDone(utteranceId: String?) {
-                        runOnUiThread { onAndroidTtsFinished(utteranceId, success = true) }
+                        runOnUiThread {
+                            val progressive = progressiveAndroidTtsRequests.finish(utteranceId)
+                            if (progressive != null) {
+                                VoiceRuntimeHealthRegistry.success(VoiceRuntimeChannel.ANDROID_SYSTEM_TTS)
+                                progressive.onFinished(true)
+                            } else {
+                                onAndroidTtsFinished(utteranceId, success = true)
+                            }
+                        }
                     }
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) {
-                        runOnUiThread { onAndroidTtsFinished(utteranceId, success = false) }
+                        runOnUiThread {
+                            val progressive = progressiveAndroidTtsRequests.finish(utteranceId)
+                            if (progressive != null) {
+                                VoiceRuntimeHealthRegistry.failure(
+                                    VoiceRuntimeChannel.ANDROID_SYSTEM_TTS,
+                                    "Android TTS utterance failed"
+                                )
+                                progressive.onFinished(false)
+                            } else {
+                                onAndroidTtsFinished(utteranceId, success = false)
+                            }
+                        }
                     }
                     override fun onStop(utteranceId: String?, interrupted: Boolean) {
                         runOnUiThread {
-                            if (androidTtsRequests.discard(utteranceId)) {
+                            val progressive = progressiveAndroidTtsRequests.finish(utteranceId)
+                            if (progressive != null) {
+                                progressive.onFinished(false)
+                            } else if (androidTtsRequests.discard(utteranceId)) {
                                 voiceAssistantSpeaking = false
                             }
                         }
@@ -1205,7 +1264,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceSecondPassCoordinator.cancelForInteractiveVoice()
         activeCloudStreams.values.forEach { stream ->
             stream.flushRunnable?.let(handler::removeCallbacks)
+            stream.sentenceCommitRunnable?.let(handler::removeCallbacks)
         }
+        if (::microsoftTts.isInitialized) progressiveTtsScheduler.cancelActive(TtsCancelReason.APP_DESTROYED)
+        progressiveAndroidTtsRequests.clear()
+        releaseVoicePlaybackAudioFocus()
         activeCloudStreamJobs.values.forEach(Job::cancel)
         activeCloudStreamJobs.clear()
         activeCloudStreams.clear()
@@ -6808,6 +6871,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun preemptBackgroundWhisperForInteractiveVoice() {
+        interruptSpeechForNewUtterance()
         WhisperBenchmarkManager.cancelForInteractiveVoice()
         voiceSecondPassCoordinator.cancelForInteractiveVoice()
         voiceRiskConfirmationCancellation?.invoke()
@@ -6829,8 +6893,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             Toast.makeText(this, getString(R.string.voice_status_asr_unavailable), Toast.LENGTH_SHORT).show()
             return
         }
-        stopVoiceAssistant()
         preemptBackgroundWhisperForInteractiveVoice()
+        stopVoiceAssistant()
         ensureSpeechRecognizer()
         val config = VoiceAssistantSettings.get(this)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -6878,6 +6942,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             showMainTab(PAGE_MESSAGES)
         }
         addWakeVoiceStatusViews()
+        val interruptAndListen = View.OnClickListener {
+            if (voiceAssistantSpeaking && VoiceFeatureFlags.isBargeInEnabled(this)) {
+                interruptSpeechForNewUtterance()
+                startVoiceCommandRecording()
+            }
+        }
+        wakeAnimation.setOnClickListener(interruptAndListen)
+        wakeReplyPanel?.setOnClickListener(interruptAndListen)
         wakeAnimation.visibility = View.VISIBLE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val source = ImageDecoder.createSource(resources, R.drawable.voice_wakeup_ice_text_fixed)
@@ -6993,9 +7065,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         runCatching { speechRecognizer?.cancel() }
         runCatching { speechRecognizer?.destroy() }
         speechRecognizer = null
+        progressiveTtsScheduler.cancelActive(TtsCancelReason.SESSION_CHANGED)
+        progressiveAndroidTtsRequests.clear()
         microsoftTts.stop()
         androidTts?.stop()
         androidTtsRequests.clear()
+        activeProgressiveSpeechSessionId = ""
+        activeProgressiveSpeechTraceId = ""
+        activeProgressiveSpeechProvider = ""
+        releaseVoicePlaybackAudioFocus()
         VoiceRuntimeChannel.entries.forEach(VoiceRuntimeHealthRegistry::idle)
     }
 
@@ -7766,6 +7844,334 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
 
         return configured.takeIf { AppStore.canCommunicateWith(this, it) } ?: CONTACT_HERMES.id
+    }
+
+    private fun shouldUseProgressiveCloudSpeech(traceId: String): Boolean {
+        val config = VoiceAssistantSettings.get(this)
+        return traceId.isNotBlank() &&
+            config.speakReplies &&
+            voiceAssistantAwake &&
+            activeMainTab == PAGE_VOICE &&
+            VoiceFeatureFlags.isSentenceCommitterEnabled(this) &&
+            VoiceFeatureFlags.isProgressiveTtsEnabled(this)
+    }
+
+    private fun beginProgressiveCloudSpeech(state: ActiveCloudStream) {
+        progressiveTtsScheduler.begin(
+            state.requestId,
+            TtsChunkSchedulerCallbacks(
+                onPlaybackStarted = { chunk ->
+                    if (activeProgressiveSpeechSessionId == state.requestId) {
+                        voiceAssistantSpeaking = true
+                        updateWakeVoiceUi(getString(R.string.voice_status_speaking), chunk.speechText.take(80))
+                        voiceCoordinatorSession(state.voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
+                            dispatchVoiceCoordinator(VoiceInteractionEvent.PlaybackStarted(sessionId, state.requestId))
+                        }
+                    }
+                },
+                onUnderrun = { count ->
+                    VoiceLatencyTelemetry.record(
+                        this,
+                        state.voiceTraceId,
+                        VoiceTraceEvents.TTS_QUEUE_UNDERRUN,
+                        mapOf("underrun_count" to count.toString())
+                    )
+                },
+                onFinished = { success, errorCode ->
+                    if (activeProgressiveSpeechSessionId == state.requestId) {
+                        VoiceLatencyTelemetry.record(
+                            this,
+                            state.voiceTraceId,
+                            VoiceTraceEvents.TTS_COMPLETED,
+                            mapOf(
+                                "tts_provider" to activeProgressiveSpeechProvider,
+                                "success" to success.toString(),
+                                "error_code" to errorCode.orEmpty()
+                            ),
+                            once = true
+                        )
+                        if (success) {
+                            VoiceRuntimeHealthRegistry.success(progressiveTtsRuntimeChannel())
+                        } else {
+                            VoiceRuntimeHealthRegistry.failure(
+                                progressiveTtsRuntimeChannel(),
+                                errorCode.orEmpty().ifBlank { "Progressive TTS playback failed" }
+                            )
+                        }
+                        resumeVoiceAssistantAfterSpeech(state.requestId, state.voiceTraceId)
+                    }
+                },
+                onCancelled = {
+                    if (activeProgressiveSpeechSessionId == state.requestId) {
+                        activeProgressiveSpeechSessionId = ""
+                        activeProgressiveSpeechTraceId = ""
+                        activeProgressiveSpeechProvider = ""
+                        voiceAssistantSpeaking = false
+                        releaseVoicePlaybackAudioFocus()
+                    }
+                }
+            )
+        )
+        activeProgressiveSpeechSessionId = state.requestId
+        activeProgressiveSpeechTraceId = state.voiceTraceId
+        activeProgressiveSpeechProvider = VoiceAssistantSettings.get(this).ttsProvider
+    }
+
+    private fun enqueueProgressiveSpeech(
+        state: ActiveCloudStream,
+        chunks: List<CommittedSpeechChunk>
+    ) {
+        if (!state.progressiveSpeechEnabled || chunks.isEmpty()) return
+        state.sentenceCommitRunnable?.let(handler::removeCallbacks)
+        state.sentenceCommitRunnable = null
+        chunks.forEach { chunk ->
+            val result = progressiveTtsScheduler.enqueue(state.requestId, chunk)
+            if (result == com.signalasi.chat.voice.tts.TtsEnqueueResult.ACCEPTED ||
+                result == com.signalasi.chat.voice.tts.TtsEnqueueResult.COALESCED
+            ) {
+                VoiceLatencyTelemetry.record(
+                    this,
+                    state.voiceTraceId,
+                    VoiceTraceEvents.MODEL_FIRST_SENTENCE_COMMITTED,
+                    mapOf(
+                        "chunk_sequence" to chunk.sequence.toString(),
+                        "chunk_characters" to chunk.speechText.length.toString()
+                    ),
+                    once = true
+                )
+            }
+        }
+    }
+
+    private fun playProgressiveTtsChunk(
+        chunk: CommittedSpeechChunk,
+        callbacks: TtsChunkPlaybackCallbacks
+    ): TtsChunkPlayback {
+        val cancelled = AtomicBoolean(false)
+        val completed = AtomicBoolean(false)
+        val traceId = activeProgressiveSpeechTraceId.takeIf {
+            activeProgressiveSpeechSessionId == chunk.requestId
+        }.orEmpty()
+        val finish: (Boolean, String?) -> Unit = { success, errorCode ->
+            if (!cancelled.get() && completed.compareAndSet(false, true)) {
+                callbacks.onCompleted(success, errorCode)
+            }
+        }
+        if (!acquireVoicePlaybackAudioFocus()) {
+            finish(false, "AUDIO_FOCUS_DENIED")
+            return TtsChunkPlayback { }
+        }
+        runCatching { speechRecognizer?.cancel() }
+        voiceAssistantListening = false
+        voiceAssistantSpeaking = true
+        val config = VoiceAssistantSettings.get(this)
+        val startAndroidFallback = {
+            activeProgressiveSpeechProvider = "android_system"
+            playProgressiveAndroidTtsChunk(chunk, traceId, callbacks.onStarted, finish)
+        }
+        if (config.ttsProvider == VoiceAssistantSettings.PROVIDER_MICROSOFT_EDGE) {
+            activeProgressiveSpeechProvider = "microsoft_edge"
+            VoiceRuntimeHealthRegistry.begin(VoiceRuntimeChannel.MICROSOFT_EDGE_TTS)
+            val voice = LanguagePolicySettings.microsoftVoice(config.ttsLanguage, config.microsoftVoice)
+            microsoftTts.speak(
+                chunk.speechText,
+                voice,
+                traceId,
+                onPlaybackStarted = { runOnUiThread { callbacks.onStarted() } },
+                recordCompletion = false
+            ) { success, error ->
+                runOnUiThread {
+                    when {
+                        cancelled.get() -> Unit
+                        success -> finish(true, null)
+                        error == "cancelled" -> finish(false, "TTS_CANCELLED")
+                        else -> startAndroidFallback()
+                    }
+                }
+            }
+        } else {
+            startAndroidFallback()
+        }
+        return TtsChunkPlayback { reason ->
+            if (cancelled.compareAndSet(false, true)) {
+                progressiveAndroidTtsRequests.clear()
+                microsoftTts.stop()
+                androidTts?.stop()
+                completed.set(true)
+                Log.i("SignalASIVoice", "Progressive TTS chunk cancelled reason=${reason.name}")
+            }
+        }
+    }
+
+    private fun playProgressiveAndroidTtsChunk(
+        chunk: CommittedSpeechChunk,
+        traceId: String,
+        onStarted: () -> Unit,
+        onFinished: (Boolean, String?) -> Unit
+    ) {
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.TTS_REQUEST_STARTED,
+            mapOf("tts_provider" to "android_system"),
+            once = true
+        )
+        if (!androidTtsReady) {
+            onFinished(false, "TTS_NOT_READY")
+            return
+        }
+        VoiceRuntimeHealthRegistry.begin(VoiceRuntimeChannel.ANDROID_SYSTEM_TTS)
+        configureAndroidTtsLanguage()
+        val utteranceId = "signalasi_progressive_${chunk.requestId.hashCode()}_${chunk.sequence}"
+        progressiveAndroidTtsRequests.begin(
+            ProgressiveTtsUtteranceRequest(
+                utteranceId = utteranceId,
+                sessionId = chunk.requestId,
+                onStarted = {
+                    VoiceLatencyTelemetry.record(
+                        this,
+                        traceId,
+                        VoiceTraceEvents.TTS_FIRST_AUDIO,
+                        mapOf("tts_provider" to "android_system"),
+                        once = true
+                    )
+                    VoiceLatencyTelemetry.record(
+                        this,
+                        traceId,
+                        VoiceTraceEvents.TTS_PLAYBACK_STARTED,
+                        mapOf("tts_provider" to "android_system"),
+                        once = true
+                    )
+                    onStarted()
+                },
+                onFinished = { success ->
+                    onFinished(success, if (success) null else "TTS_PLAYBACK_FAILED")
+                }
+            )
+        )
+        val result = androidTts?.speak(
+            chunk.speechText,
+            TextToSpeech.QUEUE_FLUSH,
+            Bundle(),
+            utteranceId
+        )
+        if (result == TextToSpeech.ERROR) {
+            progressiveAndroidTtsRequests.finish(utteranceId)
+            onFinished(false, "TTS_REJECTED")
+            return
+        }
+        handler.postDelayed({
+            val request = progressiveAndroidTtsRequests.finish(utteranceId) ?: return@postDelayed
+            androidTts?.stop()
+            request.onFinished(false)
+        }, 20_000L)
+    }
+
+    private fun progressiveTtsRuntimeChannel(): VoiceRuntimeChannel =
+        if (activeProgressiveSpeechProvider == "microsoft_edge") {
+            VoiceRuntimeChannel.MICROSOFT_EDGE_TTS
+        } else {
+            VoiceRuntimeChannel.ANDROID_SYSTEM_TTS
+        }
+
+    private fun resumeVoiceAssistantAfterSpeech(sessionId: String, traceId: String) {
+        if (activeProgressiveSpeechSessionId != sessionId) return
+        activeProgressiveSpeechSessionId = ""
+        activeProgressiveSpeechTraceId = ""
+        activeProgressiveSpeechProvider = ""
+        resumeVoiceAssistantListening(traceId)
+    }
+
+    private fun resumeVoiceAssistantListening(traceId: String) {
+        voiceAssistantSpeaking = false
+        releaseVoicePlaybackAudioFocus()
+        completeVoiceTrace(traceId)
+        if (voiceAssistantAwake && activeMainTab == PAGE_VOICE && wakePage.visibility == View.VISIBLE) {
+            handler.post(::startCommandListening)
+        }
+    }
+
+    private fun acquireVoicePlaybackAudioFocus(): Boolean {
+        if (ttsAudioFocusRequest != null) return true
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setWillPauseWhenDucked(true)
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) {
+                    handler.post {
+                        stopSpeechPlaybackOnly(TtsCancelReason.USER_STOP)
+                        releaseVoicePlaybackAudioFocus()
+                    }
+                }
+            }
+            .build()
+        return if (ttsAudioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            ttsAudioFocusRequest = request
+            true
+        } else {
+            false
+        }
+    }
+
+    private fun releaseVoicePlaybackAudioFocus() {
+        val request = ttsAudioFocusRequest ?: return
+        ttsAudioFocusRequest = null
+        runCatching { ttsAudioManager.abandonAudioFocusRequest(request) }
+    }
+
+    private fun stopSpeechPlaybackOnly(reason: TtsCancelReason): Boolean {
+        val wasSpeaking = voiceAssistantSpeaking || progressiveTtsScheduler.snapshot().sessionId.isNotBlank()
+        progressiveTtsScheduler.cancelActive(reason)
+        progressiveAndroidTtsRequests.clear()
+        microsoftTts.stop()
+        androidTts?.stop()
+        androidTtsRequests.clear()
+        voiceAssistantSpeaking = false
+        return wasSpeaking
+    }
+
+    private fun interruptSpeechForNewUtterance() {
+        if (!VoiceFeatureFlags.isBargeInEnabled(this)) return
+        val ordinaryStreams = activeCloudStreams.values
+            .filter { it.voiceTraceId.isNotBlank() }
+            .map { it.contact.id }
+            .distinct()
+        val wasSpeaking = voiceAssistantSpeaking || progressiveTtsScheduler.snapshot().sessionId.isNotBlank()
+        if (!wasSpeaking && ordinaryStreams.isEmpty()) return
+        val traceId = activeProgressiveSpeechTraceId.ifBlank { activeVoiceTraceId }
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.TTS_BARGE_IN_STARTED,
+            once = true
+        )
+        val result = bargeInController.interrupt(
+            if (ordinaryStreams.isNotEmpty()) BargeInTaskKind.ORDINARY_MODEL else BargeInTaskKind.NONE,
+            BargeInActions(
+                stopSpeech = { stopSpeechPlaybackOnly(TtsCancelReason.VOICE_BARGE_IN) },
+                cancelOrdinaryModel = {
+                    ordinaryStreams.forEach { contactId ->
+                        cancelActiveCloudStream(contactId, ModelStreamCancelReason.VOICE_BARGE_IN)
+                    }
+                },
+                releaseAudioFocus = ::releaseVoicePlaybackAudioFocus
+            )
+        )
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.TTS_BARGE_IN_COMPLETED,
+            mapOf(
+                "elapsed_ms" to result.elapsedMs.toString(),
+                "model_cancelled" to result.ordinaryModelCancelled.toString()
+            ),
+            once = true
+        )
     }
 
     private fun maybeSpeakIncomingReply(msg: ChatMessage) {
@@ -19880,14 +20286,23 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         cancelActiveCloudStream(contact.id, ModelStreamCancelReason.NEW_REQUEST)
         val requestId = "cloud-${contact.id}-${outgoingId}-${UUID.randomUUID()}"
+        val progressiveSpeechEnabled = shouldUseProgressiveCloudSpeech(voiceTraceId)
+        val sentenceCommitter = if (progressiveSpeechEnabled) {
+            DefaultSentenceCommitter().apply { reset(requestId) }
+        } else {
+            null
+        }
         val state = ActiveCloudStream(
             requestId = requestId,
             contact = contact,
             outgoingId = outgoingId,
             incomingId = newMessageId(),
             voiceTraceId = voiceTraceId,
-            selectedModel = raw.optString("selected_cloud_model", raw.optString("cloud_model"))
+            selectedModel = raw.optString("selected_cloud_model", raw.optString("cloud_model")),
+            sentenceCommitter = sentenceCommitter,
+            progressiveSpeechEnabled = progressiveSpeechEnabled
         )
+        if (progressiveSpeechEnabled) beginProgressiveCloudSpeech(state)
         VoiceLatencyTelemetry.record(
             this,
             voiceTraceId,
@@ -20047,10 +20462,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     once = true
                 )
                 val update = state.merger.offer(event.sequence, event.text, event.receivedAtElapsedMs)
+                val speechChunks = state.sentenceCommitter?.acceptDelta(event.sequence, event.text).orEmpty()
                 handler.post {
                     if (activeCloudStreams[state.contact.id] !== state || state.finalized) return@post
                     voiceCoordinatorSession(state.voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
                         dispatchVoiceCoordinator(VoiceInteractionEvent.ModelDelta(sessionId, event.text))
+                    }
+                    if (speechChunks.isNotEmpty()) {
+                        enqueueProgressiveSpeech(state, speechChunks)
+                    } else {
+                        scheduleSentenceCommit(state)
                     }
                     update?.let { applyCloudStreamUiUpdate(state, it) }
                     scheduleCloudStreamFlush(state)
@@ -20079,6 +20500,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
         state.flushRunnable = task
         handler.postDelayed(task, CLOUD_STREAM_UI_INTERVAL_MS)
+    }
+
+    private fun scheduleSentenceCommit(state: ActiveCloudStream) {
+        if (!state.progressiveSpeechEnabled || state.sentenceCommitter == null || state.sentenceCommitRunnable != null) {
+            return
+        }
+        val task = Runnable {
+            state.sentenceCommitRunnable = null
+            if (activeCloudStreams[state.contact.id] !== state || state.finalized) return@Runnable
+            val chunks = state.sentenceCommitter.commitDue()
+            if (chunks.isNotEmpty()) enqueueProgressiveSpeech(state, chunks)
+        }
+        state.sentenceCommitRunnable = task
+        handler.postDelayed(task, 525L)
     }
 
     private fun applyCloudStreamUiUpdate(state: ActiveCloudStream, update: ModelStreamUiUpdate) {
@@ -20113,6 +20548,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun finishCloudStreamSuccess(state: ActiveCloudStream, raw: JSONObject) {
         state.flushRunnable?.let(handler::removeCallbacks)
         state.flushRunnable = null
+        state.sentenceCommitRunnable?.let(handler::removeCallbacks)
+        state.sentenceCommitRunnable = null
         val update = state.merger.flush(cloudStreamClockMs(), complete = true)
         update?.let { applyCloudStreamUiUpdate(state, it) }
         val finalText = state.merger.snapshot().trim()
@@ -20132,7 +20569,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         appendDeliveryTrace(state.outgoingId, state.contact.id, "cloud_reply", state.selectedModel)
         updateMessageStatus(state.outgoingId, state.contact.id, getString(R.string.delivery_status_replied))
         val reply = persistCloudStreamMessage(state, finalText, status = null, terminalStage = "cloud_reply_received")
-        maybeSpeakIncomingReply(reply, state.voiceTraceId)
+        if (state.progressiveSpeechEnabled) {
+            enqueueProgressiveSpeech(state, state.sentenceCommitter?.flush().orEmpty())
+            progressiveTtsScheduler.finish(state.requestId)
+        } else {
+            maybeSpeakIncomingReply(reply, state.voiceTraceId)
+        }
         voiceCoordinatorIdsBySourceMessage.remove(state.outgoingId)
         val usage = state.usage
         VoiceLatencyTelemetry.record(
@@ -20166,6 +20608,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         state.finalized = true
         state.flushRunnable?.let(handler::removeCallbacks)
         state.flushRunnable = null
+        state.sentenceCommitRunnable?.let(handler::removeCallbacks)
+        state.sentenceCommitRunnable = null
         activeCloudStreams.remove(state.contact.id, state)
         activeCloudStreamJobs.remove(state.contact.id)
         val partialText = state.merger.snapshot().trim()
@@ -20190,6 +20634,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     fromIncoming = true
                 )
             }
+            if (state.progressiveSpeechEnabled && error.code != "CANCELLED") {
+                enqueueProgressiveSpeech(state, state.sentenceCommitter?.flush().orEmpty())
+                progressiveTtsScheduler.finish(state.requestId)
+            }
         } else if (error.code != "CANCELLED") {
             addMessage(
                 ChatMessage(
@@ -20201,6 +20649,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ),
                 fromIncoming = true
             )
+            if (state.progressiveSpeechEnabled) {
+                progressiveTtsScheduler.cancel(state.requestId, TtsCancelReason.PLAYBACK_FAILED)
+                resumeVoiceAssistantListening(state.voiceTraceId)
+            }
+        }
+        if (state.progressiveSpeechEnabled && error.code == "CANCELLED") {
+            progressiveTtsScheduler.cancel(state.requestId, TtsCancelReason.SESSION_CHANGED)
         }
         failVoiceCoordinator(state.voiceTraceId, error.code)
         voiceCoordinatorIdsBySourceMessage.remove(state.outgoingId)
@@ -20254,7 +20709,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val state = activeCloudStreams.remove(contactId) ?: return
         state.flushRunnable?.let(handler::removeCallbacks)
         state.flushRunnable = null
+        state.sentenceCommitRunnable?.let(handler::removeCallbacks)
+        state.sentenceCommitRunnable = null
         state.finalized = true
+        if (state.progressiveSpeechEnabled) {
+            progressiveTtsScheduler.cancel(
+                state.requestId,
+                when (reason) {
+                    ModelStreamCancelReason.VOICE_BARGE_IN -> TtsCancelReason.VOICE_BARGE_IN
+                    ModelStreamCancelReason.NEW_REQUEST -> TtsCancelReason.NEW_RESPONSE
+                    ModelStreamCancelReason.APP_DESTROYED -> TtsCancelReason.APP_DESTROYED
+                    else -> TtsCancelReason.SESSION_CHANGED
+                }
+            )
+        }
         val partial = state.merger.snapshot().trim()
         if (partial.isNotBlank()) {
             persistCloudStreamMessage(

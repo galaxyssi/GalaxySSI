@@ -11,6 +11,9 @@ const val VOICE_WHISPER_AUTO_BENCHMARK_V1_FLAG = "voice.whisper_auto_benchmark_v
 const val VOICE_WHISPER_POLICY_ENGINE_V1_FLAG = "voice.whisper_policy_engine_v1"
 const val VOICE_WHISPER_SECOND_PASS_V1_FLAG = "voice.whisper_second_pass_v1"
 const val VOICE_CLOUD_MODEL_STREAM_V1_FLAG = "voice.cloud_model_stream_v1"
+const val VOICE_SENTENCE_COMMITTER_V1_FLAG = "voice.sentence_committer_v1"
+const val VOICE_PROGRESSIVE_TTS_V1_FLAG = "voice.progressive_tts_v1"
+const val VOICE_BARGE_IN_V1_FLAG = "voice.barge_in_v1"
 
 object VoiceFeatureFlags {
     private const val PREFERENCES = "signalasi_voice_feature_flags"
@@ -124,6 +127,41 @@ object VoiceFeatureFlags {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(VOICE_CLOUD_MODEL_STREAM_V1_FLAG, enabled)
+            .apply()
+    }
+
+    fun isSentenceCommitterEnabled(context: Context): Boolean =
+        isDebugOptInEnabled(context, VOICE_SENTENCE_COMMITTER_V1_FLAG)
+
+    fun setSentenceCommitterEnabled(context: Context, enabled: Boolean) {
+        setFlag(context, VOICE_SENTENCE_COMMITTER_V1_FLAG, enabled)
+    }
+
+    fun isProgressiveTtsEnabled(context: Context): Boolean =
+        isDebugOptInEnabled(context, VOICE_PROGRESSIVE_TTS_V1_FLAG)
+
+    fun setProgressiveTtsEnabled(context: Context, enabled: Boolean) {
+        setFlag(context, VOICE_PROGRESSIVE_TTS_V1_FLAG, enabled)
+    }
+
+    fun isBargeInEnabled(context: Context): Boolean =
+        isDebugOptInEnabled(context, VOICE_BARGE_IN_V1_FLAG)
+
+    fun setBargeInEnabled(context: Context, enabled: Boolean) {
+        setFlag(context, VOICE_BARGE_IN_V1_FLAG, enabled)
+    }
+
+    private fun isDebugOptInEnabled(context: Context, key: String): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(
+                key,
+                (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            )
+
+    private fun setFlag(context: Context, key: String, enabled: Boolean) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(key, enabled)
             .apply()
     }
 }
