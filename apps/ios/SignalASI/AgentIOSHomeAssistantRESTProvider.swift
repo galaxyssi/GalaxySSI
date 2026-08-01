@@ -174,7 +174,7 @@ struct AgentIOSConfiguredHomeAssistantToolProvider: AgentIOSHomeAssistantToolPro
       let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       let domainFilter = Set(domains.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
         .filter { !$0.isEmpty })
-      let matched = payload.compactMap { entity(from: $0) }
+      let matched = payload.compactMap { try? entity(from: $0) }
         .filter { entity in
           domainFilter.isEmpty || domainFilter.contains(entity.domain)
         }
