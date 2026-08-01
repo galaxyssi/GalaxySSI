@@ -22,7 +22,7 @@ final class VoiceLiveWhisperCaptureController {
   private let sessionBuilder: VoiceLiveWhisperCaptureSessionBuilder
   private let coordinatorBridge: VoiceLiveWhisperCoordinatorBridge
   private var updateHandler: (VoiceLiveWhisperTranscriptUpdate) -> Void
-  private let transitionHandler: (VoiceInteractionTransition) -> Void
+  private var transitionHandler: (VoiceInteractionTransition) -> Void
   private let lock = NSLock()
   private var session: VoiceLiveWhisperSessionHandling?
   private var speechStartedAtMillis: Int64?
@@ -66,6 +66,12 @@ final class VoiceLiveWhisperCaptureController {
   func setUpdateHandler(_ updateHandler: @escaping (VoiceLiveWhisperTranscriptUpdate) -> Void) {
     locked {
       self.updateHandler = updateHandler
+    }
+  }
+
+  func setTransitionHandler(_ transitionHandler: @escaping (VoiceInteractionTransition) -> Void) {
+    locked {
+      self.transitionHandler = transitionHandler
     }
   }
 
@@ -134,8 +140,9 @@ final class VoiceLiveWhisperCaptureController {
   }
 
   private func apply(_ update: VoiceLiveWhisperTranscriptUpdate) {
-    locked { updateHandler }(update)
-    coordinatorBridge.apply(update).forEach(transitionHandler)
+    let handlers = locked { (update: updateHandler, transition: transitionHandler) }
+    handlers.update(update)
+    coordinatorBridge.apply(update).forEach(handlers.transition)
   }
 
   private func locked<T>(_ body: () -> T) -> T {

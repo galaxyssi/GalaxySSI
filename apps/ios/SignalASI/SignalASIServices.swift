@@ -1234,12 +1234,22 @@ private enum SpeechCaptureServiceError: LocalizedError {
   }
 }
 
+private enum SpeechCaptureLiveWhisperFinalizationError: LocalizedError {
+  case sessionUnavailable
+
+  var errorDescription: String? {
+    switch self {
+    case .sessionUnavailable:
+      return "Live Whisper session is unavailable for final transcription."
+    }
+  }
+}
+
 final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizerDelegate {
   @Published private(set) var transcript = ""
   @Published private(set) var isRecording = false
   var onVoiceCommand: ((VoiceInteractionCommand) -> Void)?
 
-  private let runtimeChannel = VoiceRuntimeChannel.androidSystemASR
   private let coordinatorBridge: VoiceSpeechCaptureCoordinatorBridge
   private let liveWhisperScheduler: VoiceWhisperDecodeScheduling
   private let liveWhisperController: VoiceLiveWhisperCaptureController
@@ -1248,6 +1258,8 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   private var task: SFSpeechRecognitionTask?
   private var recognizer: SFSpeechRecognizer?
   private var currentRecognitionModelProfileId = ""
+  private var currentIOSSpeechTranscript = ""
+  private var currentRuntimeChannel = VoiceRuntimeChannel.androidSystemASR
   private var pcmTapPipeline: VoicePcmTapPipeline?
   private var pcmTapSpeechStarted = false
   private var pcmTapSpeechEnded = false
@@ -1274,6 +1286,11 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         if !displayText.isEmpty {
           self.transcript = displayText
         }
+      }
+    }
+    self.liveWhisperController.setTransitionHandler { [weak self] transition in
+      DispatchQueue.main.async { [weak self] in
+        self?.emitCommands(transition)
       }
     }
   }
@@ -1322,6 +1339,7 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       throw error
     }
     transcript = ""
+    currentIOSSpeechTranscript = ""
     currentRecognitionModelProfileId = localeIdentifier
     request = SFSpeechAudioBufferRecognitionRequest()
     guard let request = request else {
@@ -1367,14 +1385,15 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
       request.append(buffer)
       self?.processPcmTap(buffer)
     }
-    VoiceRuntimeHealthRegistry.begin(runtimeChannel)
+    currentRuntimeChannel = settings?.asrProvider == .localWhisperCpp ? .localWhisperASR : .androidSystemASR
+    VoiceRuntimeHealthRegistry.begin(currentRuntimeChannel)
     do {
       try AVAudioSession.sharedInstance().setCategory(.record, mode: .measurement, options: .duckOthers)
       try AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
       audioEngine.prepare()
       try audioEngine.start()
     } catch {
-      VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+      VoiceRuntimeHealthRegistry.failure(currentRuntimeChannel, reason: error.localizedDescription)
       if coordinatorConfig != nil {
         coordinatorBridge.failCurrent(code: "ios_speech_capture_failed", detail: error.localizedDescription)
       }
@@ -1392,33 +1411,44 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
         guard let self = self else { return }
         if let result = result {
           let text = result.bestTranscription.formattedString
-          self.transcript = text
+          self.currentIOSSpeechTranscript = text
+          if !self.liveWhisperActive {
+            self.transcript = text
+          }
           if result.isFinal {
-            self.emitCommands(
-              self.coordinatorBridge.finishWithBestTranscript(
+            if !self.liveWhisperActive {
+              self.emitCommands(
+                self.coordinatorBridge.finishWithBestTranscript(
+                  text,
+                  provider: iosSpeechProviderId,
+                  modelProfileId: self.currentRecognitionModelProfileId
+                )
+              )
+            }
+          } else {
+            if !self.liveWhisperActive {
+              self.coordinatorBridge.transcriptPartial(
                 text,
                 provider: iosSpeechProviderId,
                 modelProfileId: self.currentRecognitionModelProfileId
               )
-            )
-          } else {
-            self.coordinatorBridge.transcriptPartial(
-              text,
-              provider: iosSpeechProviderId,
-              modelProfileId: self.currentRecognitionModelProfileId
-            )
+            }
           }
         }
         if let error = error, self.isRecording {
-          VoiceRuntimeHealthRegistry.failure(self.runtimeChannel, reason: error.localizedDescription)
-          self.coordinatorBridge.failCurrent(
-            code: "ios_speech_capture_failed",
-            detail: error.localizedDescription
-          )
-        } else if result?.isFinal == true {
-          VoiceRuntimeHealthRegistry.success(self.runtimeChannel)
+          if self.liveWhisperActive {
+            VoiceRuntimeHealthRegistry.failure(.androidSystemASR, reason: error.localizedDescription)
+          } else {
+            VoiceRuntimeHealthRegistry.failure(self.currentRuntimeChannel, reason: error.localizedDescription)
+            self.coordinatorBridge.failCurrent(
+              code: "ios_speech_capture_failed",
+              detail: error.localizedDescription
+            )
+          }
+        } else if result?.isFinal == true, !self.liveWhisperActive {
+          VoiceRuntimeHealthRegistry.success(self.currentRuntimeChannel)
         }
-        if error != nil || result?.isFinal == true {
+        if (error != nil || result?.isFinal == true), !self.liveWhisperActive {
           Task { @MainActor in self.stop() }
         }
       }
@@ -1428,15 +1458,22 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
   @MainActor
   func stop() {
     let wasRecording = isRecording
+    let fallbackTranscript = currentIOSSpeechTranscript.ifBlank(transcript)
+    let fallbackModelProfileId = currentRecognitionModelProfileId
+    let runtimeChannel = currentRuntimeChannel
+    let liveFinalSnapshot = wasRecording && liveWhisperActive ? pcmTapPipeline?.snapshot() : nil
+    let shouldRunLiveFinal = liveFinalSnapshot?.samples.isEmpty == false
     isRecording = false
-    if wasRecording {
+    if wasRecording, !shouldRunLiveFinal {
       emitCommands(
         coordinatorBridge.finishStoppedCapture(
-          transcript: transcript,
+          transcript: fallbackTranscript,
           provider: iosSpeechProviderId,
-          modelProfileId: currentRecognitionModelProfileId
+          modelProfileId: fallbackModelProfileId
         )
       )
+    } else if wasRecording {
+      coordinatorBridge.finalizationStarted()
     }
     audioEngine.stop()
     audioEngine.inputNode.removeTap(onBus: 0)
@@ -1445,14 +1482,64 @@ final class SpeechCaptureService: NSObject, ObservableObject, SFSpeechRecognizer
     task = nil
     request = nil
     currentRecognitionModelProfileId = ""
-    liveWhisperController.close()
-    liveWhisperActive = false
+    currentIOSSpeechTranscript = ""
     pcmTapPipeline = nil
     pcmTapSpeechStarted = false
     pcmTapSpeechEnded = false
     pcmTapEndpointRequested = false
-    if wasRecording {
-      VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+    if shouldRunLiveFinal, let liveFinalSnapshot = liveFinalSnapshot {
+      finalizeStoppedLiveWhisperCapture(
+        snapshot: liveFinalSnapshot,
+        fallbackTranscript: fallbackTranscript,
+        fallbackModelProfileId: fallbackModelProfileId,
+        runtimeChannel: runtimeChannel
+      )
+    } else {
+      liveWhisperController.close()
+      liveWhisperActive = false
+      if wasRecording {
+        VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+      }
+    }
+  }
+
+  private func finalizeStoppedLiveWhisperCapture(
+    snapshot: PcmSnapshot,
+    fallbackTranscript: String,
+    fallbackModelProfileId: String,
+    runtimeChannel: VoiceRuntimeChannel
+  ) {
+    let controller = liveWhisperController
+    Task {
+      do {
+        guard let result = try await controller.finish(snapshot) else {
+          throw SpeechCaptureLiveWhisperFinalizationError.sessionUnavailable
+        }
+        await MainActor.run {
+          let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !text.isEmpty {
+            self.transcript = text
+          }
+          controller.close()
+          self.liveWhisperActive = false
+          VoiceRuntimeHealthRegistry.success(runtimeChannel)
+          VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+        }
+      } catch {
+        await MainActor.run {
+          controller.close()
+          self.liveWhisperActive = false
+          VoiceRuntimeHealthRegistry.failure(runtimeChannel, reason: error.localizedDescription)
+          self.emitCommands(
+            self.coordinatorBridge.finishStoppedCapture(
+              transcript: fallbackTranscript,
+              provider: iosSpeechProviderId,
+              modelProfileId: fallbackModelProfileId
+            )
+          )
+          VoiceRuntimeHealthRegistry.idle(runtimeChannel)
+        }
+      }
     }
   }
 
