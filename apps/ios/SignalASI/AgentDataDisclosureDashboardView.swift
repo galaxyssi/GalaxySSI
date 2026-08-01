@@ -519,7 +519,7 @@ private extension AgentDisclosureProtection {
 private extension Int64 {
   var disclosureTimeLabel: String {
     guard self > 0 else { return "Unknown time" }
-    let elapsed = max(0, Int64(Date().timeIntervalSince1970 * 1_000) - self)
+    let elapsed = Swift.max(0, Int64(Date().timeIntervalSince1970 * 1_000) - self)
     if elapsed < 60_000 {
       return "Just now"
     }

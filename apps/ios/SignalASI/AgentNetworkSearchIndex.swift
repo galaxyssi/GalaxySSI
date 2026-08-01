@@ -372,25 +372,25 @@ final class AgentNetworkIndex {
   }
 
   private func fingerprint(_ query: AgentNetworkSearchQuery) -> String {
-    let canonical = [
-      normalizeSearchText(query.text),
-      query.requiredCapabilities.map(\.rawValue).sorted().joined(separator: ","),
-      query.preferredCapabilities.map(\.rawValue).sorted().joined(separator: ","),
-      query.kinds.map(\.rawValue).sorted().joined(separator: ","),
-      query.locations.map(\.rawValue).sorted().joined(separator: ","),
-      query.statuses.map(\.rawValue).sorted().joined(separator: ","),
-      query.providerIds.map(normalizeSearchText).sorted().joined(separator: ","),
-      query.deviceIds.map(normalizeSearchText).sorted().joined(separator: ","),
-      query.excludedAgentIds.sorted().joined(separator: ","),
-      String(query.trustedOnly),
-      String(query.routableOnly),
-      String(query.includeAtCapacity),
-      query.maximumCost?.rawValue ?? "",
-      query.maximumLatency?.rawValue ?? "",
-      query.minimumReputationScore.map { String(min(max($0, 0), 100)) } ?? "",
-      String(min(max(query.minimumReputationConfidence, 0), 100)),
-      String(min(max(query.pageSize, 1), AgentNetworkSearchQuery.maxPageSize))
-    ].joined(separator: "\u{001f}")
+    var parts: [String] = []
+    parts.append(normalizeSearchText(query.text))
+    parts.append(query.requiredCapabilities.map(\.rawValue).sorted().joined(separator: ","))
+    parts.append(query.preferredCapabilities.map(\.rawValue).sorted().joined(separator: ","))
+    parts.append(query.kinds.map(\.rawValue).sorted().joined(separator: ","))
+    parts.append(query.locations.map(\.rawValue).sorted().joined(separator: ","))
+    parts.append(query.statuses.map(\.rawValue).sorted().joined(separator: ","))
+    parts.append(query.providerIds.map(normalizeSearchText).sorted().joined(separator: ","))
+    parts.append(query.deviceIds.map(normalizeSearchText).sorted().joined(separator: ","))
+    parts.append(query.excludedAgentIds.sorted().joined(separator: ","))
+    parts.append(String(query.trustedOnly))
+    parts.append(String(query.routableOnly))
+    parts.append(String(query.includeAtCapacity))
+    parts.append(query.maximumCost?.rawValue ?? "")
+    parts.append(query.maximumLatency?.rawValue ?? "")
+    parts.append(query.minimumReputationScore.map { String(min(max($0, 0), 100)) } ?? "")
+    parts.append(String(min(max(query.minimumReputationConfidence, 0), 100)))
+    parts.append(String(min(max(query.pageSize, 1), AgentNetworkSearchQuery.maxPageSize)))
+    let canonical = parts.joined(separator: "\u{001f}")
     return String(agentReputationSha256(Data(canonical.utf8)).prefix(24))
   }
 
