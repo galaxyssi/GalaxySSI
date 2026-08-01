@@ -199,6 +199,11 @@ final class VoiceAudioHub {
     locked { active?.publicSession }
   }
 
+  func snapshotWindow(session: VoiceAudioSession, maxDurationMs: Int64) -> PcmSnapshot? {
+    guard let current = matchingActive(session) else { return nil }
+    return current.store.snapshotWindow(maxDurationMs: maxDurationMs)
+  }
+
   private func run(_ session: ActiveSession) async {
     do {
       let frames = try recorder.start(config: session.config.capture)

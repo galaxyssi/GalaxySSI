@@ -26,6 +26,7 @@ final class VoicePcmTapPipelineTests: XCTestCase {
 
     let update = pipeline.accept(buffer: buffer)
     let snapshot = pipeline.snapshot()
+    let partial = pipeline.snapshotWindow(maxDurationMs: 1)
 
     XCTAssertEqual(update?.frame.captureTimeNanos, 42)
     XCTAssertEqual(update?.frame.samples.count, 4)
@@ -33,6 +34,7 @@ final class VoicePcmTapPipelineTests: XCTestCase {
     XCTAssertTrue(update?.endpoint.speechStarted ?? false)
     XCTAssertTrue(snapshot.speechDetected)
     XCTAssertEqual(snapshot.samples.count, 4)
+    XCTAssertEqual(partial.samples.count, 1)
   }
 
   private func audioBuffer(values: [Float]) throws -> AVAudioPCMBuffer {

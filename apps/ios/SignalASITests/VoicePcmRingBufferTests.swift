@@ -32,6 +32,28 @@ final class VoicePcmRingBufferTests: XCTestCase {
     XCTAssertEqual(snapshot.samples.last, 7)
   }
 
+  func testPartialSnapshotOnlyCopiesTheNewestRollingWindow() {
+    let store = InMemorySpeechSegmentStore(sampleRateHz: 1_000, maxDurationMs: 20_000)
+    for sequence in 0..<120 {
+      let values = Array(repeating: Int16(sequence), count: 100)
+      store.append(frame(sequence: Int64(sequence), samples: values))
+      if sequence == 5 {
+        store.markSpeechStart(sequence: 5)
+      }
+    }
+
+    let partial = store.snapshotWindow(
+      maxDurationMs: 4_000,
+      segment: SegmentRange(preRollMs: 0, postRollMs: 0)
+    )
+
+    XCTAssertEqual(partial.samples.count, 4_000)
+    XCTAssertEqual(partial.captureStartSample, 8_000)
+    XCTAssertEqual(partial.captureEndSampleExclusive, 12_000)
+    XCTAssertEqual(partial.samples.first, 80)
+    XCTAssertEqual(partial.samples.last, 119)
+  }
+
   private func frame(sequence: Int64, samples: [Int16]) -> AudioFrame {
     AudioFrame(sequence: sequence, captureTimeNanos: sequence, samples: samples)
   }

@@ -93,6 +93,7 @@ protocol SpeechSegmentStore {
   func markSpeechStart(sequence: Int64)
   func markSpeechEnd(sequence: Int64)
   func snapshot(segment: SegmentRange) -> PcmSnapshot
+  func snapshotWindow(maxDurationMs: Int64, segment: SegmentRange) -> PcmSnapshot
   func trimBefore(sequence: Int64)
   func clear()
 }
@@ -145,23 +146,18 @@ final class InMemorySpeechSegmentStore: SpeechSegmentStore {
 
   func snapshot(segment: SegmentRange = SegmentRange()) -> PcmSnapshot {
     locked {
-      let retainedStart = ring.retainedStartSample()
-      let retainedEnd = ring.endSampleExclusive()
-      let start = speechStartSample.map {
-        max(retainedStart, $0 - Int64(segment.preRollMs) * Int64(sampleRateHz) / 1_000)
-      } ?? (segment.includeAllWhenSpeechMissing ? retainedStart : retainedEnd)
-      let end = speechEndSampleExclusive.map {
-        min(retainedEnd, $0 + Int64(segment.postRollMs) * Int64(sampleRateHz) / 1_000)
-      } ?? retainedEnd
-      return PcmSnapshot(
-        samples: ring.snapshot(startSample: start, endSampleExclusive: end),
-        sampleRateHz: sampleRateHz,
-        speechDetected: speechStartSample != nil,
-        speechStartSample: speechStartSample,
-        speechEndSampleExclusive: speechEndSampleExclusive,
-        captureStartSample: start,
-        captureEndSampleExclusive: end
-      )
+      let bounds = snapshotBounds(segment: segment)
+      return snapshot(start: bounds.start, end: bounds.end)
+    }
+  }
+
+  func snapshotWindow(maxDurationMs: Int64, segment: SegmentRange = SegmentRange()) -> PcmSnapshot {
+    precondition(maxDurationMs > 0)
+    return locked {
+      let bounds = snapshotBounds(segment: segment)
+      let windowSamples = max(1, maxDurationMs) * Int64(sampleRateHz) / 1_000
+      let start = max(bounds.start, bounds.end - windowSamples)
+      return snapshot(start: start, end: bounds.end)
     }
   }
 
@@ -190,6 +186,30 @@ final class InMemorySpeechSegmentStore: SpeechSegmentStore {
       speechEndSampleExclusive = nil
       ring.clear()
     }
+  }
+
+  private func snapshotBounds(segment: SegmentRange) -> (start: Int64, end: Int64) {
+    let retainedStart = ring.retainedStartSample()
+    let retainedEnd = ring.endSampleExclusive()
+    let start = speechStartSample.map {
+      max(retainedStart, $0 - Int64(segment.preRollMs) * Int64(sampleRateHz) / 1_000)
+    } ?? (segment.includeAllWhenSpeechMissing ? retainedStart : retainedEnd)
+    let end = speechEndSampleExclusive.map {
+      min(retainedEnd, $0 + Int64(segment.postRollMs) * Int64(sampleRateHz) / 1_000)
+    } ?? retainedEnd
+    return (start, end)
+  }
+
+  private func snapshot(start: Int64, end: Int64) -> PcmSnapshot {
+    PcmSnapshot(
+      samples: ring.snapshot(startSample: start, endSampleExclusive: end),
+      sampleRateHz: sampleRateHz,
+      speechDetected: speechStartSample != nil,
+      speechStartSample: speechStartSample,
+      speechEndSampleExclusive: speechEndSampleExclusive,
+      captureStartSample: start,
+      captureEndSampleExclusive: end
+    )
   }
 
   private func trimSequenceIndex() {
