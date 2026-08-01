@@ -95,6 +95,8 @@
     A10000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift */; };
     A10000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift */; };
     A10000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift */; };
+    A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */; };
+    A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -645,6 +647,8 @@
     A20000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperTextStabilizerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAdaptiveWhisperPartialPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAdaptiveWhisperPartialPolicyTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperDecodeScheduler.swift; sourceTree = "<group>"; };
+    A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperDecodeSchedulerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1309,6 +1313,7 @@
         A20000000000000000000587 /* VoiceReplySpeechService.swift */,
         A20000000000000000000761 /* VoiceTTSRequestRegistry.swift */,
         A20000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift */,
+        A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */,
         A20000000000000000000763 /* VoiceWhisperTextStabilizer.swift */,
         A20000000000000000000589 /* VoiceLatencyTracer.swift */,
         A20000000000000000000617 /* VoiceLatencyModels.swift */,
@@ -1549,6 +1554,7 @@
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
         A20000000000000000000762 /* VoiceTTSRequestRegistryTests.swift */,
         A20000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift */,
+        A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */,
         A20000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift */,
         A20000000000000000000590 /* VoiceLatencyTracerTests.swift */,
         A20000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift */,
@@ -1940,6 +1946,7 @@
         A10000000000000000000587 /* VoiceReplySpeechService.swift in Sources */,
         A10000000000000000000761 /* VoiceTTSRequestRegistry.swift in Sources */,
         A10000000000000000000765 /* VoiceAdaptiveWhisperPartialPolicy.swift in Sources */,
+        A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */,
         A10000000000000000000763 /* VoiceWhisperTextStabilizer.swift in Sources */,
         A10000000000000000000589 /* VoiceLatencyTracer.swift in Sources */,
         A10000000000000000000617 /* VoiceLatencyModels.swift in Sources */,
@@ -2187,6 +2194,7 @@
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
         A10000000000000000000762 /* VoiceTTSRequestRegistryTests.swift in Sources */,
         A10000000000000000000766 /* VoiceAdaptiveWhisperPartialPolicyTests.swift in Sources */,
+        A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */,
         A10000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift in Sources */,
         A10000000000000000000590 /* VoiceLatencyTracerTests.swift in Sources */,
         A10000000000000000000621 /* VoiceLatencyDiagnosticsStoreTests.swift in Sources */,
