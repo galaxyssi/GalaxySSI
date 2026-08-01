@@ -323,16 +323,6 @@ private func modelStreamTextValue(_ value: Any?) -> String {
 }
 
 private extension Dictionary where Key == String, Value == Any {
-  func string(_ key: String) -> String {
-    if let value = self[key] as? String {
-      return value
-    }
-    if let number = self[key] as? NSNumber {
-      return number.stringValue
-    }
-    return ""
-  }
-
   func int(_ key: String, fallback: Int = 0) -> Int {
     if let value = self[key] as? Int {
       return value

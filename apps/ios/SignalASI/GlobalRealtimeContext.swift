@@ -1582,10 +1582,6 @@ private enum GlobalRealtimeMath {
 }
 
 private extension String {
-  func ifBlank(_ fallback: String) -> String {
-    isEmpty ? fallback : self
-  }
-
   func trimmed() -> String {
     trimmingCharacters(in: .whitespacesAndNewlines)
   }

@@ -142,7 +142,8 @@ extension String {
   }
 
   var nonEmpty: String? {
-    isBlank ? nil : self
+    let clean = trimmingCharacters(in: .whitespacesAndNewlines)
+    return clean.isEmpty ? nil : clean
   }
 }
 

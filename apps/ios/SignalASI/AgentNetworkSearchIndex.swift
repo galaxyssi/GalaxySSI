@@ -40,7 +40,7 @@ struct AgentNetworkSearchQuery: Codable, Equatable {
     maximumLatency: AgentResourceLatency? = nil,
     minimumReputationScore: Int? = nil,
     minimumReputationConfidence: Int = 40,
-    pageSize: Int = Self.defaultPageSize,
+    pageSize: Int = AgentNetworkSearchQuery.defaultPageSize,
     cursor: String = ""
   ) {
     self.text = text

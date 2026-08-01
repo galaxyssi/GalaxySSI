@@ -572,15 +572,6 @@ final class AgentLearningEngine {
   static let failureMemoryTTLMillis: Int64 = 90 * 24 * 60 * 60 * 1_000
 }
 
-private extension AgentMcpJSONValue {
-  var objectValue: AgentMcpJSONObject? {
-    if case .object(let object) = self {
-      return object
-    }
-    return nil
-  }
-}
-
 private extension Array where Element: Hashable {
   func stableDistinctForLearning() -> [Element] {
     var seen: Set<Element> = []

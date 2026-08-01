@@ -1155,9 +1155,3 @@ private func executorUniqueStrings(_ values: [String]) -> [String] {
   }
   return result
 }
-
-private extension String {
-  func ifBlank(_ fallback: String) -> String {
-    isBlank ? fallback : self
-  }
-}
