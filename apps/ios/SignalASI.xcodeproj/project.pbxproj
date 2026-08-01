@@ -185,6 +185,7 @@
     A10000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift */; };
     A10000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift */; };
     A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000103 /* AgentTeamDelegationModels.swift */; };
+    A10000000000000000000691 /* AgentRunStartReceiptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000691 /* AgentRunStartReceiptStore.swift */; };
     A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000104 /* AgentNativeToolCore.swift */; };
     A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000105 /* AgentPhoneNativeTools.swift */; };
     A10000000000000000000106 /* AgentIOSWebMediaNativeTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */; };
@@ -590,6 +591,7 @@
     A20000000000000000000435 /* AgentIOSFfmpegRuntimeAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegRuntimeAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000436 /* AgentIOSFfmpegRuntimeAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSFfmpegRuntimeAdapterTests.swift; sourceTree = "<group>"; };
     A20000000000000000000103 /* AgentTeamDelegationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTeamDelegationModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000691 /* AgentRunStartReceiptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRunStartReceiptStore.swift; sourceTree = "<group>"; };
     A20000000000000000000104 /* AgentNativeToolCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentNativeToolCore.swift; sourceTree = "<group>"; };
     A20000000000000000000105 /* AgentPhoneNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneNativeTools.swift; sourceTree = "<group>"; };
     A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentIOSWebMediaNativeTools.swift; sourceTree = "<group>"; };
@@ -982,6 +984,7 @@
         A20000000000000000000408 /* AgentDataDisclosureLedger.swift */,
         A20000000000000000000410 /* AgentDataDisclosureDashboardView.swift */,
         A20000000000000000000103 /* AgentTeamDelegationModels.swift */,
+        A20000000000000000000691 /* AgentRunStartReceiptStore.swift */,
         A20000000000000000000104 /* AgentNativeToolCore.swift */,
         A20000000000000000000105 /* AgentPhoneNativeTools.swift */,
         A20000000000000000000106 /* AgentIOSWebMediaNativeTools.swift */,
@@ -1554,6 +1557,7 @@
         A10000000000000000000408 /* AgentDataDisclosureLedger.swift in Sources */,
         A10000000000000000000410 /* AgentDataDisclosureDashboardView.swift in Sources */,
         A10000000000000000000103 /* AgentTeamDelegationModels.swift in Sources */,
+        A10000000000000000000691 /* AgentRunStartReceiptStore.swift in Sources */,
         A10000000000000000000104 /* AgentNativeToolCore.swift in Sources */,
         A10000000000000000000105 /* AgentPhoneNativeTools.swift in Sources */,
         A10000000000000000000106 /* AgentIOSWebMediaNativeTools.swift in Sources */,
