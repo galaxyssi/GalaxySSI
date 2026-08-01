@@ -201,7 +201,13 @@ final class VoiceAudioHub {
 
   func snapshotWindow(session: VoiceAudioSession, maxDurationMs: Int64) -> PcmSnapshot? {
     guard let current = matchingActive(session) else { return nil }
-    return current.store.snapshotWindow(maxDurationMs: maxDurationMs)
+    return current.store.snapshotWindow(
+      maxDurationMs: maxDurationMs,
+      segment: SegmentRange(
+        preRollMs: current.config.endpoint.preRollMs,
+        postRollMs: current.config.endpoint.postRollMs
+      )
+    )
   }
 
   private func run(_ session: ActiveSession) async {
