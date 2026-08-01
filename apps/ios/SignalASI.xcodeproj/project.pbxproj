@@ -70,6 +70,19 @@
     A10000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift */; };
     A10000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */; };
     A10000000000000000000741 /* VoiceWhisperBenchmarkDetailsPresenterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000741 /* VoiceWhisperBenchmarkDetailsPresenterTests.swift */; };
+    A10000000000000000000742 /* VoiceTranscriptCorrectionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000742 /* VoiceTranscriptCorrectionModels.swift */; };
+    A10000000000000000000743 /* VoiceTranscriptCorrectionText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000743 /* VoiceTranscriptCorrectionText.swift */; };
+    A10000000000000000000744 /* VoiceCommandRiskClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000744 /* VoiceCommandRiskClassifier.swift */; };
+    A10000000000000000000745 /* VoiceEntityConsistencyChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000745 /* VoiceEntityConsistencyChecker.swift */; };
+    A10000000000000000000746 /* VoiceSecondPassTriggerPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000746 /* VoiceSecondPassTriggerPolicy.swift */; };
+    A10000000000000000000747 /* VoiceTranscriptCorrectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000747 /* VoiceTranscriptCorrectionController.swift */; };
+    A10000000000000000000748 /* VoiceExecutionLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000748 /* VoiceExecutionLedger.swift */; };
+    A10000000000000000000749 /* VoiceSecondPassCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000749 /* VoiceSecondPassCoordinator.swift */; };
+    A10000000000000000000750 /* VoiceCorrectionStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000750 /* VoiceCorrectionStores.swift */; };
+    A10000000000000000000751 /* VoiceTranscriptCorrectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000751 /* VoiceTranscriptCorrectionTests.swift */; };
+    A10000000000000000000752 /* VoiceExecutionLedgerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000752 /* VoiceExecutionLedgerTests.swift */; };
+    A10000000000000000000753 /* VoiceSecondPassCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000753 /* VoiceSecondPassCoordinatorTests.swift */; };
+    A10000000000000000000754 /* VoiceCorrectionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000754 /* VoiceCorrectionStoreTests.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -595,6 +608,19 @@
     A20000000000000000000739 /* VoiceWhisperBenchmarkDefaultsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDefaultsTests.swift; sourceTree = "<group>"; };
     A20000000000000000000740 /* VoiceWhisperBenchmarkDetailsPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDetailsPresenter.swift; sourceTree = "<group>"; };
     A20000000000000000000741 /* VoiceWhisperBenchmarkDetailsPresenterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkDetailsPresenterTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000742 /* VoiceTranscriptCorrectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptCorrectionModels.swift; sourceTree = "<group>"; };
+    A20000000000000000000743 /* VoiceTranscriptCorrectionText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptCorrectionText.swift; sourceTree = "<group>"; };
+    A20000000000000000000744 /* VoiceCommandRiskClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCommandRiskClassifier.swift; sourceTree = "<group>"; };
+    A20000000000000000000745 /* VoiceEntityConsistencyChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceEntityConsistencyChecker.swift; sourceTree = "<group>"; };
+    A20000000000000000000746 /* VoiceSecondPassTriggerPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSecondPassTriggerPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000747 /* VoiceTranscriptCorrectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptCorrectionController.swift; sourceTree = "<group>"; };
+    A20000000000000000000748 /* VoiceExecutionLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceExecutionLedger.swift; sourceTree = "<group>"; };
+    A20000000000000000000749 /* VoiceSecondPassCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSecondPassCoordinator.swift; sourceTree = "<group>"; };
+    A20000000000000000000750 /* VoiceCorrectionStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCorrectionStores.swift; sourceTree = "<group>"; };
+    A20000000000000000000751 /* VoiceTranscriptCorrectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceTranscriptCorrectionTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000752 /* VoiceExecutionLedgerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceExecutionLedgerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000753 /* VoiceSecondPassCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSecondPassCoordinatorTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000754 /* VoiceCorrectionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceCorrectionStoreTests.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1241,6 +1267,15 @@
         A20000000000000000000578 /* VoiceInteractionCommand.swift */,
         A20000000000000000000579 /* VoiceFeatureFlags.swift */,
         A20000000000000000000580 /* VoiceInteractionCoordinator.swift */,
+        A20000000000000000000742 /* VoiceTranscriptCorrectionModels.swift */,
+        A20000000000000000000743 /* VoiceTranscriptCorrectionText.swift */,
+        A20000000000000000000744 /* VoiceCommandRiskClassifier.swift */,
+        A20000000000000000000745 /* VoiceEntityConsistencyChecker.swift */,
+        A20000000000000000000746 /* VoiceSecondPassTriggerPolicy.swift */,
+        A20000000000000000000747 /* VoiceTranscriptCorrectionController.swift */,
+        A20000000000000000000748 /* VoiceExecutionLedger.swift */,
+        A20000000000000000000749 /* VoiceSecondPassCoordinator.swift */,
+        A20000000000000000000750 /* VoiceCorrectionStores.swift */,
         A20000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift */,
         A20000000000000000000584 /* VoiceTranscriptRoutePolicy.swift */,
         A20000000000000000000586 /* VoiceReplyPlaybackPolicy.swift */,
@@ -1472,6 +1507,10 @@
         A20000000000000000000220 /* AgentMediaNetworkPolicyTests.swift */,
         A20000000000000000000221 /* VoiceRealtimeHealthTests.swift */,
         A20000000000000000000581 /* VoiceInteractionCoordinatorTests.swift */,
+        A20000000000000000000751 /* VoiceTranscriptCorrectionTests.swift */,
+        A20000000000000000000752 /* VoiceExecutionLedgerTests.swift */,
+        A20000000000000000000753 /* VoiceSecondPassCoordinatorTests.swift */,
+        A20000000000000000000754 /* VoiceCorrectionStoreTests.swift */,
         A20000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift */,
         A20000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift */,
         A20000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift */,
@@ -1847,6 +1886,15 @@
         A10000000000000000000578 /* VoiceInteractionCommand.swift in Sources */,
         A10000000000000000000579 /* VoiceFeatureFlags.swift in Sources */,
         A10000000000000000000580 /* VoiceInteractionCoordinator.swift in Sources */,
+        A10000000000000000000742 /* VoiceTranscriptCorrectionModels.swift in Sources */,
+        A10000000000000000000743 /* VoiceTranscriptCorrectionText.swift in Sources */,
+        A10000000000000000000744 /* VoiceCommandRiskClassifier.swift in Sources */,
+        A10000000000000000000745 /* VoiceEntityConsistencyChecker.swift in Sources */,
+        A10000000000000000000746 /* VoiceSecondPassTriggerPolicy.swift in Sources */,
+        A10000000000000000000747 /* VoiceTranscriptCorrectionController.swift in Sources */,
+        A10000000000000000000748 /* VoiceExecutionLedger.swift in Sources */,
+        A10000000000000000000749 /* VoiceSecondPassCoordinator.swift in Sources */,
+        A10000000000000000000750 /* VoiceCorrectionStores.swift in Sources */,
         A10000000000000000000582 /* VoiceSpeechCaptureCoordinatorBridge.swift in Sources */,
         A10000000000000000000584 /* VoiceTranscriptRoutePolicy.swift in Sources */,
         A10000000000000000000586 /* VoiceReplyPlaybackPolicy.swift in Sources */,
@@ -2085,6 +2133,10 @@
         A10000000000000000000220 /* AgentMediaNetworkPolicyTests.swift in Sources */,
         A10000000000000000000221 /* VoiceRealtimeHealthTests.swift in Sources */,
         A10000000000000000000581 /* VoiceInteractionCoordinatorTests.swift in Sources */,
+        A10000000000000000000751 /* VoiceTranscriptCorrectionTests.swift in Sources */,
+        A10000000000000000000752 /* VoiceExecutionLedgerTests.swift in Sources */,
+        A10000000000000000000753 /* VoiceSecondPassCoordinatorTests.swift in Sources */,
+        A10000000000000000000754 /* VoiceCorrectionStoreTests.swift in Sources */,
         A10000000000000000000583 /* VoiceSpeechCaptureCoordinatorBridgeTests.swift in Sources */,
         A10000000000000000000585 /* VoiceTranscriptRoutePolicyTests.swift in Sources */,
         A10000000000000000000588 /* VoiceReplyPlaybackPolicyTests.swift in Sources */,
