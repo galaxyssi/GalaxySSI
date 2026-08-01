@@ -32,6 +32,7 @@ enum VoiceWhisperCertificationLevel: String, Codable, Equatable {
   case realtime = "REALTIME"
   case final = "FINAL"
   case secondPass = "SECOND_PASS"
+  case remoteRecommended = "REMOTE_RECOMMENDED"
   case unsupported = "UNSUPPORTED"
 }
 
@@ -327,7 +328,7 @@ final class VoiceWhisperModelStorage {
       return .certified
     case .secondPass:
       return .secondPassOnly
-    case .unsupported:
+    case .remoteRecommended, .unsupported:
       return .unsupported
     }
   }
