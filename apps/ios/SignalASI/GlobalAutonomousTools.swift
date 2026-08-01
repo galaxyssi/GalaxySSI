@@ -127,7 +127,7 @@ enum GlobalAutonomousToolCatalogPolicy {
     return toolConcepts.contains { concept in
       let descriptorTerms = concept.0
       let goalTerms = concept.1
-      descriptorTerms.contains { descriptorValue.contains($0) } &&
+      return descriptorTerms.contains { descriptorValue.contains($0) } &&
         goalTerms.contains { normalizedGoal.contains($0) }
     } ? 0.58 : 0
   }
