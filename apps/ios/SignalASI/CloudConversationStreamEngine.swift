@@ -251,7 +251,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
         }
 
         let calls = assembler.completedCalls()
-        if calls.isEmpty() {
+        if calls.isEmpty {
           AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
           continuation.yield(
             .completed(
@@ -303,7 +303,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
           }
         }
 
-        if results.isEmpty() {
+        if results.isEmpty {
           forceFinalRound = true
         } else {
           try prepared.appendToolResults(results)
