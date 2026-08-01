@@ -1104,12 +1104,14 @@ struct AgentMcpPackageInstaller {
         guard Self.deflateLengthBases.indices.contains(lengthIndex) else {
           throw AgentRuntimeCapabilityError.invalid("MCP package deflate length code is invalid")
         }
-        let length = Self.deflateLengthBases[lengthIndex] + try reader.readBits(Self.deflateLengthExtraBits[lengthIndex])
+        let extraLength = try reader.readBits(Self.deflateLengthExtraBits[lengthIndex])
+        let length = Self.deflateLengthBases[lengthIndex] + extraLength
         let distanceSymbol = try distanceTable.decode(reader: &reader)
         guard Self.deflateDistanceBases.indices.contains(distanceSymbol) else {
           throw AgentRuntimeCapabilityError.invalid("MCP package deflate distance code is invalid")
         }
-        let distance = Self.deflateDistanceBases[distanceSymbol] + try reader.readBits(Self.deflateDistanceExtraBits[distanceSymbol])
+        let extraDistance = try reader.readBits(Self.deflateDistanceExtraBits[distanceSymbol])
+        let distance = Self.deflateDistanceBases[distanceSymbol] + extraDistance
         try copyDeflateMatch(length: length, distance: distance, output: &output, maxBytes: maxBytes)
       }
     }
