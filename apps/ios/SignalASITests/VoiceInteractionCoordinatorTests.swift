@@ -311,6 +311,20 @@ final class VoiceInteractionCoordinatorTests: XCTestCase {
     XCTAssertTrue(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(userDefaults: userDefaults, defaultEnabled: false))
   }
 
+  func testVoiceFeatureFlagPersistsWhisperSecondPassSetting() {
+    let suiteName = "signalasi-voice-whisper-second-pass-flags-\(UUID().uuidString)"
+    let userDefaults = UserDefaults(suiteName: suiteName)!
+    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+
+    XCTAssertTrue(VoiceFeatureFlags.isWhisperSecondPassEnabled(userDefaults: userDefaults, defaultEnabled: true))
+    VoiceFeatureFlags.setWhisperSecondPassEnabled(false, userDefaults: userDefaults)
+    XCTAssertFalse(VoiceFeatureFlags.isWhisperSecondPassEnabled(userDefaults: userDefaults, defaultEnabled: true))
+    VoiceFeatureFlags.setWhisperSecondPassEnabled(true, userDefaults: userDefaults)
+    XCTAssertTrue(VoiceFeatureFlags.isWhisperSecondPassEnabled(userDefaults: userDefaults, defaultEnabled: false))
+    VoiceFeatureFlags.resetWhisperSecondPassEnabled(userDefaults: userDefaults)
+    XCTAssertFalse(VoiceFeatureFlags.isWhisperSecondPassEnabled(userDefaults: userDefaults, defaultEnabled: false))
+  }
+
 }
 
 private enum ObserverFailure: Error {
