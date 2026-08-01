@@ -116,6 +116,11 @@
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible custom endpoint</string>
     <string name="cloud_request_failed">Cloud model call failed: %1$s</string>
     <string name="cloud_unknown_error">Unknown error</string>
+    <string name="cloud_empty_response">The model returned an empty response.</string>
+    <string name="cloud_streaming_status">Responding</string>
+    <string name="cloud_stream_interrupted_status">Interrupted</string>
+    <string name="cloud_stream_cancelled_status">Stopped</string>
+    <string name="cloud_stream_interrupted_notice">The response was interrupted. Send the request again to retry.</string>
     <string name="cloud_web_fallback_sources">I found these current sources:</string>
     <string name="cloud_web_fallback_empty">The live search finished, but no reliable source could be summarized. Please try again.</string>
     <string name="discover_segment_all">All</string>

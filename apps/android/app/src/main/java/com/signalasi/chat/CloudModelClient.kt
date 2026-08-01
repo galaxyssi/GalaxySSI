@@ -5,14 +5,17 @@ import android.util.Log
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
+import com.signalasi.chat.voice.modelstream.ModelStreamProvider
+import com.signalasi.chat.voice.modelstream.SharedCloudModelHttpClient
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okio.Buffer
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.OutputStreamWriter
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -70,6 +73,107 @@ object CloudModelClient {
     ): String {
         return send(context, contact, turns, defaultSystemPrompt(context), onToolEvent)
     }
+
+    internal fun prepareConversationStream(
+        context: Context,
+        contact: JSONObject,
+        turns: List<ChatMessage>,
+        requestId: String
+    ): PreparedCloudConversationStream {
+        validateContact(context, contact)
+        val style = contact.optString("cloud_api_style", "openai")
+        val systemPrompt = defaultSystemPrompt(context)
+        val effectiveSystemPrompt =
+            secureSystemPrompt(systemPrompt) + "\n" + CloudWebGrounding.currentEvidencePrompt()
+        val compiled = compileCloudContext(context, contact, turns, effectiveSystemPrompt)
+        logCompaction(contact, compiled)
+        return when (style) {
+            "anthropic" -> {
+                val messages = anthropicMessages(compiled.messages)
+                val body = JSONObject()
+                    .put("model", contact.getString("cloud_model"))
+                    .put("system", systemPromptWithContext(effectiveSystemPrompt, compiled.summary))
+                    .put("max_tokens", 1200)
+                    .put("messages", messages)
+                    .put("tools", anthropicWebTools())
+                    .put("stream", true)
+                PreparedCloudConversationStream(
+                    requestId = requestId,
+                    provider = ModelStreamProvider.ANTHROPIC,
+                    endpoint = contact.getString("cloud_endpoint"),
+                    headers = mapOf(
+                        "x-api-key" to contact.getString("cloud_api_key"),
+                        "anthropic-version" to "2023-06-01",
+                        "anthropic-dangerous-direct-browser-access" to "true"
+                    ),
+                    body = body,
+                    conversation = messages,
+                    conversationKey = "messages"
+                )
+            }
+            "gemini" -> {
+                val contents = geminiContents(compiled.messages)
+                val body = JSONObject()
+                    .put(
+                        "system_instruction",
+                        JSONObject().put(
+                            "parts",
+                            JSONArray().put(
+                                JSONObject().put(
+                                    "text",
+                                    systemPromptWithContext(effectiveSystemPrompt, compiled.summary)
+                                )
+                            )
+                        )
+                    )
+                    .put("contents", contents)
+                    .put(
+                        "generationConfig",
+                        JSONObject()
+                            .put("temperature", 0.7)
+                            .put("maxOutputTokens", 1200)
+                    )
+                    .put("tools", geminiWebTools())
+                PreparedCloudConversationStream(
+                    requestId = requestId,
+                    provider = ModelStreamProvider.GEMINI,
+                    endpoint = geminiStreamingEndpoint(
+                        contact.getString("cloud_endpoint"),
+                        contact.getString("cloud_api_key")
+                    ),
+                    headers = emptyMap(),
+                    body = body,
+                    conversation = contents,
+                    conversationKey = "contents"
+                )
+            }
+            else -> {
+                val messages = openAiMessages(compiled, effectiveSystemPrompt)
+                val body = JSONObject()
+                    .put("model", contact.getString("cloud_model"))
+                    .put("messages", messages)
+                    .put("stream", true)
+                    .put("tools", CloudWebGrounding.openAiTools())
+                    .put("tool_choice", "auto")
+                PreparedCloudConversationStream(
+                    requestId = requestId,
+                    provider = ModelStreamProvider.OPENAI_COMPATIBLE,
+                    endpoint = contact.getString("cloud_endpoint"),
+                    headers = openAiHeaders(contact),
+                    body = body,
+                    conversation = messages,
+                    conversationKey = "messages"
+                )
+            }
+        }
+    }
+
+    internal fun legacyConversationResponse(
+        context: Context,
+        contact: JSONObject,
+        turns: List<ChatMessage>,
+        onToolEvent: ((CloudToolEvent) -> Unit)?
+    ): String = send(context, contact, turns, onToolEvent)
 
     fun sendStructured(context: Context, contact: JSONObject, systemPrompt: String, prompt: String): String {
         return sendStructuredWithUsage(context, contact, systemPrompt, prompt).text
@@ -1360,6 +1464,23 @@ object CloudModelClient {
         return headers
     }
 
+    private fun geminiStreamingEndpoint(endpoint: String, apiKey: String): String {
+        val streaming = endpoint.replace(":generateContent", ":streamGenerateContent")
+        val separator = if (streaming.contains("?")) "&" else "?"
+        return buildString {
+            append(streaming)
+            if (!Regex("[?&]key=").containsMatchIn(streaming)) {
+                append(separator)
+                append("key=")
+                append(URLEncoder.encode(apiKey, "UTF-8"))
+                append('&')
+            } else {
+                append(separator)
+            }
+            append("alt=sse")
+        }
+    }
+
     private fun stringifyContent(value: Any?): String {
         return when (value) {
             is String -> value.trim()
@@ -1414,19 +1535,16 @@ object CloudModelClient {
         headers: Map<String, String>,
         body: JSONObject
     ): String {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20_000
-            readTimeout = 60_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            headers.forEach { (key, value) -> setRequestProperty(key, value) }
-        }
-        try {
-            OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { writer ->
-                writer.write(body.toString())
-            }
-            val responseCode = connection.responseCode
+        val client = SharedCloudModelHttpClient.client.newBuilder()
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .post(body.toString().toRequestBody(CLOUD_JSON_MEDIA_TYPE))
+            .apply { headers.forEach { (key, value) -> header(key, value) } }
+            .build()
+        return client.newCall(request).execute().use { httpResponse ->
+            val responseCode = httpResponse.code
             val traceId = VoiceLatencyTraceContext.currentTraceId()
             if (traceId.isNotBlank()) {
                 VoiceLatencyTelemetry.record(
@@ -1437,36 +1555,30 @@ object CloudModelClient {
                     once = true
                 )
             }
-            val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+            val source = httpResponse.body?.source()
             var firstChunk = true
-            val response = stream?.let {
-                BufferedReader(it.reader(Charsets.UTF_8)).use { reader ->
-                    val buffer = CharArray(8_192)
-                    buildString {
-                        while (true) {
-                            val count = reader.read(buffer)
-                            if (count < 0) break
-                            if (count == 0) continue
-                            if (firstChunk && traceId.isNotBlank()) {
-                                firstChunk = false
-                                VoiceLatencyTelemetry.record(
-                                    context,
-                                    traceId,
-                                    VoiceTraceEvents.MODEL_FIRST_DELTA,
-                                    once = true
-                                )
-                            }
-                            append(buffer, 0, count)
-                        }
+            val responseBuffer = Buffer()
+            if (source != null) {
+                while (true) {
+                    val count = source.read(responseBuffer, 8_192L)
+                    if (count < 0L) break
+                    if (count == 0L) continue
+                    if (firstChunk && traceId.isNotBlank()) {
+                        firstChunk = false
+                        VoiceLatencyTelemetry.record(
+                            context,
+                            traceId,
+                            VoiceTraceEvents.MODEL_FIRST_DELTA,
+                            once = true
+                        )
                     }
                 }
-            }.orEmpty()
+            }
+            val response = responseBuffer.readUtf8()
             if (responseCode !in 200..299) {
                 throw CloudHttpException(responseCode, response)
             }
-            return response
-        } finally {
-            connection.disconnect()
+            response
         }
     }
 
@@ -1485,6 +1597,7 @@ object CloudModelClient {
     private const val STRICT_FINALIZE_WEB_RESEARCH_PROMPT =
         "Return only the final user-facing answer from the evidence already provided. Do not emit " +
             "tool calls, XML, DSML, JSON protocol, planning text, or internal errors."
+    private val CLOUD_JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     private const val CONTEXT_COMPACTION_PROMPT =
         "Compact the supplied conversation prefix into a factual handoff for the next model turn. " +
             "Preserve user goals, current project state, decisions, constraints, unresolved work, exact paths, URLs, " +
