@@ -1,11 +1,33 @@
 import Foundation
 
-enum VoiceWhisperUserVoiceMode: String, Codable, Equatable {
+enum VoiceWhisperUserVoiceMode: String, Codable, Equatable, CaseIterable, Identifiable {
   case automatic = "AUTOMATIC"
   case fast = "FAST"
   case accurate = "ACCURATE"
   case privacy = "PRIVACY"
   case manual = "MANUAL"
+
+  var id: String { rawValue }
+
+  var displayTitle: String {
+    switch self {
+    case .automatic:
+      return "Automatic"
+    case .fast:
+      return "Fast"
+    case .accurate:
+      return "Accurate"
+    case .privacy:
+      return "Privacy"
+    case .manual:
+      return "Selected model"
+    }
+  }
+
+  static func normalized(_ value: String?) -> VoiceWhisperUserVoiceMode {
+    let clean = value?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+    return VoiceWhisperUserVoiceMode(rawValue: clean) ?? .automatic
+  }
 }
 
 enum VoiceWhisperProviderChoice: String, Codable, Equatable {

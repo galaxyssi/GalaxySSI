@@ -815,6 +815,14 @@ struct VoiceSettingsView: View {
                 .foregroundColor(.secondary)
             }
           }
+          Picker("Model selection", selection: Binding(
+            get: { store.voiceSettings.asrRuntimeMode },
+            set: { value in store.updateVoiceSettings { $0.asrRuntimeMode = value } }
+          )) {
+            ForEach(VoiceWhisperUserVoiceMode.allCases) { mode in
+              Text(mode.displayTitle).tag(mode)
+            }
+          }
           Picker("TTS Provider", selection: Binding(
             get: { store.voiceSettings.ttsProvider },
             set: { value in store.updateVoiceSettings { $0.ttsProvider = value } }

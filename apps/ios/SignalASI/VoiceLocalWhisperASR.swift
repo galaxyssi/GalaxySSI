@@ -7,6 +7,12 @@ typealias VoiceLocalWhisperTraceRecorder = (
   _ once: Bool
 ) -> Void
 
+typealias VoiceLocalWhisperRuntimeDecisionProvider = (
+  _ settings: VoiceSettings,
+  _ selectedModel: VoiceWhisperModelProfile,
+  _ audioDurationMillis: Int64
+) -> VoiceWhisperRuntimeDecision?
+
 final class VoiceLocalWhisperASR {
   private let runtime: VoiceLocalWhisperRuntime
   private let decoder: VoiceWhisperAudioDecoding
@@ -14,6 +20,7 @@ final class VoiceLocalWhisperASR {
   private let modelFileProvider: (VoiceWhisperModelProfile) throws -> URL?
   private let markModelLoaded: (String) -> Void
   private let markModelUnloaded: (String?) -> Void
+  private let runtimeDecisionProvider: VoiceLocalWhisperRuntimeDecisionProvider
   private let trace: VoiceLocalWhisperTraceRecorder
   private let elapsedClock: () -> Int64
   private let lock = NSLock()
@@ -27,6 +34,8 @@ final class VoiceLocalWhisperASR {
     modelFileProvider: ((VoiceWhisperModelProfile) throws -> URL?)? = nil,
     markModelLoaded: ((String) -> Void)? = nil,
     markModelUnloaded: ((String?) -> Void)? = nil,
+    benchmarkManager: VoiceWhisperBenchmarkManager? = nil,
+    runtimeDecisionProvider: VoiceLocalWhisperRuntimeDecisionProvider? = nil,
     elapsedClock: @escaping () -> Int64 = VoiceLocalWhisperASR.defaultElapsedClock,
     trace: @escaping VoiceLocalWhisperTraceRecorder = VoiceLocalWhisperASR.defaultTraceRecorder
   ) {
@@ -42,6 +51,16 @@ final class VoiceLocalWhisperASR {
     }
     self.markModelLoaded = markModelLoaded ?? { modelManager.markLoaded($0) }
     self.markModelUnloaded = markModelUnloaded ?? { modelManager.markUnloaded($0) }
+    let resolvedBenchmarkManager = benchmarkManager ?? VoiceWhisperBenchmarkManager()
+    self.runtimeDecisionProvider = runtimeDecisionProvider ?? { settings, selectedModel, audioDurationMillis in
+      resolvedBenchmarkManager.decide(
+        userMode: settings.asrRuntimeMode,
+        selectedProfileId: selectedModel.id,
+        context: VoiceWhisperBenchmarkDecisionContext(
+          utteranceDurationMillis: audioDurationMillis
+        )
+      )
+    }
     self.elapsedClock = elapsedClock
     self.trace = trace
   }
@@ -53,15 +72,17 @@ final class VoiceLocalWhisperASR {
     traceId: String = VoiceLatencyTraceContext.currentTraceId()
   ) async throws -> VoiceLocalWhisperTranscriptionResult {
     let startedAtNs = elapsedClock()
-    let model = VoiceWhisperModelCatalog.model(settings.asrModelId)
+    let selectedModel = VoiceWhisperModelCatalog.model(settings.asrModelId)
+    var model = selectedModel
     let requestedLanguage = language ?? settings.preferredLocaleIdentifier
     let runtimeLanguage = VoiceWhisperLanguagePolicy.normalizedRecognitionLanguage(requestedLanguage)
-    let threadCount = min(4, max(1, ProcessInfo.processInfo.processorCount))
-    let baseAttributes = [
+    var threadCount = min(4, max(1, ProcessInfo.processInfo.processorCount))
+    var baseAttributes = [
       "asr_provider": "whisper.cpp",
-      "model_profile_id": model.id,
+      "model_profile_id": selectedModel.id,
       "execution_mode": "full_file",
       "thread_count": String(threadCount),
+      "runtime_mode": settings.asrRuntimeMode.rawValue,
     ]
     record(traceId, VoiceTraceEvents.asrFinalStarted, baseAttributes, once: true)
     do {
@@ -70,6 +91,15 @@ final class VoiceLocalWhisperASR {
       let audio = try decoder.decode(fileURL: audioFile)
       guard !audio.samples.isEmpty else {
         throw VoiceLocalWhisperASRError.emptyAudio
+      }
+      if let decision = runtimeDecisionProvider(settings, selectedModel, audio.durationMs),
+         decision.provider == .local,
+         let decidedModelId = decision.fastProfileId {
+        model = VoiceWhisperModelCatalog.model(decidedModelId)
+        threadCount = decision.threadCount ?? threadCount
+        baseAttributes["model_profile_id"] = model.id
+        baseAttributes["thread_count"] = String(threadCount)
+        baseAttributes["runtime_decision"] = decision.provider.rawValue
       }
       let audioAttributes = baseAttributes.merging([
         "audio_duration_ms": String(audio.durationMs),

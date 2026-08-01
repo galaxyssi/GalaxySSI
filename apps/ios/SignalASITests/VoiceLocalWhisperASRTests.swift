@@ -76,6 +76,42 @@ final class VoiceLocalWhisperASRTests: XCTestCase {
     XCTAssertTrue(traces.contains(VoiceTraceEvents.asrFinalFailed))
   }
 
+  func testRuntimeDecisionCanSwitchCertifiedModelAndThreadCount() async throws {
+    let runtime = FakeWhisperRuntime(response: "policy model")
+    let tinyURL = FileManager.default.temporaryDirectory.appendingPathComponent("ggml-tiny.bin")
+    let baseURL = FileManager.default.temporaryDirectory.appendingPathComponent("ggml-base.bin")
+    let service = VoiceLocalWhisperASR(
+      runtime: runtime,
+      modelAvailable: { ["tiny", "base"].contains($0.id) },
+      modelFileProvider: { model in model.id == "base" ? baseURL : tinyURL },
+      runtimeDecisionProvider: { _, selected, _ in
+        VoiceWhisperRuntimeDecision(
+          provider: .local,
+          fastProfileId: selected.id == "tiny" ? "base" : selected.id,
+          fastMode: .finalOnly,
+          accurateProfileId: nil,
+          accurateMode: nil,
+          partialIntervalMillis: nil,
+          threadCount: 6,
+          runSecondPass: false,
+          reasons: ["test decision"]
+        )
+      }
+    )
+
+    let result = try await service.transcribe(
+      audioFile: try waveFile(),
+      settings: settings(asrModelId: "tiny", runtimeMode: .automatic),
+      language: "en-US",
+      traceId: "trace-policy-asr"
+    )
+
+    XCTAssertEqual(result.model.id, "base")
+    XCTAssertEqual(runtime.requests.single?.model.id, "base")
+    XCTAssertEqual(runtime.requests.single?.modelFileURL, baseURL)
+    XCTAssertEqual(runtime.requests.single?.threadCount, 6)
+  }
+
   func testLanguageAndTranscriptPolicyMatchesAndroidLocalWhisperRules() {
     XCTAssertEqual(VoiceWhisperLanguagePolicy.normalizedRecognitionLanguage("zh-CN"), "zh")
     XCTAssertEqual(VoiceWhisperLanguagePolicy.normalizedRecognitionLanguage("en-US"), "en")
@@ -119,14 +155,18 @@ final class VoiceLocalWhisperASRTests: XCTestCase {
     return url
   }
 
-  private func settings(asrModelId: String) -> VoiceSettings {
+  private func settings(
+    asrModelId: String,
+    runtimeMode: VoiceWhisperUserVoiceMode = .manual
+  ) -> VoiceSettings {
     VoiceSettings(
       wakeListeningEnabled: false,
       speechRecognitionEnabled: true,
       textToSpeechEnabled: true,
       autoSendTranscripts: false,
       preferredLocaleIdentifier: "en-US",
-      asrModelId: asrModelId
+      asrModelId: asrModelId,
+      asrRuntimeMode: runtimeMode
     )
   }
 }
