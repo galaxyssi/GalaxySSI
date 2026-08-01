@@ -6,6 +6,7 @@ let voiceLocalWhisperRuntimeV2Flag = "voice.local_whisper_runtime_v2"
 let voiceWhisperAdaptivePartialV1Flag = "voice.whisper_adaptive_partial_v1"
 let voiceWhisperAutoBenchmarkV1Flag = "voice.whisper_auto_benchmark_v1"
 let voiceWhisperPolicyEngineV1Flag = "voice.whisper_policy_engine_v1"
+let voiceWhisperSecondPassV1Flag = "voice.whisper_second_pass_v1"
 
 enum VoiceFeatureFlags {
   static func isCoordinatorEnabled(
@@ -134,6 +135,27 @@ enum VoiceFeatureFlags {
     userDefaults.removeObject(forKey: voiceWhisperPolicyEngineV1Flag)
   }
 
+  static func isWhisperSecondPassEnabled(
+    userDefaults: UserDefaults = .standard,
+    defaultEnabled: Bool = defaultWhisperSecondPassEnabled
+  ) -> Bool {
+    guard userDefaults.object(forKey: voiceWhisperSecondPassV1Flag) != nil else {
+      return defaultEnabled
+    }
+    return userDefaults.bool(forKey: voiceWhisperSecondPassV1Flag)
+  }
+
+  static func setWhisperSecondPassEnabled(
+    _ enabled: Bool,
+    userDefaults: UserDefaults = .standard
+  ) {
+    userDefaults.set(enabled, forKey: voiceWhisperSecondPassV1Flag)
+  }
+
+  static func resetWhisperSecondPassEnabled(userDefaults: UserDefaults = .standard) {
+    userDefaults.removeObject(forKey: voiceWhisperSecondPassV1Flag)
+  }
+
   #if DEBUG
   private static let defaultCoordinatorEnabled = true
   private static let defaultPcmCaptureEnabled = true
@@ -141,6 +163,7 @@ enum VoiceFeatureFlags {
   private static let defaultWhisperAdaptivePartialEnabled = true
   private static let defaultWhisperAutoBenchmarkEnabled = true
   private static let defaultWhisperPolicyEngineEnabled = true
+  private static let defaultWhisperSecondPassEnabled = true
   #else
   private static let defaultCoordinatorEnabled = false
   private static let defaultPcmCaptureEnabled = false
@@ -148,5 +171,6 @@ enum VoiceFeatureFlags {
   private static let defaultWhisperAdaptivePartialEnabled = false
   private static let defaultWhisperAutoBenchmarkEnabled = false
   private static let defaultWhisperPolicyEngineEnabled = false
+  private static let defaultWhisperSecondPassEnabled = false
   #endif
 }
