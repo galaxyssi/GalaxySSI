@@ -215,6 +215,7 @@
     A10000000000000000000687 /* FileAgentWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000687 /* FileAgentWorkspaceStore.swift */; };
     A10000000000000000000689 /* AgentTaskRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000689 /* AgentTaskRuntime.swift */; };
     A10000000000000000000692 /* AgentTaskLivenessPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000692 /* AgentTaskLivenessPolicy.swift */; };
+    A10000000000000000000693 /* AgentExecutionPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000693 /* AgentExecutionPresentation.swift */; };
     A10000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift */; };
     A10000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift */; };
     A10000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift */; };
@@ -622,6 +623,7 @@
     A20000000000000000000687 /* FileAgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAgentWorkspaceStore.swift; sourceTree = "<group>"; };
     A20000000000000000000689 /* AgentTaskRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskRuntime.swift; sourceTree = "<group>"; };
     A20000000000000000000692 /* AgentTaskLivenessPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskLivenessPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000693 /* AgentExecutionPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionPresentation.swift; sourceTree = "<group>"; };
     A20000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceNativeToolExecutor.swift; sourceTree = "<group>"; };
     A20000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceNativeToolStateStore.swift; sourceTree = "<group>"; };
     A20000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPhoneCapabilityStatusSnapshotProvider.swift; sourceTree = "<group>"; };
@@ -1033,6 +1035,7 @@
         A20000000000000000000689 /* AgentTaskRuntime.swift */,
         A20000000000000000000692 /* AgentTaskLivenessPolicy.swift */,
         A20000000000000000000425 /* AgentExecutionLoopTimeline.swift */,
+        A20000000000000000000693 /* AgentExecutionPresentation.swift */,
         A20000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift */,
         A20000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift */,
         A20000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift */,
@@ -1591,6 +1594,7 @@
         A10000000000000000000689 /* AgentTaskRuntime.swift in Sources */,
         A10000000000000000000692 /* AgentTaskLivenessPolicy.swift in Sources */,
         A10000000000000000000425 /* AgentExecutionLoopTimeline.swift in Sources */,
+        A10000000000000000000693 /* AgentExecutionPresentation.swift in Sources */,
         A10000000000000000000316 /* AgentWorkspaceNativeToolExecutor.swift in Sources */,
         A10000000000000000000317 /* AgentWorkspaceNativeToolStateStore.swift in Sources */,
         A10000000000000000000318 /* AgentPhoneCapabilityStatusSnapshotProvider.swift in Sources */,
