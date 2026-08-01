@@ -334,7 +334,7 @@ enum VoiceProviderCapabilityDetector {
       offlineAsrAvailable: offlineAsrAvailable ?? offlineSpeechRecognizerAvailable(localeIdentifier: locale),
       validatedNetworkAvailable: validatedNetworkAvailable,
       ttsInitialized: ttsInitialized,
-      ttsReady: ttsReady ?? resolvedTtsEngineCount > 0,
+      ttsReady: ttsReady ?? (resolvedTtsEngineCount > 0),
       ttsEngineCount: resolvedTtsEngineCount,
       ttsLanguageSupported: ttsLanguageSupported ?? Self.ttsLanguageSupported(localeIdentifier: locale),
       ttsLanguage: locale

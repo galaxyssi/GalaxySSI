@@ -631,6 +631,6 @@ enum LocalModelRuntimeSettings {
 
 private extension Int64 {
   func clamped(lower: Int64, upper: Int64) -> Int64 {
-    min(max(self, lower), upper)
+    Swift.min(Swift.max(self, lower), upper)
   }
 }
