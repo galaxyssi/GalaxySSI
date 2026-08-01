@@ -2,6 +2,10 @@ import Foundation
 
 let agentToolHandleContract = "signalasi.tool-handle/1.0"
 
+enum AgentExplicitToolHandleContract {
+  static let version = agentToolHandleContract
+}
+
 struct AgentExplicitToolHandleException: Error, Equatable {
   var code: String
   var message: String
@@ -14,7 +18,9 @@ struct AgentExplicitToolHandleException: Error, Equatable {
   }
 }
 
-struct AgentExplicitToolHandleScope: Equatable {
+typealias AgentExplicitToolHandleError = AgentExplicitToolHandleException
+
+struct AgentExplicitToolHandleScope: Codable, Equatable {
   var ownerId: String
   var contextId: String
 
@@ -31,6 +37,43 @@ struct AgentExplicitToolHandleScope: Equatable {
       contextId: contextId.isEmpty ? context.sessionId : context.conversationId
     )
   }
+
+  enum CodingKeys: String, CodingKey {
+    case ownerId = "owner_id"
+    case contextId = "context_id"
+  }
+}
+
+struct AgentExplicitToolHandleResource: Codable, Equatable {
+  var resourceId: String
+  var payload: AgentRunControlPayload
+
+  init(
+    resourceId: String,
+    payload: AgentRunControlPayload = [:]
+  ) {
+    self.resourceId = resourceId
+    self.payload = payload
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case resourceId = "resource_id"
+    case payload
+  }
+}
+
+struct AgentExplicitToolHandleResolvedResource {
+  var rawValue: Any
+  private var explicitResource: AgentExplicitToolHandleResource?
+
+  var payload: AgentRunControlPayload {
+    explicitResource?.payload ?? [:]
+  }
+
+  init(_ rawValue: Any) {
+    self.rawValue = rawValue
+    self.explicitResource = rawValue as? AgentExplicitToolHandleResource
+  }
 }
 
 struct AgentExplicitToolHandleResolution {
@@ -38,8 +81,49 @@ struct AgentExplicitToolHandleResolution {
   var kind: String
   var capabilities: Set<String>
   var resourceId: String
-  var resource: Any
+  var resource: AgentExplicitToolHandleResolvedResource
   var expiresAtEpochMillis: Int64
+  var useCount: Int64
+}
+
+struct AgentExplicitToolHandlePublicRecord: Codable, Equatable {
+  var contract: String
+  var handleId: String
+  var kind: String
+  var capabilities: [String]
+  var ownerId: String
+  var contextId: String
+  var metadata: AgentRunControlPayload
+  var createdAtEpochMillis: Int64
+  var lastUsedAtEpochMillis: Int64
+  var expiresAtEpochMillis: Int64
+  var useCount: Int64
+
+  enum CodingKeys: String, CodingKey {
+    case contract
+    case handleId = "handle_id"
+    case kind
+    case capabilities
+    case ownerId = "owner_id"
+    case contextId = "context_id"
+    case metadata
+    case createdAtEpochMillis = "created_at_epoch_ms"
+    case lastUsedAtEpochMillis = "last_used_at_epoch_ms"
+    case expiresAtEpochMillis = "expires_at_epoch_ms"
+    case useCount = "use_count"
+  }
+}
+
+struct AgentExplicitToolHandleStatus: Codable, Equatable {
+  var contract: String
+  var activeCount: Int
+  var byKind: [String: Int]
+
+  enum CodingKeys: String, CodingKey {
+    case contract
+    case activeCount = "active_count"
+    case byKind = "by_kind"
+  }
 }
 
 final class AgentExplicitToolHandleRegistry {
@@ -49,6 +133,13 @@ final class AgentExplicitToolHandleRegistry {
   ) {
     self.clock = clock
     self.maxHandles = maxHandles
+  }
+
+  convenience init(
+    nowMillis: @escaping () -> Int64,
+    maxHandles: Int = 512
+  ) {
+    self.init(clock: nowMillis, maxHandles: maxHandles)
   }
 
   func create(
@@ -61,6 +152,53 @@ final class AgentExplicitToolHandleRegistry {
     idleTimeoutMillis: Int64 = AgentExplicitToolHandleRegistry.defaultIdleTimeoutMillis,
     metadata: AgentMcpJSONObject = [:]
   ) throws -> AgentMcpJSONObject {
+    let entry = try createEntry(
+      kind: kind,
+      resourceId: resourceId,
+      scope: scope,
+      capabilities: capabilities,
+      resource: AgentExplicitToolHandleResolvedResource(resource),
+      ttlMillis: ttlMillis,
+      idleTimeoutMillis: idleTimeoutMillis,
+      metadata: metadata
+    )
+    return publicEntry(entry)
+  }
+
+  func create(
+    kind: String,
+    resourceId: String,
+    scope: AgentExplicitToolHandleScope,
+    capabilities: Set<String>,
+    resource: AgentExplicitToolHandleResource? = nil,
+    ttlMillis: Int64 = AgentExplicitToolHandleRegistry.defaultTTLMillis,
+    idleTimeoutMillis: Int64 = AgentExplicitToolHandleRegistry.defaultIdleTimeoutMillis,
+    metadata: AgentRunControlPayload = [:]
+  ) throws -> AgentExplicitToolHandlePublicRecord {
+    let resolvedResource = resource ?? AgentExplicitToolHandleResource(resourceId: resourceId)
+    let entry = try createEntry(
+      kind: kind,
+      resourceId: resourceId,
+      scope: scope,
+      capabilities: capabilities,
+      resource: AgentExplicitToolHandleResolvedResource(resolvedResource),
+      ttlMillis: ttlMillis,
+      idleTimeoutMillis: idleTimeoutMillis,
+      metadata: mcpMetadata(from: metadata)
+    )
+    return publicRecord(entry)
+  }
+
+  private func createEntry(
+    kind: String,
+    resourceId: String,
+    scope: AgentExplicitToolHandleScope,
+    capabilities: Set<String>,
+    resource: AgentExplicitToolHandleResolvedResource,
+    ttlMillis: Int64,
+    idleTimeoutMillis: Int64,
+    metadata: AgentMcpJSONObject
+  ) throws -> Entry {
     let normalizedKind = try checked(kind, field: "kind", maxLength: 80).lowercased()
     let normalizedResourceId = try checked(resourceId, field: "resource_id", maxLength: 512)
     guard normalizedKind.range(of: "^[a-z0-9][a-z0-9._-]{0,79}$", options: .regularExpression) != nil else {
@@ -104,7 +242,7 @@ final class AgentExplicitToolHandleRegistry {
       idleTimeoutMillis: idle
     )
     entries[handleId] = entry
-    return publicEntry(entry)
+    return entry
   }
 
   func resolve(
@@ -148,7 +286,8 @@ final class AgentExplicitToolHandleRegistry {
       capabilities: entry.capabilities,
       resourceId: entry.resourceId,
       resource: entry.resource,
-      expiresAtEpochMillis: entry.expiresAtEpochMillis
+      expiresAtEpochMillis: entry.expiresAtEpochMillis,
+      useCount: entry.useCount
     )
   }
 
@@ -171,11 +310,13 @@ final class AgentExplicitToolHandleRegistry {
     return true
   }
 
-  func revokeResource(kind: String, resourceId: String) -> Int {
+  func revokeResource(kind: String, resourceId: String) throws -> Int {
+    let normalizedKind = try checked(kind, field: "kind", maxLength: 80).lowercased()
+    let normalizedResourceId = try checked(resourceId, field: "resource_id", maxLength: 512)
     lock.lock()
     defer { lock.unlock() }
     let targets = entries.values
-      .filter { $0.kind == kind && $0.resourceId == resourceId }
+      .filter { $0.kind == normalizedKind && $0.resourceId == normalizedResourceId }
       .map(\.handleId)
     for target in targets {
       entries.removeValue(forKey: target)
@@ -183,25 +324,36 @@ final class AgentExplicitToolHandleRegistry {
     return targets.count
   }
 
-  func status() -> AgentMcpJSONObject {
+  func status() -> AgentExplicitToolHandleStatus {
     lock.lock()
     defer { lock.unlock() }
     pruneLocked(clock())
-    var byKind: AgentMcpJSONObject = [:]
+    var byKind: [String: Int] = [:]
     for entry in entries.values {
-      byKind[entry.kind] = .int((byKind[entry.kind]?.intValue ?? 0) + 1)
+      byKind[entry.kind, default: 0] += 1
     }
+    return AgentExplicitToolHandleStatus(
+      contract: AgentExplicitToolHandleContract.version,
+      activeCount: entries.count,
+      byKind: byKind
+    )
+  }
+
+  func statusJSONObject() -> AgentMcpJSONObject {
+    let status = status()
     return [
-      "contract": .string(agentToolHandleContract),
-      "active_count": .int(Int64(entries.count)),
-      "by_kind": .object(byKind)
+      "contract": .string(status.contract),
+      "active_count": .int(Int64(status.activeCount)),
+      "by_kind": .object(status.byKind.mapValues { .int(Int64($0)) })
     ]
   }
 
   static let shared = AgentExplicitToolHandleRegistry()
   static let defaultTtlMillis: Int64 = 30 * 60 * 1_000
+  static let defaultTTLMillis = defaultTtlMillis
   static let defaultIdleTimeoutMillis: Int64 = 10 * 60 * 1_000
   static let maxTtlMillis: Int64 = 24 * 60 * 60 * 1_000
+  static let maxTTLMillis = maxTtlMillis
 
   private final class Entry {
     var handleId: String
@@ -210,7 +362,7 @@ final class AgentExplicitToolHandleRegistry {
     var ownerId: String
     var contextId: String
     var capabilities: Set<String>
-    var resource: Any
+    var resource: AgentExplicitToolHandleResolvedResource
     var metadata: AgentMcpJSONObject
     var createdAtEpochMillis: Int64
     var lastUsedAtEpochMillis: Int64
@@ -225,7 +377,7 @@ final class AgentExplicitToolHandleRegistry {
       ownerId: String,
       contextId: String,
       capabilities: Set<String>,
-      resource: Any,
+      resource: AgentExplicitToolHandleResolvedResource,
       metadata: AgentMcpJSONObject,
       createdAtEpochMillis: Int64,
       lastUsedAtEpochMillis: Int64,
@@ -282,6 +434,22 @@ final class AgentExplicitToolHandleRegistry {
     ]
   }
 
+  private func publicRecord(_ entry: Entry) -> AgentExplicitToolHandlePublicRecord {
+    AgentExplicitToolHandlePublicRecord(
+      contract: AgentExplicitToolHandleContract.version,
+      handleId: entry.handleId,
+      kind: entry.kind,
+      capabilities: entry.capabilities.sorted(),
+      ownerId: entry.ownerId,
+      contextId: entry.contextId,
+      metadata: runControlMetadata(from: entry.metadata),
+      createdAtEpochMillis: entry.createdAtEpochMillis,
+      lastUsedAtEpochMillis: entry.lastUsedAtEpochMillis,
+      expiresAtEpochMillis: entry.expiresAtEpochMillis,
+      useCount: entry.useCount
+    )
+  }
+
   private func checked(_ value: String, field: String, maxLength: Int) throws -> String {
     let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
     if normalized.count > maxLength || normalized.unicodeScalars.contains(where: { $0.value < 32 }) {
@@ -297,6 +465,38 @@ final class AgentExplicitToolHandleRegistry {
   private func newHandleId(kind: String) -> String {
     let prefix = kind.filter { $0.isLetter || $0.isNumber }.prefix(8)
     return "sth_\(prefix)_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+  }
+
+  private func mcpMetadata(from values: AgentRunControlPayload) -> AgentMcpJSONObject {
+    values.mapValues { value in
+      switch value {
+      case .string(let text):
+        return .string(text)
+      case .int(let number):
+        return .int(number)
+      case .bool(let flag):
+        return .bool(flag)
+      }
+    }
+  }
+
+  private func runControlMetadata(from values: AgentMcpJSONObject) -> AgentRunControlPayload {
+    var result: AgentRunControlPayload = [:]
+    for (key, value) in values {
+      switch value {
+      case .bool(let flag):
+        result[key] = .bool(flag)
+      case .int(let number):
+        result[key] = .int(number)
+      case .double(let number):
+        result[key] = .string(String(number))
+      case .string(let text):
+        result[key] = .string(text)
+      case .null, .object, .array:
+        continue
+      }
+    }
+    return result
   }
 
   private func publicMetadata(_ values: AgentMcpJSONObject) throws -> AgentMcpJSONObject {

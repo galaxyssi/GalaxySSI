@@ -26,7 +26,7 @@ final class AgentExplicitToolHandlesTests: XCTestCase {
       requiredCapability: "browser.navigate"
     )
     XCTAssertEqual(resolved.resourceId, "internal-browser-resource")
-    XCTAssertEqual((resolved.resource as? [String: String])?["url"], "")
+    XCTAssertEqual((resolved.resource.rawValue as? [String: String])?["url"], "")
 
     XCTAssertThrowsError(
       try registry.resolve(
@@ -78,7 +78,7 @@ final class AgentExplicitToolHandlesTests: XCTestCase {
       handleId: replacement["handle_id"]?.stringValue ?? "",
       scope: AgentExplicitToolHandleScope(ownerId: "owner")
     ))
-    XCTAssertEqual(registry.status()["active_count"]?.intValue, 0)
+    XCTAssertEqual(registry.status().activeCount, 0)
   }
 
   private final class MutableClock {
