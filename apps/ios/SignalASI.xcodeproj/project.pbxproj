@@ -39,6 +39,7 @@
     A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000708 /* AgentModelPlannerSettings.swift */; };
     A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000709 /* LanguagePolicySettings.swift */; };
     A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000710 /* CodexStyleResponsePolicy.swift */; };
+    A10000000000000000000711 /* AppDisplaySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000711 /* AppDisplaySettings.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -533,6 +534,7 @@
     A20000000000000000000708 /* AgentModelPlannerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlannerSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000709 /* LanguagePolicySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettings.swift; sourceTree = "<group>"; };
     A20000000000000000000710 /* CodexStyleResponsePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexStyleResponsePolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000711 /* AppDisplaySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDisplaySettings.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1017,6 +1019,7 @@
         A20000000000000000000708 /* AgentModelPlannerSettings.swift */,
         A20000000000000000000709 /* LanguagePolicySettings.swift */,
         A20000000000000000000710 /* CodexStyleResponsePolicy.swift */,
+        A20000000000000000000711 /* AppDisplaySettings.swift */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
@@ -1609,6 +1612,7 @@
         A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */,
         A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */,
         A10000000000000000000710 /* CodexStyleResponsePolicy.swift in Sources */,
+        A10000000000000000000711 /* AppDisplaySettings.swift in Sources */,
         A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */,
         A10000000000000000000705 /* AgentSafetySettings.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
