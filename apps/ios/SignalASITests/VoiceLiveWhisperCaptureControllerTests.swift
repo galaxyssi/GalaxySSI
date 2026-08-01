@@ -69,6 +69,26 @@ final class VoiceLiveWhisperCaptureControllerTests: XCTestCase {
     XCTAssertEqual(routeFinalTranscriptCount(transitions.last?.commands ?? []), 1)
   }
 
+  func testUpdateHandlerCanBeReplacedForLiveDisplayText() {
+    let session = FakeCaptureLiveWhisperSession(modelProfileId: "tiny")
+    let controller = controller(session: session)
+    var displayTexts: [String] = []
+    controller.setUpdateHandler { update in
+      displayTexts.append(update.transcript.displayText)
+    }
+
+    XCTAssertTrue(
+      controller.start(
+        voiceSessionId: "voice-1",
+        settings: settings(),
+        scheduler: NoopCaptureScheduler()
+      )
+    )
+    session.emit(stable: "local", unstable: " whisper", revision: 1, final: false)
+
+    XCTAssertEqual(displayTexts, ["local whisper"])
+  }
+
   func testFinishReturnsNativeResultAndCloseClosesSession() async throws {
     let session = FakeCaptureLiveWhisperSession(modelProfileId: "tiny")
     session.finalResult = Self.nativeResult("done")
