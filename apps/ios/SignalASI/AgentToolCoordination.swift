@@ -158,10 +158,6 @@ private extension Array where Element == String {
 }
 
 private extension String {
-  func ifBlank(_ fallback: String) -> String {
-    trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : self
-  }
-
   func clamped(to limit: Int) -> String {
     String(prefix(max(limit, 0)))
   }

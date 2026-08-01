@@ -291,7 +291,9 @@ extension Data {
 
 extension Dictionary where Key == String, Value == Any {
   func string(_ key: String) -> String {
-    self[key] as? String ?? ""
+    if let value = self[key] as? String { return value }
+    if let value = self[key] as? NSNumber { return value.stringValue }
+    return ""
   }
 
   func int(_ key: String) -> Int {

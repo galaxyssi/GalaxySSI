@@ -279,7 +279,7 @@ final class AgentTaskSupervisor {
 
   init(
     workspaceStore: AgentWorkspaceStore,
-    maxConcurrentReadReasoningTasks: Int = Self.defaultMaxReadReasoningTasks,
+    maxConcurrentReadReasoningTasks: Int = AgentTaskSupervisor.defaultMaxReadReasoningTasks,
     clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) },
     livenessPolicy: AgentTaskLivenessPolicy = AgentTaskLivenessPolicy(),
     livenessListener: @escaping AgentTaskLivenessListener = { _ in },

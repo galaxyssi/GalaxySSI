@@ -1046,9 +1046,3 @@ private final class ActionExecutorAgentTransport: AgentAdapterTransport {
   private static let eventReplay = 32
   private static let maxTrackedRuns = 256
 }
-
-private extension String {
-  func ifBlank(_ fallback: String) -> String {
-    trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : self
-  }
-}

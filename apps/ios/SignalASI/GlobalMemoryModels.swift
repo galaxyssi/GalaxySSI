@@ -1139,10 +1139,3 @@ extension GlobalAgentText {
     return Double(intersection) / Double(max(min(left.count, right.count), 1))
   }
 }
-
-private extension String {
-  var nonEmpty: String? {
-    let clean = trimmingCharacters(in: .whitespacesAndNewlines)
-    return clean.isEmpty ? nil : clean
-  }
-}

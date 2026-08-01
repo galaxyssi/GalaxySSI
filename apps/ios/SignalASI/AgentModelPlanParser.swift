@@ -565,10 +565,6 @@ private extension String {
     String(prefix(max(count, 0)))
   }
 
-  func ifBlank(_ fallback: String) -> String {
-    trimmedForModelPlan.isEmpty ? fallback : self
-  }
-
   func removingPrefix(_ prefix: String) -> String {
     hasPrefix(prefix) ? String(dropFirst(prefix.count)) : self
   }

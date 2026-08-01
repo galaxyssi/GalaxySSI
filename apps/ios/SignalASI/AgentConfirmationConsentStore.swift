@@ -14,7 +14,7 @@ final class AgentGrantBackedConfirmationConsentStore: AgentConfirmationConsentSt
 
   init(
     grantStore: InMemoryAgentPermissionGrantStore = InMemoryAgentPermissionGrantStore(),
-    subjectId: String = Self.defaultSubjectId
+    subjectId: String = AgentGrantBackedConfirmationConsentStore.defaultSubjectId
   ) {
     self.grantStore = grantStore
     self.subjectId = subjectId
