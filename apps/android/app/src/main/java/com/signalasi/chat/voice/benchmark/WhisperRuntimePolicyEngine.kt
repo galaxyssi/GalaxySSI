@@ -37,7 +37,8 @@ data class WhisperRuntimeEnvironment(
     val decodeQueueDepth: Int,
     val utteranceDurationMs: Long,
     val highRiskTask: Boolean,
-    val remoteAllowed: Boolean
+    val remoteAllowed: Boolean,
+    val accuracySensitiveTask: Boolean = false
 )
 
 data class WhisperRuntimeCandidate(
@@ -113,7 +114,11 @@ object WhisperRuntimePolicyEngine {
                     remoteOrUnavailable(input, reasons)
                 } else {
                     val certification = requireNotNull(fast.certification)
-                    val secondPass = input.userMode == WhisperUserVoiceMode.AUTOMATIC &&
+                    val secondPass = (
+                        input.userMode == WhisperUserVoiceMode.AUTOMATIC ||
+                            environment.highRiskTask ||
+                            environment.accuracySensitiveTask
+                        ) &&
                         shouldRunSecondPass(environment) && accurate.firstOrNull { it.profile.id != fast.profile.id } != null
                     val accurateCandidate = if (secondPass) {
                         accurate.firstOrNull { it.profile.id != fast.profile.id }
@@ -130,7 +135,10 @@ object WhisperRuntimePolicyEngine {
                     unavailable(reasons)
                 } else {
                     reasons += "Privacy mode keeps audio on this device"
-                    localDecision(fast, null, environment, reasons)
+                    val accurateCandidate = if (environment.highRiskTask && shouldRunSecondPass(environment)) {
+                        accurate.firstOrNull { it.profile.id != fast.profile.id }
+                    } else null
+                    localDecision(fast, accurateCandidate, environment, reasons)
                 }
             }
 
@@ -157,9 +165,12 @@ object WhisperRuntimePolicyEngine {
                     remoteOrUnavailable(input, reasons)
                 } else {
                     reasons += "Manual mode uses the selected certified model"
+                    val accurateCandidate = if (environment.highRiskTask && shouldRunSecondPass(environment)) {
+                        accurate.firstOrNull { it.profile.id != selected.profile.id }
+                    } else null
                     localDecision(
                         selected,
-                        null,
+                        accurateCandidate,
                         environment,
                         reasons,
                         forceFinal = selected.certification?.realtimeCertified != true
@@ -248,7 +259,9 @@ object WhisperRuntimePolicyEngine {
             environment.thermalStatus < THERMAL_SEVERE &&
             (environment.batteryPercent == null || environment.charging || environment.batteryPercent >= LOW_BATTERY_PERCENT) &&
             environment.decodeQueueDepth == 0 &&
-            (environment.highRiskTask || environment.utteranceDurationMs >= MIN_SECOND_PASS_AUDIO_MS)
+            (environment.highRiskTask ||
+                environment.accuracySensitiveTask ||
+                environment.utteranceDurationMs >= MIN_SECOND_PASS_AUDIO_MS)
 
     private fun remoteOrUnavailable(
         input: WhisperRuntimePolicyInput,
