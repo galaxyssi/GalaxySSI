@@ -83,7 +83,7 @@ extension CloudModelClient {
       throw SignalASIError.missingAPIKey
     }
     let languagePolicy = await store.languagePolicy
-    let systemPrompt = Self.systemPrompt(languagePolicy: languagePolicy)
+    let systemPrompt = Self.systemPrompt(languagePolicy: languagePolicy) + "\n" + CloudWebGrounding.currentEvidencePrompt()
     return try conversationStreamingRequest(
       model: model,
       apiKey: apiKey,
@@ -162,7 +162,9 @@ extension CloudModelClient {
     let body = try Self.bodyJSON([
       "model": model.modelId,
       "messages": Self.openAIMessages(turns: turns, systemPrompt: systemPrompt),
-      "stream": true
+      "stream": true,
+      "tools": CloudModelStreamToolSchemas.openAITools(),
+      "tool_choice": "auto"
     ])
     return ModelStreamRequest(
       requestId: Self.normalizedStreamRequestId(requestId),
@@ -187,6 +189,7 @@ extension CloudModelClient {
       "system": systemPrompt,
       "max_tokens": 1200,
       "messages": Self.anthropicMessages(turns: turns),
+      "tools": CloudModelStreamToolSchemas.anthropicTools(),
       "stream": true
     ])
     return ModelStreamRequest(
@@ -214,7 +217,8 @@ extension CloudModelClient {
     let body = try Self.bodyJSON([
       "system_instruction": ["parts": [["text": systemPrompt]]],
       "contents": Self.geminiContents(turns: turns),
-      "generationConfig": ["temperature": 0.7, "maxOutputTokens": 1200]
+      "generationConfig": ["temperature": 0.7, "maxOutputTokens": 1200],
+      "tools": CloudModelStreamToolSchemas.geminiTools()
     ])
     return ModelStreamRequest(
       requestId: Self.normalizedStreamRequestId(requestId),

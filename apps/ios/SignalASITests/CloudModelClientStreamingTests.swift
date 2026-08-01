@@ -23,6 +23,8 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertEqual(request.headers["Authorization"], "Bearer sk-live")
     XCTAssertEqual(body["model"] as? String, "model-id")
     XCTAssertEqual(body["stream"] as? Bool, true)
+    XCTAssertEqual(body["tool_choice"] as? String, "auto")
+    XCTAssertFalse((body["tools"] as? [[String: Any]])?.isEmpty ?? true)
     XCTAssertEqual(messages.map { $0["role"] as? String }, ["system", "user", "assistant"])
     XCTAssertEqual(messages.compactMap { $0["content"] as? String }, ["system", "hello", "answer"])
   }
@@ -61,6 +63,7 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertEqual(request.headers["anthropic-dangerous-direct-browser-access"], "true")
     XCTAssertEqual(body["system"] as? String, "system")
     XCTAssertEqual(body["stream"] as? Bool, true)
+    XCTAssertNotNil((body["tools"] as? [[String: Any]])?.first?["input_schema"])
     XCTAssertEqual(messages.first?["role"] as? String, "user")
     XCTAssertEqual(messages.first?["content"] as? String, "hello")
   }
@@ -86,6 +89,7 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertTrue(request.endpoint.contains("alt=sse"))
     XCTAssertTrue(request.headers.isEmpty)
     XCTAssertNil(body["stream"])
+    XCTAssertFalse((body["tools"] as? [[String: Any]])?.isEmpty ?? true)
     XCTAssertEqual(generationConfig["temperature"] as? Double, 0.7)
     XCTAssertEqual(generationConfig["maxOutputTokens"] as? Int, 1200)
     XCTAssertEqual(contents.first?["role"] as? String, "user")

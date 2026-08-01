@@ -46,6 +46,8 @@
     A10000000000000000000787 /* CloudConversationStreamEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000787 /* CloudConversationStreamEngine.swift */; };
     A10000000000000000000788 /* CloudConversationStreamEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000788 /* CloudConversationStreamEngineTests.swift */; };
     A10000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift */; };
+    A10000000000000000000790 /* CloudModelStreamToolSchemas.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000790 /* CloudModelStreamToolSchemas.swift */; };
+    A10000000000000000000791 /* CloudConversationStreamToolRounds.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */; };
     A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000707 /* AgentExecutionPolicy.swift */; };
     A10000000000000000000708 /* AgentModelPlannerSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000708 /* AgentModelPlannerSettings.swift */; };
     A10000000000000000000709 /* LanguagePolicySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000709 /* LanguagePolicySettings.swift */; };
@@ -619,6 +621,8 @@
     A20000000000000000000787 /* CloudConversationStreamEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationStreamEngine.swift; sourceTree = "<group>"; };
     A20000000000000000000788 /* CloudConversationStreamEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationStreamEngineTests.swift; sourceTree = "<group>"; };
     A20000000000000000000789 /* MessageCoordinatorCloudStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageCoordinatorCloudStreamingTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000790 /* CloudModelStreamToolSchemas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelStreamToolSchemas.swift; sourceTree = "<group>"; };
+    A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudConversationStreamToolRounds.swift; sourceTree = "<group>"; };
     A20000000000000000000707 /* AgentExecutionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000708 /* AgentModelPlannerSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentModelPlannerSettings.swift; sourceTree = "<group>"; };
     A20000000000000000000709 /* LanguagePolicySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguagePolicySettings.swift; sourceTree = "<group>"; };
@@ -1176,6 +1180,8 @@
         A20000000000000000000783 /* URLSessionCloudModelStreamClient.swift */,
         A20000000000000000000785 /* CloudModelClientStreaming.swift */,
         A20000000000000000000787 /* CloudConversationStreamEngine.swift */,
+        A20000000000000000000790 /* CloudModelStreamToolSchemas.swift */,
+        A20000000000000000000791 /* CloudConversationStreamToolRounds.swift */,
         A20000000000000000000707 /* AgentExecutionPolicy.swift */,
         A20000000000000000000708 /* AgentModelPlannerSettings.swift */,
         A20000000000000000000709 /* LanguagePolicySettings.swift */,
@@ -2092,6 +2098,8 @@
         A10000000000000000000783 /* URLSessionCloudModelStreamClient.swift in Sources */,
         A10000000000000000000785 /* CloudModelClientStreaming.swift in Sources */,
         A10000000000000000000787 /* CloudConversationStreamEngine.swift in Sources */,
+        A10000000000000000000790 /* CloudModelStreamToolSchemas.swift in Sources */,
+        A10000000000000000000791 /* CloudConversationStreamToolRounds.swift in Sources */,
         A10000000000000000000164 /* AgentModelPlannerContactResolver.swift in Sources */,
         A10000000000000000000165 /* SignalASILinkTransportDiagnostics.swift in Sources */,
         A10000000000000000000166 /* SignalASILinkDiagnosticsView.swift in Sources */,
