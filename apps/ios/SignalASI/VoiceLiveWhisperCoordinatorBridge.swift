@@ -69,7 +69,7 @@ struct VoiceLiveWhisperCoordinatorBridge {
     )
     appendAccepted(
       emitPartial(
-        transcript.unstableText,
+        transcript.displayText,
         provider,
         modelProfileId
       ),
