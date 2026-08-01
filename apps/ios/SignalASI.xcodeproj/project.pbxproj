@@ -103,6 +103,8 @@
     A10000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift */; };
     A10000000000000000000773 /* VoiceWhisperRuntimeDecodeSchedulerAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000773 /* VoiceWhisperRuntimeDecodeSchedulerAdapter.swift */; };
     A10000000000000000000774 /* VoiceWhisperRuntimeDecodeSchedulerAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000774 /* VoiceWhisperRuntimeDecodeSchedulerAdapterTests.swift */; };
+    A10000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift */; };
+    A10000000000000000000776 /* VoiceLiveWhisperSessionFactoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000776 /* VoiceLiveWhisperSessionFactoryTests.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -661,6 +663,8 @@
     A20000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperCoordinatorBridgeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000773 /* VoiceWhisperRuntimeDecodeSchedulerAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperRuntimeDecodeSchedulerAdapter.swift; sourceTree = "<group>"; };
     A20000000000000000000774 /* VoiceWhisperRuntimeDecodeSchedulerAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperRuntimeDecodeSchedulerAdapterTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperSessionFactory.swift; sourceTree = "<group>"; };
+    A20000000000000000000776 /* VoiceLiveWhisperSessionFactoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceLiveWhisperSessionFactoryTests.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1328,6 +1332,7 @@
         A20000000000000000000767 /* VoiceWhisperDecodeScheduler.swift */,
         A20000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift */,
         A20000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift */,
+        A20000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift */,
         A20000000000000000000773 /* VoiceWhisperRuntimeDecodeSchedulerAdapter.swift */,
         A20000000000000000000763 /* VoiceWhisperTextStabilizer.swift */,
         A20000000000000000000589 /* VoiceLatencyTracer.swift */,
@@ -1572,6 +1577,7 @@
         A20000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift */,
         A20000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift */,
         A20000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift */,
+        A20000000000000000000776 /* VoiceLiveWhisperSessionFactoryTests.swift */,
         A20000000000000000000774 /* VoiceWhisperRuntimeDecodeSchedulerAdapterTests.swift */,
         A20000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift */,
         A20000000000000000000590 /* VoiceLatencyTracerTests.swift */,
@@ -1967,6 +1973,7 @@
         A10000000000000000000767 /* VoiceWhisperDecodeScheduler.swift in Sources */,
         A10000000000000000000769 /* VoiceLiveWhisperTranscriptionSession.swift in Sources */,
         A10000000000000000000771 /* VoiceLiveWhisperCoordinatorBridge.swift in Sources */,
+        A10000000000000000000775 /* VoiceLiveWhisperSessionFactory.swift in Sources */,
         A10000000000000000000773 /* VoiceWhisperRuntimeDecodeSchedulerAdapter.swift in Sources */,
         A10000000000000000000763 /* VoiceWhisperTextStabilizer.swift in Sources */,
         A10000000000000000000589 /* VoiceLatencyTracer.swift in Sources */,
@@ -2218,6 +2225,7 @@
         A10000000000000000000768 /* VoiceWhisperDecodeSchedulerTests.swift in Sources */,
         A10000000000000000000770 /* VoiceLiveWhisperTranscriptionSessionTests.swift in Sources */,
         A10000000000000000000772 /* VoiceLiveWhisperCoordinatorBridgeTests.swift in Sources */,
+        A10000000000000000000776 /* VoiceLiveWhisperSessionFactoryTests.swift in Sources */,
         A10000000000000000000774 /* VoiceWhisperRuntimeDecodeSchedulerAdapterTests.swift in Sources */,
         A10000000000000000000764 /* VoiceWhisperTextStabilizerTests.swift in Sources */,
         A10000000000000000000590 /* VoiceLatencyTracerTests.swift in Sources */,
