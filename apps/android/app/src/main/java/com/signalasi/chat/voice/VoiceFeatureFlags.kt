@@ -16,6 +16,7 @@ const val VOICE_PROGRESSIVE_TTS_V1_FLAG = "voice.progressive_tts_v1"
 const val VOICE_BARGE_IN_V1_FLAG = "voice.barge_in_v1"
 const val VOICE_AGENT_RUN_BRIDGE_V1_FLAG = "agent.voice_run_bridge_v1"
 const val VOICE_ONLINE_REALTIME_ASR_V1_FLAG = "voice.online_realtime_asr_v1"
+const val VOICE_RELIABILITY_GOVERNOR_V1_FLAG = "voice.reliability_governor_v1"
 
 object VoiceFeatureFlags {
     private const val PREFERENCES = "signalasi_voice_feature_flags"
@@ -165,6 +166,13 @@ object VoiceFeatureFlags {
 
     fun setOnlineRealtimeAsrEnabled(context: Context, enabled: Boolean) {
         setFlag(context, VOICE_ONLINE_REALTIME_ASR_V1_FLAG, enabled)
+    }
+
+    fun isReliabilityGovernorEnabled(context: Context): Boolean =
+        isDebugOptInEnabled(context, VOICE_RELIABILITY_GOVERNOR_V1_FLAG)
+
+    fun setReliabilityGovernorEnabled(context: Context, enabled: Boolean) {
+        setFlag(context, VOICE_RELIABILITY_GOVERNOR_V1_FLAG, enabled)
     }
 
     private fun isDebugOptInEnabled(context: Context, key: String): Boolean =
