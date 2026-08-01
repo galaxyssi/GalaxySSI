@@ -8,6 +8,13 @@ enum AgentExternalRequestDirection: String, Codable, CaseIterable, Identifiable 
   var id: String { rawValue }
 }
 
+private extension Array where Element == String {
+  func stableDistinct() -> [String] {
+    var seen = Set<String>()
+    return filter { seen.insert($0).inserted }
+  }
+}
+
 enum AgentPolicyFirewallVerdict: String, Codable, CaseIterable, Identifiable {
   case allow = "ALLOW"
   case requireConfirmation = "REQUIRE_CONFIRMATION"

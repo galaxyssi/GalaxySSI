@@ -161,7 +161,7 @@ struct AgentRemoteApprovalDecision: Codable, Equatable {
       "conversation_id": .string(conversationId),
       "turn_id": .string(turnId),
       "contact_id": .string(contactId),
-      "source_message_id": .int(Int(sourceMessageId)),
+      "source_message_id": .int(sourceMessageId),
       "approval_id": .string(approvalId),
       "action_hash": .string(actionHash),
       "approved": .bool(approved)
