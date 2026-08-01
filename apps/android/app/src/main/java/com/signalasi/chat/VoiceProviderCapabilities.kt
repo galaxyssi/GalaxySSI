@@ -36,6 +36,8 @@ enum class VoiceProviderCapabilityReason {
     WHISPER_MODEL_MISSING,
     SYSTEM_RECOGNIZER_MISSING,
     OFFLINE_RECOGNIZER_MISSING,
+    ONLINE_AUDIO_PERMISSION_REQUIRED,
+    CREDENTIAL_BROKER_REQUIRED,
     NETWORK_REQUIRED,
     TTS_ENGINE_MISSING,
     TTS_LANGUAGE_UNSUPPORTED
@@ -73,7 +75,9 @@ data class VoiceDeviceCapabilityProbe(
     val ttsReady: Boolean,
     val ttsEngineCount: Int,
     val ttsLanguageSupported: Boolean,
-    val ttsLanguage: String
+    val ttsLanguage: String,
+    val onlineAsrAllowed: Boolean = false,
+    val realtimeAsrCredentialBrokerConfigured: Boolean = false
 )
 
 object VoiceProviderCapabilityPolicy {
@@ -152,10 +156,6 @@ object VoiceProviderCapabilityPolicy {
             VoiceProviderCapabilityId.CLOUD_ASR,
             VoiceProviderCapabilityReason.MICROPHONE_MISSING
         )
-        !probe.systemAsrAvailable -> unavailable(
-            VoiceProviderCapabilityId.CLOUD_ASR,
-            VoiceProviderCapabilityReason.SYSTEM_RECOGNIZER_MISSING
-        )
         !probe.microphonePermissionGranted -> capability(
             VoiceProviderCapabilityId.CLOUD_ASR,
             VoiceProviderCapabilityState.NEEDS_PERMISSION,
@@ -165,6 +165,14 @@ object VoiceProviderCapabilityPolicy {
             VoiceProviderCapabilityId.CLOUD_ASR,
             VoiceProviderCapabilityState.NEEDS_NETWORK,
             VoiceProviderCapabilityReason.NETWORK_REQUIRED
+        )
+        !probe.onlineAsrAllowed -> unavailable(
+            VoiceProviderCapabilityId.CLOUD_ASR,
+            VoiceProviderCapabilityReason.ONLINE_AUDIO_PERMISSION_REQUIRED
+        )
+        !probe.realtimeAsrCredentialBrokerConfigured -> unavailable(
+            VoiceProviderCapabilityId.CLOUD_ASR,
+            VoiceProviderCapabilityReason.CREDENTIAL_BROKER_REQUIRED
         )
         else -> ready(VoiceProviderCapabilityId.CLOUD_ASR)
     }
@@ -256,7 +264,11 @@ object VoiceProviderCapabilityDetector {
                 ttsReady = ttsReady,
                 ttsEngineCount = ttsEngineCount,
                 ttsLanguageSupported = ttsLanguageSupported,
-                ttsLanguage = config.ttsLanguage
+                ttsLanguage = config.ttsLanguage,
+                onlineAsrAllowed = config.onlineAsrPrivacy.allowOnlineVoice &&
+                    config.onlineAsrPrivacy.allowRawAudioUpload,
+                realtimeAsrCredentialBrokerConfigured =
+                    BuildConfig.REALTIME_ASR_CREDENTIAL_BROKER_URL.isNotBlank()
             )
         )
     }

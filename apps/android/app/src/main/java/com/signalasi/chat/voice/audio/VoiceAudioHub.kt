@@ -17,7 +17,11 @@ data class VoiceAudioSessionConfig(
 data class VoiceAudioSession(val id: String)
 
 interface VoiceAudioHubListener {
+    val acceptsPcmFrames: Boolean
+        get() = false
+
     fun onCaptureReady(session: VoiceAudioSession, state: PcmRecorderState) = Unit
+    fun onPcmFrame(session: VoiceAudioSession, frame: PcmFramePacket) = Unit
     fun onAudioLevel(session: VoiceAudioSession, decision: VadDecision) = Unit
     fun onSpeechStarted(session: VoiceAudioSession, sequence: Long) = Unit
     fun onSpeechEndedCandidate(session: VoiceAudioSession, sequence: Long) = Unit
@@ -147,6 +151,19 @@ class VoiceAudioHub(
 
     private fun processFrame(session: ActiveSession, frame: AudioFrame) {
         session.store.append(frame)
+        if (session.listener.acceptsPcmFrames) {
+            safely {
+                session.listener.onPcmFrame(
+                    session.public,
+                    PcmFramePacket(
+                        sequence = frame.sequence,
+                        captureTimeNanos = frame.captureTimeNanos,
+                        samples = frame.samples.copyOf(frame.validSamples),
+                        sampleRateHz = session.config.capture.sampleRateHz
+                    )
+                )
+            }
+        }
         val vad = session.vad.accept(frame)
         val endpoint = session.endpoint.accept(frame, vad)
         if (endpoint.speechStarted) {

@@ -1,6 +1,8 @@
 package com.signalasi.chat
 
 import android.content.Context
+import com.signalasi.chat.voice.asr.AsrPrivacyPolicy
+import com.signalasi.chat.voice.asr.VoiceRecognitionPreference
 import com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode
 
 data class VoiceAssistantConfig(
@@ -10,6 +12,8 @@ data class VoiceAssistantConfig(
     val wakeModel: String,
     val wakeThreshold: Float,
     val asrProvider: String,
+    val recognitionPreference: VoiceRecognitionPreference,
+    val onlineAsrPrivacy: AsrPrivacyPolicy,
     val asrModel: String,
     val asrRuntimeMode: WhisperUserVoiceMode,
     val asrLanguage: String,
@@ -31,6 +35,13 @@ object VoiceAssistantSettings {
     private const val KEY_WAKE_MODEL = "wake_model"
     private const val KEY_WAKE_THRESHOLD = "wake_threshold"
     private const val KEY_ASR_PROVIDER = "asr_provider"
+    private const val KEY_ASR_RECOGNITION_PREFERENCE = "asr_recognition_preference"
+    private const val KEY_ONLINE_ASR_ALLOWED = "online_asr_allowed"
+    private const val KEY_ONLINE_ASR_WIFI_ONLY = "online_asr_wifi_only"
+    private const val KEY_ONLINE_ASR_MOBILE_ALLOWED = "online_asr_mobile_allowed"
+    private const val KEY_ONLINE_ASR_AUDIO_UPLOAD_ALLOWED = "online_asr_audio_upload_allowed"
+    private const val KEY_ONLINE_ASR_DELETE_SERVER_DATA = "online_asr_delete_server_data"
+    private const val KEY_LOCAL_ASR_ALWAYS_PREFERRED = "local_asr_always_preferred"
     private const val KEY_ASR_MODEL = "asr_model"
     private const val KEY_ASR_RUNTIME_MODE = "asr_runtime_mode"
     private const val KEY_TTS_PROVIDER = "tts_provider"
@@ -45,6 +56,8 @@ object VoiceAssistantSettings {
     const val WAKE_PROVIDER_OPEN_WAKE_WORD = "openwakeword"
     const val WAKE_PROVIDER_ANDROID_ASR = "android_asr"
     const val ASR_PROVIDER_LOCAL_WHISPER = "local_whisper_cpp"
+    const val ASR_PROVIDER_AUTO = "auto"
+    const val ASR_PROVIDER_ONLINE_REALTIME = "online_realtime"
     const val ROUTING_MODE_NATIVE_AGENT = "native_agent"
     const val ROUTING_MODE_CONTACT = "contact"
     const val DEFAULT_WAKE_MODEL = "hello_world.onnx"
@@ -73,7 +86,22 @@ object VoiceAssistantSettings {
                 .takeIf { it in SUPPORTED_WAKE_MODELS }
                 ?: DEFAULT_WAKE_MODEL,
             wakeThreshold = prefs.getFloat(KEY_WAKE_THRESHOLD, 0.5f).coerceIn(0.01f, 0.99f),
-            asrProvider = ASR_PROVIDER_LOCAL_WHISPER,
+            asrProvider = prefs.getString(KEY_ASR_PROVIDER, ASR_PROVIDER_AUTO).orEmpty()
+                .takeIf { it in SUPPORTED_ASR_PROVIDERS }
+                ?: ASR_PROVIDER_AUTO,
+            recognitionPreference = runCatching {
+                enumValueOf<VoiceRecognitionPreference>(
+                    prefs.getString(KEY_ASR_RECOGNITION_PREFERENCE, VoiceRecognitionPreference.AUTO.name).orEmpty()
+                )
+            }.getOrDefault(VoiceRecognitionPreference.AUTO),
+            onlineAsrPrivacy = AsrPrivacyPolicy(
+                allowOnlineVoice = prefs.getBoolean(KEY_ONLINE_ASR_ALLOWED, false),
+                wifiOnly = prefs.getBoolean(KEY_ONLINE_ASR_WIFI_ONLY, true),
+                allowMobileNetwork = prefs.getBoolean(KEY_ONLINE_ASR_MOBILE_ALLOWED, false),
+                allowRawAudioUpload = prefs.getBoolean(KEY_ONLINE_ASR_AUDIO_UPLOAD_ALLOWED, false),
+                requestServerDataDeletion = prefs.getBoolean(KEY_ONLINE_ASR_DELETE_SERVER_DATA, true),
+                localAlwaysPreferred = prefs.getBoolean(KEY_LOCAL_ASR_ALWAYS_PREFERRED, false)
+            ),
             asrModel = canonicalAsrModel,
             asrRuntimeMode = runCatching {
                 enumValueOf<WhisperUserVoiceMode>(
@@ -120,8 +148,32 @@ object VoiceAssistantSettings {
     }
 
     fun setAsrProvider(context: Context, value: String) {
+        val provider = value.takeIf { it in SUPPORTED_ASR_PROVIDERS } ?: ASR_PROVIDER_AUTO
+        val preference = when (provider) {
+            ASR_PROVIDER_LOCAL_WHISPER -> VoiceRecognitionPreference.LOCAL_PRIVATE
+            ASR_PROVIDER_ONLINE_REALTIME -> VoiceRecognitionPreference.ONLINE_FAST
+            else -> VoiceRecognitionPreference.AUTO
+        }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putString(KEY_ASR_PROVIDER, ASR_PROVIDER_LOCAL_WHISPER)
+            .putString(KEY_ASR_PROVIDER, provider)
+            .putString(KEY_ASR_RECOGNITION_PREFERENCE, preference.name)
+            .apply()
+    }
+
+    fun setRecognitionPreference(context: Context, value: VoiceRecognitionPreference) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ASR_RECOGNITION_PREFERENCE, value.name)
+            .apply()
+    }
+
+    fun setOnlineAsrPrivacy(context: Context, value: AsrPrivacyPolicy) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_ONLINE_ASR_ALLOWED, value.allowOnlineVoice)
+            .putBoolean(KEY_ONLINE_ASR_WIFI_ONLY, value.wifiOnly)
+            .putBoolean(KEY_ONLINE_ASR_MOBILE_ALLOWED, value.allowMobileNetwork)
+            .putBoolean(KEY_ONLINE_ASR_AUDIO_UPLOAD_ALLOWED, value.allowRawAudioUpload)
+            .putBoolean(KEY_ONLINE_ASR_DELETE_SERVER_DATA, value.requestServerDataDeletion)
+            .putBoolean(KEY_LOCAL_ASR_ALWAYS_PREFERRED, value.localAlwaysPreferred)
             .apply()
     }
 
@@ -186,4 +238,10 @@ object VoiceAssistantSettings {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()
         LanguagePolicySettings.clear(context)
     }
+
+    private val SUPPORTED_ASR_PROVIDERS = setOf(
+        ASR_PROVIDER_AUTO,
+        ASR_PROVIDER_LOCAL_WHISPER,
+        ASR_PROVIDER_ONLINE_REALTIME
+    )
 }

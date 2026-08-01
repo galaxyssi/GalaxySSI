@@ -95,6 +95,17 @@ import com.signalasi.chat.voice.audio.PcmWaveFileAdapter
 import com.signalasi.chat.voice.audio.VadDecision
 import com.signalasi.chat.voice.audio.VoiceAudioHub
 import com.signalasi.chat.voice.audio.VoiceAudioHubListener
+import com.signalasi.chat.voice.asr.AsrNetworkType
+import com.signalasi.chat.voice.asr.AsrProviderSelector
+import com.signalasi.chat.voice.asr.AsrSessionConfig
+import com.signalasi.chat.voice.asr.VoiceRecognitionPreference
+import com.signalasi.chat.voice.asr.online.CachingRealtimeAsrCredentialSource
+import com.signalasi.chat.voice.asr.online.HttpRealtimeAsrCredentialSource
+import com.signalasi.chat.voice.asr.online.OnlineAsrCompletion
+import com.signalasi.chat.voice.asr.online.OnlineRealtimeAsrTurn
+import com.signalasi.chat.voice.asr.online.RealtimeAsrPreconnector
+import com.signalasi.chat.voice.asr.online.RealtimeAsrProvider
+import com.signalasi.chat.voice.asr.online.RealtimeAsrTurnAction
 import com.signalasi.chat.voice.asr.local.AbortReason
 import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
@@ -176,6 +187,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import okhttp3.OkHttpClient
 import kotlin.concurrent.thread
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -567,6 +579,28 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val whisperDecodeSchedulerLock = Any()
     private var whisperDecodeScheduler: WhisperDecodeScheduler? = null
     private val liveWhisperSessions = ConcurrentHashMap<String, LiveWhisperTranscriptionSession>()
+    private val onlineRealtimeAsrTurns = ConcurrentHashMap<String, OnlineRealtimeAsrTurn>()
+    private val onlineRealtimeAsrFinals = ConcurrentHashMap<String, TranscriptHypothesis>()
+    private val onlineRealtimeAsrClient: OkHttpClient by lazy {
+        OkHttpClient.Builder().retryOnConnectionFailure(false).build()
+    }
+    private val onlineRealtimeAsrProviderLazy = lazy {
+        RealtimeAsrProvider(
+            id = "signalasi_realtime",
+            client = onlineRealtimeAsrClient,
+            credentialSource = CachingRealtimeAsrCredentialSource(
+                HttpRealtimeAsrCredentialSource(
+                    client = onlineRealtimeAsrClient,
+                    brokerUrl = BuildConfig.REALTIME_ASR_CREDENTIAL_BROKER_URL
+                )
+            )
+        )
+    }
+    private val onlineRealtimeAsrProvider: RealtimeAsrProvider by onlineRealtimeAsrProviderLazy
+    private val onlineRealtimeAsrPreconnectorLazy = lazy {
+        RealtimeAsrPreconnector(onlineRealtimeAsrProvider)
+    }
+    private val onlineRealtimeAsrPreconnector: RealtimeAsrPreconnector by onlineRealtimeAsrPreconnectorLazy
     private var pcmCaptureStopping = false
     @Volatile private var pcmVoiceAmplitude = 0
     private var lastPcmAudioLevelDispatchAt = 0L
@@ -1288,6 +1322,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (::agentHoldToTalkController.isInitialized) agentHoldToTalkController.release()
         liveWhisperSessions.values.forEach(LiveWhisperTranscriptionSession::close)
         liveWhisperSessions.clear()
+        onlineRealtimeAsrTurns.values.forEach(OnlineRealtimeAsrTurn::close)
+        onlineRealtimeAsrTurns.clear()
+        onlineRealtimeAsrFinals.clear()
+        if (onlineRealtimeAsrPreconnectorLazy.isInitialized()) onlineRealtimeAsrPreconnector.close()
+        if (onlineRealtimeAsrProviderLazy.isInitialized()) onlineRealtimeAsrProvider.close()
         voiceRiskConfirmationCancellation?.invoke()
         voiceRiskConfirmationCancellation = null
         voiceRiskConfirmationDialog?.dismiss()
@@ -22337,6 +22376,104 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         return session
     }
 
+    private fun startOnlineRealtimeAsrTurn(purpose: String, traceId: String): OnlineRealtimeAsrTurn? {
+        if (!VoiceFeatureFlags.isOnlineRealtimeAsrEnabled(this) ||
+            BuildConfig.REALTIME_ASR_CREDENTIAL_BROKER_URL.isBlank()
+        ) return null
+        val settings = VoiceAssistantSettings.get(this)
+        val config = AsrSessionConfig(
+            voiceSessionId = traceId,
+            transcriptId = traceId,
+            language = LanguagePolicySettings.resolvedAsrLanguage(this),
+            preference = settings.recognitionPreference,
+            networkType = currentAsrNetworkType(),
+            privacy = settings.onlineAsrPrivacy
+        )
+        if (!AsrProviderSelector.onlineAllowed(config)) return null
+        val turn = OnlineRealtimeAsrTurn(
+            config = config,
+            preconnector = onlineRealtimeAsrPreconnector,
+            scope = voiceAssistantScope,
+            onAction = { action -> handleOnlineRealtimeAsrAction(purpose, traceId, action) }
+        )
+        onlineRealtimeAsrTurns.put(traceId, turn)?.close()
+        VoiceRuntimeHealthRegistry.begin(VoiceRuntimeChannel.ONLINE_REALTIME_ASR)
+        turn.start()
+        return turn
+    }
+
+    private fun handleOnlineRealtimeAsrAction(
+        purpose: String,
+        traceId: String,
+        action: RealtimeAsrTurnAction
+    ) {
+        when (action) {
+            is RealtimeAsrTurnAction.Display -> runOnUiThread {
+                if (recordingVoiceTraceId != traceId || pcmVoiceSession == null) return@runOnUiThread
+                val sessionId = voiceCoordinatorSession(traceId)
+                if (sessionId.isNotBlank()) {
+                    dispatchVoiceCoordinator(
+                        if (action.stable) {
+                            VoiceInteractionEvent.TranscriptStable(sessionId, action.hypothesis)
+                        } else {
+                            VoiceInteractionEvent.TranscriptPartial(sessionId, action.hypothesis)
+                        }
+                    )
+                }
+                val stableText = if (action.stable) action.hypothesis.text else ""
+                val unstableText = if (action.stable) "" else action.hypothesis.text
+                when (purpose) {
+                    "agent_input" -> if (::agentHoldToTalkController.isInitialized) {
+                        agentHoldToTalkController.updateTranscript(stableText, unstableText)
+                    }
+                    "voice_wakeup" -> updateWakeVoiceUi(
+                        getString(R.string.voice_status_recording),
+                        action.hypothesis.text
+                    )
+                    else -> if (::holdToTalkController.isInitialized) {
+                        holdToTalkController.updateTranscript(stableText, unstableText)
+                    }
+                }
+            }
+            is RealtimeAsrTurnAction.Commit -> {
+                onlineRealtimeAsrFinals[traceId] = action.hypothesis
+                VoiceRuntimeHealthRegistry.success(VoiceRuntimeChannel.ONLINE_REALTIME_ASR)
+            }
+            is RealtimeAsrTurnAction.Correct -> Unit
+            is RealtimeAsrTurnAction.RequestLocalFallback -> {
+                VoiceRuntimeHealthRegistry.failure(
+                    VoiceRuntimeChannel.ONLINE_REALTIME_ASR,
+                    action.reasonCode
+                )
+                Log.i("SignalASIVoice", "Realtime ASR switched to retained local PCM reason=${action.reasonCode}")
+            }
+            is RealtimeAsrTurnAction.Failed -> {
+                VoiceRuntimeHealthRegistry.failure(
+                    VoiceRuntimeChannel.ONLINE_REALTIME_ASR,
+                    action.reasonCode
+                )
+                Log.w("SignalASIVoice", "Realtime ASR unavailable reason=${action.reasonCode}")
+            }
+            RealtimeAsrTurnAction.None -> Unit
+        }
+    }
+
+    private fun currentAsrNetworkType(): AsrNetworkType {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            ?: return AsrNetworkType.OFFLINE
+        val network = manager.activeNetwork ?: return AsrNetworkType.OFFLINE
+        val capabilities = manager.getNetworkCapabilities(network) ?: return AsrNetworkType.OFFLINE
+        if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+            return AsrNetworkType.OFFLINE
+        }
+        return when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> AsrNetworkType.WIFI
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> AsrNetworkType.MOBILE
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) -> AsrNetworkType.OTHER_VALIDATED
+            else -> AsrNetworkType.OFFLINE
+        }
+    }
+
     private fun handleLiveWhisperUpdate(
         purpose: String,
         traceId: String,
@@ -22494,7 +22631,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             mapOf("recording_source" to purpose)
         )
         val coordinatorSessionId = beginVoiceCoordinatorSession(purpose, traceId)
-        val liveWhisperSession = startLiveWhisperSession(purpose, traceId)
+        val onlineAsrTurn = startOnlineRealtimeAsrTurn(purpose, traceId)
+        val liveWhisperSession = if (onlineAsrTurn == null) startLiveWhisperSession(purpose, traceId) else null
         val partialSpeechStartedAt = AtomicLong(0L)
         activeVoiceTraceId = traceId
         recordingVoiceTraceId = traceId
@@ -22527,6 +22665,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 autoEndpoint = autoEndpoint
             ),
             object : VoiceAudioHubListener {
+                override val acceptsPcmFrames: Boolean = onlineAsrTurn != null
+
+                override fun onPcmFrame(
+                    session: VoiceAudioSession,
+                    frame: com.signalasi.chat.voice.audio.PcmFramePacket
+                ) {
+                    onlineAsrTurn?.offer(frame)
+                }
+
                 override fun onCaptureReady(session: VoiceAudioSession, state: com.signalasi.chat.voice.audio.PcmRecorderState) {
                     runOnUiThread {
                         if (pcmVoiceSession?.id != session.id) return@runOnUiThread
@@ -22577,6 +22724,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
 
                 override fun onSpeechStarted(session: VoiceAudioSession, sequence: Long) {
+                    onlineAsrTurn?.onLocalSpeechStarted()
                     partialSpeechStartedAt.compareAndSet(0L, SystemClock.elapsedRealtime())
                     runOnUiThread {
                         if (pcmVoiceSession?.id != session.id) return@runOnUiThread
@@ -22606,6 +22754,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                 }
 
+                override fun onSpeechEndedCandidate(session: VoiceAudioSession, sequence: Long) {
+                    onlineAsrTurn?.onLocalSpeechEnded()
+                }
+
                 override fun onEndpoint(session: VoiceAudioSession, reason: EndpointReason) {
                     handler.post {
                         if (pcmVoiceSession?.id != session.id || purpose != "voice_wakeup") return@post
@@ -22626,10 +22778,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
 
                 override fun onFailure(session: VoiceAudioSession, error: Throwable) {
+                    onlineRealtimeAsrTurns.remove(traceId)?.close()
                     runOnUiThread { handlePcmCaptureFailure(session, purpose, traceId, error) }
                 }
             }
         ) ?: run {
+            onlineRealtimeAsrTurns.remove(traceId)?.close()
             closeLiveWhisperSession(traceId)
             recordingPurpose = ""
             recordingVoiceTraceId = ""
@@ -22752,6 +22906,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceAssistantScope.launch {
             val captureResult = runCatching { hub.stop(session, stopReason) }
             val result = captureResult.getOrNull()
+            val onlineTurn = onlineRealtimeAsrTurns.remove(traceId)
+            val onlineCompletion = if (send && result?.snapshot?.samples?.isNotEmpty() == true && onlineTurn != null) {
+                runCatching { onlineTurn.finish(pcmBufferComplete = captureResult.isSuccess) }.getOrNull()
+            } else null
+            when (onlineCompletion) {
+                is OnlineAsrCompletion.Final -> onlineRealtimeAsrFinals[traceId] = onlineCompletion.hypothesis
+                is OnlineAsrCompletion.Failed -> VoiceRuntimeHealthRegistry.failure(
+                    VoiceRuntimeChannel.ONLINE_REALTIME_ASR,
+                    onlineCompletion.reasonCode
+                )
+                else -> Unit
+            }
+            onlineTurn?.close()
             val waveFile = if (send && result?.snapshot?.samples?.isNotEmpty() == true) {
                 runCatching {
                     PcmWaveFileAdapter.write(
@@ -23259,6 +23426,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         language: String,
         decodedModelProfileId: String,
         confidence: Float?,
+        providerId: String = "whisper.cpp",
         onSuccess: (String) -> Unit,
         onFailure: () -> Unit
     ) {
@@ -23273,9 +23441,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             fast = TranscriptHypothesis(
                 text = transcript,
                 revision = 1,
-                provider = "whisper.cpp",
+                provider = providerId,
                 modelProfileId = decodedModelProfileId,
-                confidence = confidence
+                confidence = confidence,
+                transcriptId = sessionId,
+                isFinal = true
             ),
             utteranceDurationMs = durationMs,
             userRequestedAccuracy = settings.asrRuntimeMode == WhisperUserVoiceMode.ACCURATE
@@ -23301,9 +23471,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val fast = TranscriptHypothesis(
             text = transcript,
             revision = 1,
-            provider = "whisper.cpp",
+            provider = providerId,
             modelProfileId = fastProfileId,
-            confidence = confidence
+            confidence = confidence,
+            transcriptId = sessionId,
+            isFinal = true
         )
         voiceExecutionLedger.begin(
             sessionId = sessionId,
@@ -23693,6 +23865,27 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         onFailure: () -> Unit = {}
     ) {
         val language = LanguagePolicySettings.resolvedAsrLanguage(this)
+        val onlineFinal = onlineRealtimeAsrFinals.remove(traceId)
+        if (onlineFinal != null && pcmSamples != null) {
+            sourceFile.delete()
+            val pcmCopy = pcmSamples.copyOf()
+            runOnUiThread {
+                handleVoiceFastTranscript(
+                    purpose = purpose,
+                    traceId = traceId,
+                    transcript = onlineFinal.text,
+                    pcmSnapshot = pcmCopy,
+                    sampleRateHz = sampleRateHz,
+                    language = language,
+                    decodedModelProfileId = onlineFinal.modelProfileId,
+                    confidence = onlineFinal.confidence,
+                    providerId = onlineFinal.providerId,
+                    onSuccess = onSuccess,
+                    onFailure = onFailure
+                )
+            }
+            return
+        }
         VoiceRuntimeHealthRegistry.begin(
             VoiceRuntimeChannel.LOCAL_WHISPER_ASR
         )
@@ -28303,6 +28496,56 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             if (whisperCapability.ready) "#14C66A" else "#D48B18",
             voiceCapabilityStatus(whisperCapability)
         ))
+        if (VoiceFeatureFlags.isOnlineRealtimeAsrEnabled(this)) {
+            addSectionTitle(getString(R.string.voice_asr_recognition_mode_section))
+            featureContent.addView(featureRow(
+                getString(R.string.voice_asr_recognition_mode_title),
+                getString(R.string.voice_asr_recognition_mode_subtitle),
+                R.drawable.ic_input_voice,
+                voiceRecognitionPreferenceLabel(config.recognitionPreference)
+            ).apply {
+                setOnClickListener { showVoiceRecognitionPreferenceDialog(config.recognitionPreference) }
+            })
+            addSectionTitle(getString(R.string.voice_asr_online_privacy_section))
+            featureContent.addView(featureSwitchRow(
+                getString(R.string.voice_asr_online_allowed_title),
+                getString(R.string.voice_asr_online_allowed_subtitle),
+                R.drawable.ic_avatar_cloud_model,
+                config.onlineAsrPrivacy.allowOnlineVoice && config.onlineAsrPrivacy.allowRawAudioUpload
+            ).apply {
+                setOnClickListener { toggleOnlineRealtimeAsr(config) }
+            })
+            featureContent.addView(featureSwitchRow(
+                getString(R.string.voice_asr_wifi_only_title),
+                getString(R.string.voice_asr_wifi_only_subtitle),
+                R.drawable.ic_resource_network,
+                config.onlineAsrPrivacy.wifiOnly
+            ).apply {
+                setOnClickListener {
+                    VoiceAssistantSettings.setOnlineAsrPrivacy(
+                        this@MainActivity,
+                        config.onlineAsrPrivacy.copy(wifiOnly = !config.onlineAsrPrivacy.wifiOnly)
+                    )
+                    showAsrProviderPage()
+                }
+            })
+            featureContent.addView(featureSwitchRow(
+                getString(R.string.voice_asr_server_delete_title),
+                getString(R.string.voice_asr_server_delete_subtitle),
+                R.drawable.ic_security_shield,
+                config.onlineAsrPrivacy.requestServerDataDeletion
+            ).apply {
+                setOnClickListener {
+                    VoiceAssistantSettings.setOnlineAsrPrivacy(
+                        this@MainActivity,
+                        config.onlineAsrPrivacy.copy(
+                            requestServerDataDeletion = !config.onlineAsrPrivacy.requestServerDataDeletion
+                        )
+                    )
+                    showAsrProviderPage()
+                }
+            })
+        }
         addSectionTitle(getString(R.string.voice_provider_device_capabilities))
         listOf(
             VoiceProviderCapabilityId.WHISPER_CPP to R.drawable.ic_local_model,
@@ -28487,6 +28730,71 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             setPadding(dp(4), dp(4), dp(4), dp(18))
         })
         if (hasActiveDownload) handler.postDelayed(asrModelDownloadPoll, 1_000L)
+    }
+
+    private fun showVoiceRecognitionPreferenceDialog(current: VoiceRecognitionPreference) {
+        val values = listOf(
+            VoiceRecognitionPreference.AUTO,
+            VoiceRecognitionPreference.ONLINE_FAST,
+            VoiceRecognitionPreference.LOCAL_PRIVATE,
+            VoiceRecognitionPreference.LOCAL_HIGH_ACCURACY
+        )
+        val labels = values.map(::voiceRecognitionPreferenceLabel).toTypedArray()
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.voice_asr_recognition_mode_title))
+            .setSingleChoiceItems(labels, values.indexOf(current).coerceAtLeast(0)) { dialog, which ->
+                val selected = values[which]
+                VoiceAssistantSettings.setRecognitionPreference(this, selected)
+                VoiceAssistantSettings.setAsrProvider(
+                    this,
+                    when (selected) {
+                        VoiceRecognitionPreference.ONLINE_FAST -> VoiceAssistantSettings.ASR_PROVIDER_ONLINE_REALTIME
+                        VoiceRecognitionPreference.LOCAL_PRIVATE,
+                        VoiceRecognitionPreference.LOCAL_HIGH_ACCURACY ->
+                            VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER
+                        else -> VoiceAssistantSettings.ASR_PROVIDER_AUTO
+                    }
+                )
+                VoiceAssistantSettings.setRecognitionPreference(this, selected)
+                dialog.dismiss()
+                showAsrProviderPage()
+            }
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .show()
+    }
+
+    private fun voiceRecognitionPreferenceLabel(value: VoiceRecognitionPreference): String = getString(
+        when (value) {
+            VoiceRecognitionPreference.AUTO -> R.string.voice_asr_mode_auto
+            VoiceRecognitionPreference.ONLINE_FAST -> R.string.voice_asr_mode_online_fast
+            VoiceRecognitionPreference.LOCAL_PRIVATE -> R.string.voice_asr_mode_local_private
+            VoiceRecognitionPreference.LOCAL_HIGH_ACCURACY -> R.string.voice_asr_mode_local_accurate
+            VoiceRecognitionPreference.REMOTE_NODE -> R.string.voice_asr_mode_remote_node
+        }
+    )
+
+    private fun toggleOnlineRealtimeAsr(config: VoiceAssistantConfig) {
+        val enabled = config.onlineAsrPrivacy.allowOnlineVoice && config.onlineAsrPrivacy.allowRawAudioUpload
+        if (enabled) {
+            VoiceAssistantSettings.setOnlineAsrPrivacy(
+                this,
+                config.onlineAsrPrivacy.copy(allowOnlineVoice = false, allowRawAudioUpload = false)
+            )
+            showAsrProviderPage()
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.voice_asr_online_consent_title))
+            .setMessage(getString(R.string.voice_asr_online_consent_message))
+            .setNegativeButton(getString(R.string.common_cancel), null)
+            .setPositiveButton(getString(R.string.common_enable)) { _, _ ->
+                VoiceAssistantSettings.setOnlineAsrPrivacy(
+                    this,
+                    config.onlineAsrPrivacy.copy(allowOnlineVoice = true, allowRawAudioUpload = true)
+                )
+                showAsrProviderPage()
+            }
+            .show()
     }
 
     private fun showWhisperRuntimeModeDialog(current: WhisperUserVoiceMode) {
@@ -29050,6 +29358,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 R.string.voice_capability_system_asr_missing
             VoiceProviderCapabilityReason.OFFLINE_RECOGNIZER_MISSING ->
                 R.string.voice_capability_offline_asr_missing
+            VoiceProviderCapabilityReason.ONLINE_AUDIO_PERMISSION_REQUIRED ->
+                R.string.voice_capability_online_audio_permission
+            VoiceProviderCapabilityReason.CREDENTIAL_BROKER_REQUIRED ->
+                R.string.voice_capability_credential_broker_required
             VoiceProviderCapabilityReason.NETWORK_REQUIRED ->
                 R.string.voice_capability_network_required
             VoiceProviderCapabilityReason.TTS_ENGINE_MISSING ->

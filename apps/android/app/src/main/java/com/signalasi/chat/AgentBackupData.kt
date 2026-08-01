@@ -86,6 +86,13 @@ object AgentBackupData {
                     .put("wake_model", voiceAssistant.wakeModel)
                     .put("wake_threshold", voiceAssistant.wakeThreshold.toDouble())
                     .put("asr_provider", voiceAssistant.asrProvider)
+                    .put("asr_recognition_preference", voiceAssistant.recognitionPreference.name)
+                    .put("online_asr_allowed", voiceAssistant.onlineAsrPrivacy.allowOnlineVoice)
+                    .put("online_asr_wifi_only", voiceAssistant.onlineAsrPrivacy.wifiOnly)
+                    .put("online_asr_mobile_allowed", voiceAssistant.onlineAsrPrivacy.allowMobileNetwork)
+                    .put("online_asr_audio_upload_allowed", voiceAssistant.onlineAsrPrivacy.allowRawAudioUpload)
+                    .put("online_asr_delete_server_data", voiceAssistant.onlineAsrPrivacy.requestServerDataDeletion)
+                    .put("local_asr_always_preferred", voiceAssistant.onlineAsrPrivacy.localAlwaysPreferred)
                     .put("asr_model", voiceAssistant.asrModel)
                     .put("asr_runtime_mode", voiceAssistant.asrRuntimeMode.name)
                     .put("asr_language", voiceAssistant.asrLanguage)
@@ -233,6 +240,28 @@ object AgentBackupData {
             VoiceAssistantSettings.setWakeModel(context, json.optString("wake_model"))
             VoiceAssistantSettings.setWakeThreshold(context, json.optDouble("wake_threshold", 0.5).toFloat())
             VoiceAssistantSettings.setAsrProvider(context, json.optString("asr_provider"))
+            VoiceAssistantSettings.setRecognitionPreference(
+                context,
+                runCatching {
+                    enumValueOf<com.signalasi.chat.voice.asr.VoiceRecognitionPreference>(
+                        json.optString(
+                            "asr_recognition_preference",
+                            com.signalasi.chat.voice.asr.VoiceRecognitionPreference.AUTO.name
+                        )
+                    )
+                }.getOrDefault(com.signalasi.chat.voice.asr.VoiceRecognitionPreference.AUTO)
+            )
+            VoiceAssistantSettings.setOnlineAsrPrivacy(
+                context,
+                com.signalasi.chat.voice.asr.AsrPrivacyPolicy(
+                    allowOnlineVoice = json.optBoolean("online_asr_allowed", false),
+                    wifiOnly = json.optBoolean("online_asr_wifi_only", true),
+                    allowMobileNetwork = json.optBoolean("online_asr_mobile_allowed", false),
+                    allowRawAudioUpload = json.optBoolean("online_asr_audio_upload_allowed", false),
+                    requestServerDataDeletion = json.optBoolean("online_asr_delete_server_data", true),
+                    localAlwaysPreferred = json.optBoolean("local_asr_always_preferred", false)
+                )
+            )
             VoiceAssistantSettings.setAsrModel(context, json.optString("asr_model", "tiny"))
             VoiceAssistantSettings.setAsrRuntimeMode(
                 context,

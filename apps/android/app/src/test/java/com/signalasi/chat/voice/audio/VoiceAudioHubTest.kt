@@ -51,6 +51,8 @@ class VoiceAudioHubTest {
 
         assertEquals(1, listener.speechStarts)
         assertEquals(EndpointReason.TRAILING_SILENCE, listener.endpoint)
+        assertEquals(55, listener.pcmFrames.size)
+        assertEquals(5_000.toShort(), listener.pcmFrames[15].samples.first())
         val result = hub.stop(session, PcmStopReason.ADAPTIVE_ENDPOINT)
         assertNotNull(result)
         assertTrue(result!!.snapshot.speechDetected)
@@ -115,6 +117,13 @@ class VoiceAudioHubTest {
     private class RecordingListener : VoiceAudioHubListener {
         var speechStarts = 0
         var endpoint: EndpointReason? = null
+        val pcmFrames = mutableListOf<PcmFramePacket>()
+
+        override val acceptsPcmFrames: Boolean = true
+
+        override fun onPcmFrame(session: VoiceAudioSession, frame: PcmFramePacket) {
+            pcmFrames += frame
+        }
 
         override fun onSpeechStarted(session: VoiceAudioSession, sequence: Long) {
             speechStarts += 1
