@@ -65,6 +65,7 @@
     A10000000000000000000734 /* VoiceWhisperBenchmarkAudioLoaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000734 /* VoiceWhisperBenchmarkAudioLoaderTests.swift */; };
     A10000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift */; };
     A10000000000000000000736 /* VoiceWhisperBenchmarkRunCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000736 /* VoiceWhisperBenchmarkRunCoordinatorTests.swift */; };
+    A10000000000000000000737 /* voice in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000737 /* voice */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -585,6 +586,7 @@
     A20000000000000000000734 /* VoiceWhisperBenchmarkAudioLoaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkAudioLoaderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkRunCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000736 /* VoiceWhisperBenchmarkRunCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkRunCoordinatorTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000737 /* voice */ = {isa = PBXFileReference; lastKnownFileType = folder; path = voice; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1085,6 +1087,7 @@
         A20000000000000000000731 /* VoiceWhisperBenchmarkRunner.swift */,
         A20000000000000000000733 /* VoiceWhisperBenchmarkAudioLoader.swift */,
         A20000000000000000000735 /* VoiceWhisperBenchmarkRunCoordinator.swift */,
+        A20000000000000000000737 /* voice */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
@@ -1671,7 +1674,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+    A70000000000000000000001 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A10000000000000000000737 /* voice in Resources */,); runOnlyForDeploymentPostprocessing = 0; };
     A70000000000000000000002 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
