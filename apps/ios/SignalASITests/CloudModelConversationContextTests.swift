@@ -44,12 +44,43 @@ final class CloudModelConversationContextTests: XCTestCase {
     XCTAssertEqual(prepared.turns.last?.conversationId, "conversation")
   }
 
+  func testContextOverflowRetryShrinksWindowsUntilSuccess() async throws {
+    var attempts: [(window: Int, attempt: Int)] = []
+    let result = try await CloudModelClient().withContextOverflowRetry(model: model(), apiKey: "sk-live") { window, attempt in
+      attempts.append((window: window, attempt: attempt))
+      if attempt < 2 {
+        throw CloudHTTPFailure(statusCode: 400, responseBody: #"{"code":"context_length_exceeded"}"#)
+      }
+      return "ok"
+    }
+
+    XCTAssertEqual(result, "ok")
+    XCTAssertEqual(attempts.map(\.attempt), [0, 1, 2])
+    XCTAssertEqual(attempts.map(\.window), [128_000, 64_000, 32_000])
+  }
+
+  func testContextOverflowRetryDoesNotRetryNonOverflowHTTPFailure() async {
+    var attempts = 0
+    do {
+      _ = try await CloudModelClient().withContextOverflowRetry(model: model(), apiKey: "sk-live") { _, _ in
+        attempts += 1
+        throw CloudHTTPFailure(statusCode: 401, responseBody: "bad key")
+      }
+      XCTFail("Expected non-overflow HTTP failure.")
+    } catch let error as SignalASIError {
+      XCTAssertEqual(error.errorDescription, "Invalid SignalASI payload: Cloud request failed with 401: bad key")
+    } catch {
+      XCTFail("Unexpected error: \(error)")
+    }
+    XCTAssertEqual(attempts, 1)
+  }
+
   private func model() -> CloudModelConfig {
     CloudModelConfig(
       id: "model",
       displayName: "Model",
       provider: "OpenAI",
-      modelId: "model-id",
+      modelId: "gpt-5",
       endpoint: "https://api.example.test/v1/chat/completions",
       apiStyle: .openAICompatible,
       keychainAccount: "model",
