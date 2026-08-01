@@ -14,6 +14,7 @@ data class VoiceAssistantConfig(
     val asrProvider: String,
     val recognitionPreference: VoiceRecognitionPreference,
     val onlineAsrPrivacy: AsrPrivacyPolicy,
+    val remoteWhisperAllowed: Boolean,
     val asrModel: String,
     val asrRuntimeMode: WhisperUserVoiceMode,
     val asrLanguage: String,
@@ -42,6 +43,7 @@ object VoiceAssistantSettings {
     private const val KEY_ONLINE_ASR_AUDIO_UPLOAD_ALLOWED = "online_asr_audio_upload_allowed"
     private const val KEY_ONLINE_ASR_DELETE_SERVER_DATA = "online_asr_delete_server_data"
     private const val KEY_LOCAL_ASR_ALWAYS_PREFERRED = "local_asr_always_preferred"
+    private const val KEY_REMOTE_WHISPER_ALLOWED = "remote_whisper_allowed"
     private const val KEY_ASR_MODEL = "asr_model"
     private const val KEY_ASR_RUNTIME_MODE = "asr_runtime_mode"
     private const val KEY_TTS_PROVIDER = "tts_provider"
@@ -58,6 +60,7 @@ object VoiceAssistantSettings {
     const val ASR_PROVIDER_LOCAL_WHISPER = "local_whisper_cpp"
     const val ASR_PROVIDER_AUTO = "auto"
     const val ASR_PROVIDER_ONLINE_REALTIME = "online_realtime"
+    const val ASR_PROVIDER_REMOTE_WHISPER = "remote_whisper"
     const val ROUTING_MODE_NATIVE_AGENT = "native_agent"
     const val ROUTING_MODE_CONTACT = "contact"
     const val DEFAULT_WAKE_MODEL = "hello_world.onnx"
@@ -102,6 +105,7 @@ object VoiceAssistantSettings {
                 requestServerDataDeletion = prefs.getBoolean(KEY_ONLINE_ASR_DELETE_SERVER_DATA, true),
                 localAlwaysPreferred = prefs.getBoolean(KEY_LOCAL_ASR_ALWAYS_PREFERRED, false)
             ),
+            remoteWhisperAllowed = prefs.getBoolean(KEY_REMOTE_WHISPER_ALLOWED, false),
             asrModel = canonicalAsrModel,
             asrRuntimeMode = runCatching {
                 enumValueOf<WhisperUserVoiceMode>(
@@ -152,6 +156,7 @@ object VoiceAssistantSettings {
         val preference = when (provider) {
             ASR_PROVIDER_LOCAL_WHISPER -> VoiceRecognitionPreference.LOCAL_PRIVATE
             ASR_PROVIDER_ONLINE_REALTIME -> VoiceRecognitionPreference.ONLINE_FAST
+            ASR_PROVIDER_REMOTE_WHISPER -> VoiceRecognitionPreference.REMOTE_NODE
             else -> VoiceRecognitionPreference.AUTO
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -174,6 +179,12 @@ object VoiceAssistantSettings {
             .putBoolean(KEY_ONLINE_ASR_AUDIO_UPLOAD_ALLOWED, value.allowRawAudioUpload)
             .putBoolean(KEY_ONLINE_ASR_DELETE_SERVER_DATA, value.requestServerDataDeletion)
             .putBoolean(KEY_LOCAL_ASR_ALWAYS_PREFERRED, value.localAlwaysPreferred)
+            .apply()
+    }
+
+    fun setRemoteWhisperAllowed(context: Context, value: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_REMOTE_WHISPER_ALLOWED, value)
             .apply()
     }
 
@@ -242,6 +253,7 @@ object VoiceAssistantSettings {
     private val SUPPORTED_ASR_PROVIDERS = setOf(
         ASR_PROVIDER_AUTO,
         ASR_PROVIDER_LOCAL_WHISPER,
-        ASR_PROVIDER_ONLINE_REALTIME
+        ASR_PROVIDER_ONLINE_REALTIME,
+        ASR_PROVIDER_REMOTE_WHISPER
     )
 }

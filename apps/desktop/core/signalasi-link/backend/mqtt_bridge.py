@@ -1983,6 +1983,7 @@ def _publish_phone_payload(
         PROACTIVE_TASK_EVENT_TYPE,
         PROACTIVE_WEBHOOK_EVENT_TYPE,
         "unified_command_result",
+        "remote_whisper_result", "remote_whisper_error", "remote_whisper_cancelled",
     } else "down"
     target_topic = paired_client["topics"][channel]
     reliable = reply_payload.get("type") != "delivery_ack" if durable is None else bool(durable)
@@ -2218,6 +2219,87 @@ def _route_evolution_payload(mqttc, paired_client: dict, payload: dict) -> bool:
             durable=True,
         )
         return True
+
+
+def _route_remote_whisper_payload(
+    mqttc,
+    wire_payload: dict,
+    payload: dict,
+    *,
+    client_route_id: str,
+    paired_client: dict,
+) -> bool:
+    from remote_whisper_node import (
+        CANCEL_TYPE,
+        CHUNK_TYPE,
+        REQUEST_TYPE,
+        RemoteWhisperError,
+        remote_whisper_assembler,
+        remote_whisper_node,
+    )
+
+    payload_type = str(payload.get("type") or "")
+    if payload_type not in {REQUEST_TYPE, CHUNK_TYPE, CANCEL_TYPE}:
+        return False
+    node = remote_whisper_node()
+    assembler = remote_whisper_assembler()
+    reply_route = dict(wire_payload)
+    if payload_type == CANCEL_TYPE:
+        try:
+            assembler.cancel(
+                str(payload.get("request_id") or ""),
+                client_route_id=client_route_id,
+            )
+            result = node.cancel(payload, client_route_id=client_route_id)
+        except RemoteWhisperError as exc:
+            result = {
+                "type": "remote_whisper_error",
+                "protocol": "signalasi.remote-whisper/1.0",
+                "request_id": str(payload.get("request_id") or ""),
+                "status": "failed",
+                "error_code": exc.code,
+                "error_message": str(exc),
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+                "server_time_ms": int(time.time() * 1_000),
+            }
+        _publish_phone_payload(mqttc, reply_route, result, durable=True)
+        return True
+
+    try:
+        completed = assembler.accept(payload, client_route_id=client_route_id)
+    except RemoteWhisperError as exc:
+        _publish_phone_payload(
+            mqttc,
+            reply_route,
+            {
+                "type": "remote_whisper_error",
+                "protocol": "signalasi.remote-whisper/1.0",
+                "request_id": str(payload.get("request_id") or ""),
+                "status": "failed",
+                "error_code": exc.code,
+                "error_message": str(exc),
+                "desktop_id": desktop_id(),
+                "desktop_name": desktop_name(),
+                "server_time_ms": int(time.time() * 1_000),
+            },
+            durable=True,
+        )
+        return True
+    if completed is None:
+        return True
+    node.submit(
+        completed,
+        client_route_id=client_route_id,
+        paired_client=paired_client,
+        on_result=lambda result: _publish_phone_payload(
+            mqttc,
+            reply_route,
+            result,
+            durable=True,
+        ),
+    )
+    return True
 
 
 def _client_task_turn_id(task: dict) -> str:
@@ -5135,6 +5217,15 @@ def _process_message(mqttc, userdata, msg):
                 accepted_delivery_ack_payload(payload, message_id, trace),
             )
 
+        if _route_remote_whisper_payload(
+            mqttc,
+            wire_payload,
+            payload,
+            client_route_id=client_route_id,
+            paired_client=paired_client,
+        ):
+            return
+
         if payload.get("type") == ARTIFACT_RECEIPT_TYPE:
             from artifact_delivery import acknowledge_artifact
 
@@ -5692,6 +5783,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
     from desktop_native_tools import desktop_native_tool_registry
     from desktop_control import desktop_control_manager
     from provider_profiles import routable_model_profiles
+    from remote_whisper_node import remote_whisper_node
     from tool_handle_registry import tool_handle_registry
     from tool_marketplace import tool_marketplace
 
@@ -5703,6 +5795,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
     handle_status = tool_handle_registry().status()
     native_manifest = desktop_native_tool_registry().manifest()
     marketplace = tool_marketplace().catalog()
+    remote_whisper = remote_whisper_node().capability(client_route_id)
     provider_profiles = diagnostics.get("provider_profiles") or {
         "schema_version": 1,
         "profiles": [],
@@ -5725,6 +5818,8 @@ def capability_manifest(client_route_id: str = "") -> dict:
     ]
     if full_executor:
         advertised_tools.extend(["desktop_native_tools", "desktop_control"])
+    if remote_whisper.get("available"):
+        advertised_tools.append("remote_whisper")
     return {
         "type": "capability_manifest",
         "manifest_version": 1,
@@ -5802,6 +5897,7 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "provider_profile_v1",
             "provider_performance_observations_v1",
             "explicit_execution_location_v1",
+            "remote_whisper_node_v1",
             *(["agent_output_delta_v1"] if agent_output_delta_enabled() else []),
             "agent_status_sequence_v1",
         ],
@@ -5811,7 +5907,8 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "agent_status_seq": True,
             "agent_delta_mode": "cumulative",
             "agent_delta_coalesce_ms": int(TASK_EVENT_DELTA_COALESCE_SECONDS * 1_000),
-            "remote_whisper": False,
+            "remote_whisper": bool(remote_whisper.get("available")),
+            "remote_whisper_node": remote_whisper,
             "supported_audio": ["pcm_s16le_16000_mono"],
         },
         "limits": {

@@ -1290,6 +1290,13 @@
     <string name="voice_asr_mode_local_private">Local private</string>
     <string name="voice_asr_mode_local_accurate">Local high accuracy</string>
     <string name="voice_asr_mode_remote_node">Remote node</string>
+    <string name="voice_asr_remote_section">My Desktop accuracy node</string>
+    <string name="voice_asr_remote_allowed_title">Allow remote accuracy review</string>
+    <string name="voice_asr_remote_allowed_subtitle">Send encrypted PCM only to a verified paired Desktop, then delete its temporary audio</string>
+    <string name="voice_asr_remote_consent_title">Allow this paired Desktop to review voice?</string>
+    <string name="voice_asr_remote_consent_message">SignalASI will send encrypted audio only when remote high-accuracy review is selected. The paired Desktop verifies every chunk and deletes temporary audio after transcription.</string>
+    <string name="voice_asr_remote_node_title">Execution device</string>
+    <string name="voice_asr_remote_node_unavailable">No verified Whisper node is online</string>
     <string name="voice_asr_provider_local_whisper">On-device whisper.cpp · %1$s</string>
     <string name="voice_asr_local_title">On-device whisper.cpp</string>
     <string name="voice_asr_local_subtitle">Speech stays on this phone. Choose an installed model or download one from a trusted source.</string>
