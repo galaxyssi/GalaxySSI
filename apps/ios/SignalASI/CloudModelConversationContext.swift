@@ -53,7 +53,7 @@ enum CloudModelConversationContext {
   }
 
   private static func profile(model: CloudModelConfig, apiKey: String?) -> ProviderProfile {
-    AgentProviderProfileCatalog.fromCloudModel(
+    ProviderProfileCatalog.fromCloudModel(
       resourceId: "",
       provider: model.provider,
       displayName: model.displayName,
