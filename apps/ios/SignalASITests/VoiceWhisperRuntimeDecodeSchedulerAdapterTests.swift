@@ -47,6 +47,24 @@ final class VoiceWhisperRuntimeDecodeSchedulerAdapterTests: XCTestCase {
     XCTAssertEqual(runtime.sessions.first?.decodeRequests.first?.mode, .finalOnly)
   }
 
+  func testFactorySchedulerRetainsAdapterForDecodeLifetime() async throws {
+    let runtime = FakeSchedulerRuntime(result: Self.nativeResult("retained"))
+    let scheduler = VoiceWhisperRuntimeDecodeSchedulerAdapter(
+      runtime: runtime,
+      threadCountProvider: { _, _ in 1 }
+    ).makeScheduler()
+    defer { scheduler.close() }
+
+    let request = try Self.request(modelProfileId: "tiny", mode: .finalOnly)
+    let result = await scheduler.submit(request)
+
+    guard case .completed(_, let native) = result else {
+      return XCTFail("Expected scheduler to keep adapter alive for decode")
+    }
+    XCTAssertEqual(native.text, "retained")
+    XCTAssertEqual(runtime.loadedProfileIds, ["tiny"])
+  }
+
   func testAbortForwardingUsesStatefulRuntimeAbortAll() {
     let runtime = FakeSchedulerRuntime(result: Self.nativeResult("unused"))
     let adapter = VoiceWhisperRuntimeDecodeSchedulerAdapter(runtime: runtime)
