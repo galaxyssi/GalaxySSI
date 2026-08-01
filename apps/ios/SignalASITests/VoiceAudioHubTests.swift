@@ -46,6 +46,9 @@ final class VoiceAudioHubTests: XCTestCase {
 
     XCTAssertEqual(listener.speechStarts, 1)
     XCTAssertEqual(listener.endpoint, .trailingSilence)
+    let partial = hub.snapshotWindow(session: session, maxDurationMs: 200)
+    XCTAssertTrue(partial?.speechDetected ?? false)
+    XCTAssertEqual(partial?.samples.count, 200)
     let result = await hub.stop(session: session, reason: .adaptiveEndpoint)
     XCTAssertNotNil(result)
     XCTAssertTrue(result?.snapshot.speechDetected ?? false)

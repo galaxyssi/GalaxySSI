@@ -67,6 +67,16 @@ final class VoicePcmTapPipeline {
     )
   }
 
+  func snapshotWindow(maxDurationMs: Int64) -> PcmSnapshot {
+    store.snapshotWindow(
+      maxDurationMs: maxDurationMs,
+      segment: SegmentRange(
+        preRollMs: config.endpoint.preRollMs,
+        postRollMs: config.endpoint.postRollMs
+      )
+    )
+  }
+
   func reset() {
     locked {
       sequence = 0
