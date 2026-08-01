@@ -265,9 +265,3 @@ struct AgentIOSDefaultSelfEvolutionProvider: AgentIOSSelfEvolutionToolProviding 
     max(0, nowMillis())
   }
 }
-
-private extension Int {
-  func clamped(to range: ClosedRange<Int>) -> Int {
-    min(max(self, range.lowerBound), range.upperBound)
-  }
-}

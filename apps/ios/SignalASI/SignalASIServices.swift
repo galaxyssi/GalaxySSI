@@ -583,7 +583,7 @@ final class MessageCoordinator: ObservableObject {
 
   init(
     store: SignalASIStore,
-    deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
+    deliveryStore: SignalASILinkDeliveryStore? = nil,
     attachmentTransferStore: AgentOutboundAttachmentTransferStore = AgentOutboundAttachmentTransferStore(),
     diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger(),
     cloudStreamEngine: CloudConversationStreaming? = nil,
@@ -596,7 +596,7 @@ final class MessageCoordinator: ObservableObject {
     mqttClient: SignalASIMqttClient? = nil
   ) {
     self.store = store
-    self.deliveryStore = deliveryStore
+    self.deliveryStore = deliveryStore ?? SignalASILinkDeliveryStore()
     self.attachmentTransferStore = attachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
     self.disclosureStore = disclosureStore
