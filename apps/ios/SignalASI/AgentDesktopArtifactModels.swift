@@ -350,22 +350,22 @@ private struct AgentDesktopArtifactChunkPayload {
   var chunkData: Data
 
   init(_ payload: [String: Any]) throws {
-    guard string(payload["type"]) == "artifact_chunk" else {
+    guard Self.string(payload["type"]) == "artifact_chunk" else {
       throw AgentDesktopArtifactStoreError.invalidPayload("Unsupported artifact payload")
     }
-    artifactId = string(payload["artifact_id"]).lowercased()
-    artifactURI = string(payload["artifact_uri"])
-    taskId = string(payload["task_id"])
-    name = AgentDesktopArtifactStore.safeFileName(string(payload["name"]))
-    mimeType = string(payload["mime_type"]).ifBlank("application/octet-stream")
-    sizeBytes = int64(payload["size_bytes"])
-    sha256 = string(payload["sha256"]).lowercased()
-    originalSizeBytes = int64(payload["original_size_bytes"], fallback: sizeBytes)
-    originalSHA256 = string(payload["original_sha256"]).lowercased().ifBlank(sha256)
-    chunkIndex = int(payload["chunk_index"])
-    chunkCount = int(payload["chunk_count"])
-    chunkSizeBytes = int64(payload["chunk_size_bytes"])
-    chunkSHA256 = string(payload["chunk_sha256"]).lowercased()
+    artifactId = Self.string(payload["artifact_id"]).lowercased()
+    artifactURI = Self.string(payload["artifact_uri"])
+    taskId = Self.string(payload["task_id"])
+    name = AgentDesktopArtifactStore.safeFileName(Self.string(payload["name"]))
+    mimeType = Self.string(payload["mime_type"]).ifBlank("application/octet-stream")
+    sizeBytes = Self.int64(payload["size_bytes"])
+    sha256 = Self.string(payload["sha256"]).lowercased()
+    originalSizeBytes = Self.int64(payload["original_size_bytes"], fallback: sizeBytes)
+    originalSHA256 = Self.string(payload["original_sha256"]).lowercased().ifBlank(sha256)
+    chunkIndex = Self.int(payload["chunk_index"])
+    chunkCount = Self.int(payload["chunk_count"])
+    chunkSizeBytes = Self.int64(payload["chunk_size_bytes"])
+    chunkSHA256 = Self.string(payload["chunk_sha256"]).lowercased()
     guard Self.hex64(artifactId),
       Self.hex64(sha256),
       Self.hex64(originalSHA256),
@@ -390,7 +390,7 @@ private struct AgentDesktopArtifactChunkPayload {
     guard (sizeBytes + Self.maximumChunkBytes - 1) / Self.maximumChunkBytes == Int64(chunkCount) else {
       throw AgentDesktopArtifactStoreError.invalidPayload("Artifact chunk count does not match the delivered size")
     }
-    guard let data = Data(base64Encoded: string(payload["data_b64"]), options: [.ignoreUnknownCharacters]) else {
+    guard let data = Data(base64Encoded: Self.string(payload["data_b64"]), options: [.ignoreUnknownCharacters]) else {
       throw AgentDesktopArtifactStoreError.invalidPayload("Artifact chunk data is not base64")
     }
     guard Int64(data.count) == chunkSizeBytes else {
