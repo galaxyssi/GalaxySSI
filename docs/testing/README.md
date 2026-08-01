@@ -28,6 +28,7 @@ dedicated-device gate checklist in [SELF_EVOLUTION_V2.md](SELF_EVOLUTION_V2.md).
 | Android background delivery | `npm run smoke:android:background` | Offline or background message persistence, notification history, unread badge, list timestamp, bubble timestamp, stable MQTT client identity, and QoS 1 delivery evidence are present. |
 | Android agent replies | `npm run smoke:android:agent-replies` | Hermes and Codex chat replies preserve full text and delivery trace evidence after contact switching and UI refresh. |
 | Android voice reply panel | `npm run smoke:android:voice-reply` | Long Agent replies remain visible on the Voice page response panel and are persisted in the Hermes chat history with delivery trace evidence. |
+| Android voice Agent run bridge | `npm run smoke:android:voice-agent-run` | Local creation, explicit remote acceptance, persistent progress, cancellation, recovery, and legacy final replies remain distinct and idempotent. |
 | Android voice settings | `npm run smoke:android:voice-settings` | Wake engine, wake words, ASR provider, ASR language, TTS provider, Xiaoxiao voice, welcome text, speak-reply toggle, and default target settings persist and render. |
 | Android backup roundtrip | `npm run smoke:android:backup` | Encrypted backup export and import restore contacts plus chat messages on device. |
 | Android destructive reset | `npm run smoke:android:reset` | Clear All Data rotates the local identity, clears contacts and trust state, recreates the welcome system notification, and restores test device state afterward. |

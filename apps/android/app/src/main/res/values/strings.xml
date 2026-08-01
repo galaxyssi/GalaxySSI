@@ -1126,6 +1126,7 @@
     <string name="delivery_status_send_failed">Send failed</string>
     <string name="delivery_status_confirmed">Confirmed</string>
     <string name="delivery_status_notified">Notified</string>
+    <string name="agent_task_status_created">Created on this phone</string>
     <string name="agent_task_status_accepted">Accepted</string>
     <string name="agent_task_status_queued">Queued</string>
     <string name="agent_task_status_starting">Starting</string>
@@ -1145,6 +1146,8 @@
     <string name="agent_task_cancel_title">Cancel Agent task</string>
     <string name="agent_task_cancel_subtitle">Stop the task running on the paired computer</string>
     <string name="agent_task_details_title">Agent task</string>
+    <string name="voice_agent_run_accepted">%1$s accepted the task</string>
+    <string name="voice_agent_run_approval_required">The task needs your approval</string>
     <string name="delivery_trace_empty">No trace yet</string>
     <string name="delivery_trace_created">Created</string>
     <string name="delivery_trace_persisted">Persisted</string>

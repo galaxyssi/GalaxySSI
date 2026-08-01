@@ -31,6 +31,7 @@ sealed interface VoiceInteractionEvent {
     ) : VoiceInteractionEvent
     data class LocalActionCompleted(override val sessionId: String) : VoiceInteractionEvent
     data class ModelDelta(override val sessionId: String, val text: String) : VoiceInteractionEvent
+    data class AgentRunCreated(override val sessionId: String, val runId: String) : VoiceInteractionEvent
     data class AgentAccepted(override val sessionId: String, val runId: String) : VoiceInteractionEvent
     data class AgentProgress(override val sessionId: String, val runId: String) : VoiceInteractionEvent
     data class PlaybackStarted(override val sessionId: String, val utteranceId: String) : VoiceInteractionEvent

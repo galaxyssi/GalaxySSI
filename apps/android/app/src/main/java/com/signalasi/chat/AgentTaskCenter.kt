@@ -35,6 +35,8 @@ object AgentTaskCenterPolicy {
 }
 
 class AgentTaskCenter(private val store: AgentTaskStore) {
+    fun find(taskId: String): AgentTaskRecord? = store.find(taskId.trim())
+
     fun deleteTask(taskId: String): Boolean {
         val cleanTaskId = taskId.trim()
         if (cleanTaskId.isBlank() || store.find(cleanTaskId) == null) return false

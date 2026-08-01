@@ -987,6 +987,25 @@ class AgentRunEventStore(context: Context) : AgentRunControlStore {
         snapshotLocked(runId)
     }
 
+    fun storedRunIds(limit: Int = MAX_RUNS): List<String> = synchronized(STORE_LOCK) {
+        runIdsLocked().takeLast(limit.coerceIn(1, MAX_RUNS))
+    }
+
+    fun removeRuns(runIds: Set<String>) = synchronized(STORE_LOCK) {
+        val normalized = runIds.map(String::trim).filter(String::isNotBlank).toSet()
+        if (normalized.isEmpty()) return@synchronized
+        normalized.forEach { runId ->
+            database.remove(runKey(runId))
+            EVENTS_CACHE.remove(runId)
+        }
+        val retainedRuns = runIdsLocked().filterNot(normalized::contains)
+        database.writeString(KEY_RUN_IDS, JSONArray(retainedRuns).toString())
+        RUN_IDS_CACHE = retainedRuns
+        val retainedRecoverableRuns = recoverableRunIdsLocked().filterNot(normalized::contains)
+        database.writeString(KEY_RECOVERABLE_RUN_IDS, JSONArray(retainedRecoverableRuns).toString())
+        RECOVERABLE_RUN_IDS_CACHE = retainedRecoverableRuns
+    }
+
     private fun snapshotLocked(runId: String): AgentRunControlSnapshot? {
         val events = eventsLocked(runId)
         val last = events.lastOrNull() ?: return null

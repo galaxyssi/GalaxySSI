@@ -14,6 +14,7 @@ const val VOICE_CLOUD_MODEL_STREAM_V1_FLAG = "voice.cloud_model_stream_v1"
 const val VOICE_SENTENCE_COMMITTER_V1_FLAG = "voice.sentence_committer_v1"
 const val VOICE_PROGRESSIVE_TTS_V1_FLAG = "voice.progressive_tts_v1"
 const val VOICE_BARGE_IN_V1_FLAG = "voice.barge_in_v1"
+const val VOICE_AGENT_RUN_BRIDGE_V1_FLAG = "agent.voice_run_bridge_v1"
 
 object VoiceFeatureFlags {
     private const val PREFERENCES = "signalasi_voice_feature_flags"
@@ -149,6 +150,13 @@ object VoiceFeatureFlags {
 
     fun setBargeInEnabled(context: Context, enabled: Boolean) {
         setFlag(context, VOICE_BARGE_IN_V1_FLAG, enabled)
+    }
+
+    fun isAgentVoiceRunBridgeEnabled(context: Context): Boolean =
+        isDebugOptInEnabled(context, VOICE_AGENT_RUN_BRIDGE_V1_FLAG)
+
+    fun setAgentVoiceRunBridgeEnabled(context: Context, enabled: Boolean) {
+        setFlag(context, VOICE_AGENT_RUN_BRIDGE_V1_FLAG, enabled)
     }
 
     private fun isDebugOptInEnabled(context: Context, key: String): Boolean =
