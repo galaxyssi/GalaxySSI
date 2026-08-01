@@ -94,7 +94,7 @@ enum GlobalConversationContextJournalPolicy {
       if !retractions.isEmpty {
         journal = journal.filter { entry in
           let stored = entry.value
-          isJournalControlMarker(stored) ||
+          return isJournalControlMarker(stored) ||
             (!retractions.contains(stored.id) && stored.evidenceRoots.isDisjoint(with: retractions))
         }
       }
@@ -114,7 +114,7 @@ enum GlobalConversationContextJournalPolicy {
         if event.type == .conversationDeleted || excludesConversationFromGlobalModel(event) {
           journal = journal.filter { entry in
             let stored = entry.value
-            isJournalControlMarker(stored) || stored.conversationId != event.conversationId
+            return isJournalControlMarker(stored) || stored.conversationId != event.conversationId
           }
         }
         continue
@@ -286,7 +286,7 @@ enum GlobalConversationContextJournalPolicy {
     }
     journal = journal.filter { entry in
       let stored = entry.value
-      !(isJournalControlMarker(stored) &&
+      return !(isJournalControlMarker(stored) &&
         isConversationLifecycleEvent(stored) &&
         stored.conversationId == event.conversationId)
     }
