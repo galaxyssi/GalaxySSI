@@ -123,29 +123,35 @@ extension CloudModelClient {
     systemPrompt: String,
     requestId: String
   ) throws -> ModelStreamRequest {
+    let context = CloudModelConversationContext.prepare(
+      model: model,
+      apiKey: apiKey,
+      turns: turns,
+      systemPrompt: systemPrompt
+    )
     switch model.apiStyle {
     case .anthropic:
       return try anthropicStreamingRequest(
         model: model,
         apiKey: apiKey,
-        turns: turns,
-        systemPrompt: systemPrompt,
+        turns: context.turns,
+        systemPrompt: context.systemPrompt,
         requestId: requestId
       )
     case .gemini:
       return try geminiStreamingRequest(
         model: model,
         apiKey: apiKey,
-        turns: turns,
-        systemPrompt: systemPrompt,
+        turns: context.turns,
+        systemPrompt: context.systemPrompt,
         requestId: requestId
       )
     case .openAICompatible:
       return try openAICompatibleStreamingRequest(
         model: model,
         apiKey: apiKey,
-        turns: turns,
-        systemPrompt: systemPrompt,
+        turns: context.turns,
+        systemPrompt: context.systemPrompt,
         requestId: requestId
       )
     }
