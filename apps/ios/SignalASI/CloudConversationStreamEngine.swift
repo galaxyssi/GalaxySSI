@@ -16,9 +16,13 @@ protocol CloudConversationStreaming {
 }
 
 final class CloudConversationStreamEngine: CloudModelStreamClient {
+  private static let maxToolRounds = 4
+  private static let maxToolCalls = 8
+
   private let modelClient: CloudModelClient
   private let streamClient: CloudModelStreamClient
   private let legacySender: CloudConversationLegacySending
+  private let toolExecutor: CloudConversationToolExecuting
   private let disclosureStore: AgentDataDisclosureStore
   private let elapsedMillis: () -> Int64
   private let lock = NSLock()
@@ -28,6 +32,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     modelClient: CloudModelClient = CloudModelClient(),
     streamClient: CloudModelStreamClient = URLSessionCloudModelStreamClient(),
     legacySender: CloudConversationLegacySending? = nil,
+    toolExecutor: CloudConversationToolExecuting = CloudWebGroundingToolExecutor(),
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
@@ -36,6 +41,7 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     self.modelClient = modelClient
     self.streamClient = streamClient
     self.legacySender = legacySender ?? modelClient
+    self.toolExecutor = toolExecutor
     self.disclosureStore = disclosureStore
     self.elapsedMillis = elapsedMillis
   }
@@ -121,128 +127,203 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     var emittedText = false
     var emittedSequence: Int64 = 0
     var connected = false
-    var roundCompleted = false
     var lastFinishReason: String?
-    var roundFailure: ModelStreamFailed?
-    let roundId = "\(requestId):r0"
+    let conversationId = turns.last?.conversationId ?? ""
+    let turnId = turns.last?.turnId.ifBlank(requestId) ?? requestId
 
     do {
-      var request = try await modelClient.prepareConversationStreamRequest(
+      let request = try await modelClient.prepareConversationStreamRequest(
         contact: contact,
         store: store,
         turns: turns,
         requestId: requestId
       )
-      request.requestId = roundId
-      setActiveRound(roundId, for: requestId)
+      var prepared = try CloudModelStreamMutableConversation(request: request)
+      var executedToolKeys = Set<String>()
+      var toolCallCount = 0
+      var forceFinalRound = false
 
-      for try await event in streamClient.stream(request) {
-        try Task.checkCancellation()
-        switch event {
-        case .connected(let value):
-          guard !connected else { continue }
-          connected = true
-          continuation.yield(
-            .connected(
-              ModelStreamConnected(
-                requestId: requestId,
-                httpStatus: value.httpStatus,
-                connectedAtElapsedMs: value.connectedAtElapsedMs
+      for round in 0..<Self.maxToolRounds {
+        let roundId = "\(requestId):r\(round)"
+        let finalRound = forceFinalRound || round == Self.maxToolRounds - 1
+        let roundRequest = try prepared.requestForRound(roundId: roundId, finalRound: finalRound)
+        let assembler = ToolCallDeltaAssembler()
+        var roundCompleted = false
+        var roundFailure: ModelStreamFailed?
+        setActiveRound(roundId, for: requestId)
+
+        for try await event in streamClient.stream(roundRequest) {
+          try Task.checkCancellation()
+          switch event {
+          case .connected(let value):
+            guard !connected else { continue }
+            connected = true
+            continuation.yield(
+              .connected(
+                ModelStreamConnected(
+                  requestId: requestId,
+                  httpStatus: value.httpStatus,
+                  connectedAtElapsedMs: value.connectedAtElapsedMs
+                )
               )
             )
-          )
 
-        case .textDelta(let value):
-          emittedText = emittedText || !value.text.isEmpty
-          emittedSequence += 1
-          continuation.yield(
-            .textDelta(
-              ModelStreamTextDelta(
-                requestId: requestId,
-                sequence: emittedSequence,
-                text: value.text,
-                receivedAtElapsedMs: value.receivedAtElapsedMs
+          case .textDelta(let value):
+            emittedText = emittedText || !value.text.isEmpty
+            emittedSequence += 1
+            continuation.yield(
+              .textDelta(
+                ModelStreamTextDelta(
+                  requestId: requestId,
+                  sequence: emittedSequence,
+                  text: value.text,
+                  receivedAtElapsedMs: value.receivedAtElapsedMs
+                )
               )
             )
-          )
 
-        case .toolCallDelta(let value):
-          emittedSequence += 1
-          continuation.yield(
-            .toolCallDelta(
-              ModelStreamToolCallDelta(
-                requestId: requestId,
-                sequence: emittedSequence,
-                payload: value.payload
+          case .toolCallDelta(let value):
+            assembler.accept(value.payload)
+            emittedSequence += 1
+            continuation.yield(
+              .toolCallDelta(
+                ModelStreamToolCallDelta(
+                  requestId: requestId,
+                  sequence: emittedSequence,
+                  payload: value.payload
+                )
               )
             )
-          )
 
-        case .usage(let value):
-          continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
+          case .usage(let value):
+            continuation.yield(.usage(ModelStreamUsage(requestId: requestId, usage: value.usage)))
 
-        case .completed(let value):
-          roundCompleted = true
-          lastFinishReason = value.finishReason
+          case .completed(let value):
+            roundCompleted = true
+            lastFinishReason = value.finishReason
 
-        case .failed(let value):
-          roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
+          case .failed(let value):
+            roundFailure = ModelStreamFailed(requestId: requestId, error: value.error)
+          }
         }
-      }
-      setActiveRound(nil, for: requestId)
+        setActiveRound(nil, for: requestId)
 
-      if let failure = roundFailure {
-        if !emittedText && failure.error.code == "STREAM_UNSUPPORTED" {
-          await emitLegacyConversation(
-            contact: contact,
-            store: store,
-            turns: turns,
-            requestId: requestId,
-            sequence: &emittedSequence,
-            ticket: ticket,
-            continuation: continuation
+        if let failure = roundFailure {
+          if !emittedText && failure.error.code == "STREAM_UNSUPPORTED" {
+            await emitLegacyConversation(
+              contact: contact,
+              store: store,
+              turns: turns,
+              requestId: requestId,
+              sequence: &emittedSequence,
+              ticket: ticket,
+              continuation: continuation
+            )
+          } else {
+            AgentDataDisclosureLedger.update(
+              store: disclosureStore,
+              ticket: ticket,
+              status: .failed,
+              failureReason: failure.error.message
+            )
+            continuation.yield(.failed(failure))
+          }
+          continuation.finish()
+          return
+        }
+
+        guard roundCompleted else {
+          let error = ModelStreamError(
+            code: "STREAM_INTERRUPTED",
+            message: "The provider stream ended before completion",
+            retryable: true,
+            partialResponse: emittedText
           )
-        } else {
           AgentDataDisclosureLedger.update(
             store: disclosureStore,
             ticket: ticket,
             status: .failed,
-            failureReason: failure.error.message
+            failureReason: error.message
           )
-          continuation.yield(.failed(failure))
+          continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: error)))
+          continuation.finish()
+          return
         }
-        continuation.finish()
-        return
-      }
 
-      guard roundCompleted else {
-        let error = ModelStreamError(
-          code: "STREAM_INTERRUPTED",
-          message: "The provider stream ended before completion",
-          retryable: true,
-          partialResponse: emittedText
-        )
-        AgentDataDisclosureLedger.update(
-          store: disclosureStore,
-          ticket: ticket,
-          status: .failed,
-          failureReason: error.message
-        )
-        continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: error)))
-        continuation.finish()
-        return
-      }
-
-      AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
-      continuation.yield(
-        .completed(
-          ModelStreamCompleted(
-            requestId: requestId,
-            finishReason: lastFinishReason,
-            completedAtElapsedMs: elapsedMillis()
+        let calls = assembler.completedCalls()
+        if calls.isEmpty() {
+          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
+          continuation.yield(
+            .completed(
+              ModelStreamCompleted(
+                requestId: requestId,
+                finishReason: lastFinishReason,
+                completedAtElapsedMs: elapsedMillis()
+              )
+            )
           )
-        )
+          continuation.finish()
+          return
+        }
+
+        let remaining = Self.maxToolCalls - toolCallCount
+        if remaining <= 0 || finalRound {
+          forceFinalRound = true
+          continue
+        }
+
+        var results: [(AssembledToolCall, String)] = []
+        for call in calls.prefix(remaining) {
+          guard executedToolKeys.insert(call.streamIdentityKey).inserted else { continue }
+          do {
+            let result = try toolExecutor.executeTool(
+              call: call,
+              context: CloudConversationToolExecutionContext(
+                requestId: requestId,
+                conversationId: conversationId,
+                turnId: turnId
+              )
+            )
+            results.append((call, result))
+            toolCallCount += 1
+          } catch {
+            let streamError = ModelStreamError(
+              code: "INVALID_TOOL_ARGUMENTS",
+              message: "Tool arguments were incomplete: \(error.localizedDescription.ifBlank(String(describing: error)))"
+            )
+            AgentDataDisclosureLedger.update(
+              store: disclosureStore,
+              ticket: ticket,
+              status: .failed,
+              failureReason: streamError.message
+            )
+            continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: streamError)))
+            continuation.finish()
+            return
+          }
+        }
+
+        if results.isEmpty() {
+          forceFinalRound = true
+        } else {
+          try prepared.appendToolResults(results)
+        }
+      }
+
+      let error = ModelStreamError(
+        code: "TOOL_ROUND_LIMIT",
+        message: "The model did not produce a final answer within the tool-call budget",
+        partialResponse: emittedText
       )
+      AgentDataDisclosureLedger.update(
+        store: disclosureStore,
+        ticket: ticket,
+        status: .failed,
+        failureReason: error.message
+      )
+      continuation.yield(.failed(ModelStreamFailed(requestId: requestId, error: error)))
+      continuation.finish()
+      return
     } catch is CancellationError {
       await cancel(requestId: requestId, reason: .userStop)
     } catch {

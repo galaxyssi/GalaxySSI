@@ -99,6 +99,64 @@ final class CloudConversationStreamEngineTests: XCTestCase {
   }
 
   @MainActor
+  func testToolCallRoundExecutesToolAndContinuesWithAugmentedConversation() async throws {
+    let fixture = try makeFixture()
+    let streamClient = RecordingModelStreamClient(eventBatches: [
+      [
+        .connected(ModelStreamConnected(requestId: "round-0", httpStatus: 200, connectedAtElapsedMs: 10)),
+        .toolCallDelta(
+          ModelStreamToolCallDelta(
+            requestId: "round-0",
+            sequence: 1,
+            payload: ToolCallPayload(
+              callId: "call-1",
+              index: 0,
+              nameDelta: "web_search",
+              argumentsDelta: #"{"query":"SignalASI"}"#
+            )
+          )
+        ),
+        .completed(ModelStreamCompleted(requestId: "round-0", finishReason: "tool_calls", completedAtElapsedMs: 11))
+      ],
+      [
+        .textDelta(ModelStreamTextDelta(requestId: "round-1", sequence: 1, text: "grounded", receivedAtElapsedMs: 12)),
+        .completed(ModelStreamCompleted(requestId: "round-1", finishReason: "stop", completedAtElapsedMs: 13))
+      ]
+    ])
+    let toolExecutor = RecordingConversationToolExecutor(result: #"{"results":[{"url":"https://signalasi.example"}]}"#)
+    let engine = CloudConversationStreamEngine(
+      streamClient: streamClient,
+      toolExecutor: toolExecutor,
+      disclosureStore: InMemoryAgentDataDisclosureStore(),
+      elapsedMillis: { 99 }
+    )
+
+    let events = try await collect(
+      engine.streamConversation(
+        contact: fixture.contact,
+        store: fixture.store,
+        turns: fixture.turns,
+        requestId: "conversation-tool"
+      )
+    )
+    let secondBody = try object(streamClient.requests[1].bodyJson)
+    let messages = try XCTUnwrap(secondBody["messages"] as? [[String: Any]])
+    let toolMessage = try XCTUnwrap(messages.last)
+
+    XCTAssertEqual(streamClient.requests.map(\.requestId), ["conversation-tool:r0", "conversation-tool:r1"])
+    XCTAssertEqual(toolExecutor.calls.map(\.call.name), ["web_search"])
+    XCTAssertEqual(toolExecutor.calls.first?.context.conversationId, "conversation")
+    XCTAssertEqual(toolExecutor.calls.first?.context.turnId, "turn")
+    XCTAssertEqual(toolDeltas(events).map(\.sequence), [1])
+    XCTAssertEqual(textDeltas(events).map(\.sequence), [2])
+    XCTAssertEqual(textDeltas(events).map(\.text), ["grounded"])
+    XCTAssertEqual(toolMessage["role"] as? String, "tool")
+    XCTAssertEqual(toolMessage["tool_call_id"] as? String, "call-1")
+    XCTAssertTrue((toolMessage["content"] as? String)?.contains("SIGNALASI_UNTRUSTED_EVIDENCE") == true)
+    XCTAssertEqual(completed(events)?.finishReason, "stop")
+  }
+
+  @MainActor
   private func makeFixture() throws -> Fixture {
     let secrets = InMemorySecretStore()
     let store = makeStore(secrets: secrets)
@@ -145,6 +203,13 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     }
   }
 
+  private func toolDeltas(_ events: [ModelStreamEvent]) -> [ModelStreamToolCallDelta] {
+    events.compactMap {
+      if case .toolCallDelta(let value) = $0 { return value }
+      return nil
+    }
+  }
+
   private func completed(_ events: [ModelStreamEvent]) -> ModelStreamCompleted? {
     events.compactMap {
       if case .completed(let value) = $0 { return value }
@@ -164,19 +229,29 @@ final class CloudConversationStreamEngineTests: XCTestCase {
     var store: SignalASIStore
     var turns: [ChatMessage]
   }
+
+  private func object(_ bodyJson: String) throws -> [String: Any] {
+    let data = try XCTUnwrap(bodyJson.data(using: .utf8))
+    return try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+  }
 }
 
 private final class RecordingModelStreamClient: CloudModelStreamClient {
   var requests: [ModelStreamRequest] = []
   var cancellations: [(requestId: String, reason: ModelStreamCancelReason)] = []
-  var events: [ModelStreamEvent]
+  private var eventBatches: [[ModelStreamEvent]]
 
   init(events: [ModelStreamEvent]) {
-    self.events = events
+    self.eventBatches = [events]
+  }
+
+  init(eventBatches: [[ModelStreamEvent]]) {
+    self.eventBatches = eventBatches
   }
 
   func stream(_ request: ModelStreamRequest) -> AsyncThrowingStream<ModelStreamEvent, Error> {
     requests.append(request)
+    let events = eventBatches.isEmpty ? [] : eventBatches.removeFirst()
     return AsyncThrowingStream { continuation in
       events.forEach { continuation.yield($0) }
       continuation.finish()
@@ -185,6 +260,25 @@ private final class RecordingModelStreamClient: CloudModelStreamClient {
 
   func cancel(requestId: String, reason: ModelStreamCancelReason) async {
     cancellations.append((requestId: requestId, reason: reason))
+  }
+}
+
+private final class RecordingConversationToolExecutor: CloudConversationToolExecuting {
+  struct Call {
+    var call: AssembledToolCall
+    var context: CloudConversationToolExecutionContext
+  }
+
+  var result: String
+  var calls: [Call] = []
+
+  init(result: String) {
+    self.result = result
+  }
+
+  func executeTool(call: AssembledToolCall, context: CloudConversationToolExecutionContext) throws -> String {
+    calls.append(Call(call: call, context: context))
+    return result
   }
 }
 
