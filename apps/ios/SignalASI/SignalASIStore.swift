@@ -964,7 +964,12 @@ final class SignalASIStore: ObservableObject {
   @discardableResult
   func addServerLink(from pairing: PairingQRCode, rotateClientRoute: Bool = true) throws -> ServerLink {
     let existing = serverLinks.first { $0.desktopId == pairing.desktopId }
-    let clientRouteId = (!rotateClientRoute ? existing?.routes.clientRouteId : nil) ?? (try SignalASILinkProtocol.newRouteId())
+    let clientRouteId: String
+    if !rotateClientRoute, let existingRouteId = existing?.routes.clientRouteId {
+      clientRouteId = existingRouteId
+    } else {
+      clientRouteId = try SignalASILinkProtocol.newRouteId()
+    }
     let routes = SignalASILinkRoutes(serverRouteId: pairing.serverRouteId, clientRouteId: clientRouteId)
     let link = ServerLink(
       desktopId: pairing.desktopId,

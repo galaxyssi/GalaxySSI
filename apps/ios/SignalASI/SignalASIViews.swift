@@ -2597,8 +2597,7 @@ final class QRScannerViewController: UIViewController, AVCaptureMetadataOutputOb
 
 private extension String {
   var chunkedFingerprint: String {
-    filter { $0.isLetter || $0.isNumber }
-      .prefix(64)
+    String(filter { $0.isLetter || $0.isNumber }.prefix(64))
       .chunked(into: 32)
       .joined(separator: "\n")
   }

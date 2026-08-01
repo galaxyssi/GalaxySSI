@@ -182,8 +182,18 @@ struct AgentIOSSignedFfmpegMediaProvider: AgentIOSMediaNativeToolProviding {
       let artifact = response.artifacts.first {
         $0["relative_path"]?.stringValue == plan.destinationPath
       }
-      let outputSize = artifact?["size_bytes"]?.intValue ?? (try fileSize(destinationFile))
-      let outputSha = artifact?["sha256"]?.stringValue?.nonEmpty ?? (try sha256File(destinationFile))
+      let outputSize: Int64
+      if let artifactSize = artifact?["size_bytes"]?.intValue {
+        outputSize = artifactSize
+      } else {
+        outputSize = try fileSize(destinationFile)
+      }
+      let outputSha: String
+      if let artifactSha = artifact?["sha256"]?.stringValue?.nonEmpty {
+        outputSha = artifactSha
+      } else {
+        outputSha = try sha256File(destinationFile)
+      }
       let artifacts = response.artifacts.map { AgentMcpJSONValue.object($0) }
 
       return AgentNativeToolExecutionResult.success(
