@@ -301,6 +301,7 @@ final class SignalASIStoreTests: XCTestCase {
       $0.welcomeText = "  "
       $0.asrProvider = .localWhisperCpp
       $0.asrModelId = "does-not-exist"
+      $0.asrRuntimeMode = .privacy
       $0.ttsProvider = .microsoftEdge
       $0.microsoftVoice = "  "
       $0.targetContactId = ""
@@ -315,6 +316,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(store.voiceSettings.welcomeText, VoiceSettings.defaultWelcomeText)
     XCTAssertEqual(store.voiceSettings.asrProvider, .localWhisperCpp)
     XCTAssertEqual(store.voiceSettings.asrModelId, "tiny")
+    XCTAssertEqual(store.voiceSettings.asrRuntimeMode, .privacy)
     XCTAssertEqual(store.voiceSettings.ttsProvider, .microsoftEdge)
     XCTAssertEqual(store.voiceSettings.microsoftVoice, VoiceSettings.defaultMicrosoftVoice)
     XCTAssertEqual(store.voiceSettings.targetContactId, "hermes")
@@ -325,7 +327,7 @@ final class SignalASIStoreTests: XCTestCase {
   func testVoiceSettingsDecodeAndroidProviderWireValues() throws {
     let settings = try JSONDecoder.signalASI.decode(
       VoiceSettings.self,
-      from: Data(#"{"wake_provider":"android_asr","wake_model":"hello_world.onnx","asr_provider":"local_whisper_cpp","tts_provider":"microsoft_edge","microsoft_voice":" en-US-AriaNeural ","asr_model":"base"}"#.utf8)
+      from: Data(#"{"wake_provider":"android_asr","wake_model":"hello_world.onnx","asr_provider":"local_whisper_cpp","asr_runtime_mode":"ACCURATE","tts_provider":"microsoft_edge","microsoft_voice":" en-US-AriaNeural ","asr_model":"base"}"#.utf8)
     )
     let fallback = try JSONDecoder.signalASI.decode(
       VoiceSettings.self,
@@ -337,6 +339,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(settings.wakeProvider, .androidASR)
     XCTAssertEqual(settings.wakeModel, VoiceSettings.defaultWakeModel)
     XCTAssertEqual(settings.asrProvider, .localWhisperCpp)
+    XCTAssertEqual(settings.asrRuntimeMode, .accurate)
     XCTAssertEqual(settings.ttsProvider, .microsoftEdge)
     XCTAssertEqual(settings.microsoftVoice, "en-US-AriaNeural")
     XCTAssertEqual(settings.asrModelId, "base")
@@ -346,6 +349,7 @@ final class SignalASIStoreTests: XCTestCase {
     XCTAssertEqual(fallback.microsoftVoice, VoiceSettings.defaultMicrosoftVoice)
     XCTAssertEqual(object["wake_provider"] as? String, "android_asr")
     XCTAssertEqual(object["asr_provider"] as? String, "local_whisper_cpp")
+    XCTAssertEqual(object["asr_runtime_mode"] as? String, "ACCURATE")
     XCTAssertEqual(object["tts_provider"] as? String, "microsoft_edge")
     XCTAssertEqual(object["microsoft_voice"] as? String, "en-US-AriaNeural")
   }

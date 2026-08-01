@@ -501,6 +501,7 @@ struct VoiceSettings: Codable, Equatable {
   var welcomeText: String
   var asrProvider: VoiceASRProvider
   var asrModelId: String
+  var asrRuntimeMode: VoiceWhisperUserVoiceMode
   var ttsProvider: VoiceTTSProvider
   var microsoftVoice: String
   var targetContactId: String
@@ -520,6 +521,7 @@ struct VoiceSettings: Codable, Equatable {
     welcomeText: String = VoiceSettings.defaultWelcomeText,
     asrProvider: VoiceASRProvider = VoiceASRProvider.defaultValue,
     asrModelId: String = VoiceSettings.defaultAsrModelId,
+    asrRuntimeMode: VoiceWhisperUserVoiceMode = .automatic,
     ttsProvider: VoiceTTSProvider = VoiceTTSProvider.defaultValue,
     microsoftVoice: String = VoiceSettings.defaultMicrosoftVoice,
     targetContactId: String = "hermes",
@@ -538,6 +540,7 @@ struct VoiceSettings: Codable, Equatable {
     self.welcomeText = welcomeText.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultWelcomeText)
     self.asrProvider = asrProvider
     self.asrModelId = VoiceWhisperModelCatalog.normalizedModelId(asrModelId)
+    self.asrRuntimeMode = asrRuntimeMode
     self.ttsProvider = ttsProvider
     self.microsoftVoice = microsoftVoice.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(Self.defaultMicrosoftVoice)
     self.targetContactId = targetContactId.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank("hermes")
@@ -558,6 +561,7 @@ struct VoiceSettings: Codable, Equatable {
     welcomeText: defaultWelcomeText,
     asrProvider: VoiceASRProvider.defaultValue,
     asrModelId: defaultAsrModelId,
+    asrRuntimeMode: .automatic,
     ttsProvider: VoiceTTSProvider.defaultValue,
     microsoftVoice: defaultMicrosoftVoice,
     targetContactId: "hermes",
@@ -597,6 +601,7 @@ struct VoiceSettings: Codable, Equatable {
       welcomeText: welcomeText,
       asrProvider: asrProvider,
       asrModelId: asrModelId,
+      asrRuntimeMode: asrRuntimeMode,
       ttsProvider: ttsProvider,
       microsoftVoice: microsoftVoice,
       targetContactId: targetContactId,
@@ -618,6 +623,7 @@ struct VoiceSettings: Codable, Equatable {
     case welcomeText = "welcome_text"
     case asrProvider = "asr_provider"
     case asrModelId = "asr_model"
+    case asrRuntimeMode = "asr_runtime_mode"
     case ttsProvider = "tts_provider"
     case microsoftVoice = "microsoft_voice"
     case targetContactId = "target_contact_id"
@@ -640,6 +646,9 @@ struct VoiceSettings: Codable, Equatable {
       welcomeText: try container.decodeIfPresent(String.self, forKey: .welcomeText) ?? Self.defaultWelcomeText,
       asrProvider: VoiceASRProvider.normalized(try container.decodeIfPresent(String.self, forKey: .asrProvider)),
       asrModelId: try container.decodeIfPresent(String.self, forKey: .asrModelId) ?? Self.defaultAsrModelId,
+      asrRuntimeMode: VoiceWhisperUserVoiceMode.normalized(
+        try container.decodeIfPresent(String.self, forKey: .asrRuntimeMode)
+      ),
       ttsProvider: VoiceTTSProvider.normalized(try container.decodeIfPresent(String.self, forKey: .ttsProvider)),
       microsoftVoice: try container.decodeIfPresent(String.self, forKey: .microsoftVoice) ?? Self.defaultMicrosoftVoice,
       targetContactId: try container.decodeIfPresent(String.self, forKey: .targetContactId) ?? "hermes",

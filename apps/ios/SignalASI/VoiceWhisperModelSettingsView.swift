@@ -140,7 +140,10 @@ struct VoiceWhisperModelSettingsView: View {
   }
 
   private func select(_ model: VoiceWhisperModelProfile) {
-    store.updateVoiceSettings { $0.asrModelId = model.id }
+    store.updateVoiceSettings {
+      $0.asrModelId = model.id
+      $0.asrRuntimeMode = .manual
+    }
     statusMessage = "\(model.displayName) selected"
     refreshModelState()
   }
@@ -157,7 +160,10 @@ struct VoiceWhisperModelSettingsView: View {
     }
     do {
       _ = try await downloadService.start(model)
-      store.updateVoiceSettings { $0.asrModelId = model.id }
+      store.updateVoiceSettings {
+        $0.asrModelId = model.id
+        $0.asrRuntimeMode = .manual
+      }
       statusMessage = "\(model.displayName) downloaded and selected"
     } catch {
       statusMessage = "Model download failed. Tap to retry."

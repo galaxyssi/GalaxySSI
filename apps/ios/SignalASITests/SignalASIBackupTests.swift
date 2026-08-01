@@ -56,6 +56,7 @@ final class SignalASIBackupTests: XCTestCase {
       $0.welcomeText = "Ready for voice work."
       $0.asrProvider = .localWhisperCpp
       $0.asrModelId = "base"
+      $0.asrRuntimeMode = .accurate
       $0.ttsProvider = .microsoftEdge
       $0.microsoftVoice = "zh-CN-YunxiNeural"
       $0.targetContactId = "cloud:openai"
@@ -173,6 +174,7 @@ final class SignalASIBackupTests: XCTestCase {
     XCTAssertEqual(restored.voiceSettings.welcomeText, "Ready for voice work.")
     XCTAssertEqual(restored.voiceSettings.asrProvider, .localWhisperCpp)
     XCTAssertEqual(restored.voiceSettings.asrModelId, "base")
+    XCTAssertEqual(restored.voiceSettings.asrRuntimeMode, .accurate)
     XCTAssertEqual(restored.voiceSettings.ttsProvider, .microsoftEdge)
     XCTAssertEqual(restored.voiceSettings.microsoftVoice, "zh-CN-YunxiNeural")
     XCTAssertEqual(restored.voiceSettings.targetContactId, "cloud:openai")
