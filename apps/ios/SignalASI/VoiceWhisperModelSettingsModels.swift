@@ -3,6 +3,7 @@ import Foundation
 enum VoiceWhisperModelRowAction: Equatable {
   case current
   case use
+  case useAndTest
   case download
   case retry
   case waiting(progress: Int)
@@ -13,6 +14,8 @@ enum VoiceWhisperModelRowAction: Equatable {
       return "Current"
     case .use:
       return "Use"
+    case .useAndTest:
+      return "Use and test"
     case .download:
       return "Download"
     case .retry:
@@ -28,6 +31,8 @@ enum VoiceWhisperModelRowAction: Equatable {
       return "checkmark.circle.fill"
     case .use:
       return "arrow.right.circle"
+    case .useAndTest:
+      return "speedometer"
     case .download:
       return "arrow.down.circle"
     case .retry:
@@ -39,7 +44,7 @@ enum VoiceWhisperModelRowAction: Equatable {
 
   var isEnabled: Bool {
     switch self {
-    case .use, .download, .retry:
+    case .use, .useAndTest, .download, .retry:
       return true
     case .current, .waiting:
       return false
@@ -53,6 +58,9 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   var available: Bool
   var downloadState: VoiceWhisperModelDownloadState
   var activeDownload: Bool
+  var benchmarkRecord: VoiceWhisperBenchmarkRecord?
+  var latestBenchmarkRecord: VoiceWhisperBenchmarkRecord?
+  var benchmarkProgress: VoiceWhisperBenchmarkProgress?
 
   var id: String { model.id }
   var title: String { model.displayName }
@@ -62,6 +70,12 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   }
 
   var action: VoiceWhisperModelRowAction {
+    if let benchmarkProgress {
+      return .waiting(progress: benchmarkProgressPercent(benchmarkProgress))
+    }
+    if available, benchmarkRecord == nil {
+      return .useAndTest
+    }
     if selected {
       return .current
     }
@@ -82,6 +96,15 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
   }
 
   private var lifecycleDetail: String {
+    if let benchmarkProgress {
+      return "Benchmarking \(benchmarkStageLabel(benchmarkProgress)) \(benchmarkProgressPercent(benchmarkProgress))%"
+    }
+    if let benchmarkRecord {
+      return certificationLabel(benchmarkRecord.certification.level)
+    }
+    if available, latestBenchmarkRecord != nil {
+      return "Previous result is stale and cannot control the current model build."
+    }
     if model.bundled {
       return "Included with the app"
     }
@@ -96,6 +119,47 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
     }
     return "Download required"
   }
+
+  private func benchmarkProgressPercent(_ progress: VoiceWhisperBenchmarkProgress) -> Int {
+    guard progress.totalSteps > 0 else { return 0 }
+    return min(max(progress.completedSteps * 100 / progress.totalSteps, 0), 100)
+  }
+
+  private func certificationLabel(_ level: VoiceWhisperCertificationLevel) -> String {
+    switch level {
+    case .untested:
+      return "Installed - Benchmark required before real-time use"
+    case .realtime:
+      return "Real-time certified"
+    case .final:
+      return "Final transcription"
+    case .secondPass:
+      return "Background accuracy pass"
+    case .remoteRecommended:
+      return "Remote recommended"
+    case .unsupported:
+      return "Unsupported on this device"
+    }
+  }
+
+  private func benchmarkStageLabel(_ progress: VoiceWhisperBenchmarkProgress) -> String {
+    switch progress.stage {
+    case .verifying:
+      return "Verifying model"
+    case .checkingDevice:
+      return "Checking device"
+    case .searchingThreads:
+      return "Searching threads"
+    case .stability:
+      return "Testing stability"
+    case .cancellation:
+      return "Testing cancellation"
+    case .certifying:
+      return "Creating certification"
+    case .complete:
+      return "Complete"
+    }
+  }
 }
 
 enum VoiceWhisperModelSettingsPresenter {
@@ -106,6 +170,9 @@ enum VoiceWhisperModelSettingsPresenter {
     selectedModelId: String,
     downloadState: (VoiceWhisperModelProfile) -> VoiceWhisperModelDownloadState,
     isAvailable: (VoiceWhisperModelProfile) -> Bool,
+    benchmarkRecord: (VoiceWhisperModelProfile) -> VoiceWhisperBenchmarkRecord? = { _ in nil },
+    latestBenchmarkRecord: (VoiceWhisperModelProfile) -> VoiceWhisperBenchmarkRecord? = { _ in nil },
+    benchmarkProgress: (VoiceWhisperModelProfile) -> VoiceWhisperBenchmarkProgress? = { _ in nil },
     activeDownloadIds: Set<String> = []
   ) -> [VoiceWhisperModelRowPresentation] {
     let selected = VoiceWhisperModelCatalog.normalizedModelId(selectedModelId)
@@ -115,7 +182,10 @@ enum VoiceWhisperModelSettingsPresenter {
         selected: model.id == selected,
         available: isAvailable(model),
         downloadState: downloadState(model),
-        activeDownload: activeDownloadIds.contains(model.id)
+        activeDownload: activeDownloadIds.contains(model.id),
+        benchmarkRecord: benchmarkRecord(model),
+        latestBenchmarkRecord: latestBenchmarkRecord(model),
+        benchmarkProgress: benchmarkProgress(model)
       )
     }
   }
