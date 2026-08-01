@@ -459,6 +459,31 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     @Volatile private var pendingRuntimeCatalogPackId: String? = null
     @Volatile private var runtimePackInstallInProgressId: String? = null
     @Volatile private var lastSelfEvolutionRemoteSyncAtMillis = 0L
+    private val localModelSearchGeneration = AtomicLong(0L)
+    private data class LocalModelRowBinding(
+        val profile: LocalModelRuntimeProfile,
+        val subtitle: TextView,
+        val action: TextView,
+        val progress: ProgressBar
+    )
+    private val localModelRowBindings = linkedMapOf<String, LocalModelRowBinding>()
+    private val localModelDownloadRefresh = object : Runnable {
+        override fun run() {
+            if (localModelRowBindings.isEmpty()) return
+            var active = false
+            localModelRowBindings.values.forEach { binding ->
+                val state = LocalModelManager.state(this@MainActivity, binding.profile)
+                updateLocalModelRow(binding, state)
+                active = active || state.state in setOf(
+                    LocalModelInstallState.QUEUED,
+                    LocalModelInstallState.DOWNLOADING,
+                    LocalModelInstallState.VERIFYING,
+                    LocalModelInstallState.INSTALLING
+                )
+            }
+            if (active) handler.postDelayed(this, 750L)
+        }
+    }
 
     // State
     private val handler = Handler(Looper.getMainLooper())
@@ -25694,31 +25719,32 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun showLocalModelFeaturePage() {
         val profile = LocalModelRuntimeSettings.selectedProfile(this)
         val contextTokens = LocalModelRuntimeSettings.contextTokens(this)
-        val estimate = LocalModelRuntimePreflight.estimate(this, profile, contextTokens)
+        val storageSnapshot = LocalModelManager.storage(this).inspect(profile)
+        val estimate = LocalModelRuntimeEstimator.estimate(
+            LocalModelRuntimeRequest(
+                profile = profile,
+                requestedContextTokens = contextTokens,
+                modelFileBytes = profile.expectedModelFileBytes,
+                modelFilePresent = storageSnapshot.installed,
+                requireModelFile = true
+            ),
+            LocalModelDeviceSnapshotDetector.capture(this)
+        )
         val accelerators = LocalModelAcceleratorDetector.detect(this)
         showFeaturePage(getString(R.string.local_model_title))
         featureContent.addView(localModelStatusCard(profile, estimate))
         addSectionTitle(getString(R.string.local_model_section_manage))
-        featureContent.addView(featureValueRow(
-            getString(R.string.local_model_select),
-            getString(R.string.local_model_select_subtitle),
-            R.drawable.ic_local_model,
-            profile.displayName
+        featureContent.addView(featureRow(
+            getString(R.string.local_model_search_title),
+            getString(R.string.local_model_search_subtitle),
+            R.drawable.ic_agent_knowledge,
+            getString(R.string.local_model_search_action)
         ).apply {
-            setOnClickListener {
-                val options = LocalModelRuntimeProfiles.all.map(LocalModelRuntimeProfile::displayName)
-                showChoiceDialog(
-                    getString(R.string.local_model_select),
-                    options,
-                    profile.displayName
-                ) { selected ->
-                    LocalModelRuntimeProfiles.all.firstOrNull { it.displayName == selected }?.let {
-                        LocalModelRuntimeSettings.setSelectedProfile(this@MainActivity, it.id)
-                    }
-                    showLocalModelFeaturePage()
-                }
-            }
+            setOnClickListener { showLocalModelSearchPage() }
         })
+        LocalModelManager.profiles(this).forEach { candidate ->
+            featureContent.addView(localModelProfileRow(candidate))
+        }
         featureContent.addView(featureValueRow(
             getString(R.string.local_model_context_window),
             getString(R.string.local_model_context_window_subtitle),
@@ -25740,7 +25766,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
         })
-        featureContent.addView(featureValueRow(getString(R.string.local_model_vision), "", R.drawable.ic_import, ""))
+        if (profile.visionCapable) {
+            featureContent.addView(featureValueRow(
+                getString(R.string.local_model_vision),
+                getString(R.string.local_model_multimodal_runtime_detail),
+                R.drawable.ic_import,
+                getString(R.string.local_model_text_only)
+            ))
+        }
         addSectionTitle(getString(R.string.local_model_preflight_section))
         featureContent.addView(featureValueRow(
             getString(R.string.local_model_file_estimate),
@@ -25827,8 +25860,394 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         featureContent.addView(featureValueRow(getString(R.string.local_model_location), "", R.drawable.ic_device_node, getString(R.string.permission_while_using_allowed)))
         featureContent.addView(featureValueRow(getString(R.string.local_model_notification_permission), "", R.drawable.ic_agent_node, getString(R.string.permission_allowed)))
         addSectionTitle(getString(R.string.local_model_section_privacy_storage))
-        featureContent.addView(featureSwitchRow(getString(R.string.local_model_offline_mode), getString(R.string.local_model_offline_mode_subtitle), R.drawable.ic_security_shield, true))
+        featureContent.addView(featureValueRow(
+            getString(R.string.local_model_offline_mode),
+            getString(R.string.local_model_offline_mode_subtitle),
+            R.drawable.ic_security_shield,
+            getString(R.string.common_enabled)
+        ))
         featureContent.addView(featureStorageRow())
+        localModelDownloadRefresh.run()
+    }
+
+    private fun localModelProfileRow(profile: LocalModelRuntimeProfile): View {
+        val subtitleView = TextView(this).apply {
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 12f
+            maxLines = 2
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val actionView = TextView(this).apply {
+            setTextColor(getColorCompat(R.color.signalasi_green))
+            textSize = 12.5f
+            gravity = Gravity.CENTER
+            maxLines = 1
+        }
+        val progressView = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progressTintList = android.content.res.ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
+            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E5E7EB"))
+            visibility = View.GONE
+        }
+        val binding = LocalModelRowBinding(profile, subtitleView, actionView, progressView)
+        localModelRowBindings[profile.id] = binding
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isClickable = true
+            isFocusable = true
+            setPadding(dp(14), dp(10), dp(14), dp(9))
+            background = getDrawable(R.drawable.glass_card_background)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(featureIcon(R.drawable.ic_local_model, featureIconColor(R.drawable.ic_local_model)))
+                addView(LinearLayout(this@MainActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(12), 0, dp(8), 0)
+                    addView(TextView(this@MainActivity).apply {
+                        text = profile.displayName
+                        setTextColor(getColorCompat(R.color.text_primary))
+                        textSize = 15f
+                        setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        maxLines = 1
+                        ellipsize = TextUtils.TruncateAt.END
+                    })
+                    addView(subtitleView)
+                }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                addView(actionView, LinearLayout.LayoutParams(dp(76), dp(36)))
+            })
+            addView(progressView, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(4)
+            ).apply {
+                topMargin = dp(7)
+                leftMargin = dp(56)
+            })
+            minimumHeight = dp(72)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(9) }
+            setOnClickListener { handleLocalModelRowClick(profile) }
+            setOnLongClickListener {
+                if (LocalModelManager.isInstalled(this@MainActivity, profile)) {
+                    showDeleteLocalModelDialog(profile)
+                    true
+                } else {
+                    false
+                }
+            }
+            updateLocalModelRow(binding, LocalModelManager.state(this@MainActivity, profile))
+        }
+    }
+
+    private fun updateLocalModelRow(binding: LocalModelRowBinding, state: LocalModelDownloadState) {
+        val profile = binding.profile
+        val parameterLabel = if (profile.parameterCountBillions % 1.0 == 0.0) {
+            profile.parameterCountBillions.toInt().toString()
+        } else {
+            String.format(Locale.US, "%.1f", profile.parameterCountBillions)
+        }
+        binding.subtitle.text = buildString {
+            append(getString(
+                R.string.local_model_size_and_quantization,
+                formatBytes(profile.expectedModelFileBytes),
+                profile.quantizationLabel,
+                parameterLabel
+            ))
+            if (profile.defaultNoThink) {
+                append("\n")
+                append(getString(R.string.local_model_default_no_think))
+            } else if (state.state == LocalModelInstallState.FAILED && state.detail.isNotBlank()) {
+                append("\n")
+                append(state.detail)
+            }
+        }
+        binding.action.text = localModelActionLabel(profile, state)
+        binding.action.setTextColor(getColorCompat(
+            if (state.state == LocalModelInstallState.READY &&
+                LocalModelRuntimeSettings.selectedProfile(this).id == profile.id
+            ) {
+                R.color.text_secondary
+            } else {
+                R.color.signalasi_green
+            }
+        ))
+        val showProgress = state.state in setOf(
+            LocalModelInstallState.QUEUED,
+            LocalModelInstallState.DOWNLOADING,
+            LocalModelInstallState.PAUSED,
+            LocalModelInstallState.VERIFYING,
+            LocalModelInstallState.INSTALLING
+        )
+        binding.progress.visibility = if (showProgress) View.VISIBLE else View.GONE
+        binding.progress.isIndeterminate = state.state in setOf(
+            LocalModelInstallState.QUEUED,
+            LocalModelInstallState.VERIFYING,
+            LocalModelInstallState.INSTALLING
+        )
+        binding.progress.progress = state.progressPercent
+    }
+
+    private fun localModelActionLabel(
+        profile: LocalModelRuntimeProfile,
+        state: LocalModelDownloadState
+    ): String = when (state.state) {
+        LocalModelInstallState.NOT_INSTALLED -> getString(R.string.local_model_download_action)
+        LocalModelInstallState.QUEUED -> getString(R.string.local_model_download_queued)
+        LocalModelInstallState.DOWNLOADING -> "${state.progressPercent}%"
+        LocalModelInstallState.PAUSED -> getString(R.string.local_model_resume_action)
+        LocalModelInstallState.VERIFYING -> getString(R.string.local_model_download_verifying)
+        LocalModelInstallState.INSTALLING -> getString(R.string.local_model_download_installing)
+        LocalModelInstallState.READY -> getString(
+            if (LocalModelRuntimeSettings.selectedProfile(this).id == profile.id) {
+                R.string.local_model_selected
+            } else {
+                R.string.local_model_use_action
+            }
+        )
+        LocalModelInstallState.FAILED -> getString(R.string.common_retry)
+    }
+
+    private fun handleLocalModelRowClick(profile: LocalModelRuntimeProfile) {
+        when (LocalModelManager.state(this, profile).state) {
+            LocalModelInstallState.NOT_INSTALLED,
+            LocalModelInstallState.PAUSED,
+            LocalModelInstallState.FAILED -> requestLocalModelDownload(profile)
+            LocalModelInstallState.QUEUED,
+            LocalModelInstallState.DOWNLOADING -> {
+                LocalModelManager.pause(this, profile)
+                handler.postDelayed(localModelDownloadRefresh, 150L)
+            }
+            LocalModelInstallState.VERIFYING,
+            LocalModelInstallState.INSTALLING -> Unit
+            LocalModelInstallState.READY -> {
+                LocalModelRuntimeSettings.setSelectedProfile(this, profile.id)
+                showLocalModelFeaturePage()
+            }
+        }
+    }
+
+    private fun requestLocalModelDownload(profile: LocalModelRuntimeProfile, allowMetered: Boolean = false) {
+        try {
+            LocalModelManager.start(this, profile, allowMetered)
+            handler.post(localModelDownloadRefresh)
+        } catch (_: LocalModelMeteredConfirmationRequired) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.local_model_metered_title)
+                .setMessage(getString(
+                    R.string.local_model_metered_message,
+                    profile.displayName,
+                    formatBytes(profile.expectedModelFileBytes)
+                ))
+                .setNegativeButton(R.string.common_cancel, null)
+                .setPositiveButton(R.string.common_confirm) { _, _ ->
+                    requestLocalModelDownload(profile, allowMetered = true)
+                }
+                .show()
+        } catch (error: LocalModelInsufficientStorage) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.local_model_download_failed)
+                .setMessage(getString(
+                    R.string.local_model_download_storage_error,
+                    formatBytes(error.requiredBytes),
+                    formatBytes(error.availableBytes)
+                ))
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        } catch (error: Throwable) {
+            Toast.makeText(
+                this,
+                getString(R.string.local_model_search_error, error.message.orEmpty()),
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun showDeleteLocalModelDialog(profile: LocalModelRuntimeProfile) {
+        AlertDialog.Builder(this)
+            .setTitle(R.string.local_model_delete_action)
+            .setMessage(profile.displayName)
+            .setNegativeButton(R.string.common_cancel, null)
+            .setPositiveButton(R.string.common_delete) { _, _ ->
+                runCatching { LocalModelManager.delete(this, profile) }
+                    .onFailure { error ->
+                        Toast.makeText(this, error.message.orEmpty(), Toast.LENGTH_LONG).show()
+                    }
+                showLocalModelFeaturePage()
+            }
+            .show()
+    }
+
+    private fun showLocalModelSearchPage() {
+        localModelSearchGeneration.incrementAndGet()
+        showFeaturePage(getString(R.string.local_model_search_title))
+        setFeatureBackAction { showLocalModelFeaturePage() }
+        featureContent.addView(TextView(this).apply {
+            text = getString(R.string.local_model_search_subtitle)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 13f
+            setPadding(dp(4), 0, dp(4), dp(12))
+        })
+        val input = EditText(this).apply {
+            hint = getString(R.string.local_model_search_hint)
+            setSingleLine(true)
+            textSize = 15f
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+            setPadding(dp(14), 0, dp(12), 0)
+            background = getDrawable(R.drawable.glass_card_background)
+        }
+        val searchButton = TextView(this).apply {
+            text = getString(R.string.local_model_search_action)
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(10).toFloat()
+                setColor(getColorCompat(R.color.signalasi_green))
+            }
+        }
+        val results = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        val submit = {
+            val query = input.text?.toString().orEmpty().trim()
+            if (query.length >= 2) performLocalModelSearch(query, results)
+        }
+        featureContent.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(input, LinearLayout.LayoutParams(0, dp(52), 1f))
+            addView(searchButton, LinearLayout.LayoutParams(dp(76), dp(44)).apply {
+                leftMargin = dp(8)
+            })
+        }, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { bottomMargin = dp(14) })
+        featureContent.addView(results)
+        searchButton.setOnClickListener { submit() }
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                submit()
+                true
+            } else {
+                false
+            }
+        }
+        input.requestFocus()
+    }
+
+    private fun performLocalModelSearch(query: String, container: LinearLayout) {
+        val generation = localModelSearchGeneration.incrementAndGet()
+        container.removeAllViews()
+        container.addView(localModelMessageRow(getString(R.string.local_model_searching)))
+        cloudExecutor.execute {
+            val result = runCatching { HuggingFaceModelSearch().search(query) }
+            handler.post {
+                if (generation != localModelSearchGeneration.get()) return@post
+                container.removeAllViews()
+                result.onSuccess { models ->
+                    if (models.isEmpty()) {
+                        container.addView(localModelMessageRow(getString(R.string.local_model_search_empty)))
+                    } else {
+                        models.forEach { model ->
+                            container.addView(featureRow(
+                                model.displayName,
+                                getString(
+                                    R.string.local_model_repository_downloads,
+                                    model.author,
+                                    compactCount(model.downloads)
+                                ),
+                                R.drawable.ic_local_model,
+                                getString(R.string.common_select)
+                            ).apply {
+                                setOnClickListener { showLocalModelArtifactPage(model) }
+                            })
+                        }
+                    }
+                }.onFailure { error ->
+                    container.addView(localModelMessageRow(getString(
+                        R.string.local_model_search_error,
+                        error.message.orEmpty()
+                    )))
+                }
+            }
+        }
+    }
+
+    private fun showLocalModelArtifactPage(model: HuggingFaceModelResult) {
+        val generation = localModelSearchGeneration.incrementAndGet()
+        showFeaturePage(model.displayName)
+        setFeatureBackAction { showLocalModelSearchPage() }
+        featureContent.addView(TextView(this).apply {
+            text = getString(R.string.local_model_artifact_subtitle)
+            setTextColor(getColorCompat(R.color.text_secondary))
+            textSize = 13f
+            setPadding(dp(4), 0, dp(4), dp(12))
+        })
+        val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        container.addView(localModelMessageRow(getString(R.string.local_model_artifact_loading)))
+        featureContent.addView(container)
+        cloudExecutor.execute {
+            val result = runCatching { HuggingFaceModelSearch().artifacts(model.repositoryId) }
+            handler.post {
+                if (generation != localModelSearchGeneration.get()) return@post
+                container.removeAllViews()
+                result.onSuccess { artifacts ->
+                    if (artifacts.isEmpty()) {
+                        container.addView(localModelMessageRow(getString(R.string.local_model_artifact_empty)))
+                    } else {
+                        artifacts.forEach { artifact ->
+                            val parameterLabel = if (artifact.parameterCountBillions % 1.0 == 0.0) {
+                                artifact.parameterCountBillions.toInt().toString()
+                            } else {
+                                String.format(Locale.US, "%.1f", artifact.parameterCountBillions)
+                            }
+                            container.addView(featureRow(
+                                artifact.fileName.removeSuffix(".gguf").replace('_', ' '),
+                                getString(
+                                    R.string.local_model_size_and_quantization,
+                                    formatBytes(artifact.sizeBytes),
+                                    artifact.quantization,
+                                    parameterLabel
+                                ),
+                                R.drawable.ic_local_model,
+                                getString(R.string.local_model_download_action)
+                            ).apply {
+                                setOnClickListener {
+                                    val profile = LocalModelCatalog.addHubArtifact(this@MainActivity, artifact)
+                                    showLocalModelFeaturePage()
+                                    requestLocalModelDownload(profile)
+                                }
+                            })
+                        }
+                    }
+                }.onFailure { error ->
+                    container.addView(localModelMessageRow(getString(
+                        R.string.local_model_search_error,
+                        error.message.orEmpty()
+                    )))
+                }
+            }
+        }
+    }
+
+    private fun localModelMessageRow(message: String): View = TextView(this).apply {
+        text = message
+        setTextColor(getColorCompat(R.color.text_secondary))
+        textSize = 13f
+        gravity = Gravity.CENTER
+        setPadding(dp(16), dp(24), dp(16), dp(24))
+    }
+
+    private fun compactCount(value: Long): String = when {
+        value >= 1_000_000L -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
+        value >= 1_000L -> String.format(Locale.US, "%.1fK", value / 1_000.0)
+        else -> value.toString()
     }
 
     private fun showDeviceFeaturePage() {
@@ -30898,6 +31317,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     private fun showFeaturePage(title: String, preserveDesktopControlId: String? = null) {
         handler.removeCallbacks(voiceHealthRefresh)
+        handler.removeCallbacks(localModelDownloadRefresh)
+        localModelRowBindings.clear()
         voiceHealthRows.clear()
         activeDesktopControlId
             ?.takeIf { it != preserveDesktopControlId }
@@ -31460,6 +31881,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     private fun featureStorageRow(): View {
+        val storage = LocalModelManager.storage(this)
+        val usedBytes = LocalModelManager.profiles(this).sumOf { profile ->
+            storage.finalFile(profile).takeIf(File::isFile)?.length().orZero() +
+                storage.partialFile(profile).takeIf(File::isFile)?.length().orZero()
+        }
+        val fileSystemTotal = filesDir.totalSpace.coerceAtLeast(1L)
+        val fileSystemAvailable = filesDir.usableSpace.coerceAtLeast(0L)
+        val progressPercent = (((fileSystemTotal - fileSystemAvailable).coerceAtLeast(0L) * 100L) /
+            fileSystemTotal).toInt().coerceIn(0, 100)
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -31473,14 +31903,18 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     textSize = 15f
                 }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
                 addView(TextView(this@MainActivity).apply {
-                    text = "12.4GB / 64GB"
+                    text = getString(
+                        R.string.local_model_memory_required_value,
+                        formatBytes(usedBytes),
+                        formatBytes(fileSystemAvailable)
+                    )
                     setTextColor(getColorCompat(R.color.text_secondary))
                     textSize = 12f
                 })
             })
             addView(ProgressBar(this@MainActivity, null, android.R.attr.progressBarStyleHorizontal).apply {
                 max = 100
-                progress = 19
+                progress = progressPercent
                 progressTintList = android.content.res.ColorStateList.valueOf(getColorCompat(R.color.signalasi_green))
                 progressBackgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#E5E7EB"))
             }, LinearLayout.LayoutParams(
@@ -31493,6 +31927,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             ).apply { bottomMargin = dp(8) }
         }
     }
+
+    private fun Long?.orZero(): Long = this ?: 0L
 
     private fun addSectionTitle(title: String) {
         featureContent.addView(TextView(this).apply {

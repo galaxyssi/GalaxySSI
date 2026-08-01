@@ -31,7 +31,7 @@ class LocalModelRuntimeEstimatorTest {
     @Test
     fun minimumContextStillOverBudgetBlocksLaunch() {
         val estimate = estimate(
-            profile = LocalModelRuntimeProfiles.QWEN_2_5_7B_Q4,
+            profile = LocalModelRuntimeProfiles.QWEN_3_8B_Q4_K_M,
             device = device(totalGib = 4, availableGib = 1)
         )
 
