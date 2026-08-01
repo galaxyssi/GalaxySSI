@@ -40,6 +40,59 @@ def _record(index: int, conversation_id: str = "conversation-main") -> dict:
 
 
 class AgentTaskStoreTests(unittest.TestCase):
+    def test_partial_result_is_persistent_and_sequence_deduplicated(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tasks.sqlite3"
+            snapshots = []
+            manager = AgentTaskManager(state_path=path)
+            task = manager.create_external(
+                agent_id="codex",
+                contact_id="codex-contact",
+                source_message_id="message-1",
+                prompt="stream a reply",
+                task_id="task-delta",
+                conversation_id="conversation-delta",
+                client_conversation_id="conversation-delta",
+                client_route_id="route-delta",
+                client_turn_id="turn-delta",
+                on_event=snapshots.append,
+            )
+
+            first = manager.record_partial_result(
+                task.task_id,
+                "First",
+                sequence=1,
+                event_id="partial-1",
+                at=12_345,
+            )
+            first_text = first.partial_result_text
+            duplicate = manager.record_partial_result(
+                task.task_id,
+                "Wrong duplicate",
+                sequence=1,
+                event_id="partial-duplicate",
+            )
+            duplicate_text = duplicate.partial_result_text
+            latest = manager.record_partial_result(
+                task.task_id,
+                "First response",
+                sequence=2,
+                event_id="partial-2",
+            )
+
+            self.assertEqual("First", first_text)
+            self.assertEqual("First", duplicate_text)
+            self.assertEqual("First response", latest.partial_result_text)
+            self.assertEqual(2, latest.output_delta_sequence)
+            self.assertEqual(12_345, latest.first_output_at)
+            self.assertEqual("First response", snapshots[-1]["partial_result"]["text"])
+
+            restored = AgentTaskManager(state_path=path).get(task.task_id)
+            self.assertIsNotNone(restored)
+            self.assertEqual(2, restored.output_delta_sequence)
+            self.assertEqual("partial-2", restored.output_delta_event_id)
+            self.assertEqual("First response", restored.partial_result_text)
+
     def test_large_output_is_chunked_for_lists_and_hydrated_for_agent_context(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "tasks.sqlite3"

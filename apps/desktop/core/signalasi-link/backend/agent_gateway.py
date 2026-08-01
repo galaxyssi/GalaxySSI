@@ -2486,6 +2486,29 @@ def _run_cli_agent_process(
 
                     agent_task_manager.register_process(task_id, active_process)
 
+            def handle_persistent_event(event: dict) -> None:
+                if not task_id:
+                    return
+                from agent_task_manager import agent_task_manager
+
+                method = str(event.get("method") or "").strip().lower()
+                sequence = max(0, int(event.get("sequence") or 0))
+                if method == "agent/output_delta":
+                    agent_task_manager.record_partial_result(
+                        task_id,
+                        str(event.get("text") or ""),
+                        sequence=sequence,
+                        event_id=f"cli-output:{task_id}:{sequence}",
+                    )
+                elif method == "agent/progress":
+                    agent_task_manager.add_event(
+                        task_id,
+                        "agent_progress",
+                        str(event.get("message") or "Agent is working"),
+                        event_id=f"cli-progress:{task_id}:{sequence}",
+                        status="running",
+                    )
+
             pooled = external_cli_process_pool().execute(
                 PersistentCliRequest(
                     agent_id=spec.id,
@@ -2503,6 +2526,7 @@ def _run_cli_agent_process(
                         "temporary_directory": str(support_directory / "temp"),
                     },
                     on_process=register_process,
+                    on_event=handle_persistent_event,
                 ),
                 command=args,
                 env={

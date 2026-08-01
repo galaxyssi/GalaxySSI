@@ -260,6 +260,78 @@ class CodexConversationThreadTests(unittest.TestCase):
         self.assertTrue(telemetry[0]["telemetry_only"])
         self.assertEqual("codex", telemetry[0]["trace_detail"])
 
+    def test_visible_answer_delta_is_cumulative_and_matches_final(self):
+        server, run, events = self._event_server()
+
+        for delta in ("Hello", " world"):
+            server._handle_event({
+                "method": "item/agentMessage/delta",
+                "params": {
+                    "threadId": run.thread_id,
+                    "turnId": run.turn_id,
+                    "itemId": "answer-stream",
+                    "phase": "final_answer",
+                    "delta": delta,
+                },
+            })
+        server._handle_event({
+            "method": "item/completed",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "item": {
+                    "id": "answer-stream",
+                    "type": "agentMessage",
+                    "phase": "final_answer",
+                    "text": "Hello world",
+                },
+            },
+        })
+        server._handle_event({
+            "method": "turn/completed",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "turn": {"status": "completed"},
+            },
+        })
+
+        deltas = [
+            event["output_delta"]
+            for _, event in events
+            if isinstance(event.get("output_delta"), dict)
+        ]
+        self.assertEqual([1, 2], [event["sequence"] for event in deltas])
+        self.assertEqual("Hello", deltas[0]["text"])
+        self.assertEqual("Hello world", deltas[-1]["text"])
+        self.assertEqual(events[-1][1]["result"], deltas[-1]["text"])
+
+    def test_private_reasoning_delta_never_becomes_output_delta(self):
+        server, run, events = self._event_server()
+
+        server._handle_event({
+            "method": "item/reasoning/textDelta",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "itemId": "reasoning-private",
+                "delta": "private chain of thought",
+            },
+        })
+        server._handle_event({
+            "method": "item/agentMessage/delta",
+            "params": {
+                "threadId": run.thread_id,
+                "turnId": run.turn_id,
+                "itemId": "commentary-visible",
+                "phase": "commentary",
+                "delta": "I am checking the file.",
+            },
+        })
+
+        self.assertFalse(any("output_delta" in event for _, event in events))
+        self.assertNotIn("private chain of thought", str(events))
+
     def test_command_approval_is_bound_to_exact_parameters_and_resumed(self):
         server, run, events = self._event_server()
         responses = []

@@ -31,6 +31,7 @@ PAUSED_STATES = {"pausing", "paused", "takeover"}
 MAX_AUTOMATIC_RECOVERY_ATTEMPTS = 2
 MAX_TASK_EVENTS = 256
 MAX_DELIVERY_TRACE_EVENTS = 64
+MAX_PARTIAL_RESULT_CHARACTERS = 64_000
 DEFAULT_TAKEOVER_LEASE_SECONDS = 15 * 60
 MAX_TAKEOVER_LEASE_SECONDS = 60 * 60
 EXECUTION_LOCATION_CONTRACT = "signalasi.execution-location/1.0"
@@ -122,6 +123,10 @@ class AgentTask:
     completed_at: int = 0
     result: str = ""
     error: str = ""
+    first_output_at: int = 0
+    output_delta_sequence: int = 0
+    output_delta_event_id: str = ""
+    partial_result_text: str = ""
     exit_code: int | None = None
     status_seq: int = 0
     thread_id: str = ""
@@ -208,6 +213,18 @@ class AgentTask:
             "elapsed_ms": max(0, (self.completed_at or self.updated_at) - (self.started_at or self.created_at)),
             "result": self.result,
             "error": self.error,
+            "first_output_at": self.first_output_at,
+            "output_delta_sequence": self.output_delta_sequence,
+            "partial_result": (
+                {
+                    "event_id": self.output_delta_event_id,
+                    "sequence": self.output_delta_sequence,
+                    "text": self.partial_result_text,
+                    "mode": "cumulative",
+                    "user_visible": True,
+                }
+                if self.partial_result_text else {}
+            ),
             "exit_code": self.exit_code,
             "status_seq": self.status_seq,
             "thread_id": self.thread_id,
@@ -298,6 +315,7 @@ class AgentTaskManager:
         ] = {}
         self._takeover_timers: dict[str, threading.Timer] = {}
         self._listeners: dict[str, EventCallback] = {}
+        self._task_event_callbacks: dict[str, EventCallback] = {}
         self._heartbeat_interval_seconds = max(0.01, float(heartbeat_interval_seconds))
         self._default_stall_timeout_seconds = max(
             0.01,
@@ -393,6 +411,7 @@ class AgentTaskManager:
                 delivery_trace or [],
             )
             self._tasks[task.task_id] = task
+            self._task_event_callbacks[task.task_id] = on_event
             self._save_locked(task)
             queue_depth = sum(
                 candidate.status in {"accepted", "queued", "starting"}
@@ -463,6 +482,7 @@ class AgentTaskManager:
             )
             self._tasks[task.task_id] = task
             self._external_task_ids.add(task.task_id)
+            self._task_event_callbacks[task.task_id] = on_event
             self._save_locked(task)
             queue_depth = sum(
                 candidate.status in {"accepted", "queued", "starting"}
@@ -482,6 +502,7 @@ class AgentTaskManager:
         if task is not None:
             with self._lock:
                 self._external_task_ids.add(task.task_id)
+                self._task_event_callbacks[task.task_id] = on_event
             self._emit(task, on_event)
         return task
 
@@ -1019,6 +1040,61 @@ class AgentTaskManager:
                 {"task_status": task.status},
                 once=True,
             )
+        return task
+
+    def record_partial_result(
+        self,
+        task_id: str,
+        text: str,
+        *,
+        sequence: int = 0,
+        event_id: str = "",
+        at: int = 0,
+        on_event: EventCallback | None = None,
+    ) -> AgentTask | None:
+        """Persist the latest cumulative user-visible Agent output snapshot."""
+        clean_text = str(text or "")[:MAX_PARTIAL_RESULT_CHARACTERS]
+        if not clean_text.strip():
+            return self.get(task_id)
+        with self._lock:
+            task = self._tasks.get(str(task_id or ""))
+            if task is None or task.status in TERMINAL_STATES:
+                return task
+            next_sequence = max(1, int(sequence or task.output_delta_sequence + 1))
+            if next_sequence < task.output_delta_sequence:
+                return task
+            if (
+                next_sequence == task.output_delta_sequence
+                and clean_text == task.partial_result_text
+            ):
+                return task
+            if next_sequence == task.output_delta_sequence:
+                return task
+            now = max(0, int(at or time.time() * 1000))
+            task.output_delta_sequence = next_sequence
+            task.output_delta_event_id = (
+                str(event_id or "").strip()[:200]
+                or f"partial:{task.task_id}:{next_sequence}"
+            )
+            task.partial_result_text = clean_text
+            if not task.first_output_at:
+                task.first_output_at = now
+            if task.status in {"accepted", "queued", "starting", "recovering"}:
+                task.status = "running"
+                if not task.started_at:
+                    task.started_at = now
+            task.updated_at = max(task.updated_at, now)
+            task.last_progress_at = max(task.last_progress_at, now)
+            task.recovery_state = "healthy"
+            task.status_seq += 1
+            self._save_locked(task)
+        self._record_latency(
+            task,
+            VoiceTraceEvents.AGENT_FIRST_PARTIAL_RESULT,
+            {"task_status": task.status},
+            once=True,
+        )
+        self._emit(task, on_event)
         return task
 
     def merge_trace(self, task_id: str, trace: list[dict]) -> AgentTask | None:
@@ -1912,12 +1988,24 @@ class AgentTaskManager:
         if on_event is not None:
             callbacks.append(on_event)
         with self._lock:
+            if on_event is None:
+                task_callback = self._task_event_callbacks.get(
+                    str(snapshot.get("task_id") or "")
+                )
+                if task_callback is not None:
+                    callbacks.append(task_callback)
             callbacks.extend(self._listeners.values())
         for callback in callbacks:
             try:
                 callback(snapshot)
             except Exception:
                 pass
+        if str(snapshot.get("status") or "") in TERMINAL_STATES:
+            with self._lock:
+                self._task_event_callbacks.pop(
+                    str(snapshot.get("task_id") or ""),
+                    None,
+                )
 
     @staticmethod
     def _terminate(process: subprocess.Popen) -> None:
@@ -2043,6 +2131,27 @@ class AgentTaskManager:
             completed_at=int(row.get("completed_at") or 0),
             result=str(row.get("result") or ""),
             error=str(row.get("error") or ""),
+            first_output_at=max(0, int(row.get("first_output_at") or 0)),
+            output_delta_sequence=max(
+                0,
+                int(row.get("output_delta_sequence") or 0),
+            ),
+            output_delta_event_id=str(
+                (
+                    row.get("partial_result")
+                    if isinstance(row.get("partial_result"), dict) else {}
+                ).get("event_id")
+                or row.get("output_delta_event_id")
+                or ""
+            )[:200],
+            partial_result_text=str(
+                (
+                    row.get("partial_result")
+                    if isinstance(row.get("partial_result"), dict) else {}
+                ).get("text")
+                or row.get("partial_result_text")
+                or ""
+            )[:MAX_PARTIAL_RESULT_CHARACTERS],
             exit_code=row.get("exit_code"),
             status_seq=int(row.get("status_seq") or 0),
             thread_id=str(row.get("thread_id") or ""),
