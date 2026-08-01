@@ -73,7 +73,7 @@ enum AgentDesktopArtifactActions {
     }
     let data = try Data(contentsOf: source)
     let name = AgentDesktopArtifactStore.safeFileName(displayName ?? source.lastPathComponent)
-    return AgentRuntimeProjectArchiveBuilder.buildStoredZip([
+    return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: [
       AgentRuntimeProjectArchiveEntry(path: name, data: data)
     ])
   }

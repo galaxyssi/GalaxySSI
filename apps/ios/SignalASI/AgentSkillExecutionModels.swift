@@ -56,7 +56,7 @@ final class AgentSkillExecutionEngine {
   ) -> AgentSkillExecutionResult {
     let expansion: AgentSkillExpansion
     do {
-      expansion = try runtime.expand(match.installation.id, version: match.installation.version, parameters: match.parameters)
+      expansion = try runtime.expand(id: match.installation.id, version: match.installation.version, parameters: match.parameters)
     } catch {
       return fallback(match, reason: executionMessage(error), results: [])
     }

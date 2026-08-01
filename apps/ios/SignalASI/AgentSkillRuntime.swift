@@ -7,7 +7,7 @@ final class AgentSkillRuntime {
 
   init(
     store: AgentSkillStore = InMemoryAgentSkillStore(),
-    availableNativeToolIds: Collection<String>? = nil,
+    availableNativeToolIds: [String]? = nil,
     clock: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1_000) }
   ) {
     self.store = store

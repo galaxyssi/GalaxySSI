@@ -51,7 +51,7 @@ enum AgentSkillPackageExporter {
       "signer": .string("SignalASI local export")
     ]
     let integrity = AgentMcpJSONCodec.stringify(integrityDocument)
-    return AgentRuntimeProjectArchiveBuilder.buildStoredZip([
+    return AgentRuntimeProjectArchiveBuilder.buildStoredZip(entries: [
       AgentRuntimeProjectArchiveEntry(path: AgentSkillPackageInstaller.manifestFile, data: rawManifest),
       AgentRuntimeProjectArchiveEntry(path: AgentSkillPackageInstaller.integrityFile, data: Data(integrity.utf8))
     ])
