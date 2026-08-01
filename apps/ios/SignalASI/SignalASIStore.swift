@@ -552,13 +552,19 @@ final class SignalASIStore: ObservableObject {
   }
 
   @discardableResult
-  func appendIncoming(_ content: String, from contactId: String, remoteMessageId: String = "") -> ChatMessage {
+  func appendIncoming(
+    _ content: String,
+    from contactId: String,
+    remoteMessageId: String = "",
+    status: ChatDeliveryStatus = .delivered,
+    traceStage: String = "received"
+  ) -> ChatMessage {
     let message = ChatMessage(
       contactId: contactId,
       content: content,
       isMine: false,
-      deliveryStatus: .delivered,
-      deliveryTrace: [DeliveryTraceEvent(stage: "received")],
+      deliveryStatus: status,
+      deliveryTrace: [DeliveryTraceEvent(stage: traceStage)],
       conversationId: "ios-\(contactId)",
       remoteMessageId: remoteMessageId
     )
@@ -604,6 +610,31 @@ final class SignalASIStore: ObservableObject {
       save()
       return
     }
+  }
+
+  @discardableResult
+  func updateMessageContent(
+    _ messageId: UUID,
+    contactId: String,
+    content: String,
+    status: ChatDeliveryStatus? = nil,
+    traceStage: String? = nil,
+    detail: String = ""
+  ) -> ChatMessage? {
+    guard var messages = messagesByContact[contactId],
+          let index = messages.firstIndex(where: { $0.id == messageId }) else {
+      return nil
+    }
+    messages[index].content = content
+    if let status {
+      messages[index].deliveryStatus = status
+    }
+    if let traceStage {
+      messages[index].deliveryTrace.append(DeliveryTraceEvent(stage: traceStage, detail: detail))
+    }
+    messagesByContact[contactId] = messages
+    save()
+    return messages[index]
   }
 
   @discardableResult
