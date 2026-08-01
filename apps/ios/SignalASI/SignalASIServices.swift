@@ -359,11 +359,17 @@ struct CloudModelClient {
     turns: [ChatMessage],
     systemPrompt: String
   ) async throws -> String {
+    let context = CloudModelConversationContext.prepare(
+      model: model,
+      apiKey: apiKey,
+      turns: turns,
+      systemPrompt: systemPrompt
+    )
     var request = try jsonRequest(url: model.endpoint, apiKey: apiKey)
     var messages: [[String: Any]] = [
-      ["role": "system", "content": systemPrompt]
+      ["role": "system", "content": context.systemPrompt]
     ]
-    messages.append(contentsOf: turns.filter { !$0.isSystem }.suffix(16).map {
+    messages.append(contentsOf: context.turns.filter { !$0.isSystem }.map {
       ["role": $0.isMine ? "user" : "assistant", "content": $0.content] as [String: Any]
     })
     request.httpBody = try SignalASILinkProtocol.jsonData([
@@ -389,6 +395,12 @@ struct CloudModelClient {
     turns: [ChatMessage],
     systemPrompt: String
   ) async throws -> String {
+    let context = CloudModelConversationContext.prepare(
+      model: model,
+      apiKey: apiKey,
+      turns: turns,
+      systemPrompt: systemPrompt
+    )
     guard let url = URL(string: model.endpoint) else {
       throw SignalASIError.invalidPayload("Cloud endpoint is not a URL.")
     }
@@ -397,12 +409,12 @@ struct CloudModelClient {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
     request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-    let messages = turns.filter { !$0.isSystem }.suffix(16).map {
+    let messages = context.turns.filter { !$0.isSystem }.map {
       ["role": $0.isMine ? "user" : "assistant", "content": $0.content]
     }
     request.httpBody = try SignalASILinkProtocol.jsonData([
       "model": model.modelId,
-      "system": systemPrompt,
+      "system": context.systemPrompt,
       "max_tokens": 1200,
       "messages": messages
     ])
@@ -420,6 +432,12 @@ struct CloudModelClient {
     turns: [ChatMessage],
     systemPrompt: String
   ) async throws -> String {
+    let context = CloudModelConversationContext.prepare(
+      model: model,
+      apiKey: apiKey,
+      turns: turns,
+      systemPrompt: systemPrompt
+    )
     var components = URLComponents(string: model.endpoint)
     var items = components?.queryItems ?? []
     items.append(URLQueryItem(name: "key", value: apiKey))
@@ -430,14 +448,14 @@ struct CloudModelClient {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    let contents = turns.filter { !$0.isSystem }.suffix(16).map {
+    let contents = context.turns.filter { !$0.isSystem }.map {
       [
         "role": $0.isMine ? "user" : "model",
         "parts": [["text": $0.content]]
       ] as [String: Any]
     }
     request.httpBody = try SignalASILinkProtocol.jsonData([
-      "system_instruction": ["parts": [["text": systemPrompt]]],
+      "system_instruction": ["parts": [["text": context.systemPrompt]]],
       "contents": contents,
       "generationConfig": ["temperature": 0.1, "maxOutputTokens": 1200]
     ])

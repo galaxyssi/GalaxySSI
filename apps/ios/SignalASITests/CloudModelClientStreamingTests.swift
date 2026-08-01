@@ -95,7 +95,7 @@ final class CloudModelClientStreamingTests: XCTestCase {
     XCTAssertEqual(contents.first?["role"] as? String, "user")
   }
 
-  func testStreamingRequestKeepsLatestSixteenVisibleTurns() throws {
+  func testStreamingRequestKeepsVisibleTurnsWithinContextBudget() throws {
     let turns = (0..<20).map {
       ChatMessage(contactId: "contact", content: "turn-\($0)", isMine: $0.isMultiple(of: 2))
     }
@@ -109,9 +109,9 @@ final class CloudModelClientStreamingTests: XCTestCase {
     let body = try object(request.bodyJson)
     let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
 
-    XCTAssertEqual(messages.count, 17)
+    XCTAssertEqual(messages.count, 21)
     XCTAssertEqual(messages.first?["content"] as? String, "system")
-    XCTAssertEqual(messages.dropFirst().first?["content"] as? String, "turn-4")
+    XCTAssertEqual(messages.dropFirst().first?["content"] as? String, "turn-0")
     XCTAssertEqual(messages.last?["content"] as? String, "turn-19")
   }
 
