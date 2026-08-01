@@ -43,7 +43,7 @@ struct AgentIOSUnavailableMediaNativeToolProvider: AgentIOSMediaNativeToolProvid
     case .transcode:
       reason = "iOS signed FFmpeg media runtime is not connected"
     }
-    AgentNativeToolAvailability(
+    return AgentNativeToolAvailability(
       status: .requiresSetup,
       reason: reason
     )
