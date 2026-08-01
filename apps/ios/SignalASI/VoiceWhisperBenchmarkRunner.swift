@@ -48,8 +48,9 @@ final class VoiceWhisperBenchmarkRunner {
     profile: VoiceWhisperModelProfile,
     audio: VoiceWhisperBenchmarkAudio,
     force: Bool = false,
-    onProgress: (VoiceWhisperBenchmarkProgress) -> Void = { _ in }
+    onProgress: @escaping (VoiceWhisperBenchmarkProgress) -> Void = { _ in }
   ) async throws -> VoiceWhisperBenchmarkRecord {
+    try Task.checkCancellation()
     let key = keyFactory(profile, audio.version)
     if !force, let cached = store.find(key) {
       return cached
@@ -79,6 +80,7 @@ final class VoiceWhisperBenchmarkRunner {
     }
 
     progress(.verifying)
+    try Task.checkCancellation()
     let verificationStarted = elapsedMillis()
     try verifyModel(profile)
     let verificationDurationMillis = max(elapsedMillis() - verificationStarted, 0)
@@ -114,6 +116,7 @@ final class VoiceWhisperBenchmarkRunner {
     var measurements: [VoiceWhisperBenchmarkMeasurement] = []
     var loadSequence = 0
     for threadCount in threadCandidates {
+      try Task.checkCancellation()
       let runtime = runtimeFactory()
       do {
         progress(.searchingThreads, threadCount: threadCount)
@@ -125,6 +128,7 @@ final class VoiceWhisperBenchmarkRunner {
         loadSequence += 1
         for duration in plan.candidateAudioDurationsMillis {
           for _ in 0..<plan.candidateIterations {
+            try Task.checkCancellation()
             try ensureThermalAllowsBenchmark()
             measurements.append(
               try await measureDecode(
@@ -150,6 +154,7 @@ final class VoiceWhisperBenchmarkRunner {
     }
 
     let bestThreadCount = try VoiceWhisperThreadSearch.selectBest(measurements: measurements)
+    try Task.checkCancellation()
     let stabilityRuntime = runtimeFactory()
     var stabilityMeasurements: [VoiceWhisperBenchmarkMeasurement] = []
     var abortLatencies: [Int64] = []
@@ -161,6 +166,7 @@ final class VoiceWhisperBenchmarkRunner {
       )
       let loadKind: VoiceWhisperBenchmarkLoadKind = loadSequence == 0 ? .cold : .hot
       for _ in 0..<plan.stabilityIterations {
+        try Task.checkCancellation()
         try ensureThermalAllowsBenchmark()
         stabilityMeasurements.append(
           try await measureDecode(
@@ -178,6 +184,7 @@ final class VoiceWhisperBenchmarkRunner {
 
       progress(.cancellation, threadCount: bestThreadCount)
       for _ in 0..<plan.abortIterations {
+        try Task.checkCancellation()
         stabilityRuntime.requestAbortAll(.userStop)
         abortLatencies.append(0)
         completedSteps += 1
@@ -192,6 +199,7 @@ final class VoiceWhisperBenchmarkRunner {
     }
 
     progress(.certifying, threadCount: bestThreadCount)
+    try Task.checkCancellation()
     let allMeasurements = measurements + stabilityMeasurements
     let record = VoiceWhisperBenchmarkRecordBuilder.certify(
       key: key,
