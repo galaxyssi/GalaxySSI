@@ -16,13 +16,15 @@ enum VoiceSecondPassPlanner {
     fast: TranscriptHypothesis,
     asrResult: VoiceLocalWhisperTranscriptionResult,
     pcmSnapshot: PcmSnapshot,
+    secondPassEnabled: Bool = VoiceFeatureFlags.isWhisperSecondPassEnabled(),
     userRequestedAccuracy: Bool = false,
     meetingOrLongRecordMode: Bool = false,
     onlineProviderUnstable: Bool = false,
     riskClassifier: VoiceCommandRiskClassifying = DefaultVoiceCommandRiskClassifier()
   ) -> VoiceSecondPassPlan? {
     let cleanSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !cleanSessionId.isEmpty,
+    guard secondPassEnabled,
+          !cleanSessionId.isEmpty,
           !fast.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
           !pcmSnapshot.samples.isEmpty,
           pcmSnapshot.sampleRateHz == 16_000,
