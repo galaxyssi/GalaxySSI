@@ -152,6 +152,54 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     XCTAssertTrue(provider.invocations.singleValue().prompt.contains(AgentIOSOnDeviceRuntimeNativeToolCatalog.status))
   }
 
+  func testGuardedModelAgentPlannerInjectsVoiceCorrectionContextBeforeModelPlanning() async throws {
+    let suiteName = "signalasi-guarded-planner-voice-correction-\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defer { defaults.removePersistentDomain(forName: suiteName) }
+    let journal = VoiceCorrectionJournal(defaults: defaults)
+    journal.clear()
+    XCTAssertTrue(journal.append(VoiceCorrectionContextRecord(
+      sessionId: "session-voice",
+      conversationId: "conversation-voice",
+      turnId: "turn-voice",
+      fastText: "message Lee",
+      accurateText: "message Li",
+      diffSummary: "contact changed",
+      risk: .high,
+      revision: 2,
+      modelProfileId: "medium_q5_0",
+      modelSha256: String(repeating: "c", count: 64),
+      executionMode: "SECOND_PASS",
+      userEdited: false,
+      completedAtMillis: 10
+    )))
+    let provider = RecordingModelPlanningProvider(raw: #"{"actions":[{"kind":"READ_SCREEN","parameters":{}}]}"#)
+    let planner = GuardedModelAgentPlanner(
+      provider: provider,
+      modelProfile: "planner-model",
+      voiceCorrectionJournal: journal
+    )
+
+    _ = await planner.plan(
+      request: promptRequest(
+        conversationContext: AgentConversationContext(
+          conversationId: "conversation-voice",
+          summary: "Earlier context",
+          turns: [],
+          privateMode: false
+        )
+      ),
+      settings: AgentModelPlannerSettings(enabled: true),
+      fallbackPlan: fallbackPlan(actions: [fallbackAction(id: "draft", kind: .draftPlan)])
+    )
+
+    let invocation = provider.invocations.singleValue()
+    XCTAssertTrue(invocation.request.conversationContext.summary.contains("Earlier context"))
+    XCTAssertTrue(invocation.request.conversationContext.summary.contains("accurate=message Li"))
+    XCTAssertTrue(invocation.prompt.contains("Speech transcription corrections"))
+    XCTAssertTrue(invocation.prompt.contains("never execute again"))
+  }
+
   func testAgentModelPlanningInvocationUsesAndroidWireNames() async throws {
     let invocation = AgentModelPlanningInvocation(
       systemPrompt: "system",
@@ -173,7 +221,13 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
     screen: AgentScreenContext = AgentScreenContext(foregroundApp: "SignalASI", pageTitle: "Agent"),
     requirements: AgentTaskRequirements = AgentTaskRequirements(mode: .quality),
     nativeTools: [AgentNativeToolDescriptor] = [],
-    allowsPhoneRuntimeTools: Bool = false
+    allowsPhoneRuntimeTools: Bool = false,
+    conversationContext: AgentConversationContext = AgentConversationContext(
+      conversationId: "",
+      summary: "",
+      turns: [],
+      privateMode: false
+    )
   ) -> AgentModelPlanningPromptRequest {
     AgentModelPlanningPromptRequest(
       planRequest: AgentPlanRequest(
@@ -184,6 +238,7 @@ final class GuardedModelAgentPlannerTests: XCTestCase {
         contextDigest: "guarded-planner-test"
       ),
       parsingContext: AgentModelPlanParsingContext(),
+      conversationContext: conversationContext,
       requirements: requirements,
       allowsPhoneRuntimeTools: allowsPhoneRuntimeTools
     )

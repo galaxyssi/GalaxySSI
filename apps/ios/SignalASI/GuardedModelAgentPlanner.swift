@@ -3,13 +3,16 @@ import Foundation
 struct GuardedModelAgentPlanner {
   var provider: AgentModelPlanningProviding
   var modelProfile: String
+  var voiceCorrectionJournal: VoiceCorrectionJournal?
 
   init(
     provider: AgentModelPlanningProviding,
-    modelProfile: String = "model"
+    modelProfile: String = "model",
+    voiceCorrectionJournal: VoiceCorrectionJournal? = nil
   ) {
     self.provider = provider
     self.modelProfile = modelProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+    self.voiceCorrectionJournal = voiceCorrectionJournal
   }
 
   func plan(
@@ -53,7 +56,13 @@ struct GuardedModelAgentPlanner {
       )
     }
 
-    let safeRequest = request.withNativeTools(safeNativeTools(for: request))
+    let nativeSafeRequest = request.withNativeTools(safeNativeTools(for: request))
+    let safeRequest = voiceCorrectionJournal.map {
+      VoiceCorrectionContextProvider.merge(
+        request: nativeSafeRequest,
+        correctionJournal: $0
+      ).request
+    } ?? nativeSafeRequest
     let prompt = AgentModelPlanningPrompt.build(request: safeRequest, settings: normalizedSettings)
     let raw: String
     do {
