@@ -207,6 +207,7 @@
     A10000000000000000000114 /* AgentMcpSessionModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000114 /* AgentMcpSessionModels.swift */; };
     A10000000000000000000700 /* AgentMcpLocalRuntimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000700 /* AgentMcpLocalRuntimeClient.swift */; };
     A10000000000000000000701 /* AgentMcpDeclarativeHTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000701 /* AgentMcpDeclarativeHTTPClient.swift */; };
+    A10000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift */; };
     A10000000000000000000115 /* AgentMcpCatalogModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000115 /* AgentMcpCatalogModels.swift */; };
     A10000000000000000000116 /* AgentWorkspaceModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000116 /* AgentWorkspaceModels.swift */; };
     A10000000000000000000673 /* AgentWorkspaceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000673 /* AgentWorkspaceStore.swift */; };
@@ -623,6 +624,7 @@
     A20000000000000000000114 /* AgentMcpSessionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpSessionModels.swift; sourceTree = "<group>"; };
     A20000000000000000000700 /* AgentMcpLocalRuntimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpLocalRuntimeClient.swift; sourceTree = "<group>"; };
     A20000000000000000000701 /* AgentMcpDeclarativeHTTPClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpDeclarativeHTTPClient.swift; sourceTree = "<group>"; };
+    A20000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpAuthenticationCoordinator.swift; sourceTree = "<group>"; };
     A20000000000000000000115 /* AgentMcpCatalogModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMcpCatalogModels.swift; sourceTree = "<group>"; };
     A20000000000000000000116 /* AgentWorkspaceModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceModels.swift; sourceTree = "<group>"; };
     A20000000000000000000673 /* AgentWorkspaceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkspaceStore.swift; sourceTree = "<group>"; };
@@ -1042,6 +1044,7 @@
         A20000000000000000000114 /* AgentMcpSessionModels.swift */,
         A20000000000000000000700 /* AgentMcpLocalRuntimeClient.swift */,
         A20000000000000000000701 /* AgentMcpDeclarativeHTTPClient.swift */,
+        A20000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift */,
         A20000000000000000000115 /* AgentMcpCatalogModels.swift */,
         A20000000000000000000116 /* AgentWorkspaceModels.swift */,
         A20000000000000000000673 /* AgentWorkspaceStore.swift */,
@@ -1609,6 +1612,7 @@
         A10000000000000000000114 /* AgentMcpSessionModels.swift in Sources */,
         A10000000000000000000700 /* AgentMcpLocalRuntimeClient.swift in Sources */,
         A10000000000000000000701 /* AgentMcpDeclarativeHTTPClient.swift in Sources */,
+        A10000000000000000000702 /* AgentMcpAuthenticationCoordinator.swift in Sources */,
         A10000000000000000000115 /* AgentMcpCatalogModels.swift in Sources */,
         A10000000000000000000116 /* AgentWorkspaceModels.swift in Sources */,
         A10000000000000000000673 /* AgentWorkspaceStore.swift in Sources */,
