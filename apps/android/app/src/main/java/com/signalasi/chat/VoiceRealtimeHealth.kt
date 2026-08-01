@@ -38,6 +38,7 @@ enum class VoiceRuntimeChannel {
     OPEN_WAKE_WORD,
     ANDROID_WAKE_ASR,
     LOCAL_WHISPER_ASR,
+    ONLINE_REALTIME_ASR,
     ANDROID_SYSTEM_ASR,
     ANDROID_SYSTEM_TTS,
     MICROSOFT_EDGE_TTS
@@ -211,6 +212,15 @@ object VoiceRealtimeHealthDetector {
                 VoiceProviderCapabilityId.MICROSOFT_EDGE_TTS
             }
         ]
+        val onlineAsr = config.asrProvider == VoiceAssistantSettings.ASR_PROVIDER_ONLINE_REALTIME
+        val asrChannel = if (onlineAsr) {
+            VoiceRuntimeChannel.ONLINE_REALTIME_ASR
+        } else {
+            VoiceRuntimeChannel.LOCAL_WHISPER_ASR
+        }
+        val asrCapability = capabilities[
+            if (onlineAsr) VoiceProviderCapabilityId.CLOUD_ASR else VoiceProviderCapabilityId.WHISPER_CPP
+        ]
         return VoiceRealtimeHealthPolicy.evaluate(
             listOf(
                 VoiceHealthProbe(
@@ -227,11 +237,13 @@ object VoiceRealtimeHealthDetector {
                 VoiceHealthProbe(
                     component = VoiceHealthComponent.ASR,
                     enabled = true,
-                    provider = "whisper.cpp / ${WhisperModelManager.model(config.asrModel).displayName}",
-                    dependency = dependency(capabilities[VoiceProviderCapabilityId.WHISPER_CPP]),
-                    runtime = VoiceRuntimeHealthRegistry.record(
-                        VoiceRuntimeChannel.LOCAL_WHISPER_ASR
-                    )
+                    provider = if (onlineAsr) {
+                        "SignalASI Realtime ASR"
+                    } else {
+                        "whisper.cpp / ${WhisperModelManager.model(config.asrModel).displayName}"
+                    },
+                    dependency = dependency(asrCapability),
+                    runtime = VoiceRuntimeHealthRegistry.record(asrChannel)
                 ),
                 VoiceHealthProbe(
                     component = VoiceHealthComponent.TTS,

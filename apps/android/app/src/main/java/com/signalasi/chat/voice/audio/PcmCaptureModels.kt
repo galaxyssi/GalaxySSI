@@ -84,6 +84,20 @@ class AudioFrame internal constructor(
     }
 }
 
+data class PcmFramePacket(
+    val sequence: Long,
+    val captureTimeNanos: Long,
+    val samples: ShortArray,
+    val sampleRateHz: Int
+) {
+    init {
+        require(sequence >= 0L)
+        require(captureTimeNanos >= 0L)
+        require(samples.isNotEmpty())
+        require(sampleRateHz > 0)
+    }
+}
+
 data class PcmSnapshot(
     val samples: ShortArray,
     val sampleRateHz: Int,

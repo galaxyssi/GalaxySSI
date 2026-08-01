@@ -26,8 +26,20 @@ data class TranscriptHypothesis(
     val revision: Int,
     val provider: String = "",
     val modelProfileId: String = "",
-    val confidence: Float? = null
-)
+    val confidence: Float? = null,
+    val transcriptId: String = "",
+    val stablePrefixLength: Int = 0,
+    val isFinal: Boolean = false,
+    val language: String? = null,
+    val segmentStartMs: Long = 0L,
+    val segmentEndMs: Long = 0L,
+    val averageLogProb: Float? = null,
+    val noSpeechProbability: Float? = null,
+    val createdElapsedNs: Long = 0L
+) {
+    val providerId: String
+        get() = provider
+}
 
 enum class VoiceRouteKind {
     LOCAL_ACTION,

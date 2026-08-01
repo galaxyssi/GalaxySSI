@@ -10,6 +10,8 @@ val runtimeAssetRoot = rootProject.file("../../build/runtime/android-assets")
 val requireEmbeddedRuntime = providers.gradleProperty("signalasi.requireEmbeddedRuntime")
     .map(String::toBoolean)
     .orElse(true)
+val realtimeAsrCredentialBrokerUrl = providers.gradleProperty("signalasi.realtimeAsrCredentialBrokerUrl")
+    .orElse("")
 val bundledWhisperAsset = file("src/main/assets/ggml-tiny.bin")
 val bundledWhisperAssets = fileTree("src/main/assets") {
     include("ggml-*.bin")
@@ -82,11 +84,16 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 313
-        versionName = "0.3.13"
+        versionCode = 314
+        versionName = "0.3.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
+        buildConfigField(
+            "String",
+            "REALTIME_ASR_CREDENTIAL_BROKER_URL",
+            "\"${realtimeAsrCredentialBrokerUrl.get().replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        )
 
         ndk {
             abiFilters += listOf("arm64-v8a")

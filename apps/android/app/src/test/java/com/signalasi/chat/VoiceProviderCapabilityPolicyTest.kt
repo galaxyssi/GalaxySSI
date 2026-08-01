@@ -76,10 +76,7 @@ class VoiceProviderCapabilityPolicyTest {
             VoiceProviderCapabilityReason.SYSTEM_RECOGNIZER_MISSING,
             noSystem[VoiceProviderCapabilityId.ANDROID_SYSTEM_ASR].reason
         )
-        assertEquals(
-            VoiceProviderCapabilityReason.SYSTEM_RECOGNIZER_MISSING,
-            noSystem[VoiceProviderCapabilityId.CLOUD_ASR].reason
-        )
+        assertTrue(noSystem[VoiceProviderCapabilityId.CLOUD_ASR].ready)
         assertEquals(
             VoiceProviderCapabilityReason.OFFLINE_RECOGNIZER_MISSING,
             noOffline[VoiceProviderCapabilityId.ANDROID_OFFLINE_ASR].reason
@@ -125,7 +122,9 @@ class VoiceProviderCapabilityPolicyTest {
         ttsInitialized: Boolean = true,
         ttsReady: Boolean = true,
         ttsEngineCount: Int = 2,
-        ttsLanguageSupported: Boolean = true
+        ttsLanguageSupported: Boolean = true,
+        onlineAsrAllowed: Boolean = true,
+        realtimeAsrCredentialBrokerConfigured: Boolean = true
     ) = VoiceDeviceCapabilityProbe(
         hasMicrophone = hasMicrophone,
         microphonePermissionGranted = microphonePermissionGranted,
@@ -140,6 +139,8 @@ class VoiceProviderCapabilityPolicyTest {
         ttsReady = ttsReady,
         ttsEngineCount = ttsEngineCount,
         ttsLanguageSupported = ttsLanguageSupported,
-        ttsLanguage = "en-US"
+        ttsLanguage = "en-US",
+        onlineAsrAllowed = onlineAsrAllowed,
+        realtimeAsrCredentialBrokerConfigured = realtimeAsrCredentialBrokerConfigured
     )
 }
