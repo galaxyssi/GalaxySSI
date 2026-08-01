@@ -4,18 +4,32 @@ struct VoiceWhisperModelSettingsView: View {
   @EnvironmentObject private var store: SignalASIStore
   private let modelManager: VoiceWhisperModelManager
   private let downloadService: VoiceWhisperModelDownloadService
+  private let benchmarkManager: VoiceWhisperBenchmarkManager
+  private let benchmarkCoordinator: VoiceWhisperBenchmarkRunCoordinator
 
   @State private var downloadStates: [String: VoiceWhisperModelDownloadState] = [:]
   @State private var availableModelIds: Set<String> = []
   @State private var activeDownloadIds: Set<String> = []
+  @State private var benchmarkRecords: [String: VoiceWhisperBenchmarkRecord] = [:]
+  @State private var latestBenchmarkRecords: [String: VoiceWhisperBenchmarkRecord] = [:]
+  @State private var benchmarkProgress: [String: VoiceWhisperBenchmarkProgress] = [:]
+  @State private var activeBenchmarkIds: Set<String> = []
   @State private var statusMessage = ""
 
   init(
     modelManager: VoiceWhisperModelManager = VoiceWhisperModelManager(),
-    downloadService: VoiceWhisperModelDownloadService? = nil
+    downloadService: VoiceWhisperModelDownloadService? = nil,
+    benchmarkManager: VoiceWhisperBenchmarkManager? = nil,
+    benchmarkCoordinator: VoiceWhisperBenchmarkRunCoordinator? = nil
   ) {
+    let resolvedBenchmarkManager = benchmarkManager ?? VoiceWhisperBenchmarkManager()
     self.modelManager = modelManager
     self.downloadService = downloadService ?? VoiceWhisperModelDownloadService(manager: modelManager)
+    self.benchmarkManager = resolvedBenchmarkManager
+    self.benchmarkCoordinator = benchmarkCoordinator ?? VoiceWhisperBenchmarkDefaultFactory.makeCoordinator(
+      modelManager: modelManager,
+      benchmarkManager: resolvedBenchmarkManager
+    )
   }
 
   var body: some View {
@@ -81,6 +95,9 @@ struct VoiceWhisperModelSettingsView: View {
       selectedModelId: store.voiceSettings.asrModelId,
       downloadState: { downloadStates[$0.id] ?? modelManager.downloadState(for: $0) },
       isAvailable: { availableModelIds.contains($0.id) || $0.bundled },
+      benchmarkRecord: { benchmarkRecords[$0.id] },
+      latestBenchmarkRecord: { latestBenchmarkRecords[$0.id] },
+      benchmarkProgress: { benchmarkProgress[$0.id] },
       activeDownloadIds: activeDownloadIds
     )
   }
@@ -89,6 +106,9 @@ struct VoiceWhisperModelSettingsView: View {
     switch row.action {
     case .use:
       select(row.model)
+    case .useAndTest:
+      select(row.model)
+      Task { await benchmark(row.model, force: false) }
     case .download, .retry:
       Task { await download(row.model) }
     case .current, .waiting:
@@ -99,6 +119,7 @@ struct VoiceWhisperModelSettingsView: View {
   private func remove(_ model: VoiceWhisperModelProfile) {
     do {
       _ = try modelManager.delete(model, active: modelManager.isLoaded(model.id))
+      try? benchmarkManager.remove(profile: model)
       statusMessage = "\(model.displayName) removed"
     } catch {
       statusMessage = "Model remove failed."
@@ -131,17 +152,56 @@ struct VoiceWhisperModelSettingsView: View {
     }
   }
 
+  @MainActor
+  private func benchmark(_ model: VoiceWhisperModelProfile, force: Bool) async {
+    guard !activeBenchmarkIds.contains(model.id) else { return }
+    activeBenchmarkIds.insert(model.id)
+    benchmarkProgress[model.id] = VoiceWhisperBenchmarkProgress(
+      stage: .verifying,
+      completedSteps: 0,
+      totalSteps: 1
+    )
+    statusMessage = "Benchmarking \(model.displayName)"
+    refreshModelState()
+    defer {
+      activeBenchmarkIds.remove(model.id)
+      benchmarkProgress.removeValue(forKey: model.id)
+      refreshModelState()
+    }
+    do {
+      let record = try await benchmarkCoordinator.benchmark(profile: model, force: force) { progress in
+        Task { @MainActor in
+          benchmarkProgress[model.id] = progress
+        }
+      }
+      benchmarkRecords[model.id] = record
+      latestBenchmarkRecords.removeValue(forKey: model.id)
+      statusMessage = "\(model.displayName) certification completed"
+    } catch {
+      statusMessage = "Benchmark could not finish: \(error.localizedDescription)"
+    }
+  }
+
   private func refreshModelState() {
     var nextStates: [String: VoiceWhisperModelDownloadState] = [:]
     var nextAvailable = Set<String>()
+    var nextBenchmarkRecords: [String: VoiceWhisperBenchmarkRecord] = [:]
+    var nextLatestRecords: [String: VoiceWhisperBenchmarkRecord] = [:]
     for model in VoiceWhisperModelCatalog.models {
       nextStates[model.id] = modelManager.downloadState(for: model)
       if modelManager.isAvailable(model) {
         nextAvailable.insert(model.id)
+        if let record = benchmarkManager.current(profile: model) {
+          nextBenchmarkRecords[model.id] = record
+        } else if let latest = benchmarkManager.latest(profile: model) {
+          nextLatestRecords[model.id] = latest
+        }
       }
     }
     downloadStates = nextStates
     availableModelIds = nextAvailable
+    benchmarkRecords = nextBenchmarkRecords
+    latestBenchmarkRecords = nextLatestRecords
   }
 
   private func actionColor(_ action: VoiceWhisperModelRowAction) -> Color {
@@ -152,7 +212,7 @@ struct VoiceWhisperModelSettingsView: View {
       return .orange
     case .waiting:
       return .secondary
-    case .use, .download:
+    case .use, .useAndTest, .download:
       return .accentColor
     }
   }

@@ -28,14 +28,14 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     )
 
     XCTAssertEqual(rows.map(\.model.id), VoiceWhisperModelCatalog.models.map(\.id))
-    XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.action, .current)
-    XCTAssertEqual(rows.first { $0.model.id == base.id }?.action, .use)
+    XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.action, .useAndTest)
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.action, .useAndTest)
     XCTAssertEqual(rows.first { $0.model.id == small.id }?.action, .waiting(progress: 42))
     XCTAssertEqual(rows.first { $0.model.id == medium.id }?.action, .retry)
     XCTAssertEqual(rows.first { $0.model.id == large.id }?.action, .waiting(progress: 0))
     XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.detail.contains("Included with the app"), true)
     XCTAssertEqual(rows.first { $0.model.id == base.id }?.detail.contains(base.quantization.rawValue), true)
-    XCTAssertEqual(rows.first { $0.model.id == base.id }?.detail.contains("Installed"), true)
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.detail.contains("Benchmark required"), true)
     XCTAssertEqual(rows.first { $0.model.id == small.id }?.detail.contains("Downloading 42%"), true)
     XCTAssertEqual(rows.first { $0.model.id == medium.id }?.detail.contains("Install failed"), true)
     XCTAssertEqual(rows.first { $0.model.id == large.id }?.detail.contains("Waiting to download"), true)
@@ -49,11 +49,45 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
     let rows = VoiceWhisperModelSettingsPresenter.rows(
       selectedModelId: base.id,
       downloadState: { _ in VoiceWhisperModelDownloadState(status: .successful, progress: 100) },
-      isAvailable: { $0.id == base.id }
+      isAvailable: { $0.id == base.id },
+      benchmarkRecord: { model in
+        model.id == base.id ? Self.benchmarkRecord(for: model, level: .realtime) : nil
+      }
     )
 
     XCTAssertEqual(rows.first { $0.model.id == base.id }?.action, .current)
     XCTAssertEqual(rows.first { $0.model.id == base.id }?.removable, false)
+  }
+
+  func testPresenterShowsBenchmarkCertificationProgressAndStaleStates() {
+    let tiny = VoiceWhisperModelCatalog.model("tiny")
+    let base = VoiceWhisperModelCatalog.model("base")
+    let small = VoiceWhisperModelCatalog.model("small")
+    let rows = VoiceWhisperModelSettingsPresenter.rows(
+      models: [tiny, base, small],
+      selectedModelId: "tiny",
+      downloadState: { _ in VoiceWhisperModelDownloadState(status: .successful, progress: 100) },
+      isAvailable: { _ in true },
+      benchmarkRecord: { model in
+        model.id == tiny.id ? Self.benchmarkRecord(for: model, level: .realtime) : nil
+      },
+      latestBenchmarkRecord: { model in
+        model.id == base.id ? Self.benchmarkRecord(for: model, level: .final) : nil
+      },
+      benchmarkProgress: { model in
+        if model.id == small.id {
+          return VoiceWhisperBenchmarkProgress(stage: .searchingThreads, completedSteps: 3, totalSteps: 6)
+        }
+        return nil
+      }
+    )
+
+    XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.action, .current)
+    XCTAssertEqual(rows.first { $0.model.id == tiny.id }?.detail.contains("Real-time certified"), true)
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.action, .useAndTest)
+    XCTAssertEqual(rows.first { $0.model.id == base.id }?.detail.contains("Previous result is stale"), true)
+    XCTAssertEqual(rows.first { $0.model.id == small.id }?.action, .waiting(progress: 50))
+    XCTAssertEqual(rows.first { $0.model.id == small.id }?.detail.contains("Searching threads 50%"), true)
   }
 
   func testDownloadServiceCompletesModelThroughInjectedDownloader() async throws {
@@ -157,6 +191,35 @@ final class VoiceWhisperModelSettingsTests: XCTestCase {
       }
       return try XCTUnwrap(results.first).get()
     }
+  }
+
+  private static func benchmarkRecord(
+    for model: VoiceWhisperModelProfile,
+    level: VoiceWhisperCertificationLevel
+  ) -> VoiceWhisperBenchmarkRecord {
+    VoiceWhisperBenchmarkRecord(
+      certification: VoiceWhisperCertification(
+        key: VoiceWhisperBenchmarkKey(
+          manufacturer: "Apple",
+          device: "iPhone",
+          soc: "A17",
+          osVersion: "17.0",
+          appVersionCode: 1,
+          whisperNativeVersion: "test",
+          nativeBuildFingerprint: "test",
+          modelProfileId: model.id,
+          modelSha256: model.sha256,
+          benchmarkAudioVersion: "test"
+        ),
+        level: level,
+        recommendedMode: level == .realtime ? .realtimePartial : .finalOnly,
+        recommendedThreadCount: 4,
+        recommendedPartialIntervalMillis: model.defaultPartialIntervalMillis,
+        warmRtfP50: 0.25,
+        warmRtfP95: 0.5,
+        createdAtEpochMillis: 2_000
+      )
+    )
   }
 
   private final class Environment {
