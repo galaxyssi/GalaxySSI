@@ -105,7 +105,7 @@ enum GlobalCapabilityObservationExtractor {
     let current: [String: CapabilityResourceSnapshot] = after.reduce(into: [:]) { result, connection in
       result[connection.id] = mcpSnapshot(connection, nowMillis: timestampMillis)
     }
-    resourceMutations(
+    return resourceMutations(
       before: previous,
       after: current,
       timestampMillis: timestampMillis
@@ -123,7 +123,7 @@ enum GlobalCapabilityObservationExtractor {
     let current: [String: CapabilityResourceSnapshot] = after.reduce(into: [:]) { result, registration in
       result[registration.agentId] = agentSnapshot(registration)
     }
-    resourceMutations(
+    return resourceMutations(
       before: previous,
       after: current,
       timestampMillis: timestampMillis
@@ -151,7 +151,7 @@ enum GlobalCapabilityObservationExtractor {
     let current: [String: CapabilityResourceSnapshot] = after.reduce(into: [:]) { result, connector in
       result[connector.id] = customDeviceSnapshot(connector)
     }
-    resourceMutations(
+    return resourceMutations(
       before: previous,
       after: current,
       timestampMillis: timestampMillis
