@@ -491,7 +491,7 @@ enum GlobalEvidenceEvaluator {
 
 private extension Array {
   func prefixArray(_ maximumCount: Int) -> [Element] {
-    Array(prefix(max(maximumCount, 0)))
+    Array(prefix(Swift.max(maximumCount, 0)))
   }
 }
 

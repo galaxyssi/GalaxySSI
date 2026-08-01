@@ -266,10 +266,10 @@ enum AgentWorkspaceBoundsPolicy {
 
 private extension Array {
   func suffixArray(_ limit: Int) -> [Element] {
-    Array(suffix(max(limit, 0)))
+    Array(suffix(Swift.max(limit, 0)))
   }
 
   func prefixArray(_ limit: Int) -> [Element] {
-    Array(prefix(max(limit, 0)))
+    Array(prefix(Swift.max(limit, 0)))
   }
 }
