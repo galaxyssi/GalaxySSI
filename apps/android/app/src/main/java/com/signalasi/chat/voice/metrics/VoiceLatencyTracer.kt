@@ -398,6 +398,9 @@ object VoiceLatencyTelemetry {
         return output
     }
 
+    fun diagnosticSummary(context: Context): VoiceDiagnosticSummary =
+        tracer(context.applicationContext).diagnosticSummary()
+
     private fun tracer(context: Context): VoiceLatencyTracer {
         instance?.let { return it }
         return synchronized(lock) {

@@ -144,6 +144,12 @@ import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperCertificationLevel
+import com.signalasi.chat.voice.model.WhisperModelFamily
+import com.signalasi.chat.voice.reliability.AndroidVoiceReliabilityController
+import com.signalasi.chat.voice.reliability.VoicePipelineFeature
+import com.signalasi.chat.voice.reliability.VoicePerformanceHealth
+import com.signalasi.chat.voice.reliability.VoiceResourceMode
+import com.signalasi.chat.voice.reliability.VoiceWorkloadProfile
 import com.signalasi.chat.voice.modelstream.ModelStreamCancelReason
 import com.signalasi.chat.voice.modelstream.CommittedSpeechChunk
 import com.signalasi.chat.voice.modelstream.DefaultSentenceCommitter
@@ -601,6 +607,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         RealtimeAsrPreconnector(onlineRealtimeAsrProvider)
     }
     private val onlineRealtimeAsrPreconnector: RealtimeAsrPreconnector by onlineRealtimeAsrPreconnectorLazy
+    private val voiceReliabilityController: AndroidVoiceReliabilityController by lazy {
+        AndroidVoiceReliabilityController(applicationContext)
+    }
+    private val voicePerformanceVisibleMetrics = setOf(
+        "asr_total_ms",
+        "model_first_delta_ms",
+        "tts_first_audio_ms",
+        "agent_accept_ms",
+        "agent_first_progress_ms",
+        "agent_first_output_ms"
+    )
     private var pcmCaptureStopping = false
     @Volatile private var pcmVoiceAmplitude = 0
     private var lastPcmAudioLevelDispatchAt = 0L
@@ -9753,6 +9770,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             })
             "advanced.protocol" -> openExistingControlCenterPage { showSignalLinkProtocolPage() }
             "advanced.web_sources" -> openExistingControlCenterPage { showWebIntelligenceSourcesPage() }
+            "advanced.voice_performance" -> openExistingControlCenterPage { showVoicePerformanceDashboardPage() }
             "advanced.audit" -> openExistingControlCenterPage { showAgentAuditOperationsPage() }
             "advanced.permissions" -> openControlCenterDestination(ControlCenterDestination(ControlCenterRoute.PERMISSIONS_AUDIT))
             "advanced.app_details" -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
@@ -15007,6 +15025,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ControlCenterSectionSpec(
                         getString(R.string.advanced_section_diagnostics),
                         listOf(
+                            ControlCenterRowSpec("advanced.voice_performance", getString(R.string.voice_performance_title), getString(R.string.voice_performance_subtitle), R.drawable.ic_settings_diagnostics, getString(R.string.common_view), ControlCenterTone.GREEN),
                             ControlCenterRowSpec("advanced.web_sources", getString(R.string.web_sources_title), getString(R.string.web_sources_subtitle), R.drawable.ic_process_network, getString(R.string.web_sources_count, AgentWebIntelligenceEngineCatalog.entries.size), ControlCenterTone.GREEN),
                             ControlCenterRowSpec("advanced.protocol", getString(R.string.advanced_protocol_logs), getString(R.string.advanced_protocol_logs_subtitle), R.drawable.ic_protocol_link, getString(R.string.common_view), ControlCenterTone.BLUE),
                             ControlCenterRowSpec("advanced.audit", getString(R.string.advanced_agent_permission_audit), getString(R.string.advanced_agent_permission_audit_subtitle), R.drawable.ic_security_shield, getString(R.string.common_view), ControlCenterTone.VIOLET),
@@ -15025,6 +15044,99 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             )
         )
     }
+
+    private fun showVoicePerformanceDashboardPage() {
+        val dashboard = voiceReliabilityController.dashboard(foreground = true)
+        showFeaturePage(getString(R.string.voice_performance_title))
+        featureContent.addView(featureHeroCard(
+            getString(R.string.voice_performance_hero_title),
+            getString(R.string.voice_performance_hero_subtitle),
+            R.drawable.ic_settings_diagnostics,
+            "#14C66A",
+            voicePerformanceHealthLabel(dashboard.health)
+        ))
+        addSectionTitle(getString(R.string.voice_performance_health_section))
+        featureContent.addView(featureValueRow(
+            getString(R.string.voice_performance_success_rate),
+            getString(R.string.voice_performance_session_count, dashboard.sessionCount),
+            R.drawable.ic_process_analysis,
+            String.format(Locale.US, "%.1f%%", dashboard.successRate * 100.0)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.voice_performance_fallback_rate),
+            getString(R.string.voice_performance_failure_rate_value, dashboard.failureRate * 100.0),
+            R.drawable.ic_process_network,
+            String.format(Locale.US, "%.1f%%", dashboard.fallbackRate * 100.0)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.voice_performance_resource_mode),
+            if (dashboard.resourceReasons.isEmpty()) {
+                getString(R.string.voice_performance_no_constraints)
+            } else {
+                getString(R.string.voice_performance_active_constraints, dashboard.resourceReasons.size)
+            },
+            R.drawable.ic_process_terminal,
+            voicePerformanceResourceModeLabel(dashboard.resourceMode)
+        ))
+        featureContent.addView(featureValueRow(
+            getString(R.string.voice_performance_circuits),
+            getString(R.string.voice_performance_circuits_subtitle),
+            R.drawable.ic_security_shield,
+            dashboard.openCircuits.size.toString()
+        ))
+        addSectionTitle(getString(R.string.voice_performance_latency_section))
+        val visibleMetrics = dashboard.metrics.filter { metric ->
+            metric.id in voicePerformanceVisibleMetrics
+        }
+        if (visibleMetrics.isEmpty()) {
+            featureContent.addView(featureValueRow(
+                getString(R.string.voice_performance_no_samples),
+                getString(R.string.voice_performance_no_samples_subtitle),
+                R.drawable.ic_settings_diagnostics,
+                "-"
+            ))
+        } else {
+            visibleMetrics.forEach { metric ->
+                featureContent.addView(featureValueRow(
+                    voicePerformanceMetricLabel(metric.id),
+                    getString(R.string.voice_performance_metric_samples, metric.samples),
+                    R.drawable.ic_settings_diagnostics,
+                    getString(R.string.voice_performance_latency_value, metric.p50Ms, metric.p95Ms)
+                ))
+            }
+        }
+    }
+
+    private fun voicePerformanceHealthLabel(health: VoicePerformanceHealth): String = getString(
+        when (health) {
+            VoicePerformanceHealth.HEALTHY -> R.string.voice_performance_health_healthy
+            VoicePerformanceHealth.WATCH -> R.string.voice_performance_health_watch
+            VoicePerformanceHealth.DEGRADED -> R.string.voice_performance_health_degraded
+            VoicePerformanceHealth.BLOCKED -> R.string.voice_performance_health_blocked
+            VoicePerformanceHealth.NO_DATA -> R.string.voice_performance_health_no_data
+        }
+    )
+
+    private fun voicePerformanceResourceModeLabel(mode: VoiceResourceMode): String = getString(
+        when (mode) {
+            VoiceResourceMode.NORMAL -> R.string.voice_performance_resource_normal
+            VoiceResourceMode.CONSERVE -> R.string.voice_performance_resource_conserve
+            VoiceResourceMode.DEGRADED -> R.string.voice_performance_resource_degraded
+            VoiceResourceMode.BLOCKED -> R.string.voice_performance_resource_blocked
+        }
+    )
+
+    private fun voicePerformanceMetricLabel(metricId: String): String = getString(
+        when (metricId) {
+            "asr_total_ms" -> R.string.voice_performance_metric_asr
+            "model_first_delta_ms" -> R.string.voice_performance_metric_model
+            "tts_first_audio_ms" -> R.string.voice_performance_metric_tts
+            "agent_accept_ms" -> R.string.voice_performance_metric_agent_accept
+            "agent_first_progress_ms" -> R.string.voice_performance_metric_agent_progress
+            "agent_first_output_ms" -> R.string.voice_performance_metric_agent_output
+            else -> R.string.voice_performance_title
+        }
+    )
 
     private fun showWebIntelligenceSourcesPage() {
         showFeaturePage(getString(R.string.web_sources_title))
@@ -22360,6 +22472,33 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val certification = if (decision != null) {
             WhisperBenchmarkManager.current(this, profile)?.certification
         } else null
+        if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
+            val admission = voiceReliabilityController.admit(
+                workload = VoiceWorkloadProfile(
+                    feature = VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
+                    profileId = profile.id,
+                    estimatedPeakPssBytes = profile.minAvailableRamBytes,
+                    certifiedPeakPssBytes = certification?.peakPssBytes ?: 0L,
+                    localInference = true,
+                    highMemoryLocalModel = profile.family in setOf(
+                        WhisperModelFamily.MEDIUM,
+                        WhisperModelFamily.LARGE_V3,
+                        WhisperModelFamily.LARGE_V3_TURBO
+                    ),
+                    allowBackground = false
+                ),
+                requestedEnabled = true,
+                deviceCertified = decision == null || certification?.realtimeCertified == true,
+                foreground = true
+            )
+            if (!admission.allowed) {
+                Log.i(
+                    "SignalASIVoice",
+                    "Adaptive local ASR gated reason=${admission.fallbackReasonCode} profile=${profile.id}"
+                )
+                return null
+            }
+        }
         val session = LiveWhisperTranscriptionSession(
             voiceSessionId = traceId,
             profile = profile,
@@ -22390,6 +22529,24 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             privacy = settings.onlineAsrPrivacy
         )
         if (!AsrProviderSelector.onlineAllowed(config)) return null
+        if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
+            val admission = voiceReliabilityController.admit(
+                workload = VoiceWorkloadProfile(
+                    feature = VoicePipelineFeature.ONLINE_REALTIME_ASR,
+                    profileId = "signalasi_realtime",
+                    requiresNetwork = true
+                ),
+                requestedEnabled = true,
+                foreground = true
+            )
+            if (!admission.allowed) {
+                Log.i(
+                    "SignalASIVoice",
+                    "Realtime ASR gated reason=${admission.fallbackReasonCode}"
+                )
+                return null
+            }
+        }
         val turn = OnlineRealtimeAsrTurn(
             config = config,
             preconnector = onlineRealtimeAsrPreconnector,
@@ -22438,6 +22595,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             is RealtimeAsrTurnAction.Commit -> {
                 onlineRealtimeAsrFinals[traceId] = action.hypothesis
                 VoiceRuntimeHealthRegistry.success(VoiceRuntimeChannel.ONLINE_REALTIME_ASR)
+                if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
+                    voiceReliabilityController.reportSuccess(
+                        VoicePipelineFeature.ONLINE_REALTIME_ASR,
+                        "signalasi_realtime"
+                    )
+                }
             }
             is RealtimeAsrTurnAction.Correct -> Unit
             is RealtimeAsrTurnAction.RequestLocalFallback -> {
@@ -22445,6 +22608,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     VoiceRuntimeChannel.ONLINE_REALTIME_ASR,
                     action.reasonCode
                 )
+                if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
+                    voiceReliabilityController.reportFailure(
+                        VoicePipelineFeature.ONLINE_REALTIME_ASR,
+                        "signalasi_realtime",
+                        error = null,
+                        reasonCode = action.reasonCode
+                    )
+                }
                 Log.i("SignalASIVoice", "Realtime ASR switched to retained local PCM reason=${action.reasonCode}")
             }
             is RealtimeAsrTurnAction.Failed -> {
@@ -22452,6 +22623,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     VoiceRuntimeChannel.ONLINE_REALTIME_ASR,
                     action.reasonCode
                 )
+                if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
+                    voiceReliabilityController.reportFailure(
+                        VoicePipelineFeature.ONLINE_REALTIME_ASR,
+                        "signalasi_realtime",
+                        error = null,
+                        reasonCode = action.reasonCode
+                    )
+                }
                 Log.w("SignalASIVoice", "Realtime ASR unavailable reason=${action.reasonCode}")
             }
             RealtimeAsrTurnAction.None -> Unit
@@ -23886,6 +24065,49 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             return
         }
+        val selectedLocalProfile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
+        if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
+            val certification = WhisperBenchmarkManager.current(this, selectedLocalProfile)?.certification
+            val admission = voiceReliabilityController.admit(
+                workload = VoiceWorkloadProfile(
+                    feature = VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
+                    profileId = selectedLocalProfile.id,
+                    estimatedPeakPssBytes = selectedLocalProfile.minAvailableRamBytes,
+                    certifiedPeakPssBytes = certification?.peakPssBytes ?: 0L,
+                    localInference = true,
+                    highMemoryLocalModel = selectedLocalProfile.family in setOf(
+                        WhisperModelFamily.MEDIUM,
+                        WhisperModelFamily.LARGE_V3,
+                        WhisperModelFamily.LARGE_V3_TURBO
+                    )
+                ),
+                requestedEnabled = true,
+                deviceCertified = true,
+                foreground = true
+            )
+            if (!admission.allowed) {
+                sourceFile.delete()
+                Log.w(
+                    "SignalASILocalASR",
+                    "Local transcription gated reason=${admission.fallbackReasonCode} profile=${selectedLocalProfile.id}"
+                )
+                failVoiceCoordinator(traceId, admission.fallbackReasonCode.ifBlank { "local_asr_gated" })
+                VoiceLatencyTelemetry.record(
+                    this,
+                    traceId,
+                    VoiceTraceEvents.ASR_FINAL_FAILED,
+                    mapOf(
+                        "asr_provider" to "whisper.cpp",
+                        "model_profile_id" to selectedLocalProfile.id,
+                        "error_code" to admission.fallbackReasonCode.ifBlank { "local_asr_gated" },
+                        "fallback" to "true"
+                    ),
+                    once = true
+                )
+                onFailure()
+                return
+            }
+        }
         VoiceRuntimeHealthRegistry.begin(
             VoiceRuntimeChannel.LOCAL_WHISPER_ASR
         )
@@ -23983,6 +24205,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     VoiceRuntimeHealthRegistry.success(
                         VoiceRuntimeChannel.LOCAL_WHISPER_ASR
                     )
+                    if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this@MainActivity)) {
+                        voiceReliabilityController.reportSuccess(
+                            VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
+                            requireNotNull(decoded).modelProfileId
+                        )
+                    }
                     handleVoiceFastTranscript(
                         purpose = purpose,
                         traceId = traceId,
@@ -24002,6 +24230,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         result.exceptionOrNull()?.message
                             ?: getString(R.string.voice_status_transcription_failed)
                     )
+                    if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this@MainActivity)) {
+                        voiceReliabilityController.reportFailure(
+                            VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
+                            WhisperModelManager.model(VoiceAssistantSettings.get(this@MainActivity).asrModel).id,
+                            result.exceptionOrNull(),
+                            result.exceptionOrNull()?.javaClass?.simpleName ?: "empty_transcript"
+                        )
+                    }
                     Log.e("SignalASILocalASR", "Local transcription failed", result.exceptionOrNull())
                     Toast.makeText(
                         this@MainActivity,
