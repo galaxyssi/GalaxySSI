@@ -1,17 +1,27 @@
+import os
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from codex_app_server import CodexAppServer
+from latency_feature_flags import feature_enabled
 from mqtt_bridge import (
     _TaskProgressEventGate,
     _agent_task_payload,
     _should_publish_task_status,
+    _task_event_is_coalescible,
     _trace_metrics,
 )
 
 
 class TaskLatencyTests(unittest.TestCase):
+    def test_output_delta_feature_flag_can_be_disabled(self):
+        with patch.dict(
+            os.environ,
+            {"SIGNALASI_FEATURE_AGENT_OUTPUT_DELTA_V1": "off"},
+        ):
+            self.assertFalse(feature_enabled("agent.output_delta_v1", default=True))
+
     def test_trace_metrics_reports_stage_and_total_milliseconds(self):
         metrics = _trace_metrics([
             {"stage": "phone_publish_started", "at": 1_000},
@@ -113,6 +123,34 @@ class TaskLatencyTests(unittest.TestCase):
         self.assertTrue(gate.should_publish(running, now_ms=1_000))
         self.assertTrue(gate.should_publish(first_output, now_ms=1_250))
 
+    def test_new_output_sequence_publishes_even_when_step_is_unchanged(self):
+        gate = _TaskProgressEventGate(heartbeat_interval_ms=15_000)
+        first = {
+            "status": "running",
+            "status_seq": 1,
+            "current_step": "Codex is responding",
+            "output_delta_sequence": 1,
+        }
+        second = {
+            **first,
+            "status_seq": 2,
+            "output_delta_sequence": 2,
+        }
+
+        self.assertTrue(gate.should_publish(first, now_ms=1_000))
+        self.assertTrue(gate.should_publish(second, now_ms=1_050))
+        self.assertFalse(gate.should_publish(second, now_ms=1_100))
+
+    def test_running_partial_snapshot_is_mqtt_coalescible(self):
+        self.assertTrue(_task_event_is_coalescible({
+            "status": "running",
+            "partial_result": {"sequence": 1, "text": "Visible reply"},
+        }))
+        self.assertFalse(_task_event_is_coalescible({
+            "status": "waiting_approval",
+            "partial_result": {"sequence": 1, "text": "Visible reply"},
+        }))
+
     def test_task_payload_carries_latest_event_and_replays_only_readable_progress(self):
         first = {
             "event_id": "one",
@@ -160,6 +198,32 @@ class TaskLatencyTests(unittest.TestCase):
             }],
             payload["events"],
         )
+
+    def test_task_payload_carries_reconnect_safe_cumulative_partial(self):
+        payload = _agent_task_payload(
+            {
+                "task_id": "task-delta",
+                "status": "running",
+                "status_seq": 8,
+                "partial_result": {
+                    "event_id": "partial-3",
+                    "sequence": 3,
+                    "text": "Complete text so far",
+                    "mode": "cumulative",
+                },
+            },
+            [],
+            resolved_desktop_id="desktop-1",
+            resolved_desktop_name="Desktop",
+            resolved_connector_agents=[],
+        )
+
+        self.assertEqual(8, payload["status_seq"])
+        self.assertEqual("partial-3", payload["partial_result"]["event_id"])
+        self.assertEqual(3, payload["partial_result"]["sequence"])
+        self.assertEqual("cumulative", payload["partial_result"]["mode"])
+        self.assertEqual("partial_result", payload["event_type"])
+        self.assertEqual(payload["partial_result"], payload["payload"])
 
     def test_task_payload_uses_persisted_trace_and_includes_outbound_stage(self):
         task = {

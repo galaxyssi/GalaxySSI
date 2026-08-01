@@ -20,8 +20,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from latency_feature_flags import agent_output_delta_enabled
+
 
 CLI_PROTOCOL = "signalasi.agent-cli/1.0"
+CLI_CLIENT_CAPABILITIES = tuple(filter(None, (
+    "user_visible_output_delta_v1" if agent_output_delta_enabled() else "",
+    "progress_notification_v1",
+    "cancellation_v1",
+)))
 DEFAULT_MAX_PROCESSES = 4
 DEFAULT_MAX_PROCESSES_PER_AGENT = 2
 DEFAULT_IDLE_TIMEOUT_SECONDS = 5 * 60
@@ -65,6 +72,11 @@ class PersistentCliRequest:
         repr=False,
         compare=False,
     )
+    on_event: Callable[[dict], None] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -76,6 +88,7 @@ class PersistentCliResult:
     request_count: int
     session_id: str = ""
     artifacts: tuple[dict, ...] = ()
+    capabilities: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,7 +168,10 @@ class _PersistentJsonlWorker:
     def alive(self) -> bool:
         return self.process.poll() is None
 
-    def request(self, request: PersistentCliRequest) -> tuple[str, str, tuple[dict, ...]]:
+    def request(
+        self,
+        request: PersistentCliRequest,
+    ) -> tuple[str, str, tuple[dict, ...], tuple[str, ...]]:
         if not self.alive():
             raise ExternalCliProcessExited(
                 self._exit_message(),
@@ -177,6 +193,7 @@ class _PersistentJsonlWorker:
                 "response_language": request.response_language,
                 "priority": str(request.priority or "foreground").strip().lower(),
                 "metadata": dict(request.metadata),
+                "client_capabilities": list(CLI_CLIENT_CAPABILITIES),
             },
         }
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -221,8 +238,7 @@ class _PersistentJsonlWorker:
                     request_sent=True,
                 )
             if str(message.get("id") or "") != request_id:
-                # Notifications and responses from prior cancelled requests do
-                # not satisfy the active request.
+                self._dispatch_notification(request, message)
                 continue
             if isinstance(message.get("error"), dict):
                 error = message["error"]
@@ -234,6 +250,7 @@ class _PersistentJsonlWorker:
                 reply = result
                 session_id = ""
                 artifacts: tuple[dict, ...] = ()
+                capabilities: tuple[str, ...] = ()
             elif isinstance(result, dict):
                 reply = str(result.get("reply") or result.get("content") or "")
                 session_id = str(result.get("session_id") or "")
@@ -242,17 +259,68 @@ class _PersistentJsonlWorker:
                     for item in result.get("artifacts", [])
                     if isinstance(item, dict)
                 )
+                capabilities = tuple(
+                    str(item or "").strip()
+                    for item in result.get("capabilities", [])
+                    if str(item or "").strip()
+                )
             else:
                 reply = str(message.get("reply") or "")
                 session_id = str(message.get("session_id") or "")
                 artifacts = ()
+                capabilities = ()
             if not reply.strip():
                 raise ExternalCliProtocolError(
                     f"{request.agent_id} persistent process returned no reply"
                 )
             self.request_count += 1
             self.last_used_at = self._now()
-            return reply, session_id, artifacts
+            return reply, session_id, artifacts, capabilities
+
+    @staticmethod
+    def _dispatch_notification(
+        request: PersistentCliRequest,
+        message: dict,
+    ) -> None:
+        callback = request.on_event
+        if callback is None:
+            return
+        method = str(message.get("method") or "").strip().lower()
+        if method not in {
+            "agent/output_delta",
+            "agent/progress",
+            "agent/first_output",
+        }:
+            return
+        params = message.get("params")
+        if not isinstance(params, dict):
+            return
+        notification_task_id = str(params.get("task_id") or "").strip()
+        if notification_task_id != request.task_id:
+            return
+        if params.get("user_visible") is False:
+            return
+        try:
+            sequence = max(0, int(params.get("sequence") or 0))
+        except (TypeError, ValueError):
+            return
+        event = {
+            "method": method,
+            "task_id": request.task_id,
+            "sequence": sequence,
+            "text": str(params.get("text") or params.get("content") or "")[:64_000],
+            "message": str(params.get("message") or params.get("title") or "")[:2_000],
+            "status": str(params.get("status") or "running")[:32],
+            "user_visible": True,
+        }
+        if method == "agent/output_delta" and not event["text"].strip():
+            return
+        if method != "agent/output_delta" and not event["message"].strip():
+            return
+        try:
+            callback(event)
+        except Exception:
+            return
 
     def close(self) -> None:
         self.retiring = True
@@ -436,7 +504,7 @@ class ExternalCliProcessPool:
         try:
             if request.on_process is not None:
                 request.on_process(worker.process)
-            reply, session_id, artifacts = worker.request(request)
+            reply, session_id, artifacts, capabilities = worker.request(request)
             return PersistentCliResult(
                 reply=reply,
                 worker_id=worker.worker_id,
@@ -445,6 +513,7 @@ class ExternalCliProcessPool:
                 request_count=worker.request_count,
                 session_id=session_id,
                 artifacts=artifacts,
+                capabilities=capabilities,
             )
         except Exception:
             with self._condition:

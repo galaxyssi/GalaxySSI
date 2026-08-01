@@ -43,10 +43,24 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
             "        time.sleep(float(prompt.split(':', 1)[1]))\n"
             "    if prompt == 'crash':\n"
             "        os._exit(7)\n"
+            "    if prompt == 'stream':\n"
+            "        print(json.dumps({\n"
+            "            'protocol': 'signalasi.agent-cli/1.0',\n"
+            "            'method': 'agent/output_delta',\n"
+            "            'params': {\n"
+            "                'task_id': str(params.get('task_id') or ''),\n"
+            "                'sequence': 1,\n"
+            "                'text': 'visible partial',\n"
+            "                'user_visible': True,\n"
+            "            },\n"
+            "        }), flush=True)\n"
             "    print(json.dumps({\n"
             "        'protocol': 'signalasi.agent-cli/1.0',\n"
             "        'id': request_id,\n"
-            "        'result': {'reply': f'{os.getpid()}:{prompt}'},\n"
+            "        'result': {\n"
+            "            'reply': f'{os.getpid()}:{prompt}',\n"
+            "            'capabilities': params.get('client_capabilities', []),\n"
+            "        },\n"
             "    }), flush=True)\n",
             encoding="utf-8",
         )
@@ -121,6 +135,31 @@ class ExternalCliProcessPoolTest(unittest.TestCase):
         self.assertEqual(2, second.request_count)
         self.assertEqual(1, len(self.startup_log.read_text(encoding="utf-8").splitlines()))
         self.assertEqual(1, pool.health()["metrics"]["warm_reuses"])
+
+    def test_user_visible_notification_and_capabilities_are_negotiated(self):
+        pool = self.pool()
+        events = []
+        request = PersistentCliRequest(
+            agent_id="custom-agent",
+            prompt="stream",
+            task_id="task-stream",
+            conversation_id="conversation-1",
+            working_directory="C:/workspace",
+            timeout_seconds=2,
+            on_event=events.append,
+        )
+
+        result = pool.execute(
+            request,
+            command=self.command(),
+            env=self.env(),
+            cwd=self.root,
+        )
+
+        self.assertEqual(1, len(events))
+        self.assertEqual("agent/output_delta", events[0]["method"])
+        self.assertEqual("visible partial", events[0]["text"])
+        self.assertIn("user_visible_output_delta_v1", result.capabilities)
 
     def test_prewarmed_process_serves_first_request_without_restart(self):
         pool = self.pool()

@@ -61,6 +61,7 @@ from link_transport_diagnostics import (
     classify_fragment_error,
     link_transport_diagnostics,
 )
+from latency_feature_flags import agent_output_delta_enabled
 from mqtt_wire_chunking import (
     MAX_PACKET_BYTES as MAX_MQTT_PACKET_BYTES,
     MqttWireChunkAssembler,
@@ -1283,9 +1284,13 @@ pending_task_events_lock = threading.Lock()
 task_event_publish_queue: queue.Queue[str | None] = queue.Queue()
 task_event_publish_snapshots: dict[str, tuple[object, dict, dict, list[dict]]] = {}
 task_event_publish_scheduled: set[str] = set()
+task_event_publish_inflight: set[str] = set()
+task_event_publish_timers: dict[str, threading.Timer] = {}
+task_event_last_published_at: dict[str, float] = {}
 task_event_publish_snapshots_lock = threading.Lock()
 task_event_publisher_started = threading.Event()
 task_event_publisher_lock = threading.Lock()
+TASK_EVENT_DELTA_COALESCE_SECONDS = 0.15
 
 PHONE_DEVELOPMENT_MANIFEST_SCHEMAS = {
     "signalasi.phone-development-manifest.v1",
@@ -1428,6 +1433,7 @@ class _TaskProgressEventGate:
             int(latest_event.get("updated_at") or latest_event.get("created_at") or 0),
             str(latest_trace.get("stage") or ""),
             int(latest_trace.get("at") or 0),
+            int(task.get("output_delta_sequence") or 0),
         )
         status_seq = int(task.get("status_seq") or 0)
         observed_at_ms = int(time.monotonic() * 1000) if now_ms is None else int(now_ms)
@@ -1456,7 +1462,11 @@ class _TaskProgressEventGate:
             first_running_event = self._last_status != "running"
             step_changed = self._last_status == "running" and step != self._last_step
             progress_changed = (
-                bool(progress_signature[0] or progress_signature[3])
+                bool(
+                    progress_signature[0]
+                    or progress_signature[3]
+                    or progress_signature[5]
+                )
                 and progress_signature != self._last_progress_signature
             )
             heartbeat_due = (
@@ -1479,6 +1489,7 @@ def _task_event_publish_loop() -> None:
             if task_id is None:
                 return
             with task_event_publish_snapshots_lock:
+                task_event_publish_inflight.add(task_id)
                 item = task_event_publish_snapshots.pop(task_id, None)
             if item is None:
                 continue
@@ -1489,8 +1500,15 @@ def _task_event_publish_loop() -> None:
         finally:
             if task_id is not None:
                 with task_event_publish_snapshots_lock:
+                    task_event_publish_inflight.discard(task_id)
+                    task_event_last_published_at[task_id] = time.monotonic()
                     if task_id in task_event_publish_snapshots:
-                        task_event_publish_queue.put(task_id)
+                        latest = task_event_publish_snapshots[task_id][2]
+                        _schedule_task_event_locked(
+                            task_id,
+                            TASK_EVENT_DELTA_COALESCE_SECONDS
+                            if _task_event_is_coalescible(latest) else 0.0,
+                        )
                     else:
                         task_event_publish_scheduled.discard(task_id)
             task_event_publish_queue.task_done()
@@ -1519,9 +1537,46 @@ def _enqueue_task_event(mqttc, wire_payload: dict, task: dict, trace: list[dict]
     with task_event_publish_snapshots_lock:
         task_event_publish_snapshots[task_id] = snapshot
         if task_id in task_event_publish_scheduled:
+            timer = task_event_publish_timers.get(task_id)
+            if timer is not None and not _task_event_is_coalescible(task):
+                timer.cancel()
+                task_event_publish_timers.pop(task_id, None)
+                task_event_publish_queue.put(task_id)
             return
         task_event_publish_scheduled.add(task_id)
+        delay = 0.0
+        if _task_event_is_coalescible(task):
+            elapsed = time.monotonic() - task_event_last_published_at.get(task_id, 0.0)
+            delay = max(0.0, TASK_EVENT_DELTA_COALESCE_SECONDS - elapsed)
+        _schedule_task_event_locked(task_id, delay)
+
+
+def _task_event_is_coalescible(task: dict) -> bool:
+    return (
+        str(task.get("status") or "").strip().lower() == "running"
+        and isinstance(task.get("partial_result"), dict)
+        and bool(str(task.get("partial_result", {}).get("text") or "").strip())
+    )
+
+
+def _schedule_task_event_locked(task_id: str, delay_seconds: float) -> None:
+    if delay_seconds <= 0:
         task_event_publish_queue.put(task_id)
+        return
+
+    timer: threading.Timer
+
+    def enqueue() -> None:
+        with task_event_publish_snapshots_lock:
+            if task_event_publish_timers.get(task_id) is not timer:
+                return
+            task_event_publish_timers.pop(task_id, None)
+        task_event_publish_queue.put(task_id)
+
+    timer = threading.Timer(delay_seconds, enqueue)
+    timer.daemon = True
+    task_event_publish_timers[task_id] = timer
+    timer.start()
 
 
 def _reason_code_value(reason_code):
@@ -2500,6 +2555,28 @@ def _agent_task_payload(
         "delivery_trace": outbound_trace,
         "latency": _trace_metrics(outbound_trace),
     }
+    partial_result = task.get("partial_result")
+    if (
+        agent_output_delta_enabled()
+        and status not in TERMINAL_STATES
+        and isinstance(partial_result, dict)
+    ):
+        text = str(partial_result.get("text") or "")
+        sequence = max(0, int(partial_result.get("sequence") or 0))
+        if text and sequence:
+            cumulative_partial = {
+                "event_id": str(partial_result.get("event_id") or f"partial:{task.get('task_id', '')}:{sequence}"),
+                "sequence": sequence,
+                "text": text,
+                "mode": "cumulative",
+                "user_visible": True,
+            }
+            payload["partial_result"] = cumulative_partial
+            payload["event_type"] = "partial_result"
+            payload["event_id"] = cumulative_partial["event_id"]
+            payload["payload"] = cumulative_partial
+    if status in TERMINAL_STATES and str(task.get("result") or "").strip():
+        payload["result_summary"] = str(task.get("result") or "")
     if readable_progress:
         payload["events"] = readable_progress
     receipt, snapshot = _task_reputation_evidence(task)
@@ -4037,6 +4114,16 @@ def _start_remote_agent_task(mqttc, wire_payload: dict, payload: dict, trace: li
                 traced_task = agent_task_manager.get(task_id)
                 if traced_task is not None:
                     publish_event(traced_task.public())
+                return
+            output_delta = event.get("output_delta")
+            if event_status == "running" and isinstance(output_delta, dict):
+                agent_task_manager.record_partial_result(
+                    task_id,
+                    str(output_delta.get("text") or ""),
+                    sequence=max(0, int(output_delta.get("sequence") or 0)),
+                    event_id=str(output_delta.get("event_id") or ""),
+                    on_event=publish_event,
+                )
                 return
             add_task_trace(f"codex_{event_status}", event.get("current_step") or "")
             event_kind = str(event.get("event_kind") or "").strip()
@@ -5715,7 +5802,18 @@ def capability_manifest(client_route_id: str = "") -> dict:
             "provider_profile_v1",
             "provider_performance_observations_v1",
             "explicit_execution_location_v1",
+            *(["agent_output_delta_v1"] if agent_output_delta_enabled() else []),
+            "agent_status_sequence_v1",
         ],
+        "protocol_capabilities": {
+            "voice_protocol": 2,
+            "agent_delta": agent_output_delta_enabled(),
+            "agent_status_seq": True,
+            "agent_delta_mode": "cumulative",
+            "agent_delta_coalesce_ms": int(TASK_EVENT_DELTA_COALESCE_SECONDS * 1_000),
+            "remote_whisper": False,
+            "supported_audio": ["pcm_s16le_16000_mono"],
+        },
         "limits": {
             "max_parallel_tasks": int(os.environ.get("SIGNALASI_MAX_PARALLEL_TASKS", "4")),
             "max_message_bytes": 524288,

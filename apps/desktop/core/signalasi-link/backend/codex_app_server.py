@@ -24,6 +24,7 @@ from agent_execution_harness import (
     failure_fingerprint,
     replan_instruction,
 )
+from latency_feature_flags import agent_output_delta_enabled
 
 
 log = logging.getLogger("signalasi.codex")
@@ -51,7 +52,10 @@ CODEX_APPROVAL_TTL_SECONDS = max(
     int(os.environ.get("SIGNALASI_CODEX_APPROVAL_TTL_SECONDS", "300")),
 )
 MAX_VISIBLE_PROGRESS_TEXT = 2_000
+MAX_VISIBLE_OUTPUT_TEXT = 64_000
 MAX_VISIBLE_TOOL_DETAIL = 500
+OUTPUT_DELTA_COALESCE_SECONDS = 0.2
+OUTPUT_DELTA_MIN_GROWTH = 256
 CODEX_APPROVAL_METHODS = {
     "item/commandExecution/requestApproval": "command",
     "item/fileChange/requestApproval": "file_change",
@@ -108,6 +112,7 @@ class CodexRun:
     final_text: str = ""
     last_agent_text: str = ""
     agent_message_deltas: dict[str, str] = field(default_factory=dict)
+    agent_message_phases: dict[str, str] = field(default_factory=dict)
     reasoning_summary_deltas: dict[str, dict[int, str]] = field(default_factory=dict)
     pending_requests: dict[str, CodexPendingApproval] = field(default_factory=dict)
     started_monotonic: float = field(default_factory=time.monotonic)
@@ -126,6 +131,9 @@ class CodexRun:
     finished: bool = False
     prefers_chinese: bool = False
     first_output_emitted: bool = False
+    output_delta_sequence: int = 0
+    last_output_delta_text: str = ""
+    last_output_delta_monotonic: float = 0.0
     working_directory: str = ""
     file_access_scope: object | None = field(default=None, repr=False)
     workspace_capture: object | None = field(default=None, repr=False)
@@ -1232,14 +1240,18 @@ class CodexAppServer:
                 self._turn_tasks[turn_id] = task_id
             self.on_event(task_id, {**common, "turn_id": run.turn_id, "status": "running", "current_step": "Codex is working"})
         elif method == "item/agentMessage/delta":
-            item_id = str(params.get("itemId") or "")
+            item_id = str(params.get("itemId") or "agent-message")
             delta = str(params.get("delta") or "")
-            if item_id:
-                run.agent_message_deltas[item_id] = (
-                    run.agent_message_deltas.get(item_id, "") + delta
-                )[:MAX_VISIBLE_PROGRESS_TEXT]
+            phase = str(params.get("phase") or "").strip()
+            if phase:
+                run.agent_message_phases[item_id] = phase
+            run.agent_message_deltas[item_id] = (
+                run.agent_message_deltas.get(item_id, "") + delta
+            )[:MAX_VISIBLE_OUTPUT_TEXT]
             if delta.strip():
                 self._emit_first_output(task_id, run, common)
+                if run.agent_message_phases.get(item_id) != "commentary":
+                    self._emit_output_delta(task_id, run, common)
         elif method == "item/reasoning/summaryTextDelta":
             item_id = str(params.get("itemId") or "")
             if item_id:
@@ -1249,10 +1261,14 @@ class CodexAppServer:
                     summaries.get(summary_index, "") + str(params.get("delta") or "")
                 )[:MAX_VISIBLE_PROGRESS_TEXT]
         elif method == "item/started":
+            item = params.get("item") or {}
+            if str(item.get("type") or "") == "agentMessage":
+                item_id = str(item.get("id") or params.get("itemId") or "agent-message")
+                run.agent_message_phases[item_id] = str(item.get("phase") or "").strip()
             self._emit_item_progress(
                 task_id,
                 common,
-                params.get("item") or {},
+                item,
                 completed=False,
             )
         elif method == "item/completed":
@@ -1261,10 +1277,14 @@ class CodexAppServer:
             item_type = str(item.get("type") or "")
             item_id = str(item.get("id") or params.get("itemId") or "")
             if item_type == "agentMessage":
-                text = self._clean_visible_text(
-                    item.get("text") or run.agent_message_deltas.pop(item_id, "")
+                text = self._clean_output_text(
+                    item.get("text") or run.agent_message_deltas.get(item_id, "")
                 )
                 phase = str(item.get("phase") or "")
+                if item_id:
+                    run.agent_message_phases[item_id] = phase
+                    if text:
+                        run.agent_message_deltas[item_id] = text
                 if text:
                     self._emit_first_output(task_id, run, common)
                     run.last_agent_text = text
@@ -1276,6 +1296,13 @@ class CodexAppServer:
                         )
                     else:
                         run.final_text = text
+                        self._emit_output_delta(
+                            task_id,
+                            run,
+                            common,
+                            force=True,
+                            text_override=text,
+                        )
             elif item_type == "fileChange":
                 self._record_file_changes(run, item)
                 self._emit_item_progress(
@@ -1328,6 +1355,14 @@ class CodexAppServer:
             )
             if not run.final_text:
                 run.final_text = run.last_agent_text
+            if mapped == "completed" and run.final_text:
+                self._emit_output_delta(
+                    task_id,
+                    run,
+                    common,
+                    force=True,
+                    text_override=run.final_text,
+                )
             if (
                 mapped == "completed"
                 and not run.finished
@@ -1352,6 +1387,7 @@ class CodexAppServer:
                     host_config_write_blocked=True,
                 )
             run.agent_message_deltas.clear()
+            run.agent_message_phases.clear()
             run.reasoning_summary_deltas.clear()
             if turn_id:
                 self._turn_tasks.pop(turn_id, None)
@@ -1416,6 +1452,57 @@ class CodexAppServer:
             "trace_stage": "agent_first_output",
             "trace_detail": "codex",
         })
+
+    def _emit_output_delta(
+        self,
+        task_id: str,
+        run: CodexRun,
+        common: dict,
+        *,
+        force: bool = False,
+        text_override: str = "",
+    ) -> None:
+        if not agent_output_delta_enabled():
+            return
+        text = self._clean_output_text(
+            text_override or self._visible_output_text(run)
+        )
+        if not text or text == run.last_output_delta_text:
+            return
+        now = time.monotonic()
+        growth = max(0, len(text) - len(run.last_output_delta_text))
+        if (
+            not force
+            and run.last_output_delta_monotonic
+            and now - run.last_output_delta_monotonic < OUTPUT_DELTA_COALESCE_SECONDS
+            and growth < OUTPUT_DELTA_MIN_GROWTH
+        ):
+            return
+        run.output_delta_sequence += 1
+        run.last_output_delta_text = text
+        run.last_output_delta_monotonic = now
+        self.on_event(task_id, {
+            **common,
+            "status": "running",
+            "current_step": "Codex is responding",
+            "output_delta": {
+                "event_id": f"codex-output:{task_id}:{run.output_delta_sequence}",
+                "sequence": run.output_delta_sequence,
+                "text": text,
+                "mode": "cumulative",
+                "user_visible": True,
+            },
+        })
+
+    @staticmethod
+    def _visible_output_text(run: CodexRun) -> str:
+        values = [
+            value
+            for item_id, value in run.agent_message_deltas.items()
+            if run.agent_message_phases.get(item_id) != "commentary"
+            and str(value or "").strip()
+        ]
+        return "\n\n".join(values)
 
     @staticmethod
     def _checkpoint_progress(
@@ -1642,6 +1729,11 @@ class CodexAppServer:
     def _clean_visible_text(value: object) -> str:
         text = str(value or "").replace("\x00", "").strip()
         return text[:MAX_VISIBLE_PROGRESS_TEXT]
+
+    @staticmethod
+    def _clean_output_text(value: object) -> str:
+        text = str(value or "").replace("\x00", "").strip()
+        return text[:MAX_VISIBLE_OUTPUT_TEXT]
 
     @staticmethod
     def _request_label(method: str) -> str:
