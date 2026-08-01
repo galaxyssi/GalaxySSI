@@ -112,7 +112,8 @@ object WhisperBenchmarkManager {
         decodeQueueDepth: Int = 0,
         utteranceDurationMs: Long = 0L,
         highRiskTask: Boolean = false,
-        remoteAllowed: Boolean = false
+        remoteAllowed: Boolean = false,
+        accuracySensitiveTask: Boolean = false
     ): WhisperRuntimeDecision {
         val appContext = context.applicationContext
         val device = LocalModelDeviceSnapshotDetector.capture(appContext)
@@ -141,7 +142,8 @@ object WhisperBenchmarkManager {
                     decodeQueueDepth = decodeQueueDepth.coerceAtLeast(0),
                     utteranceDurationMs = utteranceDurationMs.coerceAtLeast(0L),
                     highRiskTask = highRiskTask,
-                    remoteAllowed = remoteAllowed
+                    remoteAllowed = remoteAllowed,
+                    accuracySensitiveTask = accuracySensitiveTask
                 )
             )
         )

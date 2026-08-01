@@ -9,6 +9,7 @@ const val VOICE_LOCAL_WHISPER_RUNTIME_V2_FLAG = "voice.local_whisper_runtime_v2"
 const val VOICE_WHISPER_ADAPTIVE_PARTIAL_V1_FLAG = "voice.whisper_adaptive_partial_v1"
 const val VOICE_WHISPER_AUTO_BENCHMARK_V1_FLAG = "voice.whisper_auto_benchmark_v1"
 const val VOICE_WHISPER_POLICY_ENGINE_V1_FLAG = "voice.whisper_policy_engine_v1"
+const val VOICE_WHISPER_SECOND_PASS_V1_FLAG = "voice.whisper_second_pass_v1"
 
 object VoiceFeatureFlags {
     private const val PREFERENCES = "signalasi_voice_feature_flags"
@@ -94,6 +95,20 @@ object VoiceFeatureFlags {
         context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .edit()
             .putBoolean(VOICE_WHISPER_POLICY_ENGINE_V1_FLAG, enabled)
+            .apply()
+    }
+
+    fun isWhisperSecondPassEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getBoolean(
+                VOICE_WHISPER_SECOND_PASS_V1_FLAG,
+                (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+            )
+
+    fun setWhisperSecondPassEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean(VOICE_WHISPER_SECOND_PASS_V1_FLAG, enabled)
             .apply()
     }
 }

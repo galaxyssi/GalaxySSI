@@ -2402,4 +2402,26 @@
     <string name="cc_memory_namespace_project">Project</string>
     <string name="cc_memory_namespace_device">Device</string>
     <string name="cc_memory_namespace_security">Security</string>
+    <string name="voice_correction_confirmation_title">Confirm voice command</string>
+    <string name="voice_correction_confirmation_single_message">Recognized: %1$s\n\nRisk: %2$s\n\nAn accurate local model is unavailable. Review the command before it runs.</string>
+    <string name="voice_correction_confirmation_comparison_message">Fast transcription:\n%1$s\n\nAccurate transcription:\n%2$s\n\nDifferences: %3$s\nRisk: %4$s</string>
+    <string name="voice_correction_confirmation_execute">Confirm and run</string>
+    <string name="voice_correction_edit">Edit</string>
+    <string name="voice_correction_warning_title">Voice transcription changed</string>
+    <string name="voice_correction_warning_message">Fast transcription:\n%1$s\n\nAccurate transcription:\n%2$s\n\nThe original action was not repeated.</string>
+    <string name="voice_risk_conversation">conversation</string>
+    <string name="voice_risk_low">low</string>
+    <string name="voice_risk_medium">medium</string>
+    <string name="voice_risk_high">high</string>
+    <string name="voice_risk_critical">critical</string>
+    <string name="voice_correction_wording_changed">wording changed</string>
+    <string name="voice_entity_recipient">Recipient</string>
+    <string name="voice_entity_phone">Phone</string>
+    <string name="voice_entity_amount">Amount</string>
+    <string name="voice_entity_date_time">Date or time</string>
+    <string name="voice_entity_file_path">File path</string>
+    <string name="voice_entity_application">App</string>
+    <string name="voice_entity_device">Device</string>
+    <string name="voice_entity_negation">Negation</string>
+    <string name="voice_entity_action">Action</string>
 </resources>

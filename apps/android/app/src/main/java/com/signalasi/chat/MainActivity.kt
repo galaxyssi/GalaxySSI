@@ -104,6 +104,19 @@ import com.signalasi.chat.voice.benchmark.WhisperBenchmarkRecord
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkStage
 import com.signalasi.chat.voice.benchmark.WhisperProviderChoice
 import com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode
+import com.signalasi.chat.voice.correction.AndroidVoiceExecutionRecordStore
+import com.signalasi.chat.voice.correction.CorrectionDecision
+import com.signalasi.chat.voice.correction.DefaultVoiceCommandRiskClassifier
+import com.signalasi.chat.voice.correction.TranscriptDiff
+import com.signalasi.chat.voice.correction.VoiceCommandRisk
+import com.signalasi.chat.voice.correction.VoiceCorrectionContextRecord
+import com.signalasi.chat.voice.correction.VoiceCorrectionJournal
+import com.signalasi.chat.voice.correction.VoiceExecutionLedger
+import com.signalasi.chat.voice.correction.VoiceEntityType
+import com.signalasi.chat.voice.correction.VoiceSecondPassCoordinator
+import com.signalasi.chat.voice.correction.VoiceSecondPassRequest
+import com.signalasi.chat.voice.correction.VoiceSecondPassResult
+import com.signalasi.chat.voice.correction.VoiceSecondPassTriggerPolicy
 import com.signalasi.chat.voice.audio.VoiceAudioSession
 import com.signalasi.chat.voice.audio.VoiceAudioSessionConfig
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
@@ -493,7 +506,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     @Volatile private var pcmVoiceAmplitude = 0
     private var lastPcmAudioLevelDispatchAt = 0L
     private val voiceTraceIdsByTurn = ConcurrentHashMap<String, String>()
+    private data class VoiceTurnContext(val conversationId: String, val turnId: String)
+    private data class VoiceFastDecodeResult(
+        val text: String,
+        val pcm16: ShortArray,
+        val modelProfileId: String,
+        val confidence: Float?
+    )
+    private val voiceTurnContextsByTraceId = ConcurrentHashMap<String, VoiceTurnContext>()
     private lateinit var voiceInteractionCoordinator: VoiceInteractionCoordinator
+    private lateinit var voiceExecutionLedger: VoiceExecutionLedger
+    private lateinit var voiceCorrectionJournal: VoiceCorrectionJournal
+    private val voiceSecondPassCoordinator = VoiceSecondPassCoordinator()
+    private var voiceRiskConfirmationDialog: AlertDialog? = null
+    private var voiceRiskConfirmationCancellation: (() -> Unit)? = null
     private var voiceCoordinatorObserverId = ""
     private var recordingVoiceCoordinatorSessionId = ""
     private val voiceCoordinatorIdsByTurn = ConcurrentHashMap<String, String>()
@@ -636,6 +662,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         traceStartup("content_view")
         AppStore.ensureInitialized(this)
         voiceInteractionCoordinator = VoiceInteractionCoordinatorRegistry.coordinator
+        val voiceExecutionStore = AndroidVoiceExecutionRecordStore(this)
+        voiceExecutionLedger = VoiceExecutionLedger(
+            initialRecords = voiceExecutionStore.read(),
+            persistence = voiceExecutionStore
+        )
+        voiceCorrectionJournal = VoiceCorrectionJournal(this)
         if (VoiceFeatureFlags.isCoordinatorEnabled(this)) {
             voiceCoordinatorObserverId = voiceInteractionCoordinator.observe { state ->
                 if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
@@ -1144,6 +1176,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (::agentHoldToTalkController.isInitialized) agentHoldToTalkController.release()
         liveWhisperSessions.values.forEach(LiveWhisperTranscriptionSession::close)
         liveWhisperSessions.clear()
+        voiceRiskConfirmationCancellation?.invoke()
+        voiceRiskConfirmationCancellation = null
+        voiceRiskConfirmationDialog?.dismiss()
+        voiceRiskConfirmationDialog = null
+        voiceSecondPassCoordinator.cancelForInteractiveVoice()
         whisperDecodeScheduler?.close()
         whisperDecodeScheduler = null
         stopRecording(send = false)
@@ -4491,6 +4528,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (voiceTraceId.isNotBlank()) {
             activeVoiceTraceId = voiceTraceId
             voiceTraceIdsByTurn[turnId] = voiceTraceId
+            voiceTurnContextsByTraceId[voiceTraceId] = VoiceTurnContext(conversation.id, turnId)
+            if (voiceTurnContextsByTraceId.size > 256) {
+                voiceTurnContextsByTraceId.keys.take(64).forEach(voiceTurnContextsByTraceId::remove)
+            }
         }
         voiceCoordinatorSession(voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
             voiceCoordinatorIdsByTurn[turnId] = sessionId
@@ -4668,10 +4709,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             handleAgentSkillCommand(goal, conversationId, turnId)
         ) return
         agentRoutingExecutor.execute {
-            val localConversationContext = agentTranscriptStore.context(
+            val baseConversationContext = agentTranscriptStore.context(
                 conversationId = conversationId,
                 excludeTurnId = turnId
             )
+            val correctionContext = voiceCorrectionJournal.contextBlock(conversationId)
+            val localConversationContext = if (correctionContext.isBlank()) {
+                baseConversationContext
+            } else {
+                baseConversationContext.copy(
+                    summary = listOf(baseConversationContext.summary, correctionContext)
+                        .filter(String::isNotBlank)
+                        .joinToString("\n\n")
+                )
+            }
             val turnAttachments = AgentTurnAttachmentRegistry.get(turnId)
             val clarification = AgentClarificationPolicy.decide(
                 goal = originalGoal,
@@ -6727,6 +6778,22 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun preemptBackgroundWhisperForInteractiveVoice() {
+        WhisperBenchmarkManager.cancelForInteractiveVoice()
+        voiceSecondPassCoordinator.cancelForInteractiveVoice()
+        voiceRiskConfirmationCancellation?.invoke()
+        voiceRiskConfirmationCancellation = null
+        voiceRiskConfirmationDialog?.dismiss()
+        voiceRiskConfirmationDialog = null
+        if (::voiceInteractionCoordinator.isInitialized) {
+            val state = voiceInteractionCoordinator.snapshot()
+            if (state.sessionId.isNotBlank() && !state.phase.isTerminal && state.phase != VoiceInteractionPhase.IDLE) {
+                voiceInteractionCoordinator.cancel("new_utterance")
+            }
+        }
+        LocalWhisperAsr.requestAbort(AbortReason.NEW_UTTERANCE)
+    }
+
     private fun startAgentVoiceInput() {
         if (!ensureRecordPermission()) return
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
@@ -6734,7 +6801,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         stopVoiceAssistant()
-        WhisperBenchmarkManager.cancelForInteractiveVoice()
+        preemptBackgroundWhisperForInteractiveVoice()
         ensureSpeechRecognizer()
         val config = VoiceAssistantSettings.get(this)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -7085,7 +7152,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun startVoiceCommandRecording() {
         if (activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE) return
         if (!ensureRecordPermission() || isVoiceCaptureActive()) return
-        WhisperBenchmarkManager.cancelForInteractiveVoice()
+        preemptBackgroundWhisperForInteractiveVoice()
         if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
             startPcmVoiceCommandRecording()
             return
@@ -21062,20 +21129,14 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .onFailure { Log.w("SignalASIVoice", "Coordinator event rejected safely", it) }
     }
 
-    private fun acceptVoiceCoordinatorFinal(traceId: String, transcript: String): Boolean {
+    private fun acceptVoiceCoordinatorFinal(traceId: String, transcript: TranscriptHypothesis): Boolean {
         val sessionId = voiceCoordinatorSession(traceId)
         if (sessionId.isBlank()) return true
-        val selectedModel = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
         val transition = runCatching {
             voiceInteractionCoordinator.dispatch(
                 VoiceInteractionEvent.TranscriptFinal(
                     sessionId,
-                    TranscriptHypothesis(
-                        text = transcript,
-                        revision = 1,
-                        provider = "whisper.cpp",
-                        modelProfileId = selectedModel.id
-                    )
+                    transcript
                 )
             )
         }.getOrElse {
@@ -21088,6 +21149,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private fun selectVoiceCoordinatorRoute(traceId: String, kind: VoiceRouteKind, targetId: String) {
         val sessionId = voiceCoordinatorSession(traceId)
         if (sessionId.isBlank()) return
+        when (kind) {
+            VoiceRouteKind.LOCAL_ACTION -> voiceExecutionLedger.claimExternalSideEffect(sessionId)
+            VoiceRouteKind.REMOTE_AGENT -> voiceExecutionLedger.claimAgentRun(sessionId)
+            VoiceRouteKind.CLOUD_MODEL -> Unit
+        }
         dispatchVoiceCoordinator(
             VoiceInteractionEvent.RouteSelected(
                 sessionId,
@@ -21241,7 +21307,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     // ===== Recording =====
     private fun startRecording(purpose: String): Boolean {
         if (isVoiceCaptureActive()) return false
-        WhisperBenchmarkManager.cancelForInteractiveVoice()
+        preemptBackgroundWhisperForInteractiveVoice()
         if (VoiceFeatureFlags.isPcmCaptureEnabled(this)) {
             return startPcmRecording(purpose, autoEndpoint = false)
         }
@@ -22018,7 +22084,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         pcmSamples: ShortArray? = null,
         sampleRateHz: Int = 16_000
     ): Boolean {
-        transcribeLocally(sourceFile, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, onSuccess = { transcript ->
+        transcribeLocally(sourceFile, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, purpose = "agent_input", onSuccess = { transcript ->
             agentGoalInput.setText(transcript)
             agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
             submitAgentGoal(traceId)
@@ -22064,6 +22130,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             traceId = traceId,
             pcmSamples = pcmSamples,
             sampleRateHz = sampleRateHz,
+            purpose = "voice_agent",
             onSuccess = { transcript -> submitVoiceAgentGoal(transcript, traceId) }
         )
         return true
@@ -22078,7 +22145,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         sampleRateHz: Int = 16_000
     ) {
         updateMessageStatus(messageId, contact.id, getString(R.string.voice_status_transcribing))
-        transcribeLocally(file, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, onSuccess = { transcript ->
+        transcribeLocally(file, traceId = traceId, pcmSamples = pcmSamples, sampleRateHz = sampleRateHz, purpose = "chat", onSuccess = { transcript ->
             updateMessageStatus(messageId, contact.id, getString(R.string.voice_status_transcribed))
             sendOutgoingText(contact, transcript, traceId)
         }, onFailure = {
@@ -22086,11 +22153,445 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         })
     }
 
+    private fun handleVoiceFastTranscript(
+        purpose: String,
+        traceId: String,
+        transcript: String,
+        pcmSnapshot: ShortArray,
+        sampleRateHz: Int,
+        language: String,
+        decodedModelProfileId: String,
+        confidence: Float?,
+        onSuccess: (String) -> Unit,
+        onFailure: () -> Unit
+    ) {
+        val sessionId = voiceCoordinatorSession(traceId)
+            .ifBlank { traceId }
+            .ifBlank { UUID.randomUUID().toString() }
+        val risk = DefaultVoiceCommandRiskClassifier.classify(transcript)
+        val settings = VoiceAssistantSettings.get(this)
+        val selectedProfile = WhisperModelManager.model(settings.asrModel)
+        val durationMs = pcmSnapshot.size.toLong() * 1_000L / sampleRateHz.coerceAtLeast(1)
+        val trigger = VoiceSecondPassTriggerPolicy.evaluate(
+            fast = TranscriptHypothesis(
+                text = transcript,
+                revision = 1,
+                provider = "whisper.cpp",
+                modelProfileId = decodedModelProfileId,
+                confidence = confidence
+            ),
+            utteranceDurationMs = durationMs,
+            userRequestedAccuracy = settings.asrRuntimeMode == WhisperUserVoiceMode.ACCURATE
+        )
+        val policyDecision = if (
+            VoiceFeatureFlags.isWhisperPolicyEngineEnabled(this) &&
+            VoiceFeatureFlags.isWhisperSecondPassEnabled(this)
+        ) {
+            WhisperBenchmarkManager.decide(
+                context = this,
+                userMode = settings.asrRuntimeMode,
+                selectedProfileId = selectedProfile.id,
+                foreground = true,
+                decodeQueueDepth = whisperDecodeScheduler?.queueSnapshot()?.queuedPartials ?: 0,
+                utteranceDurationMs = durationMs,
+                highRiskTask = risk >= VoiceCommandRisk.HIGH,
+                accuracySensitiveTask = trigger.requested
+            )
+        } else null
+        val fastProfileId = decodedModelProfileId.ifBlank {
+            policyDecision?.fastProfileId ?: selectedProfile.id
+        }
+        val fast = TranscriptHypothesis(
+            text = transcript,
+            revision = 1,
+            provider = "whisper.cpp",
+            modelProfileId = fastProfileId,
+            confidence = confidence
+        )
+        voiceExecutionLedger.begin(
+            sessionId = sessionId,
+            idempotencyKey = "$sessionId:primary-dispatch",
+            fast = fast,
+            risk = risk
+        )
+
+        val requiresVoiceConfirmation = risk >= VoiceCommandRisk.HIGH
+        val secondPassStarted = scheduleVoiceSecondPass(
+            purpose = purpose,
+            traceId = traceId,
+            sessionId = sessionId,
+            fast = fast,
+            risk = risk,
+            pcmSnapshot = pcmSnapshot,
+            sampleRateHz = sampleRateHz,
+            language = language,
+            accurateProfileId = policyDecision?.accurateProfileId,
+            runSecondPass = policyDecision?.runSecondPass == true,
+            onSuccess = onSuccess,
+            onFailure = onFailure,
+            waitForConfirmation = requiresVoiceConfirmation
+        )
+        pcmSnapshot.fill(0)
+
+        if (requiresVoiceConfirmation) {
+            if (!secondPassStarted) {
+                showVoiceRiskConfirmation(
+                    purpose = purpose,
+                    traceId = traceId,
+                    sessionId = sessionId,
+                    fast = fast,
+                    accurate = null,
+                    diff = null,
+                    risk = risk,
+                    onSuccess = onSuccess,
+                    onFailure = onFailure
+                )
+            }
+            return
+        }
+        routeVoiceTranscriptOnce(traceId, sessionId, fast, onSuccess)
+    }
+
+    private fun scheduleVoiceSecondPass(
+        purpose: String,
+        traceId: String,
+        sessionId: String,
+        fast: TranscriptHypothesis,
+        risk: VoiceCommandRisk,
+        pcmSnapshot: ShortArray,
+        sampleRateHz: Int,
+        language: String,
+        accurateProfileId: String?,
+        runSecondPass: Boolean,
+        onSuccess: (String) -> Unit,
+        onFailure: () -> Unit,
+        waitForConfirmation: Boolean
+    ): Boolean {
+        if (!runSecondPass || accurateProfileId.isNullOrBlank() || pcmSnapshot.isEmpty()) return false
+        val profile = runCatching { WhisperModelManager.model(accurateProfileId) }.getOrNull() ?: return false
+        if (!WhisperModelManager.isAvailable(this, profile)) return false
+        val request = VoiceSecondPassRequest(
+            sessionId = sessionId,
+            pcm16 = pcmSnapshot,
+            sampleRateHz = sampleRateHz,
+            language = language,
+            fast = fast,
+            accurateProfileId = profile.id,
+            accurateModelSha256 = profile.sha256,
+            mode = WhisperExecutionMode.SECOND_PASS
+        )
+        VoiceLatencyTelemetry.record(
+            this,
+            traceId,
+            VoiceTraceEvents.SECOND_PASS_STARTED,
+            mapOf(
+                "model_profile_id" to profile.id,
+                "model_sha256" to profile.sha256,
+                "execution_mode" to WhisperExecutionMode.SECOND_PASS.name.lowercase(Locale.ROOT)
+            )
+        )
+        return voiceSecondPassCoordinator.schedule(
+            scope = voiceAssistantScope,
+            request = request,
+            executionLedger = voiceExecutionLedger,
+            decoder = { frozen ->
+                val outcome = LocalWhisperAsr.decodePcmWindow(
+                    context = this@MainActivity,
+                    pcm16 = frozen.pcm16,
+                    sampleRateHz = frozen.sampleRateHz,
+                    language = frozen.language,
+                    mode = frozen.mode,
+                    traceId = frozen.sessionId,
+                    source = "audio_record_second_pass_pcm16",
+                    modelProfileId = frozen.accurateProfileId
+                )
+                TranscriptHypothesis(
+                    text = outcome.result.text,
+                    revision = fast.revision + 1,
+                    provider = "whisper.cpp",
+                    modelProfileId = outcome.profileId,
+                    confidence = whisperConfidence(outcome.result.segments.map { it.averageLogProb })
+                )
+            },
+            onResult = { result ->
+                VoiceLatencyTelemetry.record(
+                    this,
+                    traceId,
+                    VoiceTraceEvents.SECOND_PASS_COMPLETED,
+                    mapOf(
+                        "model_profile_id" to result.metadata.accurateProfileId,
+                        "success" to "true",
+                        "changed" to result.diff.changed.toString()
+                    )
+                )
+                runOnUiThread {
+                    handleVoiceSecondPassResult(
+                        purpose = purpose,
+                        traceId = traceId,
+                        sessionId = sessionId,
+                        risk = risk,
+                        result = result,
+                        onSuccess = onSuccess,
+                        onFailure = onFailure,
+                        waitForConfirmation = waitForConfirmation
+                    )
+                }
+            },
+            onFailure = { error ->
+                VoiceLatencyTelemetry.record(
+                    this,
+                    traceId,
+                    VoiceTraceEvents.SECOND_PASS_COMPLETED,
+                    mapOf(
+                        "model_profile_id" to profile.id,
+                        "success" to "false",
+                        "error_code" to error.javaClass.simpleName
+                    )
+                )
+                Log.w("SignalASIVoice", "Second pass failed safely session=$sessionId", error)
+                if (waitForConfirmation) {
+                    runOnUiThread {
+                        showVoiceRiskConfirmation(
+                            purpose = purpose,
+                            traceId = traceId,
+                            sessionId = sessionId,
+                            fast = fast,
+                            accurate = null,
+                            diff = null,
+                            risk = risk,
+                            onSuccess = onSuccess,
+                            onFailure = onFailure
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    private fun handleVoiceSecondPassResult(
+        purpose: String,
+        traceId: String,
+        sessionId: String,
+        risk: VoiceCommandRisk,
+        result: VoiceSecondPassResult,
+        onSuccess: (String) -> Unit,
+        onFailure: () -> Unit,
+        waitForConfirmation: Boolean
+    ) {
+        val coordinatorSessionId = voiceCoordinatorSession(traceId)
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(
+                VoiceInteractionEvent.TranscriptCorrected(
+                    coordinatorSessionId,
+                    result.metadata.fast,
+                    result.accurate
+                )
+            )
+        }
+        persistVoiceCorrection(traceId, sessionId, risk, result)
+        if (waitForConfirmation) {
+            showVoiceRiskConfirmation(
+                purpose = purpose,
+                traceId = traceId,
+                sessionId = sessionId,
+                fast = result.metadata.fast,
+                accurate = result.accurate,
+                diff = result.diff,
+                risk = risk,
+                onSuccess = onSuccess,
+                onFailure = onFailure
+            )
+            return
+        }
+        if (result.decision is CorrectionDecision.WarnUser) {
+            AlertDialog.Builder(this)
+                .setTitle(getString(R.string.voice_correction_warning_title))
+                .setMessage(
+                    getString(
+                        R.string.voice_correction_warning_message,
+                        result.diff.fastText,
+                        result.diff.accurateText
+                    )
+                )
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+        }
+    }
+
+    private fun whisperConfidence(averageLogProbabilities: List<Float>): Float? =
+        averageLogProbabilities
+            .filterNot(Float::isNaN)
+            .takeIf { values -> values.isNotEmpty() }
+            ?.map { value -> kotlin.math.exp(value.toDouble()) }
+            ?.average()
+            ?.toFloat()
+            ?.coerceIn(0f, 1f)
+
+    private fun persistVoiceCorrection(
+        traceId: String,
+        sessionId: String,
+        risk: VoiceCommandRisk,
+        result: VoiceSecondPassResult
+    ) {
+        if (!result.diff.changed) return
+        val turnContext = voiceTurnContextsByTraceId[traceId]
+        val executionRecord = voiceExecutionLedger.snapshot(sessionId)
+        voiceCorrectionJournal.append(
+            VoiceCorrectionContextRecord(
+                sessionId = sessionId,
+                conversationId = turnContext?.conversationId.orEmpty(),
+                turnId = turnContext?.turnId.orEmpty(),
+                fastText = result.diff.fastText,
+                accurateText = result.diff.accurateText,
+                diffSummary = result.diff.compactSummary(),
+                risk = risk,
+                revision = result.accurate.revision,
+                modelProfileId = result.metadata.accurateProfileId,
+                modelSha256 = result.metadata.accurateModelSha256,
+                executionMode = result.metadata.mode.name,
+                userEdited = executionRecord?.userEdited == true,
+                completedAtMillis = result.completedAtMillis
+            )
+        )
+    }
+
+    private fun showVoiceRiskConfirmation(
+        purpose: String,
+        traceId: String,
+        sessionId: String,
+        fast: TranscriptHypothesis,
+        accurate: TranscriptHypothesis?,
+        diff: TranscriptDiff?,
+        risk: VoiceCommandRisk,
+        onSuccess: (String) -> Unit,
+        onFailure: () -> Unit
+    ) {
+        if (isFinishing || isDestroyed || voiceExecutionLedger.snapshot(sessionId)?.primaryDispatchClaimed == true) {
+            return
+        }
+        val chosen = accurate?.takeIf { it.text.isNotBlank() } ?: fast
+        val message = if (accurate == null) {
+            getString(
+                R.string.voice_correction_confirmation_single_message,
+                fast.text,
+                voiceCommandRiskLabel(risk)
+            )
+        } else {
+            getString(
+                R.string.voice_correction_confirmation_comparison_message,
+                fast.text,
+                accurate.text,
+                diff?.let(::formatVoiceTranscriptDiff).orEmpty(),
+                voiceCommandRiskLabel(risk)
+            )
+        }
+        val cancelPending = {
+            cancelVoiceBeforeExecution(purpose, traceId, onFailure)
+            Unit
+        }
+        voiceRiskConfirmationCancellation?.invoke()
+        voiceRiskConfirmationCancellation = null
+        voiceRiskConfirmationDialog?.dismiss()
+        voiceRiskConfirmationDialog = null
+        voiceRiskConfirmationCancellation = cancelPending
+        val builder = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.voice_correction_confirmation_title))
+            .setMessage(message)
+            .setPositiveButton(getString(R.string.voice_correction_confirmation_execute)) { _, _ ->
+                voiceRiskConfirmationCancellation = null
+                routeVoiceTranscriptOnce(traceId, sessionId, chosen, onSuccess)
+            }
+            .setNegativeButton(android.R.string.cancel) { _, _ ->
+                voiceRiskConfirmationCancellation = null
+                cancelPending()
+            }
+        if (purpose == "agent_input") {
+            builder.setNeutralButton(getString(R.string.voice_correction_edit)) { _, _ ->
+                voiceRiskConfirmationCancellation = null
+                voiceExecutionLedger.markUserEdited(sessionId)
+                voiceCorrectionJournal.markUserEdited(sessionId)
+                agentGoalInput.setText(chosen.text)
+                agentGoalInput.setSelection(agentGoalInput.text?.length ?: 0)
+                cancelVoiceBeforeExecution(purpose, traceId, onFailure = {})
+            }
+        }
+        builder.setOnCancelListener {
+            voiceRiskConfirmationCancellation = null
+            cancelPending()
+        }
+        voiceRiskConfirmationDialog = builder.create().also { dialog ->
+            dialog.setOnDismissListener {
+                if (voiceRiskConfirmationDialog === dialog) {
+                    voiceRiskConfirmationDialog = null
+                    voiceRiskConfirmationCancellation = null
+                }
+            }
+            dialog.show()
+        }
+    }
+
+    private fun voiceCommandRiskLabel(risk: VoiceCommandRisk): String = getString(
+        when (risk) {
+            VoiceCommandRisk.CONVERSATION -> R.string.voice_risk_conversation
+            VoiceCommandRisk.LOW -> R.string.voice_risk_low
+            VoiceCommandRisk.MEDIUM -> R.string.voice_risk_medium
+            VoiceCommandRisk.HIGH -> R.string.voice_risk_high
+            VoiceCommandRisk.CRITICAL -> R.string.voice_risk_critical
+        }
+    )
+
+    private fun formatVoiceTranscriptDiff(diff: TranscriptDiff): String {
+        if (diff.entityDifferences.isEmpty()) return getString(R.string.voice_correction_wording_changed)
+        return diff.entityDifferences.joinToString("\n") { difference ->
+            val label = getString(
+                when (difference.type) {
+                    VoiceEntityType.RECIPIENT -> R.string.voice_entity_recipient
+                    VoiceEntityType.PHONE_NUMBER -> R.string.voice_entity_phone
+                    VoiceEntityType.AMOUNT -> R.string.voice_entity_amount
+                    VoiceEntityType.DATE_TIME -> R.string.voice_entity_date_time
+                    VoiceEntityType.FILE_PATH -> R.string.voice_entity_file_path
+                    VoiceEntityType.APPLICATION -> R.string.voice_entity_application
+                    VoiceEntityType.DEVICE -> R.string.voice_entity_device
+                    VoiceEntityType.NEGATION -> R.string.voice_entity_negation
+                    VoiceEntityType.ACTION -> R.string.voice_entity_action
+                }
+            )
+            "$label: ${difference.fastValues.joinToString("|").ifBlank { "-" }} -> " +
+                difference.accurateValues.joinToString("|").ifBlank { "-" }
+        }
+    }
+
+    private fun routeVoiceTranscriptOnce(
+        traceId: String,
+        sessionId: String,
+        transcript: TranscriptHypothesis,
+        onSuccess: (String) -> Unit
+    ): Boolean {
+        if (transcript.text.isBlank()) return false
+        if (!acceptVoiceCoordinatorFinal(traceId, transcript)) return false
+        if (!voiceExecutionLedger.claimPrimaryDispatch(sessionId)) {
+            Log.i("SignalASIVoice", "Duplicate primary voice dispatch ignored session=$sessionId")
+            return false
+        }
+        onSuccess(transcript.text.trim())
+        return true
+    }
+
+    private fun cancelVoiceBeforeExecution(purpose: String, traceId: String, onFailure: () -> Unit) {
+        val coordinatorSessionId = voiceCoordinatorSession(traceId)
+        if (coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(VoiceInteractionEvent.Cancelled(coordinatorSessionId, "voice_confirmation_cancelled"))
+        }
+        onFailure()
+        if (purpose == "voice_agent" && voiceAssistantAwake) scheduleVoiceRestart(500L)
+    }
+
     private fun transcribeLocally(
         sourceFile: File,
         traceId: String = "",
         pcmSamples: ShortArray? = null,
         sampleRateHz: Int = 16_000,
+        purpose: String = "voice",
         onSuccess: (String) -> Unit,
         onFailure: () -> Unit = {}
     ) {
@@ -22099,9 +22600,34 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             VoiceRuntimeChannel.LOCAL_WHISPER_ASR
         )
         voiceAssistantScope.launch {
+            var preparedPcm: ShortArray? = null
             val result = runCatching {
+                val finalPcm = if (pcmSamples != null) {
+                    pcmSamples.copyOf()
+                } else {
+                    val decodeStartedAt = SystemClock.elapsedRealtime()
+                    VoiceLatencyTelemetry.record(
+                        this@MainActivity,
+                        traceId,
+                        VoiceTraceEvents.ASR_DECODE_STARTED,
+                        mapOf("audio_source" to "compatibility_file")
+                    )
+                    LocalWhisperAsr.decodeAudioFileToPcm16(sourceFile).also { decoded ->
+                        VoiceLatencyTelemetry.record(
+                            this@MainActivity,
+                            traceId,
+                            VoiceTraceEvents.ASR_DECODE_COMPLETED,
+                            mapOf(
+                                "audio_source" to "compatibility_file",
+                                "duration_ms" to (SystemClock.elapsedRealtime() - decodeStartedAt).toString(),
+                                "audio_duration_ms" to (decoded.size.toLong() * 1_000L / sampleRateHz).toString()
+                            )
+                        )
+                    }
+                }
+                preparedPcm = finalPcm
                 val liveSession = liveWhisperSessions[traceId]
-                if (pcmSamples != null && liveSession != null) {
+                val decoded = if (liveSession != null) {
                     VoiceLatencyTelemetry.record(
                         this@MainActivity,
                         traceId,
@@ -22109,19 +22635,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         mapOf(
                             "asr_provider" to "whisper.cpp",
                             "audio_source" to "audio_record_pcm16",
-                            "audio_duration_ms" to (pcmSamples.size.toLong() * 1_000L / sampleRateHz).toString()
+                            "audio_duration_ms" to (finalPcm.size.toLong() * 1_000L / sampleRateHz).toString()
                         ),
                         once = true
                     )
                     val native = liveSession.finish(
                         PcmSnapshot(
-                            samples = pcmSamples,
+                            samples = finalPcm,
                             sampleRateHz = sampleRateHz,
                             speechDetected = true,
                             speechStartSample = 0L,
-                            speechEndSampleExclusive = pcmSamples.size.toLong(),
+                            speechEndSampleExclusive = finalPcm.size.toLong(),
                             captureStartSample = 0L,
-                            captureEndSampleExclusive = pcmSamples.size.toLong()
+                            captureEndSampleExclusive = finalPcm.size.toLong()
                         )
                     )
                     VoiceLatencyTelemetry.record(
@@ -22135,34 +22661,52 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         ),
                         once = true
                     )
-                    native.text
-                } else if (pcmSamples != null) {
-                    LocalWhisperAsr.transcribePcm(
+                    Triple(
+                        native.text,
+                        liveSession.modelProfileId,
+                        whisperConfidence(native.segments.map { it.averageLogProb })
+                    )
+                } else {
+                    val outcome = LocalWhisperAsr.transcribePcmOutcome(
                         this@MainActivity,
-                        pcmSamples,
+                        finalPcm,
                         sampleRateHz,
                         language,
                         traceId,
-                        source = "audio_record_pcm16"
+                        source = if (pcmSamples != null) "audio_record_pcm16" else "compatibility_file"
                     )
-                } else {
-                    LocalWhisperAsr.transcribe(this@MainActivity, sourceFile, language, traceId)
+                    Triple(outcome.text, outcome.profileId, outcome.confidence)
                 }
+                VoiceFastDecodeResult(
+                    text = decoded.first,
+                    pcm16 = finalPcm,
+                    modelProfileId = decoded.second,
+                    confidence = decoded.third
+                )
             }
             closeLiveWhisperSession(traceId)
             sourceFile.delete()
             runOnUiThread {
-                val transcript = result.getOrNull().orEmpty().trim()
+                val decoded = result.getOrNull()
+                val transcript = decoded?.text.orEmpty().trim()
                 if (transcript.isNotBlank()) {
                     VoiceRuntimeHealthRegistry.success(
                         VoiceRuntimeChannel.LOCAL_WHISPER_ASR
                     )
-                    if (acceptVoiceCoordinatorFinal(traceId, transcript)) {
-                        onSuccess(transcript)
-                    } else {
-                        Log.i("SignalASIVoice", "Duplicate final transcript ignored session=${voiceCoordinatorSession(traceId)}")
-                    }
+                    handleVoiceFastTranscript(
+                        purpose = purpose,
+                        traceId = traceId,
+                        transcript = transcript,
+                        pcmSnapshot = requireNotNull(decoded).pcm16,
+                        sampleRateHz = sampleRateHz,
+                        language = language,
+                        decodedModelProfileId = decoded.modelProfileId,
+                        confidence = decoded.confidence,
+                        onSuccess = onSuccess,
+                        onFailure = onFailure
+                    )
                 } else {
+                    preparedPcm?.fill(0)
                     VoiceRuntimeHealthRegistry.failure(
                         VoiceRuntimeChannel.LOCAL_WHISPER_ASR,
                         result.exceptionOrNull()?.message

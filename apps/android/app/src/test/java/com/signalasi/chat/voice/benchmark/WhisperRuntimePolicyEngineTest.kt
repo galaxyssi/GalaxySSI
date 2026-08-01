@@ -148,6 +148,50 @@ class WhisperRuntimePolicyEngineTest {
         assertEquals(WhisperProviderChoice.LOCAL, decision.provider)
     }
 
+    @Test
+    fun fastModeStillSchedulesCertifiedAccuracyPassForHighRiskSpeech() {
+        val tiny = WhisperModelCatalog.require("tiny")
+        val medium = WhisperModelCatalog.require("medium_q5_0")
+        val decision = WhisperRuntimePolicyEngine.decide(
+            WhisperRuntimePolicyInput(
+                userMode = WhisperUserVoiceMode.FAST,
+                selectedProfileId = tiny.id,
+                candidates = listOf(
+                    candidate(tiny, WhisperCertificationLevel.REALTIME, WhisperExecutionMode.REALTIME_PARTIAL, 0.4),
+                    candidate(medium, WhisperCertificationLevel.SECOND_PASS, WhisperExecutionMode.SECOND_PASS, 1.8)
+                ),
+                environment = environment(highRiskTask = true)
+            )
+        )
+
+        assertEquals(tiny.id, decision.fastProfileId)
+        assertEquals(medium.id, decision.accurateProfileId)
+        assertTrue(decision.runSecondPass)
+    }
+
+    @Test
+    fun privacyAndManualModesKeepHighRiskAccuracyPassLocal() {
+        val tiny = WhisperModelCatalog.require("tiny")
+        val medium = WhisperModelCatalog.require("medium_q5_0")
+        listOf(WhisperUserVoiceMode.PRIVACY, WhisperUserVoiceMode.MANUAL).forEach { mode ->
+            val decision = WhisperRuntimePolicyEngine.decide(
+                WhisperRuntimePolicyInput(
+                    userMode = mode,
+                    selectedProfileId = tiny.id,
+                    candidates = listOf(
+                        candidate(tiny, WhisperCertificationLevel.REALTIME, WhisperExecutionMode.REALTIME_PARTIAL, 0.4),
+                        candidate(medium, WhisperCertificationLevel.SECOND_PASS, WhisperExecutionMode.SECOND_PASS, 1.8)
+                    ),
+                    environment = environment(highRiskTask = true)
+                )
+            )
+
+            assertEquals(WhisperProviderChoice.LOCAL, decision.provider)
+            assertEquals(medium.id, decision.accurateProfileId)
+            assertTrue(decision.runSecondPass)
+        }
+    }
+
     private fun decide(
         candidates: List<WhisperRuntimeCandidate>,
         environment: WhisperRuntimeEnvironment = environment()
@@ -197,7 +241,7 @@ class WhisperRuntimePolicyEngineTest {
         device = "test-device",
         soc = "test-soc",
         androidApi = 36,
-        appVersionCode = 309,
+        appVersionCode = 310,
         whisperNativeVersion = "v1",
         nativeBuildFingerprint = "native-a",
         modelProfileId = profile.id,
@@ -209,7 +253,8 @@ class WhisperRuntimePolicyEngineTest {
         availableMemoryBytes: Long = 8L * 1_024L * MIB,
         currentPssBytes: Long = 100L * MIB,
         thermalStatus: Int = 0,
-        decodeQueueDepth: Int = 0
+        decodeQueueDepth: Int = 0,
+        highRiskTask: Boolean = false
     ) = WhisperRuntimeEnvironment(
         network = WhisperNetworkState.UNMETERED,
         availableMemoryBytes = availableMemoryBytes,
@@ -221,7 +266,7 @@ class WhisperRuntimePolicyEngineTest {
         recentRealTimeFactor = null,
         decodeQueueDepth = decodeQueueDepth,
         utteranceDurationMs = 5_000L,
-        highRiskTask = false,
+        highRiskTask = highRiskTask,
         remoteAllowed = true
     )
 

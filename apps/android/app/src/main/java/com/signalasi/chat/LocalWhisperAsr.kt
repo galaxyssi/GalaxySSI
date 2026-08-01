@@ -45,6 +45,12 @@ data class LocalWhisperDecodeOutcome(
     val result: NativeWhisperResult
 )
 
+data class LocalWhisperTranscriptionOutcome(
+    val text: String,
+    val profileId: String,
+    val confidence: Float?
+)
+
 object LocalWhisperAsr {
     private const val TAG = "SignalASILocalASR"
     private const val TARGET_SAMPLE_RATE = 16_000
@@ -61,7 +67,7 @@ object LocalWhisperAsr {
     ): String {
         val decodeStartedAtNs = SystemClock.elapsedRealtimeNanos()
         trace(context, traceId, VoiceTraceEvents.ASR_DECODE_STARTED, mapOf("audio_source" to "compatibility_file"))
-        val samples = decodeFileTo16kMonoPcm16(audioFile)
+        val samples = decodeAudioFileToPcm16(audioFile)
         val decodeDurationMs = (SystemClock.elapsedRealtimeNanos() - decodeStartedAtNs) / 1_000_000L
         trace(
             context,
@@ -83,7 +89,23 @@ object LocalWhisperAsr {
         language: String = "auto",
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
         source: String = "audio_record_pcm16"
-    ): String = mutex.withLock {
+    ): String = transcribePcmOutcome(
+        context,
+        pcm16,
+        sampleRateHz,
+        language,
+        traceId,
+        source
+    ).text
+
+    internal suspend fun transcribePcmOutcome(
+        context: Context,
+        pcm16: ShortArray,
+        sampleRateHz: Int = TARGET_SAMPLE_RATE,
+        language: String = "auto",
+        traceId: String = VoiceLatencyTraceContext.currentTraceId(),
+        source: String = "audio_record_pcm16"
+    ): LocalWhisperTranscriptionOutcome = mutex.withLock {
         require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
         require(pcm16.isNotEmpty()) { "PCM16 audio is empty" }
         val startedAtNs = SystemClock.elapsedRealtimeNanos()
@@ -145,6 +167,7 @@ object LocalWhisperAsr {
             val rawText: String
             val inferenceDurationMs: Long
             val rtf: String
+            var confidence: Float? = null
             if (VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
                 val result = decodeWithRuntimeV2(
                     context = context,
@@ -160,6 +183,14 @@ object LocalWhisperAsr {
                     throw LocalWhisperException(result.code, result.message ?: "Whisper decode failed (${result.code})")
                 }
                 rawText = result.text
+                confidence = result.segments
+                    .map { segment -> segment.averageLogProb }
+                    .filterNot(Float::isNaN)
+                    .takeIf { values -> values.isNotEmpty() }
+                    ?.map { value -> kotlin.math.exp(value.toDouble()) }
+                    ?.average()
+                    ?.toFloat()
+                    ?.coerceIn(0f, 1f)
                 inferenceDurationMs = result.timings.totalMs.toLong().coerceAtLeast(0L)
                 rtf = String.format(Locale.US, "%.4f", result.timings.realTimeFactor)
             } else {
@@ -198,7 +229,11 @@ object LocalWhisperAsr {
                 "Local transcription completed model=${selected.id} samples=${pcm16.size} " +
                     "language=$normalizedLanguage source=$source elapsed=${totalDurationMs}ms"
             )
-            text
+            LocalWhisperTranscriptionOutcome(
+                text = text,
+                profileId = selected.id,
+                confidence = confidence
+            )
         } catch (error: Throwable) {
             trace(
                 context,
@@ -376,7 +411,7 @@ object LocalWhisperAsr {
 
     private fun durationMs(samples: ShortArray): Long = samples.size.toLong() * 1_000L / TARGET_SAMPLE_RATE
 
-    private fun decodeFileTo16kMonoPcm16(file: File): ShortArray {
+    internal fun decodeAudioFileToPcm16(file: File): ShortArray {
         if (file.extension.equals("wav", ignoreCase = true)) return decodePcmWave(file)
         val extractor = MediaExtractor()
         extractor.setDataSource(file.absolutePath)
