@@ -55,6 +55,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
       messageId: turnId.ifBlank(action.id),
       taskId: turnId.ifBlank(runId),
       runId: runId,
+      parentRunId: (action.parameters["parent_run_id"] ?? "").ifBlank(runId),
       goal: (action.parameters["original_goal"] ?? "")
         .ifBlank(action.parameters["prompt"] ?? "")
         .ifBlank(action.description),
@@ -65,7 +66,8 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
         "action_target": .string(action.target),
         "risk": .string(action.risk.rawValue.lowercased())
       ],
-      idempotencyKey: (action.parameters["idempotency_key"] ?? "").ifBlank(runId)
+      idempotencyKey: (action.parameters["idempotency_key"] ?? "").ifBlank(runId),
+      createdAtMillis: AgentControlPlaneClock.nowMillis()
     )
     provider.prepare(agentId: agentId, request: request, action: action, screen: screen)
     do {
@@ -86,7 +88,7 @@ final class AgentControlPlaneActionExecutor: AgentActionExecutor {
         ]) { _, new in new }
         return result
       }
-      if request.deliveryMode == .ignore {
+      if request.deliveryMode == AgentDeliveryMode.ignore {
         return AgentActionResult(
           actionId: action.id,
           success: true,

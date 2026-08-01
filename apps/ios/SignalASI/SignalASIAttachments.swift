@@ -28,7 +28,7 @@ struct SignalASIDraftAttachment: Identifiable, Equatable {
   }
 
   var isImage: Bool {
-    mimeType.localizedCaseInsensitiveHasPrefix("image/")
+    mimeType.lowercased().hasPrefix("image/")
   }
 
   var humanSize: String {
