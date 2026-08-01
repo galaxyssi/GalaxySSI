@@ -94,6 +94,18 @@ object WhisperRuntimePolicyEngine {
                     .thenBy { it.certification?.warmRtfP95 ?: Double.MAX_VALUE }
             )
         val selected = input.selectedProfileId?.let { id -> usable.firstOrNull { it.profile.id == id } }
+        val uncertifiedLocalFallbacks = input.candidates
+            .filter { candidate ->
+                candidate.installed &&
+                    candidate.certification == null &&
+                    memoryAllowed(candidate, environment, reasons) &&
+                    thermalAllowed(candidate, environment, reasons)
+            }
+            .sortedWith(
+                compareByDescending<WhisperRuntimeCandidate> {
+                    it.profile.id == input.selectedProfileId
+                }.thenBy { qualityRank(it.profile.family) }
+            )
 
         if (environment.thermalStatus >= THERMAL_CRITICAL) {
             reasons += "Critical thermal pressure blocks local Whisper"
@@ -111,7 +123,15 @@ object WhisperRuntimePolicyEngine {
                 val fast = realtime.firstOrNull()
                 if (fast == null) {
                     reasons += "Automatic mode requires a current realtime certification"
-                    remoteOrUnavailable(input, reasons)
+                    val remote = remoteOrUnavailable(input, reasons)
+                    if (remote.provider != WhisperProviderChoice.UNAVAILABLE) {
+                        remote
+                    } else {
+                        uncertifiedLocalFallbacks.firstOrNull()?.let { fallback ->
+                            reasons += "${fallback.profile.displayName} is used in conservative final-only mode until benchmarking completes"
+                            uncertifiedLocalDecision(fallback, reasons)
+                        } ?: remote
+                    }
                 } else {
                     val certification = requireNotNull(fast.certification)
                     val secondPass = (
@@ -131,8 +151,13 @@ object WhisperRuntimePolicyEngine {
             WhisperUserVoiceMode.PRIVACY -> {
                 val fast = realtime.firstOrNull()
                 if (fast == null) {
-                    reasons += "Privacy mode has no realtime-certified local model"
-                    unavailable(reasons)
+                    uncertifiedLocalFallbacks.firstOrNull()?.let { fallback ->
+                        reasons += "Privacy mode uses ${fallback.profile.displayName} in conservative final-only mode"
+                        uncertifiedLocalDecision(fallback, reasons)
+                    } ?: run {
+                        reasons += "Privacy mode has no realtime-certified local model"
+                        unavailable(reasons)
+                    }
                 } else {
                     reasons += "Privacy mode keeps audio on this device"
                     val accurateCandidate = if (environment.highRiskTask && shouldRunSecondPass(environment)) {
@@ -161,8 +186,16 @@ object WhisperRuntimePolicyEngine {
 
             WhisperUserVoiceMode.MANUAL -> {
                 if (selected == null) {
-                    reasons += "The selected model has no current certification"
-                    remoteOrUnavailable(input, reasons)
+                    uncertifiedLocalFallbacks
+                        .firstOrNull { it.profile.id == input.selectedProfileId }
+                        ?.let { fallback ->
+                            reasons += "The selected model is used in conservative final-only mode until benchmarking completes"
+                            uncertifiedLocalDecision(fallback, reasons)
+                        }
+                        ?: run {
+                            reasons += "The selected model has no current certification"
+                            remoteOrUnavailable(input, reasons)
+                        }
                 } else {
                     reasons += "Manual mode uses the selected certified model"
                     val accurateCandidate = if (environment.highRiskTask && shouldRunSecondPass(environment)) {
@@ -219,6 +252,21 @@ object WhisperRuntimePolicyEngine {
             reasons = reasons.distinct()
         )
     }
+
+    private fun uncertifiedLocalDecision(
+        candidate: WhisperRuntimeCandidate,
+        reasons: List<String>
+    ): WhisperRuntimeDecision = WhisperRuntimeDecision(
+        provider = WhisperProviderChoice.LOCAL,
+        fastProfileId = candidate.profile.id,
+        fastMode = WhisperExecutionMode.FINAL_ONLY,
+        accurateProfileId = null,
+        accurateMode = null,
+        partialIntervalMs = null,
+        threadCount = 2,
+        runSecondPass = false,
+        reasons = reasons.distinct()
+    )
 
     private fun memoryAllowed(
         candidate: WhisperRuntimeCandidate,

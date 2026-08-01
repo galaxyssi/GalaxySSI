@@ -780,6 +780,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Agent capability events can be published during the long first launch. Mark the
+        // activity foreground before that work so they do not start a deadline-bound FGS.
+        AppForegroundTracker.onActivityForeground(this)
         val startupStartedAt = SystemClock.elapsedRealtime()
         var startupCheckpointAt = startupStartedAt
         fun traceStartup(stage: String) {
@@ -1403,7 +1406,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         traceResume("display")
-        AppForegroundTracker.onActivityResumed()
+        AppForegroundTracker.onActivityForeground(this)
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)
@@ -1481,7 +1484,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         GlobalProactiveDeliveryBus.removeListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.removeVisualListener(agentVisualScreenListener)
         flushChatHistoryAsync()
-        AppForegroundTracker.onActivityPaused()
+        AppForegroundTracker.onActivityBackground(this)
         super.onPause()
     }
 

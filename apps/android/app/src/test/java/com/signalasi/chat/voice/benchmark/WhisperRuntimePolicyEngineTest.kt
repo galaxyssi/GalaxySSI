@@ -43,6 +43,23 @@ class WhisperRuntimePolicyEngineTest {
     }
 
     @Test
+    fun automaticUsesInstalledModelInFinalModeWhenRemoteIsUnavailable() {
+        val tiny = WhisperModelCatalog.require("tiny")
+        val decision = decide(
+            candidates = listOf(
+                WhisperRuntimeCandidate(tiny, installed = true, certification = null)
+            ),
+            environment = environment(remoteAllowed = false)
+        )
+
+        assertEquals(WhisperProviderChoice.LOCAL, decision.provider)
+        assertEquals(tiny.id, decision.fastProfileId)
+        assertEquals(WhisperExecutionMode.FINAL_ONLY, decision.fastMode)
+        assertEquals(2, decision.threadCount)
+        assertFalse(decision.runSecondPass)
+    }
+
+    @Test
     fun sameModelCanReceiveDifferentModesOnDifferentDeviceCertifications() {
         val profile = WhisperModelCatalog.require("small_q5_1")
         val fastDevice = decide(
@@ -254,7 +271,8 @@ class WhisperRuntimePolicyEngineTest {
         currentPssBytes: Long = 100L * MIB,
         thermalStatus: Int = 0,
         decodeQueueDepth: Int = 0,
-        highRiskTask: Boolean = false
+        highRiskTask: Boolean = false,
+        remoteAllowed: Boolean = true
     ) = WhisperRuntimeEnvironment(
         network = WhisperNetworkState.UNMETERED,
         availableMemoryBytes = availableMemoryBytes,
@@ -267,7 +285,7 @@ class WhisperRuntimePolicyEngineTest {
         decodeQueueDepth = decodeQueueDepth,
         utteranceDurationMs = 5_000L,
         highRiskTask = highRiskTask,
-        remoteAllowed = true
+        remoteAllowed = remoteAllowed
     )
 
     private companion object {
