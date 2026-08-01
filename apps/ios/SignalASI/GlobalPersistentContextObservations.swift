@@ -392,6 +392,6 @@ private extension Array where Element: Hashable {
 
 private extension Array {
   func prefixArray(_ limit: Int) -> [Element] {
-    Array(prefix(max(limit, 0)))
+    Array(prefix(Swift.max(limit, 0)))
   }
 }

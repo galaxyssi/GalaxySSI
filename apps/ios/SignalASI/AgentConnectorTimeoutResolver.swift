@@ -62,11 +62,16 @@ enum AgentConnectorTimeoutResolver {
   }
 
   private static func fallbackIds(_ value: String) -> [String] {
-    value
+    let ids = value
       .split(separator: ",")
       .map { clean(String($0)) }
       .filter { !$0.isEmpty }
-      .stableDistinct()
+    return stableDistinct(ids)
+  }
+
+  private static func stableDistinct(_ values: [String]) -> [String] {
+    var seen = Set<String>()
+    return values.filter { seen.insert($0).inserted }
   }
 
   private static func clean(_ value: String) -> String {

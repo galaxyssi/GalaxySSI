@@ -100,6 +100,6 @@ enum AgentWorkspaceCheckpointReducer {
 
 private extension Array {
   func suffixArray(_ limit: Int) -> [Element] {
-    Array(suffix(max(limit, 0)))
+    Array(suffix(Swift.max(limit, 0)))
   }
 }
