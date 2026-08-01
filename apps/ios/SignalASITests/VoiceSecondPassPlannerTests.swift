@@ -8,7 +8,8 @@ final class VoiceSecondPassPlannerTests: XCTestCase {
       sessionId: " voice-1 ",
       fast: fast,
       asrResult: result(runSecondPass: true, accurateProfileId: "base"),
-      pcmSnapshot: pcm()
+      pcmSnapshot: pcm(),
+      secondPassEnabled: true
     ))
 
     XCTAssertEqual(plan.request.sessionId, "voice-1")
@@ -29,7 +30,8 @@ final class VoiceSecondPassPlannerTests: XCTestCase {
       sessionId: "voice-2",
       fast: hypothesis("Delete Downloads/a.txt"),
       asrResult: result(runSecondPass: true, accurateProfileId: "base"),
-      pcmSnapshot: pcm()
+      pcmSnapshot: pcm(),
+      secondPassEnabled: true
     ))
 
     XCTAssertEqual(plan.risk, .high)
@@ -42,6 +44,7 @@ final class VoiceSecondPassPlannerTests: XCTestCase {
       fast: hypothesis("hello"),
       asrResult: result(runSecondPass: true, accurateProfileId: "base"),
       pcmSnapshot: pcm(),
+      secondPassEnabled: true,
       userRequestedAccuracy: true
     ))
 
@@ -53,13 +56,25 @@ final class VoiceSecondPassPlannerTests: XCTestCase {
       sessionId: "voice-4",
       fast: hypothesis("hello"),
       asrResult: result(runSecondPass: false, accurateProfileId: nil),
-      pcmSnapshot: pcm()
+      pcmSnapshot: pcm(),
+      secondPassEnabled: true
     ))
     XCTAssertNil(VoiceSecondPassPlanner.plan(
       sessionId: "voice-4",
       fast: hypothesis("hello"),
       asrResult: result(runSecondPass: true, accurateProfileId: "base"),
-      pcmSnapshot: pcm(sampleRateHz: 44_100)
+      pcmSnapshot: pcm(sampleRateHz: 44_100),
+      secondPassEnabled: true
+    ))
+  }
+
+  func testReturnsNilWhenFeatureFlagIsDisabled() {
+    XCTAssertNil(VoiceSecondPassPlanner.plan(
+      sessionId: "voice-5",
+      fast: hypothesis("hello"),
+      asrResult: result(runSecondPass: true, accurateProfileId: "base"),
+      pcmSnapshot: pcm(),
+      secondPassEnabled: false
     ))
   }
 
