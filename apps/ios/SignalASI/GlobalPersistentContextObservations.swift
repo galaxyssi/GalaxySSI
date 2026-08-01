@@ -379,7 +379,7 @@ enum GlobalPersistentContextObservationExtractor {
 
 private extension StringProtocol {
   func prefixString(_ limit: Int) -> String {
-    String(prefix(max(limit, 0)))
+    String(prefix(Swift.max(limit, 0)))
   }
 }
 
