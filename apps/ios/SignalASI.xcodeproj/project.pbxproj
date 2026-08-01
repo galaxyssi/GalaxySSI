@@ -35,6 +35,7 @@
     A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000704 /* AgentTaskExecutionMode.swift */; };
     A10000000000000000000705 /* AgentSafetySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000705 /* AgentSafetySettings.swift */; };
     A10000000000000000000706 /* CloudModelCredentialPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000706 /* CloudModelCredentialPolicy.swift */; };
+    A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000707 /* AgentExecutionPolicy.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -525,6 +526,7 @@
     A20000000000000000000704 /* AgentTaskExecutionMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTaskExecutionMode.swift; sourceTree = "<group>"; };
     A20000000000000000000705 /* AgentSafetySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSafetySettings.swift; sourceTree = "<group>"; };
     A20000000000000000000706 /* CloudModelCredentialPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudModelCredentialPolicy.swift; sourceTree = "<group>"; };
+    A20000000000000000000707 /* AgentExecutionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentExecutionPolicy.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1005,6 +1007,7 @@
         A20000000000000000000001 /* SignalASIModels.swift */,
         A20000000000000000000101 /* SignalASICoreModels.swift */,
         A20000000000000000000706 /* CloudModelCredentialPolicy.swift */,
+        A20000000000000000000707 /* AgentExecutionPolicy.swift */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
@@ -1593,6 +1596,7 @@
         A10000000000000000000001 /* SignalASIModels.swift in Sources */,
         A10000000000000000000101 /* SignalASICoreModels.swift in Sources */,
         A10000000000000000000706 /* CloudModelCredentialPolicy.swift in Sources */,
+        A10000000000000000000707 /* AgentExecutionPolicy.swift in Sources */,
         A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */,
         A10000000000000000000705 /* AgentSafetySettings.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
