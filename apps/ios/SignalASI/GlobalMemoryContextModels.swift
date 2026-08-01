@@ -493,7 +493,7 @@ enum GlobalMemoryPromptCompiler {
     var allowedNamespaces = plan.preferredNamespaces
     allowedNamespaces.insert(.general)
 
-    return world.items
+    let candidateItems = world.items
       .filter { $0.contextVisibility == .shareable }
       .filter { $0.expiresAtMillis <= 0 || $0.expiresAtMillis > nowMillis }
       .filter { $0.layer != .conversation || $0.conversationIds.contains(currentConversationId) }
@@ -517,33 +517,33 @@ enum GlobalMemoryPromptCompiler {
       .filter {
         $0.status != .completed || plan.types.contains(.longTermGoal) || plan.includeHistorical
       }
-      .map { item -> (GlobalWorldItem, Double) in
-        let overlap = GlobalAgentText.overlap(queryTokens, GlobalAgentText.tokens("\(item.topic) \(item.value)"))
-        return (item, overlap)
+
+    let scoredItems: [(item: GlobalWorldItem, score: Double)] = candidateItems.compactMap { item in
+      let overlap = GlobalAgentText.overlap(queryTokens, GlobalAgentText.tokens("\(item.topic) \(item.value)"))
+      let relevant = overlap >= 0.08 ||
+        (plan.types.contains(where: { [.personalIdentity, .personalPreference].contains($0) }) &&
+          item.layer == .user &&
+          plan.preferredKinds.contains(item.kind))
+      guard relevant else { return nil }
+      let kindBoost = plan.preferredKinds.contains(item.kind) ? 0.32 : 0
+      let layerBoost = plan.preferredLayers.contains(item.layer) ? 0.18 : 0
+      let namespaceBoost = plan.preferredNamespaces.contains(item.namespace) ? 0.24 : 0
+      let currentBoost = item.status == .active ? 0.18 : 0
+      let score = overlap + kindBoost + layerBoost + namespaceBoost + currentBoost + item.confidence * 0.16
+      guard score >= 0.42 || (item.layer == .user && plan.preferredKinds.contains(item.kind)) else {
+        return nil
       }
-      .filter { item, overlap in
-        overlap >= 0.08 ||
-          (plan.types.contains(where: { [.personalIdentity, .personalPreference].contains($0) }) &&
-            item.layer == .user &&
-            plan.preferredKinds.contains(item.kind))
+      return (item: item, score: score)
+    }
+
+    let limit = Swift.min(Swift.max(plan.maximumWorldItems, 1), 40)
+    return scoredItems
+      .sorted { left, right in
+        if left.score != right.score { return left.score > right.score }
+        return left.item.lastSeenAtMillis > right.item.lastSeenAtMillis
       }
-      .map { item, overlap -> (GlobalWorldItem, Double) in
-        let kindBoost = plan.preferredKinds.contains(item.kind) ? 0.32 : 0
-        let layerBoost = plan.preferredLayers.contains(item.layer) ? 0.18 : 0
-        let namespaceBoost = plan.preferredNamespaces.contains(item.namespace) ? 0.24 : 0
-        let currentBoost = item.status == .active ? 0.18 : 0
-        return (item, overlap + kindBoost + layerBoost + namespaceBoost + currentBoost + item.confidence * 0.16)
-      }
-      .filter { item, score in
-        score >= 0.42 || (item.layer == .user && plan.preferredKinds.contains(item.kind))
-      }
-      .sorted {
-        if $0.1 != $1.1 { return $0.1 > $1.1 }
-        return $0.0.lastSeenAtMillis > $1.0.lastSeenAtMillis
-      }
-      .map(\.0)
-      .prefix(min(max(plan.maximumWorldItems, 1), 40))
-      .map { $0 }
+      .prefix(limit)
+      .map { $0.item }
   }
 
   private static func worldLine(state: String, item: GlobalWorldItem) -> String {

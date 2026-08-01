@@ -684,7 +684,7 @@ enum GlobalMemoryNamespacePolicy {
     layer: GlobalWorldLayer
   ) -> GlobalMemoryNamespaceRef {
     if let explicit = parseExplicit(event.metadata["memory_namespace"]) {
-      let explicitScope = event.metadata["memory_namespace_id"].nonEmpty ?? explicit.scopeId
+      let explicitScope = event.metadata["memory_namespace_id"]?.nonEmpty ?? explicit.scopeId
       return GlobalMemoryNamespaceRef(namespace: explicit.namespace, scopeId: explicitScope)
     }
 
