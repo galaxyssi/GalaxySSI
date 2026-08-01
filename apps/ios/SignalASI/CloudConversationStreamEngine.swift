@@ -6,6 +6,15 @@ protocol CloudConversationLegacySending {
 
 extension CloudModelClient: CloudConversationLegacySending {}
 
+protocol CloudConversationStreaming {
+  func streamConversation(
+    contact: SignalASIContact,
+    store: SignalASIStore,
+    turns: [ChatMessage],
+    requestId: String
+  ) -> AsyncThrowingStream<ModelStreamEvent, Error>
+}
+
 final class CloudConversationStreamEngine: CloudModelStreamClient {
   private let modelClient: CloudModelClient
   private let streamClient: CloudModelStreamClient
@@ -332,3 +341,5 @@ final class CloudConversationStreamEngine: CloudModelStreamClient {
     Int64((Date().timeIntervalSince1970 * 1_000).rounded())
   }
 }
+
+extension CloudConversationStreamEngine: CloudConversationStreaming {}

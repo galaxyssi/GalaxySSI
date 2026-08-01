@@ -496,7 +496,7 @@ final class MessageCoordinator: ObservableObject {
   private let deliveryStore: SignalASILinkDeliveryStore
   private let attachmentTransferStore: AgentOutboundAttachmentTransferStore
   private let diagnosticLedger: SignalASILinkDiagnosticLedger
-  private let cloudClient: CloudModelClient
+  private let cloudStreamEngine: CloudConversationStreaming
   private let disclosureStore: AgentDataDisclosureStore
   private let mediaNetworkProfileProvider: () -> AgentMediaDeliveryProfile
   let mqttClient: SignalASIMqttClient
@@ -508,7 +508,7 @@ final class MessageCoordinator: ObservableObject {
     deliveryStore: SignalASILinkDeliveryStore = SignalASILinkDeliveryStore(),
     attachmentTransferStore: AgentOutboundAttachmentTransferStore = AgentOutboundAttachmentTransferStore(),
     diagnosticLedger: SignalASILinkDiagnosticLedger = SignalASILinkTransportDiagnostics.runtimeLedger(),
-    cloudClient: CloudModelClient = CloudModelClient(),
+    cloudStreamEngine: CloudConversationStreaming? = nil,
     disclosureStore: AgentDataDisclosureStore = FileAgentDataDisclosureStore(
       fileURL: AgentDataDisclosureStorePaths.ledgerURL()
     ),
@@ -521,8 +521,8 @@ final class MessageCoordinator: ObservableObject {
     self.deliveryStore = deliveryStore
     self.attachmentTransferStore = attachmentTransferStore
     self.diagnosticLedger = diagnosticLedger
-    self.cloudClient = cloudClient
     self.disclosureStore = disclosureStore
+    self.cloudStreamEngine = cloudStreamEngine ?? CloudConversationStreamEngine(disclosureStore: disclosureStore)
     self.mediaNetworkProfileProvider = mediaNetworkProfileProvider
     self.mqttClient = mqttClient ?? SignalASIMqttClient(diagnosticLedger: diagnosticLedger)
     self.mqttClient.onMessage = { [weak self] topic, payload in
@@ -566,21 +566,6 @@ final class MessageCoordinator: ObservableObject {
         }
         let modelDetail = contact.selectedCloudModel?.modelId ?? contact.cloudProvider.ifBlank(contact.id)
         let requestDetail = cloudText == displayText ? modelDetail : "\(modelDetail); attachments described"
-        disclosureTicket = AgentDataDisclosureLedger.beginCloudRequest(
-          store: disclosureStore,
-          destination: AgentDataDisclosureCloudDestination(contact: contact),
-          text: cloudText,
-          historyCount: cloudTurns.count,
-          systemInstructions: true,
-          toolOutput: false,
-          purpose: "Chat request",
-          conversationId: outgoing.conversationId,
-          taskId: outgoing.id.uuidString,
-          turnId: outgoing.turnId.ifBlank(outgoing.id.uuidString)
-        )
-        guard disclosureTicket?.allowed == true else {
-          throw AgentDataDisclosureBlockedError(destination: contact.displayName)
-        }
         store.appendDeliveryTrace(
           outgoing.id,
           contactId: contact.id,
@@ -588,25 +573,11 @@ final class MessageCoordinator: ObservableObject {
           detail: requestDetail,
           status: .sent
         )
-        let reply = try await cloudClient.send(contact: contact, store: store, turns: cloudTurns)
-        if let ticket = disclosureTicket {
-          AgentDataDisclosureLedger.update(store: disclosureStore, ticket: ticket, status: .sent)
-        }
-        store.appendDeliveryTrace(
-          outgoing.id,
-          contactId: contact.id,
-          stage: "cloud_reply",
-          detail: modelDetail,
-          status: .delivered
-        )
-        let incoming = store.appendIncoming(reply, from: contact.id)
-        onIncomingMessage?(incoming)
-        store.appendDeliveryTrace(
-          incoming.id,
-          contactId: contact.id,
-          stage: "cloud_reply_received",
-          detail: modelDetail,
-          status: .delivered
+        try await receiveCloudStreamReply(
+          contact: contact,
+          turns: cloudTurns,
+          outgoing: outgoing,
+          modelDetail: modelDetail
         )
       case .link:
         disclosureTicket = AgentDataDisclosureLedger.beginDesktopRequest(
@@ -669,6 +640,89 @@ final class MessageCoordinator: ObservableObject {
         status: .failed
       )
       store.appendSystem(error.localizedDescription, to: contact.id)
+    }
+  }
+
+  private func receiveCloudStreamReply(
+    contact: SignalASIContact,
+    turns: [ChatMessage],
+    outgoing: ChatMessage,
+    modelDetail: String
+  ) async throws {
+    let requestId = outgoing.turnId.ifBlank(outgoing.id.uuidString)
+    var accumulated = ""
+    var incoming: ChatMessage?
+    var completed = false
+
+    for try await event in cloudStreamEngine.streamConversation(
+      contact: contact,
+      store: store,
+      turns: turns,
+      requestId: requestId
+    ) {
+      switch event {
+      case .connected, .usage, .toolCallDelta:
+        continue
+
+      case .textDelta(let delta):
+        accumulated += delta.text
+        let content = accumulated.trimmingCharacters(in: .whitespacesAndNewlines).ifBlank(accumulated)
+        if let current = incoming {
+          incoming = store.updateMessageContent(
+            current.id,
+            contactId: contact.id,
+            content: content,
+            status: .sent
+          ) ?? current
+        } else {
+          incoming = store.appendIncoming(
+            content,
+            from: contact.id,
+            remoteMessageId: event.requestId,
+            status: .sent,
+            traceStage: "cloud_reply"
+          )
+        }
+
+      case .completed:
+        let clean = accumulated.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, let current = incoming else {
+          throw SignalASIError.unsupportedResponse
+        }
+        completed = true
+        store.appendDeliveryTrace(
+          outgoing.id,
+          contactId: contact.id,
+          stage: "cloud_reply",
+          detail: modelDetail,
+          status: .delivered
+        )
+        let final = store.updateMessageContent(
+          current.id,
+          contactId: contact.id,
+          content: clean,
+          status: .delivered,
+          traceStage: "cloud_reply_received",
+          detail: modelDetail
+        ) ?? current
+        onIncomingMessage?(final)
+
+      case .failed(let failure):
+        if let current = incoming {
+          store.appendDeliveryTrace(
+            current.id,
+            contactId: contact.id,
+            stage: "cloud_error",
+            detail: failure.error.message,
+            status: .failed
+          )
+        }
+        throw SignalASIError.invalidPayload(failure.error.message)
+      }
+    }
+
+    guard completed else {
+      throw SignalASIError.unsupportedResponse
     }
   }
 
