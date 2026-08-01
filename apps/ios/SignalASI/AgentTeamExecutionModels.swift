@@ -223,13 +223,18 @@ final class AgentTeamCompletionDeliveryLedger {
 
   init(delivered: [String] = [], maxRecords: Int = 512) {
     let limit = Swift.max(maxRecords, 1)
-    self.delivered = delivered
+    let cleaned = delivered
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-      .stableDistinct()
+    self.delivered = Self.stableDistinct(cleaned)
       .suffix(limit)
       .map { $0 }
     self.maximumRecords = limit
+  }
+
+  private static func stableDistinct(_ values: [String]) -> [String] {
+    var seen = Set<String>()
+    return values.filter { seen.insert($0).inserted }
   }
 
   func contains(_ supervisorRunId: String) -> Bool {
