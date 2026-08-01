@@ -14,6 +14,7 @@ struct VoiceWhisperModelSettingsView: View {
   @State private var latestBenchmarkRecords: [String: VoiceWhisperBenchmarkRecord] = [:]
   @State private var benchmarkProgress: [String: VoiceWhisperBenchmarkProgress] = [:]
   @State private var activeBenchmarkIds: Set<String> = []
+  @State private var benchmarkDetails: VoiceWhisperBenchmarkDetailsPresentation?
   @State private var statusMessage = ""
 
   init(
@@ -88,6 +89,13 @@ struct VoiceWhisperModelSettingsView: View {
     }
     .navigationTitle("ASR Model")
     .onAppear(perform: refreshModelState)
+    .alert(item: $benchmarkDetails) { details in
+      Alert(
+        title: Text(details.title),
+        message: Text(details.message),
+        dismissButton: .default(Text("Done"))
+      )
+    }
   }
 
   private var rows: [VoiceWhisperModelRowPresentation] {
@@ -111,7 +119,11 @@ struct VoiceWhisperModelSettingsView: View {
       Task { await benchmark(row.model, force: false) }
     case .download, .retry:
       Task { await download(row.model) }
-    case .current, .waiting:
+    case .current:
+      if let record = row.benchmarkRecord {
+        benchmarkDetails = VoiceWhisperBenchmarkDetailsPresenter.presentation(model: row.model, record: record)
+      }
+    case .waiting:
       break
     }
   }

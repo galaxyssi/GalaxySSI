@@ -44,9 +44,9 @@ enum VoiceWhisperModelRowAction: Equatable {
 
   var isEnabled: Bool {
     switch self {
-    case .use, .useAndTest, .download, .retry:
+    case .current, .use, .useAndTest, .download, .retry:
       return true
-    case .current, .waiting:
+    case .waiting:
       return false
     }
   }
@@ -76,7 +76,7 @@ struct VoiceWhisperModelRowPresentation: Equatable, Identifiable {
     if available, benchmarkRecord == nil {
       return .useAndTest
     }
-    if selected {
+    if selected, available {
       return .current
     }
     if available || model.bundled {
