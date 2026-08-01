@@ -55,6 +55,10 @@
     A10000000000000000000724 /* VoiceWhisperThermalControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000724 /* VoiceWhisperThermalControllerTests.swift */; };
     A10000000000000000000725 /* VoiceWhisperBenchmarkManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000725 /* VoiceWhisperBenchmarkManager.swift */; };
     A10000000000000000000726 /* VoiceWhisperBenchmarkManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000726 /* VoiceWhisperBenchmarkManagerTests.swift */; };
+    A10000000000000000000727 /* VoiceWhisperBenchmarkPlanning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000727 /* VoiceWhisperBenchmarkPlanning.swift */; };
+    A10000000000000000000728 /* VoiceWhisperBenchmarkPlanningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000728 /* VoiceWhisperBenchmarkPlanningTests.swift */; };
+    A10000000000000000000729 /* VoiceWhisperBenchmarkRecordBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000729 /* VoiceWhisperBenchmarkRecordBuilder.swift */; };
+    A10000000000000000000730 /* VoiceWhisperBenchmarkRecordBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000730 /* VoiceWhisperBenchmarkRecordBuilderTests.swift */; };
     A10000000000000000000489 /* AgentPreferenceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000489 /* AgentPreferenceModeTests.swift */; };
     A10000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */; };
     A10000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */; };
@@ -565,6 +569,10 @@
     A20000000000000000000724 /* VoiceWhisperThermalControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperThermalControllerTests.swift; sourceTree = "<group>"; };
     A20000000000000000000725 /* VoiceWhisperBenchmarkManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkManager.swift; sourceTree = "<group>"; };
     A20000000000000000000726 /* VoiceWhisperBenchmarkManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkManagerTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000727 /* VoiceWhisperBenchmarkPlanning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkPlanning.swift; sourceTree = "<group>"; };
+    A20000000000000000000728 /* VoiceWhisperBenchmarkPlanningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkPlanningTests.swift; sourceTree = "<group>"; };
+    A20000000000000000000729 /* VoiceWhisperBenchmarkRecordBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkRecordBuilder.swift; sourceTree = "<group>"; };
+    A20000000000000000000730 /* VoiceWhisperBenchmarkRecordBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceWhisperBenchmarkRecordBuilderTests.swift; sourceTree = "<group>"; };
     A20000000000000000000489 /* AgentPreferenceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPreferenceModeTests.swift; sourceTree = "<group>"; };
     A20000000000000000000490 /* AgentUntrustedEvidenceBoundary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundary.swift; sourceTree = "<group>"; };
     A20000000000000000000491 /* AgentUntrustedEvidenceBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUntrustedEvidenceBoundaryTests.swift; sourceTree = "<group>"; };
@@ -1060,6 +1068,8 @@
         A20000000000000000000721 /* VoiceWhisperCertificationClassifier.swift */,
         A20000000000000000000723 /* VoiceWhisperThermalController.swift */,
         A20000000000000000000725 /* VoiceWhisperBenchmarkManager.swift */,
+        A20000000000000000000727 /* VoiceWhisperBenchmarkPlanning.swift */,
+        A20000000000000000000729 /* VoiceWhisperBenchmarkRecordBuilder.swift */,
         A20000000000000000000704 /* AgentTaskExecutionMode.swift */,
         A20000000000000000000705 /* AgentSafetySettings.swift */,
         A20000000000000000000102 /* AgentNetworkRoutingModels.swift */,
@@ -1458,6 +1468,8 @@
         A20000000000000000000722 /* VoiceWhisperCertificationClassifierTests.swift */,
         A20000000000000000000724 /* VoiceWhisperThermalControllerTests.swift */,
         A20000000000000000000726 /* VoiceWhisperBenchmarkManagerTests.swift */,
+        A20000000000000000000728 /* VoiceWhisperBenchmarkPlanningTests.swift */,
+        A20000000000000000000730 /* VoiceWhisperBenchmarkRecordBuilderTests.swift */,
         A20000000000000000000660 /* VoiceWhisperModelDownloadPolicyTests.swift */,
         A20000000000000000000662 /* VoiceWhisperLegacyMigrationTests.swift */,
         A20000000000000000000222 /* AgentDeviceProfileTests.swift */,
@@ -1668,6 +1680,8 @@
         A10000000000000000000721 /* VoiceWhisperCertificationClassifier.swift in Sources */,
         A10000000000000000000723 /* VoiceWhisperThermalController.swift in Sources */,
         A10000000000000000000725 /* VoiceWhisperBenchmarkManager.swift in Sources */,
+        A10000000000000000000727 /* VoiceWhisperBenchmarkPlanning.swift in Sources */,
+        A10000000000000000000729 /* VoiceWhisperBenchmarkRecordBuilder.swift in Sources */,
         A10000000000000000000704 /* AgentTaskExecutionMode.swift in Sources */,
         A10000000000000000000705 /* AgentSafetySettings.swift in Sources */,
         A10000000000000000000102 /* AgentNetworkRoutingModels.swift in Sources */,
@@ -2057,6 +2071,8 @@
         A10000000000000000000722 /* VoiceWhisperCertificationClassifierTests.swift in Sources */,
         A10000000000000000000724 /* VoiceWhisperThermalControllerTests.swift in Sources */,
         A10000000000000000000726 /* VoiceWhisperBenchmarkManagerTests.swift in Sources */,
+        A10000000000000000000728 /* VoiceWhisperBenchmarkPlanningTests.swift in Sources */,
+        A10000000000000000000730 /* VoiceWhisperBenchmarkRecordBuilderTests.swift in Sources */,
         A10000000000000000000660 /* VoiceWhisperModelDownloadPolicyTests.swift in Sources */,
         A10000000000000000000662 /* VoiceWhisperLegacyMigrationTests.swift in Sources */,
         A10000000000000000000222 /* AgentDeviceProfileTests.swift in Sources */,
