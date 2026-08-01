@@ -124,12 +124,19 @@ import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperCertificationLevel
+import com.signalasi.chat.voice.modelstream.ModelStreamCancelReason
+import com.signalasi.chat.voice.modelstream.ModelStreamEvent
+import com.signalasi.chat.voice.modelstream.ModelStreamUiMerger
+import com.signalasi.chat.voice.modelstream.ModelStreamUiUpdate
+import com.signalasi.chat.voice.modelstream.ModelUsage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -221,6 +228,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val CHAT_HISTORY_PAGE_ITEMS = 100
         private const val CHAT_HISTORY_PREFETCH_POSITION = 2
         private const val AGENT_PROCESS_TIMER_TICK_MS = 1_000L
+        private const val CLOUD_STREAM_UI_INTERVAL_MS = 80L
         private const val AGENT_TRANSCRIPT_PERF_LOG_THRESHOLD_MS = 16L
         private const val UNROUTABLE_CONNECTOR_GRACE_MILLIS = 5L * 60L * 1_000L
         private const val GLOBAL_AGENT_FOREGROUND_RETRY_MILLIS = 5_000L
@@ -422,6 +430,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val agentRoutingExecutor = Executors.newSingleThreadExecutor()
     private val agentTaskPersistenceExecutor = Executors.newSingleThreadExecutor()
     private val cloudExecutor = Executors.newCachedThreadPool()
+    private data class ActiveCloudStream(
+        val requestId: String,
+        val contact: Contact,
+        val outgoingId: Long,
+        val incomingId: Long,
+        val voiceTraceId: String,
+        val selectedModel: String,
+        val merger: ModelStreamUiMerger = ModelStreamUiMerger(),
+        var finalized: Boolean = false,
+        var usage: ModelUsage? = null,
+        var flushRunnable: Runnable? = null
+    )
+    private val activeCloudStreams = ConcurrentHashMap<String, ActiveCloudStream>()
+    private val activeCloudStreamJobs = ConcurrentHashMap<String, Job>()
     private val pendingHistoryMessages = linkedMapOf<Long, JSONObject>()
     private val loadedHistoryContacts = mutableSetOf<String>()
     private val historyPageCursors = mutableMapOf<String, Long?>()
@@ -1181,6 +1203,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         voiceRiskConfirmationDialog?.dismiss()
         voiceRiskConfirmationDialog = null
         voiceSecondPassCoordinator.cancelForInteractiveVoice()
+        activeCloudStreams.values.forEach { stream ->
+            stream.flushRunnable?.let(handler::removeCallbacks)
+        }
+        activeCloudStreamJobs.values.forEach(Job::cancel)
+        activeCloudStreamJobs.clear()
+        activeCloudStreams.clear()
         whisperDecodeScheduler?.close()
         whisperDecodeScheduler = null
         stopRecording(send = false)
@@ -1199,6 +1227,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         agentTaskPersistenceExecutor.shutdown()
         agentTranscriptContentExecutor.shutdown()
         historyExecutor.shutdown()
+        cloudExecutor.shutdown()
         super.onDestroy()
     }
 
@@ -19845,6 +19874,66 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         outgoingId: Long,
         voiceTraceId: String = ""
     ) {
+        if (!VoiceFeatureFlags.isCloudModelStreamingEnabled(this)) {
+            requestCloudModelReplyLegacy(contact, raw, contextTurns, outgoingId, voiceTraceId)
+            return
+        }
+        cancelActiveCloudStream(contact.id, ModelStreamCancelReason.NEW_REQUEST)
+        val requestId = "cloud-${contact.id}-${outgoingId}-${UUID.randomUUID()}"
+        val state = ActiveCloudStream(
+            requestId = requestId,
+            contact = contact,
+            outgoingId = outgoingId,
+            incomingId = newMessageId(),
+            voiceTraceId = voiceTraceId,
+            selectedModel = raw.optString("selected_cloud_model", raw.optString("cloud_model"))
+        )
+        VoiceLatencyTelemetry.record(
+            this,
+            voiceTraceId,
+            VoiceTraceEvents.MODEL_REQUEST_STARTED,
+            mapOf(
+                "model_provider" to raw.optString("cloud_provider", raw.optString("cloud_api_style", "cloud")),
+                "execution_mode" to "streaming"
+            ),
+            once = true
+        )
+        val job = voiceAssistantScope.launch(start = CoroutineStart.LAZY) {
+            CloudConversationStreamEngine.streamConversation(
+                context = this@MainActivity,
+                contact = raw,
+                turns = contextTurns,
+                requestId = requestId,
+                onToolEvent = { event -> postCloudToolEvent(contact, event) }
+            ).collect { event -> consumeCloudStreamEvent(state, event, raw) }
+        }
+        activeCloudStreams[contact.id] = state
+        activeCloudStreamJobs[contact.id] = job
+        job.invokeOnCompletion { error ->
+            handler.post {
+                activeCloudStreamJobs.remove(contact.id, job)
+                if (activeCloudStreams[contact.id] === state && !state.finalized && error != null) {
+                    finishCloudStreamFailure(
+                        state,
+                        com.signalasi.chat.voice.modelstream.ModelStreamError(
+                            code = if (error is CancellationException) "CANCELLED" else "STREAM_FAILED",
+                            message = error.message.orEmpty().ifBlank { getString(R.string.cloud_unknown_error) },
+                            partialResponse = state.merger.snapshot().isNotBlank()
+                        )
+                    )
+                }
+            }
+        }
+        job.start()
+    }
+
+    private fun requestCloudModelReplyLegacy(
+        contact: Contact,
+        raw: JSONObject,
+        contextTurns: List<ChatMessage>,
+        outgoingId: Long,
+        voiceTraceId: String
+    ) {
         cloudExecutor.execute {
             val result = runCatching {
                 VoiceLatencyTraceContext.withTrace(voiceTraceId) {
@@ -19914,6 +20003,275 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
         }
     }
+
+    private fun postCloudToolEvent(contact: Contact, event: CloudToolEvent) {
+        handler.post {
+            if (isDestroyed) return@post
+            val detail = event.detail.replace(Regex("[\\r\\n]+"), " ").take(120)
+            val text = if (event.stage == "running") {
+                getString(R.string.cloud_tool_running, event.tool, detail)
+            } else {
+                getString(R.string.cloud_tool_completed, event.tool, detail)
+            }
+            addMessage(
+                ChatMessage(
+                    newMessageId(),
+                    text,
+                    false,
+                    contact,
+                    isSystem = true,
+                    deliveryTrace = mutableListOf(newTraceEvent("cloud_tool_${event.stage}", event.tool))
+                )
+            )
+        }
+    }
+
+    private fun consumeCloudStreamEvent(
+        state: ActiveCloudStream,
+        event: ModelStreamEvent,
+        raw: JSONObject
+    ) {
+        when (event) {
+            is ModelStreamEvent.Connected -> VoiceLatencyTelemetry.record(
+                this,
+                state.voiceTraceId,
+                VoiceTraceEvents.MODEL_CONNECTED,
+                mapOf("http_status" to event.httpStatus.toString()),
+                once = true
+            )
+            is ModelStreamEvent.TextDelta -> {
+                VoiceLatencyTelemetry.record(
+                    this,
+                    state.voiceTraceId,
+                    VoiceTraceEvents.MODEL_FIRST_DELTA,
+                    once = true
+                )
+                val update = state.merger.offer(event.sequence, event.text, event.receivedAtElapsedMs)
+                handler.post {
+                    if (activeCloudStreams[state.contact.id] !== state || state.finalized) return@post
+                    voiceCoordinatorSession(state.voiceTraceId).takeIf(String::isNotBlank)?.let { sessionId ->
+                        dispatchVoiceCoordinator(VoiceInteractionEvent.ModelDelta(sessionId, event.text))
+                    }
+                    update?.let { applyCloudStreamUiUpdate(state, it) }
+                    scheduleCloudStreamFlush(state)
+                }
+            }
+            is ModelStreamEvent.Completed -> handler.post {
+                if (activeCloudStreams[state.contact.id] === state && !state.finalized) {
+                    finishCloudStreamSuccess(state, raw)
+                }
+            }
+            is ModelStreamEvent.Failed -> handler.post {
+                if (activeCloudStreams[state.contact.id] === state && !state.finalized) {
+                    finishCloudStreamFailure(state, event.error)
+                }
+            }
+            is ModelStreamEvent.ToolCallDelta -> Unit
+            is ModelStreamEvent.Usage -> state.usage = event.usage
+        }
+    }
+
+    private fun scheduleCloudStreamFlush(state: ActiveCloudStream) {
+        state.flushRunnable?.let(handler::removeCallbacks)
+        val task = Runnable {
+            if (activeCloudStreams[state.contact.id] !== state || state.finalized) return@Runnable
+            state.merger.flush(cloudStreamClockMs())?.let { applyCloudStreamUiUpdate(state, it) }
+        }
+        state.flushRunnable = task
+        handler.postDelayed(task, CLOUD_STREAM_UI_INTERVAL_MS)
+    }
+
+    private fun applyCloudStreamUiUpdate(state: ActiveCloudStream, update: ModelStreamUiUpdate) {
+        if (update.text.isBlank()) return
+        val list = messages.getOrPut(state.contact.id) { mutableListOf() }
+        val index = list.indexOfFirst { it.id == state.incomingId }
+        if (index < 0) {
+            val visible = chatPage.visibility == View.VISIBLE && selectedContact?.id == state.contact.id
+            val message = ChatMessage(
+                id = state.incomingId,
+                content = update.text,
+                isMine = false,
+                contact = state.contact,
+                deliveryStatus = getString(R.string.cloud_streaming_status),
+                deliveryTrace = mutableListOf(newTraceEvent("cloud_streaming", state.selectedModel))
+            )
+            list.add(message)
+            val summary = summaries.getOrPut(state.contact.id) { ContactSummary() }
+            summary.lastMessage = update.text
+            summary.lastAt = message.timestamp
+            if (!visible) summary.unreadCount += 1
+            refreshContactList()
+        } else {
+            val previous = list[index]
+            list[index] = previous.copy(content = update.text).also {
+                it.deliveryStatus = previous.deliveryStatus
+            }
+        }
+        refreshVisibleMessages(state.contact.id)
+    }
+
+    private fun finishCloudStreamSuccess(state: ActiveCloudStream, raw: JSONObject) {
+        state.flushRunnable?.let(handler::removeCallbacks)
+        state.flushRunnable = null
+        val update = state.merger.flush(cloudStreamClockMs(), complete = true)
+        update?.let { applyCloudStreamUiUpdate(state, it) }
+        val finalText = state.merger.snapshot().trim()
+        if (finalText.isBlank()) {
+            finishCloudStreamFailure(
+                state,
+                com.signalasi.chat.voice.modelstream.ModelStreamError(
+                    code = "EMPTY_RESPONSE",
+                    message = getString(R.string.cloud_empty_response)
+                )
+            )
+            return
+        }
+        state.finalized = true
+        activeCloudStreams.remove(state.contact.id, state)
+        activeCloudStreamJobs.remove(state.contact.id)
+        appendDeliveryTrace(state.outgoingId, state.contact.id, "cloud_reply", state.selectedModel)
+        updateMessageStatus(state.outgoingId, state.contact.id, getString(R.string.delivery_status_replied))
+        val reply = persistCloudStreamMessage(state, finalText, status = null, terminalStage = "cloud_reply_received")
+        maybeSpeakIncomingReply(reply, state.voiceTraceId)
+        voiceCoordinatorIdsBySourceMessage.remove(state.outgoingId)
+        val usage = state.usage
+        VoiceLatencyTelemetry.record(
+            this,
+            state.voiceTraceId,
+            VoiceTraceEvents.MODEL_REQUEST_COMPLETED,
+            buildMap {
+                put("model", raw.optString("selected_cloud_model", raw.optString("cloud_model")))
+                usage?.let {
+                    put("input_tokens", it.inputTokens.toString())
+                    put("output_tokens", it.outputTokens.toString())
+                    put("cached_input_tokens", it.cachedInputTokens.toString())
+                }
+            },
+            once = true
+        )
+        VoiceLatencyTelemetry.record(
+            this,
+            state.voiceTraceId,
+            VoiceTraceEvents.SESSION_COMPLETED,
+            mapOf("model" to raw.optString("selected_cloud_model", raw.optString("cloud_model"))),
+            once = true
+        )
+    }
+
+    private fun finishCloudStreamFailure(
+        state: ActiveCloudStream,
+        error: com.signalasi.chat.voice.modelstream.ModelStreamError
+    ) {
+        if (state.finalized) return
+        state.finalized = true
+        state.flushRunnable?.let(handler::removeCallbacks)
+        state.flushRunnable = null
+        activeCloudStreams.remove(state.contact.id, state)
+        activeCloudStreamJobs.remove(state.contact.id)
+        val partialText = state.merger.snapshot().trim()
+        appendDeliveryTrace(state.outgoingId, state.contact.id, "cloud_error", error.code)
+        updateMessageStatus(state.outgoingId, state.contact.id, getString(R.string.delivery_status_failed))
+        if (partialText.isNotBlank()) {
+            persistCloudStreamMessage(
+                state,
+                partialText,
+                status = getString(R.string.cloud_stream_interrupted_status),
+                terminalStage = "cloud_stream_interrupted"
+            )
+            if (error.code != "CANCELLED") {
+                addMessage(
+                    ChatMessage(
+                        newMessageId(),
+                        getString(R.string.cloud_stream_interrupted_notice),
+                        false,
+                        state.contact,
+                        isSystem = true
+                    ),
+                    fromIncoming = true
+                )
+            }
+        } else if (error.code != "CANCELLED") {
+            addMessage(
+                ChatMessage(
+                    newMessageId(),
+                    getString(R.string.cloud_request_failed, error.message.take(220)),
+                    false,
+                    state.contact,
+                    deliveryTrace = mutableListOf(newTraceEvent("cloud_error", error.code))
+                ),
+                fromIncoming = true
+            )
+        }
+        failVoiceCoordinator(state.voiceTraceId, error.code)
+        voiceCoordinatorIdsBySourceMessage.remove(state.outgoingId)
+        VoiceLatencyTelemetry.record(
+            this,
+            state.voiceTraceId,
+            VoiceTraceEvents.SESSION_FAILED,
+            mapOf("error_code" to error.code),
+            once = true
+        )
+    }
+
+    private fun persistCloudStreamMessage(
+        state: ActiveCloudStream,
+        text: String,
+        status: String?,
+        terminalStage: String
+    ): ChatMessage {
+        val list = messages.getOrPut(state.contact.id) { mutableListOf() }
+        var index = list.indexOfFirst { it.id == state.incomingId }
+        if (index < 0) {
+            applyCloudStreamUiUpdate(state, ModelStreamUiUpdate(text, firstDelta = true, complete = true))
+            index = list.indexOfFirst { it.id == state.incomingId }
+        }
+        val current = list[index]
+        current.deliveryTrace.removeAll { it.stage == "cloud_streaming" }
+        current.deliveryTrace.add(newTraceEvent(terminalStage, state.selectedModel))
+        val persisted = current.copy(content = text).also { it.deliveryStatus = status }
+        list[index] = persisted
+        persisted.deliveryTrace.add(newTraceEvent("persisted", "local_history"))
+        saveChatHistory(persisted)
+        val summary = summaries.getOrPut(state.contact.id) { ContactSummary() }
+        summary.lastMessage = text
+        summary.lastAt = persisted.timestamp
+        GlobalConversationEventBus.publishChatMessage(
+            this,
+            state.contact.id,
+            state.contact.name,
+            persisted.id,
+            text,
+            GlobalConversationActor.ASSISTANT,
+            persisted.timestamp,
+            mapOf("direction" to "incoming", "stream_request_id" to state.requestId)
+        )
+        refreshVisibleMessages(state.contact.id)
+        refreshContactList()
+        return persisted
+    }
+
+    private fun cancelActiveCloudStream(contactId: String, reason: ModelStreamCancelReason) {
+        val state = activeCloudStreams.remove(contactId) ?: return
+        state.flushRunnable?.let(handler::removeCallbacks)
+        state.flushRunnable = null
+        state.finalized = true
+        val partial = state.merger.snapshot().trim()
+        if (partial.isNotBlank()) {
+            persistCloudStreamMessage(
+                state,
+                partial,
+                status = getString(R.string.cloud_stream_cancelled_status),
+                terminalStage = "cloud_stream_cancelled"
+            )
+        }
+        val job = activeCloudStreamJobs.remove(contactId)
+        voiceAssistantScope.launch { CloudConversationStreamEngine.cancel(state.requestId, reason) }
+        job?.cancel(CancellationException(reason.name))
+        failVoiceCoordinator(state.voiceTraceId, reason.name)
+        voiceCoordinatorIdsBySourceMessage.remove(state.outgoingId)
+    }
+
+    private fun cloudStreamClockMs(): Long = System.nanoTime() / 1_000_000L
 
     private fun handleDebugSendIntent(intent: Intent?) {
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) == 0) return

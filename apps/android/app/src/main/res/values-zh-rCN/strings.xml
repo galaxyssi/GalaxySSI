@@ -116,6 +116,11 @@
     <string name="cloud_provider_custom_subtitle">OpenAI-compatible 自定义端点</string>
     <string name="cloud_request_failed">云端模型调用失败：%1$s</string>
     <string name="cloud_unknown_error">未知错误</string>
+    <string name="cloud_empty_response">模型返回了空内容。</string>
+    <string name="cloud_streaming_status">正在回复</string>
+    <string name="cloud_stream_interrupted_status">已中断</string>
+    <string name="cloud_stream_cancelled_status">已停止</string>
+    <string name="cloud_stream_interrupted_notice">回复已中断，请重新发送以重试。</string>
     <string name="cloud_web_fallback_sources">我找到了以下当前来源：</string>
     <string name="cloud_web_fallback_empty">联网检索已完成，但暂时没有可可靠汇总的来源，请重试。</string>
     <string name="discover_segment_all">全部</string>
