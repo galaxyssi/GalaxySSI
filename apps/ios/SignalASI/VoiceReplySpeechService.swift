@@ -9,7 +9,9 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   private let synthesizer: AVSpeechSynthesizer
   private let edgeTTS: VoiceMicrosoftEdgeTTS
   private let latencyTracer: VoiceLatencyTracer?
+  private let systemTTSRequests = VoiceTTSRequestRegistry()
   private var activeRequest: VoiceReplyPlaybackRequest?
+  private var activeSystemUtterance: AVSpeechUtterance?
   private var edgePlayer: AVAudioPlayer?
   private var edgeSynthesisTask: Task<Void, Never>?
   private var onPlaybackStarted: ((VoiceReplyPlaybackRequest) -> Void)?
@@ -58,6 +60,12 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     let utterance = AVSpeechUtterance(string: text)
     utterance.voice = AVSpeechSynthesisVoice(language: request.language)
     utterance.rate = AVSpeechUtteranceDefaultSpeechRate
+    activeSystemUtterance = utterance
+    systemTTSRequests.begin(VoiceTTSRequest(
+      utteranceId: request.utteranceId,
+      traceId: request.sessionId,
+      onFinished: {}
+    ))
     synthesizer.speak(utterance)
   }
 
@@ -77,7 +85,11 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
     DispatchQueue.main.async {
-      guard let request = self.activeRequest else { return }
+      guard self.activeSystemUtterance === utterance,
+            let request = self.activeRequest,
+            self.systemTTSRequests.isActive(request.utteranceId) else {
+        return
+      }
       self.isSpeaking = true
       self.recordLatency(
         request,
@@ -97,9 +109,14 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
     DispatchQueue.main.async {
-      guard let request = self.activeRequest else { return }
+      guard self.activeSystemUtterance === utterance,
+            let request = self.activeRequest,
+            self.systemTTSRequests.finish(request.utteranceId) != nil else {
+        return
+      }
       self.isSpeaking = false
       self.activeRequest = nil
+      self.activeSystemUtterance = nil
       VoiceRuntimeHealthRegistry.success(request.runtimeChannel)
       self.recordLatency(
         request,
@@ -118,7 +135,12 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
 
   func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
     DispatchQueue.main.async {
-      guard let request = self.activeRequest else { return }
+      guard self.activeSystemUtterance === utterance,
+            let request = self.activeRequest,
+            self.systemTTSRequests.finish(request.utteranceId) != nil else {
+        return
+      }
+      self.activeSystemUtterance = nil
       self.completeActiveRequest(request, success: false, error: "Speech playback was cancelled", errorCode: "tts_cancelled")
     }
   }
@@ -154,6 +176,8 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
     onPlaybackStarted: @escaping (VoiceReplyPlaybackRequest) -> Void,
     onDone: @escaping (VoiceReplyPlaybackRequest, Bool, String?) -> Void
   ) {
+    activeSystemUtterance = nil
+    systemTTSRequests.clear()
     activeRequest = request
     self.onPlaybackStarted = onPlaybackStarted
     self.onDone = onDone
@@ -226,6 +250,8 @@ final class VoiceReplySpeechService: NSObject, ObservableObject, AVAudioPlayerDe
   ) {
     isSpeaking = false
     activeRequest = nil
+    activeSystemUtterance = nil
+    _ = systemTTSRequests.discard(request.utteranceId)
     edgeSynthesisTask = nil
     edgePlayer = nil
     if success {
