@@ -225,6 +225,14 @@ class VoiceInteractionCoordinator(
             ) to emptyList()
             else -> previous to emptyList()
         }
+        is VoiceInteractionEvent.AgentRunCreated -> when (previous.phase) {
+            VoiceInteractionPhase.STARTING_AGENT -> previous.copy(
+                phase = VoiceInteractionPhase.COMPLETED,
+                agentRunId = event.runId.takeIf(String::isNotBlank) ?: previous.agentRunId,
+                canInterrupt = false
+            ) to emptyList()
+            else -> previous to emptyList()
+        }
         is VoiceInteractionEvent.AgentAccepted -> when (previous.phase) {
             VoiceInteractionPhase.STARTING_AGENT,
             VoiceInteractionPhase.AGENT_RUNNING -> previous.copy(

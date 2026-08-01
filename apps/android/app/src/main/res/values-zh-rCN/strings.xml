@@ -891,6 +891,7 @@
     <string name="delivery_status_send_failed">发送失败</string>
     <string name="delivery_status_confirmed">已确认</string>
     <string name="delivery_status_notified">已通知</string>
+    <string name="agent_task_status_created">已在手机创建</string>
     <string name="agent_task_status_accepted">已接受</string>
     <string name="agent_task_status_queued">排队中</string>
     <string name="agent_task_status_starting">正在启动</string>
@@ -910,6 +911,8 @@
     <string name="agent_task_cancel_title">取消 Agent 任务</string>
     <string name="agent_task_cancel_subtitle">停止配对电脑上正在运行的任务</string>
     <string name="agent_task_details_title">Agent 任务</string>
+    <string name="voice_agent_run_accepted">%1$s 已接受任务</string>
+    <string name="voice_agent_run_approval_required">任务需要你的审批</string>
     <string name="delivery_trace_empty">暂无轨迹</string>
     <string name="delivery_trace_created">已创建</string>
     <string name="delivery_trace_persisted">已落库</string>

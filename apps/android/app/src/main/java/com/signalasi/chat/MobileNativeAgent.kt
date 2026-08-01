@@ -23,6 +23,10 @@ import android.provider.AlarmClock
 import android.provider.CalendarContract
 import android.provider.ContactsContract
 import android.util.Log
+import com.signalasi.chat.voice.VoiceFeatureFlags
+import com.signalasi.chat.voice.agent.VoiceAgentRunBridge
+import com.signalasi.chat.voice.agent.VoiceAgentRunRequest
+import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import kotlinx.coroutines.CancellationException
 import org.json.JSONArray
 import org.json.JSONObject
@@ -9559,6 +9563,32 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             conversationId = clientConversationId,
             turnId = clientTurnId
         )
+        val voiceAgentRun = if (
+            messageId > 0L && VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(context)
+        ) {
+            runCatching {
+                VoiceAgentRunBridge.get(context).createRun(
+                    VoiceAgentRunRequest(
+                        conversationId = clientConversationId,
+                        turnId = clientTurnId,
+                        taskId = remoteTaskId,
+                        sourceMessageId = messageId,
+                        contactId = contactId,
+                        agentId = action.parameters["connector_id"].orEmpty().ifBlank { contactId },
+                        agentName = action.target,
+                        deviceId = AppStore.desktopIdForContact(context, contactId),
+                        goal = historyPrompt,
+                        idempotencyKey = action.parameters["idempotency_key"].orEmpty()
+                            .ifBlank { "remote-agent:$remoteTaskId" },
+                        traceId = VoiceLatencyTraceContext.currentTraceId()
+                    )
+                )
+            }.onFailure { failure ->
+                Log.w("SignalASIAgent", "Could not create the foreground agent run", failure)
+            }.getOrNull()
+        } else {
+            null
+        }
         val published = SignalASIMqttClient.publishUserMessage(
             content = promptWithConversationContext(action, promptWithObservedContext(prompt, observed)),
             contactId = contactId,
@@ -9568,10 +9598,19 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
             conversationId = clientConversationId,
             turnId = clientTurnId,
             taskId = remoteTaskId,
+            runId = voiceAgentRun?.snapshot?.runId.orEmpty(),
             executionMode = AgentTaskExecutionMode.fromWireValue(
                 action.parameters[INTERNAL_TASK_EXECUTION_MODE]
             )
         )
+        if (!published) {
+            voiceAgentRun?.snapshot?.runId?.let { runId ->
+                VoiceAgentRunBridge.get(context).markDispatchFailed(
+                    runId,
+                    "The remote task could not be sent"
+                )
+            }
+        }
         if (published) observationContextStore.acknowledge(observed.mapTo(linkedSetOf()) { it.id })
         if (!managedTeamAction) {
             ChatHistoryStore.markOutgoingDelivery(
@@ -9595,6 +9634,7 @@ class AndroidAgentActionExecutor(private val context: Context) : AgentActionExec
                     "remote_task_id" to remoteTaskId,
                     "conversation_id" to clientConversationId,
                     "turn_id" to clientTurnId,
+                    "voice_agent_run_id" to voiceAgentRun?.snapshot?.runId.orEmpty(),
                     "contact_id" to contactId,
                     "target" to action.target,
                     "resource_id" to action.parameters["connector_id"].orEmpty().ifBlank { contactId },

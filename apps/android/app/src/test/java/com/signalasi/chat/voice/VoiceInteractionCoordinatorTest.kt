@@ -131,6 +131,31 @@ class VoiceInteractionCoordinatorTest {
     }
 
     @Test
+    fun remoteRunCreationReleasesVoiceSessionForTheNextCommand() {
+        val coordinator = coordinator()
+        val firstSession = begin(coordinator, "voice-1")
+        reachFinal(coordinator, firstSession)
+        coordinator.dispatch(
+            VoiceInteractionEvent.RouteSelected(
+                firstSession,
+                VoiceRouteDecision(VoiceRouteKind.REMOTE_AGENT, "codex")
+            )
+        )
+
+        val handedOff = coordinator.dispatch(
+            VoiceInteractionEvent.AgentRunCreated(firstSession, "run-1")
+        )
+        val second = coordinator.begin(
+            VoiceSessionConfig(requestedSessionId = "voice-2", source = "voice_page")
+        )
+
+        assertEquals(VoiceInteractionPhase.COMPLETED, handedOff.current.phase)
+        assertEquals("run-1", handedOff.current.agentRunId)
+        assertTrue(second.accepted)
+        assertEquals("voice-2", second.current.sessionId)
+    }
+
+    @Test
     fun remoteAgentCancellationUsesCancelledTerminalState() {
         val coordinator = coordinator()
         val sessionId = begin(coordinator)

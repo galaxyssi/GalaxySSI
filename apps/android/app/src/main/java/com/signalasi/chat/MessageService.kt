@@ -15,6 +15,8 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Base64
 import android.util.Log
+import com.signalasi.chat.voice.VoiceFeatureFlags
+import com.signalasi.chat.voice.agent.VoiceAgentRunBridge
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -133,12 +135,25 @@ class MessageService : Service(), SignalASIMqttClient.Listener {
         var handled = true
         try {
             val envelope = runCatching { JSONObject(payload) }.getOrNull()
+            if (
+                envelope?.optString("type") == "agent_task_event" &&
+                VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)
+            ) {
+                VoiceAgentRunBridge.get(this).consumeRemoteEnvelope(envelope)
+            }
             if (envelope != null && ChatHistoryStore.applyAgentTaskEvent(this, envelope)) return
             if (envelope?.optString("type").orEmpty().ifBlank { "text" } == "text") {
                 val sourceMessageId = envelope?.optString("source_message_id")?.toLongOrNull()
                     ?: envelope?.optLong("source_message_id", 0L)?.takeIf { it > 0L }
                 if (sourceMessageId != null) {
                     val preview = ChatHistoryStore.inspectIncoming(this, payload) ?: return
+                    if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)) {
+                        VoiceAgentRunBridge.get(this).consumeLegacyFinal(
+                            sourceMessageId = sourceMessageId,
+                            taskId = envelope?.optString("task_id").orEmpty(),
+                            content = preview.content
+                        )
+                    }
                     val response = AgentConnectorResponse(
                         sourceMessageId = sourceMessageId,
                         contactId = envelope?.optString("contact_id").orEmpty().ifBlank { preview.contactId },

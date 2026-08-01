@@ -36,6 +36,7 @@ SignalASI is a private superintelligence interface for trusted communication bet
 | Agent rich output | Agent results use a versioned structured block document with plain-text fallback and native rendering for prose, code, tables, images, video, audio, files, links, citations, task state, progress, metrics, tool activity, approvals, actions, and forms. Rich content is encrypted and persisted with its Conversation/Turn/Task identity. | `npm run check:android`, Desktop rich-output unit tests |
 | Remote Agent task status | Messages sent to Desktop Agents retain their task ID and show ordered, localized accepted, queued, running with elapsed time, completed, failed, timed-out, or cancelled state without adding control events to chat or system notifications. Active CLI tasks can be cancelled from message actions. | `npm run smoke:desktop:agent-lifecycle`, `npm run check:android` |
 | Voice reply preservation | Long Agent replies stay visible on the Voice page response panel and persist into Hermes chat history with delivery trace evidence. | `npm run smoke:android:voice-reply` |
+| Persistent voice Agent runs | A remote Agent task is created locally, accepted only by an explicit remote event, remains visible and cancellable across process recreation, and never blocks the next voice command. | `npm run smoke:android:voice-agent-run` |
 
 ## Desktop Requirements
 

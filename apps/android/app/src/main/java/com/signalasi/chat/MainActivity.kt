@@ -122,6 +122,12 @@ import com.signalasi.chat.voice.correction.VoiceSecondPassResult
 import com.signalasi.chat.voice.correction.VoiceSecondPassTriggerPolicy
 import com.signalasi.chat.voice.audio.VoiceAudioSession
 import com.signalasi.chat.voice.audio.VoiceAudioSessionConfig
+import com.signalasi.chat.voice.agent.VoiceAgentEvent
+import com.signalasi.chat.voice.agent.VoiceAgentRunBridge
+import com.signalasi.chat.voice.agent.VoiceAgentRunListener
+import com.signalasi.chat.voice.agent.VoiceAgentRunSnapshot
+import com.signalasi.chat.voice.agent.VoiceAgentRunState
+import com.signalasi.chat.voice.agent.VoiceAgentRunUpdate
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
@@ -264,6 +270,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         private const val MAX_CONNECTOR_PROGRESS_DETAIL_CHARACTERS = 240
         private const val AGENT_REGISTRY_SYNC_INTERVAL_MILLIS = 5_000L
         private const val AGENT_STARTUP_MAINTENANCE_DELAY_MILLIS = 350L
+        private const val VOICE_AGENT_RUN_CARD_COALESCE_MS = 200L
+        private const val MAX_RESTORED_VOICE_AGENT_RUNS = 64
+        private const val MAX_VOICE_AGENT_RUN_STEP_CHARACTERS = 240
         private const val CONTROL_CENTER_HOME_CACHE_MILLIS = 30_000L
         private const val UI_PREFS = "signalasi_ui_preferences"
         private const val DEBUG_AGENT_PREFS = "signalasi_debug_agent"
@@ -483,6 +492,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private lateinit var agentSkillMatcher: AgentSkillMatcher
     private lateinit var agentLearningEngine: AgentLearningEngine
     private lateinit var agentRunEventStore: AgentRunEventStore
+    private lateinit var voiceAgentRunBridge: VoiceAgentRunBridge
+    private val voiceAgentRunListener = VoiceAgentRunListener { update ->
+        handler.post {
+            if (!isFinishing && !isDestroyed) handleVoiceAgentRunUpdate(update)
+        }
+    }
+    private val pendingVoiceAgentRunCardUpdates = linkedMapOf<String, VoiceAgentRunSnapshot>()
+    private var voiceAgentRunCardRefreshScheduled = false
+    private val voiceAgentRunCardRefresh = Runnable {
+        voiceAgentRunCardRefreshScheduled = false
+        val snapshots = pendingVoiceAgentRunCardUpdates.values.toList()
+        pendingVoiceAgentRunCardUpdates.clear()
+        snapshots.forEach(::syncVoiceAgentRunCard)
+    }
     private lateinit var agentHandoffStore: EncryptedAgentHandoffStore
     private lateinit var encryptedAgentRegistry: EncryptedAgentRegistry
     @Volatile private var lastAgentRegistrySyncAtMillis = 0L
@@ -752,6 +775,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         requestedGlobalInsightConversationId.takeIf(String::isNotBlank)?.let(agentTranscriptStore::switchConversation)
         agentRunRecorder = AgentRunRecorder(this)
         agentRunEventStore = AgentRunEventStore(this)
+        voiceAgentRunBridge = VoiceAgentRunBridge.get(this).also {
+            it.addListener(voiceAgentRunListener)
+        }
         agentHandoffStore = EncryptedAgentHandoffStore(this)
         encryptedAgentRegistry = EncryptedAgentRegistry(this)
         traceStartup("agent_registry")
@@ -1247,6 +1273,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         handler.removeCallbacks(asrModelDownloadPoll)
         handler.removeCallbacks(voiceHealthRefresh)
         handler.removeCallbacks(agentStartupMaintenanceRunnable)
+        handler.removeCallbacks(voiceAgentRunCardRefresh)
+        pendingVoiceAgentRunCardUpdates.clear()
+        if (::voiceAgentRunBridge.isInitialized) {
+            voiceAgentRunBridge.removeListener(voiceAgentRunListener)
+        }
         agentConnectorTimeoutCallbacks.values.forEach(handler::removeCallbacks)
         agentConnectorTimeoutCallbacks.clear()
         stopVoiceAssistant()
@@ -1398,6 +1429,13 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val sourceMessageId = payload.optString("source_message_id").toLongOrNull()
             ?: payload.optLong("source_message_id", 0L).takeIf { it > 0L }
             ?: return false
+        if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) && ::voiceAgentRunBridge.isInitialized) {
+            voiceAgentRunBridge.consumeLegacyFinal(
+                sourceMessageId = sourceMessageId,
+                taskId = payload.optString("task_id"),
+                content = message.content
+            )
+        }
         val voiceTraceId = payload.optString("trace_id")
         val coordinatorSessionId = voiceCoordinatorSession(voiceTraceId).ifBlank {
             voiceCoordinatorIdsBySourceMessage[sourceMessageId].orEmpty()
@@ -2094,8 +2132,208 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
+    private fun handleVoiceAgentRunUpdate(update: VoiceAgentRunUpdate) {
+        if (!VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)) return
+        val snapshot = update.snapshot
+        val coordinatorSessionId = voiceCoordinatorSession(snapshot.traceId).ifBlank {
+            voiceCoordinatorIdsByTurn[snapshot.turnId].orEmpty()
+        }.ifBlank {
+            voiceCoordinatorIdsBySourceMessage[snapshot.sourceMessageId].orEmpty()
+        }
+        if (update.event is VoiceAgentEvent.RunCreated && coordinatorSessionId.isNotBlank()) {
+            dispatchVoiceCoordinator(
+                VoiceInteractionEvent.AgentRunCreated(coordinatorSessionId, snapshot.runId)
+            )
+        }
+        if (update.firstAcceptance && snapshot.traceId.isNotBlank()) {
+            VoiceLatencyTelemetry.record(
+                this,
+                snapshot.traceId,
+                VoiceTraceEvents.AGENT_RUN_ACCEPTED,
+                mapOf("agent_provider" to snapshot.agentId.ifBlank { "remote_agent" }),
+                once = true
+            )
+        }
+        val immediate = update.event is VoiceAgentEvent.RunCreated ||
+            update.event is VoiceAgentEvent.Accepted ||
+            update.event is VoiceAgentEvent.ApprovalRequired ||
+            snapshot.state.isTerminal
+        queueVoiceAgentRunCard(snapshot, immediate)
+        announceVoiceAgentRunUpdate(update)
+    }
+
+    private fun queueVoiceAgentRunCard(snapshot: VoiceAgentRunSnapshot, immediate: Boolean) {
+        if (immediate) {
+            pendingVoiceAgentRunCardUpdates.remove(snapshot.runId)
+            syncVoiceAgentRunCard(snapshot)
+            return
+        }
+        pendingVoiceAgentRunCardUpdates[snapshot.runId] = snapshot
+        if (voiceAgentRunCardRefreshScheduled) return
+        voiceAgentRunCardRefreshScheduled = true
+        handler.postDelayed(voiceAgentRunCardRefresh, VOICE_AGENT_RUN_CARD_COALESCE_MS)
+    }
+
+    private fun restoreVoiceAgentRunCards() {
+        thread(name = "signalasi-voice-agent-run-restore") {
+            val snapshots = runCatching {
+                voiceAgentRunBridge.snapshots().takeLast(MAX_RESTORED_VOICE_AGENT_RUNS)
+            }.getOrDefault(emptyList())
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                snapshots.forEach(::syncVoiceAgentRunCard)
+            }
+        }
+    }
+
+    private fun syncVoiceAgentRunCard(snapshot: VoiceAgentRunSnapshot) {
+        val conversationId = agentTranscriptStore.resolveMergedConversationId(snapshot.conversationId)
+            ?: snapshot.conversationId
+        if (conversationId.isBlank() || snapshot.taskId.isBlank()) return
+        val statusLabel = voiceAgentRunStatusLabel(snapshot)
+        val agentLabel = snapshot.agentName.ifBlank {
+            contactById(snapshot.contactId).name
+        }.ifBlank { getString(R.string.agent_task_details_title) }
+        val currentStep = snapshot.progressMessage
+            .ifBlank { statusLabel }
+            .take(MAX_VOICE_AGENT_RUN_STEP_CHARACTERS)
+        rememberAgentExecutionPresentation(
+            snapshot.taskId,
+            AgentExecutionPresentationPolicy.remote(
+                executorId = snapshot.agentId.ifBlank { snapshot.contactId },
+                executorLabel = agentLabel,
+                locationKind = "desktop",
+                locationId = snapshot.deviceId,
+                locationName = snapshot.deviceId,
+                runtimeKind = "desktop_agent",
+                status = snapshot.state.name.lowercase(Locale.ROOT),
+                currentStep = currentStep,
+                startedAtMillis = snapshot.acceptedAtMillis.takeIf { it > 0L }
+                    ?: snapshot.createdAtMillis,
+                completedAtMillis = snapshot.completedAtMillis,
+                advertisedCancellable = snapshot.cancellable
+            )
+        )
+        agentTranscriptStore.upsert(
+            role = AgentTranscriptRole.PROCESS,
+            text = "$agentLabel \u00b7 $statusLabel",
+            dedupeKey = "connector-task:${snapshot.taskId}",
+            timestampMillis = snapshot.updatedAtMillis,
+            conversationId = conversationId,
+            turnId = snapshot.turnId,
+            taskId = snapshot.taskId
+        )
+        snapshot.firstDiscovery.takeIf(String::isNotBlank)?.let { discovery ->
+            agentTranscriptStore.upsert(
+                role = AgentTranscriptRole.PROCESS,
+                text = discovery,
+                dedupeKey = "voice-agent-first-discovery:${snapshot.runId}",
+                timestampMillis = snapshot.updatedAtMillis,
+                conversationId = conversationId,
+                turnId = snapshot.turnId,
+                taskId = snapshot.taskId
+            )
+        }
+        if (conversationId == agentTranscriptStore.activeConversation().id &&
+            ::agentTranscriptAdapter.isInitialized
+        ) {
+            refreshAgentTranscriptWindow(conversationId)
+        }
+    }
+
+    private fun voiceAgentRunStatusLabel(snapshot: VoiceAgentRunSnapshot): String = getString(
+        when (snapshot.state) {
+            VoiceAgentRunState.CREATED -> R.string.agent_task_status_created
+            VoiceAgentRunState.ACCEPTED -> R.string.agent_task_status_accepted
+            VoiceAgentRunState.QUEUED -> R.string.agent_task_status_queued
+            VoiceAgentRunState.STARTING -> if (snapshot.stage == "recovering") {
+                R.string.agent_task_status_recovering
+            } else {
+                R.string.agent_task_status_starting
+            }
+            VoiceAgentRunState.RUNNING -> R.string.agent_task_status_running
+            VoiceAgentRunState.WAITING_INPUT -> R.string.agent_task_status_waiting_input
+            VoiceAgentRunState.WAITING_APPROVAL -> R.string.agent_task_status_waiting_approval
+            VoiceAgentRunState.CANCELLING -> R.string.agent_task_status_cancelling
+            VoiceAgentRunState.COMPLETED -> R.string.agent_task_status_completed
+            VoiceAgentRunState.FAILED -> R.string.agent_task_status_failed
+            VoiceAgentRunState.CANCELLED -> R.string.agent_task_status_cancelled
+            VoiceAgentRunState.TIMED_OUT -> R.string.agent_task_status_timed_out
+        }
+    )
+
+    private fun announceVoiceAgentRunUpdate(update: VoiceAgentRunUpdate) {
+        val snapshot = update.snapshot
+        if (snapshot.traceId.isBlank() || !voiceAssistantAwake ||
+            activeMainTab != PAGE_VOICE || wakePage.visibility != View.VISIBLE
+        ) return
+        val spoken = when {
+            update.firstAcceptance -> getString(
+                R.string.voice_agent_run_accepted,
+                snapshot.agentName.ifBlank { getString(R.string.agent_task_details_title) }
+            )
+            update.event is VoiceAgentEvent.ApprovalRequired ->
+                getString(R.string.voice_agent_run_approval_required)
+            else -> ""
+        }
+        if (spoken.isBlank()) return
+        updateWakeVoiceUi(voiceAgentRunStatusLabel(snapshot), spoken)
+        if (!VoiceAssistantSettings.get(this).speakReplies || voiceAssistantListening ||
+            voiceAssistantRecordingCommand || agentVoiceListening
+        ) return
+        speakWithConfiguredTts(spoken, traceId = snapshot.traceId) {
+            scheduleVoiceRestart(350L)
+        }
+    }
+
+    private fun cancelVoiceAgentRun(snapshot: VoiceAgentRunSnapshot) {
+        if (!snapshot.cancellable) return
+        val sent = SignalASIMqttClient.publishAgentTaskCancel(
+            taskId = snapshot.taskId,
+            contactId = snapshot.contactId,
+            sourceMessageId = snapshot.sourceMessageId,
+            conversationId = snapshot.conversationId,
+            turnId = snapshot.turnId,
+            topicOverride = AppStore.outgoingTopicForContact(this, snapshot.contactId)
+        )
+        if (sent) {
+            voiceAgentRunBridge.markCancellationRequested(snapshot.runId)
+            Toast.makeText(this, R.string.agent_task_status_cancelling, Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, R.string.agent_loop_timeline_remote_cancel_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showVoiceAgentRunDetails(snapshot: VoiceAgentRunSnapshot) {
+        val task = agentTaskCenter.find(snapshot.taskId)
+        if (task != null) {
+            showAgentTaskDetails(task)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.agent_task_detail_title)
+            .setMessage(buildString {
+                appendLine(snapshot.goal.ifBlank { snapshot.taskId })
+                appendLine()
+                appendLine("${getString(R.string.agent_task_detail_status)}: ${voiceAgentRunStatusLabel(snapshot)}")
+                appendLine("${getString(R.string.agent_task_detail_target)}: ${snapshot.agentName.ifBlank { snapshot.agentId }}")
+                if (snapshot.deviceId.isNotBlank()) {
+                    appendLine("${getString(R.string.agent_task_detail_execution)}: ${snapshot.deviceId}")
+                }
+                if (snapshot.progressMessage.isNotBlank()) {
+                    appendLine()
+                    append(snapshot.progressMessage)
+                }
+            }.trim())
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
     private fun handleAgentTaskEvent(envelope: JSONObject?): Boolean {
         if (envelope?.optString("type") != "agent_task_event") return false
+        if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this) && ::voiceAgentRunBridge.isInitialized) {
+            voiceAgentRunBridge.consumeRemoteEnvelope(envelope)
+        }
         val perfStartedAt = SystemClock.elapsedRealtime()
         var perfCheckpointAt = perfStartedAt
         fun traceTaskEvent(stage: String) {
@@ -4013,6 +4251,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             finishRecording = { send -> stopAgentInputRecording(send) }
         )
         agentVoiceButton.setOnTouchListener(agentHoldToTalkController)
+        if (VoiceFeatureFlags.isAgentVoiceRunBridgeEnabled(this)) {
+            restoreVoiceAgentRunCards()
+        }
     }
 
     private fun loadOlderAgentTranscriptEntries() {
@@ -7692,6 +7933,19 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 val coordinatorSessionId = voiceCoordinatorSession(traceId)
                 if (coordinatorSessionId.isNotBlank()) {
                     when (state.phase) {
+                        AgentPhase.WAITING_RESPONSE -> state.lastActionResult
+                            ?.metadata
+                            ?.get("voice_agent_run_id")
+                            .orEmpty()
+                            .takeIf(String::isNotBlank)
+                            ?.let { runId ->
+                                dispatchVoiceCoordinator(
+                                    VoiceInteractionEvent.AgentRunCreated(
+                                        coordinatorSessionId,
+                                        runId
+                                    )
+                                )
+                            }
                         AgentPhase.COMPLETED -> dispatchVoiceCoordinator(
                             VoiceInteractionEvent.LocalActionCompleted(coordinatorSessionId)
                         )
@@ -7754,16 +8008,20 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         updateWakeVoiceUi(status, detail)
         val config = VoiceAssistantSettings.get(this)
         val waitingForRemoteAgent = state.phase == AgentPhase.WAITING_RESPONSE
+        if (waitingForRemoteAgent) {
+            scheduleVoiceRestart(350L)
+            return
+        }
         if (config.speakReplies && detail.isNotBlank()) {
             speakWithConfiguredTts(detail.take(1_200), traceId = traceId) {
                 if (state.phase in setOf(AgentPhase.COMPLETED, AgentPhase.BLOCKED, AgentPhase.FAILED)) {
                     completeVoiceTrace(traceId, state.phase)
                 }
-                if (!waitingForRemoteAgent && voiceAssistantAwake && activeMainTab == PAGE_VOICE) {
+                if (voiceAssistantAwake && activeMainTab == PAGE_VOICE) {
                     startCommandListening()
                 }
             }
-        } else if (!waitingForRemoteAgent) {
+        } else {
             if (state.phase in setOf(AgentPhase.COMPLETED, AgentPhase.BLOCKED, AgentPhase.FAILED)) {
                 completeVoiceTrace(traceId, state.phase)
             }
@@ -16316,14 +16574,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ?.let(AgentExecutionLoopTimelinePolicy::actionsForPhase)
                 .orEmpty()
         }
+        val voiceAgentRun = if (::voiceAgentRunBridge.isInitialized && entry.taskId.isNotBlank()) {
+            voiceAgentRunBridge.findByTaskId(entry.taskId)
+        } else {
+            null
+        }
         val execution = agentExecutionPresentation(
             entry = entry,
             processEntries = processEntries,
             startedAtMillis = startedAt,
             completedAtMillis = completedAt
         )
-        val canCancel = execution.cancellable &&
-            AgentExecutionLoopTimelineAction.CANCEL in timelineActions
+        val canCancel = execution.cancellable && (
+            AgentExecutionLoopTimelineAction.CANCEL in timelineActions ||
+                voiceAgentRun?.cancellable == true
+            )
         val secondaryTimelineActions = timelineActions.filterNot {
             it == AgentExecutionLoopTimelineAction.CANCEL
         }
@@ -16458,7 +16723,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         contentDescription =
                             getString(R.string.agent_execution_cancel_description)
                         setOnClickListener {
-                            agentTimelineRuntime(entry)?.let { runtime ->
+                            if (voiceAgentRun?.cancellable == true) {
+                                cancelVoiceAgentRun(voiceAgentRun)
+                            } else agentTimelineRuntime(entry)?.let { runtime ->
                                 runAgentTimelineAction(
                                     entry,
                                     runtime,
@@ -16516,8 +16783,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         refreshAgentTranscriptWindow(entry.conversationId)
                     }
                 } else {
-                    isClickable = false
-                    isFocusable = false
+                    if (voiceAgentRun != null) {
+                        setOnClickListener { showVoiceAgentRunDetails(voiceAgentRun) }
+                    } else {
+                        isClickable = false
+                        isFocusable = false
+                    }
                 }
             })
             if (expanded) {
