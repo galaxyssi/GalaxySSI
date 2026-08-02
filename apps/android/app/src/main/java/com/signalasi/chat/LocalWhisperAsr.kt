@@ -19,6 +19,7 @@ import com.signalasi.chat.voice.asr.local.WhisperLoadOptions
 import com.signalasi.chat.voice.asr.local.WhisperRuntimeState
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
 import com.signalasi.chat.voice.benchmark.WhisperProviderChoice
+import com.signalasi.chat.voice.benchmark.WhisperUserVoiceMode
 import com.signalasi.chat.voice.metrics.VoiceLatencyTelemetry
 import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
@@ -104,20 +105,24 @@ object LocalWhisperAsr {
         sampleRateHz: Int = TARGET_SAMPLE_RATE,
         language: String = "auto",
         traceId: String = VoiceLatencyTraceContext.currentTraceId(),
-        source: String = "audio_record_pcm16"
+        source: String = "audio_record_pcm16",
+        requestedProfileIdOverride: String? = null
     ): LocalWhisperTranscriptionOutcome {
-        LocalModelInferenceRuntime.releaseForAsr()
         return mutex.withLock {
         require(sampleRateHz == TARGET_SAMPLE_RATE) { "Local Whisper requires 16 kHz PCM16" }
         require(pcm16.isNotEmpty()) { "PCM16 audio is empty" }
         val startedAtNs = SystemClock.elapsedRealtimeNanos()
         val config = VoiceAssistantSettings.get(context)
-        val requested = WhisperModelManager.model(config.asrModel)
+        val requested = WhisperModelManager.model(requestedProfileIdOverride ?: config.asrModel)
         val audioDurationMs = durationMs(pcm16)
         val policyDecision = if (VoiceFeatureFlags.isWhisperPolicyEngineEnabled(context)) {
             WhisperBenchmarkManager.decide(
                 context = context,
-                userMode = config.asrRuntimeMode,
+                userMode = if (requestedProfileIdOverride != null) {
+                    WhisperUserVoiceMode.MANUAL
+                } else {
+                    config.asrRuntimeMode
+                },
                 selectedProfileId = requested.id,
                 foreground = true,
                 utteranceDurationMs = audioDurationMs
@@ -263,7 +268,6 @@ object LocalWhisperAsr {
         source: String,
         modelProfileId: String
     ): LocalWhisperDecodeOutcome {
-        LocalModelInferenceRuntime.releaseForAsr()
         return mutex.withLock {
         require(VoiceFeatureFlags.isLocalWhisperRuntimeV2Enabled(context)) {
             "Local Whisper Runtime v2 is disabled"

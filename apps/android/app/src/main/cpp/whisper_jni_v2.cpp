@@ -222,6 +222,11 @@ jobject error_result(JNIEnv *env, int code, const char *message, bool aborted = 
     return new_result(env, code, {}, "", {}, aborted, message == nullptr ? "" : message);
 }
 
+void throw_out_of_memory(JNIEnv *env, const char *message) {
+    jclass exception_class = env->FindClass("java/lang/OutOfMemoryError");
+    if (exception_class != nullptr) env->ThrowNew(exception_class, message);
+}
+
 std::string get_string(JNIEnv *env, jstring value, size_t max_length) {
     if (value == nullptr) return {};
     const char *characters = env->GetStringUTFChars(value, nullptr);
@@ -260,6 +265,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateRuntime(
         }
         return runtime->handle;
     } catch (const std::bad_alloc &) {
+        throw_out_of_memory(env, "Whisper model requires more available memory");
         return 0;
     } catch (...) {
         return 0;
@@ -306,6 +312,9 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateSession(
             sessions.emplace(session->handle, session);
         }
         return session->handle;
+    } catch (const std::bad_alloc &) {
+        throw_out_of_memory(env, "Whisper session requires more available memory");
+        return 0;
     } catch (...) {
         return 0;
     }

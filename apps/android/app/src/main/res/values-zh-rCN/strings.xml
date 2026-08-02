@@ -1247,6 +1247,8 @@
     <string name="voice_status_waiting_transcript">等待 %1$s 返回加密转写文本</string>
     <string name="voice_status_transcribed">语音目标已转写</string>
     <string name="voice_status_transcription_failed">语音转写失败</string>
+    <string name="voice_asr_model_memory_fallback">运行 Whisper %1$s 内存不足，已切换至 %2$s</string>
+    <string name="voice_asr_model_memory_insufficient">运行 Whisper %1$s 内存不足，请关闭占用内存较多的应用或选择较小模型</string>
     <string name="voice_agent_planning">本体 Agent 正在规划</string>
     <string name="voice_agent_busy">本体 Agent 正忙</string>
     <string name="voice_agent_needs_confirmation">需要确认</string>

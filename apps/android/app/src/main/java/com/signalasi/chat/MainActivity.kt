@@ -114,6 +114,7 @@ import com.signalasi.chat.voice.asr.local.AbortReason
 import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptUpdate
+import com.signalasi.chat.voice.asr.local.NativeWhisperCode
 import com.signalasi.chat.voice.asr.local.WhisperDecodeScheduler
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkDeferredException
@@ -148,7 +149,9 @@ import com.signalasi.chat.voice.metrics.VoiceLatencyTraceContext
 import com.signalasi.chat.voice.metrics.VoiceTraceEvents
 import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperCertificationLevel
+import com.signalasi.chat.voice.model.WhisperMemoryAdmissionPolicy
 import com.signalasi.chat.voice.model.WhisperModelFamily
+import com.signalasi.chat.voice.model.WhisperModelFallbackPolicy
 import com.signalasi.chat.voice.reliability.AndroidVoiceReliabilityController
 import com.signalasi.chat.voice.reliability.VoicePipelineFeature
 import com.signalasi.chat.voice.reliability.VoicePerformanceHealth
@@ -656,7 +659,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val text: String,
         val pcm16: ShortArray,
         val modelProfileId: String,
-        val confidence: Float?
+        val confidence: Float?,
+        val fallbackFromProfileId: String? = null
     )
     private val voiceTurnContextsByTraceId = ConcurrentHashMap<String, VoiceTurnContext>()
     private lateinit var voiceInteractionCoordinator: VoiceInteractionCoordinator
@@ -22526,7 +22530,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 workload = VoiceWorkloadProfile(
                     feature = VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
                     profileId = profile.id,
-                    estimatedPeakPssBytes = profile.minAvailableRamBytes,
+                    estimatedIncrementalMemoryBytes = WhisperMemoryAdmissionPolicy.estimatedIncrementalBytes(
+                        profile = profile,
+                        certifiedPeakPssBytes = certification?.peakPssBytes ?: 0L,
+                        alreadyLoaded = WhisperModelManager.isLoaded(profile)
+                    ),
                     certifiedPeakPssBytes = certification?.peakPssBytes ?: 0L,
                     localInference = true,
                     highMemoryLocalModel = profile.family in setOf(
@@ -24120,6 +24128,53 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (purpose == "voice_agent" && voiceAssistantAwake) scheduleVoiceRestart(500L)
     }
 
+    private fun localWhisperAdmission(profile: WhisperModel) = voiceReliabilityController.admit(
+        workload = VoiceWorkloadProfile(
+            feature = VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
+            profileId = profile.id,
+            estimatedIncrementalMemoryBytes = WhisperMemoryAdmissionPolicy.estimatedIncrementalBytes(
+                profile = profile,
+                alreadyLoaded = WhisperModelManager.isLoaded(profile)
+            ),
+            certifiedPeakPssBytes = WhisperBenchmarkManager.current(this, profile)?.certification?.peakPssBytes ?: 0L,
+            localInference = true,
+            highMemoryLocalModel = profile.family in setOf(
+                WhisperModelFamily.MEDIUM,
+                WhisperModelFamily.LARGE_V3,
+                WhisperModelFamily.LARGE_V3_TURBO
+            )
+        ),
+        requestedEnabled = true,
+        deviceCertified = true,
+        foreground = true
+    )
+
+    private fun selectWhisperMemoryFallback(
+        failedProfile: WhisperModel,
+        excludedProfileIds: Set<String> = emptySet()
+    ): WhisperModel? = WhisperModelFallbackPolicy.select(
+        requested = failedProfile,
+        installedProfiles = WhisperModelManager.models.filter { candidate ->
+            candidate.id !in excludedProfileIds && WhisperModelManager.isAvailable(this, candidate)
+        },
+        canRun = { candidate ->
+            !VoiceFeatureFlags.isReliabilityGovernorEnabled(this) || localWhisperAdmission(candidate).allowed
+        }
+    )
+
+    private fun isWhisperMemoryAdmissionFailure(reasonCode: String): Boolean =
+        reasonCode in setOf("low_memory_signal", "insufficient_memory_headroom")
+
+    private fun isWhisperMemoryFailure(error: Throwable?): Boolean = generateSequence(error) { it.cause }
+        .any { cause ->
+            cause is OutOfMemoryError ||
+                (cause as? LocalWhisperException)?.code == NativeWhisperCode.OUT_OF_MEMORY ||
+                cause.message.orEmpty().lowercase().let { message ->
+                    "out of memory" in message || "not enough memory" in message ||
+                        "more available memory" in message || "memory headroom" in message
+                }
+        }
+
     private fun transcribeLocally(
         sourceFile: File,
         traceId: String = "",
@@ -24151,47 +24206,51 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             return
         }
-        val selectedLocalProfile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
+        val requestedLocalProfile = WhisperModelManager.model(VoiceAssistantSettings.get(this).asrModel)
+        var selectedLocalProfile = requestedLocalProfile
+        var fallbackFromProfileId: String? = null
         if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this)) {
-            val certification = WhisperBenchmarkManager.current(this, selectedLocalProfile)?.certification
-            val admission = voiceReliabilityController.admit(
-                workload = VoiceWorkloadProfile(
-                    feature = VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
-                    profileId = selectedLocalProfile.id,
-                    estimatedPeakPssBytes = selectedLocalProfile.minAvailableRamBytes,
-                    certifiedPeakPssBytes = certification?.peakPssBytes ?: 0L,
-                    localInference = true,
-                    highMemoryLocalModel = selectedLocalProfile.family in setOf(
-                        WhisperModelFamily.MEDIUM,
-                        WhisperModelFamily.LARGE_V3,
-                        WhisperModelFamily.LARGE_V3_TURBO
-                    )
-                ),
-                requestedEnabled = true,
-                deviceCertified = true,
-                foreground = true
-            )
+            val admission = localWhisperAdmission(selectedLocalProfile)
             if (!admission.allowed) {
-                sourceFile.delete()
-                Log.w(
-                    "SignalASILocalASR",
-                    "Local transcription gated reason=${admission.fallbackReasonCode} profile=${selectedLocalProfile.id}"
-                )
-                failVoiceCoordinator(traceId, admission.fallbackReasonCode.ifBlank { "local_asr_gated" })
-                VoiceLatencyTelemetry.record(
-                    this,
-                    traceId,
-                    VoiceTraceEvents.ASR_FINAL_FAILED,
-                    mapOf(
-                        "asr_provider" to "whisper.cpp",
-                        "model_profile_id" to selectedLocalProfile.id,
-                        "error_code" to admission.fallbackReasonCode.ifBlank { "local_asr_gated" },
-                        "fallback" to "true"
-                    ),
-                    once = true
-                )
-                onFailure()
-                return
+                val fallback = if (isWhisperMemoryAdmissionFailure(admission.fallbackReasonCode)) {
+                    selectWhisperMemoryFallback(selectedLocalProfile)
+                } else null
+                if (fallback != null) {
+                    fallbackFromProfileId = selectedLocalProfile.id
+                    selectedLocalProfile = fallback
+                    Log.w(
+                        "SignalASILocalASR",
+                        "Local transcription memory fallback from=${requestedLocalProfile.id} to=${fallback.id}"
+                    )
+                } else {
+                    sourceFile.delete()
+                    Log.w(
+                        "SignalASILocalASR",
+                        "Local transcription gated reason=${admission.fallbackReasonCode} profile=${selectedLocalProfile.id}"
+                    )
+                    failVoiceCoordinator(traceId, admission.fallbackReasonCode.ifBlank { "local_asr_gated" })
+                    VoiceLatencyTelemetry.record(
+                        this,
+                        traceId,
+                        VoiceTraceEvents.ASR_FINAL_FAILED,
+                        mapOf(
+                            "asr_provider" to "whisper.cpp",
+                            "model_profile_id" to selectedLocalProfile.id,
+                            "error_code" to admission.fallbackReasonCode.ifBlank { "local_asr_gated" },
+                            "fallback" to "false"
+                        ),
+                        once = true
+                    )
+                    if (isWhisperMemoryAdmissionFailure(admission.fallbackReasonCode)) {
+                        Toast.makeText(
+                            this,
+                            getString(R.string.voice_asr_model_memory_insufficient, selectedLocalProfile.displayName),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    onFailure()
+                    return
+                }
             }
         }
         VoiceRuntimeHealthRegistry.begin(
@@ -24224,7 +24283,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     }
                 }
                 preparedPcm = finalPcm
-                val liveSession = liveWhisperSessions[traceId]
+                var activeProfile = selectedLocalProfile
+                var memoryFallbackFromProfileId = fallbackFromProfileId
+                val attemptedProfiles = linkedSetOf<String>()
+                val liveSession = liveWhisperSessions[traceId]?.takeIf { session ->
+                    memoryFallbackFromProfileId == null && session.modelProfileId == activeProfile.id
+                }
                 val decoded = if (liveSession != null) {
                     VoiceLatencyTelemetry.record(
                         this@MainActivity,
@@ -24265,21 +24329,51 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         whisperConfidence(native.segments.map { it.averageLogProb })
                     )
                 } else {
-                    val outcome = LocalWhisperAsr.transcribePcmOutcome(
-                        this@MainActivity,
-                        finalPcm,
-                        sampleRateHz,
-                        language,
-                        traceId,
-                        source = if (pcmSamples != null) "audio_record_pcm16" else "compatibility_file"
-                    )
-                    Triple(outcome.text, outcome.profileId, outcome.confidence)
+                    var outcome: LocalWhisperTranscriptionOutcome? = null
+                    while (outcome == null) {
+                        attemptedProfiles += activeProfile.id
+                        try {
+                            outcome = LocalWhisperAsr.transcribePcmOutcome(
+                                this@MainActivity,
+                                finalPcm,
+                                sampleRateHz,
+                                language,
+                                traceId,
+                                source = if (pcmSamples != null) "audio_record_pcm16" else "compatibility_file",
+                                requestedProfileIdOverride = activeProfile.id
+                            )
+                        } catch (error: Throwable) {
+                            if (!isWhisperMemoryFailure(error)) throw error
+                            if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this@MainActivity)) {
+                                voiceReliabilityController.reportFailure(
+                                    VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
+                                    activeProfile.id,
+                                    error,
+                                    "out_of_memory"
+                                )
+                            }
+                            val fallback = selectWhisperMemoryFallback(activeProfile, attemptedProfiles)
+                                ?: throw error
+                            if (memoryFallbackFromProfileId == null) {
+                                memoryFallbackFromProfileId = activeProfile.id
+                            }
+                            Log.w(
+                                "SignalASILocalASR",
+                                "Whisper memory fallback from=${activeProfile.id} to=${fallback.id}",
+                                error
+                            )
+                            activeProfile = fallback
+                        }
+                    }
+                    val completed = requireNotNull(outcome)
+                    Triple(completed.text, completed.profileId, completed.confidence)
                 }
                 VoiceFastDecodeResult(
                     text = decoded.first,
                     pcm16 = finalPcm,
                     modelProfileId = decoded.second,
-                    confidence = decoded.third
+                    confidence = decoded.third,
+                    fallbackFromProfileId = memoryFallbackFromProfileId
                 )
             }
             closeLiveWhisperSession(traceId)
@@ -24288,58 +24382,80 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 val decoded = result.getOrNull()
                 val transcript = decoded?.text.orEmpty().trim()
                 if (transcript.isNotBlank()) {
+                    val completed = requireNotNull(decoded)
                     VoiceRuntimeHealthRegistry.success(
                         VoiceRuntimeChannel.LOCAL_WHISPER_ASR
                     )
                     if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this@MainActivity)) {
                         voiceReliabilityController.reportSuccess(
                             VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
-                            requireNotNull(decoded).modelProfileId
+                            completed.modelProfileId
                         )
+                    }
+                    completed.fallbackFromProfileId?.let { fallbackFromId ->
+                        val fallbackFrom = WhisperModelManager.model(fallbackFromId)
+                        val fallbackTo = WhisperModelManager.model(completed.modelProfileId)
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(
+                                R.string.voice_asr_model_memory_fallback,
+                                fallbackFrom.displayName,
+                                fallbackTo.displayName
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                     handleVoiceFastTranscript(
                         purpose = purpose,
                         traceId = traceId,
                         transcript = transcript,
-                        pcmSnapshot = requireNotNull(decoded).pcm16,
+                        pcmSnapshot = completed.pcm16,
                         sampleRateHz = sampleRateHz,
                         language = language,
-                        decodedModelProfileId = decoded.modelProfileId,
-                        confidence = decoded.confidence,
+                        decodedModelProfileId = completed.modelProfileId,
+                        confidence = completed.confidence,
                         onSuccess = onSuccess,
                         onFailure = onFailure
                     )
                 } else {
                     preparedPcm?.fill(0)
+                    val transcriptionError = result.exceptionOrNull()
                     VoiceRuntimeHealthRegistry.failure(
                         VoiceRuntimeChannel.LOCAL_WHISPER_ASR,
-                        result.exceptionOrNull()?.message
+                        transcriptionError?.message
                             ?: getString(R.string.voice_status_transcription_failed)
                     )
                     if (VoiceFeatureFlags.isReliabilityGovernorEnabled(this@MainActivity)) {
                         voiceReliabilityController.reportFailure(
                             VoicePipelineFeature.LOCAL_WHISPER_REALTIME,
                             WhisperModelManager.model(VoiceAssistantSettings.get(this@MainActivity).asrModel).id,
-                            result.exceptionOrNull(),
-                            result.exceptionOrNull()?.javaClass?.simpleName ?: "empty_transcript"
+                            transcriptionError,
+                            transcriptionError?.javaClass?.simpleName ?: "empty_transcript"
                         )
                     }
-                    Log.e("SignalASILocalASR", "Local transcription failed", result.exceptionOrNull())
+                    Log.e("SignalASILocalASR", "Local transcription failed", transcriptionError)
                     Toast.makeText(
                         this@MainActivity,
-                        result.exceptionOrNull()?.message ?: getString(R.string.voice_status_transcription_failed),
+                        if (isWhisperMemoryFailure(transcriptionError)) {
+                            getString(
+                                R.string.voice_asr_model_memory_insufficient,
+                                requestedLocalProfile.displayName
+                            )
+                        } else {
+                            transcriptionError?.message ?: getString(R.string.voice_status_transcription_failed)
+                        },
                         Toast.LENGTH_LONG
                     ).show()
                     onFailure()
                     failVoiceCoordinator(
                         traceId,
-                        result.exceptionOrNull()?.javaClass?.simpleName ?: "empty_transcript"
+                        transcriptionError?.javaClass?.simpleName ?: "empty_transcript"
                     )
                     VoiceLatencyTelemetry.record(
                         this@MainActivity,
                         traceId,
                         VoiceTraceEvents.SESSION_FAILED,
-                        mapOf("error_code" to result.exceptionOrNull()?.javaClass?.simpleName.orEmpty()),
+                        mapOf("error_code" to transcriptionError?.javaClass?.simpleName.orEmpty()),
                         once = true
                     )
                 }

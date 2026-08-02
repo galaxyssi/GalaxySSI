@@ -2,6 +2,7 @@ package com.signalasi.chat.voice.benchmark
 
 import com.signalasi.chat.voice.model.WhisperCertificationLevel
 import com.signalasi.chat.voice.model.WhisperExecutionMode
+import com.signalasi.chat.voice.model.WhisperMemoryAdmissionPolicy
 import com.signalasi.chat.voice.model.WhisperModelFamily
 import com.signalasi.chat.voice.model.WhisperModelProfile
 
@@ -44,7 +45,8 @@ data class WhisperRuntimeEnvironment(
 data class WhisperRuntimeCandidate(
     val profile: WhisperModelProfile,
     val installed: Boolean,
-    val certification: WhisperCertification?
+    val certification: WhisperCertification?,
+    val loaded: Boolean = false
 )
 
 data class WhisperRuntimePolicyInput(
@@ -273,18 +275,18 @@ object WhisperRuntimePolicyEngine {
         environment: WhisperRuntimeEnvironment,
         reasons: MutableList<String>
     ): Boolean {
-        val certifiedPeak = candidate.certification?.peakPssBytes?.takeIf { it > 0L }
-        val incrementalMemory = if (certifiedPeak != null) {
-            (certifiedPeak - environment.currentPssBytes).coerceAtLeast(0L)
-        } else {
-            candidate.profile.minAvailableRamBytes
-        }
-        val required = incrementalMemory + MEMORY_SAFETY_MARGIN_BYTES
-        val allowed = required <= environment.availableMemoryBytes
-        if (!allowed) {
+        val decision = WhisperMemoryAdmissionPolicy.evaluate(
+            profile = candidate.profile,
+            availableMemoryBytes = environment.availableMemoryBytes,
+            currentPssBytes = environment.currentPssBytes,
+            certifiedPeakPssBytes = candidate.certification?.peakPssBytes ?: 0L,
+            alreadyLoaded = candidate.loaded,
+            safetyMarginBytes = MEMORY_SAFETY_MARGIN_BYTES
+        )
+        if (!decision.allowed) {
             reasons += "${candidate.profile.displayName} needs more certified memory headroom"
         }
-        return allowed
+        return decision.allowed
     }
 
     private fun thermalAllowed(

@@ -80,7 +80,10 @@ class DefaultLocalWhisperRuntime internal constructor(
                 if (handle != 0L) native.destroyRuntime(handle)
                 WhisperModelManager.markUnloaded(profile.id)
                 mutableState.value = WhisperRuntimeState.Failed(
-                    WhisperRuntimeError(NativeWhisperCode.MODEL_NOT_LOADED, error.message.orEmpty())
+                    WhisperRuntimeError(
+                        if (error is OutOfMemoryError) NativeWhisperCode.OUT_OF_MEMORY else NativeWhisperCode.MODEL_NOT_LOADED,
+                        error.message.orEmpty()
+                    )
                 )
                 throw error
             }

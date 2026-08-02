@@ -83,6 +83,9 @@ object WhisperModelManager {
         return storage(context).inspect(model).installed
     }
 
+    fun isLoaded(model: WhisperModelProfile): Boolean =
+        loadedModels.contains(WhisperModelCatalog.canonicalId(model.id))
+
     fun ensureVerifiedFile(context: Context, model: WhisperModelProfile): File {
         initialize(context)
         val appContext = context.applicationContext

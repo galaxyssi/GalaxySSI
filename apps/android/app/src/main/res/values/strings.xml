@@ -1482,6 +1482,8 @@
     <string name="voice_status_waiting_transcript">Waiting for encrypted transcript from %1$s</string>
     <string name="voice_status_transcribed">Voice goal transcribed</string>
     <string name="voice_status_transcription_failed">Speech transcription failed</string>
+    <string name="voice_asr_model_memory_fallback">Not enough memory to run Whisper %1$s. Switched to %2$s.</string>
+    <string name="voice_asr_model_memory_insufficient">Not enough memory to run Whisper %1$s. Close memory-intensive apps or choose a smaller model.</string>
     <string name="voice_agent_planning">Native Agent is planning</string>
     <string name="voice_agent_busy">Native Agent is busy</string>
     <string name="voice_agent_needs_confirmation">Confirmation required</string>
