@@ -1305,7 +1305,7 @@
     <string name="voice_wake_engine">Wake Engine</string>
     <string name="voice_wake_engine_openwakeword">openWakeWord Local Offline</string>
     <string name="voice_wake_engine_android_asr">Android System ASR</string>
-    <string name="voice_wake_words">Wake Words</string>
+    <string name="voice_wake_words">Wake Word</string>
     <string name="voice_openwakeword_model">openWakeWord Model</string>
     <string name="voice_wake_threshold">Wake Threshold</string>
     <string name="voice_section_asr">ASR</string>
@@ -1492,9 +1492,8 @@
     <string name="voice_agent_completed">Task completed</string>
     <string name="voice_agent_failed">Native Agent could not complete the task</string>
     <string name="voice_agent_paused">Native Agent execution is paused</string>
-    <string name="voice_default_wake_words">SignalASI,signal asi,signal a s i,signal,asi,signal ai,hello,hi</string>
     <string name="voice_default_welcome_text">I am here. Welcome to SignalASI. Say your question or task.</string>
-    <string name="voice_hint_wake">Say “SignalASI” to start talking</string>
+    <string name="voice_hint_wake">Say “hello” to start talking</string>
     <string name="voice_status_low_power">Low-power listening</string>
     <string name="voice_status_disabled">Voice wake is off</string>
     <string name="voice_status_disabled_detail">Enable it in Settings &gt; Voice Wake &amp; ASR/TTS</string>
@@ -1541,16 +1540,6 @@
     <string name="voice_error_no_valid_speech">No valid speech heard, continuing to listen</string>
     <string name="voice_error_recovering">Recognizer is recovering and will continue soon</string>
     <string name="voice_error_waiting">ASR waiting (%1$s)</string>
-    <string-array name="voice_quick_wake_words">
-        <item>hello</item>
-        <item>hi</item>
-        <item>signal asi</item>
-        <item>signal</item>
-        <item>asi</item>
-        <item>wake up</item>
-        <item>start</item>
-        <item>assistant</item>
-    </string-array>
     <string name="on_device_agent_title">On-device Agent Permissions</string>
     <string name="on_device_agent_hero_title">On-device Agent</string>
     <string name="on_device_agent_hero_subtitle">Manage perception, voice, and automation permissions</string>

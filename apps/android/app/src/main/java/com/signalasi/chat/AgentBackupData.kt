@@ -81,7 +81,6 @@ object AgentBackupData {
                 "voice_assistant",
                 JSONObject()
                     .put("enabled", voiceAssistant.enabled)
-                    .put("wake_words", JSONArray(voiceAssistant.wakeWords))
                     .put("wake_provider", voiceAssistant.wakeProvider)
                     .put("wake_model", voiceAssistant.wakeModel)
                     .put("wake_threshold", voiceAssistant.wakeThreshold.toDouble())
@@ -232,10 +231,6 @@ object AgentBackupData {
         }
         payload.optJSONObject("voice_assistant")?.let { json ->
             VoiceAssistantSettings.setEnabled(context, json.optBoolean("enabled", true))
-            VoiceAssistantSettings.setWakeWords(
-                context,
-                decodeStringList(json.optJSONArray("wake_words")).joinToString(",")
-            )
             VoiceAssistantSettings.setWakeProvider(context, json.optString("wake_provider"))
             VoiceAssistantSettings.setWakeModel(context, json.optString("wake_model"))
             VoiceAssistantSettings.setWakeThreshold(context, json.optDouble("wake_threshold", 0.5).toFloat())

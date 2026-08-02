@@ -31,7 +31,6 @@ data class VoiceAssistantConfig(
 object VoiceAssistantSettings {
     private const val PREFS = "signalasi_voice_assistant"
     private const val KEY_ENABLED = "enabled"
-    private const val KEY_WAKE_WORDS = "wake_words"
     private const val KEY_WAKE_PROVIDER = "wake_provider"
     private const val KEY_WAKE_MODEL = "wake_model"
     private const val KEY_WAKE_THRESHOLD = "wake_threshold"
@@ -69,7 +68,6 @@ object VoiceAssistantSettings {
     fun get(context: Context): VoiceAssistantConfig {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val languagePolicy = LanguagePolicySettings.get(context)
-        val defaultWakeWords = context.getString(R.string.voice_default_wake_words)
         val defaultWelcomeText = context.getString(R.string.voice_default_welcome_text)
         val storedAsrModel = prefs.getString(KEY_ASR_MODEL, "tiny").orEmpty()
         val canonicalAsrModel = WhisperModelManager.model(storedAsrModel).id
@@ -78,11 +76,7 @@ object VoiceAssistantSettings {
         }
         return VoiceAssistantConfig(
             enabled = prefs.getBoolean(KEY_ENABLED, true),
-            wakeWords = prefs.getString(KEY_WAKE_WORDS, defaultWakeWords)
-                .orEmpty()
-                .split(',')
-                .map { it.trim() }
-                .filter { it.isNotBlank() },
+            wakeWords = WakeWordPolicy.configuredWords,
             wakeProvider = prefs.getString(KEY_WAKE_PROVIDER, WAKE_PROVIDER_OPEN_WAKE_WORD).orEmpty()
                 .ifBlank { WAKE_PROVIDER_OPEN_WAKE_WORD },
             wakeModel = prefs.getString(KEY_WAKE_MODEL, DEFAULT_WAKE_MODEL).orEmpty()
@@ -132,10 +126,6 @@ object VoiceAssistantSettings {
 
     fun setEnabled(context: Context, value: Boolean) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY_ENABLED, value).apply()
-    }
-
-    fun setWakeWords(context: Context, value: String) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY_WAKE_WORDS, value).apply()
     }
 
     fun setWakeProvider(context: Context, value: String) {
