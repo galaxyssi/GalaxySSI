@@ -102,7 +102,8 @@ data class WhisperModelStorageSnapshot(
 class WhisperModelStorage(
     rootDirectory: File,
     private val catalogVersion: String = WhisperModelCatalog.CATALOG_VERSION,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val capacityProvider: (File) -> Long = { it.usableSpace }
 ) {
     private val root = rootDirectory.canonicalFile
     private val modelsRoot = child(root, "models")
@@ -158,7 +159,7 @@ class WhisperModelStorage(
         sourceFile: File,
         profile: WhisperModelProfile,
         sourceLabel: String,
-        availableBytes: Long = root.usableSpace,
+        availableBytes: Long = capacityProvider(root),
         beforeCommit: () -> Unit = {}
     ): WhisperModelInstallMetadata {
         if (!sourceFile.isFile) {

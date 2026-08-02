@@ -19,6 +19,7 @@ import com.signalasi.chat.voice.model.WhisperModelStorage
 import com.signalasi.chat.voice.model.WhisperModelStorageState
 import com.signalasi.chat.voice.model.WhisperModelVerifier
 import com.signalasi.chat.voice.model.WhisperNetworkClass
+import com.signalasi.chat.voice.model.WhisperStorageCapacity
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -129,7 +130,9 @@ object WhisperModelManager {
         val policy = WhisperModelDownloadPolicy.evaluate(
             profile = model,
             network = networkClass(appContext),
-            availableFreeBytes = appContext.filesDir.usableSpace,
+            availableFreeBytes = WhisperStorageCapacity.availableBytes(
+                File(appContext.filesDir, "voice/whisper")
+            ),
             meteredConfirmed = allowMetered
         )
         when (policy.decision) {
@@ -143,7 +146,7 @@ object WhisperModelManager {
             )
         }
         val partialRoot = downloadPartialFile(appContext, model).parentFile
-        val partialFree = partialRoot?.usableSpace ?: -1L
+        val partialFree = partialRoot?.let(WhisperStorageCapacity::availableBytes) ?: -1L
         if (partialFree in 0 until model.expectedSizeBytes) {
             throw WhisperDownloadUnavailableException(
                 WhisperDownloadDecision.INSUFFICIENT_SPACE,
@@ -517,7 +520,8 @@ object WhisperModelManager {
 
     private fun storage(context: Context): WhisperModelStorage = WhisperModelStorage(
         File(context.filesDir, "voice/whisper"),
-        WhisperModelCatalog.CATALOG_VERSION
+        WhisperModelCatalog.CATALOG_VERSION,
+        capacityProvider = WhisperStorageCapacity::availableBytes
     )
 
     private fun legacyCandidates(context: Context, model: WhisperModelProfile): List<File> = listOfNotNull(

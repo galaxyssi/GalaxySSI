@@ -112,6 +112,23 @@ class WhisperModelStorageTest {
     }
 
     @Test
+    fun installUsesTheConfiguredCapacityProvider() {
+        val source = temporaryFolder.newFile("capacity.bin").apply { writeBytes("12345678".toByteArray()) }
+        val profile = profileFor(source, reserve = 20L)
+        val storage = WhisperModelStorage(
+            temporaryFolder.newFolder("capacity-models"),
+            "test",
+            capacityProvider = { 27L }
+        )
+
+        val error = assertThrows(WhisperModelInstallException::class.java) {
+            storage.install(source, profile, "test")
+        }
+
+        assertEquals(WhisperModelInstallFailure.INSUFFICIENT_SPACE, error.failure)
+    }
+
+    @Test
     fun legacyMigrationSkipsCorruptCandidateAndMigratesVerifiedFile() {
         val valid = temporaryFolder.newFile("legacy-valid.bin").apply { writeBytes("legacy-model".toByteArray()) }
         val corrupt = temporaryFolder.newFile("legacy-corrupt.bin").apply { writeBytes("x".repeat(valid.length().toInt()).toByteArray()) }
