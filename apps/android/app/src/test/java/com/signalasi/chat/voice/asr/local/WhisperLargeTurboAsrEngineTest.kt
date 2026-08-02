@@ -38,16 +38,20 @@ class WhisperLargeTurboAsrEngineTest {
             val partial = async(start = CoroutineStart.UNDISPATCHED) {
                 withTimeout(2_000L) { engine.events.filterIsInstance<AsrEvent.Partial>().first() }
             }
-            native.emitPartial(listening.sessionToken, "今天下午", "去机场")
-            assertEquals("今天下午", partial.await().stableText)
+            native.emitPartial(
+                listening.sessionToken,
+                "\u4eca\u5929\u4e0b\u5348",
+                "\u53bb\u673a\u573a"
+            )
+            assertEquals("\u4eca\u5929\u4e0b\u5348", partial.await().stableText)
 
             engine.stop()
             awaitState(engine) { it is LocalAsrState.Stopping }
             val final = async(start = CoroutineStart.UNDISPATCHED) {
                 withTimeout(2_000L) { engine.events.filterIsInstance<AsrEvent.Final>().first() }
             }
-            native.emitFinal(listening.sessionToken, "今天下午去机场")
-            assertEquals("今天下午去机场", final.await().text)
+            native.emitFinal(listening.sessionToken, "\u4eca\u5929\u4e0b\u5348\u53bb\u673a\u573a")
+            assertEquals("\u4eca\u5929\u4e0b\u5348\u53bb\u673a\u573a", final.await().text)
             assertTrue(engine.state.value is LocalAsrState.Ready)
             assertEquals(0, native.destroyCount.get())
         } finally {
