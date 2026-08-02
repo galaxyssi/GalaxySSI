@@ -86,7 +86,8 @@ object WhisperBenchmarkManager {
                 verifyModel = { model -> WhisperModelManager.ensureVerifiedFile(appContext, model) },
                 elapsedRealtime = SystemClock::elapsedRealtime,
                 clock = System::currentTimeMillis,
-                store = store(appContext)
+                store = store(appContext),
+                plan = WhisperBenchmarkPlan.forProfile(profile)
             )
             runner.run(profile, audio, force, onProgress).also { record ->
                 WhisperModelManager.updateCertification(appContext, profile, record.certification.level)

@@ -72,17 +72,37 @@ data class WhisperBenchmarkPlan(
     val abortIterations: Int = 3,
     val metricSampleIntervalMs: Long = 50L,
     val abortDelayMs: Long = 50L,
-    val abortTimeoutMs: Long = 5_000L
+    val abortTimeoutMs: Long = 5_000L,
+    val warmUpLoads: Boolean = true
 ) {
     init {
         require(candidateAudioDurationsMs.isNotEmpty() && candidateAudioDurationsMs.all { it > 0L })
-        require(candidateIterations in 2..5)
+        require(candidateIterations in 1..5)
         require(stabilityAudioDurationMs > 0L)
-        require(stabilityIterations in 3..5)
+        require(stabilityIterations in 1..5)
         require(abortIterations in 1..5)
         require(metricSampleIntervalMs in 10L..250L)
         require(abortDelayMs in 1L..1_000L)
         require(abortTimeoutMs in 500L..15_000L)
+    }
+
+    companion object {
+        fun forProfile(profile: WhisperModelProfile): WhisperBenchmarkPlan =
+            if (profile.expectedSizeBytes >= LARGE_MODEL_THRESHOLD_BYTES) {
+                WhisperBenchmarkPlan(
+                    candidateAudioDurationsMs = listOf(3_000L),
+                    candidateIterations = 1,
+                    stabilityAudioDurationMs = 5_000L,
+                    stabilityIterations = 1,
+                    abortIterations = 1,
+                    metricSampleIntervalMs = 100L,
+                    warmUpLoads = false
+                )
+            } else {
+                WhisperBenchmarkPlan()
+            }
+
+        private const val LARGE_MODEL_THRESHOLD_BYTES = 768L * 1024L * 1024L
     }
 }
 
@@ -166,8 +186,12 @@ class WhisperBenchmarkRunner(
         try {
             candidates.forEach { threads ->
                 runtimeFactory().use { runtime ->
-                    progress(WhisperBenchmarkStage.SEARCHING_THREADS, threads)
-                    val loaded = runtime.load(profile, WhisperLoadOptions(threadCount = threads, warmUp = true))
+                    progress(WhisperBenchmarkStage.SEARCHING_THREADS, threads, "loading_model")
+                    val loaded = runtime.load(
+                        profile,
+                        WhisperLoadOptions(threadCount = threads, warmUp = plan.warmUpLoads)
+                    )
+                    progress(WhisperBenchmarkStage.SEARCHING_THREADS, threads, "decoding_audio")
                     val loadKind = if (loadSequence++ == 0) {
                         WhisperBenchmarkLoadKind.COLD
                     } else {
@@ -225,8 +249,12 @@ class WhisperBenchmarkRunner(
         val abortLatencies = mutableListOf<Long>()
         try {
             runtimeFactory().use { runtime ->
-                progress(WhisperBenchmarkStage.STABILITY, bestThreads)
-                val loaded = runtime.load(profile, WhisperLoadOptions(threadCount = bestThreads, warmUp = true))
+                progress(WhisperBenchmarkStage.STABILITY, bestThreads, "loading_model")
+                val loaded = runtime.load(
+                    profile,
+                    WhisperLoadOptions(threadCount = bestThreads, warmUp = plan.warmUpLoads)
+                )
+                progress(WhisperBenchmarkStage.STABILITY, bestThreads, "decoding_audio")
                 val loadKind = if (loadSequence++ == 0) {
                     WhisperBenchmarkLoadKind.COLD
                 } else {

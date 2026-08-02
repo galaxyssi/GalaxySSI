@@ -764,6 +764,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     @Volatile private var lastHistoryLoadedAt = 0L
     private var pendingAsrModelSelection: String? = null
     private val whisperBenchmarkProgress = ConcurrentHashMap<String, WhisperBenchmarkProgress>()
+    private val whisperBenchmarkNotices = ConcurrentHashMap<String, String>()
     private val whisperBenchmarkRefreshScheduled = AtomicBoolean(false)
     private val asrModelDownloadPoll = object : Runnable {
         override fun run() {
@@ -775,10 +776,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     VoiceAssistantSettings.setAsrModel(this@MainActivity, model.id)
                     pendingAsrModelSelection = null
                     Toast.makeText(this@MainActivity, getString(R.string.voice_asr_model_ready, model.displayName), Toast.LENGTH_SHORT).show()
+                    if (hasWindowFocus()) ensureWhisperMicrophonePermission()
                     if (featurePage.visibility == View.VISIBLE) showAsrProviderPage()
-                    if (VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this@MainActivity)) {
-                        startWhisperBenchmark(model, force = false)
-                    }
                 }
                 DownloadManager.STATUS_FAILED -> {
                     pendingAsrModelSelection = null
@@ -29488,6 +29487,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 WhisperBenchmarkManager.latest(this, model)
             } else null
             val benchmarkProgress = whisperBenchmarkProgress[model.id]
+            val benchmarkNotice = whisperBenchmarkNotices[model.id]
             val isBenchmarking = benchmarkProgress != null || WhisperBenchmarkManager.isRunning(model.id)
             val isDownloading = state.status == DownloadManager.STATUS_PENDING ||
                 state.status == DownloadManager.STATUS_RUNNING ||
@@ -29514,6 +29514,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         else (progress.completedSteps * 100 / progress.totalSteps).coerceIn(0, 100)
                     } ?: 0
                 )
+                !benchmarkNotice.isNullOrBlank() -> benchmarkNotice
                 benchmarkRecord != null -> whisperCertificationLabel(benchmarkRecord.certification.level)
                 available && latestBenchmark != null -> getString(R.string.voice_asr_model_benchmark_stale)
                 available -> getString(R.string.voice_asr_model_installed_uncertified)
@@ -29534,8 +29535,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             }
             val subtitle = "$profileDetail\n$lifecycleDetail"
             val action = when {
-                isBenchmarking -> getString(R.string.voice_asr_model_waiting)
-                available && benchmarkRecord == null -> getString(R.string.voice_asr_model_use_and_test)
+                isBenchmarking -> getString(R.string.voice_asr_model_benchmarking)
                 isSelected && available -> getString(R.string.section_current)
                 available -> getString(R.string.settings_language_use)
                 isDownloading && !model.bundled -> getString(R.string.voice_asr_model_cancel)
@@ -29562,15 +29562,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     } else if (available) {
                         if (!isSelected) {
                             VoiceAssistantSettings.setAsrModel(this@MainActivity, model.id)
-                        }
-                        if (VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this@MainActivity)) {
-                            if (benchmarkRecord == null) {
-                                startWhisperBenchmark(model, force = false)
-                            } else if (isSelected) {
-                                showWhisperBenchmarkDetails(model, benchmarkRecord)
-                            } else {
-                                showAsrProviderPage()
-                            }
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.voice_asr_model_ready, model.displayName),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            ensureWhisperMicrophonePermission()
+                            showAsrProviderPage()
+                        } else if (
+                            checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+                            PackageManager.PERMISSION_GRANTED
+                        ) {
+                            ensureWhisperMicrophonePermission()
+                        } else if (VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this@MainActivity)) {
+                            if (benchmarkRecord == null) confirmWhisperBenchmark(model)
+                            else showWhisperBenchmarkDetails(model, benchmarkRecord)
                         } else {
                             showAsrProviderPage()
                         }
@@ -29726,8 +29732,17 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             .show()
     }
 
+    private fun ensureWhisperMicrophonePermission() {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) return
+        requestPermissions(
+            arrayOf(android.Manifest.permission.RECORD_AUDIO),
+            REQUEST_CONTROL_CENTER_PERMISSION
+        )
+    }
+
     private fun startWhisperBenchmark(model: WhisperModel, force: Boolean) {
         if (WhisperBenchmarkManager.isRunning(model.id)) return
+        whisperBenchmarkNotices.remove(model.id)
         whisperBenchmarkProgress[model.id] = WhisperBenchmarkProgress(
             WhisperBenchmarkStage.VERIFYING,
             completedSteps = 0,
@@ -29745,6 +29760,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             handler.post {
                 if (isFinishing || isDestroyed) return@post
                 outcome.onSuccess { record ->
+                    whisperBenchmarkNotices.remove(model.id)
                     Toast.makeText(
                         this@MainActivity,
                         getString(R.string.voice_asr_model_benchmark_complete, model.displayName),
@@ -29758,10 +29774,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                         return@onFailure
                     }
                     val message = if (error is WhisperBenchmarkDeferredException) {
-                        error.message.orEmpty()
+                        getString(R.string.voice_asr_model_benchmark_deferred)
                     } else {
                         error.message.orEmpty().ifBlank { error.javaClass.simpleName }
                     }
+                    whisperBenchmarkNotices[model.id] = message
+                    Log.w("SignalASIWhisper", "Benchmark failed for ${model.id}: $message", error)
                     Toast.makeText(
                         this@MainActivity,
                         getString(R.string.voice_asr_model_benchmark_failed, message),
@@ -29868,15 +29886,21 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         WhisperCertificationLevel.UNSUPPORTED -> R.string.voice_asr_model_unsupported
     })
 
-    private fun whisperBenchmarkStageLabel(progress: WhisperBenchmarkProgress): String = getString(when (progress.stage) {
-        WhisperBenchmarkStage.VERIFYING -> R.string.voice_asr_benchmark_stage_verifying
-        WhisperBenchmarkStage.CHECKING_DEVICE -> R.string.voice_asr_benchmark_stage_device
-        WhisperBenchmarkStage.SEARCHING_THREADS -> R.string.voice_asr_benchmark_stage_threads
-        WhisperBenchmarkStage.STABILITY -> R.string.voice_asr_benchmark_stage_stability
-        WhisperBenchmarkStage.CANCELLATION -> R.string.voice_asr_benchmark_stage_cancellation
-        WhisperBenchmarkStage.CERTIFYING -> R.string.voice_asr_benchmark_stage_certifying
-        WhisperBenchmarkStage.COMPLETE -> R.string.voice_asr_benchmark_stage_complete
-    })
+    private fun whisperBenchmarkStageLabel(progress: WhisperBenchmarkProgress): String = getString(
+        when (progress.detail) {
+            "loading_model" -> R.string.voice_asr_benchmark_stage_loading
+            "decoding_audio" -> R.string.voice_asr_benchmark_stage_decoding
+            else -> when (progress.stage) {
+                WhisperBenchmarkStage.VERIFYING -> R.string.voice_asr_benchmark_stage_verifying
+                WhisperBenchmarkStage.CHECKING_DEVICE -> R.string.voice_asr_benchmark_stage_device
+                WhisperBenchmarkStage.SEARCHING_THREADS -> R.string.voice_asr_benchmark_stage_threads
+                WhisperBenchmarkStage.STABILITY -> R.string.voice_asr_benchmark_stage_stability
+                WhisperBenchmarkStage.CANCELLATION -> R.string.voice_asr_benchmark_stage_cancellation
+                WhisperBenchmarkStage.CERTIFYING -> R.string.voice_asr_benchmark_stage_certifying
+                WhisperBenchmarkStage.COMPLETE -> R.string.voice_asr_benchmark_stage_complete
+            }
+        }
+    )
 
     private fun showWhisperDownloadFailure(model: WhisperModel, error: Throwable) {
         when (error) {

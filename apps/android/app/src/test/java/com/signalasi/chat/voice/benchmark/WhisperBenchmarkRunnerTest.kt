@@ -146,6 +146,27 @@ class WhisperBenchmarkRunnerTest {
         assertTrue(record.measurements.all { it.transcriptCorrect })
     }
 
+    @Test
+    fun largeModelsUseAColdStartFriendlyBenchmarkPlan() {
+        val plan = WhisperBenchmarkPlan.forProfile(WhisperModelCatalog.require("large_v3_q5_0"))
+
+        assertEquals(listOf(3_000L), plan.candidateAudioDurationsMs)
+        assertEquals(1, plan.candidateIterations)
+        assertEquals(1, plan.stabilityIterations)
+        assertEquals(1, plan.abortIterations)
+        assertTrue(!plan.warmUpLoads)
+    }
+
+    @Test
+    fun smallModelsKeepTheFullBenchmarkPlan() {
+        val plan = WhisperBenchmarkPlan.forProfile(WhisperModelCatalog.require("tiny_q5_1"))
+
+        assertEquals(listOf(3_000L, 5_000L), plan.candidateAudioDurationsMs)
+        assertEquals(2, plan.candidateIterations)
+        assertEquals(3, plan.stabilityIterations)
+        assertTrue(plan.warmUpLoads)
+    }
+
     private fun runner(
         store: WhisperBenchmarkStore,
         runtimeFactory: () -> LocalWhisperRuntime,
