@@ -84,8 +84,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 318
-        versionName = "0.3.18"
+        versionCode = 319
+        versionName = "0.3.19"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -188,7 +188,7 @@ dependencies {
         exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
         exclude(group = "org.apache.commons", module = "commons-math3")
     }
-    implementation(files("libs/onnxruntime-android-1.18.0.aar"))
+    implementation(files("libs/onnxruntime-android-1.24.3.aar"))
     implementation(files("libs/commons-math3-3.6.1.jar"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")

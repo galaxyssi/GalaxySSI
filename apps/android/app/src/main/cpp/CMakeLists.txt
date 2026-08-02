@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(WHISPER_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/whispercpp)
 
+if(ANDROID)
+    add_link_options(
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384"
+    )
+endif()
+
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
