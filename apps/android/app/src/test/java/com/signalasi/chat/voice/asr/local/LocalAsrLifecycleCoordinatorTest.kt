@@ -39,6 +39,20 @@ class LocalAsrLifecycleCoordinatorTest {
         assertEquals(0, engine.nativeResumeCount)
     }
 
+    @Test
+    fun `clearing an inactive blocker never resumes or mutates the engine`() {
+        val engine = RecordingEngine()
+        val coordinator = LocalAsrLifecycleCoordinator(engine)
+
+        coordinator.onPhoneCallChanged(false)
+        coordinator.onAudioFocusChanged(true)
+        coordinator.onThermalLimitChanged(false)
+
+        assertEquals(0, engine.nativePauseCount)
+        assertEquals(0, engine.nativeResumeCount)
+        assertTrue(coordinator.activeBlockers().isEmpty())
+    }
+
     private class RecordingEngine : LocalAsrEngine {
         private val mutableState = MutableStateFlow<LocalAsrState>(
             LocalAsrState.Listening(1L, AsrConfig())

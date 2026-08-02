@@ -34,6 +34,7 @@ public:
     explicit RollingWindowPlanner(RollingWindowConfig config = {});
 
     std::optional<DecodeWindow> on_vad_decision(const VadDecision & decision) noexcept;
+    bool update_partial_policy(int update_interval_ms, bool emit_partials) noexcept;
     void reset() noexcept;
     const RollingWindowConfig & config() const noexcept;
 
@@ -53,6 +54,7 @@ private:
     std::uint64_t first_voice_sample_ = 0;
     std::uint64_t next_partial_sample_ = 0;
     std::uint64_t last_decode_end_sample_ = 0;
+    std::uint64_t last_activity_sample_ = 0;
 };
 
 }  // namespace signalasi::asr

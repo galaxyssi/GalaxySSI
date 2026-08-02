@@ -43,6 +43,7 @@ class WhisperLargeTurboAsrEngine(
     private var sessionSequence = 0L
     private var activeSessionToken = 0L
     private var activeConfig: AsrConfig? = null
+    private var activeRuntimePolicy: AsrRuntimePolicy? = null
     private var pauseReasons = linkedSetOf<LocalAsrPauseReason>()
     private var transcriptRevision = 0L
 
@@ -167,13 +168,20 @@ class WhisperLargeTurboAsrEngine(
             sessionSequence += 1L
             activeSessionToken = sessionSequence
             activeConfig = config
+            activeRuntimePolicy = AsrRuntimePolicy.from(config)
             pauseReasons.clear()
             transcriptRevision = 0L
             StartCommand(handle, activeSessionToken, config)
         }
         transition(LocalAsrState.Starting(launch.sessionToken, launch.config))
         scope.launch {
-            val started = runCatching { native.start(launch.handle, launch.sessionToken, launch.config) }
+            val started = runCatching {
+                val policy = synchronized(stateLock) {
+                    activeRuntimePolicy ?: AsrRuntimePolicy.from(launch.config)
+                }
+                native.updateRuntimePolicy(launch.handle, policy)
+                native.start(launch.handle, launch.sessionToken, launch.config)
+            }
             val failure = started.exceptionOrNull()
             val next = synchronized(stateLock) {
                 if (launch.sessionToken != activeSessionToken || closed.get()) return@synchronized null
@@ -313,6 +321,18 @@ class WhisperLargeTurboAsrEngine(
         }
     }
 
+    override fun updateRuntimePolicy(policy: AsrRuntimePolicy) {
+        if (closed.get()) return
+        val currentHandle = synchronized(stateLock) {
+            activeRuntimePolicy = policy
+            handle
+        }
+        if (currentHandle == 0L) return
+        scope.launch {
+            runCatching { native.updateRuntimePolicy(currentHandle, policy) }
+        }
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         runBlocking {
@@ -344,6 +364,7 @@ class WhisperLargeTurboAsrEngine(
     private fun clearActiveSessionLocked() {
         activeSessionToken = 0L
         activeConfig = null
+        activeRuntimePolicy = null
         pauseReasons.clear()
         transcriptRevision = 0L
     }

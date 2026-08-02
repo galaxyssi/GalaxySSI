@@ -166,6 +166,31 @@ class WhisperLargeTurboAsrEngineTest {
     }
 
     @Test
+    fun `runtime policy reaches the persistent native context without restarting it`() = runBlocking {
+        val native = FakeNativeApi()
+        val engine = engine(native)
+        try {
+            engine.prepare("model-a")
+            engine.start(AsrConfig(updateIntervalMs = 600L, performanceMode = AsrPerformanceMode.FAST))
+            awaitState(engine) { it is LocalAsrState.Listening }
+            assertEquals(600L, native.policies.last().partialIntervalMs)
+
+            engine.updateRuntimePolicy(
+                AsrRuntimePolicy(
+                    partialIntervalMs = 1_000L,
+                    emitIntermediateResults = false,
+                    thermalStatus = AsrRuntimePolicy.THERMAL_STATUS_SEVERE
+                )
+            )
+            awaitCondition { native.policies.size == 2 }
+            assertFalse(native.policies.last().emitIntermediateResults)
+            assertEquals(1, native.createCount.get())
+        } finally {
+            engine.close()
+        }
+    }
+
+    @Test
     fun `registry shares one engine instance`() {
         val created = AtomicInteger()
         val registry = LocalAsrEngineRegistry {
@@ -205,6 +230,7 @@ class WhisperLargeTurboAsrEngineTest {
         val pauseCount = AtomicInteger()
         val resumeCount = AtomicInteger()
         val destroyCount = AtomicInteger()
+        val policies = java.util.concurrent.CopyOnWriteArrayList<AsrRuntimePolicy>()
         private var callback: QnnAsrNativeCallback? = null
         var startGate: CountDownLatch? = null
 
@@ -244,6 +270,10 @@ class WhisperLargeTurboAsrEngineTest {
         override fun resume(handle: Long, sessionToken: Long): Boolean {
             resumeCount.incrementAndGet()
             return true
+        }
+
+        override fun updateRuntimePolicy(handle: Long, policy: AsrRuntimePolicy) {
+            policies += policy
         }
 
         override fun destroy(handle: Long) {

@@ -41,6 +41,7 @@ internal interface WhisperQnnAudioFrontend : AutoCloseable {
     fun cancel()
     fun pause()
     fun resume(): Boolean
+    fun updateRuntimePolicy(policy: AsrRuntimePolicy) = Unit
     fun waitForFeatures(output: ByteBuffer, timeoutMs: Int): NativeFeatureWindow?
 }
 
@@ -68,6 +69,16 @@ internal class NativeWhisperQnnAudioFrontend private constructor(
     override fun pause() = withHandle(WhisperQnnNativeFrontendBridge::nativePause)
 
     override fun resume(): Boolean = withHandle(WhisperQnnNativeFrontendBridge::nativeResume)
+
+    override fun updateRuntimePolicy(policy: AsrRuntimePolicy) {
+        withHandle {
+            WhisperQnnNativeFrontendBridge.nativeUpdatePartialPolicy(
+                it,
+                policy.partialIntervalMs.toInt(),
+                policy.emitIntermediateResults
+            )
+        }
+    }
 
     override fun waitForFeatures(output: ByteBuffer, timeoutMs: Int): NativeFeatureWindow? {
         require(output.isDirect && output.capacity() >= MEL_BUFFER_BYTES)
@@ -145,6 +156,7 @@ internal object WhisperQnnNativeFrontendBridge {
     external fun nativeCancel(handle: Long)
     external fun nativePause(handle: Long)
     external fun nativeResume(handle: Long): Boolean
+    external fun nativeUpdatePartialPolicy(handle: Long, updateIntervalMs: Int, emitPartials: Boolean)
     external fun nativeWaitForFeatures(handle: Long, output: ByteBuffer, timeoutMs: Int): LongArray?
     external fun nativeDestroy(handle: Long)
 }

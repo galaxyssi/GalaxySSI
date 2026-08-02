@@ -1465,6 +1465,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         AgentConnectorResponseBus.addListener(agentConnectorResponseListener)
         GlobalProactiveDeliveryBus.addListener(globalProactiveDeliveryListener)
         ScreenPerceptionState.addVisualListener(agentVisualScreenListener)
+        if (isHighAccuracyQnnSelected() || highAccuracyAsrControllerDelegate.isInitialized()) {
+            highAccuracyAsrController.onAppForegroundChanged(true)
+            highAccuracyAsrController.onMicrophonePermissionChanged(
+                checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            )
+        }
         prepareHighAccuracyAsrIfSelected()
         traceResume("listeners")
         val initialResume = !completedInitialResume
@@ -1524,6 +1530,9 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     }
 
     override fun onPause() {
+        if (highAccuracyAsrControllerDelegate.isInitialized()) {
+            highAccuracyAsrController.onAppForegroundChanged(false)
+        }
         if (!isChangingConfigurations && isVoiceCaptureActive()) {
             if (pcmVoiceSession != null) {
                 stopPcmRecording(send = false, reason = "app_background")
@@ -4051,10 +4060,16 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, getString(R.string.voice_record_permission_granted), Toast.LENGTH_SHORT).show()
-            if (activeMainTab == PAGE_VOICE) startVoiceAssistant()
-            if (activeMainTab == PAGE_AGENT) startAgentVoiceInput()
+        if (requestCode == REQUEST_RECORD_AUDIO) {
+            val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            if (highAccuracyAsrControllerDelegate.isInitialized()) {
+                highAccuracyAsrController.onMicrophonePermissionChanged(granted)
+            }
+            if (granted) {
+                Toast.makeText(this, getString(R.string.voice_record_permission_granted), Toast.LENGTH_SHORT).show()
+                if (activeMainTab == PAGE_VOICE) startVoiceAssistant()
+                if (activeMainTab == PAGE_AGENT) startAgentVoiceInput()
+            }
         }
         if (requestCode == REQUEST_AGENT_CAMERA_PERMISSION &&
             grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
@@ -22544,10 +22559,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         if (!isHighAccuracyQnnSelected()) return null
         val settings = VoiceAssistantSettings.get(this)
         val profile = WhisperModelManager.model(settings.asrModel)
-        val performanceMode = if (settings.asrRuntimeMode == WhisperUserVoiceMode.FAST) {
-            AsrPerformanceMode.FAST
-        } else {
-            AsrPerformanceMode.BALANCED
+        val performanceMode = when (settings.asrRuntimeMode) {
+            WhisperUserVoiceMode.FAST -> AsrPerformanceMode.FAST
+            WhisperUserVoiceMode.POWER_SAVER -> AsrPerformanceMode.POWER_SAVER
+            else -> AsrPerformanceMode.BALANCED
         }
         val config = HighAccuracyAsrConfig(
             language = LanguagePolicySettings.resolvedAsrLanguage(this)
@@ -22555,7 +22570,11 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 .lowercase(Locale.ROOT)
                 .takeIf { it == "zh" }
                 ?: "auto",
-            updateIntervalMs = if (performanceMode == AsrPerformanceMode.FAST) 600L else 900L,
+            updateIntervalMs = when (performanceMode) {
+                AsrPerformanceMode.FAST -> 600L
+                AsrPerformanceMode.BALANCED -> 900L
+                AsrPerformanceMode.POWER_SAVER -> 1_200L
+            },
             firstPartialDelayMs = 900L,
             performanceMode = performanceMode
         )
@@ -30005,6 +30024,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val modes = listOf(
             WhisperUserVoiceMode.AUTOMATIC,
             WhisperUserVoiceMode.FAST,
+            WhisperUserVoiceMode.POWER_SAVER,
             WhisperUserVoiceMode.ACCURATE,
             WhisperUserVoiceMode.PRIVACY,
             WhisperUserVoiceMode.MANUAL
@@ -30173,6 +30193,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         WhisperUserVoiceMode.AUTOMATIC -> R.string.voice_asr_runtime_mode_automatic
         WhisperUserVoiceMode.MANUAL -> R.string.voice_asr_runtime_mode_manual
         WhisperUserVoiceMode.FAST -> R.string.voice_asr_runtime_mode_fast
+        WhisperUserVoiceMode.POWER_SAVER -> R.string.voice_asr_runtime_mode_power_saver
         WhisperUserVoiceMode.ACCURATE -> R.string.voice_asr_runtime_mode_accurate
         WhisperUserVoiceMode.PRIVACY -> R.string.voice_asr_runtime_mode_privacy
     })

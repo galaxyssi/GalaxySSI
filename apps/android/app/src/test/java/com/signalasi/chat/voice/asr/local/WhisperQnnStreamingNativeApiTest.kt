@@ -117,6 +117,44 @@ class WhisperQnnStreamingNativeApiTest {
         api.destroy(handle)
     }
 
+    @Test
+    fun severeThermalPolicySkipsPartialQnnWorkButAlwaysRunsFinal() {
+        var now = 1_000L
+        val runtime = FakeRuntime("final result")
+        val frontendFactory = FakeFrontendFactory()
+        val callback = RecordingCallback()
+        val api = AndroidWhisperQnnAsrApi(
+            WhisperQnnTranscriberRuntimeFactory { runtime },
+            frontendFactory,
+            elapsedRealtimeMs = { now }
+        )
+        val handle = api.create(
+            temporaryFolder.newFolder("model-thermal").path,
+            temporaryFolder.newFolder("runtime-thermal").path,
+            callback
+        )
+        assertTrue(api.start(handle, 12L, AsrConfig(updateIntervalMs = 600L)))
+        api.updateRuntimePolicy(
+            handle,
+            AsrRuntimePolicy(
+                partialIntervalMs = 1_000L,
+                emitIntermediateResults = false,
+                thermalStatus = AsrRuntimePolicy.THERMAL_STATUS_SEVERE
+            )
+        )
+
+        frontendFactory.latest().emit(window(NativeFeatureWindowKind.PARTIAL, 0L, 16_000L))
+        Thread.sleep(100L)
+        assertEquals(0, runtime.calls.get())
+        now += 1_000L
+        frontendFactory.latest().emit(window(NativeFeatureWindowKind.FINAL, 0L, 24_000L))
+        assertTrue(callback.finalLatch.await(2, TimeUnit.SECONDS))
+
+        assertEquals(1, runtime.calls.get())
+        assertEquals(AsrRuntimePolicy.THERMAL_STATUS_SEVERE, callback.diagnostics.last().thermalStatus)
+        api.destroy(handle)
+    }
+
     private fun window(kind: NativeFeatureWindowKind, start: Long, end: Long) = NativeFeatureWindow(
         kind = kind,
         startSample = start,

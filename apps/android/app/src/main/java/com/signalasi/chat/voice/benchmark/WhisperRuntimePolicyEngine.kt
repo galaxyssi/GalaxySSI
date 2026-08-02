@@ -9,6 +9,7 @@ import com.signalasi.chat.voice.model.WhisperModelProfile
 enum class WhisperUserVoiceMode {
     AUTOMATIC,
     FAST,
+    POWER_SAVER,
     ACCURATE,
     PRIVACY,
     MANUAL
@@ -167,6 +168,21 @@ object WhisperRuntimePolicyEngine {
                         accurate.firstOrNull { it.profile.id != fast.profile.id }
                     } else null
                     localDecision(fast, accurateCandidate, environment, reasons)
+                }
+            }
+
+            WhisperUserVoiceMode.POWER_SAVER -> {
+                val efficient = selected ?: usable.minByOrNull { it.profile.expectedSizeBytes }
+                if (efficient != null) {
+                    reasons += "Power saver mode runs local Whisper only at sentence end"
+                    localDecision(efficient, null, environment, reasons, forceFinal = true)
+                } else {
+                    conservativeLocalFallbacks.minByOrNull { it.profile.expectedSizeBytes }
+                        ?.let { fallback ->
+                            reasons += "Power saver mode uses the smallest available local model"
+                            uncertifiedLocalDecision(fallback, reasons)
+                        }
+                        ?: remoteOrUnavailable(input, reasons)
                 }
             }
 

@@ -224,6 +224,29 @@ class WhisperRuntimePolicyEngineTest {
         }
     }
 
+    @Test
+    fun powerSaverKeepsTheSelectedLocalModelButDisablesPartialAndSecondPassWork() {
+        val tiny = WhisperModelCatalog.require("tiny")
+        val medium = WhisperModelCatalog.require("medium_q5_0")
+        val decision = WhisperRuntimePolicyEngine.decide(
+            WhisperRuntimePolicyInput(
+                userMode = WhisperUserVoiceMode.POWER_SAVER,
+                selectedProfileId = medium.id,
+                candidates = listOf(
+                    candidate(tiny, WhisperCertificationLevel.REALTIME, WhisperExecutionMode.REALTIME_PARTIAL, 0.4),
+                    candidate(medium, WhisperCertificationLevel.FINAL, WhisperExecutionMode.FINAL_ONLY, 1.4)
+                ),
+                environment = environment(highRiskTask = true)
+            )
+        )
+
+        assertEquals(WhisperProviderChoice.LOCAL, decision.provider)
+        assertEquals(medium.id, decision.fastProfileId)
+        assertEquals(WhisperExecutionMode.FINAL_ONLY, decision.fastMode)
+        assertFalse(decision.runSecondPass)
+        assertNull(decision.partialIntervalMs)
+    }
+
     private fun decide(
         candidates: List<WhisperRuntimeCandidate>,
         environment: WhisperRuntimeEnvironment = environment()

@@ -1373,6 +1373,7 @@
     <string name="voice_asr_runtime_mode_automatic">Automatic</string>
     <string name="voice_asr_runtime_mode_manual">Selected model</string>
     <string name="voice_asr_runtime_mode_fast">Fast</string>
+    <string name="voice_asr_runtime_mode_power_saver">Power saver</string>
     <string name="voice_asr_runtime_mode_accurate">Accurate</string>
     <string name="voice_asr_runtime_mode_privacy">Privacy</string>
     <string name="voice_asr_runtime_mode_subtitle">Automatic uses only models certified for real-time speech on this device.</string>

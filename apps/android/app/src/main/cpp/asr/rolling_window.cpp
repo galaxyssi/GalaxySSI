@@ -34,6 +34,7 @@ std::optional<DecodeWindow> RollingWindowPlanner::on_vad_decision(const VadDecis
         active_ = true;
         segment_start_sample_ = decision.segment_start_sample;
         first_voice_sample_ = decision.first_voice_sample;
+        last_activity_sample_ = decision.first_voice_sample;
         next_partial_sample_ = first_voice_sample_ + first_partial_samples_;
         last_decode_end_sample_ = 0;
         return std::nullopt;
@@ -53,9 +54,13 @@ std::optional<DecodeWindow> RollingWindowPlanner::on_vad_decision(const VadDecis
 
     if (!active_ || !config_.emit_partials || decision.type != VadEventType::kSpeechActive ||
         decision.segment_end_sample < next_partial_sample_) {
+        if (active_ && decision.type == VadEventType::kSpeechActive) {
+            last_activity_sample_ = std::max(last_activity_sample_, decision.segment_end_sample);
+        }
         return std::nullopt;
     }
 
+    last_activity_sample_ = std::max(last_activity_sample_, decision.segment_end_sample);
     while (next_partial_sample_ <= decision.segment_end_sample) {
         next_partial_sample_ += update_interval_samples_;
     }
@@ -66,12 +71,28 @@ std::optional<DecodeWindow> RollingWindowPlanner::on_vad_decision(const VadDecis
     return make_window(decision.segment_end_sample, false, VadEndReason::kNone);
 }
 
+bool RollingWindowPlanner::update_partial_policy(const int update_interval_ms,
+                                                 const bool emit_partials) noexcept {
+    if (update_interval_ms < 500 || update_interval_ms > 2'000) {
+        return false;
+    }
+    config_.update_interval_ms = update_interval_ms;
+    config_.emit_partials = emit_partials;
+    update_interval_samples_ = to_samples(update_interval_ms, config_.sample_rate_hz);
+    if (active_) {
+        const auto anchor = std::max(last_activity_sample_, last_decode_end_sample_);
+        next_partial_sample_ = anchor + update_interval_samples_;
+    }
+    return true;
+}
+
 void RollingWindowPlanner::reset() noexcept {
     active_ = false;
     segment_start_sample_ = 0;
     first_voice_sample_ = 0;
     next_partial_sample_ = 0;
     last_decode_end_sample_ = 0;
+    last_activity_sample_ = 0;
 }
 
 const RollingWindowConfig & RollingWindowPlanner::config() const noexcept {

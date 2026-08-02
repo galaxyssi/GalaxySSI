@@ -55,6 +55,7 @@ public:
     void cancel() noexcept;
     void pause() noexcept;
     bool resume() noexcept;
+    bool update_partial_policy(int update_interval_ms, bool emit_partials) noexcept;
     void close() noexcept;
 
     FeatureWaitResult wait_for_features(float * destination,

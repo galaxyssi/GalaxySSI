@@ -1138,6 +1138,7 @@
     <string name="voice_asr_runtime_mode_automatic">自动</string>
     <string name="voice_asr_runtime_mode_manual">已选模型</string>
     <string name="voice_asr_runtime_mode_fast">快速</string>
+    <string name="voice_asr_runtime_mode_power_saver">省电</string>
     <string name="voice_asr_runtime_mode_accurate">高精度</string>
     <string name="voice_asr_runtime_mode_privacy">隐私</string>
     <string name="voice_asr_runtime_mode_subtitle">自动模式只使用已在本机通过实时认证的模型。</string>
