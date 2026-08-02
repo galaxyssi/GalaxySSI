@@ -104,11 +104,12 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 328
-        versionName = "0.3.28"
+        versionCode = 329
+        versionName = "0.3.29"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
+        buildConfigField("String", "QNN_RUNTIME_VERSION", "\"2.45.0\"")
         buildConfigField(
             "String",
             "REALTIME_ASR_CREDENTIAL_BROKER_URL",
