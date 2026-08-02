@@ -12,6 +12,7 @@ enum class AsrPerformanceMode {
 
 data class AsrConfig(
     val language: String = "zh",
+    val inputSampleRateHz: Int = 16_000,
     val updateIntervalMs: Long = 900L,
     val firstPartialDelayMs: Long = 900L,
     val endSilenceMs: Long = 450L,
@@ -28,6 +29,7 @@ data class AsrConfig(
 ) {
     init {
         require(language in SUPPORTED_LANGUAGES) { "Large-v3-Turbo supports zh or auto in this product mode" }
+        require(inputSampleRateHz == 16_000 || inputSampleRateHz == 48_000)
         require(updateIntervalMs in 500L..2_000L)
         require(firstPartialDelayMs in 800L..2_000L)
         require(endSilenceMs in 350L..500L)

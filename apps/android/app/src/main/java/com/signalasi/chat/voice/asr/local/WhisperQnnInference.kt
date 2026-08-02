@@ -1,5 +1,7 @@
 package com.signalasi.chat.voice.asr.local
 
+import java.nio.FloatBuffer
+
 internal enum class WhisperDecoderSelection {
     UNRESTRICTED,
     FIRST_TEXT_TOKEN,
@@ -12,7 +14,7 @@ internal data class WhisperQnnDecoderStep(
 )
 
 internal interface WhisperQnnNetwork : AutoCloseable {
-    fun encode(melFeatures: FloatArray): Long
+    fun encode(melFeatures: FloatBuffer): Long
     fun resetDecoder()
     fun decode(inputToken: Int, position: Int, selection: WhisperDecoderSelection): WhisperQnnDecoderStep
 }
@@ -37,7 +39,12 @@ internal class WhisperGreedyTranscriber(
     private val tokenizer: WhisperTiktokenTokenizer
 ) {
     fun transcribe(melFeatures: FloatArray, language: String, maxTokens: Int): WhisperQnnTranscription {
-        require(melFeatures.size == WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES)
+        return transcribe(FloatBuffer.wrap(melFeatures), language, maxTokens)
+    }
+
+    fun transcribe(melFeatures: FloatBuffer, language: String, maxTokens: Int): WhisperQnnTranscription {
+        require(melFeatures.remaining() ==
+            WhisperLargeTurboQnnContract.MEL_BINS * WhisperLargeTurboQnnContract.MEL_FRAMES)
         require(language == "auto" || language in tokenizer.generation.languageTokens)
         require(maxTokens in 1..160)
 

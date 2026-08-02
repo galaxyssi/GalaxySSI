@@ -14,10 +14,10 @@ std::uint64_t to_samples(const int milliseconds, const int sample_rate_hz) {
 
 RollingWindowPlanner::RollingWindowPlanner(RollingWindowConfig config) : config_(config) {
     if (config_.sample_rate_hz != 16'000 || config_.first_partial_ms < 800 ||
-        config_.first_partial_ms > 1'500 || config_.update_interval_ms < 500 ||
-        config_.update_interval_ms > 1'200 || config_.active_window_ms < 6'000 ||
-        config_.active_window_ms > 10'000 || config_.overlap_ms < 1'000 ||
-        config_.overlap_ms > 2'000 || config_.maximum_window_ms < 25'000 ||
+        config_.first_partial_ms > 2'000 || config_.update_interval_ms < 500 ||
+        config_.update_interval_ms > 2'000 || config_.active_window_ms < 6'000 ||
+        config_.active_window_ms > 12'000 || config_.overlap_ms < 1'000 ||
+        config_.overlap_ms > 3'000 || config_.maximum_window_ms < 25'000 ||
         config_.maximum_window_ms > 28'000) {
         throw std::invalid_argument("Rolling Whisper window configuration is outside the product envelope");
     }
