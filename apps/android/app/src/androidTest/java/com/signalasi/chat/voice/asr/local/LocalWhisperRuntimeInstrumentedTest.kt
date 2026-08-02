@@ -27,6 +27,35 @@ import kotlin.math.sin
 @RunWith(AndroidJUnit4::class)
 class LocalWhisperRuntimeInstrumentedTest {
     @Test
+    fun acceleratedTinyUsesQnnHtpWhenAvailable() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val profile = WhisperModelCatalog.require("tiny")
+        assertTrue("QNN HTP runtime is not packaged for this Qualcomm device", WhisperQnnSupport.canUse(context, profile))
+
+        val runtime = QnnWhisperRuntime(context)
+        try {
+            val loaded = withTimeout(300_000L) {
+                runtime.load(profile, WhisperLoadOptions(threadCount = 2, warmUp = false))
+            }
+            assertEquals(WhisperAccelerationBackend.QNN_HTP, loaded.accelerationBackend)
+            runtime.createSession(
+                LocalWhisperSessionConfig(
+                    language = "en",
+                    singleSegment = true,
+                    mode = WhisperExecutionMode.FINAL_ONLY
+                )
+            ).use { session ->
+                val result = withTimeout(180_000L) {
+                    session.decode(WhisperDecodeRequest(ShortArray(16_000)))
+                }
+                assertEquals("QNN HTP decode failed: ${result.message}", NativeWhisperCode.OK, result.code)
+            }
+        } finally {
+            runtime.close()
+        }
+    }
+
+    @Test
     fun selectedDownloadedProfileLoadsAndCompletesFinalDecode() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val selected = WhisperModelCatalog.require(VoiceAssistantSettings.get(context).asrModel)

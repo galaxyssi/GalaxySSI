@@ -65,12 +65,23 @@ class DefaultLocalWhisperRuntime internal constructor(
                 handle = native.createRuntime(modelFile.path, options.threadCount, options.useGpu)
                 check(handle != 0L) { "Native Whisper runtime could not load ${profile.displayName}" }
                 val warmUp = if (options.warmUp) warmUp(handle, options) else null
+                val smeAvailable = WhisperCpuFeatures.osExposesSme()
                 val loaded = WhisperLoadedModel(
                     profile = profile,
                     threadCount = options.threadCount,
                     loadedAtMillis = clock(),
                     loadDurationMs = (elapsedRealtime() - startedAt).coerceAtLeast(0L),
-                    warmUpTimings = warmUp
+                    warmUpTimings = warmUp,
+                    accelerationBackend = if (smeAvailable) {
+                        WhisperAccelerationBackend.QMX_SME
+                    } else {
+                        WhisperAccelerationBackend.CPU
+                    },
+                    accelerationDetail = if (smeAvailable) {
+                        "GGML ARMv9.2 SME runtime backend"
+                    } else {
+                        "GGML runtime-selected NEON backend"
+                    }
                 )
                 runtime = RuntimeLease(handle, loaded, options)
                 WhisperModelManager.markLoaded(profile.id)

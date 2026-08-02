@@ -4,6 +4,12 @@ import com.signalasi.chat.voice.model.WhisperExecutionMode
 import com.signalasi.chat.voice.model.WhisperModelProfile
 import kotlinx.coroutines.flow.StateFlow
 
+enum class WhisperAccelerationBackend {
+    QNN_HTP,
+    QMX_SME,
+    CPU
+}
+
 enum class NativeWhisperCode(val wireValue: Int) {
     OK(0),
     ABORTED(1),
@@ -81,7 +87,6 @@ data class WhisperLoadOptions(
 ) {
     init {
         require(threadCount in 1..16)
-        require(!useGpu) { "The first LocalWhisperRuntime release is CPU-only" }
         require(warmUpSamples in 1_600..32_000)
     }
 }
@@ -120,7 +125,9 @@ data class WhisperLoadedModel(
     val threadCount: Int,
     val loadedAtMillis: Long,
     val loadDurationMs: Long,
-    val warmUpTimings: NativeWhisperTimings?
+    val warmUpTimings: NativeWhisperTimings?,
+    val accelerationBackend: WhisperAccelerationBackend = WhisperAccelerationBackend.CPU,
+    val accelerationDetail: String = "GGML CPU"
 )
 
 enum class AbortReason {
