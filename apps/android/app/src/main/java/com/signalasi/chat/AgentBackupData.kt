@@ -93,6 +93,7 @@ object AgentBackupData {
                     .put("online_asr_delete_server_data", voiceAssistant.onlineAsrPrivacy.requestServerDataDeletion)
                     .put("local_asr_always_preferred", voiceAssistant.onlineAsrPrivacy.localAlwaysPreferred)
                     .put("asr_model", voiceAssistant.asrModel)
+                    .put("asr_acceleration", voiceAssistant.asrAcceleration)
                     .put("asr_runtime_mode", voiceAssistant.asrRuntimeMode.name)
                     .put("asr_language", voiceAssistant.asrLanguage)
                     .put("tts_provider", voiceAssistant.ttsProvider)
@@ -258,6 +259,13 @@ object AgentBackupData {
                 )
             )
             VoiceAssistantSettings.setAsrModel(context, json.optString("asr_model", "tiny"))
+            VoiceAssistantSettings.setAsrAcceleration(
+                context,
+                json.optString(
+                    "asr_acceleration",
+                    VoiceAssistantSettings.ASR_ACCELERATION_GGML
+                )
+            )
             VoiceAssistantSettings.setAsrRuntimeMode(
                 context,
                 runCatching {

@@ -5,6 +5,7 @@ import com.argmaxinc.whisperkit.huggingface.HuggingFaceApi
 import com.argmaxinc.whisperkit.network.ArgmaxModel
 import com.argmaxinc.whisperkit.network.ArgmaxModelDownloader
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
@@ -33,16 +34,52 @@ internal class QnnWhisperModelDownloader(
         root: File
     ): Flow<HuggingFaceApi.Progress> = flow {
         require(model == ArgmaxModel.WHISPER) { "Unsupported QNN model type: $model" }
-        val assets = manifests[variant]
-            ?: error("Unsupported QNN Whisper variant: $variant")
-        root.mkdirs()
-        assets.forEachIndexed { index, asset ->
-            withContext(Dispatchers.IO) { ensureAsset(root, asset) }
-            emit(HuggingFaceApi.Progress((index + 1f) / assets.size.toFloat()))
-        }
+        install(variant, root) { }
+        emit(HuggingFaceApi.Progress(1f))
     }
 
-    private fun ensureAsset(root: File, asset: Asset) {
+    suspend fun install(variant: String, root: File, onProgress: (Int) -> Unit) {
+        val assets = manifests[variant] ?: error("Unsupported QNN Whisper variant: $variant")
+        val totalBytes = assets.sumOf(Asset::sizeBytes)
+        root.mkdirs()
+        var completedBytes = 0L
+        assets.forEach { asset ->
+            withContext(Dispatchers.IO) {
+                ensureActive()
+                ensureAsset(root, asset, completedBytes, totalBytes, onProgress)
+            }
+            completedBytes += asset.sizeBytes
+            onProgress(((completedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100))
+        }
+        receiptFile(root).writeText(receiptValue(variant))
+    }
+
+    fun isInstalled(variant: String, root: File): Boolean {
+        val assets = manifests[variant] ?: return false
+        if (receiptFile(root).readTextOrNull() == receiptValue(variant) &&
+            assets.all { File(root, it.outputName).hasExpectedSize(it) }
+        ) return true
+        val installed = assets.all { File(root, it.outputName).matches(it) }
+        if (installed) receiptFile(root).writeText(receiptValue(variant))
+        return installed
+    }
+
+    fun expectedBytes(variant: String): Long =
+        manifests[variant]?.sumOf(Asset::sizeBytes) ?: 0L
+
+    private fun receiptValue(variant: String): String = "$variant:${expectedBytes(variant)}:v1"
+
+    private fun receiptFile(root: File): File = File(root, ".signalasi-qnn-model")
+
+    private fun File.readTextOrNull(): String? = runCatching { readText() }.getOrNull()
+
+    private fun ensureAsset(
+        root: File,
+        asset: Asset,
+        completedBytes: Long,
+        totalBytes: Long,
+        onProgress: (Int) -> Unit
+    ) {
         val destination = File(root, asset.outputName)
         if (destination.matches(asset)) return
         val temporary = File(root, ".${asset.outputName}.part")
@@ -55,7 +92,16 @@ internal class QnnWhisperModelDownloader(
         var lastError: Throwable? = null
         for (base in sources) {
             try {
-                download("$base/${asset.repository}/resolve/${asset.revision}/${asset.remotePath}", temporary)
+                download(
+                    "$base/${asset.repository}/resolve/${asset.revision}/${asset.remotePath}",
+                    temporary
+                ) { assetBytes ->
+                    onProgress(
+                        (((completedBytes + assetBytes) * 100L) / totalBytes)
+                            .toInt()
+                            .coerceIn(0, 99)
+                    )
+                }
                 check(temporary.matches(asset)) {
                     "Integrity verification failed for ${asset.outputName}"
                 }
@@ -75,7 +121,7 @@ internal class QnnWhisperModelDownloader(
         throw IllegalStateException("Unable to download ${asset.outputName}", lastError)
     }
 
-    private fun download(url: String, destination: File) {
+    private fun download(url: String, destination: File, onBytes: (Long) -> Unit) {
         destination.parentFile?.mkdirs()
         val request = Request.Builder()
             .url(url)
@@ -85,13 +131,26 @@ internal class QnnWhisperModelDownloader(
             check(response.isSuccessful) { "HTTP ${response.code} for $url" }
             val body = checkNotNull(response.body) { "Empty response for $url" }
             destination.outputStream().buffered().use { output ->
-                body.byteStream().use { input -> input.copyTo(output, 1024 * 1024) }
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(1024 * 1024)
+                    var downloaded = 0L
+                    while (true) {
+                        if (Thread.currentThread().isInterrupted) error("QNN model download cancelled")
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        if (read > 0) {
+                            output.write(buffer, 0, read)
+                            downloaded += read
+                            onBytes(downloaded)
+                        }
+                    }
+                }
             }
         }
     }
 
     private fun File.matches(asset: Asset): Boolean {
-        if (!isFile || length() != asset.sizeBytes) return false
+        if (!hasExpectedSize(asset)) return false
         val digest = MessageDigest.getInstance("SHA-256")
         inputStream().buffered().use { input ->
             val buffer = ByteArray(1024 * 1024)
@@ -103,6 +162,8 @@ internal class QnnWhisperModelDownloader(
         }
         return digest.digest().joinToString("") { "%02x".format(it) } == asset.sha256
     }
+
+    private fun File.hasExpectedSize(asset: Asset): Boolean = isFile && length() == asset.sizeBytes
 
     private data class Asset(
         val outputName: String,

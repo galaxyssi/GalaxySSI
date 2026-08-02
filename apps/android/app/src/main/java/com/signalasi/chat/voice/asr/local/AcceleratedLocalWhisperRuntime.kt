@@ -2,6 +2,7 @@ package com.signalasi.chat.voice.asr.local
 
 import android.content.Context
 import android.util.Log
+import com.signalasi.chat.VoiceAssistantSettings
 import com.signalasi.chat.voice.model.WhisperModelProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +13,9 @@ class AcceleratedLocalWhisperRuntime(
     private val qnnFactory: () -> LocalWhisperRuntime = { QnnWhisperRuntime(context.applicationContext) },
     private val fallbackFactory: () -> LocalWhisperRuntime = { DefaultLocalWhisperRuntime(context.applicationContext) },
     private val qnnEligible: (WhisperModelProfile) -> Boolean = {
-        WhisperQnnSupport.canUse(context.applicationContext, it)
+        VoiceAssistantSettings.get(context.applicationContext).asrAcceleration ==
+            VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
+            WhisperQnnSupport.canUse(context.applicationContext, it)
     }
 ) : LocalWhisperRuntime {
     private val mutableState = MutableStateFlow<WhisperRuntimeState>(WhisperRuntimeState.Unloaded)
@@ -23,13 +26,16 @@ class AcceleratedLocalWhisperRuntime(
     override suspend fun load(profile: WhisperModelProfile, options: WhisperLoadOptions): WhisperLoadedModel {
         val current = active
         val ready = current?.state?.value as? WhisperRuntimeState.Ready
-        if (ready?.model?.profile?.id == profile.id) return ready.model
+        val wantsQnn = qnnEligible(profile)
+        if (ready?.model?.profile?.id == profile.id &&
+            (ready.model.accelerationBackend == WhisperAccelerationBackend.QNN_HTP) == wantsQnn
+        ) return ready.model
         current?.unload(UnloadReason.MODEL_SWITCH)
         current?.close()
         active = null
         mutableState.value = WhisperRuntimeState.Loading(profile.id)
 
-        if (qnnEligible(profile)) {
+        if (wantsQnn) {
             val qnn = qnnFactory()
             try {
                 val loaded = qnn.load(profile, options)
