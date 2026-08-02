@@ -75,6 +75,7 @@ private fun LocalModelRuntimeProfile.toJson(): JSONObject = JSONObject()
     .put("default_no_think", defaultNoThink)
     .put("vision_capable", visionCapable)
     .put("source_trust", sourceTrust.name)
+    .put("source_hub", sourceHub.name)
 
 private fun JSONObject.toProfile(): LocalModelRuntimeProfile? = runCatching {
     val trust = enumValueOf<LocalModelSourceTrust>(getString("source_trust"))
@@ -95,6 +96,9 @@ private fun JSONObject.toProfile(): LocalModelRuntimeProfile? = runCatching {
         parameterCountBillions = optDouble("parameter_billions", 0.0),
         defaultNoThink = optBoolean("default_no_think"),
         visionCapable = optBoolean("vision_capable"),
-        sourceTrust = trust
+        sourceTrust = trust,
+        sourceHub = runCatching {
+            enumValueOf<LocalModelHubSource>(optString("source_hub", LocalModelHubSource.HUGGING_FACE.name))
+        }.getOrDefault(LocalModelHubSource.HUGGING_FACE)
     ).also { require(it.downloadable) }
 }.getOrNull()
