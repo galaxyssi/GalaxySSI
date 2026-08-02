@@ -7,6 +7,13 @@ plugins {
 
 val runtimeJniRoot = rootProject.file("../../build/runtime/android-jni-libs")
 val runtimeAssetRoot = rootProject.file("../../build/runtime/android-assets")
+val qnnCompatJniRoot = layout.buildDirectory.dir("generated/qnn-compat-jni")
+val androidNdkVersion = "29.0.13113456"
+val androidNdkHostTag = when {
+    System.getProperty("os.name").startsWith("Windows", ignoreCase = true) -> "windows-x86_64"
+    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "darwin-x86_64"
+    else -> "linux-x86_64"
+}
 val requireEmbeddedRuntime = providers.gradleProperty("signalasi.requireEmbeddedRuntime")
     .map(String::toBoolean)
     .orElse(true)
@@ -76,6 +83,19 @@ tasks.matching { it.name == "preBuild" }.configureEach {
     dependsOn(bundledWhisperVerification)
 }
 
+val stageCurrentNdkSharedRuntime = tasks.register<Copy>("stageCurrentNdkSharedRuntime") {
+    val ndkSharedRuntime = file(
+        "${android.sdkDirectory}/ndk/$androidNdkVersion/toolchains/llvm/prebuilt/$androidNdkHostTag/" +
+            "sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"
+    )
+    from(ndkSharedRuntime)
+    into(qnnCompatJniRoot.map { it.dir("arm64-v8a") })
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(stageCurrentNdkSharedRuntime)
+}
+
 android {
     namespace = "com.signalasi.chat"
     compileSdk = 36
@@ -84,8 +104,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 325
-        versionName = "0.3.25"
+        versionCode = 326
+        versionName = "0.3.26"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")
@@ -105,7 +125,7 @@ android {
         }
     }
 
-    ndkVersion = "25.2.9519653"
+    ndkVersion = androidNdkVersion
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
@@ -120,6 +140,7 @@ android {
     sourceSets {
         getByName("main") {
             jniLibs.srcDir(runtimeJniRoot)
+            jniLibs.srcDir(qnnCompatJniRoot)
             assets.srcDir(runtimeAssetRoot)
         }
     }
@@ -190,6 +211,9 @@ dependencies {
     }
     implementation(files("libs/onnxruntime-android-1.24.3.aar"))
     implementation(files("libs/commons-math3-3.6.1.jar"))
+    implementation("com.argmaxinc:whisperkit:0.3.3")
+    implementation("com.qualcomm.qti:qnn-runtime:2.45.0")
+    implementation("com.qualcomm.qti:qnn-litert-delegate:2.45.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")

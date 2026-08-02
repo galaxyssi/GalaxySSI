@@ -13,15 +13,18 @@ if(ANDROID)
 endif()
 
 set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+set(GGML_CPU_ARM_ARCH "" CACHE STRING "" FORCE)
 set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(${WHISPER_ROOT}/ggml ${CMAKE_CURRENT_BINARY_DIR}/ggml)
 
-foreach(GGML_TARGET ggml ggml-base ggml-cpu)
+foreach(GGML_TARGET ggml ggml-base)
     if(TARGET ${GGML_TARGET})
-        target_compile_options(${GGML_TARGET} PRIVATE -O3 -march=armv8-a)
+        target_compile_options(${GGML_TARGET} PRIVATE -O3)
     endif()
 endforeach()
 
@@ -37,7 +40,6 @@ target_compile_definitions(whisper PRIVATE
 )
 target_compile_options(whisper PRIVATE
     -O3
-    -march=armv8-a
     -fvisibility=hidden
     -fvisibility-inlines-hidden
 )
@@ -52,4 +54,4 @@ target_include_directories(whisper PRIVATE
 
 find_library(LOG_LIB log)
 find_library(ANDROID_LIB android)
-target_link_libraries(whisper PRIVATE ${LOG_LIB} ${ANDROID_LIB} ggml)
+target_link_libraries(whisper PRIVATE ${LOG_LIB} ${ANDROID_LIB} ${CMAKE_DL_LIBS} ggml)

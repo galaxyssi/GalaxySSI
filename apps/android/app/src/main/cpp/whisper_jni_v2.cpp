@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
+#include <dlfcn.h>
 
 #include <algorithm>
 #include <atomic>
@@ -14,6 +15,7 @@
 #include <vector>
 
 #include "whisper.h"
+#include "ggml-backend.h"
 
 namespace {
 
@@ -96,6 +98,26 @@ std::mutex registry_mutex;
 std::unordered_map<jlong, std::shared_ptr<RuntimeRecord>> runtimes;
 std::unordered_map<jlong, std::shared_ptr<SessionRecord>> sessions;
 std::atomic<jlong> next_handle{1};
+std::once_flag backend_load_once;
+
+void load_runtime_backends() {
+    std::call_once(backend_load_once, [] {
+        Dl_info info{};
+        if (dladdr(reinterpret_cast<void *>(&ggml_backend_load_all_from_path), &info) != 0 &&
+            info.dli_fname != nullptr) {
+            std::string library_path(info.dli_fname);
+            const size_t separator = library_path.find_last_of('/');
+            if (separator != std::string::npos) {
+                const std::string directory = library_path.substr(0, separator);
+                ggml_backend_load_all_from_path(directory.c_str());
+                __android_log_print(ANDROID_LOG_INFO, TAG, "Loaded GGML backends from %s", directory.c_str());
+                return;
+            }
+        }
+        ggml_backend_load_all();
+        __android_log_print(ANDROID_LOG_WARN, TAG, "Loaded GGML backends from the default path");
+    });
+}
 
 jlong allocate_handle() {
     jlong value = next_handle.fetch_add(1, std::memory_order_relaxed);
@@ -250,6 +272,7 @@ Java_com_signalasi_chat_voice_asr_local_WhisperNativeBridge_nativeCreateRuntime(
     try {
         const std::string path = get_string(env, model_path, 4096);
         if (path.empty()) return 0;
+        load_runtime_backends();
         whisper_context_params params = whisper_context_default_params();
         params.use_gpu = false;
         whisper_context *context = whisper_init_from_file_with_params_no_state(path.c_str(), params);

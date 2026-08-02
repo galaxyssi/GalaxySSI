@@ -10,7 +10,8 @@ import android.os.SystemClock
 import android.util.Log
 import com.signalasi.chat.voice.VoiceFeatureFlags
 import com.signalasi.chat.voice.asr.local.AbortReason
-import com.signalasi.chat.voice.asr.local.DefaultLocalWhisperRuntime
+import com.signalasi.chat.voice.asr.local.AcceleratedLocalWhisperRuntime
+import com.signalasi.chat.voice.asr.local.LocalWhisperRuntime
 import com.signalasi.chat.voice.asr.local.LocalWhisperSessionConfig
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
 import com.signalasi.chat.voice.asr.local.NativeWhisperResult
@@ -56,7 +57,7 @@ object LocalWhisperAsr {
     private const val TAG = "SignalASILocalASR"
     private const val TARGET_SAMPLE_RATE = 16_000
     private val mutex = Mutex()
-    @Volatile private var whisperRuntime: DefaultLocalWhisperRuntime? = null
+    @Volatile private var whisperRuntime: LocalWhisperRuntime? = null
     @Volatile private var legacyContext: WhisperContext? = null
     @Volatile private var legacyModelId: String? = null
 
@@ -341,18 +342,32 @@ object LocalWhisperAsr {
         attributes: Map<String, String>
     ): NativeWhisperResult {
         releaseLegacyContext()
-        val runtime = whisperRuntime ?: DefaultLocalWhisperRuntime(context.applicationContext).also {
+        val runtime = whisperRuntime ?: AcceleratedLocalWhisperRuntime(context.applicationContext).also {
             whisperRuntime = it
         }
         val coldStart = (runtime.state.value as? WhisperRuntimeState.Ready)?.model?.profile?.id != profile.id
         if (coldStart) {
             trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_STARTED, attributes + ("cold_start" to "true"))
         }
-        runtime.load(profile, WhisperLoadOptions(threadCount = threadCount))
+        val loadedModel = runtime.load(profile, WhisperLoadOptions(threadCount = threadCount))
+        val runtimeAttributes = attributes + mapOf(
+            "acceleration_backend" to loadedModel.accelerationBackend.name,
+            "acceleration_detail" to loadedModel.accelerationDetail
+        )
+        Log.i(
+            TAG,
+            "Whisper backend=${loadedModel.accelerationBackend} " +
+                "detail=${loadedModel.accelerationDetail} model=${profile.id}"
+        )
         if (coldStart) {
-            trace(context, traceId, VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED, attributes + ("cold_start" to "true"))
+            trace(
+                context,
+                traceId,
+                VoiceTraceEvents.ASR_MODEL_LOAD_COMPLETED,
+                runtimeAttributes + ("cold_start" to "true")
+            )
         }
-        trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, attributes)
+        trace(context, traceId, VoiceTraceEvents.WHISPER_FULL_STARTED, runtimeAttributes)
         return runtime.createSession(
             LocalWhisperSessionConfig(
                 language = normalizedLanguage,
