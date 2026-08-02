@@ -84,8 +84,8 @@ android {
         applicationId = "com.signalasi.chat"
         minSdk = 26
         targetSdk = 34
-        versionCode = 319
-        versionName = "0.3.19"
+        versionCode = 320
+        versionName = "0.3.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "WHISPER_NATIVE_VERSION", "\"v1.9.1-f049fff95a08\"")
         buildConfigField("String", "WHISPER_NATIVE_BUILD_FINGERPRINT", "\"$whisperNativeBuildFingerprint\"")

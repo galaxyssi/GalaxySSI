@@ -9124,6 +9124,8 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         val homeAssistant = HomeAssistantSettingsStore.load(this)
         val homeAssistantReady = homeAssistant.configured
         val onDeviceRuntime = AgentOnDeviceRuntimeManager(this).status()
+        val localModelProfile = LocalModelRuntimeSettings.selectedProfile(this)
+        val localModelInstalled = LocalModelManager.isInstalled(this, localModelProfile)
         val globalRuntime = if (::globalSuperAgentRuntime.isInitialized) {
             globalSuperAgentRuntime
         } else GlobalSuperAgentRuntime.get(this)
@@ -9356,7 +9358,25 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 ControlCenterTone.NEUTRAL
             )
         )
-        val homeExtras = mapOf(
+        val homeLeadingRows = mapOf(
+            ControlCenterHomeGroup.MODELS to listOf(
+                ControlCenterRowSpec(
+                    actionId = "local_model.open",
+                    title = getString(R.string.local_model_title),
+                    subtitle = getString(R.string.local_model_search_subtitle),
+                    iconRes = R.drawable.ic_local_model,
+                    status = getString(
+                        if (localModelInstalled) {
+                            R.string.local_model_download_ready
+                        } else {
+                            R.string.status_needs_setup
+                        }
+                    ),
+                    tone = if (localModelInstalled) ControlCenterTone.GREEN else ControlCenterTone.BLUE
+                )
+            )
+        )
+        val homeTrailingRows = mapOf(
             ControlCenterHomeGroup.CONNECTED_DEVICES to listOf(
                 ControlCenterRowSpec(
                     actionId = "desktop.remote_control",
@@ -9396,8 +9416,10 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 sections = ControlCenterHomeGrouping.orderedGroups.map { group ->
                     ControlCenterSectionSpec(
                         controlCenterHomeGroupTitle(group),
-                        ControlCenterHomeGrouping.routes(group)
-                            .mapNotNull { route -> homeRows[route] } + homeExtras[group].orEmpty()
+                        homeLeadingRows[group].orEmpty() +
+                            ControlCenterHomeGrouping.routes(group)
+                                .mapNotNull { route -> homeRows[route] } +
+                            homeTrailingRows[group].orEmpty()
                     )
                 }
         )
@@ -9753,6 +9775,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 controlCenterDestination = ControlCenterDestination(ControlCenterRoute.SOFTWARE_CENTER)
                 renderCurrentControlCenterDestination()
             }
+            "local_model.open" -> openExistingControlCenterPage { showLocalModelFeaturePage() }
             "phone.catalog" -> openExistingControlCenterPage { showNativeToolCatalogPage() }
             "apps.adapters" -> openExistingControlCenterPage { showAgentAppAdaptersPage() }
             "desktop.remote_control" -> openExistingControlCenterPage { showDesktopControlPicker() }
