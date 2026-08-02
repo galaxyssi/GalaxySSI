@@ -21,6 +21,7 @@ set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 add_subdirectory(${WHISPER_ROOT}/ggml ${CMAKE_CURRENT_BINARY_DIR}/ggml)
+add_subdirectory(asr)
 
 foreach(GGML_TARGET ggml ggml-base)
     if(TARGET ${GGML_TARGET})
