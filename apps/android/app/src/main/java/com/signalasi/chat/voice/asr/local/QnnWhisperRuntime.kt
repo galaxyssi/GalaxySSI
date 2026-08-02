@@ -61,9 +61,14 @@ internal object WhisperQnnSupport {
         Os.sysconf(OsConstants._SC_PAGESIZE) == 4_096L
     }.getOrDefault(true)
 
-    fun canUse(context: Context, profile: WhisperModelProfile): Boolean =
-        isSupportedFamily(profile.family) && profile.quantization == WhisperQuantization.F16 &&
-            isQualcommDevice() && usesFourKilobytePages() && hasPackagedRuntime(context)
+    fun canInstall(context: Context): Boolean =
+        isQualcommDevice() && usesFourKilobytePages() && hasPackagedRuntime(context)
+
+    fun canUse(context: Context, profile: WhisperModelProfile): Boolean {
+        val modelPackage = QnnWhisperPackageManager.packageForProfile(profile.id) ?: return false
+        return isSupportedFamily(profile.family) && profile.quantization == WhisperQuantization.F16 &&
+            canInstall(context) && QnnWhisperPackageManager.isInstalled(context, modelPackage)
+    }
 }
 
 @OptIn(ExperimentalWhisperKit::class)
@@ -81,6 +86,7 @@ internal class QnnWhisperRuntime(
     private val mutableState = MutableStateFlow<WhisperRuntimeState>(WhisperRuntimeState.Unloaded)
     private var whisperKit: WhisperKit? = null
     private var loadedModel: WhisperLoadedModel? = null
+    private var pipelineInitialized = false
 
     override val state: StateFlow<WhisperRuntimeState> = mutableState.asStateFlow()
 
@@ -107,6 +113,7 @@ internal class QnnWhisperRuntime(
                 )
                 runtime.loadModel().collect { }
                 runtime.init(SAMPLE_RATE_HZ, 1, 0L)
+                pipelineInitialized = true
                 val loaded = WhisperLoadedModel(
                     profile = profile,
                     threadCount = options.threadCount,
@@ -124,6 +131,7 @@ internal class QnnWhisperRuntime(
                 runCatching { whisperKit?.deinitialize() }
                 whisperKit = null
                 loadedModel = null
+                pipelineInitialized = false
                 mutableState.value = WhisperRuntimeState.Failed(
                     WhisperRuntimeError(NativeWhisperCode.MODEL_NOT_LOADED, error.message.orEmpty())
                 )
@@ -174,8 +182,11 @@ internal class QnnWhisperRuntime(
         pendingResult.getAndSet(null)?.cancel()
         sessions.values.toList().forEach(Session::close)
         sessions.clear()
-        runCatching { whisperKit?.deinitialize() }
-            .onFailure { Log.w(TAG, "QNN Whisper deinitialize failed", it) }
+        if (pipelineInitialized) {
+            runCatching { whisperKit?.deinitialize() }
+                .onFailure { Log.w(TAG, "QNN Whisper deinitialize failed", it) }
+        }
+        pipelineInitialized = false
         whisperKit = null
         loadedModel = null
         mutableState.value = WhisperRuntimeState.Unloaded
@@ -200,14 +211,21 @@ internal class QnnWhisperRuntime(
                 val loaded = requireNotNull(loadedModel)
                 mutableState.value = WhisperRuntimeState.Decoding(id, request.mode)
                 val startedAt = elapsedRealtime()
+                if (!pipelineInitialized) {
+                    runtime.init(SAMPLE_RATE_HZ, 1, 0L)
+                    pipelineInitialized = true
+                }
+                val preparedAt = elapsedRealtime()
                 val deferred = CompletableDeferred<TranscriptionResult>()
                 check(pendingResult.compareAndSet(null, deferred)) { "Another QNN decode is already active" }
                 try {
                     val pcm = request.pcm16.copyOfRange(request.offset, request.offset + request.length)
                     val bytes = pcm.toLittleEndianBytes().padToFrame()
                     val bufferedSeconds = runtime.transcribe(bytes)
+                    val transcribedAt = elapsedRealtime()
                     check(bufferedSeconds >= 0) { "QNN Whisper rejected the PCM stream" }
                     val transcription = withTimeout(DECODE_TIMEOUT_MS) { deferred.await() }
+                    val callbackAt = elapsedRealtime()
                     val totalMs = (elapsedRealtime() - startedAt).coerceAtLeast(1L)
                     val audioMs = pcm.size.toLong() * 1_000L / SAMPLE_RATE_HZ
                     val timings = NativeWhisperTimings(
@@ -221,6 +239,14 @@ internal class QnnWhisperRuntime(
                     val segments = transcription.segments.ifEmpty {
                         listOf(com.argmaxinc.whisperkit.TranscriptionSegment(transcription.text))
                     }
+                    Log.i(
+                        TAG,
+                        "decode id=$id audioMs=$audioMs paddedBytes=${bytes.size} " +
+                            "prepareMs=${preparedAt - startedAt} " +
+                            "transcribeMs=${transcribedAt - preparedAt} " +
+                            "callbackMs=${callbackAt - transcribedAt} totalMs=$totalMs " +
+                            "bufferedSeconds=$bufferedSeconds textChars=${transcription.text.length}"
+                    )
                     NativeWhisperResult(
                         codeValue = NativeWhisperCode.OK.wireValue,
                         segments = segments.map {
@@ -238,6 +264,11 @@ internal class QnnWhisperRuntime(
                     )
                 } finally {
                     pendingResult.compareAndSet(deferred, null)
+                    if (pipelineInitialized) {
+                        runCatching { runtime.deinitialize() }
+                            .onFailure { Log.w(TAG, "QNN Whisper session reset failed", it) }
+                        pipelineInitialized = false
+                    }
                     if (!closed.get() && loadedModel?.profile?.id == loaded.profile.id) {
                         mutableState.value = WhisperRuntimeState.Ready(loaded)
                     }

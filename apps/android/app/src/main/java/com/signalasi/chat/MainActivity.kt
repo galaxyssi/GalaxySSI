@@ -115,6 +115,8 @@ import com.signalasi.chat.voice.asr.local.DefaultWhisperDecodeScheduler
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptionSession
 import com.signalasi.chat.voice.asr.local.LiveWhisperTranscriptUpdate
 import com.signalasi.chat.voice.asr.local.NativeWhisperCode
+import com.signalasi.chat.voice.asr.local.QnnWhisperPackageManager
+import com.signalasi.chat.voice.asr.local.QnnWhisperPackageStatus
 import com.signalasi.chat.voice.asr.local.WhisperDecodeScheduler
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkManager
 import com.signalasi.chat.voice.benchmark.WhisperBenchmarkDeferredException
@@ -768,7 +770,15 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
     private val whisperBenchmarkRefreshScheduled = AtomicBoolean(false)
     private val asrModelDownloadPoll = object : Runnable {
         override fun run() {
-            val pendingId = pendingAsrModelSelection ?: return
+            val pendingId = pendingAsrModelSelection
+            if (pendingId == null) {
+                if (featurePage.visibility == View.VISIBLE &&
+                    featureTitle.text == getString(R.string.voice_asr_provider)
+                ) {
+                    showAsrProviderPage()
+                }
+                return
+            }
             val model = WhisperModelManager.model(pendingId)
             val state = WhisperModelManager.downloadState(this@MainActivity, model)
             when (state.status) {
@@ -29472,12 +29482,141 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 setOnClickListener { showWhisperRuntimeModeDialog(config.asrRuntimeMode) }
             })
         }
-        addSectionTitle(getString(R.string.voice_asr_model_section))
         var hasActiveDownload = false
+        val qnnPackages = QnnWhisperPackageManager.supportedPackages(this)
+        if (qnnPackages.isNotEmpty()) {
+            addSectionTitle(getString(R.string.voice_asr_qnn_section))
+            qnnPackages.forEach { modelPackage ->
+                val state = QnnWhisperPackageManager.state(this, modelPackage)
+                val isSelected = config.asrAcceleration == VoiceAssistantSettings.ASR_ACCELERATION_QNN &&
+                    config.asrModel == modelPackage.profileId
+                val isActive = state.status == QnnWhisperPackageStatus.DOWNLOADING ||
+                    state.status == QnnWhisperPackageStatus.VERIFYING
+                hasActiveDownload = hasActiveDownload || isActive
+                val lifecycleDetail = when (state.status) {
+                    QnnWhisperPackageStatus.DOWNLOADING ->
+                        getString(R.string.voice_asr_model_progress, state.progress)
+                    QnnWhisperPackageStatus.VERIFYING ->
+                        getString(R.string.voice_asr_model_verifying)
+                    QnnWhisperPackageStatus.READY ->
+                        getString(R.string.voice_asr_qnn_ready)
+                    QnnWhisperPackageStatus.FAILED ->
+                        getString(
+                            R.string.voice_asr_model_install_failed,
+                            state.detail.ifBlank { "UNKNOWN" }
+                        )
+                    QnnWhisperPackageStatus.NOT_INSTALLED ->
+                        getString(R.string.voice_asr_model_download_size)
+                }
+                val subtitle = getString(
+                    R.string.voice_asr_qnn_detail,
+                    modelPackage.sizeLabel,
+                    lifecycleDetail
+                )
+                val action = when {
+                    isSelected && state.status == QnnWhisperPackageStatus.READY ->
+                        getString(R.string.section_current)
+                    state.status == QnnWhisperPackageStatus.READY ->
+                        getString(R.string.settings_language_use)
+                    state.status == QnnWhisperPackageStatus.DOWNLOADING ->
+                        getString(R.string.voice_asr_model_cancel)
+                    state.status == QnnWhisperPackageStatus.VERIFYING ->
+                        getString(R.string.voice_asr_model_verifying)
+                    state.status == QnnWhisperPackageStatus.FAILED ->
+                        getString(R.string.common_retry)
+                    else -> getString(R.string.voice_asr_model_download)
+                }
+                featureContent.addView(featureRow(
+                    modelPackage.displayName,
+                    subtitle,
+                    R.drawable.ic_local_model,
+                    action
+                ).apply {
+                    isClickable = state.status != QnnWhisperPackageStatus.VERIFYING
+                    isFocusable = isClickable
+                    setOnClickListener(if (isClickable) View.OnClickListener {
+                        when (state.status) {
+                            QnnWhisperPackageStatus.DOWNLOADING -> {
+                                android.app.AlertDialog.Builder(this@MainActivity)
+                                    .setTitle(getString(R.string.voice_asr_model_cancel_title))
+                                    .setMessage(getString(
+                                        R.string.voice_asr_model_cancel_message,
+                                        modelPackage.displayName
+                                    ))
+                                    .setNegativeButton(
+                                        getString(R.string.voice_asr_model_keep_downloading),
+                                        null
+                                    )
+                                    .setPositiveButton(getString(R.string.voice_asr_model_cancel)) { _, _ ->
+                                        QnnWhisperPackageManager.cancel(this@MainActivity, modelPackage)
+                                        showAsrProviderPage()
+                                    }
+                                    .show()
+                            }
+                            QnnWhisperPackageStatus.READY -> {
+                                if (!isSelected) {
+                                    VoiceAssistantSettings.setAsrModel(
+                                        this@MainActivity,
+                                        modelPackage.profileId
+                                    )
+                                    VoiceAssistantSettings.setAsrAcceleration(
+                                        this@MainActivity,
+                                        VoiceAssistantSettings.ASR_ACCELERATION_QNN
+                                    )
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        getString(
+                                            R.string.voice_asr_model_ready,
+                                            modelPackage.displayName
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    ensureWhisperMicrophonePermission()
+                                }
+                                showAsrProviderPage()
+                            }
+                            QnnWhisperPackageStatus.NOT_INSTALLED,
+                            QnnWhisperPackageStatus.FAILED -> {
+                                QnnWhisperPackageManager.enqueue(this@MainActivity, modelPackage)
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(
+                                        R.string.voice_asr_model_download_started,
+                                        modelPackage.displayName
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                handler.post(asrModelDownloadPoll)
+                            }
+                            QnnWhisperPackageStatus.VERIFYING -> Unit
+                        }
+                    } else null)
+                    if (state.status == QnnWhisperPackageStatus.READY && !isSelected) {
+                        setOnLongClickListener {
+                            android.app.AlertDialog.Builder(this@MainActivity)
+                                .setTitle(getString(
+                                    R.string.voice_asr_model_remove_title,
+                                    modelPackage.displayName
+                                ))
+                                .setMessage(getString(R.string.voice_asr_qnn_remove_message))
+                                .setNegativeButton(getString(R.string.common_cancel), null)
+                                .setPositiveButton(getString(R.string.voice_asr_model_remove)) { _, _ ->
+                                    QnnWhisperPackageManager.delete(this@MainActivity, modelPackage)
+                                    showAsrProviderPage()
+                                }
+                                .show()
+                            true
+                        }
+                    }
+                })
+            }
+        }
+        addSectionTitle(getString(R.string.voice_asr_model_section))
         WhisperModelManager.models.forEach { model ->
             val state = WhisperModelManager.downloadState(this, model)
             val available = WhisperModelManager.isAvailable(this, model)
-            val isSelected = selected.id == model.id
+            val isSelected = selected.id == model.id &&
+                config.asrAcceleration != VoiceAssistantSettings.ASR_ACCELERATION_QNN
             val benchmarkRecord = if (available && VoiceFeatureFlags.isWhisperAutoBenchmarkEnabled(this)) {
                 WhisperBenchmarkManager.current(this, model)
             } else null

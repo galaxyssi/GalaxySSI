@@ -1103,6 +1103,10 @@
     <string name="voice_asr_local_title">本机 whisper.cpp</string>
     <string name="voice_asr_local_subtitle">语音始终留在本机，可选择已安装模型或从可信来源下载。</string>
     <string name="voice_asr_model_section">Whisper 模型</string>
+    <string name="voice_asr_qnn_section">QNN 加速模型</string>
+    <string name="voice_asr_qnn_detail">%1$s · Qualcomm HTP NPU\n%2$s</string>
+    <string name="voice_asr_qnn_ready">已安装 · HTP NPU 可用</string>
+    <string name="voice_asr_qnn_remove_message">将从本机删除已下载的 QNN 模型文件。</string>
     <string name="voice_asr_model_bundled">已随 App 内置</string>
     <string name="voice_asr_model_download_size">需要下载</string>
     <string name="voice_asr_model_profile_detail">%1$s · %2$s</string>

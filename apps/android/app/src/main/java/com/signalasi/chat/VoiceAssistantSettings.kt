@@ -16,6 +16,7 @@ data class VoiceAssistantConfig(
     val onlineAsrPrivacy: AsrPrivacyPolicy,
     val remoteWhisperAllowed: Boolean,
     val asrModel: String,
+    val asrAcceleration: String,
     val asrRuntimeMode: WhisperUserVoiceMode,
     val asrLanguage: String,
     val ttsProvider: String,
@@ -44,6 +45,7 @@ object VoiceAssistantSettings {
     private const val KEY_LOCAL_ASR_ALWAYS_PREFERRED = "local_asr_always_preferred"
     private const val KEY_REMOTE_WHISPER_ALLOWED = "remote_whisper_allowed"
     private const val KEY_ASR_MODEL = "asr_model"
+    private const val KEY_ASR_ACCELERATION = "asr_acceleration"
     private const val KEY_ASR_RUNTIME_MODE = "asr_runtime_mode"
     private const val KEY_TTS_PROVIDER = "tts_provider"
     private const val KEY_MICROSOFT_VOICE = "microsoft_voice"
@@ -60,6 +62,8 @@ object VoiceAssistantSettings {
     const val ASR_PROVIDER_AUTO = "auto"
     const val ASR_PROVIDER_ONLINE_REALTIME = "online_realtime"
     const val ASR_PROVIDER_REMOTE_WHISPER = "remote_whisper"
+    const val ASR_ACCELERATION_GGML = "ggml"
+    const val ASR_ACCELERATION_QNN = "qnn"
     const val ROUTING_MODE_NATIVE_AGENT = "native_agent"
     const val ROUTING_MODE_CONTACT = "contact"
     const val DEFAULT_WAKE_MODEL = "hello_world.onnx"
@@ -101,6 +105,9 @@ object VoiceAssistantSettings {
             ),
             remoteWhisperAllowed = prefs.getBoolean(KEY_REMOTE_WHISPER_ALLOWED, false),
             asrModel = canonicalAsrModel,
+            asrAcceleration = prefs.getString(KEY_ASR_ACCELERATION, ASR_ACCELERATION_GGML).orEmpty()
+                .takeIf { it == ASR_ACCELERATION_GGML || it == ASR_ACCELERATION_QNN }
+                ?: ASR_ACCELERATION_GGML,
             asrRuntimeMode = runCatching {
                 enumValueOf<WhisperUserVoiceMode>(
                     prefs.getString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.AUTOMATIC.name).orEmpty()
@@ -194,7 +201,17 @@ object VoiceAssistantSettings {
         val model = WhisperModelManager.model(value).id
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putString(KEY_ASR_MODEL, model)
+            .putString(KEY_ASR_ACCELERATION, ASR_ACCELERATION_GGML)
             .putString(KEY_ASR_RUNTIME_MODE, WhisperUserVoiceMode.MANUAL.name)
+            .apply()
+    }
+
+    fun setAsrAcceleration(context: Context, value: String) {
+        val acceleration = value.takeIf {
+            it == ASR_ACCELERATION_GGML || it == ASR_ACCELERATION_QNN
+        } ?: ASR_ACCELERATION_GGML
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_ASR_ACCELERATION, acceleration)
             .apply()
     }
 

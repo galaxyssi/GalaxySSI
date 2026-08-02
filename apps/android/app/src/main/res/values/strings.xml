@@ -1338,6 +1338,10 @@
     <string name="voice_asr_local_title">On-device whisper.cpp</string>
     <string name="voice_asr_local_subtitle">Speech stays on this phone. Choose an installed model or download one from a trusted source.</string>
     <string name="voice_asr_model_section">Whisper model</string>
+    <string name="voice_asr_qnn_section">QNN accelerated models</string>
+    <string name="voice_asr_qnn_detail">%1$s · Qualcomm HTP NPU\n%2$s</string>
+    <string name="voice_asr_qnn_ready">Installed · HTP NPU ready</string>
+    <string name="voice_asr_qnn_remove_message">The downloaded QNN model assets will be removed from this device.</string>
     <string name="voice_asr_model_bundled">Included with the app</string>
     <string name="voice_asr_model_download_size">Download required</string>
     <string name="voice_asr_model_profile_detail">%1$s · %2$s</string>

@@ -38,21 +38,33 @@ class LocalWhisperRuntimeInstrumentedTest {
                 runtime.load(profile, WhisperLoadOptions(threadCount = 2, warmUp = false))
             }
             assertEquals(WhisperAccelerationBackend.QNN_HTP, loaded.accelerationBackend)
-            runtime.createSession(
-                LocalWhisperSessionConfig(
-                    language = "en",
-                    singleSegment = true,
-                    mode = WhisperExecutionMode.FINAL_ONLY
-                )
-            ).use { session ->
-                val result = withTimeout(180_000L) {
-                    session.decode(WhisperDecodeRequest(ShortArray(16_000)))
+            val elapsed = buildList {
+                repeat(3) { iteration ->
+                    runtime.createSession(
+                        LocalWhisperSessionConfig(
+                            language = "en",
+                            singleSegment = true,
+                            mode = WhisperExecutionMode.FINAL_ONLY
+                        )
+                    ).use { session ->
+                        val startedAt = android.os.SystemClock.elapsedRealtime()
+                        val result = withTimeout(180_000L) {
+                            session.decode(WhisperDecodeRequest(ShortArray(16_000)))
+                        }
+                        add(android.os.SystemClock.elapsedRealtime() - startedAt)
+                        assertEquals(
+                            "QNN HTP decode $iteration failed: ${result.message}",
+                            NativeWhisperCode.OK,
+                            result.code
+                        )
+                    }
                 }
-                assertEquals("QNN HTP decode failed: ${result.message}", NativeWhisperCode.OK, result.code)
             }
+            Log.i(TAG, "QNN HTP isolated decode elapsedMs=$elapsed")
         } finally {
             runtime.close()
         }
+        Unit
     }
 
     @Test
