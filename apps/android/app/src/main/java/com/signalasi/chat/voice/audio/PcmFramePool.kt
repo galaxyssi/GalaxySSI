@@ -1,19 +1,39 @@
 package com.signalasi.chat.voice.audio
 
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.concurrent.ArrayBlockingQueue
+
+internal data class PcmFrameStorage(
+    val samples: ShortArray,
+    val pcm16: ByteBuffer
+)
 
 internal class PcmFramePool(
     frameSamples: Int,
     poolSize: Int
 ) {
-    private val buffers = ArrayBlockingQueue<ShortArray>(poolSize).apply {
-        repeat(poolSize) { offer(ShortArray(frameSamples)) }
+    private val buffers = ArrayBlockingQueue<PcmFrameStorage>(poolSize).apply {
+        repeat(poolSize) {
+            offer(PcmFrameStorage(
+                samples = ShortArray(frameSamples),
+                pcm16 = ByteBuffer.allocateDirect(frameSamples * PCM16_BYTES_PER_SAMPLE)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+            ))
+        }
     }
 
-    fun acquire(): ShortArray? = buffers.poll()
+    fun acquire(): PcmFrameStorage? = buffers.poll()
 
-    fun release(buffer: ShortArray) {
-        buffer.fill(0)
+    fun release(buffer: PcmFrameStorage) {
+        buffer.samples.fill(0)
+        buffer.pcm16.clear()
+        while (buffer.pcm16.hasRemaining()) buffer.pcm16.put(0)
+        buffer.pcm16.clear()
         buffers.offer(buffer)
+    }
+
+    private companion object {
+        const val PCM16_BYTES_PER_SAMPLE = 2
     }
 }

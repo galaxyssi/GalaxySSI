@@ -7,6 +7,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.runBlocking
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -58,6 +60,44 @@ class VoiceAudioHubTest {
         assertTrue(result!!.snapshot.speechDetected)
         assertTrue(result.snapshot.durationMs in 600L..800L)
         assertEquals(PcmStopReason.ADAPTIVE_ENDPOINT, result.stopReason)
+    }
+
+    @Test
+    fun hubOffersDirectPcmToNativeConsumersWithoutCreatingLegacyPacket() = runBlocking {
+        val recorder = FakePcmRecorder()
+        val listener = DirectRecordingListener()
+        val hub = VoiceAudioHub(
+            recorder,
+            CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+            sessionIdFactory = { "direct-session" },
+            vadFactory = { ThresholdVad() }
+        )
+        val session = assertNotNullValue(hub.start(
+            VoiceAudioSessionConfig(
+                capture = PcmCaptureConfig(sampleRateHz = 1_000, frameDurationMs = 20, maxDurationMs = 5_000)
+            ),
+            listener
+        ))
+        val samples = shortArrayOf(100, -200, 300, -400)
+        val pcm16 = ByteBuffer.allocateDirect(samples.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+        samples.forEach(pcm16::putShort)
+        pcm16.flip()
+        recorder.emit(AudioFrame(
+            sequence = 0,
+            captureTimeNanos = 1,
+            samples = samples,
+            validSamples = samples.size,
+            releaseAction = {},
+            directPcm16 = pcm16
+        ))
+
+        assertEquals(1, listener.frames.size)
+        val received = listener.frames.single()
+        assertTrue(received.pcm16.isDirect)
+        assertEquals(samples.size, received.sampleCount)
+        assertEquals(samples.toList(), List(samples.size) { received.pcm16.getShort(it * 2) })
+        hub.stop(session, PcmStopReason.USER_CANCEL)
+        Unit
     }
 
     private class FakePcmRecorder : PcmRecorder {
@@ -131,6 +171,15 @@ class VoiceAudioHubTest {
 
         override fun onEndpoint(session: VoiceAudioSession, reason: EndpointReason) {
             endpoint = reason
+        }
+    }
+
+    private class DirectRecordingListener : VoiceAudioHubListener {
+        val frames = mutableListOf<DirectPcmFramePacket>()
+        override val acceptsDirectPcmFrames: Boolean = true
+
+        override fun onDirectPcmFrame(session: VoiceAudioSession, frame: DirectPcmFramePacket) {
+            frames += frame
         }
     }
 
