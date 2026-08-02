@@ -7530,7 +7530,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         runCatching {
             val engine = WakeWordEngine(
                 context = applicationContext,
-                models = listOf(WakeWordModel("SignalASI", config.wakeModel, threshold = config.wakeThreshold)),
+                models = listOf(WakeWordModel(WakeWordPolicy.WAKE_WORD, config.wakeModel, threshold = config.wakeThreshold)),
                 detectionMode = DetectionMode.SINGLE_BEST,
                 detectionCooldownMs = 2500L,
                 scope = voiceAssistantScope
@@ -7910,7 +7910,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             return
         }
         if (!voiceAssistantAwake) {
-            if (containsWakeWord(text, VoiceAssistantSettings.get(this))) {
+            if (containsWakeWord(text)) {
                 onVoiceWakeDetected(text)
             } else {
                 updateWakeVoiceUi(getString(R.string.voice_status_low_power), text)
@@ -8828,19 +8828,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
         }
     }
 
-    private fun containsWakeWord(text: String, config: VoiceAssistantConfig): Boolean {
-        val normalized = text.lowercase(Locale.getDefault()).replace("\\s+".toRegex(), "")
-        val configuredMatched = config.wakeWords.any { word ->
-            val w = word.lowercase(Locale.getDefault()).replace("\\s+".toRegex(), "")
-            w.isNotBlank() && (normalized.contains(w) || text.contains(word, ignoreCase = true))
-        }
-        if (configuredMatched) return true
-        val quickWakeWords = resources.getStringArray(R.array.voice_quick_wake_words).toList()
-        return quickWakeWords.any { word ->
-            normalized.contains(word.lowercase(Locale.getDefault()).replace("\\s+".toRegex(), "")) ||
-                text.contains(word, ignoreCase = true)
-        }
-    }
+    private fun containsWakeWord(text: String): Boolean = WakeWordPolicy.matches(text)
 
     private fun updateWakeVoiceUi(status: String, detail: String) {
         val replyPinned = System.currentTimeMillis() < wakeReplyPinnedUntilMs
@@ -14886,7 +14874,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     ControlCenterSectionSpec(
                         getString(R.string.voice_section_listening),
                         listOf(
-                            ControlCenterRowSpec("voice.settings", getString(R.string.voice_wake_words), config.wakeWords.joinToString(", "), R.drawable.ic_input_voice, "", ControlCenterTone.BLUE),
+                            ControlCenterRowSpec("voice.settings", getString(R.string.voice_wake_words), WakeWordPolicy.WAKE_WORD, R.drawable.ic_input_voice, "", ControlCenterTone.BLUE),
                             ControlCenterRowSpec("voice.settings", getString(R.string.voice_wake_engine), wakeProviderLabel(config.wakeProvider), R.drawable.ic_agent_node, getString(if (config.enabled) R.string.status_enabled else R.string.common_off), if (config.enabled) ControlCenterTone.GREEN else ControlCenterTone.NEUTRAL),
                             ControlCenterRowSpec("voice.toggle_enabled", getString(R.string.voice_low_power_monitor), getString(R.string.voice_low_power_monitor_subtitle), R.drawable.ic_voice_settings, switchValue = config.enabled, showChevron = false)
                         )
@@ -21860,7 +21848,6 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             val welcome = "VOICE_SETTINGS_WELCOME_$token"
             VoiceAssistantSettings.setEnabled(this, true)
             VoiceAssistantSettings.setWakeProvider(this, VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR)
-            VoiceAssistantSettings.setWakeWords(this, "SignalASI,voice smoke,$token")
             VoiceAssistantSettings.setWakeModel(this, VoiceAssistantSettings.DEFAULT_WAKE_MODEL)
             VoiceAssistantSettings.setWakeThreshold(this, 0.73f)
             VoiceAssistantSettings.setAsrProvider(this, VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER)
@@ -21878,7 +21865,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
             val resolvedTarget = resolveVoiceAssistantTargetContactId(config.targetContactId)
             val ok = config.enabled &&
                 config.wakeProvider == VoiceAssistantSettings.WAKE_PROVIDER_ANDROID_ASR &&
-                config.wakeWords.contains("voice smoke") &&
+                config.wakeWords == WakeWordPolicy.configuredWords &&
                 config.wakeModel == VoiceAssistantSettings.DEFAULT_WAKE_MODEL &&
                 kotlin.math.abs(config.wakeThreshold - 0.73f) < 0.001f &&
                 config.asrProvider == VoiceAssistantSettings.ASR_PROVIDER_LOCAL_WHISPER &&
@@ -21899,7 +21886,7 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                     .put("token", token)
                     .put("enabled", config.enabled)
                     .put("wake_provider", config.wakeProvider)
-                    .put("wake_words", JSONArray(config.wakeWords))
+                    .put("wake_word", WakeWordPolicy.WAKE_WORD)
                     .put("wake_model", config.wakeModel)
                     .put("wake_threshold", config.wakeThreshold.toDouble())
                     .put("asr_provider", config.asrProvider)
@@ -29079,14 +29066,12 @@ class MainActivity : Activity(), SignalASIMqttClient.Listener {
                 }
             }
         })
-        featureContent.addView(featureRow(getString(R.string.voice_wake_words), config.wakeWords.joinToString(", "), R.drawable.ic_protocol_link, getString(R.string.common_edit)).apply {
-            setOnClickListener {
-                showTextSettingDialog(getString(R.string.voice_wake_words), config.wakeWords.joinToString(", ")) {
-                    VoiceAssistantSettings.setWakeWords(this@MainActivity, it)
-                    showVoiceAssistantSettingsPage()
-                }
-            }
-        })
+        featureContent.addView(featureRow(
+            getString(R.string.voice_wake_words),
+            WakeWordPolicy.WAKE_WORD,
+            R.drawable.ic_protocol_link,
+            ""
+        ))
         featureContent.addView(featureRow(getString(R.string.voice_openwakeword_model), config.wakeModel, R.drawable.ic_protocol_link, getString(R.string.common_select)).apply {
             setOnClickListener {
                 showChoiceDialog(getString(R.string.voice_openwakeword_model), VoiceAssistantSettings.SUPPORTED_WAKE_MODELS, config.wakeModel) {

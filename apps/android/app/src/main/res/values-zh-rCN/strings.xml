@@ -1257,9 +1257,8 @@
     <string name="voice_agent_completed">任务已完成</string>
     <string name="voice_agent_failed">本体 Agent 未能完成任务</string>
     <string name="voice_agent_paused">本体 Agent 执行已暂停</string>
-    <string name="voice_default_wake_words">SignalASI,signal asi,signal a s i,signal,asi,信号,小S,小信,小西,你好,hello,在吗,醒醒</string>
     <string name="voice_default_welcome_text">我在，欢迎使用 SignalASI。请说出你的问题或任务。</string>
-    <string name="voice_hint_wake">说 “SignalASI” 开始对话</string>
+    <string name="voice_hint_wake">说 “hello” 开始对话</string>
     <string name="voice_status_low_power">低功耗监听中</string>
     <string name="voice_status_disabled">语音唤醒已关闭</string>
     <string name="voice_status_disabled_detail">可在设置 &gt; 语音唤醒与 ASR/TTS 中开启</string>
@@ -1306,16 +1305,6 @@
     <string name="voice_error_no_valid_speech">未听到有效语音，正在继续监听</string>
     <string name="voice_error_recovering">识别器正在恢复，马上继续监听</string>
     <string name="voice_error_waiting">ASR 等待中 (%1$s)</string>
-    <string-array name="voice_quick_wake_words">
-        <item>hello</item>
-        <item>hi</item>
-        <item>你好</item>
-        <item>在吗</item>
-        <item>小信</item>
-        <item>小西</item>
-        <item>醒醒</item>
-        <item>开始</item>
-    </string-array>
     <string name="on_device_agent_title">手机端 Agent 权限</string>
     <string name="on_device_agent_hero_title">手机端 Agent</string>
     <string name="on_device_agent_hero_subtitle">管理感知、语音和自动化权限</string>
