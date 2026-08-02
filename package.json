@@ -7,6 +7,7 @@
   "scripts": {
     "check": "node tools/dev/check-repo.js",
     "check:android": "node tools/dev/check-android-build.js",
+    "check:android:16kb": "node tools/dev/check-android-16kb.js",
     "check:ios": "node tools/dev/check-ios-project.js",
     "smoke:android:ui": "npm --prefix apps/desktop run smoke:android-ui",
     "smoke:android:friends": "npm --prefix apps/desktop run smoke:android-friends",

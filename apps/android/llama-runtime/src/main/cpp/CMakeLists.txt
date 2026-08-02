@@ -7,6 +7,13 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+if(ANDROID)
+    add_link_options(
+        "-Wl,-z,max-page-size=16384"
+        "-Wl,-z,common-page-size=16384"
+    )
+endif()
+
 # Strip only this module at link time. The app keeps symbols for normalized
 # QEMU libraries whose 16 KB LOAD layout must not be rewritten by AGP.
 set(CMAKE_SHARED_LINKER_FLAGS_RELEASE

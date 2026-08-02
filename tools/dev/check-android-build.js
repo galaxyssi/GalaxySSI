@@ -51,4 +51,22 @@ if (result.error) {
   process.exit(1);
 }
 
-process.exit(result.status || 0);
+if (result.status) process.exit(result.status);
+
+const pageSizeAudit = spawnSync(
+  process.execPath,
+  [path.join(root, "tools", "dev", "check-android-16kb.js")],
+  {
+    cwd: root,
+    env,
+    stdio: "inherit",
+    shell: false
+  }
+);
+
+if (pageSizeAudit.error) {
+  console.error(`Android 16 KB audit failed to start: ${pageSizeAudit.error.message}`);
+  process.exit(1);
+}
+
+process.exit(pageSizeAudit.status || 0);
