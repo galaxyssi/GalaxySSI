@@ -29,14 +29,18 @@ data class HighAccuracyAsrResult(
 class HighAccuracyLocalAsrController internal constructor(
     private val scope: CoroutineScope,
     private val modelDirectoryResolver: () -> File?,
-    private val engineFactory: () -> LocalAsrEngine
+    private val engineFactory: () -> LocalAsrEngine,
+    private val runtimeMonitorFactory: ((LocalAsrEngine) -> LocalAsrRuntimeMonitor)? = null
 ) : AutoCloseable {
     private val engine = lazy(LazyThreadSafetyMode.SYNCHRONIZED, engineFactory)
     private val prepareMutex = Mutex()
     private val turnLock = Any()
     private val closed = AtomicBoolean(false)
     @Volatile private var prepareJob: Job? = null
+    @Volatile private var appForeground = false
+    @Volatile private var microphonePermissionGranted = false
     private var activeTurn: HighAccuracyLocalAsrTurn? = null
+    private var runtimeMonitor: LocalAsrRuntimeMonitor? = null
 
     fun prepareAsync() {
         if (closed.get() || isReady()) return
@@ -51,6 +55,7 @@ class HighAccuracyLocalAsrController internal constructor(
         val directory = modelDirectoryResolver()?.canonicalFile ?: return@withLock false
         if (!directory.isDirectory) return@withLock false
         val runtime = engine.value
+        ensureRuntimeMonitor(runtime)
         val ready = runtime.state.value as? LocalAsrState.Ready
         if (ready?.modelDirectory == directory.path) return@withLock true
         runCatching { runtime.prepare(directory.path) }.isSuccess && runtime.state.value is LocalAsrState.Ready
@@ -95,6 +100,16 @@ class HighAccuracyLocalAsrController internal constructor(
         synchronized(turnLock) { activeTurn }?.cancel()
     }
 
+    fun onAppForegroundChanged(foreground: Boolean) {
+        appForeground = foreground
+        synchronized(turnLock) { runtimeMonitor }?.onAppForegroundChanged(foreground)
+    }
+
+    fun onMicrophonePermissionChanged(granted: Boolean) {
+        microphonePermissionGranted = granted
+        synchronized(turnLock) { runtimeMonitor }?.onMicrophonePermissionChanged(granted)
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         val turn = synchronized(turnLock) {
@@ -102,7 +117,18 @@ class HighAccuracyLocalAsrController internal constructor(
         }
         turn?.cancel()
         prepareJob?.cancel()
+        synchronized(turnLock) {
+            runtimeMonitor.also { runtimeMonitor = null }
+        }?.close()
         if (engine.isInitialized()) engine.value.close()
+    }
+
+    private fun ensureRuntimeMonitor(runtime: LocalAsrEngine) {
+        val monitor = synchronized(turnLock) {
+            runtimeMonitor ?: runtimeMonitorFactory?.invoke(runtime)?.also { runtimeMonitor = it }
+        } ?: return
+        monitor.onAppForegroundChanged(appForeground)
+        monitor.onMicrophonePermissionChanged(microphonePermissionGranted)
     }
 
     companion object {
@@ -119,7 +145,10 @@ class HighAccuracyLocalAsrController internal constructor(
                         .takeIf { it.state == QnnContextModelState.INSTALLED }
                         ?.directory
                 },
-                engineFactory = { HighAccuracyLocalAsrEngineFactory.create(application) }
+                engineFactory = { HighAccuracyLocalAsrEngineFactory.create(application) },
+                runtimeMonitorFactory = { runtime ->
+                    AndroidLocalAsrRuntimeMonitor(application, runtime, scope)
+                }
             )
         }
     }

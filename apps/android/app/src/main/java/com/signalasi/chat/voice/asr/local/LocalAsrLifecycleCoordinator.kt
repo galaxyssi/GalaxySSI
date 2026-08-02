@@ -40,14 +40,14 @@ class LocalAsrLifecycleCoordinator(
         val action = synchronized(lock) {
             if (active) {
                 val first = blockers.isEmpty()
-                blockers += reason
+                if (!blockers.add(reason)) return@synchronized Action.NO_OP
                 if (first && engine.state.value.let {
                         it is LocalAsrState.Listening || it is LocalAsrState.Starting
                     }
                 ) resumeEligible = true
                 Action.PAUSE
             } else {
-                blockers -= reason
+                if (!blockers.remove(reason)) return@synchronized Action.NO_OP
                 if (blockers.isEmpty() && resumeEligible && autoResumeAfterTransientInterruption) {
                     resumeEligible = false
                     Action.RESUME
@@ -58,13 +58,15 @@ class LocalAsrLifecycleCoordinator(
             Action.PAUSE -> engine.pause(reason)
             Action.RESUME -> engine.resume(reason)
             Action.REMOVE_ONLY -> engine.resume(reason)
+            Action.NO_OP -> Unit
         }
     }
 
     private enum class Action {
         PAUSE,
         RESUME,
-        REMOVE_ONLY
+        REMOVE_ONLY,
+        NO_OP
     }
 }
 

@@ -1,6 +1,7 @@
 package com.signalasi.chat.voice.asr.local
 
 import android.content.Context
+import android.os.SystemClock
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -12,6 +13,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -26,7 +28,8 @@ internal fun interface WhisperQnnTranscriberRuntimeFactory {
 internal class AndroidWhisperQnnAsrApi private constructor(
     private val runtimeFactory: WhisperQnnTranscriberRuntimeFactory,
     private val frontendFactory: WhisperQnnAudioFrontendFactory,
-    private val residentBytes: () -> Long
+    private val residentBytes: () -> Long,
+    private val elapsedRealtimeMs: () -> Long
 ) : QnnAsrNativeApi {
     private val nextHandle = AtomicLong(1L)
     private val resources = ConcurrentHashMap<Long, QnnRuntimeResource>()
@@ -38,13 +41,15 @@ internal class AndroidWhisperQnnAsrApi private constructor(
         frontendFactory = NativeWhisperQnnAudioFrontend,
         residentBytes = {
             Runtime.getRuntime().let { runtime -> runtime.totalMemory() - runtime.freeMemory() }
-        }
+        },
+        elapsedRealtimeMs = SystemClock::elapsedRealtime
     )
 
     internal constructor(
         runtimeFactory: WhisperQnnTranscriberRuntimeFactory,
-        frontendFactory: WhisperQnnAudioFrontendFactory
-    ) : this(runtimeFactory, frontendFactory, { 0L })
+        frontendFactory: WhisperQnnAudioFrontendFactory,
+        elapsedRealtimeMs: () -> Long = { System.nanoTime() / 1_000_000L }
+    ) : this(runtimeFactory, frontendFactory, { 0L }, elapsedRealtimeMs)
 
     override fun create(
         modelDirectory: String,
@@ -57,7 +62,14 @@ internal class AndroidWhisperQnnAsrApi private constructor(
         require(runtimeRoot.isDirectory && runtimeRoot.canWrite()) { "QNN ASR runtime directory is unavailable" }
         val runtime = runtimeFactory.open(model)
         val handle = nextHandle.getAndIncrement().takeIf { it > 0L } ?: error("QNN ASR handle space exhausted")
-        val resource = QnnRuntimeResource(model, runtime, frontendFactory, callback, residentBytes)
+        val resource = QnnRuntimeResource(
+            model,
+            runtime,
+            frontendFactory,
+            callback,
+            residentBytes,
+            elapsedRealtimeMs
+        )
         check(resources.putIfAbsent(handle, resource) == null)
         return handle
     }
@@ -82,6 +94,10 @@ internal class AndroidWhisperQnnAsrApi private constructor(
 
     override fun resume(handle: Long, sessionToken: Long): Boolean =
         resource(handle)?.resume(sessionToken) ?: false
+
+    override fun updateRuntimePolicy(handle: Long, policy: AsrRuntimePolicy) {
+        resource(handle)?.updateRuntimePolicy(policy)
+    }
 
     override fun destroy(handle: Long) {
         resources.remove(handle)?.close()
@@ -108,12 +124,14 @@ private class QnnRuntimeResource(
     private val runtime: WhisperQnnTranscriberRuntime,
     private val frontendFactory: WhisperQnnAudioFrontendFactory,
     private val callback: QnnAsrNativeCallback,
-    private val residentBytes: () -> Long
+    private val residentBytes: () -> Long,
+    private val elapsedRealtimeMs: () -> Long
 ) : AutoCloseable {
     private val lock = Any()
     private val closed = AtomicBoolean(false)
     private val callbackExecutor = namedSingleThreadExecutor("SignalASI-ASR-Callback")
     private var active: QnnStreamingSession? = null
+    private var runtimePolicy: AsrRuntimePolicy? = null
 
     fun start(sessionToken: Long, config: AsrConfig): Boolean = synchronized(lock) {
         if (closed.get() || active != null || sessionToken <= 0L) return false
@@ -126,8 +144,10 @@ private class QnnRuntimeResource(
             callback = callback,
             callbackExecutor = callbackExecutor,
             residentBytes = residentBytes,
+            elapsedRealtimeMs = elapsedRealtimeMs,
             onTerminal = ::onTerminal
         )
+        session.updateRuntimePolicy(runtimePolicy ?: AsrRuntimePolicy.from(config))
         if (!session.start()) {
             session.close()
             return false
@@ -153,9 +173,20 @@ private class QnnRuntimeResource(
 
     fun resume(sessionToken: Long): Boolean = active(sessionToken)?.resume() ?: false
 
+    fun updateRuntimePolicy(policy: AsrRuntimePolicy) = synchronized(lock) {
+        if (closed.get()) return@synchronized
+        runtimePolicy = policy
+        active?.updateRuntimePolicy(policy)
+    }
+
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        val session = synchronized(lock) { active.also { active = null } }
+        val session = synchronized(lock) {
+            active.also {
+                active = null
+                runtimePolicy = null
+            }
+        }
         session?.cancel()
         runtime.close()
         callbackExecutor.shutdown()
@@ -169,7 +200,10 @@ private class QnnRuntimeResource(
 
     private fun onTerminal(session: QnnStreamingSession) {
         synchronized(lock) {
-            if (active === session) active = null
+            if (active === session) {
+                active = null
+                runtimePolicy = null
+            }
         }
     }
 
@@ -186,9 +220,11 @@ private class QnnStreamingSession(
     private val callback: QnnAsrNativeCallback,
     private val callbackExecutor: ExecutorService,
     private val residentBytes: () -> Long,
+    private val elapsedRealtimeMs: () -> Long,
     private val onTerminal: (QnnStreamingSession) -> Unit
 ) : AutoCloseable {
     private val terminal = AtomicBoolean(false)
+    private val paused = AtomicBoolean(false)
     private val featureExecutor = namedSingleThreadExecutor("SignalASI-ASR-Feature")
     private val inferenceExecutor = namedSingleThreadExecutor("SignalASI-ASR-QNN")
     private val featureBuffers = ArrayBlockingQueue<ByteBuffer>(FEATURE_BUFFER_COUNT).apply {
@@ -198,6 +234,8 @@ private class QnnStreamingSession(
     }
     private val mailbox = FeatureMailbox()
     private val stabilizer = WhisperTwoPassStabilizer()
+    private val runtimePolicy = AtomicReference(AsrRuntimePolicy.from(config))
+    private var lastPartialInferenceAtMs = Long.MIN_VALUE
 
     fun start(): Boolean {
         if (terminal.get() || !frontend.start()) return false
@@ -219,6 +257,7 @@ private class QnnStreamingSession(
 
     fun pause() {
         if (terminal.get()) return
+        paused.set(true)
         mailbox.discardPartial().forEach(::release)
         runCatching(frontend::pause).onFailure(::failFrontend)
     }
@@ -228,6 +267,14 @@ private class QnnStreamingSession(
         return runCatching(frontend::resume).getOrElse {
             failFrontend(it)
             false
+        }.also { resumed -> if (resumed) paused.set(false) }
+    }
+
+    fun updateRuntimePolicy(policy: AsrRuntimePolicy) {
+        runtimePolicy.set(policy)
+        frontend.updateRuntimePolicy(policy)
+        if (!policy.emitIntermediateResults) {
+            mailbox.discardPartial().forEach(::release)
         }
     }
 
@@ -258,6 +305,10 @@ private class QnnStreamingSession(
                 featureBuffers.offer(buffer)
                 continue
             }
+            if (paused.get()) {
+                featureBuffers.offer(buffer)
+                continue
+            }
             val packet = if (window.kind == NativeFeatureWindowKind.NO_SPEECH_FINAL) {
                 featureBuffers.offer(buffer)
                 FeaturePacket(window, null)
@@ -277,9 +328,17 @@ private class QnnStreamingSession(
                 Thread.currentThread().interrupt()
                 return
             }
+            if (paused.get()) {
+                release(packet)
+                continue
+            }
             if (packet.window.kind == NativeFeatureWindowKind.NO_SPEECH_FINAL) {
                 finishFinal(StableWhisperHypothesis("", "", "", true), packet.window, null)
                 return
+            }
+            if (!packet.window.final && !shouldInferPartial()) {
+                release(packet)
+                continue
             }
 
             val transcription = try {
@@ -356,6 +415,7 @@ private class QnnStreamingSession(
     }
 
     private fun emitDiagnostics(transcription: WhisperQnnTranscription) {
+        val policy = runtimePolicy.get()
         executeCallback {
             callback.onDiagnostics(
                 sessionToken,
@@ -366,11 +426,22 @@ private class QnnStreamingSession(
                     encoderTotalLayers = WhisperLargeTurboQnnContract.ENCODER_NPU_LAYERS,
                     decoderNpuLayers = WhisperLargeTurboQnnContract.DECODER_NPU_LAYERS,
                     decoderTotalLayers = WhisperLargeTurboQnnContract.DECODER_NPU_LAYERS,
-                    thermalStatus = 0,
+                    thermalStatus = policy.thermalStatus,
                     residentBytes = residentBytes().coerceAtLeast(0L)
                 )
             )
         }
+    }
+
+    private fun shouldInferPartial(): Boolean {
+        val policy = runtimePolicy.get()
+        if (!policy.emitIntermediateResults) return false
+        val now = elapsedRealtimeMs().coerceAtLeast(0L)
+        if (lastPartialInferenceAtMs != Long.MIN_VALUE &&
+            now - lastPartialInferenceAtMs < policy.partialIntervalMs
+        ) return false
+        lastPartialInferenceAtMs = now
+        return true
     }
 
     private fun executeCallback(block: () -> Unit) {

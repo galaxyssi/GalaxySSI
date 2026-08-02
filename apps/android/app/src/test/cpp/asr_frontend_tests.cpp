@@ -231,6 +231,37 @@ void test_rolling_window_emits_partials_and_final() {
     require(saver.on_vad_decision(ended).has_value(), "Power saver must retain final decoding");
 }
 
+void test_rolling_window_updates_partial_policy_without_losing_final() {
+    RollingWindowPlanner planner;
+    VadDecision start;
+    start.type = VadEventType::kSpeechStarted;
+    start.segment_start_sample = 0;
+    start.first_voice_sample = 0;
+    planner.on_vad_decision(start);
+
+    VadDecision active;
+    active.type = VadEventType::kSpeechActive;
+    active.segment_end_sample = 14'400;
+    require(planner.on_vad_decision(active).has_value(), "Initial partial was not emitted");
+    require(planner.update_partial_policy(1'200, true), "Runtime interval update was rejected");
+    active.segment_end_sample = 32'000;
+    require(!planner.on_vad_decision(active).has_value(), "Updated interval was not applied");
+    active.segment_end_sample = 33'600;
+    require(planner.on_vad_decision(active).has_value(), "Updated interval never emitted a partial");
+
+    require(planner.update_partial_policy(1'200, false), "Final-only policy was rejected");
+    active.segment_end_sample = 64'000;
+    require(!planner.on_vad_decision(active).has_value(), "Final-only policy emitted a partial");
+    VadDecision ended;
+    ended.type = VadEventType::kSpeechEnded;
+    ended.segment_accepted = true;
+    ended.segment_end_sample = 65'600;
+    ended.end_reason = VadEndReason::kSilence;
+    const auto final = planner.on_vad_decision(ended);
+    require(final.has_value() && final->final, "Final-only policy discarded sentence finalization");
+    require(!planner.update_partial_policy(499, true), "Invalid runtime interval was accepted");
+}
+
 std::vector<float> test_filter_bank() {
     std::vector<float> filters(MelFilterBank128::kValueCount, 0.0F);
     for (std::size_t mel = 0; mel < MelFilterBank128::kMelBins; ++mel) {
@@ -356,6 +387,7 @@ int main() {
         {"VAD short segment", test_vad_discards_short_segments},
         {"VAD maximum segment", test_vad_enforces_maximum_segment},
         {"rolling windows", test_rolling_window_emits_partials_and_final},
+        {"adaptive rolling windows", test_rolling_window_updates_partial_policy_without_losing_final},
         {"Log-Mel", test_log_mel_shape_silence_and_frequency_response},
         {"mel filter validation", test_mel_filter_loader_rejects_wrong_size},
         {"UTF-8 transcript stabilization", test_transcript_stabilizer_is_utf8_safe},

@@ -10,6 +10,100 @@ enum class AsrPerformanceMode {
     POWER_SAVER
 }
 
+enum class AsrRuntimePolicyReason {
+    PERFORMANCE_MODE,
+    CONTINUOUS_USE,
+    THERMAL_MODERATE,
+    THERMAL_SEVERE,
+    SYSTEM_POWER_SAVER
+}
+
+data class AsrRuntimePolicy(
+    val partialIntervalMs: Long,
+    val emitIntermediateResults: Boolean,
+    val thermalStatus: Int = THERMAL_STATUS_NONE,
+    val continuousUseMs: Long = 0L,
+    val reasons: Set<AsrRuntimePolicyReason> = setOf(AsrRuntimePolicyReason.PERFORMANCE_MODE)
+) {
+    init {
+        require(partialIntervalMs in MIN_PARTIAL_INTERVAL_MS..MAX_PARTIAL_INTERVAL_MS)
+        require(thermalStatus in THERMAL_STATUS_NONE..THERMAL_STATUS_SHUTDOWN)
+        require(continuousUseMs >= 0L)
+    }
+
+    companion object {
+        const val MIN_PARTIAL_INTERVAL_MS = 500L
+        const val MAX_PARTIAL_INTERVAL_MS = 2_000L
+        const val THERMAL_STATUS_NONE = 0
+        const val THERMAL_STATUS_MODERATE = 2
+        const val THERMAL_STATUS_SEVERE = 3
+        const val THERMAL_STATUS_CRITICAL = 4
+        const val THERMAL_STATUS_SHUTDOWN = 6
+
+        fun from(config: AsrConfig): AsrRuntimePolicy = AsrRuntimePolicy(
+            partialIntervalMs = config.updateIntervalMs,
+            emitIntermediateResults = config.emitsIntermediateResults
+        )
+    }
+}
+
+class AdaptiveAsrRuntimePolicyPlanner(
+    private val continuousUseThresholdMs: Long = 5L * 60L * 1_000L
+) {
+    init {
+        require(continuousUseThresholdMs > 0L)
+    }
+
+    fun resolve(
+        config: AsrConfig,
+        continuousUseMs: Long,
+        thermalStatus: Int,
+        systemPowerSaveMode: Boolean
+    ): AsrRuntimePolicy {
+        val elapsed = continuousUseMs.coerceAtLeast(0L)
+        val thermal = thermalStatus.coerceIn(
+            AsrRuntimePolicy.THERMAL_STATUS_NONE,
+            AsrRuntimePolicy.THERMAL_STATUS_SHUTDOWN
+        )
+        val reasons = linkedSetOf(AsrRuntimePolicyReason.PERFORMANCE_MODE)
+        var interval = config.updateIntervalMs
+        var emitPartials = config.emitsIntermediateResults
+
+        if (elapsed >= continuousUseThresholdMs) {
+            interval = maxOf(interval, LONG_SESSION_INTERVAL_MS)
+            reasons += AsrRuntimePolicyReason.CONTINUOUS_USE
+        }
+        if (thermal >= AsrRuntimePolicy.THERMAL_STATUS_MODERATE) {
+            interval = maxOf(interval, WARM_INTERVAL_MS)
+            reasons += AsrRuntimePolicyReason.THERMAL_MODERATE
+        }
+        if (thermal >= AsrRuntimePolicy.THERMAL_STATUS_SEVERE) {
+            emitPartials = false
+            reasons += AsrRuntimePolicyReason.THERMAL_SEVERE
+        }
+        if (systemPowerSaveMode) {
+            interval = maxOf(interval, LONG_SESSION_INTERVAL_MS)
+            emitPartials = false
+            reasons += AsrRuntimePolicyReason.SYSTEM_POWER_SAVER
+        }
+        return AsrRuntimePolicy(
+            partialIntervalMs = interval.coerceIn(
+                AsrRuntimePolicy.MIN_PARTIAL_INTERVAL_MS,
+                AsrRuntimePolicy.MAX_PARTIAL_INTERVAL_MS
+            ),
+            emitIntermediateResults = emitPartials,
+            thermalStatus = thermal,
+            continuousUseMs = elapsed,
+            reasons = reasons
+        )
+    }
+
+    private companion object {
+        const val WARM_INTERVAL_MS = 1_000L
+        const val LONG_SESSION_INTERVAL_MS = 1_200L
+    }
+}
+
 data class AsrConfig(
     val language: String = "zh",
     val inputSampleRateHz: Int = 16_000,
@@ -123,6 +217,7 @@ interface LocalAsrEngine : AutoCloseable {
     fun cancel()
     fun pause(reason: LocalAsrPauseReason)
     fun resume(reason: LocalAsrPauseReason)
+    fun updateRuntimePolicy(policy: AsrRuntimePolicy) = Unit
     override fun close()
 }
 
@@ -148,6 +243,7 @@ interface QnnAsrNativeApi {
     fun cancel(handle: Long, sessionToken: Long)
     fun pause(handle: Long, sessionToken: Long)
     fun resume(handle: Long, sessionToken: Long): Boolean
+    fun updateRuntimePolicy(handle: Long, policy: AsrRuntimePolicy) = Unit
     fun destroy(handle: Long)
 }
 

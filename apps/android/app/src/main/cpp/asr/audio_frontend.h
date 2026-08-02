@@ -29,6 +29,7 @@ public:
     bool push_pcm16(const std::int16_t * samples, std::size_t sample_count) noexcept;
     void stop() noexcept;
     void reset() noexcept;
+    bool update_partial_policy(int update_interval_ms, bool emit_partials) noexcept;
     void set_callback(DecodeWindowCallback callback);
 
     bool snapshot(const DecodeWindow & window,

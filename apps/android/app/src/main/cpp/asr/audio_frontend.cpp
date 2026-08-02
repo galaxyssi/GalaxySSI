@@ -63,6 +63,11 @@ void AudioFrontend::reset() noexcept {
     rolling_window_.reset();
 }
 
+bool AudioFrontend::update_partial_policy(const int update_interval_ms,
+                                          const bool emit_partials) noexcept {
+    return rolling_window_.update_partial_policy(update_interval_ms, emit_partials);
+}
+
 void AudioFrontend::set_callback(DecodeWindowCallback callback) {
     callback_ = std::move(callback);
 }

@@ -182,6 +182,22 @@ Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeRes
     return session != nullptr && session->resume() ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeUpdatePartialPolicy(
+    JNIEnv * environment,
+    jobject,
+    const jlong handle,
+    const jint update_interval_ms,
+    const jboolean emit_partials) {
+    const auto session = from_handle(environment, handle);
+    if (session != nullptr &&
+        !session->update_partial_policy(update_interval_ms, emit_partials == JNI_TRUE)) {
+        throw_java(environment,
+                   "java/lang/IllegalArgumentException",
+                   "Native ASR partial policy is invalid");
+    }
+}
+
 extern "C" JNIEXPORT jlongArray JNICALL
 Java_com_signalasi_chat_voice_asr_local_WhisperQnnNativeFrontendBridge_nativeWaitForFeatures(
     JNIEnv * environment,

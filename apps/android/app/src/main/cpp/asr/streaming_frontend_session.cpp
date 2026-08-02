@@ -120,11 +120,23 @@ void StreamingFrontendSession::cancel() noexcept {
 }
 
 void StreamingFrontendSession::pause() noexcept {
-    std::lock_guard<std::mutex> guard(input_mutex_);
-    if (!closed_.load() && active_) {
+    {
+        std::lock_guard<std::mutex> guard(input_mutex_);
+        if (closed_.load() || !active_) {
+            return;
+        }
         paused_ = true;
         generation_.fetch_add(1);
         clear_input_locked();
+    }
+    {
+        std::lock_guard<std::mutex> frontend_guard(frontend_mutex_);
+        frontend_.reset();
+    }
+    {
+        std::lock_guard<std::mutex> window_guard(window_mutex_);
+        clear_windows_locked();
+        final_enqueued_ = false;
     }
 }
 
@@ -138,6 +150,15 @@ bool StreamingFrontendSession::resume() noexcept {
     }
     input_condition_.notify_all();
     return true;
+}
+
+bool StreamingFrontendSession::update_partial_policy(const int update_interval_ms,
+                                                     const bool emit_partials) noexcept {
+    std::lock_guard<std::mutex> frontend_guard(frontend_mutex_);
+    if (closed_.load()) {
+        return false;
+    }
+    return frontend_.update_partial_policy(update_interval_ms, emit_partials);
 }
 
 void StreamingFrontendSession::close() noexcept {
